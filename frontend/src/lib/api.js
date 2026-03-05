@@ -54,19 +54,30 @@ export const uploadFile = async (file, folderPath = "/") => {
   });
 };
 
-// Download file helper - uses direct URL for iframe compatibility
-export const downloadFile = async (fileId, filename) => {
+// Download helper - hidden iframe approach for iframe compatibility
+const triggerDownload = (url) => {
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  // Cleanup after download starts
+  setTimeout(() => {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+  }, 60000);
+};
+
+// Download file
+export const downloadFile = (fileId, filename) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
-  // Open direct download URL in new tab - works in iframes
-  window.open(`${baseUrl}/api/files/${fileId}/download?token=${token}`, '_blank');
+  triggerDownload(`${baseUrl}/api/files/${fileId}/download?token=${token}`);
 };
 
 // Download folder as ZIP
-export const downloadFolderZip = async (folderId, folderName) => {
+export const downloadFolderZip = (folderId, folderName) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
-  window.open(`${baseUrl}/api/folders/${folderId}/download?token=${token}`, '_blank');
+  triggerDownload(`${baseUrl}/api/folders/${folderId}/download?token=${token}`);
 };
 
 // Public download helper
