@@ -54,27 +54,20 @@ export const uploadFile = async (file, folderPath = "/") => {
   });
 };
 
-// Download helper - hidden iframe approach for iframe compatibility
+// Download helper - direct location change triggers download via Content-Disposition: attachment
 const triggerDownload = (url) => {
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  // Cleanup after download starts
-  setTimeout(() => {
-    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-  }, 60000);
+  window.location.href = url;
 };
 
 // Download file
-export const downloadFile = (fileId, filename) => {
+export const downloadFile = (fileId) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
   triggerDownload(`${baseUrl}/api/files/${fileId}/download?token=${token}`);
 };
 
 // Download folder as ZIP
-export const downloadFolderZip = (folderId, folderName) => {
+export const downloadFolderZip = (folderId) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
   triggerDownload(`${baseUrl}/api/folders/${folderId}/download?token=${token}`);
