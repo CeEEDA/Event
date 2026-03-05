@@ -1328,6 +1328,11 @@ async def health_check():
 # Include the router in the main app
 app.include_router(api_router)
 
+# Generator Monitoring routes
+from routes.generators import router as generator_router, init_generator_routes
+init_generator_routes(db, decode_jwt_token, get_current_user, require_admin)
+app.include_router(generator_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

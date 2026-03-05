@@ -9,6 +9,8 @@ import HubPage from "./pages/HubPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage from "./pages/AdminPage";
 import SharedFilePage from "./pages/SharedFilePage";
+import GeneratorDashboardPage from "./pages/GeneratorDashboardPage";
+import GeneratorDetailPage from "./pages/GeneratorDetailPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -110,6 +112,22 @@ function AppRoutes() {
             <AdminPage />
           </ProtectedRoute>
         } 
+      />
+      <Route
+        path="/generators"
+        element={
+          <ProtectedRoute>
+            <GeneratorDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/generators/:id"
+        element={
+          <ProtectedRoute>
+            <GeneratorDetailPage />
+          </ProtectedRoute>
+        }
       />
       <Route path="/share/:token" element={<SharedFilePage />} />
       {/* Redirect old dashboard route */}
