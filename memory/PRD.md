@@ -32,21 +32,25 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - [x] Magenta/Fuchsia Farbschema
 - [x] Passwort-Reset Flow (User + Admin)
 - [x] Admin Passwort-Verwaltung (Setzen + Reset-Link)
+- [x] Datei Download funktioniert
+- [x] Datei Löschen funktioniert
+- [x] Drag & Drop Upload
+- [x] Dateien zwischen Ordnern verschieben
+- [x] Ordner als ZIP herunterladen
+- [x] Dateivorschau für PDF und Bilder
 - [ ] E-Mail-Versand für Passwort-Reset (Office 365 IMAP)
-- [ ] Dateivorschau (PDF, Bilder)
 - [ ] E-Mail-Benachrichtigungen
 
 ## Implementation Status (05.03.2026)
 ### Completed - All Tests Passing
+- **File Management**: Upload, Download, Delete, Move between folders
+- **Drag & Drop**: Files direkt ins Dashboard ziehen zum Hochladen
+- **Ordner ZIP**: Ganze Ordner als ZIP-Datei herunterladen
+- **Dateivorschau**: PDF-Viewer und Bildvorschau direkt in der App
+- **Verschieben**: Dateien per Modal in andere Ordner verschieben
 - **Magenta Theme**: Fuchsia-600 across all components
-- **Login**: "Eventenergie Portal" title, "Passwort vergessen?" Link
-- **Passwort-Reset**: 
-  - User Flow: /forgot-password → Token → /reset-password/:token (EMAIL MOCKED)
-  - Admin Flow: Passwort setzen + Reset-Link generieren Modal
-- **Ordner-Modal**: CreateFolderModal mit Namenseingabe
+- **Passwort-Reset**: User Flow + Admin Flow (EMAIL MOCKED)
 - **Benutzerverwaltung**: CRUD + App-Berechtigungen + Passwort-Key-Button
-- **Dateibereiche**: Mein Bereich + Gemeinsamer Bereich
-- **Share-System**: Dateien + Ordner teilen mit Berechtigungen
 
 ### Tech Stack
 - Backend: FastAPI, Motor (async MongoDB), GridFS
@@ -60,15 +64,20 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 3. Hub → Benutzerverwaltung (nur Admin)
 4. FileShare: Mein Bereich | Gemeinsamer Bereich
 5. Admin: Benutzer | Dateien (alle User einsehen)
-6. Login → Passwort vergessen → Reset-Link → Neues Passwort
+
+## API Endpoints
+### New Endpoints
+- PUT /api/files/{file_id}/move - Datei in anderen Ordner verschieben
+- GET /api/folders/{folder_id}/download - Ordner als ZIP herunterladen
+- GET /api/files/{file_id}/preview - Dateivorschau (Bilder/PDF)
+- GET /api/folders/all - Alle Ordner (für Verschieben-Dialog)
 
 ## Prioritized Backlog
-### P0 (Critical) - Erledigt
+### P0 - Erledigt
 - All core features implemented and tested
 
 ### P1 (High) - Nächste Phase
 - Office 365 E-Mail-Integration (User gibt IMAP-Zugangsdaten)
-- Dateivorschau (PDF, Bilder)
 - E-Mail-Benachrichtigungen
 
 ### P2 (Medium)
