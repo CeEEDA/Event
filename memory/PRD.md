@@ -6,12 +6,12 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - Datei-Upload/Download mit konfigurierbaren Limits
 - Share-Links mit Passwortschutz
 - Deutsche Benutzeroberfläche
-- Design inspiriert von eventenergie-deutschland.de
+- Design: Weißer Hintergrund, Eventenergie Branding, zentrale Anmeldebox
 
 ## User Personas
 1. **Administrator** - Volle Kontrolle, Benutzerverwaltung, System-Statistiken
 2. **Mitarbeiter** - Datei-Upload/Download, Share-Links erstellen
-3. **Kunde** - Dateien über Share-Links herunterladen/hochladen
+3. **Kunde** - Kann sich selbst registrieren, braucht Admin-Freigabe
 
 ## Core Requirements
 - [x] JWT-basierte Authentifizierung
@@ -25,17 +25,18 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - [x] Benutzerverwaltung (CRUD)
 - [x] Upload-Limits pro Benutzer
 - [x] Deutsche Oberfläche
+- [x] Selbst-Registrierung für Kunden
+- [x] Hub-Seite nach Login
 
 ## Implementation Status (05.03.2026)
-### Completed
-- Backend: FastAPI + MongoDB + GridFS
-- Frontend: React + Tailwind + Shadcn/UI
-- Auth: JWT mit bcrypt
-- File Browser mit List/Grid View
-- Share-System mit Token-URLs
-- Admin-Panel mit User-Management
-- Dark Industrial Theme (Orange/Gelb Akzente)
-- German UI durchgehend
+### Completed - Iteration 2
+- Neues Design: Weißer Hintergrund, Eventenergie Branding
+- Hub-Seite: Zentrale Navigationsseite nach Login
+  - FileShare Button (alle User)
+  - Benutzerverwaltung Button (nur Admin)
+  - Platzhalter für zukünftige Funktionen
+- Selbst-Registrierung für Kunden aktiviert
+- Zurück-Navigation von FileShare/Admin zum Hub
 
 ### Tech Stack
 - Backend: FastAPI, Motor (async MongoDB), GridFS
@@ -43,23 +44,28 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - Database: MongoDB
 - Auth: JWT + bcrypt
 
-## Prioritized Backlog
-### P0 (Critical)
-- ✅ Core file sharing functionality
+## Navigation Flow
+1. Login/Register → Hub
+2. Hub → FileShare (Dateiverwaltung)
+3. Hub → Admin (nur für Admins)
+4. FileShare/Admin → Hub (Zurück-Button)
 
-### P1 (High)
+## Prioritized Backlog
+### P0 (Critical) - Erledigt
+- ✅ Core file sharing functionality
+- ✅ Hub page with module selection
+
+### P1 (High) - Nächste Phase
 - Dateivorschau (PDF, Bilder)
-- Bulk-Download (ZIP)
 - Email-Benachrichtigungen bei Downloads
+- Weitere Module im Hub
 
 ### P2 (Medium)
 - Datei-Versioning
 - Activity Log/Audit Trail
-- Dark/Light Mode Toggle
 - Erweiterte Suchfunktion
 
 ## Next Tasks
-1. Dateivorschau implementieren
+1. Weitere Module für den Hub entwickeln
 2. Email-Benachrichtigungen hinzufügen
-3. Bulk-Operationen (mehrere Dateien löschen/downloaden)
-4. Activity-Log für Admin-Panel
+3. Dateivorschau implementieren
