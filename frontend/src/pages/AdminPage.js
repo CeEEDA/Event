@@ -39,7 +39,8 @@ import {
   FolderOpen,
   Eye,
   KeyRound,
-  Copy
+  Copy,
+  Search
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -63,6 +64,8 @@ export default function AdminPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
+  const [userRoleFilter, setUserRoleFilter] = useState("kunden");
+  const [userSearch, setUserSearch] = useState("");
   const [usersWithFiles, setUsersWithFiles] = useState([]);
   const [formData, setFormData] = useState({
     name: "",
@@ -368,20 +371,62 @@ export default function AdminPage() {
             </TabsList>
 
             {/* Users Tab */}
-            <TabsContent value="users" className="mt-4">
-              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                  <h2 className="font-semibold text-gray-900">Alle Benutzer</h2>
+            <TabsContent value="users" className="mt-4 space-y-4">
+              {/* Role Sub-Tabs + Search */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <div className="flex border border-gray-200 rounded-lg overflow-hidden bg-white">
+                  <button
+                    onClick={() => { setUserRoleFilter("kunden"); setUserSearch(""); }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                      userRoleFilter === "kunden"
+                        ? "bg-fuchsia-50 text-fuchsia-700 border-b-2 border-fuchsia-600"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
+                    data-testid="filter-kunden"
+                  >
+                    <User className="w-4 h-4" />
+                    Kunden
+                    <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{users.filter(u => u.role === "kunde").length}</span>
+                  </button>
+                  <button
+                    onClick={() => { setUserRoleFilter("mitarbeiter"); setUserSearch(""); }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                      userRoleFilter === "mitarbeiter"
+                        ? "bg-fuchsia-50 text-fuchsia-700 border-b-2 border-fuchsia-600"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
+                    data-testid="filter-mitarbeiter"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    Mitarbeiter
+                    <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{users.filter(u => u.role === "mitarbeiter").length}</span>
+                  </button>
+                </div>
+                
+                <div className="flex items-center gap-2 flex-1">
+                  <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      placeholder="Benutzer suchen..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="pl-8 h-9 border-gray-300 text-sm"
+                      data-testid="user-search-input"
+                    />
+                  </div>
                   <Button
                     onClick={openCreateModal}
-                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white flex-shrink-0"
                     data-testid="create-user-btn"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Neuer Benutzer
                   </Button>
                 </div>
-                
+              </div>
+
+              {/* Users Table */}
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full" data-testid="users-table">
                     <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
@@ -397,18 +442,30 @@ export default function AdminPage() {
                     <tbody className="divide-y divide-gray-100">
                       {loading ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                            Laden...
-                          </td>
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">Laden...</td>
                         </tr>
-                      ) : users.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                            Keine Benutzer gefunden
-                          </td>
-                        </tr>
-                      ) : (
-                        users.map((user) => (
+                      ) : (() => {
+                        const filtered = users.filter(u => {
+                          // Role filter
+                          if (userRoleFilter === "kunden" && u.role !== "kunde" && u.role !== "admin") return false;
+                          if (userRoleFilter === "mitarbeiter" && u.role !== "mitarbeiter" && u.role !== "admin") return false;
+                          // Search filter
+                          if (userSearch) {
+                            const q = userSearch.toLowerCase();
+                            return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+                          }
+                          return true;
+                        });
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                                {userSearch ? "Keine Benutzer gefunden" : "Keine Benutzer in dieser Kategorie"}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return filtered.map((user) => (
                           <tr key={user.id} className="hover:bg-gray-50" data-testid={`user-row-${user.id}`}>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-3">
@@ -493,8 +550,8 @@ export default function AdminPage() {
                               </div>
                             </td>
                           </tr>
-                        ))
-                      )}
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>

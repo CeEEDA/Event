@@ -14,6 +14,7 @@ import { Button } from "../components/ui/button";
 import { Logo } from "../components/Logo";
 import { toast } from "sonner";
 import api, { downloadFile, downloadFolderZip, setDownloadLinkCallback } from "../lib/api";
+import { Input } from "../components/ui/input";
 import { 
   Upload, 
   FolderPlus, 
@@ -24,7 +25,8 @@ import {
   FolderOpen,
   Link2,
   Users,
-  Globe
+  Globe,
+  Search
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -51,6 +53,9 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("files");
   const [storageArea, setStorageArea] = useState("personal");
   const [isDragging, setIsDragging] = useState(false);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -291,9 +296,17 @@ export default function DashboardPage() {
     if (currentPath === "/") return;
     setCurrentPath(currentPath.substring(0, currentPath.lastIndexOf("/")) || "/");
   };
-  const switchStorageArea = (area) => { setStorageArea(area); setCurrentPath("/"); };
+  const switchStorageArea = (area) => { setStorageArea(area); setCurrentPath("/"); setSearchQuery(""); };
 
   const showUploadUI = storageArea === "personal" || canWrite;
+
+  // Filter files and folders by search query
+  const filteredFiles = searchQuery
+    ? files.filter(f => f.original_filename.toLowerCase().includes(searchQuery.toLowerCase()))
+    : files;
+  const filteredFolders = searchQuery
+    ? folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : folders;
 
   return (
     <div 
@@ -358,10 +371,20 @@ export default function DashboardPage() {
       {/* Toolbar */}
       {activeTab === "files" && (
         <div className="bg-white border-b border-gray-200 py-3 px-4">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="font-mono">{currentPath}</span>
-              {storageArea === "shared" && !canWrite && <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Nur Lesen</span>}
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <span className="text-sm text-gray-500 font-mono hidden sm:block flex-shrink-0">{currentPath}</span>
+              {storageArea === "shared" && !canWrite && <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded flex-shrink-0">Nur Lesen</span>}
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Suchen..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 h-8 border-gray-300 text-sm"
+                  data-testid="file-search-input"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="icon" onClick={loadFiles} className="text-gray-500" data-testid="refresh-btn">
@@ -395,7 +418,7 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto">
           {activeTab === "files" ? (
             <FileList
-              files={files} folders={folders} currentPath={currentPath} viewMode={viewMode} loading={loading}
+              files={filteredFiles} folders={filteredFolders} currentPath={currentPath} viewMode={viewMode} loading={loading}
               onNavigate={navigateToFolder} onNavigateUp={navigateUp}
               onDownload={handleDownload} onDelete={handleDelete}
               onShare={handleShareFile} onShareFolder={handleShareFolder} onDeleteFolder={handleDeleteFolder}
