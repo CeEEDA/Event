@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { FileList } from "../components/FileList";
 import { UploadModal } from "../components/UploadModal";
 import { ShareModal } from "../components/ShareModal";
 import { SharesPanel } from "../components/SharesPanel";
 import { Button } from "../components/ui/button";
+import { Logo } from "../components/Logo";
 import { toast } from "sonner";
 import api, { uploadFile, downloadFile } from "../lib/api";
 import { 
@@ -16,12 +17,17 @@ import {
   List,
   ArrowLeft,
   FolderOpen,
-  Link2
+  Link2,
+  Users,
+  Globe
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const viewUserId = searchParams.get("view_user");
+  
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
   const [currentPath, setCurrentPath] = useState("/");
@@ -29,17 +35,30 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [shareType, setShareType] = useState("file");
   const [activeTab, setActiveTab] = useState("files");
+  const [storageArea, setStorageArea] = useState("personal"); // personal or shared
+
+  // Check permissions
+  const canWrite = isAdmin || user?.apps?.filesharing?.can_write;
+  const canDelete = isAdmin || user?.apps?.filesharing?.can_delete;
+  const maxUploadSize = isAdmin ? 10000 : (user?.apps?.filesharing?.max_upload_size_mb || 100);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
+      const params = { folder_path: currentPath, storage_area: storageArea };
+      if (viewUserId && isAdmin) {
+        params.view_user_id = viewUserId;
+      }
+      
       const [filesRes, foldersRes] = await Promise.all([
-        api.get("/files", { params: { folder_path: currentPath } }),
-        api.get("/folders", { params: { path: currentPath } })
+        api.get("/files", { params }),
+        api.get("/folders", { params: { path: currentPath, storage_area: storageArea, view_user_id: viewUserId } })
       ]);
       setFiles(filesRes.data);
+      // Filter folders to only show direct children
       setFolders(foldersRes.data.filter(f => {
         const parentPath = f.path.substring(0, f.path.lastIndexOf("/")) || "/";
         return parentPath === currentPath;
@@ -49,7 +68,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPath]);
+  }, [currentPath, storageArea, viewUserId, isAdmin]);
 
   useEffect(() => {
     if (activeTab === "files") {
@@ -57,11 +76,24 @@ export default function DashboardPage() {
     }
   }, [loadFiles, activeTab]);
 
-  const handleUpload = async (files) => {
+  const handleUpload = async (uploadFiles) => {
+    // Check permission for shared area
+    if (storageArea === "shared" && !canWrite) {
+      toast.error("Keine Schreibberechtigung für gemeinsamen Bereich");
+      return;
+    }
+    
     let successCount = 0;
-    for (const file of files) {
+    for (const file of uploadFiles) {
       try {
-        await uploadFile(file, currentPath);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folder_path", currentPath);
+        formData.append("storage_area", storageArea);
+        
+        await api.post("/files/upload", formData, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
         successCount++;
       } catch (error) {
         const message = error.response?.data?.detail || `Fehler bei ${file.name}`;
@@ -85,6 +117,13 @@ export default function DashboardPage() {
   };
 
   const handleDelete = async (file) => {
+    // Check permission
+    const isOwner = file.owner_id === user?.id;
+    if (!isOwner && !isAdmin && !(storageArea === "shared" && canDelete)) {
+      toast.error("Keine Berechtigung zum Löschen");
+      return;
+    }
+    
     if (!window.confirm(`"${file.original_filename}" wirklich löschen?`)) return;
     
     try {
@@ -96,17 +135,34 @@ export default function DashboardPage() {
     }
   };
 
-  const handleShare = (file) => {
-    setSelectedFile(file);
+  const handleShareFile = (file) => {
+    setSelectedItem(file);
+    setShareType("file");
+    setShareModalOpen(true);
+  };
+
+  const handleShareFolder = (folder) => {
+    setSelectedItem(folder);
+    setShareType("folder");
     setShareModalOpen(true);
   };
 
   const handleCreateFolder = async () => {
+    // Check permission for shared area
+    if (storageArea === "shared" && !canWrite) {
+      toast.error("Keine Schreibberechtigung für gemeinsamen Bereich");
+      return;
+    }
+    
     const name = window.prompt("Ordnername eingeben:");
-    if (!name) return;
+    if (!name || !name.trim()) return;
     
     try {
-      await api.post("/folders", { name, parent_path: currentPath });
+      await api.post("/folders", { 
+        name: name.trim(), 
+        parent_path: currentPath,
+        storage_area: storageArea
+      });
       toast.success("Ordner erstellt");
       loadFiles();
     } catch (error) {
@@ -116,6 +172,13 @@ export default function DashboardPage() {
   };
 
   const handleDeleteFolder = async (folder) => {
+    // Check permission
+    const isOwner = folder.owner_id === user?.id;
+    if (!isOwner && !isAdmin && !(storageArea === "shared" && canDelete)) {
+      toast.error("Keine Berechtigung zum Löschen");
+      return;
+    }
+    
     if (!window.confirm(`Ordner "${folder.name}" und alle Inhalte löschen?`)) return;
     
     try {
@@ -137,6 +200,11 @@ export default function DashboardPage() {
     setCurrentPath(parentPath);
   };
 
+  const switchStorageArea = (area) => {
+    setStorageArea(area);
+    setCurrentPath("/");
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="dashboard-page">
       {/* Header */}
@@ -154,18 +222,48 @@ export default function DashboardPage() {
               Zurück
             </Button>
             <div className="h-6 w-px bg-gray-200" />
-            <h1 className="text-lg font-semibold text-gray-900">FileShare</h1>
+            <h1 className="text-lg font-semibold text-gray-900">
+              FileShare
+              {viewUserId && isAdmin && (
+                <span className="ml-2 text-sm font-normal text-orange-500">(Admin-Ansicht)</span>
+              )}
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
-              <span className="text-white font-bold text-xs">EE</span>
-            </div>
-            <span className="text-sm font-bold text-gray-900 hidden sm:inline">Eventenergie</span>
-          </div>
+          <Logo size="small" />
         </div>
       </header>
 
-      {/* Tabs */}
+      {/* Storage Area Tabs */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto flex">
+          <button
+            onClick={() => switchStorageArea("personal")}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              storageArea === "personal" 
+                ? "border-orange-500 text-orange-600" 
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            data-testid="storage-personal"
+          >
+            <Users className="w-4 h-4" />
+            Mein Bereich
+          </button>
+          <button
+            onClick={() => switchStorageArea("shared")}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              storageArea === "shared" 
+                ? "border-orange-500 text-orange-600" 
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            data-testid="storage-shared"
+          >
+            <Globe className="w-4 h-4" />
+            Gemeinsamer Bereich
+          </button>
+        </div>
+      </div>
+
+      {/* Sub Tabs */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto flex">
           <button
@@ -178,7 +276,7 @@ export default function DashboardPage() {
             data-testid="tab-files"
           >
             <FolderOpen className="w-4 h-4" />
-            Meine Dateien
+            Dateien
           </button>
           <button
             onClick={() => setActiveTab("shares")}
@@ -201,6 +299,11 @@ export default function DashboardPage() {
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <span className="font-mono">{currentPath}</span>
+              {storageArea === "shared" && !canWrite && (
+                <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">
+                  Nur Lesen
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -232,24 +335,28 @@ export default function DashboardPage() {
                   <LayoutGrid className="w-4 h-4" />
                 </Button>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCreateFolder}
-                className="hidden sm:flex text-gray-600"
-                data-testid="create-folder-btn"
-              >
-                <FolderPlus className="w-4 h-4 mr-2" />
-                Ordner
-              </Button>
-              <Button
-                onClick={() => setUploadModalOpen(true)}
-                className="bg-orange-500 hover:bg-orange-600 text-white"
-                data-testid="upload-btn"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Hochladen</span>
-              </Button>
+              {(storageArea === "personal" || canWrite) && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateFolder}
+                    className="hidden sm:flex text-gray-600"
+                    data-testid="create-folder-btn"
+                  >
+                    <FolderPlus className="w-4 h-4 mr-2" />
+                    Ordner
+                  </Button>
+                  <Button
+                    onClick={() => setUploadModalOpen(true)}
+                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                    data-testid="upload-btn"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    <span className="hidden sm:inline">Hochladen</span>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -269,8 +376,11 @@ export default function DashboardPage() {
               onNavigateUp={navigateUp}
               onDownload={handleDownload}
               onDelete={handleDelete}
-              onShare={handleShare}
+              onShare={handleShareFile}
+              onShareFolder={handleShareFolder}
               onDeleteFolder={handleDeleteFolder}
+              canWrite={storageArea === "personal" || canWrite}
+              canDelete={storageArea === "personal" || canDelete || isAdmin}
             />
           ) : (
             <SharesPanel />
@@ -283,16 +393,17 @@ export default function DashboardPage() {
         open={uploadModalOpen}
         onClose={() => setUploadModalOpen(false)}
         onUpload={handleUpload}
-        maxSizeMB={user?.max_upload_size_mb || 100}
+        maxSizeMB={maxUploadSize}
       />
 
       <ShareModal
         open={shareModalOpen}
         onClose={() => {
           setShareModalOpen(false);
-          setSelectedFile(null);
+          setSelectedItem(null);
         }}
-        file={selectedFile}
+        item={selectedItem}
+        shareType={shareType}
         onShareCreated={loadFiles}
       />
     </div>

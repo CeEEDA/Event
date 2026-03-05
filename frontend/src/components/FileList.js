@@ -17,6 +17,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
@@ -60,7 +61,10 @@ export const FileList = ({
   onDownload,
   onDelete,
   onShare,
-  onDeleteFolder
+  onShareFolder,
+  onDeleteFolder,
+  canWrite = true,
+  canDelete = true
 }) => {
   if (loading) {
     return (
@@ -111,6 +115,12 @@ export const FileList = ({
               <div className="flex flex-col items-center text-center">
                 <Folder className="w-12 h-12 text-orange-400 mb-2" />
                 <span className="text-sm font-medium text-gray-900 truncate w-full">{folder.name}</span>
+                {folder.is_shared && (
+                  <span className="text-xs text-orange-500 flex items-center gap-1 mt-1">
+                    <Share2 className="w-3 h-3" />
+                    Geteilt
+                  </span>
+                )}
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -123,10 +133,19 @@ export const FileList = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder); }}>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Löschen
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onShareFolder?.(folder); }}>
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Ordner teilen
                   </DropdownMenuItem>
+                  {canDelete && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder); }} className="text-red-600">
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Löschen
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -175,10 +194,15 @@ export const FileList = ({
                       <Share2 className="w-4 h-4 mr-2" />
                       Teilen
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onDelete(file)} className="text-red-600">
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Löschen
-                    </DropdownMenuItem>
+                    {canDelete && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onDelete(file)} className="text-red-600">
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Löschen
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -226,7 +250,15 @@ export const FileList = ({
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <Folder className="w-5 h-5 text-orange-400 flex-shrink-0" />
-                    <span className="font-medium text-gray-900 truncate">{folder.name}</span>
+                    <div className="min-w-0">
+                      <span className="font-medium text-gray-900 truncate block">{folder.name}</span>
+                      {folder.is_shared && (
+                        <span className="text-xs text-orange-500 flex items-center gap-1">
+                          <Share2 className="w-3 h-3" />
+                          Geteilt
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="px-4 py-3 hidden sm:table-cell text-gray-500">—</td>
@@ -234,15 +266,28 @@ export const FileList = ({
                   {formatDate(folder.created_at)}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder); }}
-                    className="h-8 w-8 text-gray-500 hover:text-red-500"
-                    data-testid={`delete-folder-${folder.id}`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => { e.stopPropagation(); onShareFolder?.(folder); }}
+                      className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                      data-testid={`share-folder-${folder.id}`}
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </Button>
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder); }}
+                        className="h-8 w-8 text-gray-500 hover:text-red-500"
+                        data-testid={`delete-folder-${folder.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -294,15 +339,17 @@ export const FileList = ({
                       >
                         <Share2 className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onDelete(file)}
-                        className="h-8 w-8 text-gray-500 hover:text-red-500"
-                        data-testid={`delete-file-${file.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onDelete(file)}
+                          className="h-8 w-8 text-gray-500 hover:text-red-500"
+                          data-testid={`delete-file-${file.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

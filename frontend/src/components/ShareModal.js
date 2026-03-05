@@ -12,28 +12,40 @@ import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
 import { toast } from "sonner";
 import api from "../lib/api";
-import { Link2, Copy, Lock, Calendar, Check } from "lucide-react";
+import { Link2, Copy, Lock, Calendar, Check, Folder, FileText, Upload, Pencil } from "lucide-react";
 
-export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
+export const ShareModal = ({ open, onClose, item, shareType = "file", onShareCreated }) => {
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [password, setPassword] = useState("");
   const [usePassword, setUsePassword] = useState(false);
   const [allowDownload, setAllowDownload] = useState(true);
+  const [allowUpload, setAllowUpload] = useState(false);
+  const [allowEdit, setAllowEdit] = useState(false);
   const [loading, setLoading] = useState(false);
   const [shareLink, setShareLink] = useState(null);
   const [copied, setCopied] = useState(false);
 
   const handleCreate = async () => {
-    if (!file) return;
+    if (!item) return;
     
     setLoading(true);
     try {
-      const response = await api.post("/shares", {
-        file_id: file.id,
+      const payload = {
+        share_type: shareType,
         expires_in_days: parseInt(expiresInDays),
         password: usePassword && password ? password : null,
-        allow_download: allowDownload
-      });
+        allow_download: allowDownload,
+        allow_upload: allowUpload,
+        allow_edit: allowEdit
+      };
+      
+      if (shareType === "file") {
+        payload.file_id = item.id;
+      } else {
+        payload.folder_id = item.id;
+      }
+      
+      const response = await api.post("/shares", payload);
       
       const baseUrl = window.location.origin;
       setShareLink(`${baseUrl}/share/${response.data.token}`);
@@ -63,9 +75,13 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
     setShareLink(null);
     setPassword("");
     setUsePassword(false);
+    setAllowUpload(false);
+    setAllowEdit(false);
     setCopied(false);
     onClose();
   };
+
+  const itemName = shareType === "file" ? item?.original_filename : item?.name;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -73,7 +89,7 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-gray-900">
             <Link2 className="w-5 h-5 text-orange-500" />
-            Datei teilen
+            {shareType === "file" ? "Datei teilen" : "Ordner teilen"}
           </DialogTitle>
         </DialogHeader>
 
@@ -112,6 +128,17 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
               </div>
             )}
 
+            <div className="p-3 bg-gray-50 rounded-lg space-y-1 text-sm">
+              <p className="text-gray-600">
+                <span className="font-medium">Berechtigungen:</span>
+              </p>
+              <ul className="text-gray-500 space-y-1 ml-4">
+                {allowDownload && <li>• Download erlaubt</li>}
+                {allowUpload && <li>• Upload erlaubt</li>}
+                {allowEdit && <li>• Bearbeiten/Löschen erlaubt</li>}
+              </ul>
+            </div>
+
             <DialogFooter>
               <Button onClick={handleClose} className="w-full bg-orange-500 hover:bg-orange-600 text-white">
                 Schließen
@@ -120,9 +147,14 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* File Info */}
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm font-medium text-gray-900 truncate">{file?.original_filename}</p>
+            {/* Item Info */}
+            <div className="p-3 bg-gray-50 rounded-lg flex items-center gap-3">
+              {shareType === "file" ? (
+                <FileText className="w-5 h-5 text-gray-400" />
+              ) : (
+                <Folder className="w-5 h-5 text-orange-400" />
+              )}
+              <span className="text-sm font-medium text-gray-900 truncate">{itemName}</span>
             </div>
 
             {/* Expiration */}
@@ -170,14 +202,49 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
               </div>
             )}
 
-            {/* Download Toggle */}
-            <div className="flex items-center justify-between">
-              <Label className="text-gray-700">Download erlauben</Label>
-              <Switch
-                checked={allowDownload}
-                onCheckedChange={setAllowDownload}
-                data-testid="download-toggle"
-              />
+            {/* Permissions */}
+            <div className="border-t border-gray-200 pt-4 space-y-3">
+              <Label className="text-gray-700 font-medium">Berechtigungen für Empfänger</Label>
+              
+              <div className="flex items-center justify-between">
+                <Label className="text-gray-600 text-sm flex items-center gap-2">
+                  <Download className="w-4 h-4" />
+                  Download erlauben
+                </Label>
+                <Switch
+                  checked={allowDownload}
+                  onCheckedChange={setAllowDownload}
+                  data-testid="download-toggle"
+                />
+              </div>
+
+              {shareType === "folder" && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-gray-600 text-sm flex items-center gap-2">
+                      <Upload className="w-4 h-4" />
+                      Upload erlauben
+                    </Label>
+                    <Switch
+                      checked={allowUpload}
+                      onCheckedChange={setAllowUpload}
+                      data-testid="upload-toggle"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-gray-600 text-sm flex items-center gap-2">
+                      <Pencil className="w-4 h-4" />
+                      Bearbeiten/Löschen erlauben
+                    </Label>
+                    <Switch
+                      checked={allowEdit}
+                      onCheckedChange={setAllowEdit}
+                      data-testid="edit-toggle"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <DialogFooter className="gap-2">
@@ -199,3 +266,12 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
     </Dialog>
   );
 };
+
+// Import Download icon 
+const Download = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" x2="12" y1="15" y2="3"/>
+  </svg>
+);

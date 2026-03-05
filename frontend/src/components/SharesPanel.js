@@ -10,7 +10,11 @@ import {
   Lock,
   Calendar,
   Eye,
-  Check
+  Check,
+  Folder,
+  FileText,
+  Upload,
+  Pencil
 } from "lucide-react";
 
 export const SharesPanel = () => {
@@ -84,7 +88,7 @@ export const SharesPanel = () => {
         <Link2 className="w-16 h-16 text-gray-300 mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-1">Keine Share-Links</h3>
         <p className="text-sm text-gray-500">
-          Teilen Sie Dateien über den Datei-Browser
+          Teilen Sie Dateien oder Ordner über den Datei-Browser
         </p>
       </div>
     );
@@ -96,10 +100,11 @@ export const SharesPanel = () => {
         <table className="w-full">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
             <tr>
+              <th className="px-4 py-3 text-left">Typ</th>
               <th className="px-4 py-3 text-left">Link</th>
               <th className="px-4 py-3 text-left hidden sm:table-cell">Erstellt</th>
               <th className="px-4 py-3 text-left hidden md:table-cell">Läuft ab</th>
-              <th className="px-4 py-3 text-left hidden lg:table-cell">Zugriffe</th>
+              <th className="px-4 py-3 text-left hidden lg:table-cell">Berechtigungen</th>
               <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
               <th className="px-4 py-3 text-right">Aktionen</th>
             </tr>
@@ -107,11 +112,18 @@ export const SharesPanel = () => {
           <tbody className="divide-y divide-gray-100">
             {shares.map((share) => {
               const expired = isExpired(share.expires_at);
+              const isFolder = share.share_type === "folder";
               return (
                 <tr key={share.id} className="hover:bg-gray-50" data-testid={`share-row-${share.id}`}>
                   <td className="px-4 py-3">
+                    {isFolder ? (
+                      <Folder className="w-5 h-5 text-orange-400" />
+                    ) : (
+                      <FileText className="w-5 h-5 text-gray-400" />
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Link2 className="w-4 h-4 text-orange-500 flex-shrink-0" />
                       <span className="font-mono text-sm text-gray-900 truncate max-w-[120px] sm:max-w-[200px]">
                         {share.token}
                       </span>
@@ -130,10 +142,17 @@ export const SharesPanel = () => {
                     </span>
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    <span className="text-sm flex items-center gap-1 text-gray-500">
-                      <Eye className="w-3 h-3" />
-                      {share.access_count}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {share.allow_download && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">DL</span>
+                      )}
+                      {share.allow_upload && (
+                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">UP</span>
+                      )}
+                      {share.allow_edit && (
+                        <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Edit</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     {expired ? (

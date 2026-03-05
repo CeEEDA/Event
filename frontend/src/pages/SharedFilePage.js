@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Logo } from "../components/Logo";
 import { toast } from "sonner";
 import { downloadSharedFile, uploadToShare } from "../lib/api";
 import axios from "axios";
@@ -11,6 +12,7 @@ import {
   Upload, 
   Lock, 
   FileText, 
+  Folder,
   AlertCircle,
   CheckCircle,
   Calendar,
@@ -111,6 +113,8 @@ export default function SharedFilePage() {
         toast.error("Falsches Passwort");
       } else if (err.response?.status === 413) {
         toast.error("Datei zu groß");
+      } else if (err.response?.status === 403) {
+        toast.error("Upload nicht erlaubt");
       } else {
         toast.error("Upload fehlgeschlagen");
       }
@@ -149,15 +153,7 @@ export default function SharedFilePage() {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         <header className="p-6 flex justify-center border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">EE</span>
-            </div>
-            <div>
-              <span className="text-xl font-bold text-gray-900">Eventenergie</span>
-              <span className="text-xl font-bold text-purple-600"> Deutschland</span>
-            </div>
-          </div>
+          <Logo size="normal" />
         </header>
         <main className="flex-1 flex items-center justify-center p-4">
           <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-8 max-w-md w-full text-center space-y-4">
@@ -174,19 +170,13 @@ export default function SharedFilePage() {
     );
   }
 
+  const isFolder = shareInfo.share_type === "folder";
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="shared-file-page">
       {/* Header */}
       <header className="bg-white p-6 flex justify-center border-b border-gray-200">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
-            <span className="text-white font-bold text-lg">EE</span>
-          </div>
-          <div>
-            <span className="text-xl font-bold text-gray-900">Eventenergie</span>
-            <span className="text-xl font-bold text-purple-600"> Deutschland</span>
-          </div>
-        </div>
+        <Logo size="normal" />
       </header>
 
       {/* Main Content */}
@@ -197,21 +187,27 @@ export default function SharedFilePage() {
             <p className="text-sm text-gray-500 mt-1">Eventenergie Deutschland</p>
           </div>
 
-          {/* File Info */}
+          {/* File/Folder Info */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             <div className="flex items-start gap-3">
               <div className="w-12 h-12 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-6 h-6 text-orange-500" />
+                {isFolder ? (
+                  <Folder className="w-6 h-6 text-orange-500" />
+                ) : (
+                  <FileText className="w-6 h-6 text-orange-500" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-gray-900 truncate" data-testid="shared-filename">
-                  {shareInfo.filename}
+                  {isFolder ? shareInfo.folder_name : shareInfo.filename}
                 </h2>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-1">
-                  <span className="flex items-center gap-1">
-                    <HardDrive className="w-3 h-3" />
-                    {formatSize(shareInfo.size)}
-                  </span>
+                  {!isFolder && shareInfo.size && (
+                    <span className="flex items-center gap-1">
+                      <HardDrive className="w-3 h-3" />
+                      {formatSize(shareInfo.size)}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
                     Gültig bis {formatDate(shareInfo.expires_at)}
@@ -226,6 +222,19 @@ export default function SharedFilePage() {
                 Passwortgeschützt
               </div>
             )}
+
+            {/* Permissions info */}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+              {shareInfo.allow_download && (
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Download</span>
+              )}
+              {shareInfo.allow_upload && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Upload</span>
+              )}
+              {shareInfo.allow_edit && (
+                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Bearbeiten</span>
+              )}
+            </div>
           </div>
 
           {/* Password Input */}
@@ -246,8 +255,8 @@ export default function SharedFilePage() {
             </div>
           )}
 
-          {/* Download Button */}
-          {shareInfo.allow_download && (
+          {/* Download Button - only for files */}
+          {!isFolder && shareInfo.allow_download && (
             <Button
               onClick={handleDownload}
               disabled={downloading}
@@ -265,57 +274,66 @@ export default function SharedFilePage() {
             </Button>
           )}
 
-          {/* Upload Section */}
-          <div className="border-t border-gray-200 pt-6 space-y-4">
-            <h3 className="text-sm font-medium text-gray-500">
-              Datei hochladen
-            </h3>
+          {/* Folder info */}
+          {isFolder && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+              <p>Dies ist ein freigegebener Ordner. Sie können Dateien hochladen.</p>
+            </div>
+          )}
 
-            {uploadSuccess ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                <span className="text-green-700">Datei erfolgreich hochgeladen!</span>
-              </div>
-            ) : (
-              <>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-orange-300 transition-colors">
-                  <input
-                    type="file"
-                    id="upload-input"
-                    className="hidden"
-                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                    data-testid="share-upload-input"
-                  />
-                  <label 
-                    htmlFor="upload-input" 
-                    className="cursor-pointer block space-y-2"
-                  >
-                    <Upload className="w-8 h-8 mx-auto text-gray-400" />
-                    <p className="text-sm text-gray-500">
-                      {uploadFile ? uploadFile.name : "Klicken zum Auswählen"}
-                    </p>
-                  </label>
+          {/* Upload Section - if allowed */}
+          {shareInfo.allow_upload && (
+            <div className="border-t border-gray-200 pt-6 space-y-4">
+              <h3 className="text-sm font-medium text-gray-500">
+                Datei hochladen
+              </h3>
+
+              {uploadSuccess ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                  <span className="text-green-700">Datei erfolgreich hochgeladen!</span>
                 </div>
+              ) : (
+                <>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-orange-300 transition-colors">
+                    <input
+                      type="file"
+                      id="upload-input"
+                      className="hidden"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      data-testid="share-upload-input"
+                    />
+                    <label 
+                      htmlFor="upload-input" 
+                      className="cursor-pointer block space-y-2"
+                    >
+                      <Upload className="w-8 h-8 mx-auto text-gray-400" />
+                      <p className="text-sm text-gray-500">
+                        {uploadFile ? uploadFile.name : "Klicken zum Auswählen"}
+                      </p>
+                    </label>
+                  </div>
 
-                <Button
-                  onClick={handleUpload}
-                  disabled={uploading || !uploadFile}
-                  variant="outline"
-                  className="w-full border-gray-300"
-                  data-testid="upload-to-share-btn"
-                >
-                  {uploading ? (
-                    "Wird hochgeladen..."
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Hochladen
-                    </>
-                  )}
-                </Button>
-              </>
-            )}
-          </div>
+                  <Button
+                    onClick={handleUpload}
+                    disabled={uploading || !uploadFile}
+                    variant="outline"
+                    className="w-full border-gray-300"
+                    data-testid="upload-to-share-btn"
+                  >
+                    {uploading ? (
+                      "Wird hochgeladen..."
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Hochladen
+                      </>
+                    )}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </main>
 

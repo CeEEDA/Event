@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
+import { Logo } from "../components/Logo";
 import { 
   Select,
   SelectContent,
@@ -18,6 +20,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "../components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
 import api from "../lib/api";
 import { 
@@ -31,7 +34,9 @@ import {
   User,
   HardDrive,
   FileText,
-  Link2
+  Link2,
+  FolderOpen,
+  Eye
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -54,13 +59,22 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [activeTab, setActiveTab] = useState("users");
+  const [usersWithFiles, setUsersWithFiles] = useState([]);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     role: "kunde",
-    max_upload_size_mb: 100,
-    is_active: true
+    is_active: true,
+    apps: {
+      filesharing: {
+        enabled: false,
+        max_upload_size_mb: 100,
+        can_write: false,
+        can_delete: false
+      }
+    }
   });
 
   const loadData = async () => {
@@ -79,8 +93,18 @@ export default function AdminPage() {
     }
   };
 
+  const loadUsersWithFiles = async () => {
+    try {
+      const res = await api.get("/admin/users-with-files");
+      setUsersWithFiles(res.data);
+    } catch (error) {
+      console.error("Error loading users with files:", error);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    loadUsersWithFiles();
   }, []);
 
   const openCreateModal = () => {
@@ -90,8 +114,15 @@ export default function AdminPage() {
       email: "",
       password: "",
       role: "kunde",
-      max_upload_size_mb: 100,
-      is_active: true
+      is_active: true,
+      apps: {
+        filesharing: {
+          enabled: false,
+          max_upload_size_mb: 100,
+          can_write: false,
+          can_delete: false
+        }
+      }
     });
     setModalOpen(true);
   };
@@ -103,8 +134,15 @@ export default function AdminPage() {
       email: user.email,
       password: "",
       role: user.role,
-      max_upload_size_mb: user.max_upload_size_mb,
-      is_active: user.is_active
+      is_active: user.is_active,
+      apps: user.apps || {
+        filesharing: {
+          enabled: false,
+          max_upload_size_mb: 100,
+          can_write: false,
+          can_delete: false
+        }
+      }
     });
     setModalOpen(true);
   };
@@ -117,8 +155,8 @@ export default function AdminPage() {
         await api.put(`/users/${editingUser.id}`, {
           name: formData.name,
           role: formData.role,
-          max_upload_size_mb: parseInt(formData.max_upload_size_mb),
-          is_active: formData.is_active
+          is_active: formData.is_active,
+          apps: formData.apps
         });
         toast.success("Benutzer aktualisiert");
       } else {
@@ -168,6 +206,19 @@ export default function AdminPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  const updateFilesharingApp = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      apps: {
+        ...prev.apps,
+        filesharing: {
+          ...prev.apps.filesharing,
+          [field]: value
+        }
+      }
+    }));
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="admin-page">
       {/* Header */}
@@ -187,12 +238,7 @@ export default function AdminPage() {
             <div className="h-6 w-px bg-gray-200" />
             <h1 className="text-lg font-semibold text-gray-900">Benutzerverwaltung</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
-              <span className="text-white font-bold text-xs">EE</span>
-            </div>
-            <span className="text-sm font-bold text-gray-900 hidden sm:inline">Eventenergie</span>
-          </div>
+          <Logo size="small" />
         </div>
       </header>
 
@@ -248,122 +294,198 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* User Table */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Alle Benutzer</h2>
-              <Button
-                onClick={openCreateModal}
-                className="bg-orange-500 hover:bg-orange-600 text-white"
-                data-testid="create-user-btn"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Neuer Benutzer
-              </Button>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full" data-testid="users-table">
-                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
-                    <th className="px-4 py-3 text-left">Rolle</th>
-                    <th className="px-4 py-3 text-left hidden sm:table-cell">Limit</th>
-                    <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
-                    <th className="px-4 py-3 text-right">Aktionen</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                        Laden...
-                      </td>
-                    </tr>
-                  ) : users.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                        Keine Benutzer gefunden
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-50" data-testid={`user-row-${user.id}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                              {user.role === "admin" ? (
-                                <Shield className="w-4 h-4 text-orange-500" />
-                              ) : user.role === "mitarbeiter" ? (
-                                <UserCheck className="w-4 h-4 text-blue-500" />
-                              ) : (
-                                <User className="w-4 h-4 text-gray-500" />
-                              )}
-                            </div>
-                            <span className="font-medium text-gray-900">{user.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 hidden md:table-cell text-gray-500">
-                          {user.email}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${ROLE_COLORS[user.role]}`}>
-                            {ROLE_LABELS[user.role]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 hidden sm:table-cell text-gray-500 font-mono text-sm">
-                          {user.max_upload_size_mb} MB
-                        </td>
-                        <td className="px-4 py-3 hidden sm:table-cell">
-                          {user.is_active ? (
-                            <span className="inline-flex items-center gap-1 text-green-600 text-sm">
-                              <span className="w-2 h-2 rounded-full bg-green-500" />
-                              Aktiv
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-red-600 text-sm">
-                              <span className="w-2 h-2 rounded-full bg-red-500" />
-                              Inaktiv
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditModal(user)}
-                              className="h-8 w-8 text-gray-500 hover:text-orange-500"
-                              data-testid={`edit-user-${user.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(user)}
-                              className="h-8 w-8 text-gray-500 hover:text-red-500"
-                              disabled={user.id === currentUser.id}
-                              data-testid={`delete-user-${user.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="bg-white border border-gray-200">
+              <TabsTrigger value="users" className="data-[state=active]:bg-orange-50 data-[state=active]:text-orange-600">
+                <Users className="w-4 h-4 mr-2" />
+                Benutzer
+              </TabsTrigger>
+              <TabsTrigger value="files" className="data-[state=active]:bg-orange-50 data-[state=active]:text-orange-600">
+                <FolderOpen className="w-4 h-4 mr-2" />
+                Dateien
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Users Tab */}
+            <TabsContent value="users" className="mt-4">
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-900">Alle Benutzer</h2>
+                  <Button
+                    onClick={openCreateModal}
+                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                    data-testid="create-user-btn"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Neuer Benutzer
+                  </Button>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full" data-testid="users-table">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Name</th>
+                        <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
+                        <th className="px-4 py-3 text-left">Rolle</th>
+                        <th className="px-4 py-3 text-left hidden sm:table-cell">FileShare</th>
+                        <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
+                        <th className="px-4 py-3 text-right">Aktionen</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                            Laden...
+                          </td>
+                        </tr>
+                      ) : users.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                            Keine Benutzer gefunden
+                          </td>
+                        </tr>
+                      ) : (
+                        users.map((user) => (
+                          <tr key={user.id} className="hover:bg-gray-50" data-testid={`user-row-${user.id}`}>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                                  {user.role === "admin" ? (
+                                    <Shield className="w-4 h-4 text-orange-500" />
+                                  ) : user.role === "mitarbeiter" ? (
+                                    <UserCheck className="w-4 h-4 text-blue-500" />
+                                  ) : (
+                                    <User className="w-4 h-4 text-gray-500" />
+                                  )}
+                                </div>
+                                <span className="font-medium text-gray-900">{user.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 hidden md:table-cell text-gray-500">
+                              {user.email}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${ROLE_COLORS[user.role]}`}>
+                                {ROLE_LABELS[user.role]}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              {user.role === "admin" || user.apps?.filesharing?.enabled ? (
+                                <span className="inline-flex items-center gap-1 text-green-600 text-xs">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                                  Aktiv
+                                  {user.apps?.filesharing?.can_write && " (Schreiben)"}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-gray-400 text-xs">
+                                  <span className="w-2 h-2 rounded-full bg-gray-300" />
+                                  Nicht aktiv
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              {user.is_active ? (
+                                <span className="inline-flex items-center gap-1 text-green-600 text-sm">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                                  Aktiv
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-red-600 text-sm">
+                                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                                  Inaktiv
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditModal(user)}
+                                  className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                                  data-testid={`edit-user-${user.id}`}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDelete(user)}
+                                  className="h-8 w-8 text-gray-500 hover:text-red-500"
+                                  disabled={user.id === currentUser.id}
+                                  data-testid={`delete-user-${user.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Files Tab - View all users' files */}
+            <TabsContent value="files" className="mt-4">
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="p-4 border-b border-gray-200">
+                  <h2 className="font-semibold text-gray-900">Dateien nach Benutzer</h2>
+                  <p className="text-sm text-gray-500 mt-1">Übersicht aller Benutzer und ihrer Dateien</p>
+                </div>
+                
+                <div className="divide-y divide-gray-100">
+                  {usersWithFiles.map((u) => (
+                    <div key={u.id} className="p-4 hover:bg-gray-50 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                          {u.role === "admin" ? (
+                            <Shield className="w-5 h-5 text-orange-500" />
+                          ) : (
+                            <User className="w-5 h-5 text-gray-500" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{u.name}</p>
+                          <p className="text-sm text-gray-500">{u.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-gray-900">{u.file_count}</p>
+                          <p className="text-xs text-gray-500">Dateien</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-gray-900">{u.folder_count}</p>
+                          <p className="text-xs text-gray-500">Ordner</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/fileshare?view_user=${u.id}`)}
+                          className="text-gray-600"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Ansehen
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
 
       {/* User Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="bg-white" data-testid="user-modal">
+        <DialogContent className="bg-white max-w-lg max-h-[90vh] overflow-y-auto" data-testid="user-modal">
           <DialogHeader>
             <DialogTitle className="text-gray-900">
               {editingUser ? "Benutzer bearbeiten" : "Neuer Benutzer"}
@@ -430,27 +552,68 @@ export default function AdminPage() {
 
             {editingUser && (
               <>
-                <div className="space-y-2">
-                  <Label className="text-gray-700">Upload-Limit (MB)</Label>
-                  <Input
-                    type="number"
-                    value={formData.max_upload_size_mb}
-                    onChange={(e) => setFormData({ ...formData, max_upload_size_mb: e.target.value })}
-                    className="border-gray-300"
-                    min={1}
-                    data-testid="user-limit-input"
+                <div className="flex items-center justify-between py-2">
+                  <Label className="text-gray-700">Konto aktiv</Label>
+                  <Switch
+                    checked={formData.is_active}
+                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                    data-testid="user-active-toggle"
                   />
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="is_active"
-                    checked={formData.is_active}
-                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                    className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
-                    data-testid="user-active-checkbox"
-                  />
-                  <Label htmlFor="is_active" className="text-gray-700">Konto aktiv</Label>
+
+                {/* App Permissions Section */}
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <h3 className="font-semibold text-gray-900 mb-4">App-Berechtigungen</h3>
+                  
+                  {/* FileShare App */}
+                  <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <FolderOpen className="w-5 h-5 text-orange-500" />
+                        <Label className="text-gray-900 font-medium">FileShare</Label>
+                      </div>
+                      <Switch
+                        checked={formData.apps.filesharing.enabled}
+                        onCheckedChange={(checked) => updateFilesharingApp("enabled", checked)}
+                        data-testid="filesharing-enabled-toggle"
+                      />
+                    </div>
+
+                    {formData.apps.filesharing.enabled && (
+                      <div className="space-y-3 pl-8 border-l-2 border-orange-200">
+                        <div className="space-y-2">
+                          <Label className="text-gray-600 text-sm">Max. Dateigröße (MB)</Label>
+                          <Input
+                            type="number"
+                            value={formData.apps.filesharing.max_upload_size_mb}
+                            onChange={(e) => updateFilesharingApp("max_upload_size_mb", parseInt(e.target.value) || 100)}
+                            className="border-gray-300 w-32"
+                            min={1}
+                            max={10000}
+                            data-testid="filesharing-max-size-input"
+                          />
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <Label className="text-gray-600 text-sm">Schreiben erlaubt (Gemeinsamer Bereich)</Label>
+                          <Switch
+                            checked={formData.apps.filesharing.can_write}
+                            onCheckedChange={(checked) => updateFilesharingApp("can_write", checked)}
+                            data-testid="filesharing-write-toggle"
+                          />
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <Label className="text-gray-600 text-sm">Löschen erlaubt (Gemeinsamer Bereich)</Label>
+                          <Switch
+                            checked={formData.apps.filesharing.can_delete}
+                            onCheckedChange={(checked) => updateFilesharingApp("can_delete", checked)}
+                            data-testid="filesharing-delete-toggle"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             )}

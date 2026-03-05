@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
+import { Logo } from "../components/Logo";
 import { 
   FolderOpen, 
   Users, 
@@ -17,20 +18,15 @@ export default function HubPage() {
     navigate("/login");
   };
 
+  // Check if user has filesharing enabled
+  const hasFilesharing = isAdmin || user?.apps?.filesharing?.enabled;
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="hub-page">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 p-4 md:p-6">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">EE</span>
-            </div>
-            <div>
-              <span className="text-lg font-bold text-gray-900">Eventenergie</span>
-              <span className="text-lg font-bold text-purple-600"> Deutschland</span>
-            </div>
-          </div>
+          <Logo size="normal" />
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium text-gray-900">{user?.name}</p>
@@ -63,25 +59,41 @@ export default function HubPage() {
           </div>
 
           <div className="grid gap-4 md:gap-6">
-            {/* FileShare Button - für alle User */}
-            <button
-              onClick={() => navigate("/fileshare")}
-              className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-orange-300 hover:shadow-lg transition-all group text-left"
-              data-testid="fileshare-btn"
-            >
-              <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0 group-hover:bg-orange-500 transition-colors">
-                <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-orange-500 group-hover:text-white transition-colors" />
+            {/* FileShare Button - nur wenn freigeschaltet oder Admin */}
+            {hasFilesharing ? (
+              <button
+                onClick={() => navigate("/fileshare")}
+                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-orange-300 hover:shadow-lg transition-all group text-left"
+                data-testid="fileshare-btn"
+              >
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0 group-hover:bg-orange-500 transition-colors">
+                  <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-orange-500 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
+                    FileShare
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    Dateien hochladen, verwalten und teilen
+                  </p>
+                </div>
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-orange-500 transition-colors" />
+              </button>
+            ) : (
+              <div className="bg-gray-100 border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 opacity-60">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gray-200 flex items-center justify-center flex-shrink-0">
+                  <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-gray-400" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-500 mb-1">
+                    FileShare
+                  </h2>
+                  <p className="text-sm text-gray-400">
+                    Nicht freigeschaltet - Bitte Administrator kontaktieren
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
-                  FileShare
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Dateien hochladen, verwalten und teilen
-                </p>
-              </div>
-              <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-orange-500 transition-colors" />
-            </button>
+            )}
 
             {/* Admin Button - nur für Admin */}
             {isAdmin && (

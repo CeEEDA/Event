@@ -6,6 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 import { Lock, Mail, ArrowRight } from "lucide-react";
+import { Logo } from "../components/Logo";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -36,15 +37,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white flex flex-col" data-testid="login-page">
       {/* Header with Logo */}
       <header className="p-6 flex justify-center">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
-            <span className="text-white font-bold text-lg">EE</span>
-          </div>
-          <div>
-            <span className="text-xl font-bold text-gray-900">Eventenergie</span>
-            <span className="text-xl font-bold text-purple-600"> Deutschland</span>
-          </div>
-        </div>
+        <Logo size="large" />
       </header>
 
       {/* Main Content */}
