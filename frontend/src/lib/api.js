@@ -54,20 +54,55 @@ export const uploadFile = async (file, folderPath = "/") => {
   });
 };
 
-// Download file helper
+// Download file helper - robust for iframe/preview environments
 export const downloadFile = async (fileId, filename) => {
   const response = await api.get(`/files/${fileId}/download`, {
     responseType: "blob",
   });
   
-  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const blob = new Blob([response.data]);
+  const url = window.URL.createObjectURL(blob);
+  
+  // Method 1: Create anchor with download attribute
   const link = document.createElement("a");
   link.href = url;
-  link.setAttribute("download", filename);
+  link.download = filename;
+  link.style.display = "none";
   document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
+  
+  // Force click with timeout for iframe compatibility
+  setTimeout(() => {
+    link.click();
+    // Cleanup after delay
+    setTimeout(() => {
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }, 5000);
+  }, 100);
+};
+
+// Download folder as ZIP
+export const downloadFolderZip = async (folderId, folderName) => {
+  const response = await api.get(`/folders/${folderId}/download`, {
+    responseType: "blob",
+  });
+  
+  const blob = new Blob([response.data], { type: "application/zip" });
+  const url = window.URL.createObjectURL(blob);
+  
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${folderName}.zip`;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  
+  setTimeout(() => {
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }, 5000);
+  }, 100);
 };
 
 // Public download helper

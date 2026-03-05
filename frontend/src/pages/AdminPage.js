@@ -22,6 +22,7 @@ import {
 } from "../components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import api from "../lib/api";
 import { 
   Users, 
@@ -84,6 +85,10 @@ export default function AdminPage() {
   const [passwordTarget, setPasswordTarget] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetLink, setResetLink] = useState(null);
+
+  // Confirm dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmData, setConfirmData] = useState({ title: "", description: "", onConfirm: null });
 
   const loadData = async () => {
     setLoading(true);
@@ -188,22 +193,28 @@ export default function AdminPage() {
     }
   };
 
-  const handleDelete = async (user) => {
+  const handleDelete = (user) => {
     if (user.id === currentUser.id) {
       toast.error("Sie können sich nicht selbst löschen");
       return;
     }
     
-    if (!window.confirm(`"${user.name}" wirklich löschen?`)) return;
-    
-    try {
-      await api.delete(`/users/${user.id}`);
-      toast.success("Benutzer gelöscht");
-      loadData();
-    } catch (error) {
-      const message = error.response?.data?.detail || "Fehler beim Löschen";
-      toast.error(message);
-    }
+    setConfirmData({
+      title: "Benutzer löschen",
+      description: `Möchten Sie "${user.name}" (${user.email}) wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/users/${user.id}`);
+          toast.success("Benutzer gelöscht");
+          loadData();
+        } catch (error) {
+          const message = error.response?.data?.detail || "Fehler beim Löschen";
+          toast.error(message);
+        }
+        setConfirmOpen(false);
+      }
+    });
+    setConfirmOpen(true);
   };
 
   // Password management functions
@@ -769,6 +780,15 @@ export default function AdminPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title={confirmData.title}
+        description={confirmData.description}
+        onConfirm={confirmData.onConfirm}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
