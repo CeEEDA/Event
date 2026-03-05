@@ -41,6 +41,16 @@ api.interceptors.response.use(
 
 export default api;
 
+// Build direct download URL (for <a href> links)
+export const getDownloadUrl = (fileId) => {
+  const token = localStorage.getItem("token");
+  return `${BACKEND_URL}/api/files/${fileId}/download?token=${token}`;
+};
+
+export const getFolderDownloadUrl = (folderId) => {
+  const token = localStorage.getItem("token");
+  return `${BACKEND_URL}/api/folders/${folderId}/download?token=${token}`;
+};
 // File upload helper
 export const uploadFile = async (file, folderPath = "/") => {
   const formData = new FormData();
@@ -56,34 +66,49 @@ export const uploadFile = async (file, folderPath = "/") => {
 
 import { saveAs } from 'file-saver';
 
-// Download file - uses <a target="_top"> to escape iframe sandbox
-export const downloadFile = (fileId, filename) => {
+// Download file with full debug logging
+export const downloadFile = async (fileId, filename) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
-  const url = `${baseUrl}/api/files/${fileId}/download?token=${token}`;
+  console.log('[DL] Start download:', fileId, filename);
   
-  const a = document.createElement('a');
-  a.href = url;
-  a.target = '_top';
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const response = await fetch(`${baseUrl}/api/files/${fileId}/download?token=${token}`);
+  console.log('[DL] Fetch status:', response.status);
+  
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  
+  const blob = await response.blob();
+  console.log('[DL] Blob:', blob.size, 'bytes, type:', blob.type);
+  
+  // Try file-saver
+  try {
+    saveAs(blob, filename);
+    console.log('[DL] saveAs called OK');
+  } catch (e) {
+    console.error('[DL] saveAs failed:', e);
+  }
 };
 
 // Download folder as ZIP
-export const downloadFolderZip = (folderId, folderName) => {
+export const downloadFolderZip = async (folderId, folderName) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
-  const url = `${baseUrl}/api/folders/${folderId}/download?token=${token}`;
+  console.log('[DL] Start ZIP download:', folderId, folderName);
   
-  const a = document.createElement('a');
-  a.href = url;
-  a.target = '_top';
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const response = await fetch(`${baseUrl}/api/folders/${folderId}/download?token=${token}`);
+  console.log('[DL] Fetch status:', response.status);
+  
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  
+  const blob = await response.blob();
+  console.log('[DL] Blob:', blob.size, 'bytes');
+  
+  try {
+    saveAs(blob, `${folderName}.zip`);
+    console.log('[DL] saveAs called OK');
+  } catch (e) {
+    console.error('[DL] saveAs failed:', e);
+  }
 };
 
 // Public download helper

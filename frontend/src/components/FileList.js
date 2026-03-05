@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { getDownloadUrl, getFolderDownloadUrl } from "../lib/api";
 
 const getFileIcon = (contentType) => {
   if (contentType?.startsWith("image/")) return FileImage;
@@ -137,9 +138,11 @@ export const FileList = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownloadFolder?.(folder); }}>
-                    <FolderDown className="w-4 h-4 mr-2" />
-                    Als ZIP herunterladen
+                  <DropdownMenuItem asChild onClick={(e) => e.stopPropagation()}>
+                    <a href={getFolderDownloadUrl(folder.id)}>
+                      <FolderDown className="w-4 h-4 mr-2" />
+                      Als ZIP herunterladen
+                    </a>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onShareFolder?.(folder); }}>
                     <Share2 className="w-4 h-4 mr-2" />
@@ -166,7 +169,7 @@ export const FileList = ({
               <div
                 key={file.id}
                 className="bg-white border border-gray-200 rounded-lg p-4 hover:border-fuchsia-400 hover:shadow-md transition-all relative group cursor-pointer"
-                onClick={() => canPreview ? onPreview?.(file) : onDownload(file)}
+                onClick={() => canPreview && onPreview?.(file)}
                 data-testid={`file-${file.id}`}
               >
                 <div className="flex flex-col items-center text-center">
@@ -194,9 +197,11 @@ export const FileList = ({
                         Vorschau
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload(file); }}>
-                      <Download className="w-4 h-4 mr-2" />
-                      Herunterladen
+                    <DropdownMenuItem asChild onClick={(e) => e.stopPropagation()}>
+                      <a href={getDownloadUrl(file.id)}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Herunterladen
+                      </a>
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveFile?.(file); }}>
                       <FolderInput className="w-4 h-4 mr-2" />
@@ -277,15 +282,14 @@ export const FileList = ({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost" size="icon"
-                      onClick={() => onDownloadFolder?.(folder)}
-                      className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
+                    <a
+                      href={getFolderDownloadUrl(folder.id)}
+                      className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:text-fuchsia-600 hover:bg-gray-100 transition-colors"
                       title="Als ZIP herunterladen"
                       data-testid={`download-folder-${folder.id}`}
                     >
                       <FolderDown className="w-4 h-4" />
-                    </Button>
+                    </a>
                     <Button
                       variant="ghost" size="icon"
                       onClick={() => onShareFolder?.(folder)}
@@ -352,15 +356,14 @@ export const FileList = ({
                           <Eye className="w-4 h-4" />
                         </Button>
                       )}
-                      <Button
-                        variant="ghost" size="icon"
-                        onClick={() => onDownload(file)}
-                        className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
+                      <a
+                        href={getDownloadUrl(file.id)}
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:text-fuchsia-600 hover:bg-gray-100 transition-colors"
                         title="Herunterladen"
                         data-testid={`download-file-${file.id}`}
                       >
                         <Download className="w-4 h-4" />
-                      </Button>
+                      </a>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500">
