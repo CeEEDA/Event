@@ -40,7 +40,8 @@ import {
   Eye,
   KeyRound,
   Copy,
-  Search
+  Search,
+  Activity,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -67,6 +68,7 @@ export default function AdminPage() {
   const [userRoleFilter, setUserRoleFilter] = useState("kunden");
   const [userSearch, setUserSearch] = useState("");
   const [usersWithFiles, setUsersWithFiles] = useState([]);
+  const [allGenerators, setAllGenerators] = useState([]);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -79,6 +81,11 @@ export default function AdminPage() {
         max_upload_size_mb: 100,
         can_write: false,
         can_delete: false
+      },
+      generator_monitoring: {
+        enabled: false,
+        access_all: true,
+        generator_ids: []
       }
     }
   });
@@ -96,12 +103,14 @@ export default function AdminPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, statsRes] = await Promise.all([
+      const [usersRes, statsRes, gensRes] = await Promise.all([
         api.get("/users"),
-        api.get("/stats")
+        api.get("/stats"),
+        api.get("/generators").catch(() => ({ data: [] })),
       ]);
       setUsers(usersRes.data);
       setStats(statsRes.data);
+      setAllGenerators(gensRes.data);
     } catch (error) {
       toast.error("Fehler beim Laden der Daten");
     } finally {
@@ -137,6 +146,11 @@ export default function AdminPage() {
           max_upload_size_mb: 100,
           can_write: false,
           can_delete: false
+        },
+        generator_monitoring: {
+          enabled: false,
+          access_all: true,
+          generator_ids: []
         }
       }
     });
@@ -151,12 +165,17 @@ export default function AdminPage() {
       password: "",
       role: user.role,
       is_active: user.is_active,
-      apps: user.apps || {
-        filesharing: {
+      apps: {
+        filesharing: user.apps?.filesharing || {
           enabled: false,
           max_upload_size_mb: 100,
           can_write: false,
           can_delete: false
+        },
+        generator_monitoring: user.apps?.generator_monitoring || {
+          enabled: false,
+          access_all: true,
+          generator_ids: []
         }
       }
     });
@@ -280,6 +299,38 @@ export default function AdminPage() {
         }
       }
     }));
+  };
+
+  const updateGeneratorMonitoringApp = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      apps: {
+        ...prev.apps,
+        generator_monitoring: {
+          ...prev.apps.generator_monitoring,
+          [field]: value
+        }
+      }
+    }));
+  };
+
+  const toggleGeneratorId = (genId) => {
+    setFormData(prev => {
+      const current = prev.apps.generator_monitoring.generator_ids || [];
+      const updated = current.includes(genId)
+        ? current.filter(id => id !== genId)
+        : [...current, genId];
+      return {
+        ...prev,
+        apps: {
+          ...prev.apps,
+          generator_monitoring: {
+            ...prev.apps.generator_monitoring,
+            generator_ids: updated
+          }
+        }
+      };
+    });
   };
 
   return (
@@ -435,6 +486,7 @@ export default function AdminPage() {
                         <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
                         <th className="px-4 py-3 text-left">Rolle</th>
                         <th className="px-4 py-3 text-left hidden sm:table-cell">FileShare</th>
+                        <th className="px-4 py-3 text-left hidden sm:table-cell">Monitoring</th>
                         <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
                         <th className="px-4 py-3 text-right">Aktionen</th>
                       </tr>
@@ -442,7 +494,7 @@ export default function AdminPage() {
                     <tbody className="divide-y divide-gray-100">
                       {loading ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500">Laden...</td>
+                          <td colSpan={7} className="px-4 py-8 text-center text-gray-500">Laden...</td>
                         </tr>
                       ) : (() => {
                         const filtered = users.filter(u => {
@@ -459,7 +511,7 @@ export default function AdminPage() {
                         if (filtered.length === 0) {
                           return (
                             <tr>
-                              <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                              <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                                 {userSearch ? "Keine Benutzer gefunden" : "Keine Benutzer in dieser Kategorie"}
                               </td>
                             </tr>
@@ -495,6 +547,19 @@ export default function AdminPage() {
                                   <span className="w-2 h-2 rounded-full bg-green-500" />
                                   Aktiv
                                   {user.apps?.filesharing?.can_write && " (Schreiben)"}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-gray-400 text-xs">
+                                  <span className="w-2 h-2 rounded-full bg-gray-300" />
+                                  Nicht aktiv
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                              {user.role === "admin" || user.apps?.generator_monitoring?.enabled ? (
+                                <span className="inline-flex items-center gap-1 text-green-600 text-xs">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                                  {user.role === "admin" || user.apps?.generator_monitoring?.access_all ? "Alle" : `${(user.apps?.generator_monitoring?.generator_ids || []).length} Geräte`}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 text-gray-400 text-xs">
@@ -738,6 +803,70 @@ export default function AdminPage() {
                             data-testid="filesharing-delete-toggle"
                           />
                         </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Generator Monitoring App */}
+                  <div className="bg-gray-50 rounded-lg p-4 space-y-4 mt-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Activity className="w-5 h-5 text-fuchsia-600" />
+                        <Label className="text-gray-900 font-medium">Generator-Monitoring</Label>
+                      </div>
+                      <Switch
+                        checked={formData.apps.generator_monitoring.enabled}
+                        onCheckedChange={(checked) => updateGeneratorMonitoringApp("enabled", checked)}
+                        data-testid="monitoring-enabled-toggle"
+                      />
+                    </div>
+
+                    {formData.apps.generator_monitoring.enabled && (
+                      <div className="space-y-3 pl-8 border-l-2 border-fuchsia-300">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-gray-600 text-sm">Zugriff auf alle Generatoren</Label>
+                          <Switch
+                            checked={formData.apps.generator_monitoring.access_all}
+                            onCheckedChange={(checked) => updateGeneratorMonitoringApp("access_all", checked)}
+                            data-testid="monitoring-access-all-toggle"
+                          />
+                        </div>
+
+                        {!formData.apps.generator_monitoring.access_all && (
+                          <div className="space-y-2">
+                            <Label className="text-gray-600 text-sm">Einzelne Generatoren auswählen</Label>
+                            <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white">
+                              {allGenerators.length === 0 ? (
+                                <p className="text-xs text-gray-400 p-3">Keine Generatoren vorhanden</p>
+                              ) : (
+                                allGenerators.map((gen) => {
+                                  const isSelected = (formData.apps.generator_monitoring.generator_ids || []).includes(gen.id);
+                                  return (
+                                    <label
+                                      key={gen.id}
+                                      className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 ${isSelected ? "bg-fuchsia-50" : ""}`}
+                                      data-testid={`gen-select-${gen.serial_number}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => toggleGeneratorId(gen.id)}
+                                        className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-gray-900 truncate">{gen.name}</p>
+                                        <p className="text-[10px] text-gray-400 font-mono">{gen.serial_number} · {gen.location_name || "–"}</p>
+                                      </div>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-400">
+                              {(formData.apps.generator_monitoring.generator_ids || []).length} von {allGenerators.length} ausgewählt
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

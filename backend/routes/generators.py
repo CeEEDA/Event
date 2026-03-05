@@ -144,12 +144,27 @@ async def create_generator(data: GeneratorCreate, admin: dict = Depends(require_
 async def list_generators(user: dict = Depends(get_authenticated_user)):
     if user["role"] == "admin":
         generators = await db.generators.find({}, {"_id": 0}).to_list(1000)
-    elif user["role"] == "kunde":
-        generators = await db.generators.find(
-            {"assigned_customer_id": user["id"]}, {"_id": 0}
-        ).to_list(1000)
     else:
-        generators = await db.generators.find({"is_active": True}, {"_id": 0}).to_list(1000)
+        # Check generator_monitoring permissions
+        apps = user.get("apps", {})
+        gm = apps.get("generator_monitoring", {})
+
+        if not gm.get("enabled", False):
+            # Fallback: check if user has assigned generators
+            generators = await db.generators.find(
+                {"assigned_customer_id": user["id"], "is_active": True}, {"_id": 0}
+            ).to_list(1000)
+        elif gm.get("access_all", False):
+            generators = await db.generators.find({"is_active": True}, {"_id": 0}).to_list(1000)
+        else:
+            # Only specific generators
+            allowed_ids = gm.get("generator_ids", [])
+            if allowed_ids:
+                generators = await db.generators.find(
+                    {"id": {"$in": allowed_ids}, "is_active": True}, {"_id": 0}
+                ).to_list(1000)
+            else:
+                generators = []
 
     # Strip api_key for non-admins
     if user["role"] != "admin":
@@ -174,9 +189,16 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
     if not gen:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
-    # Customers can only see their own generators
-    if user["role"] == "kunde" and gen.get("assigned_customer_id") != user["id"]:
-        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    # Check access for non-admins
+    if user["role"] != "admin":
+        apps = user.get("apps", {})
+        gm = apps.get("generator_monitoring", {})
+        if gm.get("enabled") and (gm.get("access_all") or generator_id in gm.get("generator_ids", [])):
+            pass  # allowed
+        elif gen.get("assigned_customer_id") == user["id"]:
+            pass  # allowed via assignment
+        else:
+            raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
     if user["role"] != "admin":
         gen.pop("api_key", None)
@@ -529,10 +551,17 @@ async def simulate_generator_data(admin: dict = Depends(require_admin_user)):
 
 @router.get("/stats/overview")
 async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
-    if user["role"] == "kunde":
-        query = {"assigned_customer_id": user["id"]}
-    else:
+    if user["role"] == "admin":
         query = {}
+    else:
+        apps = user.get("apps", {})
+        gm = apps.get("generator_monitoring", {})
+        if gm.get("enabled") and gm.get("access_all"):
+            query = {"is_active": True}
+        elif gm.get("enabled") and gm.get("generator_ids"):
+            query = {"id": {"$in": gm.get("generator_ids", [])}}
+        else:
+            query = {"assigned_customer_id": user["id"]}
 
     total = await db.generators.count_documents(query)
     running = await db.generators.count_documents({**query, "status": "running"})
