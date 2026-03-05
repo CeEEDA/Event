@@ -74,9 +74,9 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-card border-border sm:max-w-lg" data-testid="upload-modal">
+      <DialogContent className="bg-white sm:max-w-lg" data-testid="upload-modal">
         <DialogHeader>
-          <DialogTitle>Dateien hochladen</DialogTitle>
+          <DialogTitle className="text-gray-900">Dateien hochladen</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -86,8 +86,8 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             className={`
-              border-2 border-dashed rounded-sm p-8 text-center transition-colors
-              ${isDragging ? "border-primary bg-primary/5" : "border-muted"}
+              border-2 border-dashed rounded-lg p-8 text-center transition-colors
+              ${isDragging ? "border-orange-500 bg-orange-50" : "border-gray-300"}
             `}
           >
             <input
@@ -99,14 +99,14 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
               data-testid="file-input"
             />
             <label htmlFor="file-input" className="cursor-pointer block">
-              <Upload className={`w-10 h-10 mx-auto mb-3 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
-              <p className="text-sm font-medium mb-1">
+              <Upload className={`w-10 h-10 mx-auto mb-3 ${isDragging ? "text-orange-500" : "text-gray-400"}`} />
+              <p className="text-sm font-medium text-gray-700 mb-1">
                 Dateien hierher ziehen
               </p>
-              <p className="text-xs text-muted-foreground">
-                oder <span className="text-primary">klicken</span> zum Auswählen
+              <p className="text-xs text-gray-500">
+                oder <span className="text-orange-500">klicken</span> zum Auswählen
               </p>
-              <p className="text-xs text-muted-foreground mt-2">
+              <p className="text-xs text-gray-400 mt-2">
                 Max. {maxSizeMB} MB pro Datei
               </p>
             </label>
@@ -114,26 +114,26 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
 
           {/* File List */}
           {files.length > 0 && (
-            <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
+            <div className="space-y-2 max-h-48 overflow-y-auto">
               {files.map((file, index) => {
                 const overLimit = isOverLimit(file);
                 return (
                   <div
                     key={`${file.name}-${index}`}
                     className={`
-                      flex items-center gap-3 p-3 rounded-sm bg-muted/30
-                      ${overLimit ? "border border-destructive/50" : ""}
+                      flex items-center gap-3 p-3 rounded-lg bg-gray-50
+                      ${overLimit ? "border border-red-300" : ""}
                     `}
                     data-testid={`upload-file-${index}`}
                   >
                     {overLimit ? (
-                      <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
+                      <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                     ) : (
-                      <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+                      <FileText className="w-5 h-5 text-orange-500 flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{file.name}</p>
-                      <p className={`text-xs font-mono ${overLimit ? "text-destructive" : "text-muted-foreground"}`}>
+                      <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                      <p className={`text-xs font-mono ${overLimit ? "text-red-500" : "text-gray-500"}`}>
                         {formatSize(file.size)}
                         {overLimit && " - Zu groß!"}
                       </p>
@@ -155,8 +155,8 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
 
           {/* Summary & Actions */}
           {files.length > 0 && (
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <p className="text-sm text-muted-foreground">
+            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+              <p className="text-sm text-gray-500">
                 {files.length} Datei(en) · {formatSize(getTotalSize())}
               </p>
               <div className="flex gap-2">
@@ -164,13 +164,14 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
                   variant="outline"
                   onClick={handleClose}
                   disabled={uploading}
+                  className="border-gray-300"
                 >
                   Abbrechen
                 </Button>
                 <Button
                   onClick={handleUpload}
                   disabled={uploading || files.every(isOverLimit)}
-                  className="bg-primary hover:bg-primary/90"
+                  className="bg-orange-500 hover:bg-orange-600 text-white"
                   data-testid="confirm-upload-btn"
                 >
                   {uploading ? "Wird hochgeladen..." : "Hochladen"}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Sidebar } from "../components/Sidebar";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -18,7 +18,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "../components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
 import api from "../lib/api";
 import { 
@@ -26,7 +25,7 @@ import {
   Plus, 
   Pencil, 
   Trash2, 
-  Menu,
+  ArrowLeft,
   Shield,
   UserCheck,
   User,
@@ -42,17 +41,17 @@ const ROLE_LABELS = {
 };
 
 const ROLE_COLORS = {
-  admin: "bg-primary/20 text-primary",
-  mitarbeiter: "bg-secondary/20 text-secondary",
-  kunde: "bg-muted text-muted-foreground"
+  admin: "bg-orange-100 text-orange-700",
+  mitarbeiter: "bg-blue-100 text-blue-700",
+  kunde: "bg-gray-100 text-gray-700"
 };
 
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
@@ -170,217 +169,214 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background" data-testid="admin-page">
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <div className={`
-        fixed md:relative inset-y-0 left-0 z-50 w-64 transform transition-transform duration-200
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-      `}>
-        <Sidebar 
-          activeView="admin" 
-          onViewChange={() => {}}
-          onClose={() => setSidebarOpen(false)}
-        />
-      </div>
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4 md:px-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="admin-page">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 p-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              size="icon"
-              className="md:hidden"
-              onClick={() => setSidebarOpen(true)}
+              size="sm"
+              onClick={() => navigate("/hub")}
+              className="text-gray-600 hover:text-orange-500"
+              data-testid="back-to-hub-btn"
             >
-              <Menu className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Zurück
             </Button>
-            <h1 className="text-lg font-semibold">Administration</h1>
+            <div className="h-6 w-px bg-gray-200" />
+            <h1 className="text-lg font-semibold text-gray-900">Benutzerverwaltung</h1>
           </div>
-        </header>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
+              <span className="text-white font-bold text-xs">EE</span>
+            </div>
+            <span className="text-sm font-bold text-gray-900 hidden sm:inline">Eventenergie</span>
+          </div>
+        </div>
+      </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 grid-lines">
+      <main className="flex-1 p-4 md:p-6">
+        <div className="max-w-7xl mx-auto space-y-6">
           {/* Stats Cards */}
           {stats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-card border border-border rounded-sm p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-sm bg-primary/10 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-primary" />
+                  <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-orange-500" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.users}</p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Benutzer</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.users}</p>
+                    <p className="text-xs text-gray-500">Benutzer</p>
                   </div>
                 </div>
               </div>
-              <div className="bg-card border border-border rounded-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-sm bg-secondary/10 flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-secondary" />
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <FileText className="w-5 h-5 text-blue-500" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.files}</p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Dateien</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.files}</p>
+                    <p className="text-xs text-gray-500">Dateien</p>
                   </div>
                 </div>
               </div>
-              <div className="bg-card border border-border rounded-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-sm bg-green-500/10 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                     <Link2 className="w-5 h-5 text-green-500" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{stats.shares}</p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Shares</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.shares}</p>
+                    <p className="text-xs text-gray-500">Shares</p>
                   </div>
                 </div>
               </div>
-              <div className="bg-card border border-border rounded-sm p-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-sm bg-blue-500/10 flex items-center justify-center">
-                    <HardDrive className="w-5 h-5 text-blue-500" />
+                  <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                    <HardDrive className="w-5 h-5 text-purple-500" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{formatBytes(stats.total_storage_bytes)}</p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Speicher</p>
+                    <p className="text-2xl font-bold text-gray-900">{formatBytes(stats.total_storage_bytes)}</p>
+                    <p className="text-xs text-gray-500">Speicher</p>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* User Management */}
-          <Tabs defaultValue="users" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <TabsList className="bg-card border border-border">
-                <TabsTrigger value="users" className="data-[state=active]:bg-muted">
-                  <Users className="w-4 h-4 mr-2" />
-                  Benutzer
-                </TabsTrigger>
-              </TabsList>
+          {/* User Table */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Alle Benutzer</h2>
               <Button
                 onClick={openCreateModal}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-orange-500 hover:bg-orange-600 text-white"
                 data-testid="create-user-btn"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Neuer Benutzer
               </Button>
             </div>
-
-            <TabsContent value="users" className="mt-4">
-              <div className="bg-card border border-border rounded-sm overflow-hidden">
-                <table className="data-table" data-testid="users-table">
-                  <thead className="bg-muted/30">
+            
+            <div className="overflow-x-auto">
+              <table className="w-full" data-testid="users-table">
+                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Name</th>
+                    <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
+                    <th className="px-4 py-3 text-left">Rolle</th>
+                    <th className="px-4 py-3 text-left hidden sm:table-cell">Limit</th>
+                    <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
+                    <th className="px-4 py-3 text-right">Aktionen</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {loading ? (
                     <tr>
-                      <th className="text-left">Name</th>
-                      <th className="text-left hidden md:table-cell">E-Mail</th>
-                      <th className="text-left">Rolle</th>
-                      <th className="text-left hidden sm:table-cell">Limit</th>
-                      <th className="text-left hidden sm:table-cell">Status</th>
-                      <th className="text-right">Aktionen</th>
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        Laden...
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <td colSpan={6} className="text-center py-8 text-muted-foreground">
-                          Laden...
-                        </td>
-                      </tr>
-                    ) : users.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="text-center py-8 text-muted-foreground">
-                          Keine Benutzer gefunden
-                        </td>
-                      </tr>
-                    ) : (
-                      users.map((user) => (
-                        <tr key={user.id} data-testid={`user-row-${user.id}`}>
-                          <td>
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-sm bg-muted flex items-center justify-center">
-                                {user.role === "admin" ? (
-                                  <Shield className="w-4 h-4 text-primary" />
-                                ) : user.role === "mitarbeiter" ? (
-                                  <UserCheck className="w-4 h-4 text-secondary" />
-                                ) : (
-                                  <User className="w-4 h-4" />
-                                )}
-                              </div>
-                              <span className="font-medium">{user.name}</span>
+                  ) : users.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        Keine Benutzer gefunden
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50" data-testid={`user-row-${user.id}`}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                              {user.role === "admin" ? (
+                                <Shield className="w-4 h-4 text-orange-500" />
+                              ) : user.role === "mitarbeiter" ? (
+                                <UserCheck className="w-4 h-4 text-blue-500" />
+                              ) : (
+                                <User className="w-4 h-4 text-gray-500" />
+                              )}
                             </div>
-                          </td>
-                          <td className="hidden md:table-cell text-muted-foreground">
-                            {user.email}
-                          </td>
-                          <td>
-                            <span className={`px-2 py-1 rounded-sm text-xs font-medium uppercase ${ROLE_COLORS[user.role]}`}>
-                              {ROLE_LABELS[user.role]}
+                            <span className="font-medium text-gray-900">{user.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell text-gray-500">
+                          {user.email}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${ROLE_COLORS[user.role]}`}>
+                            {ROLE_LABELS[user.role]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell text-gray-500 font-mono text-sm">
+                          {user.max_upload_size_mb} MB
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          {user.is_active ? (
+                            <span className="inline-flex items-center gap-1 text-green-600 text-sm">
+                              <span className="w-2 h-2 rounded-full bg-green-500" />
+                              Aktiv
                             </span>
-                          </td>
-                          <td className="hidden sm:table-cell font-mono text-sm">
-                            {user.max_upload_size_mb} MB
-                          </td>
-                          <td className="hidden sm:table-cell">
-                            <span className={`w-2 h-2 rounded-full inline-block ${user.is_active ? "bg-green-500" : "bg-red-500"}`} />
-                          </td>
-                          <td className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openEditModal(user)}
-                                className="h-8 w-8"
-                                data-testid={`edit-user-${user.id}`}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete(user)}
-                                className="h-8 w-8 hover:text-destructive"
-                                disabled={user.id === currentUser.id}
-                                data-testid={`delete-user-${user.id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </main>
-      </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-red-600 text-sm">
+                              <span className="w-2 h-2 rounded-full bg-red-500" />
+                              Inaktiv
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditModal(user)}
+                              className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                              data-testid={`edit-user-${user.id}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(user)}
+                              className="h-8 w-8 text-gray-500 hover:text-red-500"
+                              disabled={user.id === currentUser.id}
+                              data-testid={`delete-user-${user.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
 
       {/* User Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="bg-card border-border" data-testid="user-modal">
+        <DialogContent className="bg-white" data-testid="user-modal">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-gray-900">
               {editingUser ? "Benutzer bearbeiten" : "Neuer Benutzer"}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Name</Label>
+              <Label className="text-gray-700">Name</Label>
               <Input
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Max Mustermann"
-                className="bg-background"
+                className="border-gray-300"
                 required
                 data-testid="user-name-input"
               />
@@ -389,25 +385,25 @@ export default function AdminPage() {
             {!editingUser && (
               <>
                 <div className="space-y-2">
-                  <Label>E-Mail</Label>
+                  <Label className="text-gray-700">E-Mail</Label>
                   <Input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="name@firma.de"
-                    className="bg-background"
+                    className="border-gray-300"
                     required
                     data-testid="user-email-input"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Passwort</Label>
+                  <Label className="text-gray-700">Passwort</Label>
                   <Input
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     placeholder="Mindestens 6 Zeichen"
-                    className="bg-background"
+                    className="border-gray-300"
                     required
                     data-testid="user-password-input"
                   />
@@ -416,12 +412,12 @@ export default function AdminPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Rolle</Label>
+              <Label className="text-gray-700">Rolle</Label>
               <Select
                 value={formData.role}
                 onValueChange={(value) => setFormData({ ...formData, role: value })}
               >
-                <SelectTrigger className="bg-background" data-testid="user-role-select">
+                <SelectTrigger className="border-gray-300" data-testid="user-role-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -435,12 +431,12 @@ export default function AdminPage() {
             {editingUser && (
               <>
                 <div className="space-y-2">
-                  <Label>Upload-Limit (MB)</Label>
+                  <Label className="text-gray-700">Upload-Limit (MB)</Label>
                   <Input
                     type="number"
                     value={formData.max_upload_size_mb}
                     onChange={(e) => setFormData({ ...formData, max_upload_size_mb: e.target.value })}
-                    className="bg-background"
+                    className="border-gray-300"
                     min={1}
                     data-testid="user-limit-input"
                   />
@@ -451,10 +447,10 @@ export default function AdminPage() {
                     id="is_active"
                     checked={formData.is_active}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                    className="rounded border-border"
+                    className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
                     data-testid="user-active-checkbox"
                   />
-                  <Label htmlFor="is_active">Konto aktiv</Label>
+                  <Label htmlFor="is_active" className="text-gray-700">Konto aktiv</Label>
                 </div>
               </>
             )}
@@ -463,7 +459,7 @@ export default function AdminPage() {
               <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
                 Abbrechen
               </Button>
-              <Button type="submit" className="bg-primary hover:bg-primary/90" data-testid="save-user-btn">
+              <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white" data-testid="save-user-btn">
                 {editingUser ? "Speichern" : "Erstellen"}
               </Button>
             </DialogFooter>

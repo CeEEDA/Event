@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { Lock, Mail, User, ArrowRight, Zap } from "lucide-react";
+import { Lock, Mail, User, ArrowRight, ArrowLeft } from "lucide-react";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -35,8 +35,8 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const user = await register(email, password, name);
-      toast.success(`Willkommen, ${user.name}!`);
+      await register(email, password, name);
+      toast.success("Registrierung erfolgreich! Warten Sie auf die Freigabe durch den Administrator.");
     } catch (error) {
       const message = error.response?.data?.detail || "Registrierung fehlgeschlagen";
       toast.error(message);
@@ -46,168 +46,142 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 h-screen w-full" data-testid="register-page">
-      {/* Left Panel - Branding */}
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-card relative overflow-hidden">
-        <div className="absolute inset-0 grid-lines opacity-50" />
-        <div 
-          className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1565207421143-bf2ad6cb574e?w=1200&q=80')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/70 to-transparent" />
-        
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center glow-orange">
-              <Zap className="w-6 h-6 text-primary-foreground" />
+    <div className="min-h-screen bg-white flex flex-col" data-testid="register-page">
+      {/* Header with Logo */}
+      <header className="p-6 flex justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
+            <span className="text-white font-bold text-lg">EE</span>
+          </div>
+          <div>
+            <span className="text-xl font-bold text-gray-900">Eventenergie</span>
+            <span className="text-xl font-bold text-purple-600"> Deutschland</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 flex items-center justify-center px-4 pb-12">
+        <div className="w-full max-w-md">
+          {/* Register Card */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-8 space-y-6">
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-gray-900">Registrieren</h1>
+              <p className="text-gray-500 mt-1">
+                Erstellen Sie Ihr Kundenkonto
+              </p>
             </div>
-            <span className="text-2xl font-bold tracking-tight">FileShare</span>
-          </div>
-          <p className="text-muted-foreground text-sm">Eventenergie Deutschland</p>
-        </div>
-        
-        <div className="relative z-10 space-y-6">
-          <h1 className="text-4xl lg:text-5xl font-bold tracking-tight leading-tight">
-            Starten Sie<br />
-            <span className="text-gradient">jetzt</span><br />
-            mit uns
-          </h1>
-          <p className="text-muted-foreground text-lg max-w-md">
-            Erstellen Sie Ihr Konto und beginnen Sie sofort mit dem 
-            sicheren Dateiaustausch.
-          </p>
-        </div>
-        
-        <div className="relative z-10 text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
-        </div>
-      </div>
 
-      {/* Right Panel - Register Form */}
-      <div className="flex items-center justify-center p-8 bg-background">
-        <div className="w-full max-w-md space-y-8 animate-fade-in">
-          <div className="lg:hidden flex items-center gap-3 justify-center mb-8">
-            <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center">
-              <Zap className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight">FileShare</span>
-          </div>
-
-          <div className="space-y-2 text-center lg:text-left">
-            <h2 className="text-3xl font-bold tracking-tight">Registrieren</h2>
-            <p className="text-muted-foreground">
-              Erstellen Sie Ihr neues Konto
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium uppercase tracking-wide">
-                  Name
+                <Label htmlFor="name" className="text-gray-700">
+                  Name / Firma
                 </Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     id="name"
                     type="text"
-                    placeholder="Max Mustermann"
+                    placeholder="Max Mustermann / Firma GmbH"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="pl-10 h-12 bg-card border-border focus:border-primary transition-colors"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     data-testid="register-name-input"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium uppercase tracking-wide">
+                <Label htmlFor="email" className="text-gray-700">
                   E-Mail
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     id="email"
                     type="email"
                     placeholder="name@firma.de"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-12 bg-card border-border focus:border-primary transition-colors"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     data-testid="register-email-input"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium uppercase tracking-wide">
+                <Label htmlFor="password" className="text-gray-700">
                   Passwort
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     id="password"
                     type="password"
                     placeholder="Mindestens 6 Zeichen"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-12 bg-card border-border focus:border-primary transition-colors"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     data-testid="register-password-input"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-sm font-medium uppercase tracking-wide">
+                <Label htmlFor="confirmPassword" className="text-gray-700">
                   Passwort bestätigen
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     id="confirmPassword"
                     type="password"
                     placeholder="Passwort wiederholen"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="pl-10 h-12 bg-card border-border focus:border-primary transition-colors"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     data-testid="register-confirm-password-input"
                   />
                 </div>
               </div>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold transition-colors mt-2"
+                data-testid="register-submit-btn"
+              >
+                {loading ? (
+                  "Wird registriert..."
+                ) : (
+                  <>
+                    Konto erstellen
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </>
+                )}
+              </Button>
+            </form>
+
+            <div className="text-center text-sm text-gray-500">
+              Nach der Registrierung erhalten Sie Zugang, sobald ein Administrator Ihr Konto freigibt.
             </div>
 
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold uppercase tracking-wide glow-orange transition-all active:scale-[0.98]"
-              data-testid="register-submit-btn"
-            >
-              {loading ? (
-                "Wird registriert..."
-              ) : (
-                <>
-                  Konto erstellen
-                  <ArrowRight className="ml-2 w-5 h-5" />
-                </>
-              )}
-            </Button>
-          </form>
-
-          <div className="text-center text-sm text-muted-foreground">
-            Bereits registriert?{" "}
             <Link 
               to="/login" 
-              className="text-primary hover:underline font-medium"
+              className="flex items-center justify-center gap-2 text-gray-600 hover:text-orange-500 transition-colors"
               data-testid="login-link"
             >
-              Anmelden
+              <ArrowLeft className="w-4 h-4" />
+              Zurück zur Anmeldung
             </Link>
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="p-6 text-center text-sm text-gray-500">
+        &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
+      </footer>
     </div>
   );
 }

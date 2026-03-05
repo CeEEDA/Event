@@ -65,7 +65,7 @@ export const FileList = ({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-muted-foreground">Laden...</div>
+        <div className="animate-pulse text-gray-500">Laden...</div>
       </div>
     );
   }
@@ -75,9 +75,9 @@ export const FileList = ({
   if (isEmpty) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center" data-testid="empty-state">
-        <Folder className="w-16 h-16 text-muted-foreground/30 mb-4" />
-        <h3 className="text-lg font-medium mb-1">Keine Dateien</h3>
-        <p className="text-sm text-muted-foreground">
+        <Folder className="w-16 h-16 text-gray-300 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-1">Keine Dateien</h3>
+        <p className="text-sm text-gray-500">
           Laden Sie Ihre erste Datei hoch
         </p>
       </div>
@@ -91,7 +91,7 @@ export const FileList = ({
         {currentPath !== "/" && (
           <button
             onClick={onNavigateUp}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-orange-500 transition-colors"
             data-testid="navigate-up-btn"
           >
             <ChevronUp className="w-4 h-4" />
@@ -104,13 +104,13 @@ export const FileList = ({
           {folders.map((folder) => (
             <div
               key={folder.id}
-              className="bg-card border border-border rounded-sm p-4 hover:border-primary/50 transition-colors cursor-pointer group"
+              className="bg-white border border-gray-200 rounded-lg p-4 hover:border-orange-300 hover:shadow-md transition-all cursor-pointer group relative"
               onClick={() => onNavigate(folder.path)}
               data-testid={`folder-${folder.id}`}
             >
               <div className="flex flex-col items-center text-center">
-                <Folder className="w-12 h-12 text-secondary mb-2" />
-                <span className="text-sm font-medium truncate w-full">{folder.name}</span>
+                <Folder className="w-12 h-12 text-orange-400 mb-2" />
+                <span className="text-sm font-medium text-gray-900 truncate w-full">{folder.name}</span>
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -138,19 +138,19 @@ export const FileList = ({
             return (
               <div
                 key={file.id}
-                className="bg-card border border-border rounded-sm p-4 hover:border-primary/50 transition-colors relative group"
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-orange-300 hover:shadow-md transition-all relative group"
                 data-testid={`file-${file.id}`}
               >
                 <div className="flex flex-col items-center text-center">
-                  <FileIcon className="w-12 h-12 text-primary mb-2" />
-                  <span className="text-sm font-medium truncate w-full" title={file.original_filename}>
+                  <FileIcon className="w-12 h-12 text-gray-400 mb-2" />
+                  <span className="text-sm font-medium text-gray-900 truncate w-full" title={file.original_filename}>
                     {file.original_filename}
                   </span>
-                  <span className="text-xs text-muted-foreground font-mono mt-1">
+                  <span className="text-xs text-gray-500 font-mono mt-1">
                     {formatSize(file.size)}
                   </span>
                   {file.is_shared && (
-                    <span className="text-xs text-secondary flex items-center gap-1 mt-1">
+                    <span className="text-xs text-orange-500 flex items-center gap-1 mt-1">
                       <Share2 className="w-3 h-3" />
                       Geteilt
                     </span>
@@ -175,7 +175,7 @@ export const FileList = ({
                       <Share2 className="w-4 h-4 mr-2" />
                       Teilen
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onDelete(file)} className="text-destructive">
+                    <DropdownMenuItem onClick={() => onDelete(file)} className="text-red-600">
                       <Trash2 className="w-4 h-4 mr-2" />
                       Löschen
                     </DropdownMenuItem>
@@ -196,7 +196,7 @@ export const FileList = ({
       {currentPath !== "/" && (
         <button
           onClick={onNavigateUp}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-orange-500 transition-colors mb-4"
           data-testid="navigate-up-btn"
         >
           <ChevronUp className="w-4 h-4" />
@@ -204,41 +204,41 @@ export const FileList = ({
         </button>
       )}
 
-      <div className="bg-card border border-border rounded-sm overflow-hidden">
-        <table className="data-table" data-testid="files-table">
-          <thead className="bg-muted/30">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <table className="w-full" data-testid="files-table">
+          <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
             <tr>
-              <th className="text-left">Name</th>
-              <th className="text-left hidden sm:table-cell">Größe</th>
-              <th className="text-left hidden md:table-cell">Geändert</th>
-              <th className="text-right">Aktionen</th>
+              <th className="px-4 py-3 text-left">Name</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">Größe</th>
+              <th className="px-4 py-3 text-left hidden md:table-cell">Geändert</th>
+              <th className="px-4 py-3 text-right">Aktionen</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-gray-100">
             {/* Folders */}
             {folders.map((folder) => (
               <tr 
                 key={folder.id} 
-                className="cursor-pointer"
+                className="hover:bg-gray-50 cursor-pointer"
                 onClick={() => onNavigate(folder.path)}
                 data-testid={`folder-row-${folder.id}`}
               >
-                <td>
+                <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Folder className="w-5 h-5 text-secondary flex-shrink-0" />
-                    <span className="font-medium truncate">{folder.name}</span>
+                    <Folder className="w-5 h-5 text-orange-400 flex-shrink-0" />
+                    <span className="font-medium text-gray-900 truncate">{folder.name}</span>
                   </div>
                 </td>
-                <td className="hidden sm:table-cell text-muted-foreground">—</td>
-                <td className="hidden md:table-cell text-muted-foreground font-mono text-xs">
+                <td className="px-4 py-3 hidden sm:table-cell text-gray-500">—</td>
+                <td className="px-4 py-3 hidden md:table-cell text-gray-500 font-mono text-xs">
                   {formatDate(folder.created_at)}
                 </td>
-                <td className="text-right">
+                <td className="px-4 py-3 text-right">
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder); }}
-                    className="h-8 w-8 hover:text-destructive"
+                    className="h-8 w-8 text-gray-500 hover:text-red-500"
                     data-testid={`delete-folder-${folder.id}`}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -251,16 +251,16 @@ export const FileList = ({
             {files.map((file) => {
               const FileIcon = getFileIcon(file.content_type);
               return (
-                <tr key={file.id} data-testid={`file-row-${file.id}`}>
-                  <td>
+                <tr key={file.id} className="hover:bg-gray-50" data-testid={`file-row-${file.id}`}>
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <FileIcon className="w-5 h-5 text-primary flex-shrink-0" />
+                      <FileIcon className="w-5 h-5 text-gray-400 flex-shrink-0" />
                       <div className="min-w-0">
-                        <span className="font-medium truncate block" title={file.original_filename}>
+                        <span className="font-medium text-gray-900 truncate block" title={file.original_filename}>
                           {file.original_filename}
                         </span>
                         {file.is_shared && (
-                          <span className="text-xs text-secondary flex items-center gap-1">
+                          <span className="text-xs text-orange-500 flex items-center gap-1">
                             <Share2 className="w-3 h-3" />
                             Geteilt
                           </span>
@@ -268,19 +268,19 @@ export const FileList = ({
                       </div>
                     </div>
                   </td>
-                  <td className="hidden sm:table-cell text-muted-foreground font-mono text-sm">
+                  <td className="px-4 py-3 hidden sm:table-cell text-gray-500 font-mono text-sm">
                     {formatSize(file.size)}
                   </td>
-                  <td className="hidden md:table-cell text-muted-foreground font-mono text-xs">
+                  <td className="px-4 py-3 hidden md:table-cell text-gray-500 font-mono text-xs">
                     {formatDate(file.created_at)}
                   </td>
-                  <td className="text-right">
+                  <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => onDownload(file)}
-                        className="h-8 w-8"
+                        className="h-8 w-8 text-gray-500 hover:text-orange-500"
                         data-testid={`download-file-${file.id}`}
                       >
                         <Download className="w-4 h-4" />
@@ -289,7 +289,7 @@ export const FileList = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => onShare(file)}
-                        className="h-8 w-8"
+                        className="h-8 w-8 text-gray-500 hover:text-orange-500"
                         data-testid={`share-file-${file.id}`}
                       >
                         <Share2 className="w-4 h-4" />
@@ -298,7 +298,7 @@ export const FileList = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => onDelete(file)}
-                        className="h-8 w-8 hover:text-destructive"
+                        className="h-8 w-8 text-gray-500 hover:text-red-500"
                         data-testid={`delete-file-${file.id}`}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -311,7 +311,7 @@ export const FileList = ({
 
             {files.length === 0 && folders.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center py-8 text-muted-foreground">
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
                   Dieser Ordner ist leer
                 </td>
               </tr>

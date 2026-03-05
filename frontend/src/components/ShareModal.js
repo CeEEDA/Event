@@ -69,29 +69,29 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-card border-border sm:max-w-md" data-testid="share-modal">
+      <DialogContent className="bg-white sm:max-w-md" data-testid="share-modal">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Link2 className="w-5 h-5 text-primary" />
+          <DialogTitle className="flex items-center gap-2 text-gray-900">
+            <Link2 className="w-5 h-5 text-orange-500" />
             Datei teilen
           </DialogTitle>
         </DialogHeader>
 
         {shareLink ? (
           <div className="space-y-4">
-            <div className="p-4 bg-muted/30 rounded-sm">
-              <p className="text-sm text-muted-foreground mb-2">Share-Link:</p>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-500 mb-2">Share-Link:</p>
               <div className="flex gap-2">
                 <Input
                   value={shareLink}
                   readOnly
-                  className="bg-background font-mono text-sm"
+                  className="font-mono text-sm border-gray-300"
                   data-testid="share-link-input"
                 />
                 <Button
                   onClick={handleCopy}
                   variant="outline"
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 border-gray-300"
                   data-testid="copy-link-btn"
                 >
                   {copied ? (
@@ -104,8 +104,8 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
             </div>
             
             {usePassword && password && (
-              <div className="p-3 bg-secondary/10 border border-secondary/30 rounded-sm">
-                <p className="text-sm text-secondary flex items-center gap-2">
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-sm text-orange-700 flex items-center gap-2">
                   <Lock className="w-4 h-4" />
                   Passwort: <span className="font-mono">{password}</span>
                 </p>
@@ -113,7 +113,7 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
             )}
 
             <DialogFooter>
-              <Button onClick={handleClose} className="w-full">
+              <Button onClick={handleClose} className="w-full bg-orange-500 hover:bg-orange-600 text-white">
                 Schließen
               </Button>
             </DialogFooter>
@@ -121,13 +121,13 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
         ) : (
           <div className="space-y-4">
             {/* File Info */}
-            <div className="p-3 bg-muted/30 rounded-sm">
-              <p className="text-sm font-medium truncate">{file?.original_filename}</p>
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm font-medium text-gray-900 truncate">{file?.original_filename}</p>
             </div>
 
             {/* Expiration */}
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
+              <Label className="flex items-center gap-2 text-gray-700">
                 <Calendar className="w-4 h-4" />
                 Gültig für (Tage)
               </Label>
@@ -137,14 +137,14 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
                 onChange={(e) => setExpiresInDays(e.target.value)}
                 min={1}
                 max={365}
-                className="bg-background"
+                className="border-gray-300"
                 data-testid="expires-days-input"
               />
             </div>
 
             {/* Password Toggle */}
             <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2">
+              <Label className="flex items-center gap-2 text-gray-700">
                 <Lock className="w-4 h-4" />
                 Passwortschutz
               </Label>
@@ -158,13 +158,13 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
             {/* Password Input */}
             {usePassword && (
               <div className="space-y-2">
-                <Label>Passwort</Label>
+                <Label className="text-gray-700">Passwort</Label>
                 <Input
                   type="text"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Passwort eingeben"
-                  className="bg-background"
+                  className="border-gray-300"
                   data-testid="share-password-input"
                 />
               </div>
@@ -172,7 +172,7 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
 
             {/* Download Toggle */}
             <div className="flex items-center justify-between">
-              <Label>Download erlauben</Label>
+              <Label className="text-gray-700">Download erlauben</Label>
               <Switch
                 checked={allowDownload}
                 onCheckedChange={setAllowDownload}
@@ -181,13 +181,13 @@ export const ShareModal = ({ open, onClose, file, onShareCreated }) => {
             </div>
 
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" onClick={handleClose} className="border-gray-300">
                 Abbrechen
               </Button>
               <Button
                 onClick={handleCreate}
                 disabled={loading || (usePassword && !password)}
-                className="bg-primary hover:bg-primary/90"
+                className="bg-orange-500 hover:bg-orange-600 text-white"
                 data-testid="create-share-btn"
               >
                 {loading ? "Wird erstellt..." : "Link erstellen"}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Sidebar } from "../components/Sidebar";
 import { FileList } from "../components/FileList";
 import { UploadModal } from "../components/UploadModal";
 import { ShareModal } from "../components/ShareModal";
@@ -14,12 +14,14 @@ import {
   RefreshCw, 
   LayoutGrid, 
   List,
-  Menu,
-  X
+  ArrowLeft,
+  FolderOpen,
+  Link2
 } from "lucide-react";
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
   const [currentPath, setCurrentPath] = useState("/");
@@ -28,8 +30,7 @@ export default function DashboardPage() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [activeView, setActiveView] = useState("files");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("files");
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -51,10 +52,10 @@ export default function DashboardPage() {
   }, [currentPath]);
 
   useEffect(() => {
-    if (activeView === "files") {
+    if (activeTab === "files") {
       loadFiles();
     }
-  }, [loadFiles, activeView]);
+  }, [loadFiles, activeTab]);
 
   const handleUpload = async (files) => {
     let successCount = 0;
@@ -137,68 +138,81 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background" data-testid="dashboard-page">
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <div className={`
-        fixed md:relative inset-y-0 left-0 z-50 w-64 transform transition-transform duration-200
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-      `}>
-        <Sidebar 
-          activeView={activeView} 
-          onViewChange={(view) => {
-            setActiveView(view);
-            setSidebarOpen(false);
-          }}
-          onClose={() => setSidebarOpen(false)}
-        />
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-4 md:px-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="dashboard-page">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 p-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              size="icon"
-              className="md:hidden"
-              onClick={() => setSidebarOpen(true)}
-              data-testid="mobile-menu-btn"
+              size="sm"
+              onClick={() => navigate("/hub")}
+              className="text-gray-600 hover:text-orange-500"
+              data-testid="back-to-hub-btn"
             >
-              <Menu className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Zurück
             </Button>
-            <div>
-              <h1 className="text-lg font-semibold">
-                {activeView === "files" ? "Meine Dateien" : "Geteilte Links"}
-              </h1>
-              {activeView === "files" && (
-                <p className="text-xs text-muted-foreground font-mono">
-                  {currentPath}
-                </p>
-              )}
-            </div>
+            <div className="h-6 w-px bg-gray-200" />
+            <h1 className="text-lg font-semibold text-gray-900">FileShare</h1>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
+              <span className="text-white font-bold text-xs">EE</span>
+            </div>
+            <span className="text-sm font-bold text-gray-900 hidden sm:inline">Eventenergie</span>
+          </div>
+        </div>
+      </header>
 
-          {activeView === "files" && (
+      {/* Tabs */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto flex">
+          <button
+            onClick={() => setActiveTab("files")}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === "files" 
+                ? "border-orange-500 text-orange-600" 
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            data-testid="tab-files"
+          >
+            <FolderOpen className="w-4 h-4" />
+            Meine Dateien
+          </button>
+          <button
+            onClick={() => setActiveTab("shares")}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === "shares" 
+                ? "border-orange-500 text-orange-600" 
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            data-testid="tab-shares"
+          >
+            <Link2 className="w-4 h-4" />
+            Geteilte Links
+          </button>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      {activeTab === "files" && (
+        <div className="bg-white border-b border-gray-200 py-3 px-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span className="font-mono">{currentPath}</span>
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={loadFiles}
-                className="hidden sm:flex"
+                className="text-gray-500"
                 data-testid="refresh-btn"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-              <div className="hidden sm:flex border border-border rounded-sm overflow-hidden">
+              <div className="hidden sm:flex border border-gray-200 rounded overflow-hidden">
                 <Button
                   variant={viewMode === "list" ? "secondary" : "ghost"}
                   size="icon"
@@ -222,7 +236,7 @@ export default function DashboardPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleCreateFolder}
-                className="hidden sm:flex"
+                className="hidden sm:flex text-gray-600"
                 data-testid="create-folder-btn"
               >
                 <FolderPlus className="w-4 h-4 mr-2" />
@@ -230,19 +244,21 @@ export default function DashboardPage() {
               </Button>
               <Button
                 onClick={() => setUploadModalOpen(true)}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-orange-500 hover:bg-orange-600 text-white"
                 data-testid="upload-btn"
               >
                 <Upload className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Hochladen</span>
               </Button>
             </div>
-          )}
-        </header>
+          </div>
+        </div>
+      )}
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 grid-lines">
-          {activeView === "files" ? (
+      {/* Content Area */}
+      <main className="flex-1 p-4 md:p-6">
+        <div className="max-w-7xl mx-auto">
+          {activeTab === "files" ? (
             <FileList
               files={files}
               folders={folders}
@@ -259,8 +275,8 @@ export default function DashboardPage() {
           ) : (
             <SharesPanel />
           )}
-        </main>
-      </div>
+        </div>
+      </main>
 
       {/* Modals */}
       <UploadModal

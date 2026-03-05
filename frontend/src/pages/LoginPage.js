@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { toast } from "sonner";
-import { Lock, Mail, ArrowRight, Zap } from "lucide-react";
+import { Lock, Mail, ArrowRight } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -33,135 +33,112 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 h-screen w-full" data-testid="login-page">
-      {/* Left Panel - Branding */}
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-card relative overflow-hidden">
-        {/* Background Pattern */}
-        <div className="absolute inset-0 grid-lines opacity-50" />
-        <div 
-          className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1597947414275-c0d307e3e12e?w=1200&q=80')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/70 to-transparent" />
-        
-        {/* Content */}
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center glow-orange">
-              <Zap className="w-6 h-6 text-primary-foreground" />
+    <div className="min-h-screen bg-white flex flex-col" data-testid="login-page">
+      {/* Header with Logo */}
+      <header className="p-6 flex justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded bg-gradient-to-br from-purple-600 to-green-500 flex items-center justify-center">
+            <span className="text-white font-bold text-lg">EE</span>
+          </div>
+          <div>
+            <span className="text-xl font-bold text-gray-900">Eventenergie</span>
+            <span className="text-xl font-bold text-purple-600"> Deutschland</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 flex items-center justify-center px-4 pb-12">
+        <div className="w-full max-w-md">
+          {/* Login Card */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-8 space-y-6">
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-gray-900">Anmelden</h1>
+              <p className="text-gray-500 mt-1">
+                Willkommen beim Kundenportal
+              </p>
             </div>
-            <span className="text-2xl font-bold tracking-tight">FileShare</span>
-          </div>
-          <p className="text-muted-foreground text-sm">Eventenergie Deutschland</p>
-        </div>
-        
-        <div className="relative z-10 space-y-6">
-          <h1 className="text-4xl lg:text-5xl font-bold tracking-tight leading-tight">
-            Sichere<br />
-            <span className="text-gradient">Dateifreigabe</span><br />
-            für Ihr Business
-          </h1>
-          <p className="text-muted-foreground text-lg max-w-md">
-            Teilen Sie Dateien sicher mit Kunden und Mitarbeitern. 
-            Volle Kontrolle über Zugriffsrechte und Ablaufdaten.
-          </p>
-        </div>
-        
-        <div className="relative z-10 text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
-        </div>
-      </div>
 
-      {/* Right Panel - Login Form */}
-      <div className="flex items-center justify-center p-8 bg-background">
-        <div className="w-full max-w-md space-y-8 animate-fade-in">
-          {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center gap-3 justify-center mb-8">
-            <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center">
-              <Zap className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight">FileShare</span>
-          </div>
-
-          <div className="space-y-2 text-center lg:text-left">
-            <h2 className="text-3xl font-bold tracking-tight">Anmelden</h2>
-            <p className="text-muted-foreground">
-              Geben Sie Ihre Zugangsdaten ein
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium uppercase tracking-wide">
+                <Label htmlFor="email" className="text-gray-700">
                   E-Mail
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     id="email"
                     type="email"
                     placeholder="name@firma.de"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-12 bg-card border-border focus:border-primary transition-colors"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     data-testid="login-email-input"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium uppercase tracking-wide">
+                <Label htmlFor="password" className="text-gray-700">
                   Passwort
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
                     id="password"
                     type="password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-12 bg-card border-border focus:border-primary transition-colors"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     data-testid="login-password-input"
                   />
                 </div>
               </div>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold transition-colors"
+                data-testid="login-submit-btn"
+              >
+                {loading ? (
+                  "Wird angemeldet..."
+                ) : (
+                  <>
+                    Anmelden
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </>
+                )}
+              </Button>
+            </form>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-white text-gray-500">oder</span>
+              </div>
             </div>
 
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold uppercase tracking-wide glow-orange transition-all active:scale-[0.98]"
-              data-testid="login-submit-btn"
-            >
-              {loading ? (
-                "Wird angemeldet..."
-              ) : (
-                <>
-                  Anmelden
-                  <ArrowRight className="ml-2 w-5 h-5" />
-                </>
-              )}
-            </Button>
-          </form>
-
-          <div className="text-center text-sm text-muted-foreground">
-            Noch kein Konto?{" "}
-            <Link 
-              to="/register" 
-              className="text-primary hover:underline font-medium"
-              data-testid="register-link"
-            >
-              Registrieren
+            <Link to="/register" className="block" data-testid="register-link">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-12 border-gray-300 text-gray-700 hover:bg-gray-50 font-semibold"
+              >
+                Neu registrieren
+              </Button>
             </Link>
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="p-6 text-center text-sm text-gray-500">
+        &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
+      </footer>
     </div>
   );
 }

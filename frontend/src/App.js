@@ -3,6 +3,7 @@ import { Toaster } from "./components/ui/sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import HubPage from "./pages/HubPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage from "./pages/AdminPage";
 import SharedFilePage from "./pages/SharedFilePage";
@@ -13,8 +14,8 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   
   if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-background">
-        <div className="animate-pulse text-primary">Laden...</div>
+      <div className="h-screen w-full flex items-center justify-center bg-white">
+        <div className="animate-pulse text-orange-500">Laden...</div>
       </div>
     );
   }
@@ -24,7 +25,7 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   }
   
   if (requiredRole && user.role !== requiredRole && user.role !== "admin") {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/hub" replace />;
   }
   
   return children;
@@ -35,14 +36,14 @@ const PublicRoute = ({ children }) => {
   
   if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-background">
-        <div className="animate-pulse text-primary">Laden...</div>
+      <div className="h-screen w-full flex items-center justify-center bg-white">
+        <div className="animate-pulse text-orange-500">Laden...</div>
       </div>
     );
   }
   
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/hub" replace />;
   }
   
   return children;
@@ -69,7 +70,15 @@ function AppRoutes() {
         } 
       />
       <Route 
-        path="/dashboard" 
+        path="/hub" 
+        element={
+          <ProtectedRoute>
+            <HubPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/fileshare" 
         element={
           <ProtectedRoute>
             <DashboardPage />
@@ -85,6 +94,8 @@ function AppRoutes() {
         } 
       />
       <Route path="/share/:token" element={<SharedFilePage />} />
+      {/* Redirect old dashboard route */}
+      <Route path="/dashboard" element={<Navigate to="/hub" replace />} />
     </Routes>
   );
 }
@@ -97,7 +108,7 @@ function App() {
         <Toaster 
           position="top-right"
           toastOptions={{
-            className: "bg-card border-border text-foreground",
+            className: "bg-white border-gray-200 text-gray-900",
           }}
         />
       </AuthProvider>

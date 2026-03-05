@@ -1,33 +1,38 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
 @layer base {
     :root {
-        --background: 240 6% 4%;
-        --foreground: 0 0% 98%;
-        --card: 240 6% 9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 240 6% 9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 24 95% 53%;
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222.2 84% 4.9%;
+        --primary: 24.6 95% 53.1%;
         --primary-foreground: 0 0% 100%;
-        --secondary: 48 96% 47%;
-        --secondary-foreground: 0 0% 0%;
-        --muted: 240 4% 16%;
-        --muted-foreground: 240 5% 50%;
-        --accent: 240 4% 16%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 84% 60%;
-        --destructive-foreground: 0 0% 98%;
-        --success: 160 84% 39%;
-        --success-foreground: 0 0% 100%;
-        --border: 240 4% 27%;
-        --input: 240 4% 27%;
-        --ring: 24 95% 53%;
-        --radius: 0.25rem;
+        --secondary: 210 40% 96.1%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96.1%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 214.3 31.8% 91.4%;
+        --input: 214.3 31.8% 91.4%;
+        --ring: 24.6 95% 53.1%;
+        --radius: 0.5rem;
     }
 }
 
@@ -35,122 +40,9 @@
     * {
         @apply border-border;
     }
-    
-    html {
-        /* Dark theme applied by default via CSS variables */
-    }
-    
     body {
-        @apply bg-background text-foreground font-sans antialiased;
-        font-family: 'Manrope', sans-serif;
+        @apply bg-background text-foreground;
     }
-    
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Barlow', sans-serif;
-        @apply font-semibold tracking-tight;
-    }
-    
-    .font-mono {
-        font-family: 'JetBrains Mono', monospace;
-    }
-}
-
-@layer utilities {
-    .grid-lines {
-        background-image: 
-            linear-gradient(to right, rgba(128, 128, 128, 0.07) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(128, 128, 128, 0.07) 1px, transparent 1px);
-        background-size: 24px 24px;
-    }
-    
-    .glass {
-        @apply backdrop-blur-md bg-black/40 border border-white/10;
-    }
-    
-    .glow-orange {
-        box-shadow: 0 0 20px rgba(249, 115, 22, 0.3);
-    }
-    
-    .glow-yellow {
-        box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
-    }
-    
-    .text-gradient {
-        @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary;
-    }
-    
-    .scrollbar-thin {
-        scrollbar-width: thin;
-        scrollbar-color: hsl(var(--muted)) transparent;
-    }
-    
-    .scrollbar-thin::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-    }
-    
-    .scrollbar-thin::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    
-    .scrollbar-thin::-webkit-scrollbar-thumb {
-        background-color: hsl(var(--muted));
-        border-radius: 3px;
-    }
-}
-
-/* Custom animations */
-@keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slide-in-right {
-    from { opacity: 0; transform: translateX(20px); }
-    to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 10px rgba(249, 115, 22, 0.3); }
-    50% { box-shadow: 0 0 20px rgba(249, 115, 22, 0.5); }
-}
-
-.animate-fade-in {
-    animation: fade-in 0.3s ease-out forwards;
-}
-
-.animate-slide-in {
-    animation: slide-in-right 0.3s ease-out forwards;
-}
-
-.animate-pulse-glow {
-    animation: pulse-glow 2s ease-in-out infinite;
-}
-
-/* File drop zone */
-.drop-zone {
-    @apply border-2 border-dashed border-muted rounded-sm transition-colors duration-200;
-}
-
-.drop-zone.active {
-    @apply border-primary bg-primary/5;
-}
-
-/* Table styles */
-.data-table {
-    @apply w-full text-sm;
-}
-
-.data-table thead {
-    @apply text-xs uppercase tracking-wider text-muted-foreground font-mono;
-}
-
-.data-table tbody tr {
-    @apply border-b border-border/20 hover:bg-muted/30 transition-colors;
-}
-
-.data-table td, .data-table th {
-    @apply px-4 py-3;
 }
 
 /* Debug wrapper fix */
