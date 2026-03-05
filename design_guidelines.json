@@ -1,0 +1,162 @@
+{
+  "identity": {
+    "name": "E1: The Anti-AI Designer",
+    "persona": "Industrial Tech Architect",
+    "mission": "Create a file sharing platform that feels like a high-end German engineering tool—precise, robust, and dark.",
+    "principles": [
+      "No generic 'SaaS Blue'. Use 'Safety Orange' and 'Signal Yellow'.",
+      "Density over whitespace. This is a tool for pros, not a landing page.",
+      "Sharp edges. Rounded corners are for toys. Industrial tools have edges.",
+      "Contrast is King. Dark backgrounds, bright text.",
+      "Motion must be mechanical. Snap, slide, lock. No floaty bounces."
+    ]
+  },
+  "theme": {
+    "mode": "dark",
+    "strategy": "The 'Dark Factory' Look. Rich blacks, warm grays, and electric accents."
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Barlow, sans-serif",
+      "weights": ["600", "700", "800"],
+      "tracking": "tracking-tight",
+      "usage": "Use for all page titles, modal headers, and section labels. uppercase for small labels."
+    },
+    "body": {
+      "font_family": "Manrope, sans-serif",
+      "weights": ["400", "500"],
+      "usage": "Use for all standard text, file lists, and inputs."
+    },
+    "mono": {
+      "font_family": "JetBrains Mono, monospace",
+      "usage": "Use for file sizes, dates, IDs, and technical data."
+    }
+  },
+  "colors": {
+    "palette": {
+      "background": "#09090B",
+      "surface": "#18181B",
+      "surface_highlight": "#27272A",
+      "border": "#3F3F46",
+      "primary": "#F97316",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#EAB308",
+      "secondary_foreground": "#000000",
+      "muted": "#71717A",
+      "success": "#10B981",
+      "error": "#EF4444"
+    },
+    "gradients": {
+      "hero": "radial-gradient(circle at top right, rgba(249, 115, 22, 0.15), transparent 40%)",
+      "card_hover": "linear-gradient(45deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 100%)"
+    }
+  },
+  "components": {
+    "buttons": {
+      "default": "rounded-sm font-medium uppercase tracking-wide transition-all active:scale-95",
+      "primary": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_10px_rgba(249,115,22,0.3)]",
+      "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/90",
+      "outline": "border border-input bg-transparent hover:bg-accent hover:text-accent-foreground",
+      "ghost": "hover:bg-accent hover:text-accent-foreground"
+    },
+    "inputs": {
+      "style": "rounded-none border-x-0 border-t-0 border-b-2 border-border bg-transparent px-0 py-2 focus-visible:ring-0 focus-visible:border-primary transition-colors",
+      "placeholder": "text-muted-foreground/50"
+    },
+    "cards": {
+      "style": "bg-surface border border-border/50 rounded-sm hover:border-primary/50 transition-colors duration-300"
+    },
+    "tables": {
+      "style": "w-full text-sm text-left",
+      "header": "text-xs uppercase tracking-wider text-muted font-mono bg-surface/50 border-b border-border",
+      "row": "border-b border-border/20 hover:bg-surface_highlight/50 transition-colors"
+    },
+    "modals": {
+      "style": "bg-background border border-border sm:max-w-lg shadow-2xl shadow-black/50"
+    },
+     "toast": {
+      "provider": "sonner",
+      "style": "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg"
+    }
+  },
+  "layouts": {
+    "auth_page": {
+      "structure": "grid grid-cols-1 lg:grid-cols-2 h-screen w-full",
+      "left_panel": "hidden lg:flex flex-col justify-between p-12 bg-surface relative overflow-hidden",
+      "right_panel": "flex items-center justify-center p-8 bg-background"
+    },
+    "dashboard": {
+      "structure": "flex h-screen overflow-hidden bg-background",
+      "sidebar": "hidden md:flex flex-col w-64 border-r border-border bg-surface/50 backdrop-blur-xl",
+      "content": "flex-1 flex flex-col overflow-y-auto relative"
+    },
+    "file_browser": {
+      "grid_view": "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 p-6",
+      "list_view": "flex flex-col gap-0 p-0"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-md bg-black/40 border border-white/10",
+    "grid_lines": "bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]",
+    "noise": "before:fixed before:inset-0 before:z-[-1] before:bg-[url('https://grainy-gradients.vercel.app/noise.svg')] before:opacity-5 before:content-['']"
+  },
+  "assets": {
+    "images": [
+      {
+        "category": "auth_background",
+        "url": "https://images.unsplash.com/photo-1597947414275-c0d307e3e12e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHw0fHxkYXJrJTIwaW5kdXN0cmlhbCUyMGFic3RyYWN0JTIwYmFja2dyb3VuZCUyMGdlb21ldHJpYyUyMG9yYW5nZSUyMGxpZ2h0c3xlbnwwfHx8fDE3NzI3NDMzMjN8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Industrial Abstract Background"
+      },
+       {
+        "category": "auth_background_texture",
+        "url": "https://images.unsplash.com/photo-1565207421143-bf2ad6cb574e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwyfHxkYXJrJTIwaW5kdXN0cmlhbCUyMGFic3RyYWN0JTIwYmFja2dyb3VuZCUyMGdlb21ldHJpYyUyMG9yYW5nZSUyMGxpZ2h0c3xlbnwwfHx8fDE3NzI3NDMzMjN8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Orange Industrial Texture"
+      },
+      {
+        "category": "logo_placeholder",
+        "url": "https://images.unsplash.com/photo-1668687700116-27f510ee45af?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBlbmVyZ3klMjBjb21wYW55JTIwbG9nbyUyMGFic3RyYWN0JTIwb3JhbmdlfGVufDB8fHx8MTc3Mjc0MzMyNXww&ixlib=rb-4.1.0&q=85",
+        "alt": "Company Logo"
+      },
+      {
+        "category": "user_avatar_1",
+        "url": "https://images.pexels.com/photos/30535625/pexels-photo-30535625.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "alt": "Male User"
+      },
+       {
+        "category": "user_avatar_2",
+        "url": "https://images.pexels.com/photos/33871730/pexels-photo-33871730.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "alt": "Female User"
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "style": "stroke-[1.5px] w-5 h-5"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Install 'lucide-react' for icons immediately.",
+    "Update 'tailwind.config.js' to include the custom colors defined in the palette section. DO NOT rely on default shadcn colors.",
+    "Install Fonts: Add '@fontsource/barlow' and '@fontsource/manrope' or use Google Fonts via CDN in index.html.",
+    "Force Dark Mode: Apply the 'dark' class to the html element by default in index.html or App.js.",
+    "Use the 'grid_lines' background class on the main dashboard container to give it that technical feel.",
+    "For file lists, use the table component but strip away the default borders and use the 'row' style defined above.",
+    "The sidebar must be collapsible on mobile.",
+    "File Upload Modal must look like a 'Drag & Drop Zone' with a dashed border using 'border-dashed border-2 border-muted'.",
+    "Admin Panel: Use 'Tabs' component for switching between User Management and Settings.",
+    "Language: All hardcoded text MUST be in German (e.g., 'Dateien hochladen', 'Speicherplatz', 'Benutzer verwalten').",
+    "Authentication: Use the JWT token stored in localStorage for all API requests.",
+    "Use 'sonner' for all notifications (success/error).",
+    "CRITICAL: Do NOT use 'Inter' font. Use 'Barlow' for headings and 'Manrope' for body.",
+    "CRITICAL: Implement the exact 'orange/yellow' accents as requested. Do not revert to blue."
+  ],
+  "universal_guidelines": [
+      "No generic centered layouts. Use split screens or asymmetric grids.",
+      "Create depth through layered design elements with z-index hierarchy.",
+      "Use glass-morphism effects with backdrop filters (12-24px blur) for overlays.",
+      "Every interaction needs micro-animations - hover states, transitions.",
+      "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+      "Main agent relies on the provided image URLs. Missing categories = main agent will use placeholder text which is FORBIDDEN.",
+      "Components MUST use named exports (export const ComponentName = ...).",
+      "Pages MUST use default exports (export default function PageName() {...})."
+  ]
+}
