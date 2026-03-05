@@ -54,55 +54,19 @@ export const uploadFile = async (file, folderPath = "/") => {
   });
 };
 
-// Download file helper - robust for iframe/preview environments
+// Download file helper - uses direct URL for iframe compatibility
 export const downloadFile = async (fileId, filename) => {
-  const response = await api.get(`/files/${fileId}/download`, {
-    responseType: "blob",
-  });
-  
-  const blob = new Blob([response.data]);
-  const url = window.URL.createObjectURL(blob);
-  
-  // Method 1: Create anchor with download attribute
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  
-  // Force click with timeout for iframe compatibility
-  setTimeout(() => {
-    link.click();
-    // Cleanup after delay
-    setTimeout(() => {
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    }, 5000);
-  }, 100);
+  const token = localStorage.getItem("token");
+  const baseUrl = process.env.REACT_APP_BACKEND_URL;
+  // Open direct download URL in new tab - works in iframes
+  window.open(`${baseUrl}/api/files/${fileId}/download?token=${token}`, '_blank');
 };
 
 // Download folder as ZIP
 export const downloadFolderZip = async (folderId, folderName) => {
-  const response = await api.get(`/folders/${folderId}/download`, {
-    responseType: "blob",
-  });
-  
-  const blob = new Blob([response.data], { type: "application/zip" });
-  const url = window.URL.createObjectURL(blob);
-  
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${folderName}.zip`;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  
-  setTimeout(() => {
-    link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    }, 5000);
-  }, 100);
+  const token = localStorage.getItem("token");
+  const baseUrl = process.env.REACT_APP_BACKEND_URL;
+  window.open(`${baseUrl}/api/folders/${folderId}/download?token=${token}`, '_blank');
 };
 
 // Public download helper

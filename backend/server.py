@@ -223,6 +223,18 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user["apps"] = get_default_apps()
     return user
 
+async def get_user_from_token_param(token: str) -> dict:
+    """Auth via query parameter token - for direct download URLs in iframes"""
+    payload = decode_jwt_token(token)
+    user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Konto deaktiviert")
+    if "apps" not in user:
+        user["apps"] = get_default_apps()
+    return user
+
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin-Berechtigung erforderlich")
@@ -750,12 +762,25 @@ async def upload_file(
     return FileMetadata(**file_doc)
 
 @api_router.get("/files/{file_id}/download")
-async def download_file(file_id: str, user: dict = Depends(require_filesharing)):
+async def download_file(file_id: str, token: Optional[str] = None, credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+    # Auth via query param OR header
+    if token:
+        user = await get_user_from_token_param(token)
+    elif credentials:
+        user = await get_current_user(credentials)
+    else:
+        raise HTTPException(status_code=401, detail="Nicht authentifiziert")
+    
+    # Check filesharing access
+    if user["role"] != UserRole.ADMIN:
+        apps = user.get("apps", {})
+        if not apps.get("filesharing", {}).get("enabled", False):
+            raise HTTPException(status_code=403, detail="FileShare nicht freigeschaltet")
+    
     file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
     if not file_doc:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     
-    # Check permission
     is_owner = file_doc["owner_id"] == user["id"]
     is_admin = user["role"] == UserRole.ADMIN
     is_shared = file_doc.get("storage_area") == "shared"
@@ -837,7 +862,20 @@ async def move_file(file_id: str, data: FileMoveRequest, user: dict = Depends(re
 # ============== Folder ZIP Download ==============
 
 @api_router.get("/folders/{folder_id}/download")
-async def download_folder_as_zip(folder_id: str, user: dict = Depends(require_filesharing)):
+async def download_folder_as_zip(folder_id: str, token: Optional[str] = None, credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+    # Auth via query param OR header
+    if token:
+        user = await get_user_from_token_param(token)
+    elif credentials:
+        user = await get_current_user(credentials)
+    else:
+        raise HTTPException(status_code=401, detail="Nicht authentifiziert")
+    
+    if user["role"] != UserRole.ADMIN:
+        apps = user.get("apps", {})
+        if not apps.get("filesharing", {}).get("enabled", False):
+            raise HTTPException(status_code=403, detail="FileShare nicht freigeschaltet")
+    
     folder = await db.folders.find_one({"id": folder_id}, {"_id": 0})
     if not folder:
         raise HTTPException(status_code=404, detail="Ordner nicht gefunden")
