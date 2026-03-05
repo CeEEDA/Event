@@ -84,7 +84,7 @@ export default function AdminPage() {
       },
       generator_monitoring: {
         enabled: false,
-        access_all: true,
+        access_all: false,
         generator_ids: []
       }
     }
@@ -149,7 +149,7 @@ export default function AdminPage() {
         },
         generator_monitoring: {
           enabled: false,
-          access_all: true,
+          access_all: false,
           generator_ids: []
         }
       }
@@ -174,7 +174,7 @@ export default function AdminPage() {
         },
         generator_monitoring: user.apps?.generator_monitoring || {
           enabled: false,
-          access_all: true,
+          access_all: false,
           generator_ids: []
         }
       }
@@ -302,16 +302,23 @@ export default function AdminPage() {
   };
 
   const updateGeneratorMonitoringApp = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      apps: {
-        ...prev.apps,
-        generator_monitoring: {
-          ...prev.apps.generator_monitoring,
-          [field]: value
-        }
+    setFormData(prev => {
+      const updated = {
+        ...prev.apps.generator_monitoring,
+        [field]: value
+      };
+      // When toggling access_all ON, clear individual generator_ids
+      if (field === "access_all" && value === true) {
+        updated.generator_ids = [];
       }
-    }));
+      return {
+        ...prev,
+        apps: {
+          ...prev.apps,
+          generator_monitoring: updated
+        }
+      };
+    });
   };
 
   const toggleGeneratorId = (genId) => {

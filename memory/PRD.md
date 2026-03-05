@@ -41,15 +41,15 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 - [x] Demo-Datengenerator für Tests
 
 ### Phase 1.5: UI & Berechtigungen (ABGESCHLOSSEN - 05.03.2026)
-- [x] Weißer Hintergrund (statt Dark Theme)
-- [x] Lila/Fuchsia Akzente (statt Orange)
-- [x] Logo auf allen Generator-Seiten
-- [x] HubPage Button in Lila
-- [x] Generator-Monitoring Freigabe pro Benutzer (Admin)
-- [x] Toggle: Zugriff auf alle Generatoren
-- [x] Einzelne Generatoren auswählen (Checkbox-Liste)
+- [x] Weißer Hintergrund + Logo auf allen Seiten
+- [x] Lila/Fuchsia Akzente durchgängig (inkl. Hub-Buttons)
+- [x] Hub: "Monitoring" (ohne Untertitel)
+- [x] Benutzerverwaltung: Monitoring-Freigabe pro User
+- [x] Toggle: Zugriff auf alle vs. einzelne Generatoren
+- [x] Checkbox-Liste zur Geräteauswahl
 - [x] Monitoring-Spalte in Benutzertabelle
-- [x] Backend: Permission-basierte Filterung
+- [x] Backend: Permission-basierte Filterung (BUG BEHOBEN)
+- [x] Default access_all=false (UX-Fix)
 
 ### Phase 2: Steuerung & Erweiterte Alarme (AUSSTEHEND)
 - [ ] Fernsteuerung (Start/Stop/Test/Alarm-Reset)
@@ -61,13 +61,9 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 - [ ] Admin-UI Generator erstellen/bearbeiten
 - [ ] Live-Kartenansicht aller Generatoren (Leaflet)
 
-### Phase 4: Mobile App & Push (ZUKUNFT)
-- [ ] Mobile App mit Push-Benachrichtigungen
-- [ ] Standort-Tracking auf Karte
-
 ## Tech Stack
 - Backend: FastAPI, Motor (async MongoDB), GridFS
-- Frontend: React 19, Tailwind CSS, Shadcn/UI, Recharts, file-saver
+- Frontend: React 19, Tailwind CSS, Shadcn/UI, Recharts
 - Database: MongoDB
 - Auth: JWT + bcrypt
 
@@ -94,12 +90,12 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 
 ## DB Collections
 - users (mit apps.generator_monitoring: {enabled, access_all, generator_ids})
-- files, folders, shares, password_resets
 - generators, generator_telemetry, generator_alarms
+- files, shares, password_resets
 
 ## Test Credentials
 - Admin: admin@test.com / password
-- Kunde: kunde@test.com / password
+- Kunde: kunde@test.com / password, kunde1@test.com / password
 - Mitarbeiter: ma1@test.com / password
 
 ## Prioritized Backlog
@@ -109,9 +105,9 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 ### P1
 - Phase 2: Generator-Fernsteuerung & Erweiterte Alarme
 - Admin-UI: Generator erstellen/bearbeiten
-- Live-Kartenansicht
 
 ### P2
+- Live-Kartenansicht (Leaflet)
 - Admin-Dateigröße-Limit pro Benutzer
 - backend/server.py aufteilen (APIRouter)
 
