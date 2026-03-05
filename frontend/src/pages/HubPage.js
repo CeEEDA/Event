@@ -21,6 +21,8 @@ export default function HubPage() {
 
   // Check if user has filesharing enabled
   const hasFilesharing = isAdmin || user?.apps?.filesharing?.enabled;
+  // Check if user has monitoring enabled
+  const hasMonitoring = isAdmin || user?.apps?.generator_monitoring?.enabled;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="hub-page">
@@ -61,7 +63,7 @@ export default function HubPage() {
 
           <div className="grid gap-4 md:gap-6">
             {/* FileShare Button - nur wenn freigeschaltet oder Admin */}
-            {hasFilesharing ? (
+            {hasFilesharing && (
               <button
                 onClick={() => navigate("/fileshare")}
                 className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
@@ -80,38 +82,26 @@ export default function HubPage() {
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
-            ) : (
-              <div className="bg-gray-100 border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 opacity-60">
-                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gray-200 flex items-center justify-center flex-shrink-0">
-                  <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-gray-400" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-500 mb-1">
-                    FileShare
-                  </h2>
-                  <p className="text-sm text-gray-400">
-                    Nicht freigeschaltet - Bitte Administrator kontaktieren
-                  </p>
-                </div>
-              </div>
             )}
 
-            {/* Generator Monitoring */}
-            <button
-              onClick={() => navigate("/generators")}
-              className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
-              data-testid="generator-monitoring-btn"
-            >
-              <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-fuchsia-100 flex items-center justify-center flex-shrink-0 group-hover:bg-fuchsia-600 transition-colors">
-                <Activity className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
-                  Monitoring
-                </h2>
-              </div>
-              <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
-            </button>
+            {/* Generator Monitoring - nur wenn freigeschaltet oder Admin */}
+            {hasMonitoring && (
+              <button
+                onClick={() => navigate("/generators")}
+                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
+                data-testid="generator-monitoring-btn"
+              >
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-fuchsia-100 flex items-center justify-center flex-shrink-0 group-hover:bg-fuchsia-600 transition-colors">
+                  <Activity className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
+                    Monitoring
+                  </h2>
+                </div>
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
+              </button>
+            )}
 
             {/* Admin Button - nur für Admin */}
             {isAdmin && (
