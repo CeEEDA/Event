@@ -9,10 +9,11 @@ import { CreateFolderModal } from "../components/CreateFolderModal";
 import { MoveFileModal } from "../components/MoveFileModal";
 import { FilePreview } from "../components/FilePreview";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DownloadLinkDialog } from "../components/DownloadLinkDialog";
 import { Button } from "../components/ui/button";
 import { Logo } from "../components/Logo";
 import { toast } from "sonner";
-import api, { downloadFile, downloadFolderZip } from "../lib/api";
+import api, { downloadFile, downloadFolderZip, setDownloadLinkCallback } from "../lib/api";
 import { 
   Upload, 
   FolderPlus, 
@@ -54,6 +55,21 @@ export default function DashboardPage() {
   // Confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmData, setConfirmData] = useState({ title: "", description: "", onConfirm: null });
+
+  // Download link dialog state (for sandboxed iframe fallback)
+  const [dlDialogOpen, setDlDialogOpen] = useState(false);
+  const [dlDialogUrl, setDlDialogUrl] = useState("");
+  const [dlDialogFilename, setDlDialogFilename] = useState("");
+
+  // Register download link callback for iframe fallback
+  useEffect(() => {
+    setDownloadLinkCallback((url, filename) => {
+      setDlDialogUrl(url);
+      setDlDialogFilename(filename);
+      setDlDialogOpen(true);
+    });
+    return () => setDownloadLinkCallback(null);
+  }, []);
 
   const canWrite = isAdmin || user?.apps?.filesharing?.can_write;
   const canDelete = isAdmin || user?.apps?.filesharing?.can_delete;
@@ -400,13 +416,21 @@ export default function DashboardPage() {
       <MoveFileModal open={moveModalOpen} onClose={() => { setMoveModalOpen(false); setMoveTarget(null); }} file={moveTarget} folders={allFolders} currentStorageArea={storageArea} onMove={handleMoveConfirm} />
       <FilePreview open={previewOpen} onClose={() => { setPreviewOpen(false); setPreviewFile(null); }} file={previewFile} files={files} />
       
-      {/* Confirm Dialog (replaces window.confirm) */}
+      {/* Confirm Dialog */}
       <ConfirmDialog
         open={confirmOpen}
         title={confirmData.title}
         description={confirmData.description}
         onConfirm={confirmData.onConfirm}
         onCancel={() => setConfirmOpen(false)}
+      />
+
+      {/* Download Link Dialog (iframe fallback) */}
+      <DownloadLinkDialog
+        open={dlDialogOpen}
+        onClose={() => setDlDialogOpen(false)}
+        url={dlDialogUrl}
+        filename={dlDialogFilename}
       />
     </div>
   );

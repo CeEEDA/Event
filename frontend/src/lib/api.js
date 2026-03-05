@@ -5,24 +5,18 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
 });
 
-// Add auth token to requests
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Handle auth errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -40,6 +34,15 @@ api.interceptors.response.use(
 
 export default api;
 
+// Check if running inside a sandboxed iframe
+const isInSandboxedIframe = () => {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+};
+
 // Build download URLs
 export const getDownloadUrl = (fileId) => {
   const token = localStorage.getItem("token");
@@ -51,9 +54,24 @@ export const getFolderDownloadUrl = (folderId) => {
   return `${BACKEND_URL}/api/folders/${folderId}/download?token=${token}`;
 };
 
+// Download callback - set by DashboardPage to show download link modal
+let _downloadLinkCallback = null;
+export const setDownloadLinkCallback = (cb) => { _downloadLinkCallback = cb; };
+
 // Download file
 export const downloadFile = async (fileId, filename) => {
-  const response = await fetch(getDownloadUrl(fileId));
+  const url = getDownloadUrl(fileId);
+
+  if (isInSandboxedIframe()) {
+    // In sandboxed iframe: show download link to user
+    if (_downloadLinkCallback) {
+      _downloadLinkCallback(url, filename);
+    }
+    return;
+  }
+
+  // Normal download outside iframe
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const blob = await response.blob();
   saveAs(blob, filename);
@@ -61,7 +79,16 @@ export const downloadFile = async (fileId, filename) => {
 
 // Download folder as ZIP
 export const downloadFolderZip = async (folderId, folderName) => {
-  const response = await fetch(getFolderDownloadUrl(folderId));
+  const url = getFolderDownloadUrl(folderId);
+
+  if (isInSandboxedIframe()) {
+    if (_downloadLinkCallback) {
+      _downloadLinkCallback(url, `${folderName}.zip`);
+    }
+    return;
+  }
+
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const blob = await response.blob();
   saveAs(blob, `${folderName}.zip`);
