@@ -54,23 +54,36 @@ export const uploadFile = async (file, folderPath = "/") => {
   });
 };
 
-// Download helper - direct location change triggers download via Content-Disposition: attachment
-const triggerDownload = (url) => {
-  window.location.href = url;
-};
+import { saveAs } from 'file-saver';
 
-// Download file
-export const downloadFile = (fileId) => {
+// Download file - uses <a target="_top"> to escape iframe sandbox
+export const downloadFile = (fileId, filename) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
-  triggerDownload(`${baseUrl}/api/files/${fileId}/download?token=${token}`);
+  const url = `${baseUrl}/api/files/${fileId}/download?token=${token}`;
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_top';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 };
 
 // Download folder as ZIP
-export const downloadFolderZip = (folderId) => {
+export const downloadFolderZip = (folderId, folderName) => {
   const token = localStorage.getItem("token");
   const baseUrl = process.env.REACT_APP_BACKEND_URL;
-  triggerDownload(`${baseUrl}/api/folders/${folderId}/download?token=${token}`);
+  const url = `${baseUrl}/api/folders/${folderId}/download?token=${token}`;
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_top';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 };
 
 // Public download helper
