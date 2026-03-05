@@ -106,6 +106,16 @@ export default function LoginPage() {
               </Button>
             </form>
 
+            <div className="text-center">
+              <Link 
+                to="/forgot-password" 
+                className="text-sm text-fuchsia-600 hover:text-fuchsia-700 hover:underline"
+                data-testid="forgot-password-link"
+              >
+                Passwort vergessen?
+              </Link>
+            </div>
+
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-200"></div>

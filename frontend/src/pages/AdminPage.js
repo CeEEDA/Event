@@ -36,7 +36,9 @@ import {
   FileText,
   Link2,
   FolderOpen,
-  Eye
+  Eye,
+  KeyRound,
+  Copy
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -76,6 +78,12 @@ export default function AdminPage() {
       }
     }
   });
+
+  // Password management state
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetLink, setResetLink] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -196,6 +204,47 @@ export default function AdminPage() {
       const message = error.response?.data?.detail || "Fehler beim Löschen";
       toast.error(message);
     }
+  };
+
+  // Password management functions
+  const openPasswordModal = (user) => {
+    setPasswordTarget(user);
+    setNewPassword("");
+    setResetLink(null);
+    setPasswordModalOpen(true);
+  };
+
+  const handleSetPassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      toast.error("Passwort muss mindestens 6 Zeichen haben");
+      return;
+    }
+    try {
+      await api.post("/admin/set-password", {
+        user_id: passwordTarget.id,
+        new_password: newPassword
+      });
+      toast.success("Passwort wurde gesetzt");
+      setNewPassword("");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Fehler beim Setzen des Passworts");
+    }
+  };
+
+  const handleGenerateResetLink = async () => {
+    try {
+      const res = await api.post(`/admin/generate-reset-link/${passwordTarget.id}`);
+      const baseUrl = window.location.origin;
+      setResetLink(`${baseUrl}/reset-password/${res.data.reset_token}`);
+      toast.success("Reset-Link erstellt");
+    } catch (error) {
+      toast.error("Fehler beim Erstellen des Links");
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success("In Zwischenablage kopiert");
   };
 
   const formatBytes = (bytes) => {
@@ -401,6 +450,16 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openPasswordModal(user)}
+                                  className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
+                                  title="Passwort verwalten"
+                                  data-testid={`password-user-${user.id}`}
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -627,6 +686,87 @@ export default function AdminPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Management Modal */}
+      <Dialog open={passwordModalOpen} onOpenChange={setPasswordModalOpen}>
+        <DialogContent className="bg-white max-w-md" data-testid="password-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-gray-900">
+              <KeyRound className="w-5 h-5 text-fuchsia-600" />
+              Passwort verwalten
+            </DialogTitle>
+          </DialogHeader>
+
+          {passwordTarget && (
+            <div className="space-y-5">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm text-gray-500">Benutzer</p>
+                <p className="font-medium text-gray-900">{passwordTarget.name} ({passwordTarget.email})</p>
+              </div>
+
+              {/* Set new password */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Neues Passwort setzen</h4>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Neues Passwort (min. 6 Zeichen)"
+                    className="border-gray-300 flex-1"
+                    data-testid="admin-new-password-input"
+                  />
+                  <Button
+                    onClick={handleSetPassword}
+                    disabled={!newPassword || newPassword.length < 6}
+                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    data-testid="admin-set-password-btn"
+                  >
+                    Setzen
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200" />
+
+              {/* Generate reset link */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">Reset-Link erstellen</h4>
+                <p className="text-xs text-gray-500">
+                  Erstellt einen einmaligen Link, mit dem der Benutzer sein Passwort selbst zurücksetzen kann.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={handleGenerateResetLink}
+                  className="w-full border-gray-300"
+                  data-testid="admin-generate-reset-link-btn"
+                >
+                  <Link2 className="w-4 h-4 mr-2" />
+                  Reset-Link generieren
+                </Button>
+
+                {resetLink && (
+                  <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-medium text-fuchsia-700">Reset-Link (24h gültig):</p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs text-fuchsia-600 break-all flex-1">{resetLink}</code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        onClick={() => copyToClipboard(resetLink)}
+                        data-testid="copy-reset-link-btn"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
