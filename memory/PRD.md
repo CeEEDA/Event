@@ -8,44 +8,45 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - Admin kann alle Strukturen sehen
 - Ordner und Dateien teilen mit Berechtigungen
 - Deutsche Benutzeroberfläche mit Eventenergie-Logo
+- Passwort-Reset per E-Mail und Admin-Passwort-Verwaltung
 
 ## User Personas
-1. **Administrator** - Volle Kontrolle, Benutzerverwaltung, App-Freigaben, alle Dateien einsehen
+1. **Administrator** - Volle Kontrolle, Benutzerverwaltung, App-Freigaben, alle Dateien einsehen, Passwörter verwalten
 2. **Mitarbeiter** - FileShare (wenn freigeschaltet), je nach Berechtigung Lesen/Schreiben
 3. **Kunde** - Selbst-Registrierung, FileShare nur nach Admin-Freigabe
 
 ## Core Requirements
 - [x] JWT-basierte Authentifizierung
 - [x] Benutzerrollen (admin, mitarbeiter, kunde)
-- [x] **NEU: App-Berechtigungssystem (FileShare pro User aktivierbar)**
-- [x] **NEU: FileShare-Optionen: Max. Dateigröße, Schreiben, Löschen**
-- [x] **NEU: Eigener Dateibereich pro User**
-- [x] **NEU: Gemeinsamer Bereich (mit Berechtigungen)**
-- [x] **NEU: Admin kann alle User-Dateien einsehen**
-- [x] **NEU: Ordner teilen mit Berechtigungen (Download/Upload/Bearbeiten)**
+- [x] App-Berechtigungssystem (FileShare pro User aktivierbar)
+- [x] FileShare-Optionen: Max. Dateigröße, Schreiben, Löschen
+- [x] Eigener Dateibereich pro User
+- [x] Gemeinsamer Bereich (mit Berechtigungen)
+- [x] Admin kann alle User-Dateien einsehen
+- [x] Ordner teilen mit Berechtigungen (Download/Upload/Bearbeiten)
 - [x] Datei-Upload mit GridFS
-- [x] Ordner-Management (erstellen, löschen)
+- [x] Ordner-Management (erstellen, löschen) mit Modal
 - [x] Share-Links mit Ablaufdatum und Passwortschutz
 - [x] Deutsche Oberfläche mit Eventenergie-Logo
 - [x] Hub-Seite nach Login
+- [x] Magenta/Fuchsia Farbschema
+- [x] Passwort-Reset Flow (User + Admin)
+- [x] Admin Passwort-Verwaltung (Setzen + Reset-Link)
+- [ ] E-Mail-Versand für Passwort-Reset (Office 365 IMAP)
+- [ ] Dateivorschau (PDF, Bilder)
+- [ ] E-Mail-Benachrichtigungen
 
 ## Implementation Status (05.03.2026)
-### Completed - Iteration 3
-- **Logo**: Eventenergie Deutschland Logo auf allen Seiten
-- **Benutzerverwaltung**:
-  - App-Freigaben pro User (FileShare aktivieren/deaktivieren)
-  - FileShare-Optionen: Max. Dateigröße, Schreiben, Löschen
-- **Dateibereiche**:
-  - "Mein Bereich" - Eigener Dateibereich pro User
-  - "Gemeinsamer Bereich" - Für alle (mit Berechtigungen)
-  - Admin kann alle User-Dateien im Admin-Panel einsehen
-- **Ordner-Funktionen**:
-  - Ordner erstellen/löschen funktioniert
-  - Ordner teilen mit Berechtigungen
-- **Share-System**:
-  - Download erlauben
-  - Upload erlauben (für Ordner)
-  - Bearbeiten/Löschen erlauben (für Ordner)
+### Completed - All Tests Passing
+- **Magenta Theme**: Fuchsia-600 across all components
+- **Login**: "Eventenergie Portal" title, "Passwort vergessen?" Link
+- **Passwort-Reset**: 
+  - User Flow: /forgot-password → Token → /reset-password/:token (EMAIL MOCKED)
+  - Admin Flow: Passwort setzen + Reset-Link generieren Modal
+- **Ordner-Modal**: CreateFolderModal mit Namenseingabe
+- **Benutzerverwaltung**: CRUD + App-Berechtigungen + Passwort-Key-Button
+- **Dateibereiche**: Mein Bereich + Gemeinsamer Bereich
+- **Share-System**: Dateien + Ordner teilen mit Berechtigungen
 
 ### Tech Stack
 - Backend: FastAPI, Motor (async MongoDB), GridFS
@@ -59,24 +60,25 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 3. Hub → Benutzerverwaltung (nur Admin)
 4. FileShare: Mein Bereich | Gemeinsamer Bereich
 5. Admin: Benutzer | Dateien (alle User einsehen)
+6. Login → Passwort vergessen → Reset-Link → Neues Passwort
 
 ## Prioritized Backlog
 ### P0 (Critical) - Erledigt
-- ✅ App-Berechtigungssystem
-- ✅ Dateibereiche (Eigen/Gemeinsam)
-- ✅ Ordner teilen mit Berechtigungen
+- All core features implemented and tested
 
 ### P1 (High) - Nächste Phase
+- Office 365 E-Mail-Integration (User gibt IMAP-Zugangsdaten)
 - Dateivorschau (PDF, Bilder)
-- Email-Benachrichtigungen
-- Weitere Module im Hub
+- E-Mail-Benachrichtigungen
 
 ### P2 (Medium)
 - Datei-Versioning
 - Activity Log/Audit Trail
 - Erweiterte Suchfunktion
 
-## Next Tasks
-1. Weitere Module für den Hub entwickeln
-2. Dateivorschau implementieren
-3. Email-Benachrichtigungen hinzufügen
+### Refactoring
+- backend/server.py aufteilen (APIRouter für auth, users, files)
+
+## Test Credentials
+- Admin: admin@test.com / password
+- Kunde: kunde@test.com / password
