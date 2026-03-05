@@ -164,7 +164,6 @@ export default function DashboardPage() {
 
   const handleDownload = async (file) => {
     try {
-      toast.info("Download wird vorbereitet...");
       await downloadFile(file.id, file.original_filename);
     } catch {
       toast.error("Fehler beim Herunterladen");
@@ -173,7 +172,6 @@ export default function DashboardPage() {
 
   const handleDownloadFolder = async (folder) => {
     try {
-      toast.info("ZIP wird erstellt...");
       await downloadFolderZip(folder.id, folder.name);
     } catch (error) {
       const msg = error.response?.status === 404 ? "Ordner ist leer" : "Fehler beim Herunterladen";

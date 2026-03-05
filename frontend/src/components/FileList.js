@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { getDownloadUrl, getFolderDownloadUrl } from "../lib/api";
+import { getDownloadUrl, getFolderDownloadUrl, downloadFile, downloadFolderZip } from "../lib/api";
 
 const getFileIcon = (contentType) => {
   if (contentType?.startsWith("image/")) return FileImage;
@@ -138,11 +138,9 @@ export const FileList = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem asChild onClick={(e) => e.stopPropagation()}>
-                    <a href={getFolderDownloadUrl(folder.id)}>
-                      <FolderDown className="w-4 h-4 mr-2" />
-                      Als ZIP herunterladen
-                    </a>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); downloadFolderZip(folder.id, folder.name).catch(() => {}); }}>
+                    <FolderDown className="w-4 h-4 mr-2" />
+                    Als ZIP herunterladen
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onShareFolder?.(folder); }}>
                     <Share2 className="w-4 h-4 mr-2" />
@@ -197,11 +195,9 @@ export const FileList = ({
                         Vorschau
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem asChild onClick={(e) => e.stopPropagation()}>
-                      <a href={getDownloadUrl(file.id)}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Herunterladen
-                      </a>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); downloadFile(file.id, file.original_filename).catch(() => {}); }}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Herunterladen
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveFile?.(file); }}>
                       <FolderInput className="w-4 h-4 mr-2" />
@@ -282,14 +278,15 @@ export const FileList = ({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                    <a
-                      href={getFolderDownloadUrl(folder.id)}
-                      className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:text-fuchsia-600 hover:bg-gray-100 transition-colors"
+                    <Button
+                      variant="ghost" size="icon"
+                      onClick={() => { downloadFolderZip(folder.id, folder.name).catch(() => {}); }}
+                      className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                       title="Als ZIP herunterladen"
                       data-testid={`download-folder-${folder.id}`}
                     >
                       <FolderDown className="w-4 h-4" />
-                    </a>
+                    </Button>
                     <Button
                       variant="ghost" size="icon"
                       onClick={() => onShareFolder?.(folder)}
@@ -356,14 +353,15 @@ export const FileList = ({
                           <Eye className="w-4 h-4" />
                         </Button>
                       )}
-                      <a
-                        href={getDownloadUrl(file.id)}
-                        className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:text-fuchsia-600 hover:bg-gray-100 transition-colors"
+                      <Button
+                        variant="ghost" size="icon"
+                        onClick={() => { downloadFile(file.id, file.original_filename).catch(() => {}); }}
+                        className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                         title="Herunterladen"
                         data-testid={`download-file-${file.id}`}
                       >
                         <Download className="w-4 h-4" />
-                      </a>
+                      </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500">
