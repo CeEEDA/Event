@@ -24,7 +24,7 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - [x] Gemeinsamer Bereich (mit Berechtigungen)
 - [x] Admin kann alle User-Dateien einsehen
 - [x] Ordner teilen mit Berechtigungen (Download/Upload/Bearbeiten)
-- [x] Datei-Upload mit GridFS
+- [x] Datei-Upload mit GridFS + Drag & Drop
 - [x] Ordner-Management (erstellen, löschen) mit Modal
 - [x] Share-Links mit Ablaufdatum und Passwortschutz
 - [x] Deutsche Oberfläche mit Eventenergie-Logo
@@ -32,8 +32,8 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - [x] Magenta/Fuchsia Farbschema
 - [x] Passwort-Reset Flow (User + Admin)
 - [x] Admin Passwort-Verwaltung (Setzen + Reset-Link)
-- [x] Datei Download funktioniert
-- [x] Datei Löschen funktioniert
+- [x] Datei Download (Blob + setTimeout für iframe-Kompatibilität)
+- [x] Datei & Ordner & Benutzer Löschen (ConfirmDialog statt window.confirm)
 - [x] Drag & Drop Upload
 - [x] Dateien zwischen Ordnern verschieben
 - [x] Ordner als ZIP herunterladen
@@ -41,41 +41,25 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 - [ ] E-Mail-Versand für Passwort-Reset (Office 365 IMAP)
 - [ ] E-Mail-Benachrichtigungen
 
-## Implementation Status (05.03.2026)
-### Completed - All Tests Passing
-- **File Management**: Upload, Download, Delete, Move between folders
-- **Drag & Drop**: Files direkt ins Dashboard ziehen zum Hochladen
-- **Ordner ZIP**: Ganze Ordner als ZIP-Datei herunterladen
-- **Dateivorschau**: PDF-Viewer und Bildvorschau direkt in der App
-- **Verschieben**: Dateien per Modal in andere Ordner verschieben
-- **Magenta Theme**: Fuchsia-600 across all components
-- **Passwort-Reset**: User Flow + Admin Flow (EMAIL MOCKED)
-- **Benutzerverwaltung**: CRUD + App-Berechtigungen + Passwort-Key-Button
-
-### Tech Stack
+## Tech Stack
 - Backend: FastAPI, Motor (async MongoDB), GridFS
 - Frontend: React 19, Tailwind CSS, Shadcn/UI
 - Database: MongoDB
 - Auth: JWT + bcrypt
 
-## Navigation Flow
-1. Login/Register → Hub
-2. Hub → FileShare (wenn freigeschaltet)
-3. Hub → Benutzerverwaltung (nur Admin)
-4. FileShare: Mein Bereich | Gemeinsamer Bereich
-5. Admin: Benutzer | Dateien (alle User einsehen)
+## Key Components
+- **ConfirmDialog**: Wiederverwendbarer Bestätigungsdialog (Shadcn AlertDialog) — ersetzt window.confirm
+- **FilePreview**: Vorschau-Modal für PDF und Bilder
+- **MoveFileModal**: Ordner-Browser zum Verschieben von Dateien
+- **CreateFolderModal**: Modal für Ordnernamen-Eingabe
 
 ## API Endpoints
-### New Endpoints
-- PUT /api/files/{file_id}/move - Datei in anderen Ordner verschieben
-- GET /api/folders/{folder_id}/download - Ordner als ZIP herunterladen
-- GET /api/files/{file_id}/preview - Dateivorschau (Bilder/PDF)
+- PUT /api/files/{file_id}/move - Datei verschieben
+- GET /api/folders/{folder_id}/download - Ordner als ZIP
+- GET /api/files/{file_id}/preview - Dateivorschau
 - GET /api/folders/all - Alle Ordner (für Verschieben-Dialog)
 
 ## Prioritized Backlog
-### P0 - Erledigt
-- All core features implemented and tested
-
 ### P1 (High) - Nächste Phase
 - Office 365 E-Mail-Integration (User gibt IMAP-Zugangsdaten)
 - E-Mail-Benachrichtigungen
@@ -90,4 +74,7 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit:
 
 ## Test Credentials
 - Admin: admin@test.com / password
-- Kunde: kunde@test.com / password
+
+## Bugfix History
+- 05.03.2026: window.confirm → ConfirmDialog (iframe-Kompatibilität)
+- 05.03.2026: Download-Funktion mit setTimeout(100ms) für iframe-Kompatibilität
