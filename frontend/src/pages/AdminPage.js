@@ -447,7 +447,7 @@ export default function AdminPage() {
                       ) : (() => {
                         const filtered = users.filter(u => {
                           // Role filter
-                          if (userRoleFilter === "kunden" && u.role !== "kunde" && u.role !== "admin") return false;
+                          if (userRoleFilter === "kunden" && u.role !== "kunde") return false;
                           if (userRoleFilter === "mitarbeiter" && u.role !== "mitarbeiter" && u.role !== "admin") return false;
                           // Search filter
                           if (userSearch) {
