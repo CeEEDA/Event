@@ -6,10 +6,12 @@ import { UploadModal } from "../components/UploadModal";
 import { ShareModal } from "../components/ShareModal";
 import { SharesPanel } from "../components/SharesPanel";
 import { CreateFolderModal } from "../components/CreateFolderModal";
+import { MoveFileModal } from "../components/MoveFileModal";
+import { FilePreview } from "../components/FilePreview";
 import { Button } from "../components/ui/button";
 import { Logo } from "../components/Logo";
 import { toast } from "sonner";
-import api, { uploadFile, downloadFile } from "../lib/api";
+import api, { downloadFile } from "../lib/api";
 import { 
   Upload, 
   FolderPlus, 
@@ -31,18 +33,23 @@ export default function DashboardPage() {
   
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
+  const [allFolders, setAllFolders] = useState([]);
   const [currentPath, setCurrentPath] = useState("/");
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [shareType, setShareType] = useState("file");
+  const [moveTarget, setMoveTarget] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
   const [activeTab, setActiveTab] = useState("files");
-  const [storageArea, setStorageArea] = useState("personal"); // personal or shared
+  const [storageArea, setStorageArea] = useState("personal");
+  const [isDragging, setIsDragging] = useState(false);
 
-  // Check permissions
   const canWrite = isAdmin || user?.apps?.filesharing?.can_write;
   const canDelete = isAdmin || user?.apps?.filesharing?.can_delete;
   const maxUploadSize = isAdmin ? 10000 : (user?.apps?.filesharing?.max_upload_size_mb || 100);
@@ -51,35 +58,85 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const params = { folder_path: currentPath, storage_area: storageArea };
-      if (viewUserId && isAdmin) {
-        params.view_user_id = viewUserId;
-      }
+      if (viewUserId && isAdmin) params.view_user_id = viewUserId;
       
       const [filesRes, foldersRes] = await Promise.all([
         api.get("/files", { params }),
         api.get("/folders", { params: { path: currentPath, storage_area: storageArea, view_user_id: viewUserId } })
       ]);
       setFiles(filesRes.data);
-      // Filter folders to only show direct children
       setFolders(foldersRes.data.filter(f => {
         const parentPath = f.path.substring(0, f.path.lastIndexOf("/")) || "/";
         return parentPath === currentPath;
       }));
-    } catch (error) {
+    } catch {
       toast.error("Fehler beim Laden der Dateien");
     } finally {
       setLoading(false);
     }
   }, [currentPath, storageArea, viewUserId, isAdmin]);
 
+  const loadAllFolders = useCallback(async () => {
+    try {
+      const res = await api.get("/folders/all", { params: { storage_area: storageArea } });
+      setAllFolders(res.data);
+    } catch { /* ignore */ }
+  }, [storageArea]);
+
   useEffect(() => {
     if (activeTab === "files") {
       loadFiles();
+      loadAllFolders();
     }
-  }, [loadFiles, activeTab]);
+  }, [loadFiles, loadAllFolders, activeTab]);
+
+  // Drag & Drop handlers for the whole page
+  const handlePageDragOver = useCallback((e) => {
+    e.preventDefault();
+    if (activeTab === "files" && (storageArea === "personal" || canWrite)) {
+      setIsDragging(true);
+    }
+  }, [activeTab, storageArea, canWrite]);
+
+  const handlePageDragLeave = useCallback((e) => {
+    e.preventDefault();
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handlePageDrop = useCallback(async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (storageArea === "shared" && !canWrite) return;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length === 0) return;
+
+    let successCount = 0;
+    for (const file of droppedFiles) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folder_path", currentPath);
+        formData.append("storage_area", storageArea);
+        
+        await api.post("/files/upload", formData, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
+        successCount++;
+      } catch (error) {
+        toast.error(error.response?.data?.detail || `Fehler bei ${file.name}`);
+      }
+    }
+    if (successCount > 0) {
+      toast.success(`${successCount} Datei(en) hochgeladen`);
+      loadFiles();
+    }
+  }, [currentPath, storageArea, canWrite, loadFiles]);
 
   const handleUpload = async (uploadFiles) => {
-    // Check permission for shared area
     if (storageArea === "shared" && !canWrite) {
       toast.error("Keine Schreibberechtigung für gemeinsamen Bereich");
       return;
@@ -98,8 +155,7 @@ export default function DashboardPage() {
         });
         successCount++;
       } catch (error) {
-        const message = error.response?.data?.detail || `Fehler bei ${file.name}`;
-        toast.error(message);
+        toast.error(error.response?.data?.detail || `Fehler bei ${file.name}`);
       }
     }
     if (successCount > 0) {
@@ -113,13 +169,31 @@ export default function DashboardPage() {
     try {
       await downloadFile(file.id, file.original_filename);
       toast.success("Download gestartet");
-    } catch (error) {
+    } catch {
       toast.error("Fehler beim Herunterladen");
     }
   };
 
+  const handleDownloadFolder = async (folder) => {
+    try {
+      toast.info("ZIP wird erstellt...");
+      const res = await api.get(`/folders/${folder.id}/download`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${folder.name}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Ordner heruntergeladen");
+    } catch (error) {
+      const msg = error.response?.status === 404 ? "Ordner ist leer" : "Fehler beim Herunterladen";
+      toast.error(msg);
+    }
+  };
+
   const handleDelete = async (file) => {
-    // Check permission
     const isOwner = file.owner_id === user?.id;
     if (!isOwner && !isAdmin && !(storageArea === "shared" && canDelete)) {
       toast.error("Keine Berechtigung zum Löschen");
@@ -132,7 +206,7 @@ export default function DashboardPage() {
       await api.delete(`/files/${file.id}`);
       toast.success("Datei gelöscht");
       loadFiles();
-    } catch (error) {
+    } catch {
       toast.error("Fehler beim Löschen");
     }
   };
@@ -150,23 +224,22 @@ export default function DashboardPage() {
   };
 
   const handleCreateFolder = async (name) => {
-    // Check permission for shared area
     if (storageArea === "shared" && !canWrite) {
       toast.error("Keine Schreibberechtigung für gemeinsamen Bereich");
       throw new Error("No permission");
     }
     
     await api.post("/folders", { 
-      name: name, 
+      name, 
       parent_path: currentPath,
       storage_area: storageArea
     });
     toast.success("Ordner erstellt");
     loadFiles();
+    loadAllFolders();
   };
 
   const handleDeleteFolder = async (folder) => {
-    // Check permission
     const isOwner = folder.owner_id === user?.id;
     if (!isOwner && !isAdmin && !(storageArea === "shared" && canDelete)) {
       toast.error("Keine Berechtigung zum Löschen");
@@ -179,35 +252,73 @@ export default function DashboardPage() {
       await api.delete(`/folders/${folder.id}`);
       toast.success("Ordner gelöscht");
       loadFiles();
-    } catch (error) {
+      loadAllFolders();
+    } catch {
       toast.error("Fehler beim Löschen");
     }
   };
 
-  const navigateToFolder = (path) => {
-    setCurrentPath(path);
+  const handleMoveFile = (file) => {
+    setMoveTarget(file);
+    setMoveModalOpen(true);
   };
 
+  const handleMoveConfirm = async (fileId, targetPath, targetArea) => {
+    try {
+      await api.put(`/files/${fileId}/move`, {
+        target_folder_path: targetPath,
+        target_storage_area: targetArea
+      });
+      toast.success("Datei verschoben");
+      loadFiles();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Fehler beim Verschieben");
+      throw error;
+    }
+  };
+
+  const handlePreview = (file) => {
+    setPreviewFile(file);
+    setPreviewOpen(true);
+  };
+
+  const navigateToFolder = (path) => setCurrentPath(path);
   const navigateUp = () => {
     if (currentPath === "/") return;
-    const parentPath = currentPath.substring(0, currentPath.lastIndexOf("/")) || "/";
-    setCurrentPath(parentPath);
+    setCurrentPath(currentPath.substring(0, currentPath.lastIndexOf("/")) || "/");
   };
-
   const switchStorageArea = (area) => {
     setStorageArea(area);
     setCurrentPath("/");
   };
 
+  const showUploadUI = storageArea === "personal" || canWrite;
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="dashboard-page">
+    <div 
+      className="min-h-screen bg-gray-50 flex flex-col relative" 
+      data-testid="dashboard-page"
+      onDragOver={handlePageDragOver}
+      onDragLeave={handlePageDragLeave}
+      onDrop={handlePageDrop}
+    >
+      {/* Drag overlay */}
+      {isDragging && showUploadUI && (
+        <div className="fixed inset-0 z-50 bg-fuchsia-600/10 backdrop-blur-sm flex items-center justify-center pointer-events-none" data-testid="drag-overlay">
+          <div className="bg-white border-2 border-dashed border-fuchsia-500 rounded-2xl p-12 text-center shadow-2xl">
+            <Upload className="w-16 h-16 text-fuchsia-600 mx-auto mb-4" />
+            <p className="text-xl font-semibold text-gray-900">Dateien hier ablegen</p>
+            <p className="text-sm text-gray-500 mt-1">zum Hochladen in {currentPath === "/" ? "Stammverzeichnis" : currentPath}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200 p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
-              variant="ghost"
-              size="sm"
+              variant="ghost" size="sm"
               onClick={() => navigate("/hub")}
               className="text-gray-600 hover:text-fuchsia-600"
               data-testid="back-to-hub-btn"
@@ -294,19 +405,11 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <span className="font-mono">{currentPath}</span>
               {storageArea === "shared" && !canWrite && (
-                <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">
-                  Nur Lesen
-                </span>
+                <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Nur Lesen</span>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={loadFiles}
-                className="text-gray-500"
-                data-testid="refresh-btn"
-              >
+              <Button variant="ghost" size="icon" onClick={loadFiles} className="text-gray-500" data-testid="refresh-btn">
                 <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
               <div className="hidden sm:flex border border-gray-200 rounded overflow-hidden">
@@ -329,11 +432,10 @@ export default function DashboardPage() {
                   <LayoutGrid className="w-4 h-4" />
                 </Button>
               </div>
-              {(storageArea === "personal" || canWrite) && (
+              {showUploadUI && (
                 <>
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="outline" size="sm"
                     onClick={() => setFolderModalOpen(true)}
                     className="hidden sm:flex text-gray-600"
                     data-testid="create-folder-btn"
@@ -373,6 +475,9 @@ export default function DashboardPage() {
               onShare={handleShareFile}
               onShareFolder={handleShareFolder}
               onDeleteFolder={handleDeleteFolder}
+              onPreview={handlePreview}
+              onMoveFile={handleMoveFile}
+              onDownloadFolder={handleDownloadFolder}
               canWrite={storageArea === "personal" || canWrite}
               canDelete={storageArea === "personal" || canDelete || isAdmin}
             />
@@ -392,10 +497,7 @@ export default function DashboardPage() {
 
       <ShareModal
         open={shareModalOpen}
-        onClose={() => {
-          setShareModalOpen(false);
-          setSelectedItem(null);
-        }}
+        onClose={() => { setShareModalOpen(false); setSelectedItem(null); }}
         item={selectedItem}
         shareType={shareType}
         onShareCreated={loadFiles}
@@ -405,6 +507,22 @@ export default function DashboardPage() {
         open={folderModalOpen}
         onClose={() => setFolderModalOpen(false)}
         onCreateFolder={handleCreateFolder}
+      />
+
+      <MoveFileModal
+        open={moveModalOpen}
+        onClose={() => { setMoveModalOpen(false); setMoveTarget(null); }}
+        file={moveTarget}
+        folders={allFolders}
+        currentStorageArea={storageArea}
+        onMove={handleMoveConfirm}
+      />
+
+      <FilePreview
+        open={previewOpen}
+        onClose={() => { setPreviewOpen(false); setPreviewFile(null); }}
+        file={previewFile}
+        files={files}
       />
     </div>
   );

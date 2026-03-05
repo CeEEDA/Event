@@ -15,6 +15,7 @@ import jwt
 import bcrypt
 from bson import ObjectId
 import io
+import zipfile
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -170,6 +171,10 @@ class ShareLinkResponse(BaseModel):
 
 class ShareAccessRequest(BaseModel):
     password: Optional[str] = None
+
+class FileMoveRequest(BaseModel):
+    target_folder_path: str = "/"
+    target_storage_area: Optional[str] = None
 
 # ============== Helper Functions ==============
 
@@ -800,6 +805,129 @@ async def delete_file(file_id: str, user: dict = Depends(require_filesharing)):
     await db.shares.delete_many({"file_id": file_id})
     
     return {"message": "Datei gelöscht"}
+
+# ============== Move File ==============
+
+@api_router.put("/files/{file_id}/move")
+async def move_file(file_id: str, data: FileMoveRequest, user: dict = Depends(require_filesharing)):
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    
+    is_owner = file_doc["owner_id"] == user["id"]
+    is_admin = user["role"] == UserRole.ADMIN
+    is_shared_area = file_doc.get("storage_area") == "shared"
+    
+    if not (is_owner or is_admin or (is_shared_area and can_user_write(user))):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    
+    update = {"folder_path": data.target_folder_path}
+    if data.target_storage_area:
+        update["storage_area"] = data.target_storage_area
+        if data.target_storage_area == "shared":
+            update["owner_id"] = "shared"
+        elif data.target_storage_area == "personal":
+            update["owner_id"] = user["id"]
+    
+    await db.files.update_one({"id": file_id}, {"$set": update})
+    
+    updated = await db.files.find_one({"id": file_id}, {"_id": 0})
+    return FileMetadata(**updated)
+
+# ============== Folder ZIP Download ==============
+
+@api_router.get("/folders/{folder_id}/download")
+async def download_folder_as_zip(folder_id: str, user: dict = Depends(require_filesharing)):
+    folder = await db.folders.find_one({"id": folder_id}, {"_id": 0})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Ordner nicht gefunden")
+    
+    is_owner = folder["owner_id"] == user["id"]
+    is_admin = user["role"] == UserRole.ADMIN
+    is_shared = folder.get("storage_area") == "shared"
+    
+    if not (is_owner or is_admin or is_shared):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    
+    # Collect all files in this folder and subfolders
+    files = await db.files.find({
+        "owner_id": folder["owner_id"],
+        "storage_area": folder["storage_area"],
+        "folder_path": {"$regex": f"^{folder['path']}"}
+    }, {"_id": 0}).to_list(10000)
+    
+    if not files:
+        raise HTTPException(status_code=404, detail="Ordner ist leer")
+    
+    # Create ZIP in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            try:
+                grid_out = await fs.open_download_stream_by_name(f["id"])
+                content = await grid_out.read()
+                # Build relative path inside zip
+                rel_path = f["folder_path"].replace(folder["path"], "", 1).lstrip("/")
+                zip_path = f"{rel_path}/{f['original_filename']}" if rel_path else f["original_filename"]
+                zf.writestr(zip_path, content)
+            except Exception as e:
+                logger.error(f"Error adding file {f['id']} to zip: {e}")
+    
+    zip_buffer.seek(0)
+    zip_name = f"{folder['name']}.zip"
+    
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'}
+    )
+
+# ============== File Preview ==============
+
+@api_router.get("/files/{file_id}/preview")
+async def preview_file(file_id: str, user: dict = Depends(require_filesharing)):
+    file_doc = await db.files.find_one({"id": file_id}, {"_id": 0})
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    
+    is_owner = file_doc["owner_id"] == user["id"]
+    is_admin = user["role"] == UserRole.ADMIN
+    is_shared = file_doc.get("storage_area") == "shared"
+    
+    if not (is_owner or is_admin or is_shared):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    
+    ct = file_doc["content_type"]
+    if not (ct.startswith("image/") or ct == "application/pdf"):
+        raise HTTPException(status_code=400, detail="Vorschau nur für Bilder und PDFs verfügbar")
+    
+    try:
+        grid_out = await fs.open_download_stream_by_name(file_id)
+        content = await grid_out.read()
+        
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=ct,
+            headers={"Content-Disposition": f'inline; filename="{file_doc["original_filename"]}"'}
+        )
+    except Exception as e:
+        logger.error(f"Preview error: {e}")
+        raise HTTPException(status_code=500, detail="Fehler bei der Vorschau")
+
+# ============== Get all folders (for move dialog) ==============
+
+@api_router.get("/folders/all")
+async def list_all_folders(
+    storage_area: str = "personal",
+    user: dict = Depends(require_filesharing)
+):
+    if storage_area == "shared":
+        query = {"storage_area": "shared"}
+    else:
+        query = {"owner_id": user["id"], "storage_area": "personal"}
+    
+    folders = await db.folders.find(query, {"_id": 0}).to_list(1000)
+    return folders
 
 # ============== Admin: View All Users' Files ==============
 
