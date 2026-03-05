@@ -144,7 +144,7 @@ export default function SharedFilePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="animate-pulse text-orange-500">Laden...</div>
+        <div className="animate-pulse text-fuchsia-600">Laden...</div>
       </div>
     );
   }
@@ -190,11 +190,11 @@ export default function SharedFilePage() {
           {/* File/Folder Info */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+              <div className="w-12 h-12 rounded-lg bg-fuchsia-100 flex items-center justify-center flex-shrink-0">
                 {isFolder ? (
-                  <Folder className="w-6 h-6 text-orange-500" />
+                  <Folder className="w-6 h-6 text-fuchsia-600" />
                 ) : (
-                  <FileText className="w-6 h-6 text-orange-500" />
+                  <FileText className="w-6 h-6 text-fuchsia-600" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -217,7 +217,7 @@ export default function SharedFilePage() {
             </div>
 
             {shareInfo.password_protected && (
-              <div className="flex items-center gap-2 text-sm text-orange-600">
+              <div className="flex items-center gap-2 text-sm text-fuchsia-700">
                 <Lock className="w-4 h-4" />
                 Passwortgeschützt
               </div>
@@ -232,7 +232,7 @@ export default function SharedFilePage() {
                 <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Upload</span>
               )}
               {shareInfo.allow_edit && (
-                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Bearbeiten</span>
+                <span className="text-xs bg-fuchsia-100 text-fuchsia-800 px-2 py-1 rounded">Bearbeiten</span>
               )}
             </div>
           </div>
@@ -260,7 +260,7 @@ export default function SharedFilePage() {
             <Button
               onClick={handleDownload}
               disabled={downloading}
-              className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold"
+              className="w-full h-12 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold"
               data-testid="download-shared-btn"
             >
               {downloading ? (
@@ -295,7 +295,7 @@ export default function SharedFilePage() {
                 </div>
               ) : (
                 <>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-orange-300 transition-colors">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-fuchsia-400 transition-colors">
                     <input
                       type="file"
                       id="upload-input"

@@ -5,6 +5,7 @@ import { FileList } from "../components/FileList";
 import { UploadModal } from "../components/UploadModal";
 import { ShareModal } from "../components/ShareModal";
 import { SharesPanel } from "../components/SharesPanel";
+import { CreateFolderModal } from "../components/CreateFolderModal";
 import { Button } from "../components/ui/button";
 import { Logo } from "../components/Logo";
 import { toast } from "sonner";
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [shareType, setShareType] = useState("file");
   const [activeTab, setActiveTab] = useState("files");
@@ -147,28 +149,20 @@ export default function DashboardPage() {
     setShareModalOpen(true);
   };
 
-  const handleCreateFolder = async () => {
+  const handleCreateFolder = async (name) => {
     // Check permission for shared area
     if (storageArea === "shared" && !canWrite) {
       toast.error("Keine Schreibberechtigung für gemeinsamen Bereich");
-      return;
+      throw new Error("No permission");
     }
     
-    const name = window.prompt("Ordnername eingeben:");
-    if (!name || !name.trim()) return;
-    
-    try {
-      await api.post("/folders", { 
-        name: name.trim(), 
-        parent_path: currentPath,
-        storage_area: storageArea
-      });
-      toast.success("Ordner erstellt");
-      loadFiles();
-    } catch (error) {
-      const message = error.response?.data?.detail || "Fehler beim Erstellen";
-      toast.error(message);
-    }
+    await api.post("/folders", { 
+      name: name, 
+      parent_path: currentPath,
+      storage_area: storageArea
+    });
+    toast.success("Ordner erstellt");
+    loadFiles();
   };
 
   const handleDeleteFolder = async (folder) => {
@@ -215,7 +209,7 @@ export default function DashboardPage() {
               variant="ghost"
               size="sm"
               onClick={() => navigate("/hub")}
-              className="text-gray-600 hover:text-orange-500"
+              className="text-gray-600 hover:text-fuchsia-600"
               data-testid="back-to-hub-btn"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -225,7 +219,7 @@ export default function DashboardPage() {
             <h1 className="text-lg font-semibold text-gray-900">
               FileShare
               {viewUserId && isAdmin && (
-                <span className="ml-2 text-sm font-normal text-orange-500">(Admin-Ansicht)</span>
+                <span className="ml-2 text-sm font-normal text-fuchsia-600">(Admin-Ansicht)</span>
               )}
             </h1>
           </div>
@@ -240,7 +234,7 @@ export default function DashboardPage() {
             onClick={() => switchStorageArea("personal")}
             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
               storageArea === "personal" 
-                ? "border-orange-500 text-orange-600" 
+                ? "border-fuchsia-600 text-fuchsia-700" 
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
             data-testid="storage-personal"
@@ -252,7 +246,7 @@ export default function DashboardPage() {
             onClick={() => switchStorageArea("shared")}
             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
               storageArea === "shared" 
-                ? "border-orange-500 text-orange-600" 
+                ? "border-fuchsia-600 text-fuchsia-700" 
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
             data-testid="storage-shared"
@@ -270,7 +264,7 @@ export default function DashboardPage() {
             onClick={() => setActiveTab("files")}
             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
               activeTab === "files" 
-                ? "border-orange-500 text-orange-600" 
+                ? "border-fuchsia-600 text-fuchsia-700" 
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
             data-testid="tab-files"
@@ -282,7 +276,7 @@ export default function DashboardPage() {
             onClick={() => setActiveTab("shares")}
             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
               activeTab === "shares" 
-                ? "border-orange-500 text-orange-600" 
+                ? "border-fuchsia-600 text-fuchsia-700" 
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
             data-testid="tab-shares"
@@ -340,7 +334,7 @@ export default function DashboardPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleCreateFolder}
+                    onClick={() => setFolderModalOpen(true)}
                     className="hidden sm:flex text-gray-600"
                     data-testid="create-folder-btn"
                   >
@@ -349,7 +343,7 @@ export default function DashboardPage() {
                   </Button>
                   <Button
                     onClick={() => setUploadModalOpen(true)}
-                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                     data-testid="upload-btn"
                   >
                     <Upload className="w-4 h-4 mr-2" />
@@ -405,6 +399,12 @@ export default function DashboardPage() {
         item={selectedItem}
         shareType={shareType}
         onShareCreated={loadFiles}
+      />
+
+      <CreateFolderModal
+        open={folderModalOpen}
+        onClose={() => setFolderModalOpen(false)}
+        onCreateFolder={handleCreateFolder}
       />
     </div>
   );

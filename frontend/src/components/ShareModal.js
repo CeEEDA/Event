@@ -88,7 +88,7 @@ export const ShareModal = ({ open, onClose, item, shareType = "file", onShareCre
       <DialogContent className="bg-white sm:max-w-md" data-testid="share-modal">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-gray-900">
-            <Link2 className="w-5 h-5 text-orange-500" />
+            <Link2 className="w-5 h-5 text-fuchsia-600" />
             {shareType === "file" ? "Datei teilen" : "Ordner teilen"}
           </DialogTitle>
         </DialogHeader>
@@ -120,8 +120,8 @@ export const ShareModal = ({ open, onClose, item, shareType = "file", onShareCre
             </div>
             
             {usePassword && password && (
-              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                <p className="text-sm text-orange-700 flex items-center gap-2">
+              <div className="p-3 bg-fuchsia-50 border border-fuchsia-300 rounded-lg">
+                <p className="text-sm text-fuchsia-800 flex items-center gap-2">
                   <Lock className="w-4 h-4" />
                   Passwort: <span className="font-mono">{password}</span>
                 </p>
@@ -140,7 +140,7 @@ export const ShareModal = ({ open, onClose, item, shareType = "file", onShareCre
             </div>
 
             <DialogFooter>
-              <Button onClick={handleClose} className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+              <Button onClick={handleClose} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white">
                 Schließen
               </Button>
             </DialogFooter>
@@ -152,7 +152,7 @@ export const ShareModal = ({ open, onClose, item, shareType = "file", onShareCre
               {shareType === "file" ? (
                 <FileText className="w-5 h-5 text-gray-400" />
               ) : (
-                <Folder className="w-5 h-5 text-orange-400" />
+                <Folder className="w-5 h-5 text-fuchsia-500" />
               )}
               <span className="text-sm font-medium text-gray-900 truncate">{itemName}</span>
             </div>
@@ -254,7 +254,7 @@ export const ShareModal = ({ open, onClose, item, shareType = "file", onShareCre
               <Button
                 onClick={handleCreate}
                 disabled={loading || (usePassword && !password)}
-                className="bg-orange-500 hover:bg-orange-600 text-white"
+                className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                 data-testid="create-share-btn"
               >
                 {loading ? "Wird erstellt..." : "Link erstellen"}

@@ -78,7 +78,7 @@ export default function RegisterPage() {
                     placeholder="Max Mustermann / Firma GmbH"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-fuchsia-600 focus:ring-fuchsia-600"
                     data-testid="register-name-input"
                   />
                 </div>
@@ -96,7 +96,7 @@ export default function RegisterPage() {
                     placeholder="name@firma.de"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-fuchsia-600 focus:ring-fuchsia-600"
                     data-testid="register-email-input"
                   />
                 </div>
@@ -114,7 +114,7 @@ export default function RegisterPage() {
                     placeholder="Mindestens 6 Zeichen"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-fuchsia-600 focus:ring-fuchsia-600"
                     data-testid="register-password-input"
                   />
                 </div>
@@ -132,7 +132,7 @@ export default function RegisterPage() {
                     placeholder="Passwort wiederholen"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-fuchsia-600 focus:ring-fuchsia-600"
                     data-testid="register-confirm-password-input"
                   />
                 </div>
@@ -141,7 +141,7 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold transition-colors mt-2"
+                className="w-full h-12 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold transition-colors mt-2"
                 data-testid="register-submit-btn"
               >
                 {loading ? (
@@ -161,7 +161,7 @@ export default function RegisterPage() {
 
             <Link 
               to="/login" 
-              className="flex items-center justify-center gap-2 text-gray-600 hover:text-orange-500 transition-colors"
+              className="flex items-center justify-center gap-2 text-gray-600 hover:text-fuchsia-600 transition-colors"
               data-testid="login-link"
             >
               <ArrowLeft className="w-4 h-4" />

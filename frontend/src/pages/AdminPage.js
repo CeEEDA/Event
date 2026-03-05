@@ -46,7 +46,7 @@ const ROLE_LABELS = {
 };
 
 const ROLE_COLORS = {
-  admin: "bg-orange-100 text-orange-700",
+  admin: "bg-fuchsia-100 text-fuchsia-800",
   mitarbeiter: "bg-blue-100 text-blue-700",
   kunde: "bg-gray-100 text-gray-700"
 };
@@ -229,7 +229,7 @@ export default function AdminPage() {
               variant="ghost"
               size="sm"
               onClick={() => navigate("/hub")}
-              className="text-gray-600 hover:text-orange-500"
+              className="text-gray-600 hover:text-fuchsia-600"
               data-testid="back-to-hub-btn"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -249,8 +249,8 @@ export default function AdminPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-orange-500" />
+                  <div className="w-10 h-10 rounded-lg bg-fuchsia-100 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-fuchsia-600" />
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-gray-900">{stats.users}</p>
@@ -297,11 +297,11 @@ export default function AdminPage() {
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="bg-white border border-gray-200">
-              <TabsTrigger value="users" className="data-[state=active]:bg-orange-50 data-[state=active]:text-orange-600">
+              <TabsTrigger value="users" className="data-[state=active]:bg-fuchsia-50 data-[state=active]:text-fuchsia-700">
                 <Users className="w-4 h-4 mr-2" />
                 Benutzer
               </TabsTrigger>
-              <TabsTrigger value="files" className="data-[state=active]:bg-orange-50 data-[state=active]:text-orange-600">
+              <TabsTrigger value="files" className="data-[state=active]:bg-fuchsia-50 data-[state=active]:text-fuchsia-700">
                 <FolderOpen className="w-4 h-4 mr-2" />
                 Dateien
               </TabsTrigger>
@@ -314,7 +314,7 @@ export default function AdminPage() {
                   <h2 className="font-semibold text-gray-900">Alle Benutzer</h2>
                   <Button
                     onClick={openCreateModal}
-                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                     data-testid="create-user-btn"
                   >
                     <Plus className="w-4 h-4 mr-2" />
@@ -354,7 +354,7 @@ export default function AdminPage() {
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
                                   {user.role === "admin" ? (
-                                    <Shield className="w-4 h-4 text-orange-500" />
+                                    <Shield className="w-4 h-4 text-fuchsia-600" />
                                   ) : user.role === "mitarbeiter" ? (
                                     <UserCheck className="w-4 h-4 text-blue-500" />
                                   ) : (
@@ -405,7 +405,7 @@ export default function AdminPage() {
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => openEditModal(user)}
-                                  className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                                  className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                                   data-testid={`edit-user-${user.id}`}
                                 >
                                   <Pencil className="w-4 h-4" />
@@ -445,7 +445,7 @@ export default function AdminPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
                           {u.role === "admin" ? (
-                            <Shield className="w-5 h-5 text-orange-500" />
+                            <Shield className="w-5 h-5 text-fuchsia-600" />
                           ) : (
                             <User className="w-5 h-5 text-gray-500" />
                           )}
@@ -569,7 +569,7 @@ export default function AdminPage() {
                   <div className="bg-gray-50 rounded-lg p-4 space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <FolderOpen className="w-5 h-5 text-orange-500" />
+                        <FolderOpen className="w-5 h-5 text-fuchsia-600" />
                         <Label className="text-gray-900 font-medium">FileShare</Label>
                       </div>
                       <Switch
@@ -580,7 +580,7 @@ export default function AdminPage() {
                     </div>
 
                     {formData.apps.filesharing.enabled && (
-                      <div className="space-y-3 pl-8 border-l-2 border-orange-200">
+                      <div className="space-y-3 pl-8 border-l-2 border-fuchsia-300">
                         <div className="space-y-2">
                           <Label className="text-gray-600 text-sm">Max. Dateigröße (MB)</Label>
                           <Input
@@ -622,7 +622,7 @@ export default function AdminPage() {
               <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
                 Abbrechen
               </Button>
-              <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white" data-testid="save-user-btn">
+              <Button type="submit" className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-user-btn">
                 {editingUser ? "Speichern" : "Erstellen"}
               </Button>
             </DialogFooter>

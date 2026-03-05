@@ -15,7 +15,7 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-white">
-        <div className="animate-pulse text-orange-500">Laden...</div>
+        <div className="animate-pulse text-fuchsia-600">Laden...</div>
       </div>
     );
   }
@@ -37,7 +37,7 @@ const PublicRoute = ({ children }) => {
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-white">
-        <div className="animate-pulse text-orange-500">Laden...</div>
+        <div className="animate-pulse text-fuchsia-600">Laden...</div>
       </div>
     );
   }

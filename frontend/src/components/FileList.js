@@ -95,7 +95,7 @@ export const FileList = ({
         {currentPath !== "/" && (
           <button
             onClick={onNavigateUp}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-orange-500 transition-colors"
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-fuchsia-600 transition-colors"
             data-testid="navigate-up-btn"
           >
             <ChevronUp className="w-4 h-4" />
@@ -108,15 +108,15 @@ export const FileList = ({
           {folders.map((folder) => (
             <div
               key={folder.id}
-              className="bg-white border border-gray-200 rounded-lg p-4 hover:border-orange-300 hover:shadow-md transition-all cursor-pointer group relative"
+              className="bg-white border border-gray-200 rounded-lg p-4 hover:border-fuchsia-400 hover:shadow-md transition-all cursor-pointer group relative"
               onClick={() => onNavigate(folder.path)}
               data-testid={`folder-${folder.id}`}
             >
               <div className="flex flex-col items-center text-center">
-                <Folder className="w-12 h-12 text-orange-400 mb-2" />
+                <Folder className="w-12 h-12 text-fuchsia-500 mb-2" />
                 <span className="text-sm font-medium text-gray-900 truncate w-full">{folder.name}</span>
                 {folder.is_shared && (
-                  <span className="text-xs text-orange-500 flex items-center gap-1 mt-1">
+                  <span className="text-xs text-fuchsia-600 flex items-center gap-1 mt-1">
                     <Share2 className="w-3 h-3" />
                     Geteilt
                   </span>
@@ -157,7 +157,7 @@ export const FileList = ({
             return (
               <div
                 key={file.id}
-                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-orange-300 hover:shadow-md transition-all relative group"
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-fuchsia-400 hover:shadow-md transition-all relative group"
                 data-testid={`file-${file.id}`}
               >
                 <div className="flex flex-col items-center text-center">
@@ -169,7 +169,7 @@ export const FileList = ({
                     {formatSize(file.size)}
                   </span>
                   {file.is_shared && (
-                    <span className="text-xs text-orange-500 flex items-center gap-1 mt-1">
+                    <span className="text-xs text-fuchsia-600 flex items-center gap-1 mt-1">
                       <Share2 className="w-3 h-3" />
                       Geteilt
                     </span>
@@ -220,7 +220,7 @@ export const FileList = ({
       {currentPath !== "/" && (
         <button
           onClick={onNavigateUp}
-          className="flex items-center gap-2 text-sm text-gray-500 hover:text-orange-500 transition-colors mb-4"
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-fuchsia-600 transition-colors mb-4"
           data-testid="navigate-up-btn"
         >
           <ChevronUp className="w-4 h-4" />
@@ -249,11 +249,11 @@ export const FileList = ({
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <Folder className="w-5 h-5 text-orange-400 flex-shrink-0" />
+                    <Folder className="w-5 h-5 text-fuchsia-500 flex-shrink-0" />
                     <div className="min-w-0">
                       <span className="font-medium text-gray-900 truncate block">{folder.name}</span>
                       {folder.is_shared && (
-                        <span className="text-xs text-orange-500 flex items-center gap-1">
+                        <span className="text-xs text-fuchsia-600 flex items-center gap-1">
                           <Share2 className="w-3 h-3" />
                           Geteilt
                         </span>
@@ -271,7 +271,7 @@ export const FileList = ({
                       variant="ghost"
                       size="icon"
                       onClick={(e) => { e.stopPropagation(); onShareFolder?.(folder); }}
-                      className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                      className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                       data-testid={`share-folder-${folder.id}`}
                     >
                       <Share2 className="w-4 h-4" />
@@ -305,7 +305,7 @@ export const FileList = ({
                           {file.original_filename}
                         </span>
                         {file.is_shared && (
-                          <span className="text-xs text-orange-500 flex items-center gap-1">
+                          <span className="text-xs text-fuchsia-600 flex items-center gap-1">
                             <Share2 className="w-3 h-3" />
                             Geteilt
                           </span>
@@ -325,7 +325,7 @@ export const FileList = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => onDownload(file)}
-                        className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                        className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                         data-testid={`download-file-${file.id}`}
                       >
                         <Download className="w-4 h-4" />
@@ -334,7 +334,7 @@ export const FileList = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => onShare(file)}
-                        className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                        className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                         data-testid={`share-file-${file.id}`}
                       >
                         <Share2 className="w-4 h-4" />

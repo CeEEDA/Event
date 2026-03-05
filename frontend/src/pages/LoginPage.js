@@ -48,7 +48,7 @@ export default function LoginPage() {
             <div className="text-center">
               <h1 className="text-2xl font-bold text-gray-900">Anmelden</h1>
               <p className="text-gray-500 mt-1">
-                Willkommen beim Kundenportal
+                Willkommen beim Eventenergie Portal
               </p>
             </div>
 
@@ -65,7 +65,7 @@ export default function LoginPage() {
                     placeholder="name@firma.de"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-fuchsia-600 focus:ring-fuchsia-600"
                     data-testid="login-email-input"
                   />
                 </div>
@@ -83,7 +83,7 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                    className="pl-10 h-12 bg-gray-50 border-gray-300 focus:border-fuchsia-600 focus:ring-fuchsia-600"
                     data-testid="login-password-input"
                   />
                 </div>
@@ -92,7 +92,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold transition-colors"
+                className="w-full h-12 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold transition-colors"
                 data-testid="login-submit-btn"
               >
                 {loading ? (

@@ -87,7 +87,7 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
             onDrop={handleDrop}
             className={`
               border-2 border-dashed rounded-lg p-8 text-center transition-colors
-              ${isDragging ? "border-orange-500 bg-orange-50" : "border-gray-300"}
+              ${isDragging ? "border-fuchsia-600 bg-fuchsia-50" : "border-gray-300"}
             `}
           >
             <input
@@ -99,12 +99,12 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
               data-testid="file-input"
             />
             <label htmlFor="file-input" className="cursor-pointer block">
-              <Upload className={`w-10 h-10 mx-auto mb-3 ${isDragging ? "text-orange-500" : "text-gray-400"}`} />
+              <Upload className={`w-10 h-10 mx-auto mb-3 ${isDragging ? "text-fuchsia-600" : "text-gray-400"}`} />
               <p className="text-sm font-medium text-gray-700 mb-1">
                 Dateien hierher ziehen
               </p>
               <p className="text-xs text-gray-500">
-                oder <span className="text-orange-500">klicken</span> zum Auswählen
+                oder <span className="text-fuchsia-600">klicken</span> zum Auswählen
               </p>
               <p className="text-xs text-gray-400 mt-2">
                 Max. {maxSizeMB} MB pro Datei
@@ -129,7 +129,7 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
                     {overLimit ? (
                       <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                     ) : (
-                      <FileText className="w-5 h-5 text-orange-500 flex-shrink-0" />
+                      <FileText className="w-5 h-5 text-fuchsia-600 flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
@@ -171,7 +171,7 @@ export const UploadModal = ({ open, onClose, onUpload, maxSizeMB }) => {
                 <Button
                   onClick={handleUpload}
                   disabled={uploading || files.every(isOverLimit)}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
+                  className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                   data-testid="confirm-upload-btn"
                 >
                   {uploading ? "Wird hochgeladen..." : "Hochladen"}

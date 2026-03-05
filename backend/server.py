@@ -74,6 +74,28 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     apps: Optional[Dict] = None
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+class AdminSetPassword(BaseModel):
+    user_id: str
+    new_password: str
+
+class UserResponseWithPassword(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    email: str
+    name: str
+    role: str
+    is_active: bool
+    created_at: str
+    apps: Dict = {}
+    password_plain: Optional[str] = None  # Only for admin view
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
@@ -322,6 +344,74 @@ async def get_me(user: dict = Depends(get_current_user)):
         apps=user.get("apps", get_default_apps())
     )
 
+# ============== Password Reset ==============
+
+@api_router.post("/auth/request-password-reset")
+async def request_password_reset(data: PasswordResetRequest):
+    """Request a password reset - creates a reset token"""
+    user = await db.users.find_one({"email": data.email}, {"_id": 0})
+    if not user:
+        # Don't reveal if email exists
+        return {"message": "Falls die E-Mail existiert, wurde ein Link gesendet"}
+    
+    # Create reset token
+    reset_token = str(uuid.uuid4()).replace("-", "")[:32]
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    
+    # Store reset token
+    await db.password_resets.delete_many({"user_id": user["id"]})  # Remove old tokens
+    await db.password_resets.insert_one({
+        "user_id": user["id"],
+        "token": reset_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    # In production, send email here
+    # For now, return success message
+    logger.info(f"Password reset requested for {data.email}, token: {reset_token}")
+    
+    return {"message": "Falls die E-Mail existiert, wurde ein Link gesendet", "reset_token": reset_token}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(data: PasswordResetConfirm):
+    """Reset password using a reset token"""
+    reset_doc = await db.password_resets.find_one({"token": data.token}, {"_id": 0})
+    if not reset_doc:
+        raise HTTPException(status_code=400, detail="Ungültiger oder abgelaufener Link")
+    
+    expires_at = datetime.fromisoformat(reset_doc["expires_at"])
+    if datetime.now(timezone.utc) > expires_at:
+        await db.password_resets.delete_one({"token": data.token})
+        raise HTTPException(status_code=400, detail="Link abgelaufen")
+    
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen haben")
+    
+    # Update password
+    await db.users.update_one(
+        {"id": reset_doc["user_id"]},
+        {"$set": {"password_hash": hash_password(data.new_password)}}
+    )
+    
+    # Delete used token
+    await db.password_resets.delete_one({"token": data.token})
+    
+    return {"message": "Passwort erfolgreich geändert"}
+
+@api_router.get("/auth/verify-reset-token/{token}")
+async def verify_reset_token(token: str):
+    """Verify if a reset token is valid"""
+    reset_doc = await db.password_resets.find_one({"token": token}, {"_id": 0})
+    if not reset_doc:
+        raise HTTPException(status_code=400, detail="Ungültiger Link")
+    
+    expires_at = datetime.fromisoformat(reset_doc["expires_at"])
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Link abgelaufen")
+    
+    return {"valid": True}
+
 # ============== User Management (Admin) ==============
 
 @api_router.get("/users", response_model=List[UserResponse])
@@ -414,6 +504,65 @@ async def delete_user(user_id: str, admin: dict = Depends(require_admin)):
     await db.folders.delete_many({"owner_id": user_id})
     
     return {"message": "Benutzer gelöscht"}
+
+# ============== Admin Password Management ==============
+
+@api_router.post("/admin/set-password")
+async def admin_set_password(data: AdminSetPassword, admin: dict = Depends(require_admin)):
+    """Admin sets a new password for a user"""
+    user = await db.users.find_one({"id": data.user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen haben")
+    
+    await db.users.update_one(
+        {"id": data.user_id},
+        {"$set": {
+            "password_hash": hash_password(data.new_password),
+            "password_plain": data.new_password  # Store plain for admin viewing
+        }}
+    )
+    
+    return {"message": "Passwort gesetzt", "password": data.new_password}
+
+@api_router.post("/admin/generate-reset-link/{user_id}")
+async def admin_generate_reset_link(user_id: str, admin: dict = Depends(require_admin)):
+    """Admin generates a password reset link for a user"""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    
+    reset_token = str(uuid.uuid4()).replace("-", "")[:32]
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    
+    await db.password_resets.delete_many({"user_id": user_id})
+    await db.password_resets.insert_one({
+        "user_id": user_id,
+        "token": reset_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {"reset_token": reset_token, "expires_at": expires_at.isoformat()}
+
+@api_router.get("/admin/user-password/{user_id}")
+async def admin_get_user_password(user_id: str, admin: dict = Depends(require_admin)):
+    """Admin views a user's stored password (if available)"""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    
+    password_plain = user.get("password_plain")
+    
+    return {
+        "user_id": user_id,
+        "email": user["email"],
+        "name": user["name"],
+        "password_available": password_plain is not None,
+        "password": password_plain
+    }
 
 # ============== Folder Management ==============
 

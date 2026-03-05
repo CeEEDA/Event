@@ -117,7 +117,7 @@ export const SharesPanel = () => {
                 <tr key={share.id} className="hover:bg-gray-50" data-testid={`share-row-${share.id}`}>
                   <td className="px-4 py-3">
                     {isFolder ? (
-                      <Folder className="w-5 h-5 text-orange-400" />
+                      <Folder className="w-5 h-5 text-fuchsia-500" />
                     ) : (
                       <FileText className="w-5 h-5 text-gray-400" />
                     )}
@@ -128,7 +128,7 @@ export const SharesPanel = () => {
                         {share.token}
                       </span>
                       {share.password_protected && (
-                        <Lock className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                        <Lock className="w-3 h-3 text-fuchsia-600 flex-shrink-0" />
                       )}
                     </div>
                   </td>
@@ -150,7 +150,7 @@ export const SharesPanel = () => {
                         <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">UP</span>
                       )}
                       {share.allow_edit && (
-                        <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Edit</span>
+                        <span className="text-xs bg-fuchsia-100 text-fuchsia-800 px-1.5 py-0.5 rounded">Edit</span>
                       )}
                     </div>
                   </td>
@@ -171,7 +171,7 @@ export const SharesPanel = () => {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleCopy(share)}
-                        className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                        className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                         disabled={expired}
                         data-testid={`copy-share-${share.id}`}
                       >
@@ -185,7 +185,7 @@ export const SharesPanel = () => {
                         variant="ghost"
                         size="icon"
                         onClick={() => window.open(`/share/${share.token}`, "_blank")}
-                        className="h-8 w-8 text-gray-500 hover:text-orange-500"
+                        className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                         disabled={expired}
                         data-testid={`open-share-${share.id}`}
                       >
