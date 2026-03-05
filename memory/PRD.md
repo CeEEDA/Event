@@ -31,15 +31,25 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 - [x] Telemetrie-Empfangsendpunkt (API-Key Auth für DSE890)
 - [x] Telemetrie-Abfrage mit Zeitfilter
 - [x] Alarm-Management (Erstellen, Quittieren, Beheben)
-- [x] Dashboard mit Status-Übersicht (Gesamt/Läuft/Standby/Warnung/Offline)
+- [x] Dashboard mit Status-Übersicht
 - [x] Suchfunktion und Statusfilter
 - [x] Generator-Karten mit Live-Telemetrie
-- [x] Detail-Seite mit Messwerten (Spannung, Strom, Leistung, Temperatur, etc.)
-- [x] Telemetrie-Charts (Recharts: Leistung, Auslastung, Spannung, Temperatur, Frequenz, Tankstand)
+- [x] Detail-Seite mit Messwerten
+- [x] Telemetrie-Charts (Recharts)
 - [x] Aktive Alarme mit Quittier-/Beheben-Funktion
 - [x] Admin-Info (Generator-ID, API-Key, DSE-Modul)
 - [x] Demo-Datengenerator für Tests
-- [x] Kunden sehen nur zugewiesene Generatoren
+
+### Phase 1.5: UI & Berechtigungen (ABGESCHLOSSEN - 05.03.2026)
+- [x] Weißer Hintergrund (statt Dark Theme)
+- [x] Lila/Fuchsia Akzente (statt Orange)
+- [x] Logo auf allen Generator-Seiten
+- [x] HubPage Button in Lila
+- [x] Generator-Monitoring Freigabe pro Benutzer (Admin)
+- [x] Toggle: Zugriff auf alle Generatoren
+- [x] Einzelne Generatoren auswählen (Checkbox-Liste)
+- [x] Monitoring-Spalte in Benutzertabelle
+- [x] Backend: Permission-basierte Filterung
 
 ### Phase 2: Steuerung & Erweiterte Alarme (AUSSTEHEND)
 - [ ] Fernsteuerung (Start/Stop/Test/Alarm-Reset)
@@ -47,10 +57,9 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 - [ ] E-Mail/SMS-Benachrichtigungen bei Alarmen
 - [ ] Alarm-Historie
 
-### Phase 3: Kundenzuordnung & Berechtigungen (AUSSTEHEND)
-- [ ] Generatoren Kunden zuweisen (Admin-UI)
-- [ ] Kundenspezifische Dashboard-Ansichten
-- [ ] Berechtigungssteuerung über Benutzerverwaltung
+### Phase 3: Erweiterungen (AUSSTEHEND)
+- [ ] Admin-UI Generator erstellen/bearbeiten
+- [ ] Live-Kartenansicht aller Generatoren (Leaflet)
 
 ### Phase 4: Mobile App & Push (ZUKUNFT)
 - [ ] Mobile App mit Push-Benachrichtigungen
@@ -74,37 +83,37 @@ NextCloud-ähnliche Dateifreigabe-Anwendung für Eventenergie Deutschland mit Ge
 └── frontend/
     └── src/
         ├── pages/
-        │   ├── GeneratorDashboardPage.js (Übersicht)
-        │   ├── GeneratorDetailPage.js (Einzelansicht)
+        │   ├── GeneratorDashboardPage.js
+        │   ├── GeneratorDetailPage.js
         │   ├── DashboardPage.js (FileShare)
-        │   ├── AdminPage.js
-        │   ├── HubPage.js (Navigations-Hub)
+        │   ├── AdminPage.js (mit Monitoring-Berechtigungen)
+        │   ├── HubPage.js
         │   └── ...
         └── ...
 ```
 
 ## DB Collections
-- users, files, folders, shares, password_resets
+- users (mit apps.generator_monitoring: {enabled, access_all, generator_ids})
+- files, folders, shares, password_resets
 - generators, generator_telemetry, generator_alarms
 
 ## Test Credentials
 - Admin: admin@test.com / password
-- Kunde: kunde1@test.com / password
+- Kunde: kunde@test.com / password
 - Mitarbeiter: ma1@test.com / password
 
 ## Prioritized Backlog
 ### P0
-- Office 365 E-Mail-Integration (User gibt Zugangsdaten)
+- Office 365 E-Mail-Integration (Zugangsdaten ausstehend)
 
 ### P1
 - Phase 2: Generator-Fernsteuerung & Erweiterte Alarme
-- Phase 3: Kundenzuordnung UI
+- Admin-UI: Generator erstellen/bearbeiten
+- Live-Kartenansicht
 
 ### P2
 - Admin-Dateigröße-Limit pro Benutzer
-- Datei-Versioning, Activity Log
-- backend/server.py aufteilen (APIRouter für Auth, Users, Files)
+- backend/server.py aufteilen (APIRouter)
 
 ### P3
 - Mobile App mit Push-Benachrichtigungen
-- Standort-Tracking auf Karte
