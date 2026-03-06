@@ -14,6 +14,8 @@ import GeneratorDetailPage from "./pages/GeneratorDetailPage";
 import DeviceManagementPage from "./pages/DeviceManagementPage";
 import ServiceplanPage from "./pages/ServiceplanPage";
 import MqttConfigPage from "./pages/MqttConfigPage";
+import EnergyMonitoringPage from "./pages/EnergyMonitoringPage";
+import EnergyMonitoringDetailPage from "./pages/EnergyMonitoringDetailPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -153,6 +155,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <MqttConfigPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/energy-monitoring"
+        element={
+          <ProtectedRoute>
+            <EnergyMonitoringPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/energy-monitoring/:id"
+        element={
+          <ProtectedRoute>
+            <EnergyMonitoringDetailPage />
           </ProtectedRoute>
         }
       />

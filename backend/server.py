@@ -210,6 +210,14 @@ def get_default_apps():
             "max_upload_size_mb": 100,
             "can_write": False,
             "can_delete": False
+        },
+        "energy_monitoring": {
+            "enabled": False,
+            "access_all": False,
+            "device_ids": [],
+            "access_type": "permanent",
+            "access_start": None,
+            "access_end": None
         }
     }
 
@@ -1391,6 +1399,11 @@ app.include_router(serviceplan_router)
 from routes.mqtt_config import router as mqtt_router, init_mqtt_routes
 init_mqtt_routes(db, decode_jwt_token)
 app.include_router(mqtt_router)
+
+# Energy Monitoring routes
+from routes.energy_monitoring import router as energy_router, init_energy_monitoring_routes
+init_energy_monitoring_routes(db, decode_jwt_token)
+app.include_router(energy_router)
 
 app.add_middleware(
     CORSMiddleware,
