@@ -1379,6 +1379,11 @@ from routes.serviceplan import router as serviceplan_router, init_serviceplan_ro
 init_serviceplan_routes(db, decode_jwt_token, fs)
 app.include_router(serviceplan_router)
 
+# MQTT Integration routes
+from routes.mqtt_config import router as mqtt_router, init_mqtt_routes
+init_mqtt_routes(db, decode_jwt_token)
+app.include_router(mqtt_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1389,4 +1394,14 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    from mqtt_service import stop_mqtt_client
+    await stop_mqtt_client()
     client.close()
+
+
+@app.on_event("startup")
+async def startup_event():
+    import asyncio
+    from mqtt_service import start_mqtt_client
+    loop = asyncio.get_event_loop()
+    await start_mqtt_client(db, loop)

@@ -43,6 +43,7 @@ import {
   Search,
   Activity,
   Mail,
+  Radio,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -371,7 +372,19 @@ export default function AdminPage() {
             <div className="h-6 w-px bg-gray-200" />
             <h1 className="text-lg font-semibold text-gray-900">Benutzerverwaltung</h1>
           </div>
-          <Logo size="small" />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/mqtt-config")}
+              className="text-gray-600 hover:text-fuchsia-600"
+              data-testid="mqtt-config-link"
+            >
+              <Radio className="w-4 h-4 mr-1" />
+              MQTT
+            </Button>
+            <Logo size="small" />
+          </div>
         </div>
       </header>
 

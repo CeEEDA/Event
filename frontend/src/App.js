@@ -13,6 +13,7 @@ import GeneratorDashboardPage from "./pages/GeneratorDashboardPage";
 import GeneratorDetailPage from "./pages/GeneratorDetailPage";
 import DeviceManagementPage from "./pages/DeviceManagementPage";
 import ServiceplanPage from "./pages/ServiceplanPage";
+import MqttConfigPage from "./pages/MqttConfigPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -144,6 +145,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <ServiceplanPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mqtt-config"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <MqttConfigPage />
           </ProtectedRoute>
         }
       />
