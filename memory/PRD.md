@@ -1,22 +1,23 @@
 # DSE Power Generator Portal – PRD
 
 ## Original Problem Statement
-A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators. Started as a secure file exchange application and evolved into a full fleet management system.
+A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators. Started as a secure file exchange application and evolved into a full fleet management system with energy monitoring capabilities.
 
 ## User Personas
-- **Administrator**: Full CRUD access to devices, users, service plans, MQTT config.
+- **Administrator**: Full CRUD access to devices, users, service plans, MQTT config, energy monitoring config.
 - **Mitarbeiter (Employee)**: Can view devices, update status/notes, create maintenance entries.
-- **Kunde (Customer)**: Limited view access.
+- **Kunde (Customer)**: Limited view access. Energy monitoring with optional time-based access control.
 
 ## Core Requirements
 1. **Generator Monitoring**: Dashboard with real-time analytics and map location.
-2. **Device Management**: Full CRUD, image/document uploads, parts management, QR codes.
-3. **QR Code System**: Unique device codes with printable QR codes.
-4. **Service Planning**: Maintenance schedules, checklists, measurement logs, photo uploads.
-5. **User & Permissions**: Role-based access (Admin, Mitarbeiter, Kunde).
-6. **File Management**: GridFS-based secure storage.
-7. **Email Notifications**: Password reset via SMTP (working).
-8. **MQTT Integration**: Connect DSE WebNet Gateways via MQTT for real-time telemetry.
+2. **Energy Monitoring (Messkoffer)**: Dashboard showing EMU meter data (voltage, current, power, frequency, energy) per Messkoffer device with charts and time-range filtering.
+3. **Device Management**: Full CRUD, image/document uploads, parts management, QR codes.
+4. **QR Code System**: Unique device codes with printable QR codes.
+5. **Service Planning**: Maintenance schedules, checklists, measurement logs, photo uploads.
+6. **User & Permissions**: Role-based access (Admin, Mitarbeiter, Kunde) with per-app granular control.
+7. **File Management**: GridFS-based secure storage.
+8. **Email Notifications**: Password reset via SMTP (working).
+9. **MQTT Integration**: Connect DSE WebNet Gateways via MQTT for real-time telemetry.
 
 ## Tech Stack
 - **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt
@@ -38,9 +39,10 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 │       ├── generators.py
 │       ├── devices.py
 │       ├── serviceplan.py
-│       └── mqtt_config.py
-├── dse8610_module_topics.csv     # Module topic file for DSE8610 MK2
-├── dse890_gateway_topics.csv     # Gateway topic file for DSE890
+│       ├── mqtt_config.py
+│       └── energy_monitoring.py  # NEW
+├── dse8610_module_topics.csv
+├── dse890_gateway_topics.csv
 └── frontend/
     └── src/
         ├── App.js, api.js
@@ -50,79 +52,77 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
             ├── GeneratorDetailPage.js
             ├── DeviceManagementPage.js
             ├── ServiceplanPage.js
-            └── MqttConfigPage.js
+            ├── MqttConfigPage.js
+            ├── EnergyMonitoringPage.js       # NEW
+            └── EnergyMonitoringDetailPage.js  # NEW
 ```
 
 ## What's Been Implemented
 - ✅ Full device CRUD with image uploads, document attachments, parts management
 - ✅ QR code system (unique device codes, printable QR)
 - ✅ Device copy with image/parts/documents duplication
-- ✅ Service plan CRUD with maintenance history (sorted newest-first)
+- ✅ Service plan CRUD with maintenance history
 - ✅ Cascade delete: deleting device removes service plan + maintenance entries
-- ✅ Orphaned service plan cleanup and prevention
 - ✅ Generator monitoring dashboard (simulated + MQTT data)
 - ✅ Role-based access control
 - ✅ File downloads with authenticated fetch
-- ✅ SMTP Email sending (password reset) – Fixed: password typo corrected
-- ✅ MQTT Integration backend:
-  - Backend MQTT client service (paho-mqtt, background thread)
-  - Admin MQTT config page (broker URL/port/credentials/TLS/topics)
-  - Gateway-to-generator topic mapping system
-  - Raw message viewer for debugging/format discovery
-  - Flexible telemetry parser with DSE field mapping
-  - Automatic telemetry storage with `source: "mqtt"`
-  - Setup instructions for gateway configuration
-  - Download endpoints for topic files
-- ✅ Virtual generator support (devices shown as generators in monitoring)
-- ✅ "Invalid Date" fix for virtual generators
+- ✅ SMTP Email sending (password reset)
+- ✅ MQTT Integration backend (broker connection, topic mapping, telemetry storage)
+- ✅ Virtual generator support
+- ✅ **Energy Monitoring (Messkoffer)** - NEW:
+  - Hub page button with amber/yellow accent
+  - Dashboard listing Messkoffer devices with stats (total, online, kW, kWh)
+  - Detail page with 5 chart types (Power per phase, Voltage, Current, Energy Import, Frequency)
+  - Real-time metric cards (Leistung, Spannung, Strom, Frequenz, Energie, Cos Phi)
+  - Time range selector (1h, 6h, 24h, 7d)
+  - Per-meter filtering
+  - Admin permission management (enable/disable, all/individual devices)
+  - **Kunden time-based access** (permanent or date-limited with auto-expiry)
+  - Demo data seeding endpoint
+  - Backend permission checking with time-based access validation
 
-## MQTT Integration Status
-- **Backend**: Fully functional - connects to HiveMQ public broker, receives and stores messages ✅
-- **Config**: broker.hivemq.com:1883, subscribed to DSEGateway4G/#, S50-18A01/#, eventenergie/#, dse/#
-- **Mapping**: DSEGateway4G → Fahrgestell S50-18A01 (dev-72c3022f-3d51-4005-a21c-b09ec926fe97)
-- **Gateway Status**: MQTT Client Open GSM ✅, but topic file upload not yet successful
-- **BLOCKER**: DSE890 Gateway shows "Module 0 row 2/23 Invalid field value" errors
-  - Root cause: Topic file needs to be uploaded ONLY to Module Index 1, NOT to Gateway slot
-  - User needs to: Remove all files, restart gateway, upload module file to Module Index 1 only
-  - Topic files created: `dse8610_module_topics.csv` (register reads) and `dse890_gateway_topics.csv` (status/GPS)
-  - Download links: /api/download-topic-file and /api/download-gateway-topic-file
+## Energy Monitoring Data Model
+### EMU Meter Fields (per reading):
+- `ts_utc`, `meter_ts` - Timestamps
+- `I_L1`, `I_L2`, `I_L3`, `I_sum` - Current (A)
+- `U_L1`, `U_L2`, `U_L3` - Voltage (V)
+- `F_Hz` - Frequency (Hz)
+- `P_sum_kW`, `P_L1_kW`, `P_L2_kW`, `P_L3_kW` - Active Power (kW)
+- `Q_sum`, `Q_L1`, `Q_L2`, `Q_L3` - Reactive Power (VAR)
+- `PF_L1`, `PF_L2`, `PF_L3` - Power Factor
+- `E_imp_kWh`, `E_exp_kWh` - Energy Import/Export (kWh)
+- `http_ok`, `error` - Status
 
-## DSE8610 MK2 Register Map (Page 4 = Instrumentation)
-- Offset 0: Oil pressure (kPa, 16-bit)
-- Offset 1: Coolant temp (°C, 16-bit signed)
-- Offset 2: Oil temp (°C, 16-bit signed)
-- Offset 3: Fuel level (%, 16-bit)
-- Offset 4: Charge alternator voltage (0.1V, 16-bit)
-- Offset 5: Battery voltage (0.1V, 16-bit)
-- Offset 6: Engine speed (RPM, 16-bit)
-- Offset 7: Generator frequency (0.1Hz, 16-bit)
-- Offset 8-9: Gen L1-N voltage (0.1V, 32-bit)
-- Offset 10-11: Gen L2-N voltage (0.1V, 32-bit)
-- Offset 12-13: Gen L3-N voltage (0.1V, 32-bit)
-- Offset 20-21: Gen L1 current (0.1A, 32-bit)
-- Offset 22-23: Gen L2 current (0.1A, 32-bit)
-- Offset 24-25: Gen L3 current (0.1A, 32-bit)
-- Offset 28-29: Gen L1 watts (W, 32-bit signed)
-- Offset 30-31: Gen L2 watts (W, 32-bit signed)
-- Offset 32-33: Gen L3 watts (W, 32-bit signed)
-- Offset 35: Mains frequency (0.1Hz, 16-bit)
-- Offset 36-37: Mains L1-N voltage (0.1V, 32-bit)
-- Offset 38-39: Mains L2-N voltage (0.1V, 32-bit)
-- Offset 40-41: Mains L3-N voltage (0.1V, 32-bit)
+### User Permission Structure:
+```json
+{
+  "apps": {
+    "energy_monitoring": {
+      "enabled": false,
+      "access_all": false,
+      "device_ids": [],
+      "access_type": "permanent",
+      "access_start": null,
+      "access_end": null
+    }
+  }
+}
+```
 
 ## Known Issues
-- **MQTT Topic File Upload**: Gateway shows "Invalid field value" errors. File must go to Module Index 1 only, not Gateway slot. User needs to retry with clean state.
-- **Simulated Data**: Demo generators still use simulated telemetry.
+- **MQTT Topic File Upload**: PAUSED - waiting for user to retry hardware configuration
+- **Simulated Data**: Demo generators still use simulated telemetry
+- **Energy Monitoring Data**: Currently uses DEMO/seeded data. External EMU database connection pending.
 
 ## Backlog (Prioritized)
-### P0 (Next Session)
-- Complete DSE890 MQTT topic file configuration (user retries upload to correct slot)
-- Once data flows: verify telemetry parsing and dashboard display
-- Adjust MQTT field mapper to match actual DSE890 data format
+### P0 (Current/Next)
+- Connect Energy Monitoring to user's real EMU database (external DB)
+- Resume DSE890 MQTT topic file configuration when user is ready
 
 ### P1
-- Add full support for "Messkoffer" and "Kirmeskiste" device types
+- Add full support for "Kirmeskiste" device type
 - Scale MQTT to all 9+ gateways
+- Once MQTT data flows: verify telemetry parsing and dashboard display
 
 ### P2
 - Implement admin-controlled file size limits
@@ -131,14 +131,21 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ### Refactoring
 - Break down ServiceplanPage.js into smaller components
 - Extract Parts management from DeviceManagementPage.js
+- Move MQTT route definitions from server.py to routes/mqtt_config.py
+
+## DB Collections
+### Energy Monitoring
+- `emu_meters`: `{ id, device_id, meter_ip, meter_name, description, created_at }`
+- `emu_data`: `{ id, device_id, meter_id, ts_utc, meter_ts, I_L1-L3, U_L1-L3, F_Hz, P_sum_kW, ... }`
+
+### MQTT
+- `mqtt_config`: Broker connection settings
+- `mqtt_gateway_mappings`: Topic prefix to generator_id mappings
+- `mqtt_raw_messages`: Debugging raw MQTT messages
+- `generator_telemetry`: Telemetry with `source: "mqtt"` field
 
 ## Test Credentials
 - Admin: admin@test.com / password
 - Mitarbeiter: ma1@test.com / password
+- Kunde: kunde@test.com / password
 - SMTP: eventenergie@mail.de / S8e?CuL7N6! (smtp.mail.de:465 SSL)
-
-## DB Collections for MQTT
-- `mqtt_config`: Broker connection settings (single document)
-- `mqtt_gateway_mappings`: Topic prefix to generator_id mappings
-- `mqtt_raw_messages`: Last 500 received raw MQTT messages for debugging
-- `generator_telemetry`: Stores telemetry with `source: "mqtt"` field
