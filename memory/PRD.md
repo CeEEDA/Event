@@ -4,39 +4,38 @@
 Secure file exchange application, evolved into a comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators.
 
 ## Product Requirements
-1. **Generator Monitoring:** Real-time analytics dashboard (status, load, temperature, etc.) with map view and detail pages. Data simulated, DSE890 integration planned.
-2. **Device Management ("Geräteverwaltung"):** Fleet management for generators, light masts, etc. Full CRUD for admins, view/edit for employees.
-3. **Service Planning ("Serviceplan"):** Maintenance schedules with history, intervals, task checklists, and overdue alerts.
+1. **Generator Monitoring:** Real-time analytics dashboard with map view and detail pages. Data simulated, DSE890 integration planned.
+2. **Device Management ("Geräteverwaltung"):** Fleet management with device images for visual identification. Full CRUD for admins, view/edit for employees.
+3. **Service Planning ("Serviceplan"):** Maintenance schedules with operating hours tracking, checklists, photo uploads, remarks, and overdue alerts.
 4. **User & Permissions:** Role-based system (Administrator, Mitarbeiter, Kunde) with feature-level and device-level access control.
 5. **File Management:** Secure file sharing with folder management, sharing links, and per-user access.
-
-## User Roles
-- **Administrator:** Full access to all features
-- **Mitarbeiter (Employee):** Access to device management (view/edit), service plans, monitoring (if assigned)
-- **Kunde (Customer):** File sharing access, monitoring (if assigned specific generators)
+6. **Email Service:** SMTP-based password reset emails via mail.de (SMTP auth pending user fix).
 
 ## Tech Stack
-- **Backend:** FastAPI, Python, MongoDB, Pydantic
+- **Backend:** FastAPI, Python, MongoDB, GridFS (images), Pydantic
 - **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts (charts), Leaflet (maps)
 - **Auth:** JWT with role-based access control
+- **Email:** SMTP via smtp.mail.de (Port 587 STARTTLS)
 
 ## Core Architecture
 ```
 /app/backend/
-  server.py          - Main FastAPI app, auth, file management
+  server.py              - Main FastAPI app, auth, file management
+  email_service.py       - SMTP email sending utility
   routes/
-    generators.py    - Generator monitoring API (with P1 & P4)
-    devices.py       - Device management API
-    serviceplan.py   - Service plan & maintenance API
+    generators.py        - Generator monitoring API
+    devices.py           - Device management API (with images)
+    serviceplan.py       - Service plan & maintenance API (with images)
 /app/frontend/src/
   pages/
-    HubPage.js       - Main navigation hub (role-based)
-    AdminPage.js     - User management (admin only)
-    DeviceManagementPage.js - Device CRUD (P2: copy from existing)
-    ServiceplanPage.js      - Service plans & maintenance history
-    GeneratorDashboardPage.js - Monitoring dashboard (P4: warnings)
-    GeneratorDetailPage.js  - Generator detail with charts
-    DashboardPage.js        - File sharing dashboard
+    HubPage.js                - Main navigation hub
+    AdminPage.js              - User management + email reset
+    DeviceManagementPage.js   - Device CRUD + image upload
+    ServiceplanPage.js        - Service plans + maintenance history
+    GeneratorDashboardPage.js - Monitoring dashboard
+    GeneratorDetailPage.js    - Generator detail with charts
+    ForgotPasswordPage.js     - Password reset via email
+    DashboardPage.js          - File sharing dashboard
 ```
 
 ## What's Been Implemented
@@ -45,52 +44,64 @@ Secure file exchange application, evolved into a comprehensive monitoring and ma
 - JWT authentication with 3 roles
 - File/folder CRUD, upload/download
 - Share links with password protection
-- Admin user management with app permissions
 
 ### Phase 2 - Generator Monitoring (Complete)
-- Simulated generator data with telemetry
-- Dashboard with grid/list view and status filters
-- Leaflet map with location markers
+- Simulated data with telemetry
+- Dashboard with grid/list view, status filters, Leaflet map
 - Detail page with Recharts graphs
-- Permission-based generator access
+- Permission-based access
 
 ### Phase 3 - Device Management (Complete)
-- Full CRUD for admin, view/status change for employees
-- Device types: Stromerzeuger, Lichtmast, Messkoffer, Kirmeskiste
+- Full CRUD with role-based permissions
+- Device image upload for visual identification (2026-03-06)
+- Image shown in table and edit modal
+- "Copy from existing" in create flow (preserves image)
 - Document upload per device
-- "Copy from existing" in create flow (P2 - 2026-03-06)
 
 ### Phase 4 - Service Plans (Complete - 2026-03-06)
-- Service plan CRUD per device (interval hours + months)
-- Maintenance history log (who, when, hours, tasks)
-- Default task checklists
+- Operating hours tracking (current_hours field)
+- Maintenance intervals (hours AND months)
+- Checklist with checkboxes for tasks
+- Photo upload for technicians (mobile-friendly with camera capture)
+- Remarks field for special incidents
+- Maintenance history log (who, when, hours, tasks, photos, remarks)
 - Auto-calculate next maintenance date
 - Statistics (plans, bald fällig, überfällig)
+- "Stunden bis Wartung" display
 
-### Cross-Feature Integrations (Complete - 2026-03-06)
-- P1: Devices "Außer Betrieb" hidden from monitoring (serial_number cross-reference)
-- P4: Maintenance warnings in generator cards (wrench badge with days)
+### Phase 5 - Email Service (In Progress - 2026-03-06)
+- SMTP email utility implemented (smtp.mail.de)
+- Password reset sends email with reset link
+- Admin can send reset link per email
+- ForgotPasswordPage no longer shows demo token
+- **BLOCKER:** SMTP authentication failing - user checking credentials
+
+### Cross-Feature Integrations (Complete)
+- P1: Devices "Außer Betrieb" hidden from monitoring
+- P4: Maintenance warnings in generator cards
 
 ## Prioritized Backlog
 
+### P0 - Blocked
+- SMTP email authentication fix (user checking mail.de settings)
+
 ### P1 - Next
-- Email Service for Password Reset (Office 365 - user deferred)
+- New Device Types support (Messkoffer, Kirmeskiste specific fields)
 
 ### P2 - Soon
-- New Device Types support (Messkoffer, Kirmeskiste specific fields)
 - Admin-controlled file size limits per user
+- Hours-based live maintenance tracking (connect operating_hours to intervals)
 
 ### P3 - Future
 - DSE890 Live Data Integration
-- Hours-based maintenance tracking (connect operating_hours to service interval)
 - Mobile-optimized views
+- Office 365 email integration (user deferred)
 
 ## Known Limitations
 - Generator data is SIMULATED (not from live DSE modules)
-- Password reset cannot send emails (no email service configured)
+- SMTP email sending NOT WORKING (authentication failure at mail.de)
 - File download uses workaround for preview sandbox
 
 ## Test Credentials
 - Admin: admin@test.com / password
 - Mitarbeiter: ma1@test.com / password
-- Kunde: kunde@test.com / password
