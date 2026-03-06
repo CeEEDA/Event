@@ -1,6 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File as FastAPIFile, Form, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
@@ -1360,6 +1360,10 @@ async def get_stats(admin: dict = Depends(require_admin)):
 @api_router.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+@api_router.get("/download-topic-file")
+async def download_topic_file():
+    return FileResponse("/app/dse8610_module_topics.csv", media_type="text/csv", filename="dse8610_module_topics.csv")
 
 # Include the router in the main app
 app.include_router(api_router)
