@@ -665,6 +665,7 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
     gen_running = await db.generators.count_documents({**query, "status": "running"})
     gen_standby = await db.generators.count_documents({**query, "status": "standby"})
     gen_alarm = await db.generators.count_documents({**query, "status": {"$in": ["alarm", "warning"]}})
+    gen_online = await db.generators.count_documents({**query, "status": "online"})
     gen_offline = await db.generators.count_documents({**query, "status": "offline"})
 
     # Count virtual generators from devices (Stromerzeuger/Lichtmast not already in generators)
@@ -692,6 +693,7 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         "total": total,
         "running": gen_running,
         "standby": standby,
+        "online": gen_online,
         "alarm": gen_alarm,
         "offline": gen_offline,
         "active_alarms": active_alarms,

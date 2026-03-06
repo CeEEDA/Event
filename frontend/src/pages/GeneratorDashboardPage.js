@@ -32,6 +32,7 @@ import "leaflet/dist/leaflet.css";
 const statusConfig = {
   running: { label: "Läuft", color: "bg-emerald-500", textColor: "text-emerald-600", filterKey: "running" },
   standby: { label: "Standby", color: "bg-sky-500", textColor: "text-sky-600", filterKey: "standby" },
+  online: { label: "Online", color: "bg-teal-500", textColor: "text-teal-600", filterKey: "online" },
   warning: { label: "Warnung", color: "bg-amber-500", textColor: "text-amber-600", filterKey: "warning" },
   alarm: { label: "Alarm", color: "bg-red-500", textColor: "text-red-600", filterKey: "alarm" },
   offline: { label: "Offline", color: "bg-gray-400", textColor: "text-gray-500", filterKey: "offline" },
@@ -44,6 +45,7 @@ function getMarkerIcon(status) {
   const colors = {
     running: "#10B981",
     standby: "#0EA5E9",
+    online: "#14B8A6",
     warning: "#F59E0B",
     alarm: "#EF4444",
     offline: "#9CA3AF",
@@ -216,7 +218,7 @@ export default function GeneratorDashboardPage() {
       g.name.toLowerCase().includes(search.toLowerCase()) ||
       g.serial_number.toLowerCase().includes(search.toLowerCase()) ||
       (g.location_name || "").toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || g.status === statusFilter;
+    const matchStatus = statusFilter === "all" || g.status === statusFilter || (statusFilter === "standby" && g.status === "online");
     return matchSearch && matchStatus;
   });
 
@@ -277,7 +279,7 @@ export default function GeneratorDashboardPage() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6" data-testid="stats-overview">
             <StatCard icon={Activity} label="Gesamt" value={stats.total} color="bg-fuchsia-600" active={statusFilter === "all"} onClick={() => handleStatClick("all")} />
             <StatCard icon={Power} label="Läuft" value={stats.running} color="bg-emerald-600" active={statusFilter === "running"} onClick={() => handleStatClick("running")} />
-            <StatCard icon={Zap} label="Standby" value={stats.standby} color="bg-sky-600" active={statusFilter === "standby"} onClick={() => handleStatClick("standby")} />
+            <StatCard icon={Zap} label="Online" value={(stats.standby || 0) + (stats.online || 0)} color="bg-teal-600" active={statusFilter === "standby"} onClick={() => handleStatClick("standby")} />
             <StatCard icon={AlertTriangle} label="Warnung" value={stats.alarm} color="bg-amber-500" active={statusFilter === "warning"} onClick={() => handleStatClick("warning")} />
             <StatCard icon={WifiOff} label="Offline" value={stats.offline} color="bg-gray-400" active={statusFilter === "offline"} onClick={() => handleStatClick("offline")} />
           </div>
