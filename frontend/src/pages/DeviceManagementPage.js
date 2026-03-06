@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api from "../lib/api";
 import { toast } from "sonner";
@@ -19,7 +20,8 @@ import {
   Zap,
   Lightbulb,
   Settings,
-  ChevronDown,
+  Power,
+  PowerOff,
 } from "lucide-react";
 
 const DEVICE_TYPES = [
@@ -52,7 +54,7 @@ const EMPTY_FORM = {
   notes: "",
 };
 
-function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, onCopy }) {
+function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, onCopy, isAdmin }) {
   const fileInputRef = useRef(null);
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -96,6 +98,8 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
 
   if (!open) return null;
 
+  const currentType = DEVICE_TYPES.find(t => t.value === formData.device_type);
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-8 overflow-y-auto">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 mb-8" data-testid="device-modal">
@@ -104,7 +108,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
             {editing ? "Gerät bearbeiten" : "Neues Gerät anlegen"}
           </h2>
           <div className="flex items-center gap-2">
-            {editing && (
+            {editing && isAdmin && (
               <Button variant="outline" size="sm" onClick={() => onCopy(editing.id)} className="text-fuchsia-600" data-testid="copy-device-btn">
                 <Copy className="w-4 h-4 mr-1" /> Kopieren
               </Button>
@@ -114,33 +118,63 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
         </div>
 
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto" data-testid="device-form">
-          {/* Device Type */}
-          <div>
-            <Label className="text-gray-700 text-sm mb-1.5 block">Gerätetyp</Label>
-            <div className="grid grid-cols-4 gap-2">
-              {DEVICE_TYPES.map(t => (
-                <button
-                  key={t.value}
-                  onClick={() => update("device_type", t.value)}
-                  className={`p-3 rounded-lg border text-center text-xs font-medium transition-colors ${
-                    formData.device_type === t.value
-                      ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700"
-                      : "border-gray-200 text-gray-500 hover:border-gray-300"
-                  }`}
-                  data-testid={`type-${t.value}`}
-                >
-                  <t.icon className="w-5 h-5 mx-auto mb-1" />
-                  {t.label}
-                </button>
-              ))}
+          {/* Device Type - selectable only on create OR for admin editing */}
+          {!editing ? (
+            <div>
+              <Label className="text-gray-700 text-sm mb-1.5 block">Gerätetyp</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {DEVICE_TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    onClick={() => update("device_type", t.value)}
+                    className={`p-3 rounded-lg border text-center text-xs font-medium transition-colors ${
+                      formData.device_type === t.value
+                        ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700"
+                        : "border-gray-200 text-gray-500 hover:border-gray-300"
+                    }`}
+                    data-testid={`type-${t.value}`}
+                  >
+                    <t.icon className="w-5 h-5 mx-auto mb-1" />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>
+              <Label className="text-gray-700 text-sm mb-1.5 block">Gerätetyp</Label>
+              {isAdmin ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {DEVICE_TYPES.map(t => (
+                    <button
+                      key={t.value}
+                      onClick={() => update("device_type", t.value)}
+                      className={`p-3 rounded-lg border text-center text-xs font-medium transition-colors ${
+                        formData.device_type === t.value
+                          ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700"
+                          : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}
+                      data-testid={`type-${t.value}`}
+                    >
+                      <t.icon className="w-5 h-5 mx-auto mb-1" />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  {currentType && <currentType.icon className="w-5 h-5 text-fuchsia-500" />}
+                  <span className="text-sm font-medium text-gray-700">{currentType?.label || formData.device_type}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Common Fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-gray-700 text-sm">Seriennummer *</Label>
-              <Input value={formData.serial_number} onChange={e => update("serial_number", e.target.value)} className="mt-1" data-testid="serial-input" />
+              <Input value={formData.serial_number} onChange={e => update("serial_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="serial-input" />
             </div>
             <div>
               <Label className="text-gray-700 text-sm">Benutzerfeld</Label>
@@ -148,7 +182,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
             </div>
           </div>
 
-          {/* Generator/Lichtmast specific fields */}
+          {/* Stromerzeuger/Lichtmast fields */}
           {isGenerator && (
             <>
               <div className="border-t border-gray-100 pt-4">
@@ -156,19 +190,19 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Modell</Label>
-                    <Input value={formData.model} onChange={e => update("model", e.target.value)} className="mt-1" data-testid="model-input" />
+                    <Input value={formData.model} onChange={e => update("model", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="model-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Baujahr</Label>
-                    <Input type="number" value={formData.year_of_manufacture} onChange={e => update("year_of_manufacture", e.target.value)} className="mt-1" data-testid="year-input" />
+                    <Input type="number" value={formData.year_of_manufacture} onChange={e => update("year_of_manufacture", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="year-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Leistung</Label>
-                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 400 kVA" className="mt-1" data-testid="power-input" />
+                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 400 kVA" className="mt-1" disabled={!isAdmin && !!editing} data-testid="power-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Steuerung</Label>
-                    <Input value={formData.controller} onChange={e => update("controller", e.target.value)} placeholder="z.B. DSE8610MK2" className="mt-1" data-testid="controller-input" />
+                    <Input value={formData.controller} onChange={e => update("controller", e.target.value)} placeholder="z.B. DSE8610MK2" className="mt-1" disabled={!isAdmin && !!editing} data-testid="controller-input" />
                   </div>
                 </div>
               </div>
@@ -178,15 +212,15 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Hersteller</Label>
-                    <Input value={formData.engine_manufacturer} onChange={e => update("engine_manufacturer", e.target.value)} className="mt-1" data-testid="engine-mfr-input" />
+                    <Input value={formData.engine_manufacturer} onChange={e => update("engine_manufacturer", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="engine-mfr-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Typ</Label>
-                    <Input value={formData.engine_type} onChange={e => update("engine_type", e.target.value)} className="mt-1" data-testid="engine-type-input" />
+                    <Input value={formData.engine_type} onChange={e => update("engine_type", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="engine-type-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Motornummer</Label>
-                    <Input value={formData.engine_number} onChange={e => update("engine_number", e.target.value)} className="mt-1" data-testid="engine-num-input" />
+                    <Input value={formData.engine_number} onChange={e => update("engine_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="engine-num-input" />
                   </div>
                 </div>
               </div>
@@ -196,15 +230,15 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Hersteller</Label>
-                    <Input value={formData.generator_manufacturer} onChange={e => update("generator_manufacturer", e.target.value)} className="mt-1" data-testid="gen-mfr-input" />
+                    <Input value={formData.generator_manufacturer} onChange={e => update("generator_manufacturer", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="gen-mfr-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Typ</Label>
-                    <Input value={formData.generator_type} onChange={e => update("generator_type", e.target.value)} className="mt-1" data-testid="gen-type-input" />
+                    <Input value={formData.generator_type} onChange={e => update("generator_type", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="gen-type-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Generatornummer</Label>
-                    <Input value={formData.generator_number} onChange={e => update("generator_number", e.target.value)} className="mt-1" data-testid="gen-num-input" />
+                    <Input value={formData.generator_number} onChange={e => update("generator_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="gen-num-input" />
                   </div>
                 </div>
               </div>
@@ -214,11 +248,11 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Letzte Wartung</Label>
-                    <Input type="date" value={formData.last_maintenance} onChange={e => update("last_maintenance", e.target.value)} className="mt-1" data-testid="last-maint-input" />
+                    <Input type="date" value={formData.last_maintenance} onChange={e => update("last_maintenance", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="last-maint-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Nächste Wartung</Label>
-                    <Input type="date" value={formData.next_maintenance} onChange={e => update("next_maintenance", e.target.value)} className="mt-1" data-testid="next-maint-input" />
+                    <Input type="date" value={formData.next_maintenance} onChange={e => update("next_maintenance", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="next-maint-input" />
                   </div>
                 </div>
               </div>
@@ -252,7 +286,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
             />
           </div>
 
-          {/* Documents (only for existing devices) */}
+          {/* Documents */}
           {editing && (
             <div className="border-t border-gray-100 pt-4">
               <div className="flex items-center justify-between mb-3">
@@ -277,9 +311,11 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
                           <p className="text-[10px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB · {new Date(doc.uploaded_at).toLocaleDateString("de-DE")}</p>
                         </div>
                       </div>
-                      <button onClick={() => handleDeleteDoc(doc.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0 ml-2" data-testid={`delete-doc-${doc.id}`}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {isAdmin && (
+                        <button onClick={() => handleDeleteDoc(doc.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0 ml-2" data-testid={`delete-doc-${doc.id}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -301,10 +337,12 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
 
 export default function DeviceManagementPage() {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
@@ -359,14 +397,12 @@ export default function DeviceManagementPage() {
       toast.error("Seriennummer ist erforderlich");
       return;
     }
-
     const payload = {
       ...formData,
       latitude: formData.latitude ? parseFloat(formData.latitude) : null,
       longitude: formData.longitude ? parseFloat(formData.longitude) : null,
       year_of_manufacture: formData.year_of_manufacture ? parseInt(formData.year_of_manufacture) : null,
     };
-
     try {
       if (editing) {
         await api.put(`/devices/${editing.id}`, payload);
@@ -388,7 +424,6 @@ export default function DeviceManagementPage() {
       toast.success("Gerät kopiert – bitte Seriennummer anpassen");
       setModalOpen(false);
       loadDevices();
-      // Open the copied device for editing
       setTimeout(() => openEdit(res.data), 300);
     } catch (err) {
       toast.error("Fehler beim Kopieren");
@@ -406,8 +441,21 @@ export default function DeviceManagementPage() {
     }
   };
 
+  const handleToggleStatus = async (device) => {
+    try {
+      const res = await api.post(`/devices/${device.id}/ausser-betrieb`);
+      toast.success(res.data.message);
+      loadDevices();
+    } catch {
+      toast.error("Fehler beim Statuswechsel");
+    }
+  };
+
   const filtered = devices.filter(d => {
     const matchType = typeFilter === "all" || d.device_type === typeFilter;
+    const matchStatus = statusFilter === "all" ||
+      (statusFilter === "aktiv" && d.status !== "ausser_betrieb") ||
+      (statusFilter === "ausser_betrieb" && d.status === "ausser_betrieb");
     const q = search.toLowerCase();
     const matchSearch = !search ||
       (d.serial_number || "").toLowerCase().includes(q) ||
@@ -415,12 +463,11 @@ export default function DeviceManagementPage() {
       (d.model || "").toLowerCase().includes(q) ||
       (d.engine_manufacturer || "").toLowerCase().includes(q) ||
       (d.notes || "").toLowerCase().includes(q);
-    return matchType && matchSearch;
+    return matchType && matchStatus && matchSearch;
   });
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="device-management">
-      {/* Header */}
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -431,9 +478,11 @@ export default function DeviceManagementPage() {
             <h1 className="text-base font-semibold text-gray-900">Geräteverwaltung</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={openCreate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-device-btn">
-              <Plus className="w-4 h-4 mr-1" /> Neues Gerät
-            </Button>
+            {isAdmin && (
+              <Button size="sm" onClick={openCreate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-device-btn">
+                <Plus className="w-4 h-4 mr-1" /> Neues Gerät
+              </Button>
+            )}
             <Logo size="small" />
           </div>
         </div>
@@ -453,21 +502,29 @@ export default function DeviceManagementPage() {
               data-testid="device-search"
             />
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {[{ value: "all", label: "Alle" }, ...DEVICE_TYPES].map(t => (
               <button
                 key={t.value}
                 onClick={() => setTypeFilter(t.value)}
                 className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                  typeFilter === t.value
-                    ? "bg-fuchsia-600 text-white"
-                    : "bg-white text-gray-500 hover:text-gray-700 border border-gray-200"
+                  typeFilter === t.value ? "bg-fuchsia-600 text-white" : "bg-white text-gray-500 hover:text-gray-700 border border-gray-200"
                 }`}
                 data-testid={`filter-${t.value}`}
               >
                 {t.label}
               </button>
             ))}
+            <div className="w-px bg-gray-200 mx-1" />
+            <button
+              onClick={() => setStatusFilter(statusFilter === "ausser_betrieb" ? "all" : "ausser_betrieb")}
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                statusFilter === "ausser_betrieb" ? "bg-red-500 text-white" : "bg-white text-gray-500 hover:text-gray-700 border border-gray-200"
+              }`}
+              data-testid="filter-ausser-betrieb"
+            >
+              Außer Betrieb
+            </button>
           </div>
         </div>
 
@@ -478,7 +535,7 @@ export default function DeviceManagementPage() {
           <div className="text-center py-20">
             <Settings className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500 mb-4">{devices.length === 0 ? "Keine Geräte angelegt" : "Keine Treffer"}</p>
-            {devices.length === 0 && (
+            {devices.length === 0 && isAdmin && (
               <Button size="sm" onClick={openCreate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white">
                 <Plus className="w-4 h-4 mr-1" /> Erstes Gerät anlegen
               </Button>
@@ -496,7 +553,7 @@ export default function DeviceManagementPage() {
                     <th className="px-4 py-3 text-left hidden md:table-cell">Benutzerfeld</th>
                     <th className="px-4 py-3 text-left hidden lg:table-cell">Leistung</th>
                     <th className="px-4 py-3 text-left hidden lg:table-cell">Wartung</th>
-                    <th className="px-4 py-3 text-left hidden lg:table-cell">Dok.</th>
+                    <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-right">Aktionen</th>
                   </tr>
                 </thead>
@@ -505,8 +562,9 @@ export default function DeviceManagementPage() {
                     const TypeIcon = DEVICE_TYPES.find(t => t.value === device.device_type)?.icon || Settings;
                     const nextMaint = device.next_maintenance ? new Date(device.next_maintenance) : null;
                     const isOverdue = nextMaint && nextMaint < new Date();
+                    const isOutOfService = device.status === "ausser_betrieb";
                     return (
-                      <tr key={device.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors" data-testid={`device-row-${device.serial_number}`}>
+                      <tr key={device.id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isOutOfService ? "opacity-60" : ""}`} data-testid={`device-row-${device.serial_number}`}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <TypeIcon className="w-4 h-4 text-fuchsia-500" />
@@ -525,24 +583,40 @@ export default function DeviceManagementPage() {
                             </span>
                           ) : "–"}
                         </td>
-                        <td className="px-4 py-3 hidden lg:table-cell">
-                          {device.document_count > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-fuchsia-600">
-                              <FileText className="w-3 h-3" /> {device.document_count}
+                        <td className="px-4 py-3">
+                          {isOutOfService ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-red-500 font-medium">
+                              <PowerOff className="w-3 h-3" /> Außer Betrieb
                             </span>
-                          ) : "–"}
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                              <Power className="w-3 h-3" /> Aktiv
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => openEdit(device)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" data-testid={`edit-${device.serial_number}`}>
+                            <button onClick={() => openEdit(device)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Bearbeiten" data-testid={`edit-${device.serial_number}`}>
                               <Pencil className="w-4 h-4" />
                             </button>
-                            <button onClick={() => handleCopy(device.id)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" data-testid={`copy-${device.serial_number}`}>
-                              <Copy className="w-4 h-4" />
+                            <button
+                              onClick={() => handleToggleStatus(device)}
+                              className={`p-1.5 transition-colors ${isOutOfService ? "text-emerald-500 hover:text-emerald-600" : "text-amber-500 hover:text-amber-600"}`}
+                              title={isOutOfService ? "Wieder in Betrieb nehmen" : "Außer Betrieb setzen"}
+                              data-testid={`toggle-status-${device.serial_number}`}
+                            >
+                              {isOutOfService ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
                             </button>
-                            <button onClick={() => setDeleteConfirm(device)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" data-testid={`delete-${device.serial_number}`}>
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => handleCopy(device.id)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Kopieren" data-testid={`copy-${device.serial_number}`}>
+                                  <Copy className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => setDeleteConfirm(device)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-${device.serial_number}`}>
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -552,13 +626,12 @@ export default function DeviceManagementPage() {
               </table>
             </div>
             <div className="px-4 py-2 bg-gray-50 text-xs text-gray-400 border-t border-gray-100">
-              {filtered.length} von {devices.length} Geräte{typeFilter !== "all" ? ` (Filter: ${TYPE_LABELS[typeFilter]})` : ""}
+              {filtered.length} von {devices.length} Geräte
             </div>
           </div>
         )}
       </main>
 
-      {/* Device Modal */}
       <DeviceModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -567,9 +640,9 @@ export default function DeviceManagementPage() {
         onSave={handleSave}
         editing={editing}
         onCopy={handleCopy}
+        isAdmin={isAdmin}
       />
 
-      {/* Delete Confirmation */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm mx-4" data-testid="delete-confirm">

@@ -12,6 +12,7 @@ import SharedFilePage from "./pages/SharedFilePage";
 import GeneratorDashboardPage from "./pages/GeneratorDashboardPage";
 import GeneratorDetailPage from "./pages/GeneratorDetailPage";
 import DeviceManagementPage from "./pages/DeviceManagementPage";
+import ServiceplanPage from "./pages/ServiceplanPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -133,8 +134,16 @@ function AppRoutes() {
       <Route
         path="/devices"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute>
             <DeviceManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/serviceplan"
+        element={
+          <ProtectedRoute>
+            <ServiceplanPage />
           </ProtectedRoute>
         }
       />

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
@@ -13,7 +13,7 @@ security = HTTPBearer()
 
 db = None
 decode_jwt_token = None
-fs = None  # GridFS
+fs = None
 
 
 def init_device_routes(_db, _decode_jwt_token, _fs):
@@ -29,12 +29,11 @@ DEVICE_TYPES = ["stromerzeuger", "lichtmast", "messkoffer", "kirmeskiste"]
 # ============== Models ==============
 
 class DeviceCreate(BaseModel):
-    device_type: str  # stromerzeuger, lichtmast, messkoffer, kirmeskiste
+    device_type: str
     serial_number: str
-    user_field: str = ""  # free text searchable field
+    user_field: str = ""
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    # Stromerzeuger + Lichtmast fields
     model: Optional[str] = None
     engine_manufacturer: Optional[str] = None
     engine_type: Optional[str] = None
@@ -69,15 +68,31 @@ class DeviceUpdate(BaseModel):
     last_maintenance: Optional[str] = None
     next_maintenance: Optional[str] = None
     notes: Optional[str] = None
+    status: Optional[str] = None
 
 
 # ============== Helpers ==============
 
-async def require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_authenticated_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     payload = decode_jwt_token(credentials.credentials)
     user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
-    if not user or user["role"] != "admin":
+    if not user:
+        raise HTTPException(status_code=401, detail="Benutzer nicht gefunden")
+    return user
+
+
+async def require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    user = await get_authenticated_user(credentials)
+    if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin-Berechtigung erforderlich")
+    return user
+
+
+async def require_staff(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Admin or Mitarbeiter"""
+    user = await get_authenticated_user(credentials)
+    if user["role"] not in ("admin", "mitarbeiter"):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
     return user
 
 
@@ -113,6 +128,7 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "last_maintenance": data.last_maintenance,
         "next_maintenance": data.next_maintenance,
         "notes": data.notes,
+        "status": "aktiv",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -123,35 +139,29 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
 
 
 @router.get("")
-async def list_devices(admin: dict = Depends(require_admin)):
+async def list_devices(user: dict = Depends(require_staff)):
     devices = await db.devices.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
-
-    # Attach document count for each device
     for d in devices:
         doc_count = await db.device_documents.count_documents({"device_id": d["id"]})
         d["document_count"] = doc_count
-
     return devices
 
 
 @router.get("/{device_id}")
-async def get_device(device_id: str, admin: dict = Depends(require_admin)):
+async def get_device(device_id: str, user: dict = Depends(require_staff)):
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
-
     docs = await db.device_documents.find({"device_id": device_id}, {"_id": 0}).to_list(100)
-    # Convert gridfs_id ObjectId to string
     for d in docs:
         if "gridfs_id" in d:
             d["gridfs_id"] = str(d["gridfs_id"])
     device["documents"] = docs
-
     return device
 
 
 @router.put("/{device_id}")
-async def update_device(device_id: str, data: DeviceUpdate, admin: dict = Depends(require_admin)):
+async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends(require_staff)):
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
@@ -161,7 +171,22 @@ async def update_device(device_id: str, data: DeviceUpdate, admin: dict = Depend
         if v is not None:
             update_data[k] = v
 
-    # Check serial number uniqueness if changed
+    # Only admin can change device_type
+    if "device_type" in update_data and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admin kann den Gerätetyp ändern")
+
+    # Mitarbeiter can only change status (außer Betrieb)
+    if user["role"] == "mitarbeiter":
+        allowed_fields = {"status", "notes", "user_field"}
+        forbidden = set(update_data.keys()) - allowed_fields
+        if forbidden:
+            raise HTTPException(status_code=403, detail="Mitarbeiter können nur Status, Notizen und Benutzerfeld ändern")
+
+    # Validate status
+    if "status" in update_data and update_data["status"] not in ("aktiv", "ausser_betrieb"):
+        raise HTTPException(status_code=400, detail="Status muss 'aktiv' oder 'ausser_betrieb' sein")
+
+    # Check serial number uniqueness
     if "serial_number" in update_data and update_data["serial_number"] != device["serial_number"]:
         existing = await db.devices.find_one({"serial_number": update_data["serial_number"]}, {"_id": 0})
         if existing:
@@ -179,8 +204,6 @@ async def delete_device(device_id: str, admin: dict = Depends(require_admin)):
     result = await db.devices.delete_one({"id": device_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
-
-    # Delete associated documents from GridFS
     docs = await db.device_documents.find({"device_id": device_id}).to_list(100)
     for doc in docs:
         if doc.get("gridfs_id"):
@@ -189,11 +212,10 @@ async def delete_device(device_id: str, admin: dict = Depends(require_admin)):
             except Exception:
                 pass
     await db.device_documents.delete_many({"device_id": device_id})
-
     return {"message": "Gerät gelöscht"}
 
 
-# ============== Copy Device ==============
+# ============== Copy (Admin only) ==============
 
 @router.post("/{device_id}/copy")
 async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
@@ -207,6 +229,7 @@ async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
     new_device["engine_number"] = ""
     new_device["generator_number"] = ""
     new_device["operating_hours"] = None
+    new_device["status"] = "aktiv"
     new_device["created_at"] = datetime.now(timezone.utc).isoformat()
     new_device["updated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -215,21 +238,31 @@ async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
     return result
 
 
-# ============== Document Management ==============
+# ============== Status change (Mitarbeiter) ==============
 
-@router.post("/{device_id}/documents")
-async def upload_document(
-    device_id: str,
-    file: UploadFile = File(...),
-    admin: dict = Depends(require_admin),
-):
+@router.post("/{device_id}/ausser-betrieb")
+async def set_out_of_service(device_id: str, user: dict = Depends(require_staff)):
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
 
+    new_status = "aktiv" if device.get("status") == "ausser_betrieb" else "ausser_betrieb"
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": f"Status geändert auf: {new_status}", "status": new_status}
+
+
+# ============== Document Management ==============
+
+@router.post("/{device_id}/documents")
+async def upload_document(device_id: str, file: UploadFile = File(...), user: dict = Depends(require_staff)):
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
     content = await file.read()
     gridfs_id = await fs.upload_from_stream(file.filename, content)
-
     doc_record = {
         "id": str(uuid.uuid4()),
         "device_id": device_id,
@@ -239,16 +272,14 @@ async def upload_document(
         "gridfs_id": gridfs_id,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
     }
-
     await db.device_documents.insert_one(doc_record)
     result = {k: v for k, v in doc_record.items() if k != "_id"}
-    # Convert ObjectId to string
     result["gridfs_id"] = str(result["gridfs_id"])
     return result
 
 
 @router.get("/{device_id}/documents")
-async def list_documents(device_id: str, admin: dict = Depends(require_admin)):
+async def list_documents(device_id: str, user: dict = Depends(require_staff)):
     docs = await db.device_documents.find({"device_id": device_id}, {"_id": 0}).to_list(100)
     for d in docs:
         if "gridfs_id" in d:
@@ -261,13 +292,11 @@ async def delete_document(device_id: str, doc_id: str, admin: dict = Depends(req
     doc = await db.device_documents.find_one({"id": doc_id, "device_id": device_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
-
     if doc.get("gridfs_id"):
         try:
             await fs.delete(doc["gridfs_id"])
         except Exception:
             pass
-
     await db.device_documents.delete_one({"id": doc_id})
     return {"message": "Dokument gelöscht"}
 
@@ -275,10 +304,11 @@ async def delete_document(device_id: str, doc_id: str, admin: dict = Depends(req
 # ============== Stats ==============
 
 @router.get("/stats/overview")
-async def device_stats(admin: dict = Depends(require_admin)):
+async def device_stats(user: dict = Depends(require_staff)):
     total = await db.devices.count_documents({})
+    active = await db.devices.count_documents({"status": {"$ne": "ausser_betrieb"}})
+    out_of_service = await db.devices.count_documents({"status": "ausser_betrieb"})
     by_type = {}
     for dt in DEVICE_TYPES:
         by_type[dt] = await db.devices.count_documents({"device_type": dt})
-
-    return {"total": total, "by_type": by_type}
+    return {"total": total, "active": active, "out_of_service": out_of_service, "by_type": by_type}
