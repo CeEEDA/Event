@@ -36,6 +36,14 @@ class MeterUpdate(BaseModel):
     description: Optional[str] = None
 
 
+class IngestBatch(BaseModel):
+    api_key: str
+    device_id: str
+    meter_id: str
+    records: List[dict]
+    last_sync_id: Optional[int] = None
+
+
 # ============== Helpers ==============
 
 async def get_authenticated_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -293,6 +301,172 @@ async def get_latest_telemetry(device_id: str, user: dict = Depends(get_authenti
         })
 
     return result
+
+
+# ============== Ingest API (Pi Push) ==============
+
+@router.post("/ingest")
+async def ingest_data(data: IngestBatch):
+    """Receive batch of EMU data from Pi sync script. Authenticated via API key."""
+    # Verify API key
+    settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
+    if not settings or settings.get("value") != data.api_key:
+        raise HTTPException(status_code=401, detail="Ungültiger API-Schlüssel")
+
+    # Verify device and meter exist
+    device = await db.devices.find_one({"id": data.device_id, "device_type": "messkoffer"}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
+
+    meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": data.device_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
+
+    if not data.records:
+        return {"inserted": 0, "message": "Keine Datensätze"}
+
+    # Prepare records for insertion
+    docs = []
+    for r in data.records:
+        doc = {
+            "id": str(uuid.uuid4()),
+            "device_id": data.device_id,
+            "meter_id": data.meter_id,
+            "ts_utc": r.get("ts_utc"),
+            "meter_ts": r.get("meter_ts"),
+            "I_L1": r.get("I_L1", 0),
+            "I_L2": r.get("I_L2", 0),
+            "I_L3": r.get("I_L3", 0),
+            "I_sum": r.get("I_sum", 0),
+            "U_L1": r.get("U_L1", 0),
+            "U_L2": r.get("U_L2", 0),
+            "U_L3": r.get("U_L3", 0),
+            "F_Hz": r.get("F_Hz", 0),
+            "P_sum_kW": r.get("P_sum_kW", 0),
+            "P_L1_kW": r.get("P_L1_kW", 0),
+            "P_L2_kW": r.get("P_L2_kW", 0),
+            "P_L3_kW": r.get("P_L3_kW", 0),
+            "Q_sum": r.get("Q_sum", 0),
+            "Q_L1": r.get("Q_L1", 0),
+            "Q_L2": r.get("Q_L2", 0),
+            "Q_L3": r.get("Q_L3", 0),
+            "PF_L1": r.get("PF_L1", 0),
+            "PF_L2": r.get("PF_L2", 0),
+            "PF_L3": r.get("PF_L3", 0),
+            "E_imp_kWh": r.get("E_imp_kWh", 0),
+            "E_exp_kWh": r.get("E_exp_kWh", 0),
+            "gps_lat": r.get("gps_lat"),
+            "gps_lon": r.get("gps_lon"),
+            "gps_alt_m": r.get("gps_alt_m"),
+            "gps_speed_mps": r.get("gps_speed_mps"),
+            "gps_mode": r.get("gps_mode"),
+            "http_ok": r.get("http_ok", 1),
+            "error": r.get("error", ""),
+            "source_id": r.get("id"),  # Original SQLite row ID for dedup
+        }
+        docs.append(doc)
+
+    await db.emu_data.insert_many(docs)
+
+    # Update sync state
+    if data.last_sync_id:
+        await db.emu_sync_state.update_one(
+            {"device_id": data.device_id, "meter_id": data.meter_id},
+            {"$set": {"last_sync_id": data.last_sync_id, "last_sync_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True
+        )
+
+    logger.info(f"Ingest: {len(docs)} records for device={data.device_id} meter={data.meter_id}")
+    return {"inserted": len(docs), "message": f"{len(docs)} Datensätze empfangen"}
+
+
+@router.get("/ingest/sync-state")
+async def get_sync_state(device_id: str, meter_id: str, api_key: str):
+    """Get the last synced ID for a device/meter pair."""
+    settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
+    if not settings or settings.get("value") != api_key:
+        raise HTTPException(status_code=401, detail="Ungültiger API-Schlüssel")
+
+    state = await db.emu_sync_state.find_one(
+        {"device_id": device_id, "meter_id": meter_id},
+        {"_id": 0}
+    )
+    return {"last_sync_id": state.get("last_sync_id", 0) if state else 0}
+
+
+@router.post("/ingest/generate-key")
+async def generate_ingest_key(admin: dict = Depends(require_admin)):
+    """Generate or regenerate the ingest API key."""
+    key = str(uuid.uuid4()).replace("-", "")
+    await db.emu_settings.update_one(
+        {"key": "ingest_api_key"},
+        {"$set": {"key": "ingest_api_key", "value": key, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"api_key": key}
+
+
+@router.get("/ingest/api-key")
+async def get_ingest_key(admin: dict = Depends(require_admin)):
+    """Get the current ingest API key."""
+    settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
+    if not settings:
+        return {"api_key": None}
+    return {"api_key": settings.get("value")}
+
+
+# ============== GPS/Location ==============
+
+@router.get("/devices/{device_id}/location")
+async def get_device_location(device_id: str, user: dict = Depends(get_authenticated_user)):
+    """Get latest GPS location for a device."""
+    if not check_energy_monitoring_access(user):
+        raise HTTPException(status_code=403, detail="Energy Monitoring nicht freigeschaltet")
+
+    allowed_ids = get_allowed_device_ids(user)
+    if allowed_ids is not None and device_id not in allowed_ids:
+        raise HTTPException(status_code=403, detail="Kein Zugriff auf dieses Gerät")
+
+    # Find latest record with GPS data
+    location = await db.emu_data.find_one(
+        {"device_id": device_id, "gps_lat": {"$ne": None}, "gps_lon": {"$ne": None}},
+        {"_id": 0, "gps_lat": 1, "gps_lon": 1, "gps_alt_m": 1, "gps_speed_mps": 1, "gps_mode": 1, "ts_utc": 1},
+        sort=[("ts_utc", -1)]
+    )
+    return location or {}
+
+
+@router.get("/locations")
+async def get_all_device_locations(user: dict = Depends(get_authenticated_user)):
+    """Get latest GPS location for all accessible devices."""
+    if not check_energy_monitoring_access(user):
+        raise HTTPException(status_code=403, detail="Energy Monitoring nicht freigeschaltet")
+
+    devices = await db.devices.find({"device_type": "messkoffer"}, {"_id": 0}).to_list(500)
+    allowed_ids = get_allowed_device_ids(user)
+    if allowed_ids is not None:
+        devices = [d for d in devices if d["id"] in allowed_ids]
+
+    locations = []
+    for device in devices:
+        loc = await db.emu_data.find_one(
+            {"device_id": device["id"], "gps_lat": {"$ne": None}, "gps_lon": {"$ne": None}},
+            {"_id": 0, "gps_lat": 1, "gps_lon": 1, "gps_alt_m": 1, "ts_utc": 1, "P_sum_kW": 1},
+            sort=[("ts_utc", -1)]
+        )
+        if loc:
+            locations.append({
+                "device_id": device["id"],
+                "name": device.get("user_field") or device.get("serial_number"),
+                "serial_number": device.get("serial_number"),
+                "gps_lat": loc["gps_lat"],
+                "gps_lon": loc["gps_lon"],
+                "gps_alt_m": loc.get("gps_alt_m"),
+                "ts_utc": loc.get("ts_utc"),
+                "P_sum_kW": loc.get("P_sum_kW"),
+            })
+
+    return locations
 
 
 # ============== Seed Demo Data ==============

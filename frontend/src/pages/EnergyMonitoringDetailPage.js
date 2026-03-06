@@ -16,6 +16,7 @@ import {
   Plug,
   Thermometer,
   TrendingUp,
+  MapPin,
 } from "lucide-react";
 import {
   Select,
@@ -24,6 +25,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   LineChart,
   Line,
@@ -59,6 +63,8 @@ const TIME_RANGES = {
   "6h": { label: "6 Stunden", minutes: 360 },
   "24h": { label: "24 Stunden", minutes: 1440 },
   "7d": { label: "7 Tage", minutes: 10080 },
+  "30d": { label: "30 Tage", minutes: 43200 },
+  "all": { label: "Alle Daten", minutes: null },
 };
 
 export default function EnergyMonitoringDetailPage() {
@@ -67,9 +73,19 @@ export default function EnergyMonitoringDetailPage() {
   const [device, setDevice] = useState(null);
   const [telemetry, setTelemetry] = useState([]);
   const [meterData, setMeterData] = useState([]);
+  const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState("24h");
+  const [timeRange, setTimeRange] = useState("all");
   const [selectedMeter, setSelectedMeter] = useState("all");
+
+  const markerIcon = new L.Icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  });
 
   const fetchDevice = useCallback(async () => {
     try {
@@ -88,9 +104,10 @@ export default function EnergyMonitoringDetailPage() {
   const fetchTelemetry = useCallback(async () => {
     try {
       const range = TIME_RANGES[timeRange];
-      const from = new Date(Date.now() - range.minutes * 60 * 1000).toISOString();
-
-      const params = { from_time: from, limit: 2000 };
+      const params = { limit: 2000 };
+      if (range.minutes) {
+        params.from_time = new Date(Date.now() - range.minutes * 60 * 1000).toISOString();
+      }
       if (selectedMeter !== "all") {
         params.meter_id = selectedMeter;
       }
@@ -104,8 +121,12 @@ export default function EnergyMonitoringDetailPage() {
 
   const fetchLatest = useCallback(async () => {
     try {
-      const res = await api.get(`/energy-monitoring/devices/${id}/telemetry/latest`);
-      setMeterData(res.data);
+      const [latestRes, locRes] = await Promise.all([
+        api.get(`/energy-monitoring/devices/${id}/telemetry/latest`),
+        api.get(`/energy-monitoring/devices/${id}/location`).catch(() => ({ data: {} })),
+      ]);
+      setMeterData(latestRes.data);
+      if (locRes.data?.gps_lat) setLocation(locRes.data);
     } catch (err) {
       console.error("Latest data fetch error:", err);
     }
@@ -229,6 +250,43 @@ export default function EnergyMonitoringDetailPage() {
             <MetricCard icon={BarChart3} label="Energie Import" value={latest ? Math.round(latest.E_imp_kWh * 10) / 10 : null} unit="kWh" color="bg-purple-500" />
             <MetricCard icon={TrendingUp} label="Cos Phi L1" value={latest ? Math.round(latest.PF_L1 * 100) / 100 : null} unit="" color="bg-teal-500" />
           </div>
+
+          {/* Location Map */}
+          {location && (
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="detail-map">
+              <div className="p-3 border-b border-gray-200 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-fuchsia-600" />
+                <span className="text-sm font-semibold text-gray-900">Standort</span>
+                <span className="text-xs text-gray-400 ml-auto">
+                  {location.gps_lat?.toFixed(6)}, {location.gps_lon?.toFixed(6)}
+                  {location.gps_alt_m != null && ` | ${Math.round(location.gps_alt_m)} m`}
+                </span>
+              </div>
+              <div style={{ height: "250px" }}>
+                <MapContainer
+                  center={[location.gps_lat, location.gps_lon]}
+                  zoom={15}
+                  style={{ height: "100%", width: "100%" }}
+                  scrollWheelZoom={true}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <Marker position={[location.gps_lat, location.gps_lon]} icon={markerIcon}>
+                    <Popup>
+                      <div className="text-xs">
+                        <p className="font-semibold">{device.user_field || device.serial_number}</p>
+                        <p>Lat: {location.gps_lat?.toFixed(6)}</p>
+                        <p>Lon: {location.gps_lon?.toFixed(6)}</p>
+                        {location.gps_alt_m != null && <p>Höhe: {Math.round(location.gps_alt_m)} m</p>}
+                      </div>
+                    </Popup>
+                  </Marker>
+                </MapContainer>
+              </div>
+            </div>
+          )}
 
           {/* Controls */}
           <div className="flex flex-wrap items-center gap-3">

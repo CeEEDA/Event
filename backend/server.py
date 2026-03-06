@@ -1410,6 +1410,10 @@ async def download_topic_file():
 async def download_gateway_topic_file():
     return FileResponse("/app/dse890_gateway_topics.csv", media_type="text/csv", filename="dse890_gateway_topics.csv")
 
+@api_router.get("/download-sync-script")
+async def download_sync_script():
+    return FileResponse("/app/backend/static/emu_sync.py", media_type="text/x-python", filename="emu_sync.py")
+
 # Include the router in the main app
 app.include_router(api_router)
 

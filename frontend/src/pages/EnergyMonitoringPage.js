@@ -17,8 +17,12 @@ import {
   Clock,
   Plug,
   AlertCircle,
+  MapPin,
 } from "lucide-react";
 import { Input } from "../components/ui/input";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 function DeviceCard({ device, onClick }) {
   const d = device.latest_data;
@@ -108,11 +112,26 @@ export default function EnergyMonitoringPage() {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [locations, setLocations] = useState([]);
+
+  // Fix Leaflet default marker icon
+  const markerIcon = new L.Icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  });
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await api.get("/energy-monitoring/devices");
-      setDevices(res.data);
+      const [devRes, locRes] = await Promise.all([
+        api.get("/energy-monitoring/devices"),
+        api.get("/energy-monitoring/locations").catch(() => ({ data: [] })),
+      ]);
+      setDevices(devRes.data);
+      setLocations(locRes.data);
     } catch (err) {
       if (err.response?.status === 403) {
         toast.error("Energy Monitoring nicht freigeschaltet");
@@ -239,6 +258,55 @@ export default function EnergyMonitoringPage() {
               </div>
             </div>
           </div>
+
+          {/* Map */}
+          {locations.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="energy-map">
+              <div className="p-4 border-b border-gray-200 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-fuchsia-600" />
+                <h3 className="text-sm font-semibold text-gray-900">Standorte</h3>
+              </div>
+              <div style={{ height: "350px" }}>
+                <MapContainer
+                  center={[locations[0].gps_lat, locations[0].gps_lon]}
+                  zoom={12}
+                  style={{ height: "100%", width: "100%" }}
+                  scrollWheelZoom={true}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {locations.map((loc) => (
+                    <Marker
+                      key={loc.device_id}
+                      position={[loc.gps_lat, loc.gps_lon]}
+                      icon={markerIcon}
+                    >
+                      <Popup>
+                        <div className="text-xs">
+                          <p className="font-semibold text-sm mb-1">{loc.name}</p>
+                          <p className="text-gray-500 font-mono">{loc.serial_number}</p>
+                          {loc.P_sum_kW != null && (
+                            <p className="mt-1">Leistung: <strong>{Math.round(loc.P_sum_kW * 100) / 100} kW</strong></p>
+                          )}
+                          {loc.gps_alt_m != null && (
+                            <p>Höhe: {Math.round(loc.gps_alt_m)} m</p>
+                          )}
+                          <button
+                            onClick={() => navigate(`/energy-monitoring/${loc.device_id}`)}
+                            className="mt-2 text-fuchsia-600 hover:underline font-medium"
+                          >
+                            Details anzeigen
+                          </button>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              </div>
+            </div>
+          )}
 
           {/* Search + Actions */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
