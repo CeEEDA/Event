@@ -19,8 +19,17 @@ _loop = None
 def _on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code == 0:
         logger.info("MQTT: Connected to broker")
-        # Subscribe to all configured topics
-        asyncio.run_coroutine_threadsafe(_subscribe_all(client), _loop)
+        # Subscribe synchronously in the callback - this is the correct approach
+        config_data = userdata or {}
+        topics = config_data.get("subscribe_topics", ["dse/#"])
+        for topic in topics:
+            client.subscribe(topic, qos=1)
+            logger.info(f"MQTT: Subscribed to '{topic}'")
+        # Update status async
+        asyncio.run_coroutine_threadsafe(
+            _update_connection_status("connected", "Verbunden"),
+            _loop
+        )
     else:
         logger.error(f"MQTT: Connection failed with code {reason_code}")
         asyncio.run_coroutine_threadsafe(
@@ -38,7 +47,11 @@ def _on_disconnect(client, userdata, flags, reason_code, properties=None):
 
 
 def _on_message(client, userdata, msg):
-    asyncio.run_coroutine_threadsafe(_process_message(msg), _loop)
+    logger.info(f"MQTT: Message received on topic '{msg.topic}' ({len(msg.payload)} bytes)")
+    try:
+        asyncio.run_coroutine_threadsafe(_process_message(msg), _loop)
+    except Exception as e:
+        logger.error(f"MQTT: Error dispatching message: {e}")
 
 
 async def _update_connection_status(status, message=""):
@@ -122,7 +135,13 @@ async def _process_message(msg):
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):
     """Convert MQTT data to telemetry and store it."""
+    # Check generators collection first, then devices for virtual generators
     gen = await _db.generators.find_one({"id": generator_id}, {"_id": 0})
+    if not gen and generator_id.startswith("dev-"):
+        device_id = generator_id[4:]
+        device = await _db.devices.find_one({"id": device_id}, {"_id": 0})
+        if device:
+            gen = {"id": generator_id, "name": device.get("serial_number", "")}
     if not gen:
         logger.warning(f"MQTT: Generator {generator_id} not found for topic {topic}")
         return
@@ -227,10 +246,13 @@ async def start_mqtt_client(db_instance, loop):
 
     try:
         client_id = f"eventenergie-portal-{uuid.uuid4().hex[:8]}"
+        subscribe_topics = config.get("subscribe_topics", ["dse/#"])
+
         _mqtt_client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=client_id,
-            protocol=mqtt.MQTTv311
+            protocol=mqtt.MQTTv311,
+            userdata={"subscribe_topics": subscribe_topics}
         )
         _mqtt_client.on_connect = _on_connect
         _mqtt_client.on_disconnect = _on_disconnect

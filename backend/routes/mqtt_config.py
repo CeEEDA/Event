@@ -194,6 +194,11 @@ async def list_gateway_mappings(admin: dict = Depends(require_admin)):
 @router.post("/mappings")
 async def create_gateway_mapping(data: GatewayMappingCreate, admin: dict = Depends(require_admin)):
     gen = await db.generators.find_one({"id": data.generator_id}, {"_id": 0})
+    if not gen and data.generator_id.startswith("dev-"):
+        device_id = data.generator_id[4:]
+        device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+        if device:
+            gen = device
     if not gen:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
@@ -223,6 +228,11 @@ async def update_gateway_mapping(mapping_id: str, data: GatewayMappingUpdate, ad
         update_data["topic_prefix"] = data.topic_prefix
     if data.generator_id is not None:
         gen = await db.generators.find_one({"id": data.generator_id}, {"_id": 0})
+        if not gen and data.generator_id.startswith("dev-"):
+            device_id = data.generator_id[4:]
+            device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+            if device:
+                gen = device
         if not gen:
             raise HTTPException(status_code=404, detail="Generator nicht gefunden")
         update_data["generator_id"] = data.generator_id
