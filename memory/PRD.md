@@ -1,80 +1,96 @@
-# FileShare & Generator-Monitoring Portal - PRD
+# PRD - Eventenergie Monitoring & Management Portal
 
 ## Original Problem Statement
-NextCloud-ähnliche Dateifreigabe für Eventenergie Deutschland mit Monitoring, Geräteverwaltung und Serviceplanung.
+Secure file exchange application, evolved into a comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators.
 
-## Hub-Seite Buttons
-- FileShare (Kunden+Mitarbeiter mit Freigabe)
-- Monitoring (Kunden+Mitarbeiter mit Freigabe)
-- Geräteverwaltung (Admin+Mitarbeiter)
-- Serviceplan (Admin+Mitarbeiter)
-- Benutzerverwaltung (Admin)
+## Product Requirements
+1. **Generator Monitoring:** Real-time analytics dashboard (status, load, temperature, etc.) with map view and detail pages. Data simulated, DSE890 integration planned.
+2. **Device Management ("Geräteverwaltung"):** Fleet management for generators, light masts, etc. Full CRUD for admins, view/edit for employees.
+3. **Service Planning ("Serviceplan"):** Maintenance schedules with history, intervals, task checklists, and overdue alerts.
+4. **User & Permissions:** Role-based system (Administrator, Mitarbeiter, Kunde) with feature-level and device-level access control.
+5. **File Management:** Secure file sharing with folder management, sharing links, and per-user access.
 
-## FileShare - ABGESCHLOSSEN
-- [x] JWT Auth, 3 Rollen, App-Berechtigungen
-- [x] Upload/Download, Ordner, Teilen, Vorschau, Drag & Drop
-- [x] Admin-Dateieinsicht, Suche, Benutzer-Tabs
-- [ ] E-Mail für Passwort-Reset (Office 365, Zugangsdaten ausstehend)
+## User Roles
+- **Administrator:** Full access to all features
+- **Mitarbeiter (Employee):** Access to device management (view/edit), service plans, monitoring (if assigned)
+- **Kunde (Customer):** File sharing access, monitoring (if assigned specific generators)
 
-## Generator-Monitoring - ABGESCHLOSSEN
-- [x] Dashboard mit klickbaren Status-Karten als Filter
-- [x] Kartenansicht (Leaflet/OpenStreetMap) mit farbigen Markern
-- [x] Detail-Seite mit Live-Messwerten + Charts
-- [x] Alarme quittieren/beheben
-- [x] Berechtigungssteuerung (alle/einzelne pro User)
+## Tech Stack
+- **Backend:** FastAPI, Python, MongoDB, Pydantic
+- **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts (charts), Leaflet (maps)
+- **Auth:** JWT with role-based access control
 
-## Geräteverwaltung - ABGESCHLOSSEN (06.03.2026)
-- [x] 4 Gerätetypen: Stromerzeuger, Lichtmast, Messkoffer, Kirmeskiste
-- [x] Alle Felder: Seriennummer, Benutzerfeld, GPS, Modell, Motor, Generator, Wartung
-- [x] Gerätetyp nach Anlegen gesperrt (nur Admin änderbar)
-- [x] Löschen nur Admin, Mitarbeiter: nur "Außer Betrieb"
-- [x] Kopierfunktion (Seriennummer → KOPIE-, Motor/Generatornr. geleert)
-- [x] Dokumentenablage pro Gerät (GridFS)
-- [x] Status: Aktiv / Außer Betrieb mit Toggle
-- [x] Suche + Typfilter + Statusfilter
-
-## Serviceplan - GRUNDGERÜST (06.03.2026)
-- [x] Hub-Button + Seite mit Geräteauswahl
-- [ ] Wartungsplan pro Gerät anlegen (Details folgen)
-
-## Architecture
+## Core Architecture
 ```
-/app/backend/routes/
-├── generators.py (Monitoring API)
-└── devices.py (Geräteverwaltung API - Admin CRUD, Mitarbeiter read+status)
-/app/frontend/src/pages/
-├── HubPage.js (5 Buttons, rollenbasiert)
-├── GeneratorDashboardPage.js (Karte + klickbare Stats)
-├── GeneratorDetailPage.js
-├── DeviceManagementPage.js (rollenbasierte Aktionen)
-├── ServiceplanPage.js (Grundgerüst)
-├── AdminPage.js (Monitoring-Berechtigungen)
-└── ...
+/app/backend/
+  server.py          - Main FastAPI app, auth, file management
+  routes/
+    generators.py    - Generator monitoring API (with P1 & P4)
+    devices.py       - Device management API
+    serviceplan.py   - Service plan & maintenance API
+/app/frontend/src/
+  pages/
+    HubPage.js       - Main navigation hub (role-based)
+    AdminPage.js     - User management (admin only)
+    DeviceManagementPage.js - Device CRUD (P2: copy from existing)
+    ServiceplanPage.js      - Service plans & maintenance history
+    GeneratorDashboardPage.js - Monitoring dashboard (P4: warnings)
+    GeneratorDetailPage.js  - Generator detail with charts
+    DashboardPage.js        - File sharing dashboard
 ```
 
-## DB Collections
-- users, files, shares, password_resets
-- generators, generator_telemetry, generator_alarms
-- devices, device_documents
+## What's Been Implemented
 
-## Berechtigungsmatrix
-| Feature | Admin | Mitarbeiter | Kunde |
-|---|---|---|---|
-| Gerät anlegen/löschen/typ ändern | Ja | Nein | Nein |
-| Gerät bearbeiten (Daten) | Ja | Nein | Nein |
-| Gerät Außer Betrieb setzen | Ja | Ja | Nein |
-| Geräte sehen | Ja | Ja | Nein |
-| Dokument löschen | Ja | Nein | Nein |
-| Dokument hochladen | Ja | Ja | Nein |
+### Phase 1 - File Sharing (Complete)
+- JWT authentication with 3 roles
+- File/folder CRUD, upload/download
+- Share links with password protection
+- Admin user management with app permissions
+
+### Phase 2 - Generator Monitoring (Complete)
+- Simulated generator data with telemetry
+- Dashboard with grid/list view and status filters
+- Leaflet map with location markers
+- Detail page with Recharts graphs
+- Permission-based generator access
+
+### Phase 3 - Device Management (Complete)
+- Full CRUD for admin, view/status change for employees
+- Device types: Stromerzeuger, Lichtmast, Messkoffer, Kirmeskiste
+- Document upload per device
+- "Copy from existing" in create flow (P2 - 2026-03-06)
+
+### Phase 4 - Service Plans (Complete - 2026-03-06)
+- Service plan CRUD per device (interval hours + months)
+- Maintenance history log (who, when, hours, tasks)
+- Default task checklists
+- Auto-calculate next maintenance date
+- Statistics (plans, bald fällig, überfällig)
+
+### Cross-Feature Integrations (Complete - 2026-03-06)
+- P1: Devices "Außer Betrieb" hidden from monitoring (serial_number cross-reference)
+- P4: Maintenance warnings in generator cards (wrench badge with days)
+
+## Prioritized Backlog
+
+### P1 - Next
+- Email Service for Password Reset (Office 365 - user deferred)
+
+### P2 - Soon
+- New Device Types support (Messkoffer, Kirmeskiste specific fields)
+- Admin-controlled file size limits per user
+
+### P3 - Future
+- DSE890 Live Data Integration
+- Hours-based maintenance tracking (connect operating_hours to service interval)
+- Mobile-optimized views
+
+## Known Limitations
+- Generator data is SIMULATED (not from live DSE modules)
+- Password reset cannot send emails (no email service configured)
+- File download uses workaround for preview sandbox
 
 ## Test Credentials
 - Admin: admin@test.com / password
-- Kunde: kunde@test.com / password, kunde1@test.com / password
 - Mitarbeiter: ma1@test.com / password
-
-## Prioritized Backlog
-### P0 - Serviceplan Details (User beschreibt als Nächstes)
-### P1 - DSE890/PI Datenanbindung (Datensatz folgt)
-### P1 - Phase 2: Generator-Fernsteuerung
-### P2 - Office 365 E-Mail (Zugangsdaten ausstehend)
-### P3 - Kundenzuordnung, Mobile App
+- Kunde: kunde@test.com / password
