@@ -194,17 +194,36 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
         device = await db.devices.find_one(
             {"serial_number": g.get("serial_number")}, {"_id": 0}
         )
-        if device and device.get("next_maintenance"):
-            from datetime import datetime as dt
-            try:
-                next_maint = dt.fromisoformat(device["next_maintenance"])
-                days_until = (next_maint - dt.now(timezone.utc).replace(tzinfo=None)).days
-                if days_until <= 30:
-                    g["maintenance_warning"] = True
-                    g["maintenance_due_days"] = days_until
-                    g["next_maintenance_date"] = device["next_maintenance"]
-            except (ValueError, TypeError):
-                pass
+        if device:
+            warning = False
+            warning_reason = []
+            # Check date-based maintenance (< 1 month = 30 days)
+            if device.get("next_maintenance"):
+                from datetime import datetime as dt
+                try:
+                    next_maint = dt.fromisoformat(device["next_maintenance"])
+                    days_until = (next_maint - dt.now(timezone.utc).replace(tzinfo=None)).days
+                    if days_until <= 30:
+                        warning = True
+                        g["maintenance_due_days"] = days_until
+                        g["next_maintenance_date"] = device["next_maintenance"]
+                        warning_reason.append(f"{days_until} Tage" if days_until >= 0 else "Überfällig")
+                except (ValueError, TypeError):
+                    pass
+            # Check hours-based maintenance (< 50 hours)
+            if device.get("next_maintenance_hours"):
+                # Get current hours from service plan
+                plan = await db.service_plans.find_one({"device_id": device.get("id")}, {"_id": 0})
+                current_hrs = plan.get("current_hours", 0) if plan else 0
+                hrs_until = device["next_maintenance_hours"] - current_hrs
+                if hrs_until <= 50:
+                    warning = True
+                    g["maintenance_due_hours"] = round(hrs_until)
+                    warning_reason.append(f"{round(hrs_until)}h")
+
+            if warning:
+                g["maintenance_warning"] = True
+                g["maintenance_warning_reason"] = " / ".join(warning_reason)
 
     return generators
 

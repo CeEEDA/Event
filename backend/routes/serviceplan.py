@@ -48,7 +48,13 @@ class MaintenanceEntryCreate(BaseModel):
     performed_by: str
     performed_at: str
     hours_at_service: Optional[float] = None
-    tasks_completed: List[str] = []
+    next_maintenance_mode: Optional[str] = "months"  # "months" or "hours"
+    next_maintenance_value: Optional[int] = None
+    checklist_data: Optional[dict] = None  # Structured checklist with sections
+    measurements: Optional[dict] = None  # Generator measurements
+    load_test: Optional[list] = None  # Load test table
+    ats_test: Optional[dict] = None  # ATS test
+    diagnosis: Optional[dict] = None  # Diagnosis data
     notes: Optional[str] = ""
     remarks: Optional[str] = ""
 
@@ -211,7 +217,13 @@ async def add_maintenance_entry(plan_id: str, data: MaintenanceEntryCreate, user
         "performed_by": data.performed_by,
         "performed_at": data.performed_at,
         "hours_at_service": data.hours_at_service,
-        "tasks_completed": data.tasks_completed,
+        "next_maintenance_mode": data.next_maintenance_mode or "months",
+        "next_maintenance_value": data.next_maintenance_value,
+        "checklist_data": data.checklist_data or {},
+        "measurements": data.measurements or {},
+        "load_test": data.load_test or [],
+        "ats_test": data.ats_test or {},
+        "diagnosis": data.diagnosis or {},
         "notes": data.notes or "",
         "remarks": data.remarks or "",
         "images": [],
@@ -221,16 +233,27 @@ async def add_maintenance_entry(plan_id: str, data: MaintenanceEntryCreate, user
 
     await db.maintenance_entries.insert_one(entry_doc)
 
-    # Update device last/next maintenance
+    # Calculate and update next maintenance on the device
     device = await db.devices.find_one({"id": plan["device_id"]}, {"_id": 0})
     if device:
         update_fields = {"last_maintenance": data.performed_at}
-        # Calculate next maintenance date if interval_months is set
-        if plan.get("interval_months"):
+        if data.hours_at_service:
+            update_fields["last_maintenance_hours"] = data.hours_at_service
+
+        # Calculate next maintenance based on mode
+        mode = data.next_maintenance_mode or "months"
+        val = data.next_maintenance_value
+
+        if mode == "months" and val:
             from dateutil.relativedelta import relativedelta
             performed_date = datetime.fromisoformat(data.performed_at)
-            next_date = performed_date + relativedelta(months=plan["interval_months"])
+            next_date = performed_date + relativedelta(months=val)
             update_fields["next_maintenance"] = next_date.strftime("%Y-%m-%d")
+            update_fields["next_maintenance_hours"] = None
+        elif mode == "hours" and val and data.hours_at_service:
+            update_fields["next_maintenance_hours"] = data.hours_at_service + val
+            update_fields["next_maintenance"] = None
+
         await db.devices.update_one({"id": plan["device_id"]}, {"$set": update_fields})
 
     result = {k: v for k, v in entry_doc.items() if k != "_id"}

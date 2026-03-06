@@ -104,9 +104,9 @@ function GeneratorCard({ generator, onClick }) {
         </div>
         <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
           {hasMaintWarning && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700" title={`Wartung in ${generator.maintenance_due_days} Tagen`} data-testid={`maint-warning-${generator.serial_number}`}>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700" title={generator.maintenance_warning_reason || "Wartung fällig"} data-testid={`maint-warning-${generator.serial_number}`}>
               <Wrench className="w-3 h-3" />
-              {generator.maintenance_due_days <= 0 ? "Überfällig" : `${generator.maintenance_due_days}T`}
+              {generator.maintenance_warning_reason || "Wartung"}
             </span>
           )}
           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${status.color} text-white`}>
