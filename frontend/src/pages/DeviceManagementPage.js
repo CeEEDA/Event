@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api from "../lib/api";
 import { toast } from "sonner";
+import { saveAs } from "file-saver";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -42,13 +43,7 @@ function PiSetupSection({ deviceId, deviceName }) {
     setLoading(true);
     try {
       const res = await api.post(`/energy-monitoring/devices/${deviceId}/setup-script`, {}, { responseType: "blob" });
-      const blob = new Blob([res.data], { type: "application/x-sh" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `setup.sh`;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveAs(new Blob([res.data], { type: "application/x-sh" }), "setup.sh");
       setDownloaded(true);
       toast.success("Setup-Skript heruntergeladen!");
     } catch {

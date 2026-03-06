@@ -633,6 +633,9 @@ else
 fi
 '''
 
+    # Ensure Unix line endings (LF only, no CRLF)
+    script = script.replace('\r\n', '\n').replace('\r', '\n')
+
     return PlainTextResponse(
         content=script,
         media_type="application/x-sh",
