@@ -1,0 +1,23 @@
+Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
+%GROUP%/%TYPE%/%UID%/engine/oil_pressure,,P,,10,0,,,1,4,0,1,0,,,,,,Oil pressure kPa 16bit unsigned
+%GROUP%/%TYPE%/%UID%/engine/coolant_temp,,P,,10,0,,,1,4,1,1,0,,,,,,Coolant temperature degC 16bit signed
+%GROUP%/%TYPE%/%UID%/engine/oil_temp,,P,,10,0,,,1,4,2,1,0,,,,,,Oil temperature degC 16bit signed
+%GROUP%/%TYPE%/%UID%/engine/fuel_level,,P,,10,0,,,1,4,3,1,0,,,,,,Fuel level percent 16bit unsigned
+%GROUP%/%TYPE%/%UID%/engine/charge_alt_voltage,,P,,10,0,,,1,4,4,1,0,,,,,,Charge alternator voltage 0.1V 16bit unsigned
+%GROUP%/%TYPE%/%UID%/engine/battery_voltage,,P,,10,0,,,1,4,5,1,0,,,,,,Engine battery voltage 0.1V 16bit unsigned
+%GROUP%/%TYPE%/%UID%/engine/rpm,,P,,10,0,,,1,4,6,1,0,,,,,,Engine speed RPM 16bit unsigned
+%GROUP%/%TYPE%/%UID%/generator/frequency,,P,,10,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz 16bit unsigned
+%GROUP%/%TYPE%/%UID%/generator/voltage_l1n,,P,,10,0,,,1,4,8,2,0,,,,,,Generator L1-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/generator/voltage_l2n,,P,,10,0,,,1,4,10,2,0,,,,,,Generator L2-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/generator/voltage_l3n,,P,,10,0,,,1,4,12,2,0,,,,,,Generator L3-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/generator/current_l1,,P,,10,0,,,1,4,20,2,0,,,,,,Generator L1 current 0.1A 32bit
+%GROUP%/%TYPE%/%UID%/generator/current_l2,,P,,10,0,,,1,4,22,2,0,,,,,,Generator L2 current 0.1A 32bit
+%GROUP%/%TYPE%/%UID%/generator/current_l3,,P,,10,0,,,1,4,24,2,0,,,,,,Generator L3 current 0.1A 32bit
+%GROUP%/%TYPE%/%UID%/generator/watts_l1,,P,,10,0,,,1,4,28,2,0,,,,,,Generator L1 watts 32bit signed
+%GROUP%/%TYPE%/%UID%/generator/watts_l2,,P,,10,0,,,1,4,30,2,0,,,,,,Generator L2 watts 32bit signed
+%GROUP%/%TYPE%/%UID%/generator/watts_l3,,P,,10,0,,,1,4,32,2,0,,,,,,Generator L3 watts 32bit signed
+%GROUP%/%TYPE%/%UID%/mains/frequency,,P,,10,0,,,1,4,35,1,0,,,,,,Mains frequency 0.1Hz 16bit unsigned
+%GROUP%/%TYPE%/%UID%/mains/voltage_l1n,,P,,10,0,,,1,4,36,2,0,,,,,,Mains L1-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/mains/voltage_l2n,,P,,10,0,,,1,4,38,2,0,,,,,,Mains L2-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/mains/voltage_l3n,,P,,10,0,,,1,4,40,2,0,,,,,,Mains L3-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/alarm,,P,,0,1,,,4,,,,,,,,,Publish alarms on change
