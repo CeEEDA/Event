@@ -1,0 +1,99 @@
+{
+  "summary": "Iteration 20 - All cascade delete and orphan prevention tests PASSED. Backend: 6/6 tests passed (service plan no orphans, full cascade delete flow, multi-entry cascade delete, device without plan delete, plan count integrity). Frontend: Full e2e cascade delete verified (created device TESTCASC681 → created service plan → Gesamt count increased to 2 → deleted device → Gesamt count returned to 1 → orphan plan automatically removed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "serviceplan_no_orphans": {
+      "status": "PASS",
+      "test": "GET /api/serviceplan returns only plans for existing devices",
+      "result": "API correctly filters orphaned plans - returns 1 plan for 1 device (XBAP2021)"
+    },
+    "cascade_delete_full_flow": {
+      "status": "PASS",
+      "test": "DELETE /api/devices/{id} cascade deletes service plan AND maintenance entries",
+      "result": "Created device, service plan, maintenance entry - all deleted when device removed"
+    },
+    "cascade_delete_multiple_entries": {
+      "status": "PASS",
+      "test": "Device with 3 maintenance entries - all cascade deleted",
+      "result": "Plan and all 3 entries removed when device deleted"
+    },
+    "delete_device_without_plan": {
+      "status": "PASS",
+      "test": "Delete device that has no service plan",
+      "result": "No error when deleting device without associated plan"
+    },
+    "plan_count_integrity": {
+      "status": "PASS",
+      "test": "Plan count stays correct through create/delete cycles",
+      "result": "Count returns to initial value after cascade delete"
+    },
+    "frontend_cascade_verification": {
+      "status": "PASS",
+      "test": "Full e2e: create device → plan → delete device → verify UI counts",
+      "result": "Gesamt count changed 1→2→1, orphan plan removed from Serviceplan list"
+    }
+  },
+  "test_flow_summary": {
+    "step_1": "Initial state: 1 device (XBAP2021), 1 service plan, Gesamt=1",
+    "step_2": "Created test device TESTCASC681 via frontend",
+    "step_3": "Created service plan for TESTCASC681 via frontend click",
+    "step_4": "Verified Gesamt count increased to 2",
+    "step_5": "Deleted TESTCASC681 via frontend (trash icon → confirm)",
+    "step_6": "Verified device deleted, toast 'Gerät gelöscht'",
+    "step_7": "Verified Serviceplan page: Gesamt=1, only XBAP2021 listed"
+  },
+  "backend_tests": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "tests": [
+      "TestServiceplanNoOrphans::test_list_serviceplan_returns_only_valid_plans - PASS",
+      "TestServiceplanNoOrphans::test_serviceplan_count_matches_expectations - PASS",
+      "TestCascadeDelete::test_full_cascade_delete_flow - PASS",
+      "TestCascadeDeleteMultipleEntries::test_cascade_delete_with_multiple_entries - PASS",
+      "TestDeleteDeviceWithoutPlan::test_delete_device_without_serviceplan - PASS",
+      "TestPlanCountIntegrity::test_plan_count_after_cascade_delete - PASS"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cascade_delete.py",
+    "/app/test_reports/pytest/pytest_iteration20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_cascade_delete.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 tests passed)",
+    "frontend": "100% (cascade delete flow verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_creation": "Created and deleted test devices (TESTCASC681, TEST_CASCADE_DEL_001, TEST_CASCADE_MULTI_001, TEST_NO_PLAN_001, TEST_COUNT_001) during testing - all cleaned up by cascade delete",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 20 complete. Bug fix verified: (1) Orphaned service plans no longer appear in list - API filters them out at line 98-100 of serviceplan.py. (2) Cascade delete implemented in devices.py lines 296-300: deleting a device now removes associated service_plan and maintenance_entries. (3) Frontend correctly reflects cascade delete - Gesamt/Einsatzbereit counts update properly. (4) Current state: 1 device (XBAP2021), 1 service plan, 6 maintenance entries.",
+  "mocked_apis": {
+    "has_mocked_apis": true,
+    "mocked_apis_list": ["Generator monitoring/telemetry data is simulated"]
+  },
+  "bug_fix_verified": {
+    "original_issue": "Serviceplan page showed incorrect summary counts (e.g. 'Gesamt: 10' when only 1 device exists) due to orphaned service plans",
+    "root_cause": "When devices were deleted, their service_plans and maintenance_entries were not removed from MongoDB",
+    "fix_applied": [
+      "Backend filters orphaned plans in list_service_plans (serviceplan.py lines 98-100)",
+      "Cascade delete added in delete_device (devices.py lines 296-300)"
+    ],
+    "verification": "Counts now show correct values (Gesamt=1 for 1 device with plan)"
+  }
+}

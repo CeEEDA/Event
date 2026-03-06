@@ -292,6 +292,13 @@ async def delete_device(device_id: str, admin: dict = Depends(require_admin)):
                 pass
     await db.device_documents.delete_many({"device_id": device_id})
     await db.device_parts.delete_many({"device_id": device_id})
+
+    # Delete associated service plan and its maintenance entries
+    plan = await db.service_plans.find_one({"device_id": device_id})
+    if plan:
+        await db.maintenance_entries.delete_many({"service_plan_id": plan["id"]})
+        await db.service_plans.delete_one({"device_id": device_id})
+
     return {"message": "Gerät gelöscht"}
 
 

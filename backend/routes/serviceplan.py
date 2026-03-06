@@ -92,15 +92,18 @@ async def require_admin(credentials: HTTPAuthorizationCredentials = Depends(secu
 async def list_service_plans(user: dict = Depends(require_staff)):
     plans = await db.service_plans.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
-    # Enrich with device info and latest maintenance
+    # Enrich with device info - skip plans for deleted devices
+    result = []
     for plan in plans:
         device = await db.devices.find_one({"id": plan["device_id"]}, {"_id": 0})
-        if device:
-            plan["device_serial"] = device.get("serial_number", "")
-            plan["device_type"] = device.get("device_type", "")
-            plan["device_model"] = device.get("model", "")
-            plan["device_user_field"] = device.get("user_field", "")
-            plan["device_status"] = device.get("status", "aktiv")
+        if not device:
+            continue  # Skip orphaned plans (device was deleted)
+        plan["device_serial"] = device.get("serial_number", "")
+        plan["device_type"] = device.get("device_type", "")
+        plan["device_model"] = device.get("model", "")
+        plan["device_user_field"] = device.get("user_field", "")
+        plan["device_status"] = device.get("status", "aktiv")
+        plan["device_code"] = device.get("device_code", "")
 
         # Get latest maintenance entry
         latest_entry = await db.maintenance_entries.find_one(
@@ -113,8 +116,9 @@ async def list_service_plans(user: dict = Depends(require_staff)):
         # Count entries
         entry_count = await db.maintenance_entries.count_documents({"service_plan_id": plan["id"]})
         plan["entry_count"] = entry_count
+        result.append(plan)
 
-    return plans
+    return result
 
 
 @router.post("")
