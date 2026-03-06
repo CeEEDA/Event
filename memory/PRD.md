@@ -91,22 +91,23 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 - ✅ **Messkoffer form cleanup**: "Seriennummer" → "Gerätenummer", removed Modell/Leistung, simplified Pi section to username+password only
 - ✅ **All-in-One Pi Setup-Skript**: Single bash installer with embedded Messkoffer Logger (Shelly Pro 3EM readout + USB GPS via gpsd + local SQLite + background portal sync + 60GB auto-cleanup). One-click download from Device Management UI
 
-## Backlog
-### P0
-- Resume MQTT Gateway topic file config when user ready
-- Connect real Pis with real Messkoffer
+## Recent Changes (2026-03-06)
+- ✅ DSE Remote Control UI finalized: Button order Stop → Auto → Start, confirmation popup removed
+- ✅ Dynamic button colors based on generator status (running/stopped/standby)
+- ✅ Live DSE890/L401 MQTT integration (bidirectional: data + control)
 
+## Backlog
 ### P1
+- Self-hosted MQTT Broker (Mosquitto) — move broker URL to .env
 - "Kirmeskiste" device type support
 - Scale MQTT to 9+ gateways
 
 ### P2
 - Admin file size limits
-- Secure MQTT broker
 
 ### Refactoring
+- Move MQTT broker URL from hardcoded to backend/.env
 - Break down ServiceplanPage.js, DeviceManagementPage.js
-- Move MQTT routes from server.py to routes/
 
 ## Test Credentials
 - Admin: admin@test.com / password

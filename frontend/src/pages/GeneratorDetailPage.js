@@ -180,7 +180,6 @@ export default function GeneratorDetailPage() {
   };
 
   const sendCommand = async (command, label) => {
-    if (!window.confirm(`${label} wirklich ausführen?`)) return;
     setCmdLoading(command);
     try {
       await api.post(`/mqtt/control/${id}`, { command });
@@ -252,16 +251,6 @@ export default function GeneratorDetailPage() {
               <span className="text-xs text-gray-400 font-medium mr-1">Steuerung</span>
               <Button
                 size="sm"
-                onClick={() => sendCommand("start", "Generator starten")}
-                disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300 hover:bg-emerald-700" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
-                data-testid="cmd-start-btn"
-              >
-                <Play className="w-3.5 h-3.5 mr-1.5" />
-                {cmdLoading === "start" ? "..." : "Start"}
-              </Button>
-              <Button
-                size="sm"
                 onClick={() => sendCommand("stop", "Generator stoppen")}
                 disabled={cmdLoading !== null}
                 className={`h-8 px-4 text-xs ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300 hover:bg-red-700" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
@@ -270,7 +259,6 @@ export default function GeneratorDetailPage() {
                 <Square className="w-3.5 h-3.5 mr-1.5" />
                 {cmdLoading === "stop" ? "..." : "Stop"}
               </Button>
-              <div className="h-5 w-px bg-gray-200" />
               <Button
                 size="sm"
                 variant="outline"
@@ -281,6 +269,17 @@ export default function GeneratorDetailPage() {
               >
                 {generator.status === "online" || generator.status === "standby" ? <ToggleRight className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> : <ToggleLeft className="w-3.5 h-3.5 mr-1.5 text-gray-400" />}
                 {cmdLoading === "auto_on" || cmdLoading === "auto_off" ? "..." : "Auto"}
+              </Button>
+              <div className="h-5 w-px bg-gray-200" />
+              <Button
+                size="sm"
+                onClick={() => sendCommand("start", "Generator starten")}
+                disabled={cmdLoading !== null}
+                className={`h-8 px-4 text-xs ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300 hover:bg-emerald-700" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
+                data-testid="cmd-start-btn"
+              >
+                <Play className="w-3.5 h-3.5 mr-1.5" />
+                {cmdLoading === "start" ? "..." : "Start"}
               </Button>
             </div>
           );
