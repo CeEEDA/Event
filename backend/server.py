@@ -75,6 +75,9 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     apps: Optional[Dict] = None
+    access_type: Optional[str] = None
+    access_start: Optional[str] = None
+    access_end: Optional[str] = None
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
@@ -108,6 +111,9 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: str
     apps: Dict = {}
+    access_type: Optional[str] = "permanent"
+    access_start: Optional[str] = None
+    access_end: Optional[str] = None
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -214,10 +220,7 @@ def get_default_apps():
         "energy_monitoring": {
             "enabled": False,
             "access_all": False,
-            "device_ids": [],
-            "access_type": "permanent",
-            "access_start": None,
-            "access_end": None
+            "device_ids": []
         }
     }
 
@@ -340,6 +343,18 @@ async def login(data: LoginRequest):
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Konto deaktiviert")
     
+    # Check account-level time-based access for Kunden
+    if user["role"] == "kunde" and user.get("access_type") == "temporary":
+        now = datetime.now(timezone.utc)
+        access_end = user.get("access_end")
+        if access_end:
+            try:
+                end = datetime.fromisoformat(access_end)
+                if now > end:
+                    raise HTTPException(status_code=403, detail="Kontozugang abgelaufen. Bitte kontaktieren Sie den Administrator.")
+            except (ValueError, TypeError):
+                pass
+    
     # Ensure apps field exists
     if "apps" not in user:
         user["apps"] = get_default_apps()
@@ -354,7 +369,10 @@ async def login(data: LoginRequest):
         role=user["role"],
         is_active=user.get("is_active", True),
         created_at=user["created_at"],
-        apps=user.get("apps", get_default_apps())
+        apps=user.get("apps", get_default_apps()),
+        access_type=user.get("access_type", "permanent"),
+        access_start=user.get("access_start"),
+        access_end=user.get("access_end")
     )
     
     return LoginResponse(token=token, user=user_response)
@@ -368,7 +386,10 @@ async def get_me(user: dict = Depends(get_current_user)):
         role=user["role"],
         is_active=user.get("is_active", True),
         created_at=user["created_at"],
-        apps=user.get("apps", get_default_apps())
+        apps=user.get("apps", get_default_apps()),
+        access_type=user.get("access_type", "permanent"),
+        access_start=user.get("access_start"),
+        access_end=user.get("access_end")
     )
 
 # ============== Password Reset ==============
@@ -454,7 +475,10 @@ async def list_users(admin: dict = Depends(require_admin)):
         role=u["role"],
         is_active=u.get("is_active", True),
         created_at=u["created_at"],
-        apps=u.get("apps", get_default_apps())
+        apps=u.get("apps", get_default_apps()),
+        access_type=u.get("access_type", "permanent"),
+        access_start=u.get("access_start"),
+        access_end=u.get("access_end")
     ) for u in users]
 
 @api_router.post("/users", response_model=UserResponse)
@@ -504,6 +528,12 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         update_data["is_active"] = data.is_active
     if data.apps is not None:
         update_data["apps"] = data.apps
+    if data.access_type is not None:
+        update_data["access_type"] = data.access_type
+    if data.access_start is not None:
+        update_data["access_start"] = data.access_start if data.access_start else None
+    if data.access_end is not None:
+        update_data["access_end"] = data.access_end if data.access_end else None
     
     if update_data:
         await db.users.update_one({"id": user_id}, {"$set": update_data})
@@ -517,7 +547,10 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         role=updated_user["role"],
         is_active=updated_user.get("is_active", True),
         created_at=updated_user["created_at"],
-        apps=updated_user.get("apps", get_default_apps())
+        apps=updated_user.get("apps", get_default_apps()),
+        access_type=updated_user.get("access_type", "permanent"),
+        access_start=updated_user.get("access_start"),
+        access_end=updated_user.get("access_end")
     )
 
 @api_router.delete("/users/{user_id}")

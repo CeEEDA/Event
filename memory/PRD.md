@@ -96,18 +96,19 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ### User Permission Structure:
 ```json
 {
+  "access_type": "permanent",
+  "access_start": null,
+  "access_end": null,
   "apps": {
     "energy_monitoring": {
       "enabled": false,
       "access_all": false,
-      "device_ids": [],
-      "access_type": "permanent",
-      "access_start": null,
-      "access_end": null
+      "device_ids": []
     }
   }
 }
 ```
+Note: `access_type`/`access_start`/`access_end` are at the USER/account level, not inside energy_monitoring. This controls account-level access for Kunden.
 
 ## Known Issues
 - **MQTT Topic File Upload**: PAUSED - waiting for user to retry hardware configuration

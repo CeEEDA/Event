@@ -70,13 +70,13 @@ def check_energy_monitoring_access(user: dict) -> bool:
     if not em.get("enabled", False):
         return False
 
-    # For Kunde: check time-based access
+    # For Kunde: check account-level time-based access
     if user["role"] == "kunde":
-        access_type = em.get("access_type", "permanent")
+        access_type = user.get("access_type", "permanent")
         if access_type == "temporary":
             now = datetime.now(timezone.utc)
-            access_start = em.get("access_start")
-            access_end = em.get("access_end")
+            access_start = user.get("access_start")
+            access_end = user.get("access_end")
             if access_start:
                 start = datetime.fromisoformat(access_start)
                 if now < start:
