@@ -25,83 +25,73 @@ import {
   Wrench,
   Printer,
   QrCode,
-  Key,
-  Copy,
   Download,
-  Shield,
   Server,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-// Device Key Management Component for Messkoffer
-function DeviceKeySection({ deviceId }) {
-  const [keyInfo, setKeyInfo] = useState(null);
-  const [generatedKey, setGeneratedKey] = useState(null);
+// Pi Setup Section for Messkoffer - generates all-in-one installer
+function PiSetupSection({ deviceId, deviceName }) {
   const [loading, setLoading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
-  useEffect(() => {
-    api.get(`/energy-monitoring/devices/${deviceId}/key-info`)
-      .then(res => setKeyInfo(res.data))
-      .catch(() => {});
-  }, [deviceId]);
-
-  const handleGenerateKey = async () => {
-    if (keyInfo?.has_key && !window.confirm("Vorhandener Schlüssel wird ersetzt. Fortfahren?")) return;
+  const handleDownloadSetup = async () => {
+    if (!window.confirm("Ein neuer Geräteschlüssel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schlüssel existiert, wird er ersetzt.\n\nFortfahren?")) return;
     setLoading(true);
     try {
-      const res = await api.post(`/energy-monitoring/devices/${deviceId}/generate-key`);
-      setGeneratedKey(res.data.device_key);
-      setKeyInfo({ has_key: true, prefix: res.data.prefix, created_at: new Date().toISOString() });
-      toast.success("Geräteschlüssel generiert!");
+      const res = await api.post(`/energy-monitoring/devices/${deviceId}/setup-script`, {}, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "application/x-sh" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `setup_emu_sync_${deviceName || deviceId}.sh`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setDownloaded(true);
+      toast.success("Setup-Skript heruntergeladen!");
     } catch {
-      toast.error("Fehler beim Generieren");
+      toast.error("Fehler beim Generieren des Setup-Skripts");
     } finally {
       setLoading(false);
     }
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    toast.success("In Zwischenablage kopiert");
-  };
-
   return (
     <div className="border-t border-gray-100 pt-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Shield className="w-4 h-4 text-fuchsia-600" />
-        <h3 className="text-sm font-medium text-gray-900">Geräteschlüssel (Verschlüsselt)</h3>
+      <div className="flex items-center gap-2 mb-1">
+        <Server className="w-4 h-4 text-fuchsia-600" />
+        <h3 className="text-sm font-medium text-gray-900">Pi Setup</h3>
       </div>
-      <p className="text-[10px] text-gray-400 mb-3">Wird für die Authentifizierung des Pi beim Datenupload benötigt. Wird SHA-256 verschlüsselt gespeichert.</p>
+      <p className="text-[10px] text-gray-400 mb-3">
+        Generiert ein Installations-Skript mit eingebettetem Geräteschlüssel und Konfiguration.
+        Einfach auf den Pi kopieren und ausführen — der Rest passiert automatisch.
+      </p>
 
-      {keyInfo?.has_key && !generatedKey && (
-        <div className="flex items-center gap-2 mb-3 bg-gray-50 px-3 py-2 rounded-lg">
-          <Key className="w-4 h-4 text-emerald-500" />
-          <span className="text-sm text-gray-700">Schlüssel aktiv: <code className="bg-white px-1.5 py-0.5 rounded text-xs font-mono">{keyInfo.prefix}...</code></span>
-          <span className="text-[10px] text-gray-400 ml-auto">
-            {keyInfo.created_at ? new Date(keyInfo.created_at).toLocaleString("de-DE") : ""}
-          </span>
+      {downloaded && (
+        <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="setup-instructions">
+          <p className="text-xs text-emerald-800 font-medium mb-1.5">Skript heruntergeladen! So geht es weiter:</p>
+          <ol className="text-xs text-emerald-700 space-y-1 list-decimal list-inside">
+            <li>Datei auf den Pi kopieren (z.B. per SCP oder USB)</li>
+            <li><code className="bg-white px-1.5 py-0.5 rounded text-[11px] font-mono">sudo bash setup_emu_sync_{deviceName || "..."}.sh</code></li>
+            <li>Fertig — der Pi synchronisiert ab sofort automatisch</li>
+          </ol>
         </div>
       )}
 
-      {generatedKey && (
-        <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="generated-key-display">
-          <p className="text-xs text-emerald-800 font-medium mb-1">Neuer Schlüssel (nur einmal sichtbar!):</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 bg-white border border-emerald-300 px-3 py-2 rounded text-sm font-mono select-all break-all">{generatedKey}</code>
-            <button onClick={() => copyToClipboard(generatedKey)} className="px-2 py-2 bg-white border border-emerald-300 rounded hover:bg-emerald-100 transition-colors" data-testid="copy-key-btn">
-              <Copy className="w-4 h-4 text-emerald-600" />
-            </button>
-          </div>
-          <p className="text-[10px] text-emerald-600 mt-1">Diesen Schlüssel in die /etc/emu_sync.conf auf dem Pi eintragen.</p>
-        </div>
-      )}
-
-      <Button variant="outline" size="sm" onClick={handleGenerateKey} disabled={loading} className="text-gray-600 hover:text-fuchsia-600" data-testid="generate-key-btn">
-        <Key className="w-3.5 h-3.5 mr-1.5" />
-        {keyInfo?.has_key ? "Neuen Schlüssel generieren" : "Schlüssel generieren"}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleDownloadSetup}
+        disabled={loading}
+        className="text-gray-600 hover:text-fuchsia-600"
+        data-testid="download-setup-script-btn"
+      >
+        <Download className="w-3.5 h-3.5 mr-1.5" />
+        {loading ? "Wird generiert..." : "Setup-Skript herunterladen"}
       </Button>
+      <p className="text-[10px] text-gray-400 mt-2">Enthält: Sync-Skript + Schlüssel + Config + Systemd-Dienst</p>
     </div>
   );
 }
@@ -679,12 +669,12 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
             </>
           )}
 
-          {/* Messkoffer-specific fields: Pi connection + Key Management */}
+          {/* Messkoffer-specific fields: Pi connection + Setup */}
           {formData.device_type === "messkoffer" && (
             <>
-              {/* Device Key - only for editing existing devices */}
+              {/* Pi Setup - all-in-one installer (only for existing devices) */}
               {editing && isAdmin && (
-                <DeviceKeySection deviceId={editing.id} />
+                <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} />
               )}
 
               <div className="border-t border-gray-100 pt-4">
@@ -715,28 +705,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   />
                 </div>
               </div>
-
-              {/* Pi Setup Downloads - only for existing devices */}
-              {editing && isAdmin && (
-                <div className="border-t border-gray-100 pt-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Download className="w-4 h-4 text-fuchsia-600" />
-                    <h3 className="text-sm font-medium text-gray-900">Pi Dateien herunterladen</h3>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/download-sync-script`} download className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:text-fuchsia-600 transition-colors" data-testid="download-sync-script">
-                      <Download className="w-3 h-3" />emu_sync.py
-                    </a>
-                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/download-sync-service`} download className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:text-fuchsia-600 transition-colors" data-testid="download-sync-service">
-                      <Download className="w-3 h-3" />emu_sync.service
-                    </a>
-                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/download-sync-config`} download className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:text-fuchsia-600 transition-colors" data-testid="download-sync-config">
-                      <Download className="w-3 h-3" />emu_sync.conf
-                    </a>
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-2">Device-ID: <code className="bg-gray-100 px-1 rounded select-all">{editing.id}</code></p>
-                </div>
-              )}
             </>
           )}
 

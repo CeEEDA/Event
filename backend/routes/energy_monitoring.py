@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
@@ -8,6 +9,7 @@ import hashlib
 import hmac
 import secrets
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +405,208 @@ async def get_device_key_info(device_id: str, admin: dict = Depends(require_admi
         "prefix": device.get("device_key_prefix", ""),
         "created_at": device.get("device_key_created_at", "")
     }
+
+
+# ============== All-in-One Setup Script ==============
+
+SYNC_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "emu_sync.py")
+
+@router.post("/devices/{device_id}/setup-script")
+async def generate_setup_script(device_id: str, admin: dict = Depends(require_admin)):
+    """Generate an all-in-one bash installer with embedded sync script, config, and systemd service.
+    Also generates a new device key and embeds it."""
+    device = await db.devices.find_one({"id": device_id, "device_type": "messkoffer"}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
+
+    # Generate a new device key
+    plain_key = secrets.token_hex(24)
+    key_hash = _hash_key(plain_key)
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {
+            "device_key_hash": key_hash,
+            "device_key_prefix": plain_key[:8],
+            "device_key_created_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+
+    # Get first meter for this device (if any)
+    meter = await db.emu_meters.find_one({"device_id": device_id}, {"_id": 0})
+    meter_id = meter["id"] if meter else "KEINE_METER_ID_GEFUNDEN"
+
+    # Determine API URL from environment
+    api_base = os.environ.get("API_BASE_URL", "")
+    if not api_base:
+        # Try to read from frontend .env
+        fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
+        try:
+            with open(fe_env) as f:
+                for line in f:
+                    if line.startswith("REACT_APP_BACKEND_URL="):
+                        api_base = line.split("=", 1)[1].strip() + "/api"
+                        break
+        except Exception:
+            api_base = "https://BITTE_API_URL_EINTRAGEN/api"
+
+    # Read the sync python script
+    with open(SYNC_SCRIPT_PATH, "r") as f:
+        sync_py_content = f.read()
+
+    device_name = device.get("serial_number", device_id)
+
+    # Build the all-in-one bash installer
+    script = f'''#!/bin/bash
+# ================================================================
+#  EMU Sync - Automatisches Setup fuer: {device_name}
+#  Generiert am: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+# ================================================================
+#
+#  Nutzung:  sudo bash setup_emu_sync.sh
+#
+#  Was passiert:
+#    1. Python3 + requests werden installiert (falls noetig)
+#    2. Sync-Skript wird nach /opt/emu_sync.py kopiert
+#    3. Konfiguration wird nach /etc/emu_sync.conf geschrieben
+#    4. Systemd-Dienst wird eingerichtet und gestartet
+#    5. Der Pi beginnt automatisch Daten zu senden
+#
+# ================================================================
+
+set -e
+
+# Farben
+RED="\\033[0;31m"
+GREEN="\\033[0;32m"
+YELLOW="\\033[1;33m"
+NC="\\033[0m"
+
+echo ""
+echo "==========================================="
+echo "  EMU Sync Setup - Eventenergie Portal"
+echo "==========================================="
+echo ""
+
+# Root-Check
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${{RED}}Fehler: Bitte mit sudo ausfuehren:${{NC}}"
+    echo "  sudo bash $0"
+    exit 1
+fi
+
+# 1. Abhaengigkeiten
+echo -e "${{YELLOW}}[1/5] Pruefe Abhaengigkeiten...${{NC}}"
+if ! command -v python3 &> /dev/null; then
+    echo "  Python3 nicht gefunden, installiere..."
+    apt-get update -qq && apt-get install -y -qq python3 python3-pip
+else
+    echo "  Python3 OK"
+fi
+
+if ! python3 -c "import requests" 2>/dev/null; then
+    echo "  requests-Modul installieren..."
+    pip3 install requests -q 2>/dev/null || python3 -m pip install requests -q
+else
+    echo "  requests OK"
+fi
+
+# 2. Sync-Skript installieren
+echo -e "${{YELLOW}}[2/5] Installiere Sync-Skript...${{NC}}"
+cat > /opt/emu_sync.py << 'SYNC_SCRIPT_EOF'
+{sync_py_content}
+SYNC_SCRIPT_EOF
+chmod +x /opt/emu_sync.py
+echo "  /opt/emu_sync.py erstellt"
+
+# 3. Konfiguration schreiben
+echo -e "${{YELLOW}}[3/5] Schreibe Konfiguration...${{NC}}"
+cat > /etc/emu_sync.conf << 'CONFIG_EOF'
+[emu_sync]
+api_url = {api_base}
+device_key = {plain_key}
+device_id = {device_id}
+meter_id = {meter_id}
+db_path = /home/pi/emu.db
+batch_size = 500
+sync_interval = 10
+retry_delay = 30
+CONFIG_EOF
+chmod 600 /etc/emu_sync.conf
+echo "  /etc/emu_sync.conf erstellt (nur root lesbar)"
+
+# 4. Systemd-Dienst einrichten
+echo -e "${{YELLOW}}[4/5] Richte Systemd-Dienst ein...${{NC}}"
+
+# Detect user (pi or current SUDO_USER)
+PI_USER="${{SUDO_USER:-pi}}"
+if ! id "$PI_USER" &>/dev/null; then
+    PI_USER="pi"
+fi
+
+cat > /etc/systemd/system/emu_sync.service << SERVICE_EOF
+[Unit]
+Description=EMU Sync - Eventenergie Messdaten
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/emu_sync.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+User=$PI_USER
+Group=$PI_USER
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+
+systemctl daemon-reload
+systemctl enable emu_sync
+echo "  emu_sync.service eingerichtet"
+
+# 5. Dienst starten
+echo -e "${{YELLOW}}[5/5] Starte Sync-Dienst...${{NC}}"
+systemctl restart emu_sync
+sleep 2
+
+# Status pruefen
+if systemctl is-active --quiet emu_sync; then
+    echo ""
+    echo -e "${{GREEN}}==========================================${{NC}}"
+    echo -e "${{GREEN}}  Setup erfolgreich abgeschlossen!${{NC}}"
+    echo -e "${{GREEN}}==========================================${{NC}}"
+    echo ""
+    echo "  Geraet:     {device_name}"
+    echo "  Device-ID:  {device_id}"
+    echo "  Meter-ID:   {meter_id}"
+    echo "  DB-Pfad:    /home/pi/emu.db"
+    echo ""
+    echo "  Nuetzliche Befehle:"
+    echo "    Status:    sudo systemctl status emu_sync"
+    echo "    Live-Log:  sudo journalctl -u emu_sync -f"
+    echo "    Stoppen:   sudo systemctl stop emu_sync"
+    echo "    Neustart:  sudo systemctl restart emu_sync"
+    echo ""
+else
+    echo ""
+    echo -e "${{RED}}Warnung: Dienst laeuft nicht.${{NC}}"
+    echo "Pruefe mit: sudo journalctl -u emu_sync -n 20"
+    echo ""
+    echo "Haeufige Ursachen:"
+    echo "  - /home/pi/emu.db existiert nicht"
+    echo "  - Kein Internetzugang"
+    echo ""
+fi
+'''
+
+    return PlainTextResponse(
+        content=script,
+        media_type="application/x-sh",
+        headers={"Content-Disposition": f'attachment; filename="setup_emu_sync_{device_name}.sh"'}
+    )
 
 
 # ============== Ingest API (Pi Push) ==============
