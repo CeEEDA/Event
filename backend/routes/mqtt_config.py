@@ -58,6 +58,15 @@ async def require_admin(credentials: HTTPAuthorizationCredentials = Depends(secu
     return user
 
 
+async def require_operator(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Require admin or Mitarbeiter role."""
+    payload = decode_jwt_token(credentials.credentials)
+    user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user or user["role"] not in ("admin", "mitarbeiter"):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung (Admin oder Mitarbeiter erforderlich)")
+    return user
+
+
 # ============== MQTT Config ==============
 
 @router.get("/config")
@@ -266,3 +275,97 @@ async def get_raw_messages(limit: int = 50, admin: dict = Depends(require_admin)
 async def clear_raw_messages(admin: dict = Depends(require_admin)):
     await db.mqtt_raw_messages.delete_many({})
     return {"message": "Alle Roh-Nachrichten gelöscht"}
+
+
+# ============== Generator Control ==============
+
+# DSE Gencomm Page 3, Offset 0 - Control Key values
+DSE_COMMANDS = {
+    "start": {"value": 6, "label": "Manueller Start"},
+    "stop": {"value": 1, "label": "Stop"},
+    "auto_on": {"value": 2, "label": "Automatikmodus EIN"},
+    "auto_off": {"value": 3, "label": "Manueller Modus (Auto AUS)"},
+}
+
+
+class GeneratorCommand(BaseModel):
+    command: str  # start, stop, auto_on, auto_off
+
+
+@router.post("/control/{generator_id}")
+async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user: dict = Depends(require_operator)):
+    """Send a control command to a generator via MQTT."""
+    from mqtt_service import publish_command
+
+    if cmd.command not in DSE_COMMANDS:
+        raise HTTPException(status_code=400, detail=f"Unbekannter Befehl: {cmd.command}. Erlaubt: {list(DSE_COMMANDS.keys())}")
+
+    # Find the generator
+    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generator nicht gefunden")
+
+    # Find the gateway mapping for this generator
+    mapping = await db.mqtt_gateway_mappings.find_one({"generator_id": generator_id}, {"_id": 0})
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Kein MQTT-Gateway für diesen Generator konfiguriert")
+
+    # Build the control topic from the mapping's topic_prefix
+    # Topic prefix is like "/32788/" and the UID is in the notes or we derive from existing topics
+    prefix = mapping.get("topic_prefix", "").rstrip("/")
+
+    # Get the module UID from the latest raw message for this prefix
+    escaped_prefix = prefix.replace("/", "\\/")
+    latest_msg = await db.mqtt_raw_messages.find_one(
+        {"topic": {"$regex": f"^{escaped_prefix}"}},
+        {"_id": 0, "topic": 1}
+    )
+    if latest_msg:
+        # Extract UID from topic like /32788/6D2B5CDE5F/engine -> 6D2B5CDE5F
+        parts = latest_msg["topic"].strip("/").split("/")
+        uid = parts[1] if len(parts) >= 2 else ""
+        control_topic = f"{prefix}/{uid}/control"
+    else:
+        raise HTTPException(status_code=400, detail="Kein aktives Gerät gefunden. Gateway muss zuerst Daten senden.")
+
+    dse_cmd = DSE_COMMANDS[cmd.command]
+    # DSE890 expects JSON with Page/Register/Value format
+    import json
+    payload = json.dumps({uid: {"P003": {"R000": dse_cmd["value"]}}})
+
+    try:
+        publish_command(control_topic, payload)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    # Log the control action
+    log_entry = {
+        "id": str(uuid.uuid4()),
+        "generator_id": generator_id,
+        "generator_name": gen.get("name", ""),
+        "command": cmd.command,
+        "command_label": dse_cmd["label"],
+        "topic": control_topic,
+        "payload": payload,
+        "user_id": user["id"],
+        "user_name": user.get("name", user.get("email", "")),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.generator_control_log.insert_one(log_entry)
+
+    return {
+        "success": True,
+        "command": cmd.command,
+        "label": dse_cmd["label"],
+        "topic": control_topic,
+        "generator": gen.get("name", ""),
+    }
+
+
+@router.get("/control/{generator_id}/log")
+async def get_control_log(generator_id: str, user: dict = Depends(require_operator)):
+    """Get the control command history for a generator."""
+    logs = await db.generator_control_log.find(
+        {"generator_id": generator_id}, {"_id": 0}
+    ).sort("timestamp", -1).to_list(50)
+    return logs

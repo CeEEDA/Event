@@ -384,3 +384,13 @@ async def restart_mqtt_client(db_instance, loop):
 def is_connected():
     """Check if MQTT client is currently connected."""
     return _mqtt_client is not None and _mqtt_client.is_connected()
+
+
+def publish_command(topic, payload):
+    """Publish an MQTT command message."""
+    if _mqtt_client is None or not _mqtt_client.is_connected():
+        raise RuntimeError("MQTT client nicht verbunden")
+    result = _mqtt_client.publish(topic, payload, qos=1)
+    result.wait_for_publish(timeout=5)
+    logger.info(f"MQTT: Published command to {topic}: {payload}")
+    return True

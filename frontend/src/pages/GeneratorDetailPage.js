@@ -19,6 +19,10 @@ import {
   CheckCircle,
   Battery,
   RotateCcw,
+  Play,
+  Square,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
 import {
   XAxis,
@@ -122,12 +126,14 @@ function TelemetryChart({ data, dataKeys, title, colors, unit }) {
 export default function GeneratorDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const canControl = user?.role === "admin" || user?.role === "mitarbeiter";
   const [generator, setGenerator] = useState(null);
   const [telemetry, setTelemetry] = useState([]);
   const [alarms, setAlarms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hours, setHours] = useState(24);
+  const [cmdLoading, setCmdLoading] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -170,6 +176,20 @@ export default function GeneratorDetailPage() {
       fetchData();
     } catch (err) {
       toast.error("Fehler");
+    }
+  };
+
+  const sendCommand = async (command, label) => {
+    if (!window.confirm(`${label} wirklich ausführen?`)) return;
+    setCmdLoading(command);
+    try {
+      await api.post(`/mqtt/control/${id}`, { command });
+      toast.success(`${label} gesendet`);
+      setTimeout(fetchData, 2000);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Befehl konnte nicht gesendet werden");
+    } finally {
+      setCmdLoading(null);
     }
   };
 
@@ -223,6 +243,59 @@ export default function GeneratorDetailPage() {
           <span className="flex items-center gap-1"><Activity className="w-3.5 h-3.5" /> {generator.model}</span>
           <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Letzter Kontakt: {generator.last_seen ? new Date(generator.last_seen).toLocaleString("de-DE") : "–"}</span>
         </div>
+
+        {/* Control Buttons - only for Admin + Mitarbeiter */}
+        {canControl && (
+          <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3" data-testid="generator-controls">
+            <span className="text-xs text-gray-400 font-medium mr-1">Steuerung</span>
+            <Button
+              size="sm"
+              onClick={() => sendCommand("start", "Generator starten")}
+              disabled={cmdLoading !== null}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-4 text-xs"
+              data-testid="cmd-start-btn"
+            >
+              <Play className="w-3.5 h-3.5 mr-1.5" />
+              {cmdLoading === "start" ? "..." : "Start"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => sendCommand("stop", "Generator stoppen")}
+              disabled={cmdLoading !== null}
+              className="bg-red-600 hover:bg-red-700 text-white h-8 px-4 text-xs"
+              data-testid="cmd-stop-btn"
+            >
+              <Square className="w-3.5 h-3.5 mr-1.5" />
+              {cmdLoading === "stop" ? "..." : "Stop"}
+            </Button>
+            <div className="h-5 w-px bg-gray-200" />
+            {generator.status === "running" || generator.latest_telemetry?.engine_running ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => sendCommand("auto_off", "Automatikmodus AUS")}
+                disabled={cmdLoading !== null}
+                className="h-8 px-4 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                data-testid="cmd-auto-off-btn"
+              >
+                <ToggleRight className="w-3.5 h-3.5 mr-1.5 text-emerald-500" />
+                {cmdLoading === "auto_off" ? "..." : "Auto AUS"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => sendCommand("auto_on", "Automatikmodus EIN")}
+                disabled={cmdLoading !== null}
+                className="h-8 px-4 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                data-testid="cmd-auto-on-btn"
+              >
+                <ToggleLeft className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
+                {cmdLoading === "auto_on" ? "..." : "Auto EIN"}
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Live Metrics */}
         {t ? (
