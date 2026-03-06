@@ -245,57 +245,46 @@ export default function GeneratorDetailPage() {
         </div>
 
         {/* Control Buttons - only for Admin + Mitarbeiter */}
-        {canControl && (
-          <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3" data-testid="generator-controls">
-            <span className="text-xs text-gray-400 font-medium mr-1">Steuerung</span>
-            <Button
-              size="sm"
-              onClick={() => sendCommand("start", "Generator starten")}
-              disabled={cmdLoading !== null}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-4 text-xs"
-              data-testid="cmd-start-btn"
-            >
-              <Play className="w-3.5 h-3.5 mr-1.5" />
-              {cmdLoading === "start" ? "..." : "Start"}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => sendCommand("stop", "Generator stoppen")}
-              disabled={cmdLoading !== null}
-              className="bg-red-600 hover:bg-red-700 text-white h-8 px-4 text-xs"
-              data-testid="cmd-stop-btn"
-            >
-              <Square className="w-3.5 h-3.5 mr-1.5" />
-              {cmdLoading === "stop" ? "..." : "Stop"}
-            </Button>
-            <div className="h-5 w-px bg-gray-200" />
-            {generator.status === "running" || generator.latest_telemetry?.engine_running ? (
+        {canControl && (() => {
+          const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
+          return (
+            <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3" data-testid="generator-controls">
+              <span className="text-xs text-gray-400 font-medium mr-1">Steuerung</span>
+              <Button
+                size="sm"
+                onClick={() => sendCommand("start", "Generator starten")}
+                disabled={cmdLoading !== null}
+                className={`h-8 px-4 text-xs ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300 hover:bg-emerald-700" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
+                data-testid="cmd-start-btn"
+              >
+                <Play className="w-3.5 h-3.5 mr-1.5" />
+                {cmdLoading === "start" ? "..." : "Start"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => sendCommand("stop", "Generator stoppen")}
+                disabled={cmdLoading !== null}
+                className={`h-8 px-4 text-xs ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300 hover:bg-red-700" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
+                data-testid="cmd-stop-btn"
+              >
+                <Square className="w-3.5 h-3.5 mr-1.5" />
+                {cmdLoading === "stop" ? "..." : "Stop"}
+              </Button>
+              <div className="h-5 w-px bg-gray-200" />
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => sendCommand("auto_off", "Automatikmodus AUS")}
+                onClick={() => sendCommand(isRunning ? "auto_off" : "auto_on", isRunning ? "Auto AUS" : "Auto EIN")}
                 disabled={cmdLoading !== null}
-                className="h-8 px-4 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
-                data-testid="cmd-auto-off-btn"
+                className={`h-8 px-4 text-xs ${generator.status === "online" || generator.status === "standby" ? "border-teal-300 bg-teal-50 text-teal-700" : "border-gray-200 text-gray-400 hover:bg-teal-50"}`}
+                data-testid="cmd-auto-btn"
               >
-                <ToggleRight className="w-3.5 h-3.5 mr-1.5 text-emerald-500" />
-                {cmdLoading === "auto_off" ? "..." : "Auto AUS"}
+                {generator.status === "online" || generator.status === "standby" ? <ToggleRight className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> : <ToggleLeft className="w-3.5 h-3.5 mr-1.5 text-gray-400" />}
+                {cmdLoading === "auto_on" || cmdLoading === "auto_off" ? "..." : "Auto"}
               </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => sendCommand("auto_on", "Automatikmodus EIN")}
-                disabled={cmdLoading !== null}
-                className="h-8 px-4 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                data-testid="cmd-auto-on-btn"
-              >
-                <ToggleLeft className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
-                {cmdLoading === "auto_on" ? "..." : "Auto EIN"}
-              </Button>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* Live Metrics */}
         {t ? (
