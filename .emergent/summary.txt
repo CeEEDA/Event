@@ -1,178 +1,160 @@
 <analysis>**original_problem_statement:**
-The user initially requested a secure file exchange application. The project's primary focus has now shifted to building a comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators.
+The user's initial request was for a secure file exchange application. This has evolved into a comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators and Messkoffer (mobile energy measurement cases).
 
 **PRODUCT REQUIREMENTS:**
-1.  **Generator Monitoring:** A web dashboard to display real-time analytics (status, load, temperature, etc.) and location data (on a map) for over 100 generator units. Data is currently simulated, with plans to integrate directly with DSE890 modules.
-2.  **Device Management (Geräteverwaltung):** A system for administrators and employees to manage the fleet of physical assets (generators, light masts, etc.). This includes creating, editing, and tracking devices with specific attributes and maintenance information.
-3.  **Service Planning (Serviceplan):** A feature to create and track maintenance schedules for all devices, with alerts for upcoming service.
-4.  **User & Permissions System:** The existing role-based system (, , ) must be extended to control access to the new Monitoring and Device Management features on a per-user and per-device basis.
-5.  **File Management:** The original secure file sharing functionality remains, with features like file/folder management, sharing, and user-specific access.
+1.  **Generator Monitoring:** A dashboard for real-time analytics and location of DSE generators, with a pending upgrade from simulated to live data via MQTT.
+2.  **Energy Monitoring (Messkoffer):** A new dashboard for real-time monitoring of mobile energy measurement cases. This includes live data ingestion from a Raspberry Pi, GPS location tracking on a map, and detailed analytics charts.
+3.  **Device Management (Geräteverwaltung):** A system for full CRUD operations on all assets (generators, Messkoffer). This includes image/document uploads, parts management, and QR code generation. It has been extended to manage Raspberry Pi connection settings and secure, per-device API keys.
+4.  **Data Ingestion & Offline Capability:** A robust system for Raspberry Pi devices to push local SQLite data to a central server via a secure HTTPS API. The system is designed to buffer data locally during internet outages and sync automatically when connectivity is restored.
+5.  **Service Planning (Serviceplan):** A feature to create and track maintenance schedules for all devices.
+6.  **User & Permissions System:** Role-based access (, , ) controlling feature and data visibility. This now includes account-level time restrictions and data-access time windows for customers.
+7.  **File Management & Export:** Secure storage for device-specific files and the ability to export time-series data as a CSV file.
+8.  **Email Notifications:** A functional password reset system that sends emails to users.
 
 **User's preferred language**: Deutsch
 
 **what currently exists?**
-A full-stack application (FastAPI backend, React frontend, MongoDB) featuring:
--   JWT authentication with three user roles.
--   A file management system.
--   **Generator Monitoring Dashboard:** A functional dashboard with simulated data. It includes a grid/list view, a  map showing generator locations and statuses, and a detail page with  graphs. Status cards on the dashboard act as interactive filters.
--   **Device Management Page:** A page for Admins and Employees to manage a list of devices. Admins have full CRUD access, while Employees have view/edit rights and can set a device's status to out of service.
--   **Advanced Permission System:** Admins can grant users access to the Monitoring feature and assign them to all or specific generators. The Hub page conditionally renders buttons based on the logged-in user's permissions.
--   **UI:** The application has a consistent UI with a white background and fuchsia/purple accents, matching the company logo.
+A full-stack application (React, FastAPI, MongoDB) with a feature-rich frontend and a robust backend.
+-   **Authentication:** JWT-based system with three user roles.
+-   **Dashboards:** Separate monitoring dashboards exist for DSE Generators (using simulated data) and the new Energy Monitoring for Messkoffer (using real data imported from the user's DB file).
+-   **Energy Monitoring:** This new feature is fully implemented. It includes a dashboard with a Leaflet map for GPS tracking and a detail page with Recharts for time-series data visualization. It supports a von/bis date range picker and CSV export.
+-   **Data Ingestion:** A secure  endpoint is live. It authenticates using a per-device, bcrypt-hashed API key.
+-   **Device Management:** The UI has been significantly enhanced. For Messkoffer devices, an administrator can now manage Raspberry Pi connection details (IP, hostname, etc.) and a unique, secure API key for data transmission.
+-   **Pi Deployment Kit:** The system provides downloadable files to easily set up a new Raspberry Pi:
+    -   : A Python script to read local SQLite data and push it to the server.
+    -   : A configuration file for the API endpoint and device credentials.
+    -   : A  service file to ensure the script runs reliably in the background.
+-   **Advanced Permissions:** Admins can set both account-level expiration dates and data-level access windows (e.g., a customer can only view data from the last 30 days) for users.
 
 **Last working item**:
--   **Last item agent was working:** The agent was actively debugging a critical bug reported by the user in message #270. The user stated that the Geräteverwaltung (Device Management) page was not visible to users with the  (Employee) role, although it should be. The agent had started investigating by checking the application routes and was in the process of testing the backend API permissions with  for an employee user when the session ended.
+-   **Last item agent was working:** The agent finished implementing a complete solution for the user to connect their Raspberry Pi to the application securely. This involved creating a per-device, encrypted API key system, updating the Device Management UI to manage these keys, and creating a full deployment kit (Python script, config file, systemd service) for the Pi. The user has just confirmed their Pi is online and is waiting for these files and instructions.
 -   **Status:** IN PROGRESS
--   **Agent Testing Done:** N
--   **Which testing method agent to use?** backend testing agent to verify permissions, then manual testing with screenshots. Start by using  to test the  endpoint with a  token. Then, investigate the frontend code in  to check the conditional rendering logic for the button and  to see how permissions are assigned upon user creation/edit.
+-   **Agent Testing Done:** Y
+-   **Which testing method agent to use?** Manual testing by user. The next agent's primary task is to guide the user through deploying the provided files onto their physical Raspberry Pi.
 -   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P0) Employee cannot access Device Management**
-    -   **Description:** Users with the  role cannot see the Geräteverwaltung button on the hub page, blocking them from accessing the feature. This is a direct regression/bug from the last implementation cycle.
-    -   **Attempted fixes:** The agent confirmed the  user in the test database () did not have the  app enabled in their user profile. The investigation was cut short before a fix could be implemented.
-    -   **Next debug checklist:**
-        1.  **Likely Cause:** The logic in  for creating/editing users does not automatically enable the  app for the  role.
-        2.  **Frontend Fix:** In , ensure that when a  is created or saved, their  flag is set to .
-        3.  **Backend Verification:** Use  to confirm a  token can access the  endpoint.
-        4.  **Frontend Verification:** Log in as a  and confirm the Geräteverwaltung button is visible and functional.
-    -   **Why fix this issue and what will be achieved with the fix?** This is a critical bug blocking a key user role from performing their intended function. Fixing it will restore core functionality for employees.
-    -   **Status:** IN PROGRESS
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on other issue:** None
+-   **Issue 1: (P1) DSE Gateway MQTT Configuration**
+    -   **Description:** A previously paused task. The user needs to upload specific CSV files to their DSE890 gateway hardware to enable live data for the generator monitoring dashboard.
+    -   **Status:** BLOCKED (Paused by user). This should be addressed after the current Messkoffer task is completed.
 
 **In progress Task List**:
--   None.
+-   **Task 1: (P0) Guide User Through Raspberry Pi Setup**
+    -   **Where to resume:** Present the user with the generated deployment kit and provide clear, step-by-step instructions.
+    -   **What will be achieved:** The user's physical Messkoffer device will begin sending live data to the application, completing the energy monitoring feature loop.
+    -   **Status:** IN PROGRESS
+    -   **Should Test frontend/backend/both after fix?** Both. Verify that data from the user's Pi appears correctly in the database and is rendered on the frontend dashboard and charts.
+    -   **Blocked on something:** User action (deploying files to their hardware).
 
 **Upcoming and Future Tasks**
--   **Upcoming Tasks (From User Message #270):**
-    -   **(P1) Hide 'Out of Service' Devices:** Devices marked Außer Betrieb must be hidden from the Monitoring dashboard.
-    -   **(P2) Rework 'Copy Device' Flow:** Remove the 'Copy' button from the device list in . Add a Copy from existing device dropdown/search feature inside the Create New Device modal.
-    -   **(P3) Implement Service Plan ():**
-        -   Develop the  page (currently a placeholder).
-        -   Functionality to select a machine and define maintenance tasks.
-        -   Create a maintenance history log (Who, When, Hours, Date).
-        -   Display hours until next service on the device overview.
-        -   Incorporate standard maintenance intervals (e.g., 1 year or 500 hours).
-    -   **(P4) Service Due Alerts:** Display a Warning (yellow status) in the Monitoring dashboard for devices with upcoming maintenance.
-
+-   **Upcoming Tasks:**
+    -   (P1) Resume and complete the MQTT setup for DSE Generators.
+    -   (P2) Update the Generator Dashboard to display the live MQTT data once it is flowing.
 -   **Future Tasks:**
-    -   **(P1) Implement Email Service for Password Reset:** Integrate with Office 365 (user has deferred this).
-    -   **(P2) Add New Device Types:** Implement full support for Messkoffer and Kirmeskiste device types in the Device Management page.
-    -   **(P3) DSE890 Live Data Integration:** Connect the application to real DSE modules by configuring them to send data to the existing backend endpoint.
-    -   **(P4) Admin-Controlled File Size Limits:** Allow admins to set per-user file size limits for the file-sharing feature.
+    -   (P1) Add full support for the Kirmeskiste device type, similar to how Messkoffer was added.
+    -   (P2) Implement admin-controlled file size limits for the file-sharing feature.
 
 **Completed work in this session**
--   **Generator Monitoring (Phase 1):** Built the backend (simulated data) and frontend (dashboard, map view, detail page with charts) for generator monitoring.
--   **Device Management ():** Implemented the backend and frontend for managing a fleet of devices, including role-based permissions (Admin vs. Employee).
--   **Advanced Permissions:**
-    -   Implemented logic for Admins to assign specific generator access to users.
-    -   Backend endpoints now filter all data based on the user's permissions.
-    -   Hub page buttons are now dynamically rendered based on user rights.
--   **UI Overhaul:**
-    -   Standardized the UI theme (white background, fuchsia/purple accents) and redesigned the Hub page for clarity.
-    -   Shortened button text and added descriptive subtitles as requested.
--   **Bug Fixes:**
-    -   Resolved an issue where users assigned one generator could see all generators.
-    -   The testing agent automatically fixed an  serialization bug during device document downloads.
+-   **Energy Monitoring Feature (Messkoffer):** Implemented a complete, multi-phase feature including a new dashboard, detail page with charts, a Leaflet map for GPS tracking, and a von/bis date range picker with CSV export.
+-   **Live Data Ingestion from Pi:** Created a secure HTTPS endpoint and a full deployment kit ( script,  file,  file) for Raspberry Pi devices to push local SQLite data, with offline buffering support.
+-   **Per-Device API Keys:** Built a secure authentication system where each Messkoffer has its own bcrypt-hashed API key, managed through the Device Management UI.
+-   **Advanced User Access Control:** Moved time-based account access to the user level and added a new data-level time restriction, allowing admins to limit the historical data a customer can view.
+-   **UI/UX Enhancements:** Refined the Device Management and Admin modals to incorporate all new settings for Messkoffer and user permissions.
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1: File Size Limit Control**
-    -   **Description:** The user's initial request to allow an admin to set a file size limit per user for the file-sharing module has not been implemented.
-    -   **Debug checklist:** Add a  field to the  model, check against it in the file upload endpoint, and add a corresponding input in the .
-    -   **Why to solve this issue and what will be achieved with this?** Fulfills an original requirement and provides better storage control.
-    -   **Should Test frontend/backend/both after fix:** both
-    -   **Is recurring issue?** N
--   **Issue 2: Password Reset Email Functionality**
-    -   **Description:** The password reset flow is built but cannot send emails.
-    -   **Debug checklist:** Integrate an email sending service (e.g., for Office 365) and add credentials to .
-    -   **Why to solve this issue and what will be achieved with this?** Makes the password reset feature fully functional.
-    -   **Should Test frontend/backend/both after fix:** backend
-    -   **Is recurring issue?** N
+-   None.
 
 **Known issue recurrence from previous fork**
--   The file download failure in the preview environment, caused by the sandboxed iframe, has a stable workaround (). This is a known limitation of the environment and should not be fixed.
+-   **Issue recurrence in previous fork:** SMTP Email Sending Failure
+-   **Recurrence count:** 2+
+-   **Status:** RESOLVED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
 -   **Backend:** FastAPI, Python, MongoDB, Pydantic
--   **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts (for charts), Leaflet (for maps)
--   **Authentication:** JWT with role-based access control (, , ).
--   **Permissions:** Feature access is controlled at multiple levels: route protection, conditional UI rendering, and backend data filtering based on user permissions stored in the  model.
+-   **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet
+-   **Data Ingestion:** HTTPS-based push from edge devices (Raspberry Pi) with local SQLite for offline buffering.
+-   **Device Authentication:** Per-device, hashed API keys using .
+-   **System Services:** Deployment via  for robust background script execution on the Pi.
 
 **key DB schema**
--   **users:** 
--   **generators:** 
--   **devices:** 
+-   **users:** Added , , . Inside , added , , .
+-   **devices:** For Messkoffer type, added , , , , , , , and .
+-   **telemetry:** Schema now includes an optional  field containing .
 
 **changes in tech stack**
--   Added  and  for map functionality.
--    is used for data visualization.
+-   **Backend:** Added  for hashing device API keys.
 
 **All files of reference**
--   : Main FastAPI app, registers the new routers.
--   : Contains data models for  (updated),  (new), and  (new).
--   : New file containing all API endpoints for the monitoring feature.
--   : New file containing all API endpoints for device management.
--   : Main navigation hub; heavily modified for conditional button rendering.
--   : Modified to manage generator monitoring permissions for users.
--   : New page with generator list, filters, and map.
--   : New page for device CRUD operations.
--   : Updated with routes for all new pages.
+-   : Core logic for data ingestion, telemetry fetching, and API key management.
+-   : The Python script to be deployed on the user's Raspberry Pi.
+-   : Contains the complex modal for managing Messkoffer devices, including the new Pi and API key sections.
+-   : Contains the UI for setting account-level and data-level time restrictions.
+-   : Defines the database structure for the new device fields and user permissions.
 
 **Areas that need refactoring**:
--    is over 500 lines and contains complex state and UI logic for the table and modal form. The form should be extracted into a  component.
--    is also large; the map, stat cards, and generator grid could be broken into smaller, reusable components.
+-    and  have become very large and complex due to the addition of multiple new features. The main modal in each of these pages should be broken down into smaller, more focused components to improve maintainability.
 
 **key api endpoints**
--   **Generators:** , , , 
--   **Devices:** , , , , , 
+-   : The endpoint for the Raspberry Pi to push data, authenticated with a per-device key.
+-   : Creates a new, single-use API key for a device.
+-   : Fetches telemetry data, now enforces user-specific data access time windows.
+-   : Serves the  file.
+-   : Serves the  template file.
+-   : Serves the  file.
+-   : Now checks if a user's account access has expired.
 
 **Critical Info for New Agent**
--   The user's immediate priority is fixing the bugs and implementing the changes from their last message (Chat #270). Start with the  access bug.
--   Do not work on the DSE890 live data integration or the Office 365 email integration. The user has explicitly deferred these tasks.
--   Pay close attention to the role-based logic. Features and UI elements must be visible/accessible only to the authorized roles (, ).
+-   **Your immediate task is to guide the user in setting up their Raspberry Pi.** The user is ready and waiting. You need to provide the download links for the three deployment files (, , ) and give clear, step-by-step instructions on how to configure them (especially adding the device ID and the newly generated API key to the  file) and install the  service on their Pi.
+-   **Authentication has changed.** The previous global API key is deprecated. The Pi script now authenticates using a per-device key that must be generated in the Device Management UI. This is a critical point to explain to the user.
+-   The task to configure the DSE generator via MQTT is still pending but was explicitly paused by the user. Do not address it until the current Pi setup is successfully completed and verified.
 
 **documents and test reports created in this job**
--    (Updated)
--    through  (approximate range)
+-   
+-   
+-   
+-   
+-   
+-   
+-   
+-   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (212):** Provides detailed specs for Geräteverwaltung (Device Management), including specific fields and a copy feature.
-2.  **User (241):** Requests role-based changes: lock device type after creation, make deletion admin-only, and allow employees to set out of service status. Also requests a Serviceplan button.
-3.  **User (270):** **(HIGHEST PRIORITY)** Reports several issues and new requests:
-    -   **BUG:** Employees () cannot see/access Geräteverwaltung. **(Pending Fix)**
-    -   **REQ:** Out of service devices should not appear in Monitoring. **(Pending)**
-    -   **REQ:** The Copy Device button should be part of the creation flow, not a list action. **(Pending)**
-    -   **REQ:** Provides details for the Serviceplan feature, including maintenance warnings in Monitoring. **(Pending)**
-4.  **Agent (271-276):** Acknowledges the requests and starts debugging the employee access bug, but the session ends mid-investigation.
+1.  **User (msg 300):** Requests several major features: adding Pi connection fields to device management, showing only online devices in the overview, implementing a von/bis date range picker with CSV export, and adding data access time limits for customers.
+2.  **Agent (msg 301):** Confirms understanding and creates a plan to implement all requests.
+3.  **(Agent implements all requested features across multiple steps)**
+4.  **User (msg 381):** States their Pi is now online and asks for the script and setup instructions. They also request that device management be updated to include a device-specific password/key with encryption for the Pi connection.
+5.  **Agent (msg 382-428):** Acknowledges the final request, implements the per-device encrypted API key system, enhances the device management UI accordingly, creates all necessary downloadables (script, config, service file), and verifies the entire setup is working via API tests and screenshots. The agent is now prepared to deliver the complete solution to the user.
 
 **Project Health Check:**
 -   **Broken:**
-    -    role is blocked from accessing Geräteverwaltung.
-    -   Password Reset is non-functional as it cannot send emails.
+    -   None.
 -   **Mocked:**
-    -   All generator data is currently from a simulation script, not live DSE modules.
-    -   File download uses a workaround for the preview environment.
+    -   The DSE generator dashboard still relies on simulated data, as the live MQTT integration is blocked.
+-   **Blocked:**
+    -   **DSE Live Data:** Blocked on user action to configure their physical DSE gateway.
+    -   **Messkoffer Live Data:** Blocked on user action to deploy the provided scripts on their Raspberry Pi.
 
 **3rd Party Integrations**
--   ** / :** Used for the map view on the monitoring dashboard.
--   **:** Used for charts on the generator detail page.
--   **Pending:** Office 365 for email.
--   **Planned:** Direct data ingestion from DSE890 modules.
+-    / : Map visualization.
+-   : Charting library.
+-   : File storage in MongoDB.
+-    / : Backend QR code generation.
+-   : Email sending (via ).
+-   : For MQTT communication (setup is paused).
+-   : For hashing per-device API keys.
 
 **Testing status**
--   **Testing agent used after significant changes:** YES. The testing agent was used frequently and successfully, even identifying and fixing a backend bug.
+-   **Testing agent used after significant changes:** YES, used successfully after each major feature phase.
 -   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** None
--   **Known regressions:** The  role losing access to Geräteverwaltung is a new regression.
+-   **Test files created:** , , 
+-   **Known regressions:** None.
 
 **Credentials to test flow:**
 -   **Administrator:**  / 
--   **Mitarbeiter:** An employee user like  (password: ) should be used to test the access bug.
--   **Kunde:** A customer user like  (password: ).
+-   **Mitarbeiter:**  / 
 
 **What agent forgot to execute**
-The agent has not yet addressed the majority of the user's requests from the last critical message (#270), apart from starting to debug the first item (the employee access bug). All other points from that message are pending implementation.</analysis>
+-   The agent successfully implemented all user requests from the session. The final step of providing the instructions and files to the user is the immediate next action and has not been forgotten, but is the natural handoff point.</analysis>
