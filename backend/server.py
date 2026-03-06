@@ -1422,6 +1422,14 @@ async def download_sync_service():
 async def download_sync_config():
     return FileResponse("/app/backend/static/emu_sync.conf", media_type="text/plain", filename="emu_sync.conf")
 
+@api_router.get("/download-dse890-gateway-topics")
+async def download_dse890_gateway():
+    return FileResponse("/app/backend/static/dse890_gateway_topics.csv", media_type="text/csv", filename="dse890_gateway_topics.csv")
+
+@api_router.get("/download-dse8610-module-topics")
+async def download_dse8610_module():
+    return FileResponse("/app/backend/static/dse8610_module_topics.csv", media_type="text/csv", filename="dse8610_module_topics.csv")
+
 # Include the router in the main app
 app.include_router(api_router)
 
