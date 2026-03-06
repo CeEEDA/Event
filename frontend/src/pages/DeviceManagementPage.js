@@ -46,7 +46,7 @@ function PiSetupSection({ deviceId, deviceName }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `setup_emu_sync_${deviceName || deviceId}.sh`;
+      a.download = `setup.sh`;
       a.click();
       URL.revokeObjectURL(url);
       setDownloaded(true);
@@ -74,7 +74,7 @@ function PiSetupSection({ deviceId, deviceName }) {
           <p className="text-xs text-emerald-800 font-medium mb-1.5">Skript heruntergeladen! So geht es weiter:</p>
           <ol className="text-xs text-emerald-700 space-y-1 list-decimal list-inside">
             <li>Datei auf den Pi kopieren (z.B. per SCP oder USB)</li>
-            <li><code className="bg-white px-1.5 py-0.5 rounded text-[11px] font-mono">sudo bash setup_messkoffer_{deviceName || "..."}.sh</code></li>
+            <li><code className="bg-white px-1.5 py-0.5 rounded text-[11px] font-mono">sudo bash setup.sh</code></li>
             <li>Fertig — Shelly-Logging + GPS + Portal-Sync laufen automatisch</li>
           </ol>
         </div>

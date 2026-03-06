@@ -636,7 +636,7 @@ fi
     return PlainTextResponse(
         content=script,
         media_type="application/x-sh",
-        headers={"Content-Disposition": f'attachment; filename="setup_messkoffer_{device_name}.sh"'}
+        headers={"Content-Disposition": 'attachment; filename="setup.sh"'}
     )
 
 
