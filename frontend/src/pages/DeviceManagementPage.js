@@ -612,7 +612,44 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Steuerung</Label>
-                    <Input value={formData.controller} onChange={e => update("controller", e.target.value)} placeholder="z.B. DSE8610MK2" className="mt-1" disabled={!isAdmin && !!editing} data-testid="controller-input" />
+                    {(() => {
+                      const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
+                      const isKnown = CONTROLLER_OPTIONS.includes(formData.controller);
+                      const isCustom = formData.controller && !isKnown;
+                      const selectValue = isKnown ? formData.controller : (isCustom ? "__custom" : "");
+                      return (
+                        <>
+                          <select
+                            value={selectValue}
+                            onChange={e => {
+                              if (e.target.value === "__custom") {
+                                update("controller", "");
+                              } else {
+                                update("controller", e.target.value);
+                              }
+                            }}
+                            className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
+                            disabled={!isAdmin && !!editing}
+                            data-testid="controller-select"
+                          >
+                            <option value="">Steuerung wählen...</option>
+                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            <option value="__custom">Sonstige (Freitext)...</option>
+                          </select>
+                          {(isCustom || selectValue === "__custom") && (
+                            <Input
+                              value={formData.controller}
+                              onChange={e => update("controller", e.target.value)}
+                              placeholder="Steuerung eingeben..."
+                              className="mt-1"
+                              disabled={!isAdmin && !!editing}
+                              data-testid="controller-custom-input"
+                              autoFocus
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

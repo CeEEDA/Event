@@ -96,6 +96,8 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 - ✅ Dynamic button colors based on generator status (running/stopped/standby)
 - ✅ Live DSE890/L401 MQTT integration (bidirectional: data + control)
 
+- ✅ **Steuerung-Dropdown**: Feld "Steuerung" im Geräteformular zu Dropdown geändert (DSE 8610 MKII, DSE 8610, DSE 7310, DSE L401 + Freitext für Sonstige)
+
 ## Backlog
 ### P1
 - Self-hosted MQTT Broker (Mosquitto) — move broker URL to .env
