@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
@@ -21,19 +21,56 @@ import {
   Clock,
   ChevronRight,
   Search,
+  Map,
+  LayoutGrid,
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const statusConfig = {
-  running: { label: "Läuft", color: "bg-emerald-500", textColor: "text-emerald-600" },
-  standby: { label: "Standby", color: "bg-sky-500", textColor: "text-sky-600" },
-  warning: { label: "Warnung", color: "bg-amber-500", textColor: "text-amber-600" },
-  alarm: { label: "Alarm", color: "bg-red-500", textColor: "text-red-600" },
-  offline: { label: "Offline", color: "bg-gray-400", textColor: "text-gray-500" },
+  running: { label: "Läuft", color: "bg-emerald-500", textColor: "text-emerald-600", filterKey: "running" },
+  standby: { label: "Standby", color: "bg-sky-500", textColor: "text-sky-600", filterKey: "standby" },
+  warning: { label: "Warnung", color: "bg-amber-500", textColor: "text-amber-600", filterKey: "warning" },
+  alarm: { label: "Alarm", color: "bg-red-500", textColor: "text-red-600", filterKey: "alarm" },
+  offline: { label: "Offline", color: "bg-gray-400", textColor: "text-gray-500", filterKey: "offline" },
 };
 
-function StatCard({ icon: Icon, label, value, color }) {
+// Leaflet marker icons by status
+const markerIcons = {};
+function getMarkerIcon(status) {
+  if (markerIcons[status]) return markerIcons[status];
+  const colors = {
+    running: "#10B981",
+    standby: "#0EA5E9",
+    warning: "#F59E0B",
+    alarm: "#EF4444",
+    offline: "#9CA3AF",
+  };
+  const color = colors[status] || colors.offline;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+    <path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 22 14 22s14-11.5 14-22C28 6.3 21.7 0 14 0z" fill="${color}"/>
+    <circle cx="14" cy="14" r="6" fill="white"/>
+  </svg>`;
+  markerIcons[status] = L.divIcon({
+    html: svg,
+    iconSize: [28, 36],
+    iconAnchor: [14, 36],
+    popupAnchor: [0, -36],
+    className: "",
+  });
+  return markerIcons[status];
+}
+
+function StatCard({ icon: Icon, label, value, color, active, onClick }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3" data-testid={`stat-${label.toLowerCase()}`}>
+    <button
+      onClick={onClick}
+      className={`bg-white border rounded-lg p-4 flex items-center gap-3 transition-all text-left w-full ${
+        active ? "border-fuchsia-500 ring-2 ring-fuchsia-200" : "border-gray-200 hover:border-fuchsia-300"
+      }`}
+      data-testid={`stat-${label.toLowerCase()}`}
+    >
       <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center`}>
         <Icon className="w-5 h-5 text-white" />
       </div>
@@ -41,7 +78,7 @@ function StatCard({ icon: Icon, label, value, color }) {
         <p className="text-2xl font-bold text-gray-900 font-mono">{value}</p>
         <p className="text-xs text-gray-500 uppercase tracking-wider">{label}</p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -63,12 +100,10 @@ function GeneratorCard({ generator, onClick }) {
           <h3 className="text-sm font-semibold text-gray-900 truncate">{generator.name}</h3>
           <p className="text-xs text-gray-400 font-mono">{generator.serial_number} · {generator.model}</p>
         </div>
-        <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${status.color} text-white`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-            {status.label}
-          </span>
-        </div>
+        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${status.color} text-white ml-2 flex-shrink-0`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+          {status.label}
+        </span>
       </div>
 
       {generator.location_name && (
@@ -81,27 +116,19 @@ function GeneratorCard({ generator, onClick }) {
       {t && generator.status !== "offline" ? (
         <div className="grid grid-cols-4 gap-2 mt-2">
           <div className="bg-gray-50 rounded px-2 py-1.5">
-            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5">
-              <Zap className="w-3 h-3" /> Leistung
-            </div>
+            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5"><Zap className="w-3 h-3" /> Leistung</div>
             <p className="text-xs font-mono text-gray-900 truncate">{t.power_kw ? `${Math.round(t.power_kw * 10) / 10} kW` : "–"}</p>
           </div>
           <div className="bg-gray-50 rounded px-2 py-1.5">
-            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5">
-              <Gauge className="w-3 h-3" /> Last
-            </div>
+            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5"><Gauge className="w-3 h-3" /> Last</div>
             <p className="text-xs font-mono text-gray-900 truncate">{t.load_percent ? `${Math.round(t.load_percent)}%` : "–"}</p>
           </div>
           <div className="bg-gray-50 rounded px-2 py-1.5">
-            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5">
-              <Thermometer className="w-3 h-3" /> Temp
-            </div>
+            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5"><Thermometer className="w-3 h-3" /> Temp</div>
             <p className="text-xs font-mono text-gray-900 truncate">{t.coolant_temp != null ? `${Math.round(t.coolant_temp * 10) / 10}°C` : "–"}</p>
           </div>
           <div className="bg-gray-50 rounded px-2 py-1.5">
-            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5">
-              <Fuel className="w-3 h-3" /> Tank
-            </div>
+            <div className="flex items-center gap-1 text-[10px] text-gray-400 mb-0.5"><Fuel className="w-3 h-3" /> Tank</div>
             <p className="text-xs font-mono text-gray-900 truncate">{t.fuel_level != null ? `${Math.round(t.fuel_level)}%` : "–"}</p>
           </div>
         </div>
@@ -110,13 +137,22 @@ function GeneratorCard({ generator, onClick }) {
       )}
 
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-        <span className="text-[10px] text-gray-400 flex items-center gap-1">
-          <Clock className="w-3 h-3" /> {lastSeen}
-        </span>
+        <span className="text-[10px] text-gray-400 flex items-center gap-1"><Clock className="w-3 h-3" /> {lastSeen}</span>
         <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-600 transition-colors" />
       </div>
     </button>
   );
+}
+
+function FitBounds({ generators }) {
+  const map = useMap();
+  useEffect(() => {
+    const pts = generators.filter(g => g.latitude && g.longitude).map(g => [g.latitude, g.longitude]);
+    if (pts.length > 0) {
+      map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
+    }
+  }, [generators, map]);
+  return null;
 }
 
 export default function GeneratorDashboardPage() {
@@ -127,6 +163,7 @@ export default function GeneratorDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [viewMode, setViewMode] = useState("grid"); // "grid" or "map"
 
   const fetchData = useCallback(async () => {
     try {
@@ -159,6 +196,10 @@ export default function GeneratorDashboardPage() {
     }
   };
 
+  const handleStatClick = (filterValue) => {
+    setStatusFilter(prev => prev === filterValue ? "all" : filterValue);
+  };
+
   const filtered = generators.filter((g) => {
     const matchSearch =
       !search ||
@@ -184,12 +225,29 @@ export default function GeneratorDashboardPage() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-to-hub-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Hub
+              <ArrowLeft className="w-4 h-4 mr-1" /> Zurück
             </Button>
             <div className="h-5 w-px bg-gray-200" />
-            <h1 className="text-base font-semibold text-gray-900 tracking-tight">Generator-Monitoring</h1>
+            <h1 className="text-base font-semibold text-gray-900 tracking-tight">Monitoring</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* View Toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === "grid" ? "bg-white shadow text-fuchsia-600" : "text-gray-400 hover:text-gray-600"}`}
+                data-testid="view-grid-btn"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("map")}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === "map" ? "bg-white shadow text-fuchsia-600" : "text-gray-400 hover:text-gray-600"}`}
+                data-testid="view-map-btn"
+              >
+                <Map className="w-4 h-4" />
+              </button>
+            </div>
             <Button variant="ghost" size="sm" onClick={fetchData} className="text-gray-500 hover:text-fuchsia-600" data-testid="refresh-btn">
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -204,20 +262,20 @@ export default function GeneratorDashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Stats */}
+        {/* Stats - clickable as filters */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6" data-testid="stats-overview">
-            <StatCard icon={Activity} label="Gesamt" value={stats.total} color="bg-fuchsia-600" />
-            <StatCard icon={Power} label="Läuft" value={stats.running} color="bg-emerald-600" />
-            <StatCard icon={Zap} label="Standby" value={stats.standby} color="bg-sky-600" />
-            <StatCard icon={AlertTriangle} label="Warnung" value={stats.alarm} color="bg-amber-500" />
-            <StatCard icon={WifiOff} label="Offline" value={stats.offline} color="bg-gray-400" />
+            <StatCard icon={Activity} label="Gesamt" value={stats.total} color="bg-fuchsia-600" active={statusFilter === "all"} onClick={() => handleStatClick("all")} />
+            <StatCard icon={Power} label="Läuft" value={stats.running} color="bg-emerald-600" active={statusFilter === "running"} onClick={() => handleStatClick("running")} />
+            <StatCard icon={Zap} label="Standby" value={stats.standby} color="bg-sky-600" active={statusFilter === "standby"} onClick={() => handleStatClick("standby")} />
+            <StatCard icon={AlertTriangle} label="Warnung" value={stats.alarm} color="bg-amber-500" active={statusFilter === "warning"} onClick={() => handleStatClick("warning")} />
+            <StatCard icon={WifiOff} label="Offline" value={stats.offline} color="bg-gray-400" active={statusFilter === "offline"} onClick={() => handleStatClick("offline")} />
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="relative flex-1">
+        {/* Search */}
+        <div className="mb-6">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
@@ -228,47 +286,82 @@ export default function GeneratorDashboardPage() {
               data-testid="generator-search-input"
             />
           </div>
-          <div className="flex gap-1">
-            {["all", "running", "standby", "warning", "alarm", "offline"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                  statusFilter === s
-                    ? "bg-fuchsia-600 text-white"
-                    : "bg-white text-gray-500 hover:text-gray-700 border border-gray-200"
-                }`}
-                data-testid={`filter-${s}`}
-              >
-                {s === "all" ? "Alle" : (statusConfig[s]?.label || s)}
-              </button>
-            ))}
-          </div>
         </div>
 
-        {/* Generator Grid */}
-        {filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <Activity className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 mb-4">
-              {generators.length === 0 ? "Keine Generatoren vorhanden" : "Keine Treffer für den Filter"}
-            </p>
-            {isAdmin && generators.length === 0 && (
-              <Button size="sm" onClick={handleSimulate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="simulate-empty-btn">
-                <Plus className="w-4 h-4 mr-1" /> Demo-Daten generieren
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="generator-grid">
-            {filtered.map((gen) => (
-              <GeneratorCard
-                key={gen.id}
-                generator={gen}
-                onClick={() => navigate(`/generators/${gen.id}`)}
+        {/* Map View */}
+        {viewMode === "map" && (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6" style={{ height: "500px" }} data-testid="generator-map">
+            <MapContainer
+              center={[50.1109, 8.6821]}
+              zoom={10}
+              style={{ height: "100%", width: "100%" }}
+              scrollWheelZoom={true}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-            ))}
+              <FitBounds generators={filtered} />
+              {filtered.filter(g => g.latitude && g.longitude).map((gen) => {
+                const s = statusConfig[gen.status] || statusConfig.offline;
+                const t = gen.latest_telemetry;
+                return (
+                  <Marker
+                    key={gen.id}
+                    position={[gen.latitude, gen.longitude]}
+                    icon={getMarkerIcon(gen.status)}
+                    eventHandlers={{ click: () => navigate(`/generators/${gen.id}`) }}
+                  >
+                    <Popup>
+                      <div className="min-w-[180px]">
+                        <p className="font-semibold text-sm">{gen.name}</p>
+                        <p className="text-xs text-gray-500">{gen.serial_number}</p>
+                        <p className="text-xs mt-1">
+                          <span className={`inline-block w-2 h-2 rounded-full ${s.color} mr-1`}></span>
+                          {s.label}
+                        </p>
+                        {t && (
+                          <div className="text-xs mt-1 text-gray-600">
+                            {t.power_kw ? `${Math.round(t.power_kw)} kW` : ""}{t.power_kw && t.fuel_level ? " · " : ""}{t.fuel_level ? `Tank ${Math.round(t.fuel_level)}%` : ""}
+                          </div>
+                        )}
+                        {gen.location_name && <p className="text-xs text-gray-400 mt-1">{gen.location_name}</p>}
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </MapContainer>
           </div>
+        )}
+
+        {/* Grid View */}
+        {viewMode === "grid" && (
+          <>
+            {filtered.length === 0 ? (
+              <div className="text-center py-20">
+                <Activity className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 mb-4">
+                  {generators.length === 0 ? "Keine Generatoren vorhanden" : "Keine Treffer für den Filter"}
+                </p>
+                {isAdmin && generators.length === 0 && (
+                  <Button size="sm" onClick={handleSimulate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="simulate-empty-btn">
+                    <Plus className="w-4 h-4 mr-1" /> Demo-Daten generieren
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="generator-grid">
+                {filtered.map((gen) => (
+                  <GeneratorCard
+                    key={gen.id}
+                    generator={gen}
+                    onClick={() => navigate(`/generators/${gen.id}`)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

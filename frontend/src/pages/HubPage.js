@@ -8,6 +8,7 @@ import {
   LogOut,
   ChevronRight,
   Activity,
+  Settings,
 } from "lucide-react";
 
 export default function HubPage() {
@@ -19,9 +20,7 @@ export default function HubPage() {
     navigate("/login");
   };
 
-  // Check if user has filesharing enabled
   const hasFilesharing = isAdmin || user?.apps?.filesharing?.enabled;
-  // Check if user has monitoring enabled
   const hasMonitoring = isAdmin || user?.apps?.generator_monitoring?.enabled;
 
   return (
@@ -62,7 +61,7 @@ export default function HubPage() {
           </div>
 
           <div className="grid gap-4 md:gap-6">
-            {/* FileShare Button - nur wenn freigeschaltet oder Admin */}
+            {/* FileShare */}
             {hasFilesharing && (
               <button
                 onClick={() => navigate("/fileshare")}
@@ -73,18 +72,14 @@ export default function HubPage() {
                   <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
-                    FileShare
-                  </h2>
-                  <p className="text-sm text-gray-500">
-                    Dateien hochladen, verwalten und teilen
-                  </p>
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">FileShare</h2>
+                  <p className="text-sm text-gray-500">Dateien hochladen, verwalten und teilen</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
             )}
 
-            {/* Generator Monitoring - nur wenn freigeschaltet oder Admin */}
+            {/* Monitoring */}
             {hasMonitoring && (
               <button
                 onClick={() => navigate("/generators")}
@@ -95,15 +90,32 @@ export default function HubPage() {
                   <Activity className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
-                    Monitoring
-                  </h2>
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Monitoring</h2>
+                  <p className="text-sm text-gray-500">Überwachung und Steuern von Stromerzeugern, Lichtmasten und Batteriesysteme</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
             )}
 
-            {/* Admin Button - nur für Admin */}
+            {/* Geräteverwaltung - nur Admin */}
+            {isAdmin && (
+              <button
+                onClick={() => navigate("/devices")}
+                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
+                data-testid="device-management-btn"
+              >
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-fuchsia-100 flex items-center justify-center flex-shrink-0 group-hover:bg-fuchsia-600 transition-colors">
+                  <Settings className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Geräteverwaltung</h2>
+                  <p className="text-sm text-gray-500">Endgeräte anlegen, verwalten und konfigurieren</p>
+                </div>
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
+              </button>
+            )}
+
+            {/* Benutzerverwaltung - nur Admin */}
             {isAdmin && (
               <button
                 onClick={() => navigate("/admin")}
@@ -114,12 +126,8 @@ export default function HubPage() {
                   <Users className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
-                    Benutzerverwaltung
-                  </h2>
-                  <p className="text-sm text-gray-500">
-                    Benutzer anlegen, bearbeiten und Rechte vergeben
-                  </p>
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Benutzerverwaltung</h2>
+                  <p className="text-sm text-gray-500">Benutzer anlegen, bearbeiten und Rechte vergeben</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
@@ -129,7 +137,6 @@ export default function HubPage() {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="bg-white border-t border-gray-200 p-4 text-center text-sm text-gray-500">
         &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
       </footer>

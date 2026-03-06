@@ -192,7 +192,7 @@ export default function GeneratorDetailPage() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => navigate("/generators")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-to-generators-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Übersicht
+              <ArrowLeft className="w-4 h-4 mr-1" /> Zurück
             </Button>
             <div className="h-5 w-px bg-gray-200" />
             <div>

@@ -49,3 +49,14 @@ body {
 [data-debug-wrapper="true"] {
     display: contents !important;
 }
+
+
+/* Leaflet map fixes */
+.leaflet-container {
+    font-family: inherit;
+    z-index: 1;
+}
+.leaflet-popup-content-wrapper {
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
