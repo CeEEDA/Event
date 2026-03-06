@@ -11,6 +11,7 @@ import AdminPage from "./pages/AdminPage";
 import SharedFilePage from "./pages/SharedFilePage";
 import GeneratorDashboardPage from "./pages/GeneratorDashboardPage";
 import GeneratorDetailPage from "./pages/GeneratorDetailPage";
+import DeviceManagementPage from "./pages/DeviceManagementPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -126,6 +127,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <GeneratorDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/devices"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <DeviceManagementPage />
           </ProtectedRoute>
         }
       />

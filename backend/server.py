@@ -1333,6 +1333,11 @@ from routes.generators import router as generator_router, init_generator_routes
 init_generator_routes(db, decode_jwt_token, get_current_user, require_admin)
 app.include_router(generator_router)
 
+# Device Management routes
+from routes.devices import router as device_router, init_device_routes
+init_device_routes(db, decode_jwt_token, fs)
+app.include_router(device_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
