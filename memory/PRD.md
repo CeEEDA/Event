@@ -56,7 +56,7 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 - ✅ HTTPS Ingest API for Pi sync
 - ✅ Pi Sync Script (downloadable)
 - ✅ Account-level time-based access for Kunden
-- ✅ **Pi connection fields** in Messkoffer device form (hostname, IP, port, username, notes)
+- ✅ **Pi connection fields** in Messkoffer device form (username, password, notes only — hostname/IP/SSH removed)
 - ✅ **Date range picker** (Von/Bis) replacing fixed time range selector, default = last 24h
 - ✅ **CSV Export** for selected time range (semicolon separator for German Excel)
 - ✅ **Online filtering** - overview only shows devices with data
@@ -87,6 +87,8 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
   }
 }
 ```
+
+- ✅ **Messkoffer form cleanup**: "Seriennummer" → "Gerätenummer", removed Modell/Leistung, simplified Pi section to username+password only
 
 ## Backlog
 ### P0

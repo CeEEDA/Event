@@ -136,6 +136,7 @@ const EMPTY_FORM = {
   pi_ip: "",
   pi_port: "",
   pi_username: "",
+  pi_password: "",
   pi_notes: "",
 };
 
@@ -592,7 +593,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           {/* Common Fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-gray-700 text-sm">Seriennummer *</Label>
+              <Label className="text-gray-700 text-sm">{formData.device_type === "messkoffer" ? "Gerätenummer" : "Seriennummer"} *</Label>
               <Input value={formData.serial_number} onChange={e => update("serial_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="serial-input" />
             </div>
             <div>
@@ -681,20 +682,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           {/* Messkoffer-specific fields: Pi connection + Key Management */}
           {formData.device_type === "messkoffer" && (
             <>
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Gerätedaten</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-gray-700 text-sm">Modell</Label>
-                    <Input value={formData.model} onChange={e => update("model", e.target.value)} placeholder="z.B. EMU Professional" className="mt-1" data-testid="model-input" />
-                  </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">Leistung</Label>
-                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 32A / 63A" className="mt-1" data-testid="power-input" />
-                  </div>
-                </div>
-              </div>
-
               {/* Device Key - only for editing existing devices */}
               {editing && isAdmin && (
                 <DeviceKeySection deviceId={editing.id} />
@@ -703,25 +690,17 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               <div className="border-t border-gray-100 pt-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Server className="w-4 h-4 text-fuchsia-600" />
-                  <h3 className="text-sm font-medium text-gray-900">Raspberry Pi Verbindung</h3>
+                  <h3 className="text-sm font-medium text-gray-900">Raspberry Pi Anbindung</h3>
                 </div>
-                <p className="text-[10px] text-gray-400 mb-3">Verbindungsdaten zum Datenlogger (Pi)</p>
+                <p className="text-[10px] text-gray-400 mb-3">Zugangsdaten für den Datenlogger (Pi)</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-gray-700 text-sm">Hostname</Label>
-                    <Input value={formData.pi_hostname} onChange={e => update("pi_hostname", e.target.value)} placeholder="z.B. pi-messkoffer-01" className="mt-1" data-testid="pi-hostname-input" />
-                  </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">IP-Adresse</Label>
-                    <Input value={formData.pi_ip} onChange={e => update("pi_ip", e.target.value)} placeholder="z.B. 192.168.1.100" className="mt-1" data-testid="pi-ip-input" />
-                  </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">SSH-Port</Label>
-                    <Input value={formData.pi_port} onChange={e => update("pi_port", e.target.value)} placeholder="22" className="mt-1" data-testid="pi-port-input" />
-                  </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Benutzername</Label>
                     <Input value={formData.pi_username} onChange={e => update("pi_username", e.target.value)} placeholder="z.B. pi" className="mt-1" data-testid="pi-username-input" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-700 text-sm">Passwort</Label>
+                    <Input type="password" value={formData.pi_password || ""} onChange={e => update("pi_password", e.target.value)} placeholder="Pi-Passwort" className="mt-1" data-testid="pi-password-input" />
                   </div>
                 </div>
                 <div className="mt-3">
@@ -881,13 +860,19 @@ export default function DeviceManagementPage() {
       last_maintenance: device.last_maintenance || "",
       next_maintenance: device.next_maintenance || "",
       notes: device.notes || "",
+      pi_hostname: device.pi_hostname || "",
+      pi_ip: device.pi_ip || "",
+      pi_port: device.pi_port || "",
+      pi_username: device.pi_username || "",
+      pi_password: device.pi_password || "",
+      pi_notes: device.pi_notes || "",
     });
     setModalOpen(true);
   };
 
   const handleSave = async (pendingImageFile) => {
     if (!formData.serial_number.trim()) {
-      toast.error("Seriennummer ist erforderlich");
+      toast.error(formData.device_type === "messkoffer" ? "Gerätenummer ist erforderlich" : "Seriennummer ist erforderlich");
       return;
     }
     const payload = {

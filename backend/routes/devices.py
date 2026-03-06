@@ -56,6 +56,7 @@ class DeviceCreate(BaseModel):
     pi_ip: Optional[str] = None
     pi_port: Optional[str] = None
     pi_username: Optional[str] = None
+    pi_password: Optional[str] = None
     pi_notes: Optional[str] = None
 
 
@@ -82,6 +83,7 @@ class DeviceUpdate(BaseModel):
     pi_ip: Optional[str] = None
     pi_port: Optional[str] = None
     pi_username: Optional[str] = None
+    pi_password: Optional[str] = None
     pi_notes: Optional[str] = None
 
 
@@ -178,6 +180,7 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "pi_ip": data.pi_ip,
         "pi_port": data.pi_port,
         "pi_username": data.pi_username,
+        "pi_password": data.pi_password,
         "pi_notes": data.pi_notes,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
