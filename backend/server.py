@@ -1430,6 +1430,10 @@ async def download_dse890_gateway():
 async def download_dse8610_module():
     return FileResponse("/app/backend/static/dse8610_module_topics.csv", media_type="text/csv", filename="dse8610_module_topics.csv")
 
+@api_router.get("/download-dsel401-module-topics")
+async def download_dsel401_module():
+    return FileResponse("/app/backend/static/dsel401_module_topics.csv", media_type="text/csv", filename="dsel401_module_topics.csv")
+
 # Include the router in the main app
 app.include_router(api_router)
 
