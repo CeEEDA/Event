@@ -25,10 +25,86 @@ import {
   Wrench,
   Printer,
   QrCode,
+  Key,
+  Copy,
+  Download,
+  Shield,
+  Server,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+// Device Key Management Component for Messkoffer
+function DeviceKeySection({ deviceId }) {
+  const [keyInfo, setKeyInfo] = useState(null);
+  const [generatedKey, setGeneratedKey] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.get(`/energy-monitoring/devices/${deviceId}/key-info`)
+      .then(res => setKeyInfo(res.data))
+      .catch(() => {});
+  }, [deviceId]);
+
+  const handleGenerateKey = async () => {
+    if (keyInfo?.has_key && !window.confirm("Vorhandener Schlüssel wird ersetzt. Fortfahren?")) return;
+    setLoading(true);
+    try {
+      const res = await api.post(`/energy-monitoring/devices/${deviceId}/generate-key`);
+      setGeneratedKey(res.data.device_key);
+      setKeyInfo({ has_key: true, prefix: res.data.prefix, created_at: new Date().toISOString() });
+      toast.success("Geräteschlüssel generiert!");
+    } catch {
+      toast.error("Fehler beim Generieren");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success("In Zwischenablage kopiert");
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Shield className="w-4 h-4 text-fuchsia-600" />
+        <h3 className="text-sm font-medium text-gray-900">Geräteschlüssel (Verschlüsselt)</h3>
+      </div>
+      <p className="text-[10px] text-gray-400 mb-3">Wird für die Authentifizierung des Pi beim Datenupload benötigt. Wird SHA-256 verschlüsselt gespeichert.</p>
+
+      {keyInfo?.has_key && !generatedKey && (
+        <div className="flex items-center gap-2 mb-3 bg-gray-50 px-3 py-2 rounded-lg">
+          <Key className="w-4 h-4 text-emerald-500" />
+          <span className="text-sm text-gray-700">Schlüssel aktiv: <code className="bg-white px-1.5 py-0.5 rounded text-xs font-mono">{keyInfo.prefix}...</code></span>
+          <span className="text-[10px] text-gray-400 ml-auto">
+            {keyInfo.created_at ? new Date(keyInfo.created_at).toLocaleString("de-DE") : ""}
+          </span>
+        </div>
+      )}
+
+      {generatedKey && (
+        <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="generated-key-display">
+          <p className="text-xs text-emerald-800 font-medium mb-1">Neuer Schlüssel (nur einmal sichtbar!):</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-white border border-emerald-300 px-3 py-2 rounded text-sm font-mono select-all break-all">{generatedKey}</code>
+            <button onClick={() => copyToClipboard(generatedKey)} className="px-2 py-2 bg-white border border-emerald-300 rounded hover:bg-emerald-100 transition-colors" data-testid="copy-key-btn">
+              <Copy className="w-4 h-4 text-emerald-600" />
+            </button>
+          </div>
+          <p className="text-[10px] text-emerald-600 mt-1">Diesen Schlüssel in die /etc/emu_sync.conf auf dem Pi eintragen.</p>
+        </div>
+      )}
+
+      <Button variant="outline" size="sm" onClick={handleGenerateKey} disabled={loading} className="text-gray-600 hover:text-fuchsia-600" data-testid="generate-key-btn">
+        <Key className="w-3.5 h-3.5 mr-1.5" />
+        {keyInfo?.has_key ? "Neuen Schlüssel generieren" : "Schlüssel generieren"}
+      </Button>
+    </div>
+  );
+}
 
 const DEVICE_TYPES = [
   { value: "stromerzeuger", label: "Stromerzeuger", icon: Zap },
@@ -602,7 +678,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
             </>
           )}
 
-          {/* Messkoffer-specific fields: Pi connection data */}
+          {/* Messkoffer-specific fields: Pi connection + Key Management */}
           {formData.device_type === "messkoffer" && (
             <>
               <div className="border-t border-gray-100 pt-4">
@@ -610,17 +686,26 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Modell</Label>
-                    <Input value={formData.model} onChange={e => update("model", e.target.value)} placeholder="z.B. EMU Professional" className="mt-1" disabled={!isAdmin && !!editing} data-testid="model-input" />
+                    <Input value={formData.model} onChange={e => update("model", e.target.value)} placeholder="z.B. EMU Professional" className="mt-1" data-testid="model-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Leistung</Label>
-                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 32A / 63A" className="mt-1" disabled={!isAdmin && !!editing} data-testid="power-input" />
+                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 32A / 63A" className="mt-1" data-testid="power-input" />
                   </div>
                 </div>
               </div>
+
+              {/* Device Key - only for editing existing devices */}
+              {editing && isAdmin && (
+                <DeviceKeySection deviceId={editing.id} />
+              )}
+
               <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-1">Raspberry Pi Verbindung</h3>
-                <p className="text-[10px] text-gray-400 mb-3">Verbindungsdaten für den Datenlogger</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <Server className="w-4 h-4 text-fuchsia-600" />
+                  <h3 className="text-sm font-medium text-gray-900">Raspberry Pi Verbindung</h3>
+                </div>
+                <p className="text-[10px] text-gray-400 mb-3">Verbindungsdaten zum Datenlogger (Pi)</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Hostname</Label>
@@ -651,6 +736,28 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   />
                 </div>
               </div>
+
+              {/* Pi Setup Downloads - only for existing devices */}
+              {editing && isAdmin && (
+                <div className="border-t border-gray-100 pt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Download className="w-4 h-4 text-fuchsia-600" />
+                    <h3 className="text-sm font-medium text-gray-900">Pi Dateien herunterladen</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/download-sync-script`} download className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:text-fuchsia-600 transition-colors" data-testid="download-sync-script">
+                      <Download className="w-3 h-3" />emu_sync.py
+                    </a>
+                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/download-sync-service`} download className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:text-fuchsia-600 transition-colors" data-testid="download-sync-service">
+                      <Download className="w-3 h-3" />emu_sync.service
+                    </a>
+                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/download-sync-config`} download className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:text-fuchsia-600 transition-colors" data-testid="download-sync-config">
+                      <Download className="w-3 h-3" />emu_sync.conf
+                    </a>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-2">Device-ID: <code className="bg-gray-100 px-1 rounded select-all">{editing.id}</code></p>
+                </div>
+              )}
             </>
           )}
 

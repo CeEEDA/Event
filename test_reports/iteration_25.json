@@ -1,0 +1,141 @@
+{
+  "summary": "Iteration 25 - Per-Device Key Management for Messkoffer self-onboarding. All 13 backend tests passed. All frontend features verified working: Device Key Section with SHA-256 encryption, Pi connection fields, and download links for sync files.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "generate_key_endpoint": {
+      "status": "PASS",
+      "endpoint": "POST /api/energy-monitoring/devices/{id}/generate-key",
+      "description": "Generates 48-char hex key (24 bytes), stores SHA-256 hash, returns plain key once",
+      "test_details": "Key prefix stored for identification, created_at timestamp saved"
+    },
+    "key_info_endpoint": {
+      "status": "PASS",
+      "endpoint": "GET /api/energy-monitoring/devices/{id}/key-info",
+      "description": "Returns has_key boolean, prefix (8 chars), created_at timestamp",
+      "test_details": "New device returns has_key=false, device with key returns has_key=true"
+    },
+    "ingest_with_device_key": {
+      "status": "PASS",
+      "endpoint": "POST /api/energy-monitoring/ingest",
+      "description": "Authenticates using per-device SHA-256 hashed key",
+      "test_details": "Correct key accepted, wrong key rejected with 401"
+    },
+    "ingest_reject_wrong_key": {
+      "status": "PASS",
+      "endpoint": "POST /api/energy-monitoring/ingest",
+      "description": "Returns 401 Unauthorized for invalid device key",
+      "error_message": "Ungültiger Geräteschlüssel"
+    },
+    "sync_state_with_device_key": {
+      "status": "PASS",
+      "endpoint": "GET /api/energy-monitoring/ingest/sync-state",
+      "description": "Works with device key authentication via query param",
+      "test_details": "Returns last_sync_id for device/meter pair"
+    },
+    "download_sync_script": {
+      "status": "PASS",
+      "endpoint": "GET /api/download-sync-script",
+      "description": "Returns emu_sync.py Python script for Pi",
+      "file": "/app/backend/static/emu_sync.py"
+    },
+    "download_sync_service": {
+      "status": "PASS",
+      "endpoint": "GET /api/download-sync-service",
+      "description": "Returns emu_sync.service systemd service file",
+      "file": "/app/backend/static/emu_sync.service"
+    },
+    "download_sync_config": {
+      "status": "PASS",
+      "endpoint": "GET /api/download-sync-config",
+      "description": "Returns emu_sync.conf config template",
+      "file": "/app/backend/static/emu_sync.conf"
+    },
+    "frontend_device_key_section": {
+      "status": "PASS",
+      "component": "DeviceKeySection",
+      "description": "Shows 'Geräteschlüssel (Verschlüsselt)' section in Messkoffer edit modal",
+      "test_ids": ["generate-key-btn", "generated-key-display", "copy-key-btn"]
+    },
+    "frontend_key_generation_ui": {
+      "status": "PASS",
+      "description": "Key generation button works, shows green box with 48-char key",
+      "test_details": "Key prefix shown after generation, created_at timestamp displayed"
+    },
+    "frontend_download_links": {
+      "status": "PASS",
+      "description": "Download links for emu_sync.py, emu_sync.service, emu_sync.conf visible",
+      "test_ids": ["download-sync-script", "download-sync-service", "download-sync-config"]
+    },
+    "frontend_pi_connection_fields": {
+      "status": "PASS",
+      "description": "Pi connection fields (hostname, IP, port, username, notes) all present",
+      "test_ids": ["pi-hostname-input", "pi-ip-input", "pi-port-input", "pi-username-input", "pi-notes-input"]
+    }
+  },
+  "backend_tests": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "tests": [
+      "TestDeviceKeyGeneration::test_generate_key_returns_plain_key - PASS",
+      "TestDeviceKeyGeneration::test_generate_key_requires_admin - PASS",
+      "TestDeviceKeyGeneration::test_generate_key_404_for_nonexistent_device - PASS",
+      "TestDeviceKeyInfo::test_key_info_shows_has_key_true - PASS",
+      "TestDeviceKeyInfo::test_key_info_requires_admin - PASS",
+      "TestIngestWithDeviceKey::test_ingest_with_correct_device_key - PASS",
+      "TestIngestWithDeviceKey::test_ingest_rejects_wrong_key - PASS",
+      "TestSyncStateWithDeviceKey::test_sync_state_with_valid_key - PASS",
+      "TestSyncStateWithDeviceKey::test_sync_state_rejects_wrong_key - PASS",
+      "TestDownloadEndpoints::test_download_sync_script - PASS",
+      "TestDownloadEndpoints::test_download_sync_service - PASS",
+      "TestDownloadEndpoints::test_download_sync_config - PASS",
+      "TestKeyInfoForNewDevice::test_key_info_for_device_before_key_generation - PASS"
+    ]
+  },
+  "frontend_tests": {
+    "device_key_section": "PASS - 'Geräteschlüssel (Verschlüsselt)' section visible with SHA-256 description",
+    "key_generation_button": "PASS - 'Neuen Schlüssel generieren' button visible and functional",
+    "key_display": "PASS - Shows key prefix (e.g., 3fd1939a...) and created_at timestamp",
+    "pi_connection_fields": "PASS - All 5 fields (hostname, IP, port, username, notes) present",
+    "download_links": "PASS - All 3 download links (emu_sync.py, emu_sync.service, emu_sync.conf) visible"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_device_key_iteration25.py",
+    "/app/test_reports/pytest/pytest_device_key_iteration25.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_device_key_iteration25.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 tests passed)",
+    "frontend": "100% (all features verified working)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password",
+    "device_id_mk001": "1d35dfbf-c944-4127-abe6-c0f97ed3b165"
+  },
+  "seed_data_info": "MK-001 has device key configured. Key is SHA-256 hashed and stored in device_key_hash field. Only prefix (first 8 chars) is visible after generation.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 25 complete. Per-device key management fully implemented and tested: (1) generate-key endpoint creates 48-char hex key, stores SHA-256 hash (2) key-info endpoint shows has_key status and prefix (3) ingest endpoint authenticates with device key (4) sync-state endpoint works with device key (5) Download endpoints for Pi sync files (emu_sync.py, emu_sync.service, emu_sync.conf) all working. Legacy global key still works as fallback. Frontend shows DeviceKeySection only for existing Messkoffer devices (not new ones).",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  },
+  "security_notes": {
+    "key_storage": "Device keys stored as SHA-256 hash (device_key_hash field) - plain key never stored",
+    "key_display": "Plain key returned only once during generation - must be saved by admin",
+    "key_prefix": "Only first 8 chars stored in device_key_prefix for identification",
+    "authentication": "HMAC constant-time comparison used for key verification"
+  }
+}

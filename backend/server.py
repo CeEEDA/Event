@@ -1414,6 +1414,14 @@ async def download_gateway_topic_file():
 async def download_sync_script():
     return FileResponse("/app/backend/static/emu_sync.py", media_type="text/x-python", filename="emu_sync.py")
 
+@api_router.get("/download-sync-service")
+async def download_sync_service():
+    return FileResponse("/app/backend/static/emu_sync.service", media_type="text/plain", filename="emu_sync.service")
+
+@api_router.get("/download-sync-config")
+async def download_sync_config():
+    return FileResponse("/app/backend/static/emu_sync.conf", media_type="text/plain", filename="emu_sync.conf")
+
 # Include the router in the main app
 app.include_router(api_router)
 

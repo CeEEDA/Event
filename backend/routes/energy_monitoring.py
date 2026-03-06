@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 import uuid
+import hashlib
+import hmac
+import secrets
 import logging
 
 logger = logging.getLogger(__name__)
@@ -347,20 +350,81 @@ async def get_data_access_range(user: dict = Depends(get_authenticated_user)):
     return {"data_access_start": None, "data_access_end": None, "restricted": False}
 
 
+# ============== Device Key Management ==============
+
+def _hash_key(plain_key: str) -> str:
+    """Hash a device key using SHA-256 for storage."""
+    return hashlib.sha256(plain_key.encode()).hexdigest()
+
+
+def _verify_key(plain_key: str, hashed: str) -> bool:
+    """Verify a key against its hash."""
+    return hmac.compare_digest(hashlib.sha256(plain_key.encode()).hexdigest(), hashed)
+
+
+@router.post("/devices/{device_id}/generate-key")
+async def generate_device_key(device_id: str, admin: dict = Depends(require_admin)):
+    """Generate a new API key for a Messkoffer device. Returns plain key once."""
+    device = await db.devices.find_one({"id": device_id, "device_type": "messkoffer"}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
+
+    # Generate a strong random key
+    plain_key = secrets.token_hex(24)  # 48 char hex key
+    key_hash = _hash_key(plain_key)
+
+    # Store only the hash
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {
+            "device_key_hash": key_hash,
+            "device_key_prefix": plain_key[:8],
+            "device_key_created_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+
+    return {
+        "device_key": plain_key,
+        "prefix": plain_key[:8],
+        "message": "Schlüssel generiert. Bitte sicher aufbewahren - wird nur einmal angezeigt!"
+    }
+
+
+@router.get("/devices/{device_id}/key-info")
+async def get_device_key_info(device_id: str, admin: dict = Depends(require_admin)):
+    """Check if a device has a key configured (without revealing it)."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    has_key = bool(device.get("device_key_hash"))
+    return {
+        "has_key": has_key,
+        "prefix": device.get("device_key_prefix", ""),
+        "created_at": device.get("device_key_created_at", "")
+    }
+
+
 # ============== Ingest API (Pi Push) ==============
 
 @router.post("/ingest")
 async def ingest_data(data: IngestBatch):
-    """Receive batch of EMU data from Pi sync script. Authenticated via API key."""
-    # Verify API key
-    settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
-    if not settings or settings.get("value") != data.api_key:
-        raise HTTPException(status_code=401, detail="Ungültiger API-Schlüssel")
-
-    # Verify device and meter exist
-    device = await db.devices.find_one({"id": data.device_id, "device_type": "messkoffer"}, {"_id": 0})
+    """Receive batch of EMU data from Pi sync script. Authenticated via per-device key."""
+    # First try per-device key authentication
+    device = await db.devices.find_one({"id": data.device_id, "device_type": "messkoffer"})
     if not device:
         raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
+
+    # Verify device key
+    key_hash = device.get("device_key_hash")
+    if not key_hash:
+        # Fallback: check legacy global key
+        settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
+        if not settings or settings.get("value") != data.api_key:
+            raise HTTPException(status_code=401, detail="Kein Geräteschlüssel konfiguriert")
+    else:
+        if not _verify_key(data.api_key, key_hash):
+            raise HTTPException(status_code=401, detail="Ungültiger Geräteschlüssel")
 
     meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": data.device_id}, {"_id": 0})
     if not meter:
@@ -427,9 +491,20 @@ async def ingest_data(data: IngestBatch):
 @router.get("/ingest/sync-state")
 async def get_sync_state(device_id: str, meter_id: str, api_key: str):
     """Get the last synced ID for a device/meter pair."""
-    settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
-    if not settings or settings.get("value") != api_key:
-        raise HTTPException(status_code=401, detail="Ungültiger API-Schlüssel")
+    # Verify per-device key
+    device = await db.devices.find_one({"id": device_id})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    key_hash = device.get("device_key_hash")
+    if key_hash:
+        if not _verify_key(api_key, key_hash):
+            raise HTTPException(status_code=401, detail="Ungültiger Geräteschlüssel")
+    else:
+        # Fallback: legacy global key
+        settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
+        if not settings or settings.get("value") != api_key:
+            raise HTTPException(status_code=401, detail="Ungültiger Schlüssel")
 
     state = await db.emu_sync_state.find_one(
         {"device_id": device_id, "meter_id": meter_id},
