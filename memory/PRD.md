@@ -1,106 +1,66 @@
 # PRD - Eventenergie Monitoring & Management Portal
 
 ## Original Problem Statement
-Secure file exchange application, evolved into a comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators.
-
-## Product Requirements
-1. **Generator Monitoring:** Real-time analytics dashboard with map view and detail pages. Data simulated, DSE890 integration planned.
-2. **Device Management ("Geräteverwaltung"):** Fleet management with device images for visual identification. Full CRUD for admins, view/edit for employees.
-3. **Service Planning ("Serviceplan"):** Maintenance schedules with operating hours tracking, checklists, photo uploads, remarks, and overdue alerts.
-4. **User & Permissions:** Role-based system (Administrator, Mitarbeiter, Kunde) with feature-level and device-level access control.
-5. **File Management:** Secure file sharing with folder management, sharing links, and per-user access.
-6. **Email Service:** SMTP-based password reset emails via mail.de (SMTP auth pending user fix).
+Comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators with device management, maintenance scheduling, and secure file sharing.
 
 ## Tech Stack
-- **Backend:** FastAPI, Python, MongoDB, GridFS (images), Pydantic
-- **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts (charts), Leaflet (maps)
-- **Auth:** JWT with role-based access control
-- **Email:** SMTP via smtp.mail.de (Port 587 STARTTLS)
+- **Backend:** FastAPI, Python, MongoDB, GridFS
+- **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet
+- **Auth:** JWT with 3 roles (Administrator, Mitarbeiter, Kunde)
 
-## Core Architecture
+## Architecture
 ```
 /app/backend/
-  server.py              - Main FastAPI app, auth, file management
-  email_service.py       - SMTP email sending utility
-  routes/
-    generators.py        - Generator monitoring API
-    devices.py           - Device management API (with images)
-    serviceplan.py       - Service plan & maintenance API (with images)
-/app/frontend/src/
-  pages/
-    HubPage.js                - Main navigation hub
-    AdminPage.js              - User management + email reset
-    DeviceManagementPage.js   - Device CRUD + image upload
-    ServiceplanPage.js        - Service plans + maintenance history
-    GeneratorDashboardPage.js - Monitoring dashboard
-    GeneratorDetailPage.js    - Generator detail with charts
-    ForgotPasswordPage.js     - Password reset via email
-    DashboardPage.js          - File sharing dashboard
+  server.py, email_service.py
+  routes/ generators.py, devices.py, serviceplan.py
+/app/frontend/src/pages/
+  HubPage.js, AdminPage.js, DeviceManagementPage.js
+  ServiceplanPage.js, GeneratorDashboardPage.js
+  GeneratorDetailPage.js, ForgotPasswordPage.js, DashboardPage.js
 ```
 
-## What's Been Implemented
+## Implemented Features
 
-### Phase 1 - File Sharing (Complete)
-- JWT authentication with 3 roles
-- File/folder CRUD, upload/download
-- Share links with password protection
+### Generator Monitoring (Complete)
+- Simulated data dashboard with grid/list/map view
+- Status filters, detail pages with charts
+- Permission-based generator access
+- Maintenance warnings (yellow badge) when < 1 month or < 50 hours
 
-### Phase 2 - Generator Monitoring (Complete)
-- Simulated data with telemetry
-- Dashboard with grid/list view, status filters, Leaflet map
-- Detail page with Recharts graphs
-- Permission-based access
-
-### Phase 3 - Device Management (Complete)
-- Full CRUD with role-based permissions
-- Device image upload for visual identification (2026-03-06)
-- Image shown in table and edit modal
+### Device Management (Complete)
+- CRUD with role-based permissions
+- Device image upload for visual identification
 - "Copy from existing" in create flow (preserves image)
 - Document upload per device
 
-### Phase 4 - Service Plans (Complete - 2026-03-06)
-- Operating hours tracking (current_hours field)
-- Maintenance intervals (hours AND months)
-- Checklist with checkboxes for tasks
-- Photo upload for technicians (mobile-friendly with camera capture)
+### Service Plans - Wartungsplan (Complete - 2026-03-06)
+**Professional 6-section maintenance form for generators/light masts:**
+1. Mechanische Prüfung (12 items, 3-state: durchgeführt/nicht durchgeführt/nicht vorhanden)
+2. Elektrische Prüfung (13 items, 3-state push buttons)
+3. Generator Messwerte (15 measurement input fields)
+4. Lasttest Generator (25%/50%/75%/100% table)
+5. ATS / Netzumschaltung Test (6 checkboxes + Umschaltzeit)
+6. Diagnose (Fehlerspeicher, Fehlercodes freies Feld)
+
+**Additional features:**
+- Technician auto-filled from logged-in user
+- Next maintenance: choose months OR hours, auto-calculated
+- Operating hours tracking
+- Photo upload (mobile camera support)
 - Remarks field for special incidents
-- Maintenance history log (who, when, hours, tasks, photos, remarks)
-- Auto-calculate next maintenance date
-- Statistics (plans, bald fällig, überfällig)
-- "Stunden bis Wartung" display
+- Search function, stats dashboard
 
-### Phase 5 - Email Service (In Progress - 2026-03-06)
-- SMTP email utility implemented (smtp.mail.de)
-- Password reset sends email with reset link
-- Admin can send reset link per email
-- ForgotPasswordPage no longer shows demo token
-- **BLOCKER:** SMTP authentication failing - user checking credentials
+### Email Service (Implemented, SMTP auth pending)
+- Password reset emails, admin "Per E-Mail senden"
 
-### Cross-Feature Integrations (Complete)
-- P1: Devices "Außer Betrieb" hidden from monitoring
-- P4: Maintenance warnings in generator cards
+### File Management (Complete)
+- Upload/download, folder management, share links
 
-## Prioritized Backlog
-
-### P0 - Blocked
-- SMTP email authentication fix (user checking mail.de settings)
-
-### P1 - Next
-- New Device Types support (Messkoffer, Kirmeskiste specific fields)
-
-### P2 - Soon
-- Admin-controlled file size limits per user
-- Hours-based live maintenance tracking (connect operating_hours to intervals)
-
-### P3 - Future
-- DSE890 Live Data Integration
-- Mobile-optimized views
-- Office 365 email integration (user deferred)
-
-## Known Limitations
-- Generator data is SIMULATED (not from live DSE modules)
-- SMTP email sending NOT WORKING (authentication failure at mail.de)
-- File download uses workaround for preview sandbox
+## Backlog
+- P0: SMTP email fix (user checking mail.de credentials)
+- P1: New device types (Messkoffer, Kirmeskiste fields)
+- P2: Admin file size limits, hours-based live tracking
+- P3: DSE890 live data integration
 
 ## Test Credentials
 - Admin: admin@test.com / password
