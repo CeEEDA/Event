@@ -1,23 +1,28 @@
 Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
-%GROUP%/%TYPE%/%UID%/engine/oil_pressure,,P,,10,0,,,1,4,0,1,0,,,,,,Oil pressure kPa 16bit unsigned
-%GROUP%/%TYPE%/%UID%/engine/coolant_temp,,P,,10,0,,,1,4,1,1,0,,,,,,Coolant temperature degC 16bit signed
-%GROUP%/%TYPE%/%UID%/engine/oil_temp,,P,,10,0,,,1,4,2,1,0,,,,,,Oil temperature degC 16bit signed
-%GROUP%/%TYPE%/%UID%/engine/fuel_level,,P,,10,0,,,1,4,3,1,0,,,,,,Fuel level percent 16bit unsigned
-%GROUP%/%TYPE%/%UID%/engine/charge_alt_voltage,,P,,10,0,,,1,4,4,1,0,,,,,,Charge alternator voltage 0.1V 16bit unsigned
-%GROUP%/%TYPE%/%UID%/engine/battery_voltage,,P,,10,0,,,1,4,5,1,0,,,,,,Engine battery voltage 0.1V 16bit unsigned
-%GROUP%/%TYPE%/%UID%/engine/rpm,,P,,10,0,,,1,4,6,1,0,,,,,,Engine speed RPM 16bit unsigned
-%GROUP%/%TYPE%/%UID%/generator/frequency,,P,,10,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz 16bit unsigned
-%GROUP%/%TYPE%/%UID%/generator/voltage_l1n,,P,,10,0,,,1,4,8,2,0,,,,,,Generator L1-N voltage 0.1V 32bit
-%GROUP%/%TYPE%/%UID%/generator/voltage_l2n,,P,,10,0,,,1,4,10,2,0,,,,,,Generator L2-N voltage 0.1V 32bit
-%GROUP%/%TYPE%/%UID%/generator/voltage_l3n,,P,,10,0,,,1,4,12,2,0,,,,,,Generator L3-N voltage 0.1V 32bit
-%GROUP%/%TYPE%/%UID%/generator/current_l1,,P,,10,0,,,1,4,20,2,0,,,,,,Generator L1 current 0.1A 32bit
-%GROUP%/%TYPE%/%UID%/generator/current_l2,,P,,10,0,,,1,4,22,2,0,,,,,,Generator L2 current 0.1A 32bit
-%GROUP%/%TYPE%/%UID%/generator/current_l3,,P,,10,0,,,1,4,24,2,0,,,,,,Generator L3 current 0.1A 32bit
-%GROUP%/%TYPE%/%UID%/generator/watts_l1,,P,,10,0,,,1,4,28,2,0,,,,,,Generator L1 watts 32bit signed
-%GROUP%/%TYPE%/%UID%/generator/watts_l2,,P,,10,0,,,1,4,30,2,0,,,,,,Generator L2 watts 32bit signed
-%GROUP%/%TYPE%/%UID%/generator/watts_l3,,P,,10,0,,,1,4,32,2,0,,,,,,Generator L3 watts 32bit signed
-%GROUP%/%TYPE%/%UID%/mains/frequency,,P,,10,0,,,1,4,35,1,0,,,,,,Mains frequency 0.1Hz 16bit unsigned
-%GROUP%/%TYPE%/%UID%/mains/voltage_l1n,,P,,10,0,,,1,4,36,2,0,,,,,,Mains L1-N voltage 0.1V 32bit
-%GROUP%/%TYPE%/%UID%/mains/voltage_l2n,,P,,10,0,,,1,4,38,2,0,,,,,,Mains L2-N voltage 0.1V 32bit
-%GROUP%/%TYPE%/%UID%/mains/voltage_l3n,,P,,10,0,,,1,4,40,2,0,,,,,,Mains L3-N voltage 0.1V 32bit
+%GROUP%/%TYPE%/%UID%/status,,P,,0,1,,R,11,%GWUID%:Connected,,,,,,,,Gateway online status retained
+%GROUP%/%TYPE%/%UID%/status,,P,,0,1,,W,11,%GWUID%:Disconnected,,,,,,,,Gateway offline last will
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Genset control key subscribe topic
 %GROUP%/%TYPE%/%UID%/alarm,,P,,0,1,,,4,,,,,,,,,Publish alarms on change
+%GROUP%/%TYPE%/%UID%/gps,,P,,60,0,,,10,,,,,,,,,Publish GPS location every 60s
+%GROUP%/%TYPE%/%UID%/topic_file,,S,,,1,,,9,,,,,,,,,Remote topic file update
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,1,1,0,,,,,,Coolant temp degC
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,2,1,0,,,,,,Oil temp degC
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,3,1,0,,,,,,Fuel level percent
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,4,1,0,,,,,,Charge alt voltage 0.1V
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,6,1,0,,,,,,Engine speed RPM
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,10,2,0,,,,,,Gen L2-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,12,2,0,,,,,,Gen L3-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,22,2,0,,,,,,Gen L2 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,24,2,0,,,,,,Gen L3 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,28,2,0,,,,,,Gen L1 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,30,2,0,,,,,,Gen L2 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,32,2,0,,,,,,Gen L3 watts
+%GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,35,1,0,,,,,,Mains frequency 0.1Hz
+%GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,36,2,0,,,,,,Mains L1-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,38,2,0,,,,,,Mains L2-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,40,2,0,,,,,,Mains L3-N voltage 0.1V
