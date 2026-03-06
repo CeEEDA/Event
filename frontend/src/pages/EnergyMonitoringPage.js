@@ -26,7 +26,7 @@ import "leaflet/dist/leaflet.css";
 
 function DeviceCard({ device, onClick }) {
   const d = device.latest_data;
-  const isOnline = d && d.http_ok === 1;
+  const isOnline = device.is_online;
   const lastSeen = d?.ts_utc
     ? new Date(d.ts_utc).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : null;
@@ -161,6 +161,8 @@ export default function EnergyMonitoringPage() {
   };
 
   const filtered = devices.filter((d) => {
+    // Only show devices that have data (= connected/configured)
+    if (!d.latest_data) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -170,7 +172,7 @@ export default function EnergyMonitoringPage() {
     );
   });
 
-  const onlineCount = devices.filter(d => d.latest_data?.http_ok === 1).length;
+  const onlineCount = devices.filter(d => d.is_online).length;
   const totalPower = devices.reduce((sum, d) => sum + (d.latest_data?.P_sum_kW || 0), 0);
 
   return (

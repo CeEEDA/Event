@@ -51,6 +51,12 @@ class DeviceCreate(BaseModel):
     portal_link: Optional[str] = None
     notes: Optional[str] = None
     copy_from_device_id: Optional[str] = None
+    # Pi connection fields for Messkoffer
+    pi_hostname: Optional[str] = None
+    pi_ip: Optional[str] = None
+    pi_port: Optional[str] = None
+    pi_username: Optional[str] = None
+    pi_notes: Optional[str] = None
 
 
 class DeviceUpdate(BaseModel):
@@ -71,6 +77,12 @@ class DeviceUpdate(BaseModel):
     portal_link: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    # Pi connection fields for Messkoffer
+    pi_hostname: Optional[str] = None
+    pi_ip: Optional[str] = None
+    pi_port: Optional[str] = None
+    pi_username: Optional[str] = None
+    pi_notes: Optional[str] = None
 
 
 PART_TYPES = [
@@ -161,6 +173,12 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "portal_link": data.portal_link,
         "notes": data.notes,
         "status": "aktiv",
+        # Pi connection fields for Messkoffer
+        "pi_hostname": data.pi_hostname,
+        "pi_ip": data.pi_ip,
+        "pi_port": data.pi_port,
+        "pi_username": data.pi_username,
+        "pi_notes": data.pi_notes,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }

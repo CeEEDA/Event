@@ -56,6 +56,11 @@ const EMPTY_FORM = {
   acquired_date: "",
   portal_link: "",
   notes: "",
+  pi_hostname: "",
+  pi_ip: "",
+  pi_port: "",
+  pi_username: "",
+  pi_notes: "",
 };
 
 function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, isAdmin, allDevices }) {
@@ -592,6 +597,58 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                     <Label className="text-gray-700 text-sm">Portal-Verknüpfung</Label>
                     <Input value={formData.portal_link} onChange={e => update("portal_link", e.target.value)} placeholder="Link oder ID für Monitoring" className="mt-1" data-testid="portal-link-input" />
                   </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Messkoffer-specific fields: Pi connection data */}
+          {formData.device_type === "messkoffer" && (
+            <>
+              <div className="border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Gerätedaten</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-700 text-sm">Modell</Label>
+                    <Input value={formData.model} onChange={e => update("model", e.target.value)} placeholder="z.B. EMU Professional" className="mt-1" disabled={!isAdmin && !!editing} data-testid="model-input" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-700 text-sm">Leistung</Label>
+                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 32A / 63A" className="mt-1" disabled={!isAdmin && !!editing} data-testid="power-input" />
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-1">Raspberry Pi Verbindung</h3>
+                <p className="text-[10px] text-gray-400 mb-3">Verbindungsdaten für den Datenlogger</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-700 text-sm">Hostname</Label>
+                    <Input value={formData.pi_hostname} onChange={e => update("pi_hostname", e.target.value)} placeholder="z.B. pi-messkoffer-01" className="mt-1" data-testid="pi-hostname-input" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-700 text-sm">IP-Adresse</Label>
+                    <Input value={formData.pi_ip} onChange={e => update("pi_ip", e.target.value)} placeholder="z.B. 192.168.1.100" className="mt-1" data-testid="pi-ip-input" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-700 text-sm">SSH-Port</Label>
+                    <Input value={formData.pi_port} onChange={e => update("pi_port", e.target.value)} placeholder="22" className="mt-1" data-testid="pi-port-input" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-700 text-sm">Benutzername</Label>
+                    <Input value={formData.pi_username} onChange={e => update("pi_username", e.target.value)} placeholder="z.B. pi" className="mt-1" data-testid="pi-username-input" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Label className="text-gray-700 text-sm">Pi Notizen</Label>
+                  <textarea
+                    value={formData.pi_notes}
+                    onChange={e => update("pi_notes", e.target.value)}
+                    rows={2}
+                    placeholder="SIM-Karte, Standort, Zugang..."
+                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500"
+                    data-testid="pi-notes-input"
+                  />
                 </div>
               </div>
             </>

@@ -114,7 +114,10 @@ def get_allowed_device_ids(user: dict) -> Optional[List[str]]:
 # ============== Device Endpoints ==============
 
 @router.get("/devices")
-async def list_energy_devices(user: dict = Depends(get_authenticated_user)):
+async def list_energy_devices(
+    online_only: bool = False,
+    user: dict = Depends(get_authenticated_user)
+):
     """List Messkoffer devices the user has access to."""
     if not check_energy_monitoring_access(user):
         raise HTTPException(status_code=403, detail="Energy Monitoring nicht freigeschaltet")
@@ -129,6 +132,7 @@ async def list_energy_devices(user: dict = Depends(get_authenticated_user)):
         devices = [d for d in devices if d["id"] in allowed_ids]
 
     # Enrich with meter count and latest data
+    result = []
     for device in devices:
         meter_count = await db.emu_meters.count_documents({"device_id": device["id"]})
         device["meter_count"] = meter_count
@@ -141,10 +145,25 @@ async def list_energy_devices(user: dict = Depends(get_authenticated_user)):
         )
         device["latest_data"] = latest
 
+        # Determine online status (has data in last 5 minutes)
+        if latest and latest.get("ts_utc"):
+            try:
+                last_ts = datetime.fromisoformat(latest["ts_utc"].replace("Z", "+00:00"))
+                device["is_online"] = (datetime.now(timezone.utc) - last_ts).total_seconds() < 300
+            except (ValueError, TypeError):
+                device["is_online"] = False
+        else:
+            device["is_online"] = False
+
         if "image_gridfs_id" in device and device["image_gridfs_id"]:
             device["image_gridfs_id"] = str(device["image_gridfs_id"])
 
-    return devices
+        if online_only and not device["is_online"]:
+            continue
+
+        result.append(device)
+
+    return result
 
 
 @router.get("/devices/{device_id}")
@@ -245,7 +264,7 @@ async def get_device_telemetry(
     meter_id: Optional[str] = None,
     from_time: Optional[str] = None,
     to_time: Optional[str] = None,
-    limit: int = Query(default=500, le=5000),
+    limit: int = Query(default=500, le=999999),
     user: dict = Depends(get_authenticated_user)
 ):
     """Get telemetry data for a Messkoffer device (optionally filtered by meter and time range)."""
@@ -255,6 +274,18 @@ async def get_device_telemetry(
     allowed_ids = get_allowed_device_ids(user)
     if allowed_ids is not None and device_id not in allowed_ids:
         raise HTTPException(status_code=403, detail="Kein Zugriff auf dieses Gerät")
+
+    # Enforce data access range for Kunden
+    if user["role"] == "kunde":
+        em = user.get("apps", {}).get("energy_monitoring", {})
+        data_from = em.get("data_access_start")
+        data_to = em.get("data_access_end")
+        if data_from:
+            if not from_time or from_time < data_from:
+                from_time = data_from
+        if data_to:
+            if not to_time or to_time > data_to:
+                to_time = data_to
 
     query = {"device_id": device_id}
     if meter_id:
@@ -301,6 +332,19 @@ async def get_latest_telemetry(device_id: str, user: dict = Depends(get_authenti
         })
 
     return result
+
+
+@router.get("/data-access-range")
+async def get_data_access_range(user: dict = Depends(get_authenticated_user)):
+    """Get the allowed data access range for the current user (Kunden may have restrictions)."""
+    if user["role"] == "kunde":
+        em = user.get("apps", {}).get("energy_monitoring", {})
+        return {
+            "data_access_start": em.get("data_access_start"),
+            "data_access_end": em.get("data_access_end"),
+            "restricted": bool(em.get("data_access_start") or em.get("data_access_end"))
+        }
+    return {"data_access_start": None, "data_access_end": None, "restricted": False}
 
 
 # ============== Ingest API (Pi Push) ==============

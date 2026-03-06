@@ -1050,6 +1050,40 @@ export default function AdminPage() {
                             </p>
                           </div>
                         )}
+
+                        {/* Data access range for Kunden */}
+                        {formData.role === "kunde" && (
+                          <div className="space-y-2 pt-3 border-t border-fuchsia-200">
+                            <Label className="text-gray-600 text-sm flex items-center gap-1">
+                              <CalendarDays className="w-3.5 h-3.5" />
+                              Verfügbare Messdaten (Zeitraum)
+                            </Label>
+                            <p className="text-[10px] text-gray-400">Begrenzt den Datenzugriff des Kunden auf den angegebenen Zeitraum</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-gray-500 text-xs">Von</Label>
+                                <Input
+                                  type="date"
+                                  value={formData.apps.energy_monitoring.data_access_start?.split("T")[0] || ""}
+                                  onChange={(e) => updateEnergyMonitoringApp("data_access_start", e.target.value ? new Date(e.target.value).toISOString() : "")}
+                                  className="border-gray-300 text-sm"
+                                  data-testid="data-access-start-input"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-gray-500 text-xs">Bis</Label>
+                                <Input
+                                  type="date"
+                                  value={formData.apps.energy_monitoring.data_access_end?.split("T")[0] || ""}
+                                  onChange={(e) => updateEnergyMonitoringApp("data_access_end", e.target.value ? new Date(e.target.value + "T23:59:59Z").toISOString() : "")}
+                                  className="border-gray-300 text-sm"
+                                  data-testid="data-access-end-input"
+                                />
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-gray-400">Leer lassen = keine Einschränkung</p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
