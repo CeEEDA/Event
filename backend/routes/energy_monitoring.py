@@ -409,12 +409,11 @@ async def get_device_key_info(device_id: str, admin: dict = Depends(require_admi
 
 # ============== All-in-One Setup Script ==============
 
-SYNC_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "emu_sync.py")
+LOGGER_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "messkoffer_logger.py")
 
 @router.post("/devices/{device_id}/setup-script")
 async def generate_setup_script(device_id: str, admin: dict = Depends(require_admin)):
-    """Generate an all-in-one bash installer with embedded sync script, config, and systemd service.
-    Also generates a new device key and embeds it."""
+    """Generate an all-in-one bash installer: Shelly logger + GPS + local DB + portal sync."""
     device = await db.devices.find_one({"id": device_id, "device_type": "messkoffer"}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
@@ -433,12 +432,11 @@ async def generate_setup_script(device_id: str, admin: dict = Depends(require_ad
 
     # Get first meter for this device (if any)
     meter = await db.emu_meters.find_one({"device_id": device_id}, {"_id": 0})
-    meter_id = meter["id"] if meter else "KEINE_METER_ID_GEFUNDEN"
+    meter_id = meter["id"] if meter else "KEINE_METER_ID"
 
-    # Determine API URL from environment
+    # Determine API URL
     api_base = os.environ.get("API_BASE_URL", "")
     if not api_base:
-        # Try to read from frontend .env
         fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
         try:
             with open(fe_env) as f:
@@ -447,114 +445,133 @@ async def generate_setup_script(device_id: str, admin: dict = Depends(require_ad
                         api_base = line.split("=", 1)[1].strip() + "/api"
                         break
         except Exception:
-            api_base = "https://BITTE_API_URL_EINTRAGEN/api"
+            api_base = "https://BITTE_URL_EINTRAGEN/api"
 
-    # Read the sync python script
-    with open(SYNC_SCRIPT_PATH, "r") as f:
-        sync_py_content = f.read()
+    # Read the logger python script
+    with open(LOGGER_SCRIPT_PATH, "r") as f:
+        logger_py_content = f.read()
 
     device_name = device.get("serial_number", device_id)
 
-    # Build the all-in-one bash installer
     script = f'''#!/bin/bash
 # ================================================================
-#  EMU Sync - Automatisches Setup fuer: {device_name}
-#  Generiert am: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+#  Messkoffer Setup - Eventenergie Portal
+#  Geraet: {device_name}
+#  Erstellt: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
 # ================================================================
 #
-#  Nutzung:  sudo bash setup_emu_sync.sh
+#  Nutzung:  sudo bash setup_messkoffer.sh
 #
 #  Was passiert:
-#    1. Python3 + requests werden installiert (falls noetig)
-#    2. Sync-Skript wird nach /opt/emu_sync.py kopiert
-#    3. Konfiguration wird nach /etc/emu_sync.conf geschrieben
-#    4. Systemd-Dienst wird eingerichtet und gestartet
-#    5. Der Pi beginnt automatisch Daten zu senden
+#    1. Abhaengigkeiten installieren (python3, requests, gpsd)
+#    2. Logger-Skript installieren (/opt/messkoffer_logger.py)
+#    3. Konfiguration schreiben (/etc/messkoffer.conf)
+#    4. Systemd-Dienste einrichten (messkoffer + gpsd)
+#    5. Alles starten - Shelly-Logging + GPS + Portal-Sync
 #
 # ================================================================
 
 set -e
 
-# Farben
 RED="\\033[0;31m"
 GREEN="\\033[0;32m"
 YELLOW="\\033[1;33m"
+CYAN="\\033[0;36m"
 NC="\\033[0m"
 
 echo ""
-echo "==========================================="
-echo "  EMU Sync Setup - Eventenergie Portal"
-echo "==========================================="
+echo -e "${{CYAN}}==========================================${{NC}}"
+echo -e "${{CYAN}}  Messkoffer Setup - Eventenergie Portal${{NC}}"
+echo -e "${{CYAN}}==========================================${{NC}}"
 echo ""
 
-# Root-Check
 if [ "$EUID" -ne 0 ]; then
     echo -e "${{RED}}Fehler: Bitte mit sudo ausfuehren:${{NC}}"
     echo "  sudo bash $0"
     exit 1
 fi
 
-# 1. Abhaengigkeiten
-echo -e "${{YELLOW}}[1/5] Pruefe Abhaengigkeiten...${{NC}}"
+# ---- 1. Abhaengigkeiten ----
+echo -e "${{YELLOW}}[1/5] Installiere Abhaengigkeiten...${{NC}}"
+apt-get update -qq
+
+# Python + requests
 if ! command -v python3 &> /dev/null; then
-    echo "  Python3 nicht gefunden, installiere..."
-    apt-get update -qq && apt-get install -y -qq python3 python3-pip
+    apt-get install -y -qq python3 python3-pip
+fi
+python3 -c "import requests" 2>/dev/null || pip3 install requests -q 2>/dev/null || python3 -m pip install requests -q
+echo "  Python3 + requests OK"
+
+# gpsd fuer USB-GPS
+if ! command -v gpsd &> /dev/null; then
+    apt-get install -y -qq gpsd gpsd-clients python3-gps
+    echo "  gpsd installiert"
 else
-    echo "  Python3 OK"
+    # Sicherstellen dass python3-gps da ist
+    apt-get install -y -qq python3-gps 2>/dev/null || true
+    echo "  gpsd OK"
 fi
 
-if ! python3 -c "import requests" 2>/dev/null; then
-    echo "  requests-Modul installieren..."
-    pip3 install requests -q 2>/dev/null || python3 -m pip install requests -q
-else
-    echo "  requests OK"
-fi
+# gpsd konfigurieren (USB auto-detect)
+cat > /etc/default/gpsd << 'GPSD_EOF'
+DEVICES=""
+GPSD_OPTIONS="-n"
+USBAUTO="true"
+START_DAEMON="true"
+GPSD_EOF
+systemctl enable gpsd
+systemctl restart gpsd || true
+echo "  gpsd konfiguriert (USB Auto-Erkennung aktiv)"
 
-# 2. Sync-Skript installieren
-echo -e "${{YELLOW}}[2/5] Installiere Sync-Skript...${{NC}}"
-cat > /opt/emu_sync.py << 'SYNC_SCRIPT_EOF'
-{sync_py_content}
-SYNC_SCRIPT_EOF
-chmod +x /opt/emu_sync.py
-echo "  /opt/emu_sync.py erstellt"
+# ---- 2. Logger-Skript installieren ----
+echo -e "${{YELLOW}}[2/5] Installiere Messkoffer-Logger...${{NC}}"
+mkdir -p /var/lib/messkoffer
+cat > /opt/messkoffer_logger.py << 'LOGGER_EOF'
+{logger_py_content}
+LOGGER_EOF
+chmod +x /opt/messkoffer_logger.py
+echo "  /opt/messkoffer_logger.py erstellt"
 
-# 3. Konfiguration schreiben
+# ---- 3. Konfiguration ----
 echo -e "${{YELLOW}}[3/5] Schreibe Konfiguration...${{NC}}"
-cat > /etc/emu_sync.conf << 'CONFIG_EOF'
-[emu_sync]
+cat > /etc/messkoffer.conf << 'CONFIG_EOF'
+[messkoffer]
+shelly_ip = 192.168.88.252
 api_url = {api_base}
 device_key = {plain_key}
 device_id = {device_id}
 meter_id = {meter_id}
-db_path = /var/lib/shelly/shelly_pro4em.sqlite
-table_name = em_abc_samples
-batch_size = 500
+db_path = /var/lib/messkoffer/messkoffer.sqlite
+log_interval = 1
 sync_interval = 10
+sync_batch_size = 500
 retry_delay = 30
+max_db_size_gb = 60
+cleanup_check_interval = 300
 CONFIG_EOF
-chmod 600 /etc/emu_sync.conf
-echo "  /etc/emu_sync.conf erstellt (nur root lesbar)"
+chmod 600 /etc/messkoffer.conf
+echo "  /etc/messkoffer.conf erstellt"
 
-# 4. Systemd-Dienst einrichten
+# ---- 4. Systemd-Dienst ----
 echo -e "${{YELLOW}}[4/5] Richte Systemd-Dienst ein...${{NC}}"
 
-# Detect user (pi or current SUDO_USER)
 PI_USER="${{SUDO_USER:-pi}}"
-if ! id "$PI_USER" &>/dev/null; then
-    PI_USER="pi"
-fi
+id "$PI_USER" &>/dev/null || PI_USER="root"
 
-cat > /etc/systemd/system/emu_sync.service << SERVICE_EOF
+# DB-Verzeichnis fuer den User freigeben
+chown "$PI_USER":"$PI_USER" /var/lib/messkoffer
+
+cat > /etc/systemd/system/messkoffer.service << SERVICE_EOF
 [Unit]
-Description=EMU Sync - Eventenergie Messdaten
-After=network-online.target
-Wants=network-online.target
+Description=Messkoffer Logger - Shelly Pro 3EM + GPS + Portal Sync
+After=network-online.target gpsd.service
+Wants=network-online.target gpsd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/emu_sync.py
+ExecStart=/usr/bin/python3 /opt/messkoffer_logger.py
 Restart=always
-RestartSec=10
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
 User=$PI_USER
@@ -565,41 +582,53 @@ WantedBy=multi-user.target
 SERVICE_EOF
 
 systemctl daemon-reload
-systemctl enable emu_sync
-echo "  emu_sync.service eingerichtet"
+systemctl enable messkoffer
+echo "  messkoffer.service eingerichtet"
 
-# 5. Dienst starten
-echo -e "${{YELLOW}}[5/5] Starte Sync-Dienst...${{NC}}"
-systemctl restart emu_sync
-sleep 2
+# ---- 5. Starten ----
+echo -e "${{YELLOW}}[5/5] Starte Dienste...${{NC}}"
 
-# Status pruefen
-if systemctl is-active --quiet emu_sync; then
+# Alten emu_sync stoppen falls vorhanden
+systemctl stop emu_sync 2>/dev/null || true
+systemctl disable emu_sync 2>/dev/null || true
+
+systemctl restart messkoffer
+sleep 3
+
+if systemctl is-active --quiet messkoffer; then
     echo ""
     echo -e "${{GREEN}}==========================================${{NC}}"
-    echo -e "${{GREEN}}  Setup erfolgreich abgeschlossen!${{NC}}"
+    echo -e "${{GREEN}}  Setup erfolgreich!${{NC}}"
     echo -e "${{GREEN}}==========================================${{NC}}"
     echo ""
-    echo "  Geraet:     {device_name}"
-    echo "  Device-ID:  {device_id}"
-    echo "  Meter-ID:   {meter_id}"
-    echo "  DB-Pfad:    /var/lib/shelly/shelly_pro4em.sqlite"
-    echo "  Tabelle:    em_abc_samples"
+    echo "  Geraet:      {device_name}"
+    echo "  Shelly IP:   192.168.88.252"
+    echo "  Device-ID:   {device_id}"
+    echo "  Meter-ID:    {meter_id}"
+    echo "  Datenbank:   /var/lib/messkoffer/messkoffer.sqlite"
+    echo "  Max. DB:     60 GB (aelteste werden automatisch geloescht)"
+    echo "  GPS:         USB Auto-Erkennung aktiv"
     echo ""
-    echo "  Nuetzliche Befehle:"
-    echo "    Status:    sudo systemctl status emu_sync"
-    echo "    Live-Log:  sudo journalctl -u emu_sync -f"
-    echo "    Stoppen:   sudo systemctl stop emu_sync"
-    echo "    Neustart:  sudo systemctl restart emu_sync"
+    echo "  Was jetzt laeuft:"
+    echo "    - Shelly wird jede Sekunde ausgelesen"
+    echo "    - GPS-Position wird mitgespeichert"
+    echo "    - Daten werden lokal gespeichert (auch ohne Internet)"
+    echo "    - Bei Internet-Verbindung: automatischer Sync zum Portal"
+    echo ""
+    echo "  Befehle:"
+    echo "    Live-Log:   sudo journalctl -u messkoffer -f"
+    echo "    Status:     sudo systemctl status messkoffer"
+    echo "    Neustart:   sudo systemctl restart messkoffer"
+    echo "    DB-Groesse: du -sh /var/lib/messkoffer/"
     echo ""
 else
     echo ""
-    echo -e "${{RED}}Warnung: Dienst laeuft nicht.${{NC}}"
-    echo "Pruefe mit: sudo journalctl -u emu_sync -n 20"
+    echo -e "${{RED}}Dienst laeuft nicht. Pruefe:${{NC}}"
+    echo "  sudo journalctl -u messkoffer -n 30"
     echo ""
-    echo "Haeufige Ursachen:"
-    echo "  - /var/lib/shelly/shelly_pro4em.sqlite existiert nicht"
-    echo "  - Kein Internetzugang"
+    echo "  Haeufige Ursachen:"
+    echo "  - Shelly nicht erreichbar (ping 192.168.88.252)"
+    echo "  - Python-Modul fehlt"
     echo ""
 fi
 '''
@@ -607,7 +636,7 @@ fi
     return PlainTextResponse(
         content=script,
         media_type="application/x-sh",
-        headers={"Content-Disposition": f'attachment; filename="setup_emu_sync_{device_name}.sh"'}
+        headers={"Content-Disposition": f'attachment; filename="setup_messkoffer_{device_name}.sh"'}
     )
 
 

@@ -89,7 +89,7 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ```
 
 - ✅ **Messkoffer form cleanup**: "Seriennummer" → "Gerätenummer", removed Modell/Leistung, simplified Pi section to username+password only
-- ✅ **All-in-One Pi Setup-Skript**: Single bash installer with embedded sync script, device key, config, and systemd service. One-click download from Device Management UI
+- ✅ **All-in-One Pi Setup-Skript**: Single bash installer with embedded Messkoffer Logger (Shelly Pro 3EM readout + USB GPS via gpsd + local SQLite + background portal sync + 60GB auto-cleanup). One-click download from Device Management UI
 
 ## Backlog
 ### P0

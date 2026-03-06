@@ -65,8 +65,8 @@ function PiSetupSection({ deviceId, deviceName }) {
         <h3 className="text-sm font-medium text-gray-900">Pi Setup</h3>
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
-        Generiert ein Installations-Skript mit eingebettetem Geräteschlüssel und Konfiguration.
-        Einfach auf den Pi kopieren und ausführen — der Rest passiert automatisch.
+        Generiert ein Installations-Skript mit Shelly-Logger, GPS-Anbindung, lokaler Datenbank und Portal-Sync.
+        Auf den Pi kopieren und ausführen — alles wird automatisch eingerichtet.
       </p>
 
       {downloaded && (
@@ -74,8 +74,8 @@ function PiSetupSection({ deviceId, deviceName }) {
           <p className="text-xs text-emerald-800 font-medium mb-1.5">Skript heruntergeladen! So geht es weiter:</p>
           <ol className="text-xs text-emerald-700 space-y-1 list-decimal list-inside">
             <li>Datei auf den Pi kopieren (z.B. per SCP oder USB)</li>
-            <li><code className="bg-white px-1.5 py-0.5 rounded text-[11px] font-mono">sudo bash setup_emu_sync_{deviceName || "..."}.sh</code></li>
-            <li>Fertig — der Pi synchronisiert ab sofort automatisch</li>
+            <li><code className="bg-white px-1.5 py-0.5 rounded text-[11px] font-mono">sudo bash setup_messkoffer_{deviceName || "..."}.sh</code></li>
+            <li>Fertig — Shelly-Logging + GPS + Portal-Sync laufen automatisch</li>
           </ol>
         </div>
       )}
@@ -91,7 +91,7 @@ function PiSetupSection({ deviceId, deviceName }) {
         <Download className="w-3.5 h-3.5 mr-1.5" />
         {loading ? "Wird generiert..." : "Setup-Skript herunterladen"}
       </Button>
-      <p className="text-[10px] text-gray-400 mt-2">Enthält: Sync-Skript + Schlüssel + Config + Systemd-Dienst</p>
+      <p className="text-[10px] text-gray-400 mt-2">Enthält: Shelly-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst</p>
     </div>
   );
 }
