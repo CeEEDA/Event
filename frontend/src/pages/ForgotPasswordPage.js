@@ -14,7 +14,6 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const [resetToken, setResetToken] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,14 +24,13 @@ export default function ForgotPasswordPage() {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${BACKEND_URL}/api/auth/request-password-reset`, { email });
+      await axios.post(`${BACKEND_URL}/api/auth/request-password-reset`, {
+        email,
+        frontend_url: window.location.origin,
+      });
       setSent(true);
-      // For demo purposes, show the reset token (in production, this would be sent via email)
-      if (response.data.reset_token) {
-        setResetToken(response.data.reset_token);
-      }
-      toast.success("Link wurde gesendet");
-    } catch (error) {
+      toast.success("Falls die E-Mail existiert, wurde ein Link gesendet");
+    } catch {
       toast.error("Fehler beim Senden");
     } finally {
       setLoading(false);
@@ -55,28 +53,18 @@ export default function ForgotPasswordPage() {
                 </div>
                 <h1 className="text-2xl font-bold text-gray-900">E-Mail gesendet</h1>
                 <p className="text-gray-500">
-                  Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zurücksetzen gesendet.
+                  Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zurücksetzen an <strong>{email}</strong> gesendet.
                 </p>
-                
-                {/* Demo: Show reset link directly */}
-                {resetToken && (
-                  <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4 text-left">
-                    <p className="text-sm text-fuchsia-700 font-medium mb-2">Demo-Modus: Direkter Link</p>
-                    <Link 
-                      to={`/reset-password/${resetToken}`}
-                      className="text-sm text-fuchsia-600 hover:underline break-all"
-                    >
-                      Klicken Sie hier, um Ihr Passwort zurückzusetzen
-                    </Link>
-                  </div>
-                )}
+                <p className="text-sm text-gray-400">
+                  Bitte prüfen Sie auch Ihren Spam-Ordner.
+                </p>
               </div>
             ) : (
               <>
                 <div className="text-center">
                   <h1 className="text-2xl font-bold text-gray-900">Passwort vergessen?</h1>
                   <p className="text-gray-500 mt-1">
-                    Geben Sie Ihre E-Mail-Adresse ein
+                    Geben Sie Ihre E-Mail-Adresse ein und wir senden Ihnen einen Link zum Zurücksetzen.
                   </p>
                 </div>
 

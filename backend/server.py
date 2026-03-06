@@ -16,6 +16,7 @@ import bcrypt
 from bson import ObjectId
 import io
 import zipfile
+from email_service import send_password_reset_email, send_admin_reset_email
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -77,6 +78,7 @@ class UserUpdate(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
+    frontend_url: Optional[str] = ""
 
 class PasswordResetConfirm(BaseModel):
     token: str
@@ -365,7 +367,7 @@ async def get_me(user: dict = Depends(get_current_user)):
 
 @api_router.post("/auth/request-password-reset")
 async def request_password_reset(data: PasswordResetRequest):
-    """Request a password reset - creates a reset token"""
+    """Request a password reset - creates a reset token and sends email"""
     user = await db.users.find_one({"email": data.email}, {"_id": 0})
     if not user:
         # Don't reveal if email exists
@@ -384,11 +386,14 @@ async def request_password_reset(data: PasswordResetRequest):
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     
-    # In production, send email here
-    # For now, return success message
-    logger.info(f"Password reset requested for {data.email}, token: {reset_token}")
+    # Build reset link and send email
+    frontend_url = data.frontend_url.rstrip("/") if hasattr(data, "frontend_url") and data.frontend_url else ""
+    reset_link = f"{frontend_url}/reset-password/{reset_token}" if frontend_url else f"/reset-password/{reset_token}"
     
-    return {"message": "Falls die E-Mail existiert, wurde ein Link gesendet", "reset_token": reset_token}
+    email_sent = send_password_reset_email(user["email"], user["name"], reset_link)
+    logger.info(f"Password reset requested for {data.email}, email_sent={email_sent}")
+    
+    return {"message": "Falls die E-Mail existiert, wurde ein Link gesendet", "email_sent": email_sent}
 
 @api_router.post("/auth/reset-password")
 async def reset_password(data: PasswordResetConfirm):
@@ -544,6 +549,9 @@ async def admin_set_password(data: AdminSetPassword, admin: dict = Depends(requi
     
     return {"message": "Passwort gesetzt", "password": data.new_password}
 
+class AdminSendResetEmail(BaseModel):
+    frontend_url: Optional[str] = ""
+
 @api_router.post("/admin/generate-reset-link/{user_id}")
 async def admin_generate_reset_link(user_id: str, admin: dict = Depends(require_admin)):
     """Admin generates a password reset link for a user"""
@@ -563,6 +571,34 @@ async def admin_generate_reset_link(user_id: str, admin: dict = Depends(require_
     })
     
     return {"reset_token": reset_token, "expires_at": expires_at.isoformat()}
+
+
+@api_router.post("/admin/send-reset-email/{user_id}")
+async def admin_send_reset_email(user_id: str, data: AdminSendResetEmail, admin: dict = Depends(require_admin)):
+    """Admin sends a password reset email to a user"""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    
+    reset_token = str(uuid.uuid4()).replace("-", "")[:32]
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    
+    await db.password_resets.delete_many({"user_id": user_id})
+    await db.password_resets.insert_one({
+        "user_id": user_id,
+        "token": reset_token,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    frontend_url = data.frontend_url.rstrip("/") if data.frontend_url else ""
+    reset_link = f"{frontend_url}/reset-password/{reset_token}" if frontend_url else f"/reset-password/{reset_token}"
+    
+    email_sent = send_admin_reset_email(user["email"], user["name"], reset_link)
+    if not email_sent:
+        raise HTTPException(status_code=500, detail="E-Mail konnte nicht gesendet werden")
+    
+    return {"message": "Reset-Link per E-Mail gesendet", "email_sent": True}
 
 @api_router.get("/admin/user-password/{user_id}")
 async def admin_get_user_password(user_id: str, admin: dict = Depends(require_admin)):

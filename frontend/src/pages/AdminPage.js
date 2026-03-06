@@ -42,6 +42,7 @@ import {
   Copy,
   Search,
   Activity,
+  Mail,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -272,6 +273,17 @@ export default function AdminPage() {
       toast.success("Reset-Link erstellt");
     } catch (error) {
       toast.error("Fehler beim Erstellen des Links");
+    }
+  };
+
+  const handleSendResetEmail = async () => {
+    try {
+      await api.post(`/admin/send-reset-email/${passwordTarget.id}`, {
+        frontend_url: window.location.origin,
+      });
+      toast.success("Reset-Link per E-Mail gesendet");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Fehler beim Senden der E-Mail");
     }
   };
 
@@ -941,15 +953,25 @@ export default function AdminPage() {
                 <p className="text-xs text-gray-500">
                   Erstellt einen einmaligen Link, mit dem der Benutzer sein Passwort selbst zurücksetzen kann.
                 </p>
-                <Button
-                  variant="outline"
-                  onClick={handleGenerateResetLink}
-                  className="w-full border-gray-300"
-                  data-testid="admin-generate-reset-link-btn"
-                >
-                  <Link2 className="w-4 h-4 mr-2" />
-                  Reset-Link generieren
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleGenerateResetLink}
+                    className="flex-1 border-gray-300"
+                    data-testid="admin-generate-reset-link-btn"
+                  >
+                    <Link2 className="w-4 h-4 mr-2" />
+                    Link generieren
+                  </Button>
+                  <Button
+                    onClick={handleSendResetEmail}
+                    className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    data-testid="admin-send-reset-email-btn"
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    Per E-Mail senden
+                  </Button>
+                </div>
 
                 {resetLink && (
                   <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 space-y-2">
