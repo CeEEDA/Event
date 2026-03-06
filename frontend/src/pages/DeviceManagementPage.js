@@ -71,9 +71,8 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
   const isGenerator = formData.device_type === "stromerzeuger" || formData.device_type === "lichtmast";
 
   const PART_TYPES = [
-    "Kraftstofffilter", "Ölfilter", "Luftfilter", "Keilriemen",
-    "Kühlmittel", "Motoröl", "Zündkerze", "Batterie",
-    "Dichtung", "Sicherung",
+    "Kraftstoffvorfilter", "Kraftstofffilter", "Ölfilter", "Keilriemen",
+    "Umlenkrollen", "Wasserpumpe", "Luftfilter", "Motoröl",
   ];
 
   const loadDocuments = useCallback(async () => {
@@ -499,23 +498,33 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                     <div>
                       <Label className="text-gray-600 text-xs">Typ *</Label>
                       <select
-                        value={newPart.part_type}
-                        onChange={e => setNewPart(p => ({ ...p, part_type: e.target.value }))}
+                        value={PART_TYPES.includes(newPart.part_type) ? newPart.part_type : (newPart.part_type ? "__custom" : "")}
+                        onChange={e => {
+                          if (e.target.value === "__custom") {
+                            setNewPart(p => ({ ...p, part_type: "" }));
+                          } else {
+                            setNewPart(p => ({ ...p, part_type: e.target.value }));
+                          }
+                        }}
                         className="w-full mt-0.5 px-2 py-1.5 border border-fuchsia-300 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
                         data-testid="part-type-select"
                       >
                         <option value="">Typ wählen...</option>
                         {PART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        <option value="__custom">Freitext...</option>
+                        <option value="__custom">Sonderteil (Freitext)...</option>
                       </select>
-                      {newPart.part_type === "__custom" && (
+                      {!PART_TYPES.includes(newPart.part_type) && newPart.part_type !== "" && (
                         <Input
-                          value={newPart.custom_type || ""}
-                          onChange={e => setNewPart(p => ({ ...p, custom_type: e.target.value, part_type: e.target.value || "__custom" }))}
-                          placeholder="Eigener Typ..."
+                          value={newPart.part_type}
+                          onChange={e => setNewPart(p => ({ ...p, part_type: e.target.value }))}
+                          placeholder="Sonderteil-Bezeichnung..."
                           className="mt-1 text-sm"
                           data-testid="part-custom-type"
+                          autoFocus
                         />
+                      )}
+                      {PART_TYPES.includes(newPart.part_type) ? null : newPart.part_type === "" && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">Wählen Sie einen Typ oder geben Sie einen Freitext ein</p>
                       )}
                     </div>
                     <div>
@@ -531,27 +540,39 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   </div>
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <div>
-                      <Label className="text-gray-600 text-xs">Liter (bei Öl/Kühlmittel)</Label>
+                      <Label className="text-gray-600 text-xs">Teilenummer</Label>
                       <Input
-                        type="number"
-                        step="0.1"
-                        value={newPart.liters}
-                        onChange={e => setNewPart(p => ({ ...p, liters: e.target.value }))}
-                        placeholder="z.B. 12.5"
+                        value={newPart.part_number}
+                        onChange={e => setNewPart(p => ({ ...p, part_number: e.target.value }))}
+                        placeholder="z.B. FIL-001"
                         className="mt-0.5 text-sm"
-                        data-testid="part-liters-input"
+                        data-testid="part-number-input"
                       />
                     </div>
-                    <div>
-                      <Label className="text-gray-600 text-xs">Notiz</Label>
-                      <Input
-                        value={newPart.notes}
-                        onChange={e => setNewPart(p => ({ ...p, notes: e.target.value }))}
-                        placeholder="Zusatzinfo..."
-                        className="mt-0.5 text-sm"
-                        data-testid="part-notes-input"
-                      />
-                    </div>
+                    {(newPart.part_type === "Motoröl" || newPart.liters) && (
+                      <div>
+                        <Label className="text-gray-600 text-xs">Literzahl</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={newPart.liters}
+                          onChange={e => setNewPart(p => ({ ...p, liters: e.target.value }))}
+                          placeholder="z.B. 12.5"
+                          className="mt-0.5 text-sm"
+                          data-testid="part-liters-input"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="mb-2">
+                    <Label className="text-gray-600 text-xs">Notiz</Label>
+                    <Input
+                      value={newPart.notes}
+                      onChange={e => setNewPart(p => ({ ...p, notes: e.target.value }))}
+                      placeholder="Zusatzinfo..."
+                      className="mt-0.5 text-sm"
+                      data-testid="part-notes-input"
+                    />
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" onClick={handleAddPart} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="save-part-btn">Hinzufügen</Button>

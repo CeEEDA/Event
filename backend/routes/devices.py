@@ -68,9 +68,8 @@ class DeviceUpdate(BaseModel):
 
 
 PART_TYPES = [
-    "Kraftstofffilter", "Ölfilter", "Luftfilter", "Keilriemen",
-    "Kühlmittel", "Motoröl", "Zündkerze", "Batterie",
-    "Dichtung", "Sicherung",
+    "Kraftstoffvorfilter", "Kraftstofffilter", "Ölfilter", "Keilriemen",
+    "Umlenkrollen", "Wasserpumpe", "Luftfilter", "Motoröl",
 ]
 
 
@@ -217,6 +216,8 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
     await db.devices.update_one({"id": device_id}, {"$set": update_data})
 
     updated = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if "image_gridfs_id" in updated and updated["image_gridfs_id"]:
+        updated["image_gridfs_id"] = str(updated["image_gridfs_id"])
     return updated
 
 
