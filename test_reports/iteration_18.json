@@ -1,0 +1,85 @@
+{
+  "summary": "Iteration 18 - All requested features tested and PASSED. Backend: Copy device returns image_gridfs_id as string, document download requires auth (403 without). Frontend: Gesamt filter resets to all devices, device image shows in ServicePlan header, document download uses auth-based buttons not plain links.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "copy_device_image_gridfs_id_as_string": {
+      "status": "PASS",
+      "test": "POST /api/devices/{id}/copy returns image_gridfs_id as string",
+      "result": "Response includes image_gridfs_id as string type, copied device keeps same image reference"
+    },
+    "document_download_with_auth": {
+      "status": "PASS",
+      "test": "GET /api/devices/{id}/documents/{docId}/download requires authentication",
+      "result": "Returns 200 with auth, 403 without auth. Document content returned correctly."
+    },
+    "gesamt_filter_resets_all": {
+      "status": "PASS",
+      "test": "Clicking 'Gesamt' filter card resets all filters and shows ALL devices",
+      "result": "Initial count: 9, after Einsatzbereit filter: 4, after Gesamt: 9 devices shown. Toggle works correctly."
+    },
+    "all_filter_cards_clickable": {
+      "status": "PASS",
+      "test": "All filter cards (Einsatzbereit, Bald fällig, Überfällig, Gesamt) are clickable",
+      "result": "All 4 filter cards found with data-testid attributes, clicking filters devices correctly"
+    },
+    "device_image_in_serviceplan_header": {
+      "status": "PASS",
+      "test": "ServicePlan detail view shows device image next to device name in header",
+      "result": "Device image visible in header for XBAP2021 device, src points to /api/devices/{id}/image endpoint"
+    },
+    "document_download_uses_auth_fetch": {
+      "status": "PASS",
+      "test": "Document download in Dateiablage uses button with api.get (not plain anchor link)",
+      "result": "Dateiablage section shows documents as buttons (1 button, 0 anchor links). Click triggers authenticated download."
+    }
+  },
+  "backend_tests": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "tests": [
+      "TestCopyDeviceImageGridfsId::test_copy_device_returns_200 - PASS",
+      "TestCopyDeviceImageGridfsId::test_copy_device_image_gridfs_id_is_string - PASS",
+      "TestCopyDeviceImageGridfsId::test_copy_device_copies_image_reference - PASS",
+      "TestDocumentDownloadAuth::test_download_document_with_auth_returns_200 - PASS",
+      "TestDocumentDownloadAuth::test_download_document_without_auth_returns_403 - PASS",
+      "TestDocumentDownloadAuth::test_download_document_returns_correct_content_type - PASS",
+      "TestServicePlanEndpoints::test_list_serviceplans_returns_200 - PASS",
+      "TestServicePlanEndpoints::test_serviceplan_has_required_fields - PASS",
+      "TestDevicePartsEndpoint::test_get_device_parts - PASS",
+      "TestDeviceImageEndpoint::test_device_image_endpoint_no_auth - PASS"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration18.py",
+    "/app/test_reports/pytest/pytest_iteration18.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration18.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 tests passed)",
+    "frontend": "100% (6/6 features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_creation": "Used existing XBAP2021 device (07d42e9d-403e-48c6-8904-47f2f3323965) with image, 2 parts, and 1 document for frontend testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 18 complete. All 4 user-requested features verified: (1) Copy device returns image_gridfs_id as string in response, (2) Gesamt filter card is a button that sets statusFilter(null) showing all devices, (3) ServicePlan detail header shows device image via img tag with src to /api/devices/{id}/image, (4) Document download uses button with api.get(responseType:'blob') for authenticated download. Test device XBAP2021 has image, 2 parts (Kraftstofffilter, Ölfilter), and 1 document (bild 1.png). Note: DSE-HBF-001 device was deleted, use XBAP2021 for future tests.",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}

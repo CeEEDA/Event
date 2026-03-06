@@ -633,9 +633,20 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
 
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6" data-testid="plan-detail-header">
         <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">{planDetail.device_serial}</h2>
-            <p className="text-sm text-gray-500">{TYPE_LABELS[planDetail.device_type] || planDetail.device_type} · {planDetail.device_model || "–"} · {planDetail.device_user_field || "–"}</p>
+          <div className="flex items-start gap-4">
+            {planDetail.device_id && (
+              <img
+                src={`${BACKEND_URL}/api/devices/${planDetail.device_id}/image`}
+                alt=""
+                className="w-16 h-16 rounded-lg object-cover border border-gray-200 flex-shrink-0"
+                onError={e => { e.target.style.display = "none"; }}
+                data-testid="plan-device-image"
+              />
+            )}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">{planDetail.device_serial}</h2>
+              <p className="text-sm text-gray-500">{TYPE_LABELS[planDetail.device_type] || planDetail.device_type} · {planDetail.device_model || "–"} · {planDetail.device_user_field || "–"}</p>
+            </div>
           </div>
           <div className={`px-3 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>{status.label}</div>
         </div>
@@ -669,10 +680,28 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
           <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-fuchsia-500" /> Dateiablage ({deviceDocs.length})</h3>
           <div className="space-y-1.5">
             {deviceDocs.map(doc => (
-              <a key={doc.id} href={`${BACKEND_URL}/api/devices/${planDetail.device_id}/documents/${doc.id}/download`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 py-2 px-3 bg-gray-50 rounded-lg text-sm text-gray-700 hover:bg-fuchsia-50 hover:text-fuchsia-600 transition-colors" data-testid={`plan-doc-${doc.id}`}>
+              <button
+                key={doc.id}
+                onClick={async () => {
+                  try {
+                    const res = await api.get(`/devices/${planDetail.device_id}/documents/${doc.id}/download`, { responseType: "blob" });
+                    const url = window.URL.createObjectURL(new Blob([res.data]));
+                    const ct = res.headers["content-type"] || "";
+                    if (ct.startsWith("image/") || ct === "application/pdf") {
+                      window.open(url, "_blank");
+                    } else {
+                      const a = document.createElement("a");
+                      a.href = url; a.download = doc.filename || "dokument"; a.click();
+                    }
+                    setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+                  } catch { toast.error("Fehler beim Öffnen der Datei"); }
+                }}
+                className="w-full flex items-center gap-2 py-2 px-3 bg-gray-50 rounded-lg text-sm text-gray-700 hover:bg-fuchsia-50 hover:text-fuchsia-600 transition-colors text-left"
+                data-testid={`plan-doc-${doc.id}`}
+              >
                 <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="truncate">{doc.filename}</span>
-              </a>
+              </button>
             ))}
           </div>
         </div>
@@ -802,10 +831,10 @@ export default function ServiceplanPage() {
                   <p className="text-2xl font-bold text-red-600">{plans.filter(p => getServiceStatus(p).label === "Überfällig").length}</p>
                   <p className="text-xs text-gray-500">Überfällig</p>
                 </button>
-                <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+                <button onClick={() => setStatusFilter(null)} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === null ? "border-fuchsia-400 ring-2 ring-fuchsia-100" : "border-gray-200 hover:border-fuchsia-300"}`} data-testid="filter-gesamt">
                   <p className="text-2xl font-bold text-gray-900">{plans.length}</p>
                   <p className="text-xs text-gray-500">Gesamt</p>
-                </div>
+                </button>
               </div>
             )}
 

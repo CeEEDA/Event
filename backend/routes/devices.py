@@ -260,6 +260,8 @@ async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
 
     await db.devices.insert_one(new_device)
     result = {k: v for k, v in new_device.items() if k != "_id"}
+    if "image_gridfs_id" in result and result["image_gridfs_id"]:
+        result["image_gridfs_id"] = str(result["image_gridfs_id"])
 
     # Copy parts from source device
     source_parts = await db.device_parts.find({"device_id": device_id}, {"_id": 0}).to_list(100)
