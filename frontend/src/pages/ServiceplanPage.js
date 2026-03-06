@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
-  ArrowLeft, Wrench, Plus, Search, Clock, User, ChevronLeft,
+  ArrowLeft, Wrench, Plus, Search, Clock, User, ChevronLeft, ChevronDown,
   Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera,
 } from "lucide-react";
 
@@ -363,14 +363,18 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
   const ats = entry.ats_test || {};
   const diag = entry.diagnosis || {};
   const images = entry.images || [];
-  const hasDetails = Object.keys(mech).length > 0 || Object.keys(meas).length > 0;
 
   const statusLabel = { durchgefuehrt: "Durchgeführt", nicht_durchgefuehrt: "Nicht durchgeführt", nicht_vorhanden: "Nicht vorhanden" };
   const statusCls = { durchgefuehrt: "bg-emerald-100 text-emerald-700", nicht_durchgefuehrt: "bg-gray-100 text-gray-500", nicht_vorhanden: "bg-amber-100 text-amber-700" };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid={`entry-${entry.id}`}>
-      <div className="p-4">
+      {/* Clickable header to expand/collapse */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-4 text-left hover:bg-gray-50 transition-colors"
+        data-testid={`entry-toggle-${entry.id}`}
+      >
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-fuchsia-100 flex items-center justify-center flex-shrink-0">
@@ -381,8 +385,8 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
               <p className="text-xs text-gray-400">
                 {new Date(entry.performed_at).toLocaleDateString("de-DE")}
                 {entry.hours_at_service != null && ` · ${entry.hours_at_service} h`}
-                {entry.next_maintenance_months && ` · ${entry.next_maintenance_months} Mon.`}
-                {entry.next_maintenance_hours && ` · ${entry.next_maintenance_hours} h`}
+                {entry.next_maintenance_months && ` · Nächste: ${entry.next_maintenance_months} Mon.`}
+                {entry.next_maintenance_hours && ` / ${entry.next_maintenance_hours} h`}
                 {!entry.next_maintenance_months && entry.next_maintenance_mode && entry.next_maintenance_value && (
                   <> · Nächste: {entry.next_maintenance_mode === "months" ? `${entry.next_maintenance_value} Mon.` : `${entry.next_maintenance_value} h`}</>
                 )}
@@ -390,101 +394,168 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasDetails && (
-              <button onClick={() => setExpanded(!expanded)} className="text-xs text-fuchsia-600 hover:underline">{expanded ? "Einklappen" : "Details"}</button>
-            )}
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
             {isAdmin && (
-              <button onClick={() => onDelete(entry.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+              <span onClick={e => { e.stopPropagation(); onDelete(entry.id); }} className="text-gray-400 hover:text-red-500 p-1"><Trash2 className="w-4 h-4" /></span>
             )}
           </div>
         </div>
+      </button>
 
-        {entry.remarks && (
-          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <p className="text-xs font-medium text-amber-700 mb-0.5">Bemerkungen</p>
-            <p className="text-xs text-amber-800">{entry.remarks}</p>
-          </div>
-        )}
-        {entry.notes && <p className="text-xs text-gray-500 mt-2">{entry.notes}</p>}
-
-        {images.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-3">
-            {images.map(imgId => (
-              <a key={imgId} href={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} target="_blank" rel="noopener noreferrer" className="block w-14 h-14 rounded-lg overflow-hidden border border-gray-200 hover:border-fuchsia-400">
-                <img src={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} alt="" className="w-full h-full object-cover" />
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {expanded && hasDetails && (
+      {/* Collapsible content showing ALL sections */}
+      {expanded && (
         <div className="border-t border-gray-200 p-4 bg-gray-50 text-xs space-y-4">
+          {/* 1. Mechanische Prüfung */}
           {Object.keys(mech).length > 0 && (
             <div>
-              <p className="font-semibold text-gray-700 mb-1">1. Mechanische Prüfung</p>
+              <p className="font-semibold text-gray-700 mb-2">1. Mechanische Prüfung</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                 {Object.entries(mech).map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between gap-2">
+                  <div key={k} className="flex items-center justify-between gap-2 py-0.5">
                     <span className="text-gray-600">{k}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusCls[v] || "bg-gray-100 text-gray-400"}`}>{statusLabel[v] || v}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${statusCls[v] || "bg-gray-100 text-gray-400"}`}>{statusLabel[v] || v}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* 2. Elektrische Prüfung */}
           {Object.keys(elec).length > 0 && (
             <div>
-              <p className="font-semibold text-gray-700 mb-1">2. Elektrische Prüfung</p>
+              <p className="font-semibold text-gray-700 mb-2">2. Elektrische Prüfung</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                 {Object.entries(elec).map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between gap-2">
+                  <div key={k} className="flex items-center justify-between gap-2 py-0.5">
                     <span className="text-gray-600">{k}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusCls[v] || "bg-gray-100 text-gray-400"}`}>{statusLabel[v] || v}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${statusCls[v] || "bg-gray-100 text-gray-400"}`}>{statusLabel[v] || v}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* 3. Generator Messwerte */}
           {Object.values(meas).some(v => v) && (
             <div>
-              <p className="font-semibold text-gray-700 mb-1">3. Generator Messwerte</p>
-              <div className="grid grid-cols-3 gap-1">
+              <p className="font-semibold text-gray-700 mb-2">3. Generator Messwerte</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {Object.entries(meas).filter(([_, v]) => v).map(([k, v]) => {
                   const lbl = MEASUREMENT_FIELDS.find(f => f.key === k)?.label || k;
-                  return <div key={k}><span className="text-gray-500">{lbl}:</span> <span className="font-medium text-gray-700">{v}</span></div>;
+                  return (
+                    <div key={k} className="bg-white rounded px-2 py-1.5 border border-gray-200">
+                      <span className="text-[10px] text-gray-400 block">{lbl}</span>
+                      <span className="font-medium text-gray-700">{v}</span>
+                    </div>
+                  );
                 })}
               </div>
             </div>
           )}
+
+          {/* 4. Lasttest Generator */}
           {lt.length > 0 && lt.some(r => r.values) && (
             <div>
-              <p className="font-semibold text-gray-700 mb-1">4. Lasttest Generator</p>
-              {lt.filter(r => r.values).map((r, i) => <div key={i}><span className="text-gray-500">{r.load}:</span> {r.values} {r.remarks && `(${r.remarks})`}</div>)}
-            </div>
-          )}
-          {Object.values(ats).some(v => v && v !== "nicht_durchgefuehrt") && (
-            <div>
-              <p className="font-semibold text-gray-700 mb-1">5. ATS / Netzumschaltung</p>
-              <div className="grid grid-cols-2 gap-1">
-                {ATS_ITEMS.filter(a => ats[a.key] && ats[a.key] !== "nicht_durchgefuehrt").map(a => (
-                  <div key={a.key} className="flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3 text-emerald-500" />
-                    {a.label}
-                    {ats[a.key] === "nicht_vorhanden" && <span className="text-[9px] text-amber-500 ml-1">(n.v.)</span>}
+              <p className="font-semibold text-gray-700 mb-2">4. Lasttest Generator</p>
+              <div className="border border-gray-200 rounded overflow-hidden bg-white">
+                <div className="grid grid-cols-3 bg-gray-100 px-2 py-1">
+                  <span className="text-[10px] font-medium text-gray-500">Last</span>
+                  <span className="text-[10px] font-medium text-gray-500">Lasttest</span>
+                  <span className="text-[10px] font-medium text-gray-500">Bemerkungen</span>
+                </div>
+                {lt.map((r, i) => (
+                  <div key={i} className="grid grid-cols-3 px-2 py-1 border-t border-gray-100">
+                    <span className="text-gray-600">{r.load}</span>
+                    <span className="text-gray-700">{r.values || "–"}</span>
+                    <span className="text-gray-400">{r.remarks || "–"}</span>
                   </div>
                 ))}
               </div>
-              {ats.umschaltzeit && <div className="mt-1">Umschaltzeit: <span className="font-medium">{ats.umschaltzeit}s</span></div>}
             </div>
           )}
-          {(diag.fehlerspeicher_ausgelesen === true || diag.fehlerspeicher_ausgelesen === "durchgefuehrt" || diag.fehler_vorhanden === true || diag.fehler_vorhanden === "durchgefuehrt") && (
+
+          {/* 5. ATS / Netzumschaltung */}
+          {Object.keys(ats).filter(k => k !== "umschaltzeit").length > 0 && (
             <div>
-              <p className="font-semibold text-gray-700 mb-1">6. Diagnose</p>
-              {(diag.fehlerspeicher_ausgelesen === true || diag.fehlerspeicher_ausgelesen === "durchgefuehrt") && <div className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Fehlerspeicher ausgelesen</div>}
-              {(diag.keine_fehler === true || diag.keine_fehler === "durchgefuehrt") && <div className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Keine Fehler vorhanden</div>}
-              {(diag.fehler_vorhanden === true || diag.fehler_vorhanden === "durchgefuehrt") && <div className="flex items-center gap-1 text-red-600"><AlertTriangle className="w-3 h-3" /> Fehler vorhanden</div>}
-              {diag.fehlercodes && <div className="mt-1 bg-white p-2 rounded border border-gray-200">{diag.fehlercodes}</div>}
+              <p className="font-semibold text-gray-700 mb-2">5. ATS / Netzumschaltung</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                {ATS_ITEMS.map(a => {
+                  const val = ats[a.key];
+                  if (!val) return null;
+                  return (
+                    <div key={a.key} className="flex items-center justify-between gap-2 py-0.5">
+                      <span className="text-gray-600">{a.label}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${
+                        val === true || val === "durchgefuehrt" ? "bg-emerald-100 text-emerald-700" :
+                        val === "nicht_vorhanden" ? "bg-amber-100 text-amber-700" :
+                        val === "nicht_durchgefuehrt" ? "bg-gray-100 text-gray-500" :
+                        val ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
+                      }`}>
+                        {val === true ? "Durchgeführt" : statusLabel[val] || String(val)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {ats.umschaltzeit && <div className="mt-1.5 text-gray-600">Umschaltzeit: <span className="font-medium text-gray-800">{ats.umschaltzeit}s</span></div>}
+            </div>
+          )}
+
+          {/* 6. Diagnose */}
+          {(diag.fehlerspeicher_ausgelesen || diag.keine_fehler || diag.fehler_vorhanden) && (
+            <div>
+              <p className="font-semibold text-gray-700 mb-2">6. Diagnose</p>
+              <div className="space-y-1">
+                {[
+                  { key: "fehlerspeicher_ausgelesen", label: "Fehlerspeicher ausgelesen" },
+                  { key: "keine_fehler", label: "Keine Fehler vorhanden" },
+                  { key: "fehler_vorhanden", label: "Fehler vorhanden" },
+                ].map(item => {
+                  const val = diag[item.key];
+                  if (!val) return null;
+                  return (
+                    <div key={item.key} className="flex items-center justify-between gap-2 py-0.5">
+                      <span className={`text-gray-600 ${item.key === "fehler_vorhanden" && (val === true || val === "durchgefuehrt") ? "text-red-600 font-medium" : ""}`}>{item.label}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${
+                        val === true || val === "durchgefuehrt" ? (item.key === "fehler_vorhanden" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700") :
+                        val === "nicht_vorhanden" ? "bg-amber-100 text-amber-700" :
+                        "bg-gray-100 text-gray-500"
+                      }`}>
+                        {val === true ? "Ja" : statusLabel[val] || String(val)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {diag.fehlercodes && <div className="mt-1.5 bg-white p-2 rounded border border-red-200 text-red-700">{diag.fehlercodes}</div>}
+            </div>
+          )}
+
+          {/* Bemerkungen & Notizen */}
+          {entry.remarks && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-xs font-medium text-amber-700 mb-0.5">Bemerkungen</p>
+              <p className="text-xs text-amber-800">{entry.remarks}</p>
+            </div>
+          )}
+          {entry.notes && (
+            <div>
+              <p className="font-semibold text-gray-700 mb-1">Notizen</p>
+              <p className="text-gray-600">{entry.notes}</p>
+            </div>
+          )}
+
+          {/* Fotos */}
+          {images.length > 0 && (
+            <div>
+              <p className="font-semibold text-gray-700 mb-2">Fotos</p>
+              <div className="flex flex-wrap gap-2">
+                {images.map(imgId => (
+                  <a key={imgId} href={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-gray-200 hover:border-fuchsia-400">
+                    <img src={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} alt="" className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
             </div>
           )}
         </div>

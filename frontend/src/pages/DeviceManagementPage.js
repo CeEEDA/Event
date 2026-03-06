@@ -282,6 +282,127 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
             </div>
           )}
 
+          {/* Ersatzteile (Parts) - at the top of the form */}
+          {editing && (
+            <div className="border border-gray-200 rounded-lg p-4" data-testid="parts-section">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-900">Ersatzteile ({parts.length})</h3>
+                  <p className="text-[10px] text-gray-400">Filter, Öle, Riemen und weitere Teile</p>
+                </div>
+                <button
+                  onClick={() => setShowAddPart(!showAddPart)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+                  data-testid="add-part-btn"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Ersatzteil
+                </button>
+              </div>
+
+              {showAddPart && (
+                <div className="bg-white border border-gray-200 rounded-lg p-3 mb-3" data-testid="add-part-form">
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <Label className="text-gray-600 text-xs">Typ *</Label>
+                      <select
+                        value={PART_TYPES.includes(newPart.part_type) ? newPart.part_type : (newPart.part_type ? "__custom" : "")}
+                        onChange={e => {
+                          if (e.target.value === "__custom") {
+                            setNewPart(p => ({ ...p, part_type: "" }));
+                          } else {
+                            setNewPart(p => ({ ...p, part_type: e.target.value }));
+                          }
+                        }}
+                        className="w-full mt-0.5 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
+                        data-testid="part-type-select"
+                      >
+                        <option value="">Typ wählen...</option>
+                        {PART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        <option value="__custom">Sonderteil (Freitext)...</option>
+                      </select>
+                      {!PART_TYPES.includes(newPart.part_type) && newPart.part_type !== "" && (
+                        <Input
+                          value={newPart.part_type}
+                          onChange={e => setNewPart(p => ({ ...p, part_type: e.target.value }))}
+                          placeholder="Sonderteil-Bezeichnung..."
+                          className="mt-1 text-sm"
+                          data-testid="part-custom-type"
+                          autoFocus
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-gray-600 text-xs">Teilenummer</Label>
+                      <Input
+                        value={newPart.part_number}
+                        onChange={e => setNewPart(p => ({ ...p, part_number: e.target.value }))}
+                        placeholder="z.B. 265272"
+                        className="mt-0.5 text-sm"
+                        data-testid="part-number-input"
+                      />
+                    </div>
+                  </div>
+                  {(newPart.part_type === "Motoröl" || newPart.liters) && (
+                    <div className="mb-2">
+                      <Label className="text-gray-600 text-xs">Literzahl</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={newPart.liters}
+                        onChange={e => setNewPart(p => ({ ...p, liters: e.target.value }))}
+                        placeholder="z.B. 12.5"
+                        className="mt-0.5 text-sm w-40"
+                        data-testid="part-liters-input"
+                      />
+                    </div>
+                  )}
+                  <div className="mb-2">
+                    <Label className="text-gray-600 text-xs">Notiz</Label>
+                    <Input
+                      value={newPart.notes}
+                      onChange={e => setNewPart(p => ({ ...p, notes: e.target.value }))}
+                      placeholder="Zusatzinfo..."
+                      className="mt-0.5 text-sm"
+                      data-testid="part-notes-input"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleAddPart} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="save-part-btn">Hinzufügen</Button>
+                    <Button size="sm" variant="outline" onClick={() => setShowAddPart(false)} className="text-xs">Abbrechen</Button>
+                  </div>
+                </div>
+              )}
+
+              {parts.length === 0 ? (
+                <p className="text-xs text-gray-400 py-3 text-center bg-gray-50 rounded-lg">Keine Ersatzteile hinterlegt</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {parts.map(part => (
+                    <div key={part.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg" data-testid={`part-${part.id}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Wrench className="w-4 h-4 text-fuchsia-400 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-900 truncate">
+                            {part.part_type}
+                            {part.part_number && <span className="text-gray-400 ml-1.5 font-mono text-xs">{part.part_number}</span>}
+                          </p>
+                          <p className="text-[10px] text-gray-400">
+                            {part.liters != null && `${part.liters} L`}
+                            {part.liters != null && part.notes && " · "}
+                            {part.notes}
+                          </p>
+                        </div>
+                      </div>
+                      <button onClick={() => handleDeletePart(part.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0 ml-2" data-testid={`delete-part-${part.id}`}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Device Type - selectable only on create OR for admin editing */}
           {!editing ? (
             <div>
@@ -476,140 +597,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           )}
 
           {/* Ersatzteile (Parts) */}
-          {editing && (
-            <div className="border-t border-gray-100 pt-4" data-testid="parts-section">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-900">Ersatzteile ({parts.length})</h3>
-                  <p className="text-[10px] text-gray-400">Filter, Öle, Riemen und weitere Teile</p>
-                </div>
-                <button
-                  onClick={() => setShowAddPart(!showAddPart)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-fuchsia-50 text-fuchsia-600 rounded-lg text-xs font-medium hover:bg-fuchsia-100 transition-colors"
-                  data-testid="add-part-btn"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Ersatzteil
-                </button>
-              </div>
 
-              {showAddPart && (
-                <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 mb-3" data-testid="add-part-form">
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div>
-                      <Label className="text-gray-600 text-xs">Typ *</Label>
-                      <select
-                        value={PART_TYPES.includes(newPart.part_type) ? newPart.part_type : (newPart.part_type ? "__custom" : "")}
-                        onChange={e => {
-                          if (e.target.value === "__custom") {
-                            setNewPart(p => ({ ...p, part_type: "" }));
-                          } else {
-                            setNewPart(p => ({ ...p, part_type: e.target.value }));
-                          }
-                        }}
-                        className="w-full mt-0.5 px-2 py-1.5 border border-fuchsia-300 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
-                        data-testid="part-type-select"
-                      >
-                        <option value="">Typ wählen...</option>
-                        {PART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        <option value="__custom">Sonderteil (Freitext)...</option>
-                      </select>
-                      {!PART_TYPES.includes(newPart.part_type) && newPart.part_type !== "" && (
-                        <Input
-                          value={newPart.part_type}
-                          onChange={e => setNewPart(p => ({ ...p, part_type: e.target.value }))}
-                          placeholder="Sonderteil-Bezeichnung..."
-                          className="mt-1 text-sm"
-                          data-testid="part-custom-type"
-                          autoFocus
-                        />
-                      )}
-                      {PART_TYPES.includes(newPart.part_type) ? null : newPart.part_type === "" && (
-                        <p className="text-[10px] text-gray-400 mt-0.5">Wählen Sie einen Typ oder geben Sie einen Freitext ein</p>
-                      )}
-                    </div>
-                    <div>
-                      <Label className="text-gray-600 text-xs">Teilenummer</Label>
-                      <Input
-                        value={newPart.part_number}
-                        onChange={e => setNewPart(p => ({ ...p, part_number: e.target.value }))}
-                        placeholder="z.B. FIL-001"
-                        className="mt-0.5 text-sm"
-                        data-testid="part-number-input"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div>
-                      <Label className="text-gray-600 text-xs">Teilenummer</Label>
-                      <Input
-                        value={newPart.part_number}
-                        onChange={e => setNewPart(p => ({ ...p, part_number: e.target.value }))}
-                        placeholder="z.B. FIL-001"
-                        className="mt-0.5 text-sm"
-                        data-testid="part-number-input"
-                      />
-                    </div>
-                    {(newPart.part_type === "Motoröl" || newPart.liters) && (
-                      <div>
-                        <Label className="text-gray-600 text-xs">Literzahl</Label>
-                        <Input
-                          type="number"
-                          step="0.1"
-                          value={newPart.liters}
-                          onChange={e => setNewPart(p => ({ ...p, liters: e.target.value }))}
-                          placeholder="z.B. 12.5"
-                          className="mt-0.5 text-sm"
-                          data-testid="part-liters-input"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <div className="mb-2">
-                    <Label className="text-gray-600 text-xs">Notiz</Label>
-                    <Input
-                      value={newPart.notes}
-                      onChange={e => setNewPart(p => ({ ...p, notes: e.target.value }))}
-                      placeholder="Zusatzinfo..."
-                      className="mt-0.5 text-sm"
-                      data-testid="part-notes-input"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={handleAddPart} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="save-part-btn">Hinzufügen</Button>
-                    <Button size="sm" variant="outline" onClick={() => setShowAddPart(false)} className="text-xs">Abbrechen</Button>
-                  </div>
-                </div>
-              )}
-
-              {parts.length === 0 ? (
-                <p className="text-xs text-gray-400 py-3 text-center bg-gray-50 rounded-lg">Keine Ersatzteile hinterlegt</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {parts.map(part => (
-                    <div key={part.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg" data-testid={`part-${part.id}`}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Wrench className="w-4 h-4 text-fuchsia-400 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-sm text-gray-900 truncate">
-                            {part.part_type}
-                            {part.part_number && <span className="text-gray-400 ml-1.5 font-mono text-xs">{part.part_number}</span>}
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                            {part.liters != null && `${part.liters} L`}
-                            {part.liters != null && part.notes && " · "}
-                            {part.notes}
-                          </p>
-                        </div>
-                      </div>
-                      <button onClick={() => handleDeletePart(part.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0 ml-2" data-testid={`delete-part-${part.id}`}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="flex justify-end gap-3 p-5 border-t border-gray-200">
