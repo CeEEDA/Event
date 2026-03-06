@@ -321,7 +321,7 @@ export default function GeneratorDetailPage() {
               </div>
               <div className="flex justify-between py-1.5 border-b border-gray-100">
                 <span className="text-gray-400">Erstellt</span>
-                <span className="font-mono text-gray-600">{new Date(generator.created_at).toLocaleString("de-DE")}</span>
+                <span className="font-mono text-gray-600">{generator.created_at ? new Date(generator.created_at).toLocaleString("de-DE") : "–"}</span>
               </div>
               {generator.notes && (
                 <div className="flex justify-between py-1.5 col-span-2">

@@ -27,6 +27,33 @@ def init_generator_routes(_db, _decode_jwt_token, _get_current_user, _require_ad
     require_admin = _require_admin
 
 
+async def _resolve_generator(generator_id: str):
+    """Find a generator by ID, including virtual generators from devices."""
+    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    if gen:
+        return gen
+    if generator_id.startswith("dev-"):
+        device_id = generator_id[4:]
+        device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+        if device:
+            return {
+                "id": generator_id,
+                "name": device.get("user_field") or device.get("model") or device["serial_number"],
+                "serial_number": device["serial_number"],
+                "model": device.get("controller") or device.get("model") or "–",
+                "location_name": device.get("user_field", ""),
+                "latitude": None,
+                "longitude": None,
+                "status": "standby",
+                "is_active": True,
+                "device_id": device["id"],
+                "from_device": True,
+                "notes": device.get("notes", ""),
+                "last_seen": None,
+            }
+    return None
+
+
 # ============== Models ==============
 
 class GeneratorCreate(BaseModel):
@@ -255,7 +282,7 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
 
 @router.get("/{generator_id}")
 async def get_generator(generator_id: str, user: dict = Depends(get_authenticated_user)):
-    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    gen = await _resolve_generator(generator_id)
     if not gen:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
@@ -411,7 +438,7 @@ async def get_telemetry(
     limit: int = Query(default=200, ge=1, le=1000),
     user: dict = Depends(get_authenticated_user),
 ):
-    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    gen = await _resolve_generator(generator_id)
     if not gen:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
@@ -436,7 +463,7 @@ async def get_alarms(
     active_only: bool = Query(default=True),
     user: dict = Depends(get_authenticated_user),
 ):
-    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    gen = await _resolve_generator(generator_id)
     if not gen:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
