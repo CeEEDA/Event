@@ -23,6 +23,7 @@ import {
   Search,
   Map,
   LayoutGrid,
+  Wrench,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -88,6 +89,7 @@ function GeneratorCard({ generator, onClick }) {
   const lastSeen = generator.last_seen
     ? new Date(generator.last_seen).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : "–";
+  const hasMaintWarning = generator.maintenance_warning;
 
   return (
     <button
@@ -100,10 +102,18 @@ function GeneratorCard({ generator, onClick }) {
           <h3 className="text-sm font-semibold text-gray-900 truncate">{generator.name}</h3>
           <p className="text-xs text-gray-400 font-mono">{generator.serial_number} · {generator.model}</p>
         </div>
-        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${status.color} text-white ml-2 flex-shrink-0`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-          {status.label}
-        </span>
+        <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+          {hasMaintWarning && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700" title={`Wartung in ${generator.maintenance_due_days} Tagen`} data-testid={`maint-warning-${generator.serial_number}`}>
+              <Wrench className="w-3 h-3" />
+              {generator.maintenance_due_days <= 0 ? "Überfällig" : `${generator.maintenance_due_days}T`}
+            </span>
+          )}
+          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${status.color} text-white`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+            {status.label}
+          </span>
+        </div>
       </div>
 
       {generator.location_name && (

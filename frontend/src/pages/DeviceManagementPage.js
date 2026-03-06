@@ -13,7 +13,6 @@ import {
   Search,
   Pencil,
   Trash2,
-  Copy,
   FileText,
   Upload,
   X,
@@ -54,10 +53,12 @@ const EMPTY_FORM = {
   notes: "",
 };
 
-function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, onCopy, isAdmin }) {
+function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, isAdmin, allDevices }) {
   const fileInputRef = useRef(null);
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [copySearch, setCopySearch] = useState("");
+  const [showCopyDropdown, setShowCopyDropdown] = useState(false);
 
   const isGenerator = formData.device_type === "stromerzeuger" || formData.device_type === "lichtmast";
 
@@ -96,6 +97,40 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
 
   const update = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
 
+  const handleCopyFromDevice = (device) => {
+    setFormData({
+      device_type: device.device_type || "stromerzeuger",
+      serial_number: "",
+      user_field: device.user_field || "",
+      latitude: device.latitude ?? "",
+      longitude: device.longitude ?? "",
+      model: device.model || "",
+      engine_manufacturer: device.engine_manufacturer || "",
+      engine_type: device.engine_type || "",
+      engine_number: "",
+      generator_manufacturer: device.generator_manufacturer || "",
+      generator_type: device.generator_type || "",
+      generator_number: "",
+      year_of_manufacture: device.year_of_manufacture ?? "",
+      power_output: device.power_output || "",
+      controller: device.controller || "",
+      last_maintenance: "",
+      next_maintenance: "",
+      notes: "",
+    });
+    setCopySearch("");
+    setShowCopyDropdown(false);
+    toast.success("Daten übernommen – bitte Seriennummer eintragen");
+  };
+
+  const copyFilteredDevices = (allDevices || []).filter(d => {
+    if (!copySearch) return true;
+    const q = copySearch.toLowerCase();
+    return (d.serial_number || "").toLowerCase().includes(q) ||
+      (d.model || "").toLowerCase().includes(q) ||
+      (d.user_field || "").toLowerCase().includes(q);
+  });
+
   if (!open) return null;
 
   const currentType = DEVICE_TYPES.find(t => t.value === formData.device_type);
@@ -107,17 +142,50 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, on
           <h2 className="text-lg font-semibold text-gray-900">
             {editing ? "Gerät bearbeiten" : "Neues Gerät anlegen"}
           </h2>
-          <div className="flex items-center gap-2">
-            {editing && isAdmin && (
-              <Button variant="outline" size="sm" onClick={() => onCopy(editing.id)} className="text-fuchsia-600" data-testid="copy-device-btn">
-                <Copy className="w-4 h-4 mr-1" /> Kopieren
-              </Button>
-            )}
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto" data-testid="device-form">
+          {/* Copy from existing device - only in create mode */}
+          {!editing && isAdmin && allDevices && allDevices.length > 0 && (
+            <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4" data-testid="copy-from-section">
+              <Label className="text-fuchsia-700 text-sm font-medium mb-2 block">Von bestehendem Gerät kopieren</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-fuchsia-400" />
+                <input
+                  type="text"
+                  placeholder="Gerät suchen (Seriennummer, Modell...)"
+                  value={copySearch}
+                  onChange={e => { setCopySearch(e.target.value); setShowCopyDropdown(true); }}
+                  onFocus={() => setShowCopyDropdown(true)}
+                  className="w-full pl-9 pr-3 py-2 border border-fuchsia-300 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
+                  data-testid="copy-search-input"
+                />
+                {showCopyDropdown && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
+                    {copyFilteredDevices.length === 0 ? (
+                      <p className="text-xs text-gray-400 p-3">Keine Geräte gefunden</p>
+                    ) : (
+                      copyFilteredDevices.slice(0, 10).map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => handleCopyFromDevice(d)}
+                          className="w-full text-left px-3 py-2 hover:bg-fuchsia-50 transition-colors border-b border-gray-50 last:border-b-0"
+                          data-testid={`copy-option-${d.serial_number}`}
+                        >
+                          <p className="text-sm font-medium text-gray-900">{d.serial_number}</p>
+                          <p className="text-[10px] text-gray-400">{TYPE_LABELS[d.device_type] || d.device_type} · {d.model || "–"} · {d.user_field || "–"}</p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              {showCopyDropdown && (
+                <button onClick={() => setShowCopyDropdown(false)} className="text-xs text-fuchsia-500 mt-1 hover:underline">Schließen</button>
+              )}
+            </div>
+          )}
           {/* Device Type - selectable only on create OR for admin editing */}
           {!editing ? (
             <div>
@@ -609,9 +677,6 @@ export default function DeviceManagementPage() {
                             </button>
                             {isAdmin && (
                               <>
-                                <button onClick={() => handleCopy(device.id)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Kopieren" data-testid={`copy-${device.serial_number}`}>
-                                  <Copy className="w-4 h-4" />
-                                </button>
                                 <button onClick={() => setDeleteConfirm(device)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-${device.serial_number}`}>
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -639,8 +704,8 @@ export default function DeviceManagementPage() {
         setFormData={setFormData}
         onSave={handleSave}
         editing={editing}
-        onCopy={handleCopy}
         isAdmin={isAdmin}
+        allDevices={devices}
       />
 
       {deleteConfirm && (

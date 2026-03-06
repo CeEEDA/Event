@@ -166,12 +166,22 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             else:
                 generators = []
 
+    # P1: Filter out generators whose matching device is "ausser_betrieb"
+    out_of_service_serials = set()
+    oos_devices = await db.devices.find(
+        {"status": "ausser_betrieb"}, {"_id": 0, "serial_number": 1}
+    ).to_list(2000)
+    for d in oos_devices:
+        out_of_service_serials.add(d.get("serial_number", ""))
+    if out_of_service_serials:
+        generators = [g for g in generators if g.get("serial_number") not in out_of_service_serials]
+
     # Strip api_key for non-admins
     if user["role"] != "admin":
         for g in generators:
             g.pop("api_key", None)
 
-    # Attach latest telemetry for each generator
+    # Attach latest telemetry and service warning for each generator
     for g in generators:
         latest = await db.generator_telemetry.find_one(
             {"generator_id": g["id"]},
@@ -179,6 +189,22 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             sort=[("timestamp", -1)]
         )
         g["latest_telemetry"] = latest
+
+        # P4: Check for upcoming maintenance via device cross-reference
+        device = await db.devices.find_one(
+            {"serial_number": g.get("serial_number")}, {"_id": 0}
+        )
+        if device and device.get("next_maintenance"):
+            from datetime import datetime as dt
+            try:
+                next_maint = dt.fromisoformat(device["next_maintenance"])
+                days_until = (next_maint - dt.now(timezone.utc).replace(tzinfo=None)).days
+                if days_until <= 30:
+                    g["maintenance_warning"] = True
+                    g["maintenance_due_days"] = days_until
+                    g["next_maintenance_date"] = device["next_maintenance"]
+            except (ValueError, TypeError):
+                pass
 
     return generators
 
