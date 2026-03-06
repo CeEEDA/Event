@@ -1,0 +1,83 @@
+{
+  "summary": "Iteration 14 - Complete testing of bug fixes and new features. 10/10 backend tests passed (100%). All frontend UI elements verified via Playwright screenshots. Monitoring stats correctly show 12 total (including device-synced generators). Device Parts (Ersatzteile) CRUD working with type dropdown. Service Plan maintenance form has both months AND hours mandatory. ATS and Diagnosis sections use 3-state buttons. Lasttest table header says 'Lasttest' not 'Messwerte'. Create plan modal opens for devices without plans and auto-navigates to plan detail after creation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "monitoring_stats": {
+      "total_shows_12": "PASS - Stats show 12 total generators (5 real + 7 virtual from devices)",
+      "includes_device_synced": "PASS - Stromerzeuger/Lichtmast devices appear as generators with from_device=true"
+    },
+    "device_parts_ersatzteile": {
+      "parts_section_visible": "PASS - Ersatzteile section visible in device edit modal",
+      "add_part_button": "PASS - '+ Ersatzteil' button works",
+      "type_dropdown": "PASS - Part type dropdown with options (Kraftstofffilter, Ölfilter, Luftfilter, etc.)",
+      "part_number_input": "PASS - Teilenummer input field present",
+      "add_part_api": "PASS - POST /api/devices/{id}/parts creates part",
+      "list_parts_api": "PASS - GET /api/devices/{id}/parts returns parts list",
+      "delete_part_api": "PASS - DELETE /api/devices/parts/{partId} removes part",
+      "delete_button_visible": "PASS - Trash icon visible to delete parts"
+    },
+    "service_plan_create": {
+      "device_without_plan_clickable": "PASS - Clicking device without plan opens create modal",
+      "create_modal_fields": "PASS - Modal shows device dropdown, Aktuelle Betriebsstunden, Intervall (Stunden/Monate)",
+      "auto_navigate_to_detail": "PASS - After creating plan, user is redirected to plan detail view (code verified: setSelectedPlan(res.data))"
+    },
+    "maintenance_form_dual_fields": {
+      "in_monaten_mandatory": "PASS - 'In Monaten *' field present with required marker",
+      "in_betriebsstunden_mandatory": "PASS - 'In Betriebsstunden *' field present with required marker",
+      "no_dropdown_selector": "PASS - Both fields visible as separate inputs (not dropdown mode selector)",
+      "calculated_preview": "PASS - Shows 'Nächste Wartung:' calculated date/hours preview"
+    },
+    "ats_tristate_buttons": {
+      "ats_section_present": "PASS - Section 5: ATS / Netzumschaltung Test",
+      "6_items_with_tristate": "PASS - All 6 ATS items have 3-state buttons",
+      "button_labels": "PASS - 'Nicht durchgeführt' / 'Durchgeführt' / 'Nicht vorhanden'",
+      "umschaltzeit_field": "PASS - ATS Umschaltzeit (Sekunden) input present"
+    },
+    "diagnosis_tristate_buttons": {
+      "diagnosis_section_present": "PASS - Section 6: Diagnose",
+      "3_items_with_tristate": "PASS - All 3 diagnosis items have 3-state buttons",
+      "fehlercodes_textarea": "PASS - Fehlercodes textarea present"
+    },
+    "save_maintenance_entry": {
+      "save_with_both_months_hours": "PASS - API accepts both next_maintenance_months and next_maintenance_hours",
+      "entry_displays_correctly": "PASS - Saved entry shows '12 Mon. · 500 h' format"
+    },
+    "lasttest_table_header": {
+      "column_says_lasttest": "PASS - Load test table column header says 'Lasttest' (NOT 'Messwerte')",
+      "table_structure": "PASS - Columns: Last, Lasttest, Bemerkungen with rows 25%, 50%, 75%, 100%"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14.py",
+    "/app/test_reports/pytest/pytest_iteration14.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 tests passed)",
+    "frontend": "100% (all UI elements verified via Playwright)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password",
+    "mitarbeiter": "anna.weber@test.com / password"
+  },
+  "seed_data_creation": "Created test parts and maintenance entries during API testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 14 complete. All reported bugs verified as fixed: (1) Monitoring stats show 12 total including virtual generators from devices, (2) Maintenance entries save with both months AND hours mandatory fields, (3) Devices without plan can open create modal which auto-navigates to detail. New features verified: Parts/Ersatzteile CRUD per device, ATS/Diagnosis 3-state buttons (nicht_durchgefuehrt/durchgefuehrt/nicht_vorhanden), Lasttest table header says 'Lasttest'.",
+  "mocked_apis": {
+    "has_mocked_apis": true,
+    "mocked_apis_list": ["Generator telemetry data is simulated via /api/generators/simulate"]
+  }
+}

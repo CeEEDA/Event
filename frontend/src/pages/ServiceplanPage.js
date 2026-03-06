@@ -116,43 +116,52 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
     performed_by: user?.name || "",
     performed_at: new Date().toISOString().split("T")[0],
     hours_at_service: "",
-    next_maintenance_mode: "months",
-    next_maintenance_value: "",
+    next_maintenance_months: "",
+    next_maintenance_hours: "",
     mechanical: initChecklist(MECHANICAL_ITEMS),
     electrical: initChecklist(ELECTRICAL_ITEMS),
     measurements: MEASUREMENT_FIELDS.reduce((acc, f) => { acc[f.key] = ""; return acc; }, {}),
     load_test: LOAD_LEVELS.map(l => ({ load: l, values: "", remarks: "" })),
-    ats_test: ATS_ITEMS.reduce((acc, i) => { acc[i.key] = false; return acc; }, {}),
+    ats_test: ATS_ITEMS.reduce((acc, i) => { acc[i.key] = "nicht_durchgefuehrt"; return acc; }, {}),
     ats_umschaltzeit: "",
-    diagnosis: { fehlerspeicher_ausgelesen: false, keine_fehler: false, fehler_vorhanden: false, fehlercodes: "" },
+    diagnosis: {
+      fehlerspeicher_ausgelesen: "nicht_durchgefuehrt",
+      keine_fehler: "nicht_durchgefuehrt",
+      fehler_vorhanden: "nicht_durchgefuehrt",
+      fehlercodes: "",
+    },
     remarks: "",
     notes: "",
   });
 
   // Calculate next maintenance preview
-  const calcNextMaintenance = () => {
-    if (!form.next_maintenance_value) return "–";
-    const val = parseInt(form.next_maintenance_value);
-    if (form.next_maintenance_mode === "months") {
-      const d = new Date(form.performed_at);
-      d.setMonth(d.getMonth() + val);
-      return d.toLocaleDateString("de-DE");
-    } else {
-      const hrs = parseFloat(form.hours_at_service || 0);
-      return `bei ${hrs + val} Betriebsstunden`;
-    }
+  const calcNextMaintenanceMonths = () => {
+    if (!form.next_maintenance_months) return "–";
+    const val = parseInt(form.next_maintenance_months);
+    const d = new Date(form.performed_at);
+    d.setMonth(d.getMonth() + val);
+    return d.toLocaleDateString("de-DE");
+  };
+
+  const calcNextMaintenanceHours = () => {
+    if (!form.next_maintenance_hours || !form.hours_at_service) return "–";
+    const hrs = parseFloat(form.hours_at_service || 0);
+    const val = parseInt(form.next_maintenance_hours);
+    return `bei ${hrs + val} h`;
   };
 
   const handleSave = async () => {
     if (!form.performed_by.trim()) { toast.error("Techniker ist erforderlich"); return; }
+    if (!form.next_maintenance_months) { toast.error("Nächste Wartung in Monaten ist erforderlich"); return; }
+    if (!form.next_maintenance_hours) { toast.error("Nächste Wartung in Stunden ist erforderlich"); return; }
     setSaving(true);
     try {
       await onSave({
         performed_by: form.performed_by,
         performed_at: form.performed_at,
         hours_at_service: form.hours_at_service ? parseFloat(form.hours_at_service) : null,
-        next_maintenance_mode: form.next_maintenance_mode,
-        next_maintenance_value: form.next_maintenance_value ? parseInt(form.next_maintenance_value) : null,
+        next_maintenance_months: parseInt(form.next_maintenance_months),
+        next_maintenance_hours: parseInt(form.next_maintenance_hours),
         checklist_data: { mechanical: form.mechanical, electrical: form.electrical },
         measurements: form.measurements,
         load_test: form.load_test,
@@ -193,21 +202,19 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
         </div>
       </div>
 
-      {/* Next Maintenance Calculation */}
+      {/* Next Maintenance Calculation - Both months and hours mandatory */}
       <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4 mb-6">
-        <Label className="text-fuchsia-700 text-sm font-medium mb-2 block">Nächste Wartung</Label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <Label className="text-fuchsia-700 text-sm font-medium mb-2 block">Nächste Wartung *</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <select value={form.next_maintenance_mode} onChange={e => setForm(p => ({ ...p, next_maintenance_mode: e.target.value }))} className="w-full px-3 py-2 border border-fuchsia-300 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="next-maint-mode">
-              <option value="months">In Monaten</option>
-              <option value="hours">In Betriebsstunden</option>
-            </select>
+            <Label className="text-gray-600 text-xs mb-1 block">In Monaten *</Label>
+            <Input type="number" value={form.next_maintenance_months} onChange={e => setForm(p => ({ ...p, next_maintenance_months: e.target.value }))} placeholder="z.B. 12" className="border-fuchsia-300" data-testid="next-maint-months" />
+            <p className="text-xs text-fuchsia-600 mt-1">Nächste Wartung: <span className="font-bold">{calcNextMaintenanceMonths()}</span></p>
           </div>
           <div>
-            <Input type="number" value={form.next_maintenance_value} onChange={e => setForm(p => ({ ...p, next_maintenance_value: e.target.value }))} placeholder={form.next_maintenance_mode === "months" ? "z.B. 12" : "z.B. 500"} className="border-fuchsia-300" data-testid="next-maint-value" />
-          </div>
-          <div className="text-sm text-fuchsia-700 font-medium">
-            Nächste Wartung: <span className="font-bold">{calcNextMaintenance()}</span>
+            <Label className="text-gray-600 text-xs mb-1 block">In Betriebsstunden *</Label>
+            <Input type="number" value={form.next_maintenance_hours} onChange={e => setForm(p => ({ ...p, next_maintenance_hours: e.target.value }))} placeholder="z.B. 500" className="border-fuchsia-300" data-testid="next-maint-hours" />
+            <p className="text-xs text-fuchsia-600 mt-1">Nächste Wartung: <span className="font-bold">{calcNextMaintenanceHours()}</span></p>
           </div>
         </div>
       </div>
@@ -246,7 +253,7 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium w-20">Last</th>
-              <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Messwerte</th>
+              <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Lasttest</th>
               <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Bemerkungen</th>
             </tr>
           </thead>
@@ -264,14 +271,11 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
 
       {/* 5. ATS / Netzumschaltung Test */}
       <SectionHeader number="5" title="ATS / Netzumschaltung Test" />
-      <div className="space-y-2">
+      <div className="space-y-0">
         {ATS_ITEMS.map(item => (
-          <label key={item.key} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${form.ats_test[item.key] ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200" : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-transparent"}`}>
-            <input type="checkbox" checked={form.ats_test[item.key]} onChange={e => updateAts(item.key, e.target.checked)} className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500" />
-            {item.label}
-          </label>
+          <TriStateButton key={item.key} label={item.label} status={form.ats_test[item.key]} onChange={val => updateAts(item.key, val)} />
         ))}
-        <div className="mt-2">
+        <div className="mt-2 pt-2">
           <Label className="text-gray-600 text-xs">ATS Umschaltzeit (Sekunden)</Label>
           <Input value={form.ats_umschaltzeit} onChange={e => setForm(p => ({ ...p, ats_umschaltzeit: e.target.value }))} placeholder="–" className="mt-0.5 w-40 text-sm" data-testid="ats-umschaltzeit" />
         </div>
@@ -279,18 +283,15 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
 
       {/* 6. Diagnose */}
       <SectionHeader number="6" title="Diagnose" />
-      <div className="space-y-2 mb-3">
+      <div className="space-y-0 mb-3">
         {[
           { key: "fehlerspeicher_ausgelesen", label: "Fehlerspeicher ausgelesen" },
           { key: "keine_fehler", label: "Keine Fehler vorhanden" },
           { key: "fehler_vorhanden", label: "Fehler vorhanden" },
         ].map(item => (
-          <label key={item.key} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${form.diagnosis[item.key] ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200" : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-transparent"}`}>
-            <input type="checkbox" checked={form.diagnosis[item.key]} onChange={e => updateDiag(item.key, e.target.checked)} className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500" />
-            {item.label}
-          </label>
+          <TriStateButton key={item.key} label={item.label} status={form.diagnosis[item.key]} onChange={val => updateDiag(item.key, val)} />
         ))}
-        <div>
+        <div className="mt-2">
           <Label className="text-gray-600 text-xs">Fehlercodes</Label>
           <textarea value={form.diagnosis.fehlercodes} onChange={e => updateDiag("fehlercodes", e.target.value)} rows={2} placeholder="Fehlercodes eingeben..." className="mt-0.5 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500" data-testid="diag-fehlercodes" />
         </div>
@@ -302,20 +303,36 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
         <textarea value={form.remarks} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))} rows={3} placeholder="Besonderheiten, Auffälligkeiten, Schäden..." className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500" data-testid="entry-remarks" />
       </div>
 
-      {/* Photos */}
+      {/* Photos with Drag & Drop */}
       <div className="mb-4">
         <Label className="text-gray-700 text-sm font-medium mb-2 block">Fotos</Label>
         <input ref={imageInputRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={e => setPendingImages(prev => [...prev, ...Array.from(e.target.files || [])])} />
-        <div className="flex flex-wrap gap-2">
-          {pendingImages.map((img, idx) => (
-            <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200">
-              <img src={URL.createObjectURL(img)} alt="" className="w-full h-full object-cover" />
-              <button onClick={() => setPendingImages(p => p.filter((_, i) => i !== idx))} className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center"><X className="w-3 h-3" /></button>
-            </div>
-          ))}
-          <button onClick={() => imageInputRef.current?.click()} className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-fuchsia-400 hover:text-fuchsia-500 transition-colors" data-testid="add-photo-btn">
-            <Camera className="w-5 h-5" /><span className="text-[10px] mt-0.5">Foto</span>
-          </button>
+        <div
+          className="border-2 border-dashed border-gray-300 rounded-lg p-4 transition-colors hover:border-fuchsia-400"
+          data-testid="photo-drop-zone"
+          onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-fuchsia-500", "bg-fuchsia-50"); }}
+          onDragLeave={e => { e.preventDefault(); e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); }}
+          onDrop={e => {
+            e.preventDefault();
+            e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50");
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+            if (files.length > 0) setPendingImages(prev => [...prev, ...files]);
+          }}
+        >
+          <div className="flex flex-wrap gap-2">
+            {pendingImages.map((img, idx) => (
+              <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200">
+                <img src={URL.createObjectURL(img)} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => setPendingImages(p => p.filter((_, i) => i !== idx))} className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center"><X className="w-3 h-3" /></button>
+              </div>
+            ))}
+            <button onClick={() => imageInputRef.current?.click()} className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-fuchsia-400 hover:text-fuchsia-500 transition-colors" data-testid="add-photo-btn">
+              <Camera className="w-5 h-5" /><span className="text-[10px] mt-0.5">Foto</span>
+            </button>
+          </div>
+          {pendingImages.length === 0 && (
+            <p className="text-xs text-gray-400 text-center mt-2">Fotos hierher ziehen oder auf "Foto" klicken</p>
+          )}
         </div>
       </div>
 
@@ -364,7 +381,9 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
               <p className="text-xs text-gray-400">
                 {new Date(entry.performed_at).toLocaleDateString("de-DE")}
                 {entry.hours_at_service != null && ` · ${entry.hours_at_service} h`}
-                {entry.next_maintenance_mode && entry.next_maintenance_value && (
+                {entry.next_maintenance_months && ` · ${entry.next_maintenance_months} Mon.`}
+                {entry.next_maintenance_hours && ` · ${entry.next_maintenance_hours} h`}
+                {!entry.next_maintenance_months && entry.next_maintenance_mode && entry.next_maintenance_value && (
                   <> · Nächste: {entry.next_maintenance_mode === "months" ? `${entry.next_maintenance_value} Mon.` : `${entry.next_maintenance_value} h`}</>
                 )}
               </p>
@@ -444,23 +463,27 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
               {lt.filter(r => r.values).map((r, i) => <div key={i}><span className="text-gray-500">{r.load}:</span> {r.values} {r.remarks && `(${r.remarks})`}</div>)}
             </div>
           )}
-          {Object.values(ats).some(v => v) && (
+          {Object.values(ats).some(v => v && v !== "nicht_durchgefuehrt") && (
             <div>
               <p className="font-semibold text-gray-700 mb-1">5. ATS / Netzumschaltung</p>
               <div className="grid grid-cols-2 gap-1">
-                {ATS_ITEMS.filter(a => ats[a.key]).map(a => (
-                  <div key={a.key} className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> {a.label}</div>
+                {ATS_ITEMS.filter(a => ats[a.key] && ats[a.key] !== "nicht_durchgefuehrt").map(a => (
+                  <div key={a.key} className="flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-500" />
+                    {a.label}
+                    {ats[a.key] === "nicht_vorhanden" && <span className="text-[9px] text-amber-500 ml-1">(n.v.)</span>}
+                  </div>
                 ))}
               </div>
               {ats.umschaltzeit && <div className="mt-1">Umschaltzeit: <span className="font-medium">{ats.umschaltzeit}s</span></div>}
             </div>
           )}
-          {(diag.fehlerspeicher_ausgelesen || diag.fehler_vorhanden) && (
+          {(diag.fehlerspeicher_ausgelesen === true || diag.fehlerspeicher_ausgelesen === "durchgefuehrt" || diag.fehler_vorhanden === true || diag.fehler_vorhanden === "durchgefuehrt") && (
             <div>
               <p className="font-semibold text-gray-700 mb-1">6. Diagnose</p>
-              {diag.fehlerspeicher_ausgelesen && <div className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Fehlerspeicher ausgelesen</div>}
-              {diag.keine_fehler && <div className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Keine Fehler vorhanden</div>}
-              {diag.fehler_vorhanden && <div className="flex items-center gap-1 text-red-600"><AlertTriangle className="w-3 h-3" /> Fehler vorhanden</div>}
+              {(diag.fehlerspeicher_ausgelesen === true || diag.fehlerspeicher_ausgelesen === "durchgefuehrt") && <div className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Fehlerspeicher ausgelesen</div>}
+              {(diag.keine_fehler === true || diag.keine_fehler === "durchgefuehrt") && <div className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500" /> Keine Fehler vorhanden</div>}
+              {(diag.fehler_vorhanden === true || diag.fehler_vorhanden === "durchgefuehrt") && <div className="flex items-center gap-1 text-red-600"><AlertTriangle className="w-3 h-3" /> Fehler vorhanden</div>}
               {diag.fehlercodes && <div className="mt-1 bg-white p-2 rounded border border-gray-200">{diag.fehlercodes}</div>}
             </div>
           )}
@@ -655,7 +678,14 @@ export default function ServiceplanPage() {
 
   const handleCreatePlan = async () => {
     if (!createForm.device_id) { toast.error("Bitte Gerät auswählen"); return; }
-    try { await api.post("/serviceplan", createForm); toast.success("Wartungsplan erstellt"); setShowCreateModal(false); loadData(); }
+    try {
+      const res = await api.post("/serviceplan", createForm);
+      toast.success("Wartungsplan erstellt");
+      setShowCreateModal(false);
+      // Auto-navigate to the new plan's detail view
+      setSelectedPlan(res.data);
+      loadData();
+    }
     catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
   };
 

@@ -633,21 +633,40 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         else:
             query = {"assigned_customer_id": user["id"]}
 
-    total = await db.generators.count_documents(query)
-    running = await db.generators.count_documents({**query, "status": "running"})
-    standby = await db.generators.count_documents({**query, "status": "standby"})
-    alarm = await db.generators.count_documents({**query, "status": {"$in": ["alarm", "warning"]}})
-    offline = await db.generators.count_documents({**query, "status": "offline"})
+    # Count from generators collection
+    gen_total = await db.generators.count_documents(query)
+    gen_running = await db.generators.count_documents({**query, "status": "running"})
+    gen_standby = await db.generators.count_documents({**query, "status": "standby"})
+    gen_alarm = await db.generators.count_documents({**query, "status": {"$in": ["alarm", "warning"]}})
+    gen_offline = await db.generators.count_documents({**query, "status": "offline"})
+
+    # Count virtual generators from devices (Stromerzeuger/Lichtmast not already in generators)
+    existing_serials = set()
+    async for g in db.generators.find(query, {"serial_number": 1, "_id": 0}):
+        existing_serials.add(g.get("serial_number"))
+
+    virtual_count = 0
+    active_devices = await db.devices.find(
+        {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
+        {"_id": 0, "serial_number": 1}
+    ).to_list(2000)
+    for dev in active_devices:
+        if dev.get("serial_number") not in existing_serials:
+            virtual_count += 1
+            existing_serials.add(dev["serial_number"])
+
+    total = gen_total + virtual_count
+    standby = gen_standby + virtual_count  # Virtual generators default to standby
 
     active_alarms = await db.generator_alarms.count_documents({"resolved_at": None, "severity": "alarm"})
     active_warnings = await db.generator_alarms.count_documents({"resolved_at": None, "severity": "warning"})
 
     return {
         "total": total,
-        "running": running,
+        "running": gen_running,
         "standby": standby,
-        "alarm": alarm,
-        "offline": offline,
+        "alarm": gen_alarm,
+        "offline": gen_offline,
         "active_alarms": active_alarms,
         "active_warnings": active_warnings,
     }

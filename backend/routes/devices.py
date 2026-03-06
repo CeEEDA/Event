@@ -67,6 +67,27 @@ class DeviceUpdate(BaseModel):
     status: Optional[str] = None
 
 
+PART_TYPES = [
+    "Kraftstofffilter", "Ölfilter", "Luftfilter", "Keilriemen",
+    "Kühlmittel", "Motoröl", "Zündkerze", "Batterie",
+    "Dichtung", "Sicherung",
+]
+
+
+class PartCreate(BaseModel):
+    part_type: str
+    part_number: Optional[str] = ""
+    liters: Optional[float] = None
+    notes: Optional[str] = ""
+
+
+class PartUpdate(BaseModel):
+    part_type: Optional[str] = None
+    part_number: Optional[str] = None
+    liters: Optional[float] = None
+    notes: Optional[str] = None
+
+
 # ============== Helpers ==============
 
 async def get_authenticated_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -212,6 +233,7 @@ async def delete_device(device_id: str, admin: dict = Depends(require_admin)):
             except Exception:
                 pass
     await db.device_documents.delete_many({"device_id": device_id})
+    await db.device_parts.delete_many({"device_id": device_id})
     return {"message": "Gerät gelöscht"}
 
 
@@ -236,6 +258,15 @@ async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
 
     await db.devices.insert_one(new_device)
     result = {k: v for k, v in new_device.items() if k != "_id"}
+
+    # Copy parts from source device
+    source_parts = await db.device_parts.find({"device_id": device_id}, {"_id": 0}).to_list(100)
+    for part in source_parts:
+        part["id"] = str(uuid.uuid4())
+        part["device_id"] = new_device["id"]
+        part["created_at"] = datetime.now(timezone.utc).isoformat()
+        await db.device_parts.insert_one(part)
+
     return result
 
 
@@ -348,6 +379,73 @@ async def get_device_image(device_id: str):
         media_type=device.get("image_content_type", "image/jpeg"),
         headers={"Content-Disposition": f'inline; filename="{device.get("image_filename", "device.jpg")}"'}
     )
+
+
+# ============== Parts (Ersatzteile) Management ==============
+
+@router.get("/{device_id}/parts")
+async def list_parts(device_id: str, user: dict = Depends(require_staff)):
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+    parts = await db.device_parts.find({"device_id": device_id}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    return parts
+
+
+@router.post("/{device_id}/parts")
+async def add_part(device_id: str, data: PartCreate, user: dict = Depends(require_staff)):
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    part_doc = {
+        "id": str(uuid.uuid4()),
+        "device_id": device_id,
+        "part_type": data.part_type,
+        "part_number": data.part_number or "",
+        "liters": data.liters,
+        "notes": data.notes or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.device_parts.insert_one(part_doc)
+    result = {k: v for k, v in part_doc.items() if k != "_id"}
+    return result
+
+
+@router.put("/parts/{part_id}")
+async def update_part(part_id: str, data: PartUpdate, user: dict = Depends(require_staff)):
+    part = await db.device_parts.find_one({"id": part_id}, {"_id": 0})
+    if not part:
+        raise HTTPException(status_code=404, detail="Ersatzteil nicht gefunden")
+
+    update_data = {}
+    if data.part_type is not None:
+        update_data["part_type"] = data.part_type
+    if data.part_number is not None:
+        update_data["part_number"] = data.part_number
+    if data.liters is not None:
+        update_data["liters"] = data.liters
+    if data.notes is not None:
+        update_data["notes"] = data.notes
+
+    if update_data:
+        await db.device_parts.update_one({"id": part_id}, {"$set": update_data})
+
+    updated = await db.device_parts.find_one({"id": part_id}, {"_id": 0})
+    return updated
+
+
+@router.delete("/parts/{part_id}")
+async def delete_part(part_id: str, user: dict = Depends(require_staff)):
+    result = await db.device_parts.delete_one({"id": part_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Ersatzteil nicht gefunden")
+    return {"message": "Ersatzteil gelöscht"}
+
+
+@router.get("/parts/types")
+async def get_part_types(user: dict = Depends(require_staff)):
+    return {"types": PART_TYPES}
 
 
 # ============== Stats ==============
