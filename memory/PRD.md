@@ -15,13 +15,14 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 4. **Service Planning ("Serviceplan")**: Multi-section maintenance schedules, checklists, measurement logs, photo uploads.
 5. **User & Permissions**: Role-based access (Admin, Mitarbeiter, Kunde).
 6. **File Management**: GridFS-based secure storage for device images and documents.
-7. **Email Notifications**: Password reset via SMTP (currently blocked by external config).
+7. **Email Notifications**: Password reset via SMTP.
 
 ## Tech Stack
 - **Backend**: FastAPI, Python, MongoDB (Motor), GridFS
 - **Frontend**: React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet
 - **Auth**: JWT with role-based access
 - **QR**: qrcode (backend), react-qr-code (frontend)
+- **Email**: smtplib with SMTP_SSL to smtp.mail.de:465
 
 ## Architecture
 ```
@@ -54,9 +55,9 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 - ✅ Generator monitoring dashboard (simulated data)
 - ✅ Role-based access control
 - ✅ File downloads with authenticated fetch
+- ✅ SMTP Email sending (password reset) – Fixed 2026-03-06: password typo in .env corrected
 
 ## Known Issues
-- **SMTP Email**: Password reset blocked by external mail.de server config (BLOCKED)
 - **Simulated Data**: Generator telemetry is mocked (not live DSE890 data)
 
 ## Backlog (Prioritized)
@@ -66,7 +67,6 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ### P2
 - Integrate live data from DSE890 generator modules
 - Implement admin-controlled file size limits
-- SMTP email fix (pending user's mail.de account resolution)
 
 ### Refactoring
 - Break down ServiceplanPage.js into smaller components
@@ -75,3 +75,4 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ## Test Credentials
 - Admin: admin@test.com / password
 - Mitarbeiter: ma1@test.com / password
+- SMTP: eventenergie@mail.de / S8e?CuL7N6! (smtp.mail.de:465 SSL)
