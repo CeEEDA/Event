@@ -23,7 +23,10 @@ import {
   PowerOff,
   Camera,
   Wrench,
+  Printer,
+  QrCode,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -289,6 +292,48 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               </Button>
             </div>
           </div>
+
+          {/* QR Code Section */}
+          {editing && editing.device_code && (
+            <div className="border border-gray-200 rounded-lg p-4" data-testid="qr-code-section">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-4">
+                  <div className="bg-white p-2 rounded-lg border border-gray-200" id="qr-print-area">
+                    <QRCodeSVG value={editing.device_code} size={80} level="M" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900">Geräte-Code</h3>
+                    <p className="text-lg font-mono font-bold text-fuchsia-600 tracking-wider mt-0.5">{editing.device_code}</p>
+                    <p className="text-[10px] text-gray-400 mt-1">Einmaliger Code zur Geräteidentifikation</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const printWin = window.open("", "_blank", "width=400,height=500");
+                    printWin.document.write(`
+                      <html><head><title>QR Code - ${editing.serial_number}</title>
+                      <style>body{font-family:sans-serif;text-align:center;padding:40px}
+                      .code{font-size:28px;font-weight:bold;letter-spacing:4px;margin:16px 0;font-family:monospace}
+                      .serial{font-size:14px;color:#666;margin-top:8px}
+                      svg{margin:20px auto}
+                      </style></head><body>
+                      <h2>Geräte-Code</h2>
+                      <div class="code">${editing.device_code}</div>
+                      ${document.getElementById("qr-print-area")?.innerHTML || ""}
+                      <div class="serial">${editing.serial_number}</div>
+                      <div class="serial">${editing.model || ""}</div>
+                      <script>setTimeout(()=>{window.print();window.close()},500)<\/script>
+                      </body></html>`);
+                    printWin.document.close();
+                  }}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
+                  data-testid="print-qr-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Drucken
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Ersatzteile (Parts) - at the top of the form */}
           {editing && (
@@ -685,6 +730,10 @@ export default function DeviceManagementPage() {
       ...formData,
       year_of_manufacture: formData.year_of_manufacture ? parseInt(formData.year_of_manufacture) : null,
     };
+    // Pass copy_from_device_id for backend to copy image/parts/docs
+    if (!editing && formData.copy_docs_from) {
+      payload.copy_from_device_id = formData.copy_docs_from;
+    }
     // Remove frontend-only fields
     delete payload.copy_image_from;
     delete payload.copy_docs_from;
@@ -756,6 +805,7 @@ export default function DeviceManagementPage() {
       (d.user_field || "").toLowerCase().includes(q) ||
       (d.model || "").toLowerCase().includes(q) ||
       (d.engine_manufacturer || "").toLowerCase().includes(q) ||
+      (d.device_code || "").toLowerCase().includes(q) ||
       (d.notes || "").toLowerCase().includes(q);
     return matchType && matchStatus && matchSearch;
   });
@@ -869,7 +919,10 @@ export default function DeviceManagementPage() {
                             <span className="text-xs text-gray-500">{TYPE_LABELS[device.device_type] || device.device_type}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-mono font-medium text-gray-900">{device.serial_number}</td>
+                        <td className="px-4 py-3 font-mono font-medium text-gray-900">
+                          {device.serial_number}
+                          {device.device_code && <span className="block text-[10px] text-gray-400 font-normal">{device.device_code}</span>}
+                        </td>
                         <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{device.model || "–"}</td>
                         <td className="px-4 py-3 text-gray-500 hidden md:table-cell truncate max-w-[200px]">{device.user_field || "–"}</td>
                         <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{device.power_output || "–"}</td>

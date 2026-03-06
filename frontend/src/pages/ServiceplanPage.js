@@ -761,7 +761,7 @@ export default function ServiceplanPage() {
     // Search filter
     if (search) {
       const q = search.toLowerCase();
-      const match = (d.serial_number || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) || (d.user_field || "").toLowerCase().includes(q);
+      const match = (d.serial_number || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) || (d.user_field || "").toLowerCase().includes(q) || (d.device_code || "").toLowerCase().includes(q);
       if (!match) return false;
     }
     // Status filter

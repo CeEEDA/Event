@@ -165,7 +165,7 @@ async def get_service_plan(plan_id: str, user: dict = Depends(require_staff)):
     # Get all maintenance entries
     entries = await db.maintenance_entries.find(
         {"service_plan_id": plan_id}, {"_id": 0}
-    ).sort("performed_at", -1).to_list(500)
+    ).sort([("performed_at", -1), ("created_at", -1)]).to_list(500)
     plan["entries"] = entries
 
     return plan

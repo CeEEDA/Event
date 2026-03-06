@@ -5,7 +5,11 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
 import uuid
+import secrets
+import string
 import logging
+import qrcode
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,7 @@ class DeviceCreate(BaseModel):
     acquired_date: Optional[str] = None
     portal_link: Optional[str] = None
     notes: Optional[str] = None
+    copy_from_device_id: Optional[str] = None
 
 
 class DeviceUpdate(BaseModel):
@@ -115,6 +120,12 @@ async def require_staff(credentials: HTTPAuthorizationCredentials = Depends(secu
 
 # ============== CRUD ==============
 
+def generate_device_code():
+    """Generate a unique 8-character alphanumeric device code."""
+    chars = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(chars) for _ in range(8))
+
+
 @router.post("")
 async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)):
     if data.device_type not in DEVICE_TYPES:
@@ -124,8 +135,14 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
     if existing:
         raise HTTPException(status_code=400, detail="Seriennummer bereits vorhanden")
 
+    # Generate unique device code
+    device_code = generate_device_code()
+    while await db.devices.find_one({"device_code": device_code}):
+        device_code = generate_device_code()
+
     device_doc = {
         "id": str(uuid.uuid4()),
+        "device_code": device_code,
         "device_type": data.device_type,
         "serial_number": data.serial_number,
         "user_field": data.user_field,
@@ -149,7 +166,39 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
     }
 
     await db.devices.insert_one(device_doc)
+
+    # Copy image, parts, and documents from source device if specified
+    if data.copy_from_device_id:
+        source = await db.devices.find_one({"id": data.copy_from_device_id})
+        if source:
+            # Copy image reference
+            if source.get("image_gridfs_id"):
+                await db.devices.update_one(
+                    {"id": device_doc["id"]},
+                    {"$set": {
+                        "image_gridfs_id": source["image_gridfs_id"],
+                        "image_content_type": source.get("image_content_type"),
+                        "image_filename": source.get("image_filename"),
+                    }}
+                )
+            # Copy parts
+            source_parts = await db.device_parts.find({"device_id": data.copy_from_device_id}, {"_id": 0}).to_list(100)
+            for part in source_parts:
+                part["id"] = str(uuid.uuid4())
+                part["device_id"] = device_doc["id"]
+                part["created_at"] = datetime.now(timezone.utc).isoformat()
+                await db.device_parts.insert_one(part)
+            # Copy documents
+            source_docs = await db.device_documents.find({"device_id": data.copy_from_device_id}, {"_id": 0}).to_list(100)
+            for doc in source_docs:
+                doc["id"] = str(uuid.uuid4())
+                doc["device_id"] = device_doc["id"]
+                doc["created_at"] = datetime.now(timezone.utc).isoformat()
+                await db.device_documents.insert_one(doc)
+
     result = {k: v for k, v in device_doc.items() if k != "_id"}
+    if "image_gridfs_id" in result and result["image_gridfs_id"]:
+        result["image_gridfs_id"] = str(result["image_gridfs_id"])
     return result
 
 
@@ -162,6 +211,13 @@ async def list_devices(user: dict = Depends(require_staff)):
         # Convert ObjectId to string for JSON serialization
         if "image_gridfs_id" in d and d["image_gridfs_id"]:
             d["image_gridfs_id"] = str(d["image_gridfs_id"])
+        # Generate device_code for legacy devices
+        if not d.get("device_code"):
+            code = generate_device_code()
+            while await db.devices.find_one({"device_code": code}):
+                code = generate_device_code()
+            await db.devices.update_one({"id": d["id"]}, {"$set": {"device_code": code}})
+            d["device_code"] = code
     return devices
 
 
@@ -256,6 +312,11 @@ async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
     new_device["status"] = "aktiv"
     new_device["created_at"] = datetime.now(timezone.utc).isoformat()
     new_device["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Generate new unique device code
+    device_code = generate_device_code()
+    while await db.devices.find_one({"device_code": device_code}):
+        device_code = generate_device_code()
+    new_device["device_code"] = device_code
     # Keep image_gridfs_id from source so copied device has same image
 
     await db.devices.insert_one(new_device)
@@ -397,6 +458,42 @@ async def get_device_image(device_id: str):
         media_type=device.get("image_content_type", "image/jpeg"),
         headers={"Content-Disposition": f'inline; filename="{device.get("image_filename", "device.jpg")}"'}
     )
+
+
+# ============== QR Code ==============
+
+@router.get("/{device_id}/qrcode")
+async def get_device_qrcode(device_id: str):
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0, "device_code": 1, "serial_number": 1})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    code = device.get("device_code")
+    if not code:
+        # Generate code for legacy devices
+        code = generate_device_code()
+        while await db.devices.find_one({"device_code": code}):
+            code = generate_device_code()
+        await db.devices.update_one({"id": device_id}, {"$set": {"device_code": code}})
+
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    qr.add_data(code)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@router.get("/search/by-code/{code}")
+async def search_by_code(code: str, user: dict = Depends(get_authenticated_user)):
+    device = await db.devices.find_one({"device_code": code.upper().strip()}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Kein Gerät mit diesem Code gefunden")
+    if "image_gridfs_id" in device and device["image_gridfs_id"]:
+        device["image_gridfs_id"] = str(device["image_gridfs_id"])
+    return device
 
 
 # ============== Parts (Ersatzteile) Management ==============
