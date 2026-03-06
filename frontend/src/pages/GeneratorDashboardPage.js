@@ -24,6 +24,9 @@ import {
   Map,
   LayoutGrid,
   Wrench,
+  Play,
+  Square,
+  ToggleLeft,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -85,18 +88,33 @@ function StatCard({ icon: Icon, label, value, color, active, onClick }) {
   );
 }
 
-function GeneratorCard({ generator, onClick }) {
+function GeneratorCard({ generator, onClick, canControl }) {
   const status = statusConfig[generator.status] || statusConfig.offline;
   const t = generator.latest_telemetry;
   const lastSeen = generator.last_seen
     ? new Date(generator.last_seen).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : "–";
   const hasMaintWarning = generator.maintenance_warning;
+  const [cmdLoading, setCmdLoading] = useState(null);
+
+  const sendCmd = async (e, command, label) => {
+    e.stopPropagation();
+    if (!window.confirm(`${label} wirklich ausführen?`)) return;
+    setCmdLoading(command);
+    try {
+      await api.post(`/mqtt/control/${generator.id}`, { command });
+      toast.success(`${label} gesendet`);
+    } catch {
+      toast.error("Befehl fehlgeschlagen");
+    } finally {
+      setCmdLoading(null);
+    }
+  };
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="bg-white border border-gray-200 rounded-lg p-5 text-left hover:border-fuchsia-400 hover:shadow-md transition-all group w-full"
+      className="bg-white border border-gray-200 rounded-lg p-5 text-left hover:border-fuchsia-400 hover:shadow-md transition-all group w-full cursor-pointer"
       data-testid={`generator-card-${generator.serial_number}`}
     >
       <div className="flex items-start justify-between mb-3">
@@ -148,11 +166,25 @@ function GeneratorCard({ generator, onClick }) {
         <div className="text-xs text-gray-400 mt-2">Keine Telemetrie-Daten</div>
       )}
 
+      {canControl && (
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100" onClick={e => e.stopPropagation()}>
+          <button onClick={e => sendCmd(e, "start", "Generator starten")} disabled={cmdLoading !== null} className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-medium transition-colors disabled:opacity-50" data-testid={`cmd-start-${generator.serial_number}`}>
+            <Play className="w-3 h-3" />{cmdLoading === "start" ? "..." : "Start"}
+          </button>
+          <button onClick={e => sendCmd(e, "stop", "Generator stoppen")} disabled={cmdLoading !== null} className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[10px] font-medium transition-colors disabled:opacity-50" data-testid={`cmd-stop-${generator.serial_number}`}>
+            <Square className="w-3 h-3" />{cmdLoading === "stop" ? "..." : "Stop"}
+          </button>
+          <button onClick={e => sendCmd(e, "auto_on", "Auto EIN")} disabled={cmdLoading !== null} className="flex items-center gap-1 px-2.5 py-1 border border-emerald-300 text-emerald-700 hover:bg-emerald-50 rounded text-[10px] font-medium transition-colors disabled:opacity-50" data-testid={`cmd-auto-${generator.serial_number}`}>
+            <ToggleLeft className="w-3 h-3" />{cmdLoading === "auto_on" ? "..." : "Auto"}
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
         <span className="text-[10px] text-gray-400 flex items-center gap-1"><Clock className="w-3 h-3" /> {lastSeen}</span>
         <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-600 transition-colors" />
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -369,6 +401,7 @@ export default function GeneratorDashboardPage() {
                     key={gen.id}
                     generator={gen}
                     onClick={() => navigate(`/generators/${gen.id}`)}
+                    canControl={user?.role === "admin" || user?.role === "mitarbeiter"}
                   />
                 ))}
               </div>
