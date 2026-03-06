@@ -155,58 +155,62 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
     }
 
     if isinstance(parsed, dict):
-        # Map known DSE parameter names to our telemetry fields
-        field_map = {
-            "voltage_l1": ["voltage_l1", "voltageL1", "V_L1", "volts_l1"],
-            "voltage_l2": ["voltage_l2", "voltageL2", "V_L2", "volts_l2"],
-            "voltage_l3": ["voltage_l3", "voltageL3", "V_L3", "volts_l3"],
-            "current_l1": ["current_l1", "currentL1", "I_L1", "amps_l1"],
-            "current_l2": ["current_l2", "currentL2", "I_L2", "amps_l2"],
-            "current_l3": ["current_l3", "currentL3", "I_L3", "amps_l3"],
-            "frequency": ["frequency", "freq", "Hz"],
-            "power_kw": ["power_kw", "powerKW", "kW", "active_power", "power"],
-            "power_kva": ["power_kva", "powerKVA", "kVA", "apparent_power"],
-            "load_percent": ["load_percent", "load", "loadPercent"],
-            "rpm": ["rpm", "RPM", "engine_speed"],
-            "oil_pressure": ["oil_pressure", "oilPressure", "oil_press"],
-            "coolant_temp": ["coolant_temp", "coolantTemp", "coolant_temperature", "water_temp"],
-            "fuel_level": ["fuel_level", "fuelLevel", "fuel"],
-            "battery_voltage": ["battery_voltage", "batteryVoltage", "battery", "batt_volts"],
-            "hours_run": ["hours_run", "hoursRun", "run_hours", "engine_hours"],
-            "engine_running": ["engine_running", "engineRunning", "running"],
-            "mode": ["mode", "operating_mode", "genset_mode"],
-            "gps_lat": ["gps_lat", "latitude", "lat"],
-            "gps_lng": ["gps_lng", "longitude", "lng", "lon"],
-        }
+        # Check if this is DSE Gencomm register format: {"UID":{"P004":{"R000":val,...}}}
+        gencomm_data = _parse_gencomm_registers(parsed, topic)
+        if gencomm_data:
+            telemetry.update(gencomm_data)
+        else:
+            # Standard JSON field mapping (legacy format)
+            field_map = {
+                "voltage_l1": ["voltage_l1", "voltageL1", "V_L1", "volts_l1"],
+                "voltage_l2": ["voltage_l2", "voltageL2", "V_L2", "volts_l2"],
+                "voltage_l3": ["voltage_l3", "voltageL3", "V_L3", "volts_l3"],
+                "current_l1": ["current_l1", "currentL1", "I_L1", "amps_l1"],
+                "current_l2": ["current_l2", "currentL2", "I_L2", "amps_l2"],
+                "current_l3": ["current_l3", "currentL3", "I_L3", "amps_l3"],
+                "frequency": ["frequency", "freq", "Hz"],
+                "power_kw": ["power_kw", "powerKW", "kW", "active_power", "power"],
+                "power_kva": ["power_kva", "powerKVA", "kVA", "apparent_power"],
+                "load_percent": ["load_percent", "load", "loadPercent"],
+                "rpm": ["rpm", "RPM", "engine_speed"],
+                "oil_pressure": ["oil_pressure", "oilPressure", "oil_press"],
+                "coolant_temp": ["coolant_temp", "coolantTemp", "coolant_temperature", "water_temp"],
+                "fuel_level": ["fuel_level", "fuelLevel", "fuel"],
+                "battery_voltage": ["battery_voltage", "batteryVoltage", "battery", "batt_volts"],
+                "hours_run": ["hours_run", "hoursRun", "run_hours", "engine_hours"],
+                "engine_running": ["engine_running", "engineRunning", "running"],
+                "mode": ["mode", "operating_mode", "genset_mode"],
+                "gps_lat": ["gps_lat", "latitude", "lat"],
+                "gps_lng": ["gps_lng", "longitude", "lng", "lon"],
+            }
 
-        for our_field, possible_keys in field_map.items():
-            for key in possible_keys:
-                if key in parsed:
-                    val = parsed[key]
-                    if isinstance(val, (int, float)):
-                        telemetry[our_field] = val
-                    elif isinstance(val, bool):
-                        telemetry[our_field] = val
-                    elif isinstance(val, str):
-                        try:
-                            telemetry[our_field] = float(val)
-                        except ValueError:
+            for our_field, possible_keys in field_map.items():
+                for key in possible_keys:
+                    if key in parsed:
+                        val = parsed[key]
+                        if isinstance(val, (int, float)):
                             telemetry[our_field] = val
-                    break
+                        elif isinstance(val, bool):
+                            telemetry[our_field] = val
+                        elif isinstance(val, str):
+                            try:
+                                telemetry[our_field] = float(val)
+                            except ValueError:
+                                telemetry[our_field] = val
+                        break
 
-        # Also store any unrecognized fields as extra_data
-        mapped_keys = set()
-        for possible_keys in field_map.values():
-            mapped_keys.update(possible_keys)
-        extra = {k: v for k, v in parsed.items() if k not in mapped_keys}
-        if extra:
-            telemetry["extra_data"] = extra
+            mapped_keys = set()
+            for possible_keys in field_map.values():
+                mapped_keys.update(possible_keys)
+            extra = {k: v for k, v in parsed.items() if k not in mapped_keys}
+            if extra:
+                telemetry["extra_data"] = extra
 
     await _db.generator_telemetry.insert_one(telemetry)
 
     # Update generator status
     status_update = {"last_seen": timestamp}
-    if telemetry.get("engine_running") is True:
+    if telemetry.get("engine_running") is True or telemetry.get("rpm", 0) > 0:
         status_update["status"] = "running"
     elif telemetry.get("engine_running") is False:
         status_update["status"] = "standby"
@@ -221,6 +225,93 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
 
     result = {k: v for k, v in telemetry.items() if k != "_id"}
     logger.info(f"MQTT: Telemetry stored for generator {generator_id}")
+
+
+def _parse_gencomm_registers(parsed, topic):
+    """Parse DSE Gencomm register format: {"UID":{"P004":{"R000":val,...}}}
+    Returns mapped telemetry fields or None if not Gencomm format."""
+    # Find the inner register data: drill into UID -> Page -> Registers
+    registers = {}
+    for uid_key, uid_data in parsed.items():
+        if not isinstance(uid_data, dict):
+            continue
+        for page_key, page_data in uid_data.items():
+            if not isinstance(page_data, dict):
+                continue
+            if page_key.startswith("P"):
+                page_num = int(page_key[1:])
+                for reg_key, val in page_data.items():
+                    if reg_key.startswith("R"):
+                        offset = int(reg_key[1:])
+                        registers[(page_num, offset)] = val
+
+    if not registers:
+        return None
+
+    result = {}
+    INVALID_16 = 32764   # 0x7FFC - DSE "not available" for 16-bit
+    INVALID_32 = 2147483644  # 0x7FFFFFFC - DSE "not available" for 32-bit
+
+    def valid(val):
+        """Check if value is a valid reading (not DSE error/unavailable marker)."""
+        if val is None:
+            return False
+        if val in (INVALID_16, INVALID_16 + 1, INVALID_16 + 2, INVALID_16 + 3,
+                   INVALID_32, INVALID_32 + 1, INVALID_32 + 2, INVALID_32 + 3,
+                   32767, 2147483647, 65535, 4294967295):
+            return False
+        return True
+
+    # Detect topic type for context
+    topic_lower = topic.lower()
+
+    # Page 4 register mapping (standard DSE Gencomm instrumentation)
+    # Engine parameters
+    if valid(registers.get((4, 0))):
+        result["oil_pressure"] = registers[(4, 0)]          # kPa
+    if valid(registers.get((4, 1))):
+        result["coolant_temp"] = registers[(4, 1)]           # °C
+    if valid(registers.get((4, 3))):
+        result["fuel_level"] = registers[(4, 3)]             # %
+    if valid(registers.get((4, 5))):
+        result["battery_voltage"] = registers[(4, 5)] / 10.0  # 0.1V -> V
+    if valid(registers.get((4, 6))):
+        result["rpm"] = registers[(4, 6)]                    # RPM
+        result["engine_running"] = registers[(4, 6)] > 0
+
+    # Generator parameters
+    if valid(registers.get((4, 7))):
+        result["frequency"] = registers[(4, 7)] / 10.0      # 0.1Hz -> Hz
+
+    # Voltages L-N (32-bit at offset 8,10,12)
+    for offset, field in [(8, "voltage_l1"), (10, "voltage_l2"), (12, "voltage_l3")]:
+        val = registers.get((4, offset))
+        if val is not None and valid(val):
+            result[field] = val / 10.0                       # 0.1V -> V
+
+    # Voltages L-L (32-bit at offset 14,16,18)
+    for offset, field in [(14, "voltage_l1_l2"), (16, "voltage_l2_l3"), (18, "voltage_l3_l1")]:
+        val = registers.get((4, offset))
+        if val is not None and valid(val):
+            result[field] = val / 10.0
+
+    # Currents (32-bit at offset 20,22,24)
+    for offset, field in [(20, "current_l1"), (22, "current_l2"), (24, "current_l3")]:
+        val = registers.get((4, offset))
+        if val is not None and valid(val):
+            result[field] = val / 10.0                       # 0.1A -> A
+
+    # Power per phase (32-bit at offset 28,30,32) - watts
+    for offset, field in [(28, "power_l1_w"), (30, "power_l2_w"), (32, "power_l3_w")]:
+        val = registers.get((4, offset))
+        if val is not None and valid(val):
+            result[field] = val
+
+    # Total power (32-bit at offset 34)
+    if valid(registers.get((4, 34))):
+        result["power_kw"] = registers[(4, 34)] / 1000.0    # W -> kW
+
+    return result if result else None
 
 
 async def start_mqtt_client(db_instance, loop):
