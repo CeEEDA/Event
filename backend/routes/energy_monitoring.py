@@ -411,9 +411,13 @@ async def get_device_key_info(device_id: str, admin: dict = Depends(require_admi
 
 LOGGER_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "messkoffer_logger.py")
 
+# Temporary storage for pre-generated setup scripts (download token -> script content)
+_setup_downloads = {}
+
 @router.post("/devices/{device_id}/setup-script")
 async def generate_setup_script(device_id: str, admin: dict = Depends(require_admin)):
-    """Generate an all-in-one bash installer: Shelly logger + GPS + local DB + portal sync."""
+    """Generate an all-in-one bash installer: Shelly logger + GPS + local DB + portal sync.
+    Returns a download token for easy wget access from the Pi."""
     device = await db.devices.find_one({"id": device_id, "device_type": "messkoffer"}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
@@ -636,9 +640,43 @@ fi
     # Ensure Unix line endings (LF only, no CRLF)
     script = script.replace('\r\n', '\n').replace('\r', '\n')
 
+    # Store script with a download token (valid for 1 hour)
+    download_token = secrets.token_urlsafe(16)
+    _setup_downloads[download_token] = {
+        "script": script,
+        "created_at": datetime.now(timezone.utc),
+        "device_name": device_name,
+    }
+
+    # Clean up old tokens (older than 1 hour)
+    now = datetime.now(timezone.utc)
+    expired = [k for k, v in _setup_downloads.items() if (now - v["created_at"]).total_seconds() > 3600]
+    for k in expired:
+        del _setup_downloads[k]
+
+    return {
+        "download_token": download_token,
+        "download_url": f"{api_base}/energy-monitoring/setup-download/{download_token}",
+        "device_name": device_name,
+    }
+
+
+@router.get("/setup-download/{token}")
+async def download_setup_script(token: str):
+    """Public download endpoint for setup script using a temporary token."""
+    entry = _setup_downloads.get(token)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Download-Link abgelaufen oder ungueltig")
+
+    # Check expiry (1 hour)
+    age = (datetime.now(timezone.utc) - entry["created_at"]).total_seconds()
+    if age > 3600:
+        del _setup_downloads[token]
+        raise HTTPException(status_code=410, detail="Download-Link abgelaufen")
+
     return PlainTextResponse(
-        content=script,
-        media_type="application/x-sh",
+        content=entry["script"],
+        media_type="text/plain",
         headers={"Content-Disposition": 'attachment; filename="setup.sh"'}
     )
 

@@ -4,7 +4,6 @@ import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api from "../lib/api";
 import { toast } from "sonner";
-import { saveAs } from "file-saver";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -36,21 +35,26 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 // Pi Setup Section for Messkoffer - generates all-in-one installer
 function PiSetupSection({ deviceId, deviceName }) {
   const [loading, setLoading] = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
+  const [wgetCommand, setWgetCommand] = useState(null);
 
-  const handleDownloadSetup = async () => {
+  const handleGenerateSetup = async () => {
     if (!window.confirm("Ein neuer Geräteschlüssel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schlüssel existiert, wird er ersetzt.\n\nFortfahren?")) return;
     setLoading(true);
     try {
-      const res = await api.post(`/energy-monitoring/devices/${deviceId}/setup-script`, {}, { responseType: "blob" });
-      saveAs(new Blob([res.data], { type: "application/x-sh" }), "setup.sh");
-      setDownloaded(true);
-      toast.success("Setup-Skript heruntergeladen!");
+      const res = await api.post(`/energy-monitoring/devices/${deviceId}/setup-script`);
+      const url = res.data.download_url;
+      setWgetCommand(`wget "${url}" -O setup.sh && sudo bash setup.sh`);
+      toast.success("Setup-Skript generiert!");
     } catch {
       toast.error("Fehler beim Generieren des Setup-Skripts");
     } finally {
       setLoading(false);
     }
+  };
+
+  const copyCommand = () => {
+    navigator.clipboard.writeText(wgetCommand);
+    toast.success("Befehl kopiert!");
   };
 
   return (
@@ -61,30 +65,31 @@ function PiSetupSection({ deviceId, deviceName }) {
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
         Generiert ein Installations-Skript mit Shelly-Logger, GPS-Anbindung, lokaler Datenbank und Portal-Sync.
-        Auf den Pi kopieren und ausführen — alles wird automatisch eingerichtet.
       </p>
 
-      {downloaded && (
+      {wgetCommand && (
         <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="setup-instructions">
-          <p className="text-xs text-emerald-800 font-medium mb-1.5">Skript heruntergeladen! So geht es weiter:</p>
-          <ol className="text-xs text-emerald-700 space-y-1 list-decimal list-inside">
-            <li>Datei auf den Pi kopieren (z.B. per SCP oder USB)</li>
-            <li><code className="bg-white px-1.5 py-0.5 rounded text-[11px] font-mono">sudo bash setup.sh</code></li>
-            <li>Fertig — Shelly-Logging + GPS + Portal-Sync laufen automatisch</li>
-          </ol>
+          <p className="text-xs text-emerald-800 font-medium mb-2">Diesen Befehl auf dem Pi einfügen:</p>
+          <div className="flex items-start gap-2">
+            <code className="flex-1 bg-white border border-emerald-300 px-3 py-2 rounded text-[11px] font-mono select-all break-all leading-relaxed">{wgetCommand}</code>
+            <button onClick={copyCommand} className="shrink-0 px-2 py-2 bg-white border border-emerald-300 rounded hover:bg-emerald-100 transition-colors" data-testid="copy-wget-btn" title="Kopieren">
+              <Download className="w-4 h-4 text-emerald-600" />
+            </button>
+          </div>
+          <p className="text-[10px] text-emerald-600 mt-2">Link ist 1 Stunde gültig. Danach neu generieren.</p>
         </div>
       )}
 
       <Button
         variant="outline"
         size="sm"
-        onClick={handleDownloadSetup}
+        onClick={handleGenerateSetup}
         disabled={loading}
         className="text-gray-600 hover:text-fuchsia-600"
         data-testid="download-setup-script-btn"
       >
         <Download className="w-3.5 h-3.5 mr-1.5" />
-        {loading ? "Wird generiert..." : "Setup-Skript herunterladen"}
+        {loading ? "Wird generiert..." : "Setup generieren"}
       </Button>
       <p className="text-[10px] text-gray-400 mt-2">Enthält: Shelly-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst</p>
     </div>
