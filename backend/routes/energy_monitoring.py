@@ -553,7 +553,7 @@ retry_delay = 30
 max_db_size_gb = 60
 cleanup_check_interval = 300
 CONFIG_EOF
-chmod 600 /etc/messkoffer.conf
+chmod 644 /etc/messkoffer.conf
 echo "  /etc/messkoffer.conf erstellt"
 
 # ---- 4. Systemd-Dienst ----
