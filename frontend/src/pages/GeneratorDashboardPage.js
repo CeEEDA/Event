@@ -172,17 +172,17 @@ function GeneratorCard({ generator, onClick, canControl }) {
             return (
               <>
                 <button onClick={e => sendCmd(e, "stop", "Generator stoppen")} disabled={cmdLoading !== null}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50 ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors disabled:opacity-50 ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
                   data-testid={`cmd-stop-${generator.serial_number}`}>
                   <Square className="w-3 h-3" />{cmdLoading === "stop" ? "..." : "Stop"}
                 </button>
                 <button onClick={e => sendCmd(e, "auto_on", "Auto EIN")} disabled={cmdLoading !== null}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50 ${generator.status === "online" || generator.status === "standby" ? "bg-teal-100 text-teal-700 border border-teal-300" : "bg-gray-100 text-gray-400 border border-gray-200 hover:bg-teal-50"}`}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors disabled:opacity-50 ${generator.status === "online" || generator.status === "standby" ? "bg-teal-100 text-teal-700 border border-teal-300" : "bg-gray-100 text-gray-400 border border-gray-200 hover:bg-teal-50"}`}
                   data-testid={`cmd-auto-${generator.serial_number}`}>
                   <ToggleLeft className="w-3 h-3" />{cmdLoading === "auto_on" ? "..." : "Auto"}
                 </button>
                 <button onClick={e => sendCmd(e, "start", "Generator starten")} disabled={cmdLoading !== null}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50 ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors disabled:opacity-50 ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
                   data-testid={`cmd-start-${generator.serial_number}`}>
                   <Play className="w-3 h-3" />{cmdLoading === "start" ? "..." : "Start"}
                 </button>

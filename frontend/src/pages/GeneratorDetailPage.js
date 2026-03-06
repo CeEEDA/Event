@@ -253,7 +253,7 @@ export default function GeneratorDetailPage() {
                 size="sm"
                 onClick={() => sendCommand("stop", "Generator stoppen")}
                 disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300 hover:bg-red-700" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
+                className={`h-8 px-4 text-xs rounded-full ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300 hover:bg-red-700" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
                 data-testid="cmd-stop-btn"
               >
                 <Square className="w-3.5 h-3.5 mr-1.5" />
@@ -264,7 +264,7 @@ export default function GeneratorDetailPage() {
                 variant="outline"
                 onClick={() => sendCommand(isRunning ? "auto_off" : "auto_on", isRunning ? "Auto AUS" : "Auto EIN")}
                 disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs ${generator.status === "online" || generator.status === "standby" ? "border-teal-300 bg-teal-50 text-teal-700" : "border-gray-200 text-gray-400 hover:bg-teal-50"}`}
+                className={`h-8 px-4 text-xs rounded-full ${generator.status === "online" || generator.status === "standby" ? "border-teal-300 bg-teal-50 text-teal-700" : "border-gray-200 text-gray-400 hover:bg-teal-50"}`}
                 data-testid="cmd-auto-btn"
               >
                 {generator.status === "online" || generator.status === "standby" ? <ToggleRight className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> : <ToggleLeft className="w-3.5 h-3.5 mr-1.5 text-gray-400" />}
@@ -275,7 +275,7 @@ export default function GeneratorDetailPage() {
                 size="sm"
                 onClick={() => sendCommand("start", "Generator starten")}
                 disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300 hover:bg-emerald-700" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
+                className={`h-8 px-4 text-xs rounded-full ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300 hover:bg-emerald-700" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
                 data-testid="cmd-start-btn"
               >
                 <Play className="w-3.5 h-3.5 mr-1.5" />
