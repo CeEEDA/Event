@@ -143,6 +143,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
   const [parts, setParts] = useState([]);
   const [showAddPart, setShowAddPart] = useState(false);
   const [newPart, setNewPart] = useState({ part_type: "", part_number: "", liters: "", notes: "" });
+  const [controllerCustomMode, setControllerCustomMode] = useState(false);
 
   const isGenerator = formData.device_type === "stromerzeuger" || formData.device_type === "lichtmast";
 
@@ -176,6 +177,8 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       } else {
         setDeviceImageUrl(null);
       }
+      const KNOWN = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
+      setControllerCustomMode(!!editing.controller && !KNOWN.includes(editing.controller));
     } else {
       setDocuments([]);
       setParts([]);
@@ -183,6 +186,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       setShowAddPart(false);
       setNewPart({ part_type: "", part_number: "", liters: "", notes: "" });
       setPendingImage(null);
+      setControllerCustomMode(false);
     }
   }, [open, editing, loadDocuments, loadParts]);
 
@@ -615,16 +619,17 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                     {(() => {
                       const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
                       const isKnown = CONTROLLER_OPTIONS.includes(formData.controller);
-                      const isCustom = formData.controller && !isKnown;
-                      const selectValue = isKnown ? formData.controller : (isCustom ? "__custom" : "");
+                      const selectValue = isKnown ? formData.controller : (controllerCustomMode ? "__custom" : "");
                       return (
                         <>
                           <select
                             value={selectValue}
                             onChange={e => {
                               if (e.target.value === "__custom") {
+                                setControllerCustomMode(true);
                                 update("controller", "");
                               } else {
+                                setControllerCustomMode(false);
                                 update("controller", e.target.value);
                               }
                             }}
@@ -636,7 +641,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                             {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                             <option value="__custom">Sonstige (Freitext)...</option>
                           </select>
-                          {(isCustom || selectValue === "__custom") && (
+                          {controllerCustomMode && (
                             <Input
                               value={formData.controller}
                               onChange={e => update("controller", e.target.value)}
