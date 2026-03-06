@@ -526,7 +526,8 @@ api_url = {api_base}
 device_key = {plain_key}
 device_id = {device_id}
 meter_id = {meter_id}
-db_path = /home/pi/emu.db
+db_path = /var/lib/shelly/shelly_pro4em.sqlite
+table_name = em_abc_samples
 batch_size = 500
 sync_interval = 10
 retry_delay = 30
@@ -582,7 +583,8 @@ if systemctl is-active --quiet emu_sync; then
     echo "  Geraet:     {device_name}"
     echo "  Device-ID:  {device_id}"
     echo "  Meter-ID:   {meter_id}"
-    echo "  DB-Pfad:    /home/pi/emu.db"
+    echo "  DB-Pfad:    /var/lib/shelly/shelly_pro4em.sqlite"
+    echo "  Tabelle:    em_abc_samples"
     echo ""
     echo "  Nuetzliche Befehle:"
     echo "    Status:    sudo systemctl status emu_sync"
@@ -596,7 +598,7 @@ else
     echo "Pruefe mit: sudo journalctl -u emu_sync -n 20"
     echo ""
     echo "Haeufige Ursachen:"
-    echo "  - /home/pi/emu.db existiert nicht"
+    echo "  - /var/lib/shelly/shelly_pro4em.sqlite existiert nicht"
     echo "  - Kein Internetzugang"
     echo ""
 fi

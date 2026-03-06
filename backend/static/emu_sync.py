@@ -2,22 +2,15 @@
 """
 EMU Pi Sync - Eventenergie Portal
 ==================================
-Synchronisiert lokale SQLite-Messdaten mit dem Eventenergie Portal.
+Liest Shelly Pro 4EM Messdaten aus lokaler SQLite-DB
+und synchronisiert sie mit dem Eventenergie Portal.
 
 Voraussetzungen:
   sudo apt install python3-pip
   pip3 install requests
 
 Konfiguration:
-  Datei /etc/emu_sync.conf erstellen (siehe unten) oder Umgebungsvariablen setzen.
-
-Als Systemd-Dienst installieren:
-  sudo cp emu_sync.py /opt/emu_sync.py
-  sudo cp emu_sync.service /etc/systemd/system/
-  sudo cp emu_sync.conf /etc/emu_sync.conf   # Konfiguration anpassen!
-  sudo systemctl daemon-reload
-  sudo systemctl enable emu_sync
-  sudo systemctl start emu_sync
+  Datei /etc/emu_sync.conf erstellen oder Setup-Skript verwenden.
 
 Status pruefen:
   sudo systemctl status emu_sync
@@ -27,12 +20,12 @@ Status pruefen:
 import sqlite3
 import requests
 import time
-import json
 import logging
 import os
 import sys
 import configparser
 from pathlib import Path
+
 
 # ====== Konfiguration laden ======
 
@@ -43,13 +36,13 @@ def load_config():
         "device_key": "",
         "device_id": "",
         "meter_id": "",
-        "db_path": "/home/pi/emu.db",
+        "db_path": "/var/lib/shelly/shelly_pro4em.sqlite",
+        "table_name": "em_abc_samples",
         "batch_size": 500,
         "sync_interval": 10,
         "retry_delay": 30,
     }
 
-    # 1. Versuche Config-Datei zu laden
     conf_path = Path("/etc/emu_sync.conf")
     if conf_path.exists():
         cp = configparser.ConfigParser()
@@ -61,11 +54,11 @@ def load_config():
             config["device_id"] = s.get("device_id", config["device_id"])
             config["meter_id"] = s.get("meter_id", config["meter_id"])
             config["db_path"] = s.get("db_path", config["db_path"])
+            config["table_name"] = s.get("table_name", config["table_name"])
             config["batch_size"] = int(s.get("batch_size", config["batch_size"]))
             config["sync_interval"] = int(s.get("sync_interval", config["sync_interval"]))
             config["retry_delay"] = int(s.get("retry_delay", config["retry_delay"]))
 
-    # 2. Umgebungsvariablen ueberschreiben Config-Datei
     config["api_url"] = os.environ.get("EMU_API_URL", config["api_url"])
     config["device_key"] = os.environ.get("EMU_DEVICE_KEY", config["device_key"])
     config["device_id"] = os.environ.get("EMU_DEVICE_ID", config["device_id"])
@@ -86,6 +79,52 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger("emu_sync")
+
+
+# ====== Feldmapping Shelly -> Portal ======
+
+def map_shelly_to_portal(row):
+    """Mappt eine Zeile aus em_abc_samples auf das Portal-Format.
+    Shelly: a=L1, b=L2, c=L3. Leistung in Watt -> kW."""
+    def safe(val):
+        if val is None:
+            return 0
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return 0
+
+    p_l1 = safe(row.get("a_act_power", 0)) / 1000.0
+    p_l2 = safe(row.get("b_act_power", 0)) / 1000.0
+    p_l3 = safe(row.get("c_act_power", 0)) / 1000.0
+    p_sum = safe(row.get("total_act_power", 0)) / 1000.0
+
+    return {
+        "ts_utc": row.get("ts", ""),
+        "meter_ts": 0,
+        "I_L1": safe(row.get("a_current")),
+        "I_L2": safe(row.get("b_current")),
+        "I_L3": safe(row.get("c_current")),
+        "I_sum": safe(row.get("total_current")),
+        "U_L1": safe(row.get("a_voltage")),
+        "U_L2": safe(row.get("b_voltage")),
+        "U_L3": safe(row.get("c_voltage")),
+        "F_Hz": safe(row.get("a_freq")),
+        "P_sum_kW": round(p_sum, 4),
+        "P_L1_kW": round(p_l1, 4),
+        "P_L2_kW": round(p_l2, 4),
+        "P_L3_kW": round(p_l3, 4),
+        "Q_sum": safe(row.get("total_aprt_power", 0)) / 1000.0,
+        "Q_L1": safe(row.get("a_aprt_power", 0)) / 1000.0,
+        "Q_L2": safe(row.get("b_aprt_power", 0)) / 1000.0,
+        "Q_L3": safe(row.get("c_aprt_power", 0)) / 1000.0,
+        "PF_L1": safe(row.get("a_pf")),
+        "PF_L2": safe(row.get("b_pf")),
+        "PF_L3": safe(row.get("c_pf")),
+        "E_imp_kWh": 0,
+        "E_exp_kWh": 0,
+        "id": row.get("id"),
+    }
 
 
 # ====== Sync-Funktionen ======
@@ -119,11 +158,11 @@ def read_new_records(after_id, limit):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM emu_samples WHERE id > ? ORDER BY id ASC LIMIT ?",
+            f"SELECT * FROM {CFG['table_name']} WHERE id > ? ORDER BY id ASC LIMIT ?",
             (after_id, limit)
         )
         rows = cursor.fetchall()
-        records = [dict(row) for row in rows]
+        records = [map_shelly_to_portal(dict(row)) for row in rows]
         conn.close()
         return records
     except sqlite3.OperationalError as e:
@@ -167,10 +206,10 @@ def check_db():
     try:
         conn = sqlite3.connect(CFG["db_path"])
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM emu_samples")
+        c.execute(f"SELECT COUNT(*) FROM {CFG['table_name']}")
         count = c.fetchone()[0]
         conn.close()
-        log.info(f"Datenbank OK: {count} Datensaetze in emu_samples")
+        log.info(f"Datenbank OK: {count} Datensaetze in {CFG['table_name']}")
         return True
     except Exception as e:
         log.error(f"Datenbank Fehler: {e}")
@@ -182,17 +221,18 @@ def check_db():
 def main():
     log.info("=" * 55)
     log.info("  EMU Sync - Eventenergie Portal")
+    log.info("  Quelle: Shelly Pro 4EM -> SQLite")
     log.info("=" * 55)
     log.info(f"  Server:     {CFG['api_url']}")
     log.info(f"  Device-ID:  {CFG['device_id']}")
     log.info(f"  Meter-ID:   {CFG['meter_id']}")
     log.info(f"  Schluessel: {CFG['device_key'][:8]}...")
     log.info(f"  DB:         {CFG['db_path']}")
+    log.info(f"  Tabelle:    {CFG['table_name']}")
     log.info(f"  Batch:      {CFG['batch_size']}")
     log.info(f"  Intervall:  {CFG['sync_interval']}s")
     log.info("=" * 55)
 
-    # Validierung
     errors = []
     if not CFG["api_url"]:
         errors.append("api_url nicht gesetzt")
@@ -218,14 +258,12 @@ def main():
 
     while True:
         try:
-            # 1. Letzte Sync-ID vom Server holen
             last_id = get_last_sync_id()
             if last_id is None:
                 log.info(f"Server nicht erreichbar, naechster Versuch in {CFG['retry_delay']}s...")
                 time.sleep(CFG["retry_delay"])
                 continue
 
-            # 2. Neue Datensaetze lesen
             records = read_new_records(last_id, CFG["batch_size"])
 
             if not records:
@@ -235,12 +273,10 @@ def main():
             new_last_id = records[-1]["id"]
             log.info(f"Sende {len(records)} Datensaetze (ID {last_id+1} bis {new_last_id})")
 
-            # 3. An Server senden
             result = push_batch(records, new_last_id)
             log.info(f"OK: {result.get('inserted', 0)} uebertragen")
             consecutive_errors = 0
 
-            # Wenn noch mehr Daten, sofort weiter
             if len(records) >= CFG["batch_size"]:
                 continue
 
