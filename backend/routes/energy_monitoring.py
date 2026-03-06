@@ -434,9 +434,21 @@ async def generate_setup_script(device_id: str, admin: dict = Depends(require_ad
         }}
     )
 
-    # Get first meter for this device (if any)
+    # Get or auto-create meter for this device
     meter = await db.emu_meters.find_one({"device_id": device_id}, {"_id": 0})
-    meter_id = meter["id"] if meter else "KEINE_METER_ID"
+    if not meter:
+        device_name = device.get("serial_number", device_id)
+        meter = {
+            "id": str(uuid.uuid4()),
+            "device_id": device_id,
+            "meter_ip": "192.168.88.252",
+            "meter_name": f"Shelly Pro 3EM ({device_name})",
+            "description": "Automatisch erstellt beim Setup",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.emu_meters.insert_one(meter)
+        del meter["_id"]  # Remove MongoDB ObjectId
+    meter_id = meter["id"]
 
     # Determine API URL
     api_base = os.environ.get("API_BASE_URL", "")
