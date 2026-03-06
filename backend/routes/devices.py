@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
@@ -332,6 +333,20 @@ async def delete_document(device_id: str, doc_id: str, admin: dict = Depends(req
             pass
     await db.device_documents.delete_one({"id": doc_id})
     return {"message": "Dokument gelöscht"}
+
+
+@router.get("/{device_id}/documents/{doc_id}/download")
+async def download_document(device_id: str, doc_id: str, user: dict = Depends(get_authenticated_user)):
+    doc = await db.device_documents.find_one({"id": doc_id, "device_id": device_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+    if not doc.get("gridfs_id"):
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    grid_out = await fs.open_download_stream(doc["gridfs_id"])
+    content = await grid_out.read()
+    content_type = doc.get("content_type", "application/octet-stream")
+    filename = doc.get("filename", "dokument")
+    return Response(content=content, media_type=content_type, headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 # ============== Device Image ==============

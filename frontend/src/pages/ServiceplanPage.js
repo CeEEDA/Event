@@ -9,7 +9,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
   ArrowLeft, Wrench, Plus, Search, Clock, User, ChevronLeft, ChevronDown,
-  Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera,
+  Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera, FileText,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -571,21 +571,24 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
   const [planDetail, setPlanDetail] = useState(plan);
   const [loading, setLoading] = useState(true);
   const [showAddEntry, setShowAddEntry] = useState(false);
-  const [editingPlan, setEditingPlan] = useState(false);
-  const [planForm, setPlanForm] = useState({
-    current_hours: plan.current_hours || 0,
-    interval_hours: plan.interval_hours || 500,
-    interval_months: plan.interval_months || 12,
-    tasks: plan.tasks || [],
-    notes: plan.notes || "",
-  });
-  const [newTask, setNewTask] = useState("");
+  const [deviceParts, setDeviceParts] = useState([]);
+  const [deviceDocs, setDeviceDocs] = useState([]);
 
   const loadDetail = useCallback(async () => {
     try {
       const res = await api.get(`/serviceplan/${plan.id}`);
       setPlanDetail(res.data);
       setEntries(res.data.entries || []);
+      // Load device parts and documents
+      const deviceId = res.data.device_id;
+      if (deviceId) {
+        const [partsRes, docsRes] = await Promise.all([
+          api.get(`/devices/${deviceId}/parts`).catch(() => ({ data: [] })),
+          api.get(`/devices/${deviceId}/documents`).catch(() => ({ data: [] })),
+        ]);
+        setDeviceParts(partsRes.data);
+        setDeviceDocs(docsRes.data);
+      }
     } catch { toast.error("Fehler beim Laden"); }
     finally { setLoading(false); }
   }, [plan.id]);
@@ -617,14 +620,6 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
     } catch { toast.error("Fehler"); }
   };
 
-  const handleUpdatePlan = async () => {
-    try {
-      await api.put(`/serviceplan/${plan.id}`, planForm);
-      toast.success("Serviceplan aktualisiert");
-      setEditingPlan(false); loadDetail(); onUpdate();
-    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
-  };
-
   const status = getServiceStatus(planDetail);
   const currentHrs = planDetail.current_hours || 0;
   const lastServiceHrs = planDetail.latest_entry?.hours_at_service || 0;
@@ -650,31 +645,35 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
           <div><p className="text-xs text-gray-400">Intervall</p><p className="text-sm font-medium text-gray-900">{planDetail.interval_hours || "–"} h / {planDetail.interval_months || "–"} Mon.</p></div>
           <div><p className="text-xs text-gray-400">Letzter Service</p><p className="text-sm font-medium text-gray-900">{planDetail.latest_entry ? new Date(planDetail.latest_entry.performed_at).toLocaleDateString("de-DE") : "–"}</p></div>
         </div>
-        <div className="flex gap-2 mt-4">
-          <Button size="sm" onClick={() => setEditingPlan(!editingPlan)} variant="outline" className="text-gray-600" data-testid="edit-plan-btn"><Pencil className="w-3.5 h-3.5 mr-1" /> Plan bearbeiten</Button>
-        </div>
       </div>
 
-      {editingPlan && (
-        <div className="bg-white border border-fuchsia-200 rounded-lg p-6 mb-6" data-testid="edit-plan-form">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">Serviceplan bearbeiten</h3>
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div><Label className="text-gray-700 text-sm">Akt. Betriebsstunden</Label><Input type="number" value={planForm.current_hours} onChange={e => setPlanForm(p => ({ ...p, current_hours: parseFloat(e.target.value) || 0 }))} className="mt-1" /></div>
-            <div><Label className="text-gray-700 text-sm">Intervall (Stunden)</Label><Input type="number" value={planForm.interval_hours} onChange={e => setPlanForm(p => ({ ...p, interval_hours: parseInt(e.target.value) || 0 }))} className="mt-1" /></div>
-            <div><Label className="text-gray-700 text-sm">Intervall (Monate)</Label><Input type="number" value={planForm.interval_months} onChange={e => setPlanForm(p => ({ ...p, interval_months: parseInt(e.target.value) || 0 }))} className="mt-1" /></div>
+      {/* Ersatzteile Section */}
+      {deviceParts.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4" data-testid="plan-parts-section">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><Wrench className="w-4 h-4 text-fuchsia-500" /> Ersatzteile ({deviceParts.length})</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {deviceParts.map(part => (
+              <div key={part.id} className="flex items-center gap-2 py-1.5 px-3 bg-gray-50 rounded-lg text-sm">
+                <span className="font-medium text-gray-800">{part.part_type}</span>
+                {part.part_number && <span className="text-gray-400 font-mono text-xs">{part.part_number}</span>}
+                {part.liters != null && <span className="text-fuchsia-600 text-xs">{part.liters} L</span>}
+              </div>
+            ))}
           </div>
-          <div className="mb-4">
-            <Label className="text-gray-700 text-sm mb-2 block">Aufgaben</Label>
-            <div className="space-y-1 mb-2">
-              {planForm.tasks.map((t, i) => (
-                <div key={i} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-1.5"><span className="text-sm text-gray-700 flex-1">{t}</span><button onClick={() => setPlanForm(p => ({ ...p, tasks: p.tasks.filter((_, j) => j !== i) }))} className="text-gray-400 hover:text-red-500"><X className="w-3.5 h-3.5" /></button></div>
-              ))}
-            </div>
-            <div className="flex gap-2"><Input value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Neue Aufgabe..." className="text-sm" onKeyDown={e => e.key === "Enter" && (e.preventDefault(), newTask.trim() && (setPlanForm(p => ({ ...p, tasks: [...p.tasks, newTask.trim()] })), setNewTask("")))} /><Button size="sm" variant="outline" onClick={() => newTask.trim() && (setPlanForm(p => ({ ...p, tasks: [...p.tasks, newTask.trim()] })), setNewTask(""))}>Hinzufügen</Button></div>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={handleUpdatePlan} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"><Save className="w-3.5 h-3.5 mr-1" /> Speichern</Button>
-            <Button size="sm" variant="outline" onClick={() => setEditingPlan(false)}>Abbrechen</Button>
+        </div>
+      )}
+
+      {/* Dateiablage Button */}
+      {deviceDocs.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6" data-testid="plan-docs-section">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-fuchsia-500" /> Dateiablage ({deviceDocs.length})</h3>
+          <div className="space-y-1.5">
+            {deviceDocs.map(doc => (
+              <a key={doc.id} href={`${BACKEND_URL}/api/devices/${planDetail.device_id}/documents/${doc.id}/download`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 py-2 px-3 bg-gray-50 rounded-lg text-sm text-gray-700 hover:bg-fuchsia-50 hover:text-fuchsia-600 transition-colors" data-testid={`plan-doc-${doc.id}`}>
+                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <span className="truncate">{doc.filename}</span>
+              </a>
+            ))}
           </div>
         </div>
       )}
@@ -715,8 +714,7 @@ export default function ServiceplanPage() {
   const [search, setSearch] = useState("");
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ device_id: "", current_hours: 0, interval_hours: 500, interval_months: 12, tasks: [] });
+  const [creatingPlan, setCreatingPlan] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -747,20 +745,23 @@ export default function ServiceplanPage() {
     return true;
   });
 
-  const handleCreatePlan = async () => {
-    if (!createForm.device_id) { toast.error("Bitte Gerät auswählen"); return; }
+  const handleCreatePlanForDevice = async (deviceId) => {
+    if (creatingPlan) return;
+    setCreatingPlan(true);
     try {
-      const res = await api.post("/serviceplan", createForm);
+      const res = await api.post("/serviceplan", {
+        device_id: deviceId,
+        current_hours: 0,
+        interval_hours: 500,
+        interval_months: 12,
+        tasks: [],
+      });
       toast.success("Wartungsplan erstellt");
-      setShowCreateModal(false);
-      // Auto-navigate to the new plan's detail view
       setSelectedPlan(res.data);
       loadData();
-    }
-    catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler beim Erstellen"); }
+    finally { setCreatingPlan(false); }
   };
-
-  const devicesWithoutPlan = devices.filter(d => !plans.some(p => p.device_id === d.id));
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="serviceplan-page">
@@ -821,7 +822,7 @@ export default function ServiceplanPage() {
                     <button key={d.id} className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-fuchsia-400 hover:shadow-sm transition-all text-left group" data-testid={`sp-device-${d.serial_number}`}
                       onClick={() => {
                         if (d.plan) { setSelectedPlan(d.plan); }
-                        else { setCreateForm({ ...createForm, device_id: d.id }); setShowCreateModal(true); }
+                        else { handleCreatePlanForDevice(d.id); }
                       }}>
                       <div className="flex items-center gap-4">
                         {hasImage ? (
@@ -853,34 +854,6 @@ export default function ServiceplanPage() {
           </>
         )}
       </main>
-
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" data-testid="create-plan-modal">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
-            <div className="flex items-center justify-between p-5 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Neue Wartung anlegen</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div><Label className="text-gray-700 text-sm mb-1.5 block">Gerät *</Label>
-                <select value={createForm.device_id} onChange={e => setCreateForm(p => ({ ...p, device_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500" data-testid="select-device">
-                  <option value="">Gerät auswählen...</option>
-                  {devicesWithoutPlan.map(d => <option key={d.id} value={d.id}>{d.serial_number} – {TYPE_LABELS[d.device_type] || d.device_type} ({d.model || "–"})</option>)}
-                </select>
-              </div>
-              <div><Label className="text-gray-700 text-sm">Aktuelle Betriebsstunden</Label><Input type="number" value={createForm.current_hours} onChange={e => setCreateForm(p => ({ ...p, current_hours: parseFloat(e.target.value) || 0 }))} placeholder="z.B. 3500" className="mt-1" data-testid="create-current-hours" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label className="text-gray-700 text-sm">Intervall (Stunden)</Label><Input type="number" value={createForm.interval_hours} onChange={e => setCreateForm(p => ({ ...p, interval_hours: parseInt(e.target.value) || 0 }))} className="mt-1" /></div>
-                <div><Label className="text-gray-700 text-sm">Intervall (Monate)</Label><Input type="number" value={createForm.interval_months} onChange={e => setCreateForm(p => ({ ...p, interval_months: parseInt(e.target.value) || 0 }))} className="mt-1" /></div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-5 border-t border-gray-200">
-              <Button variant="outline" onClick={() => setShowCreateModal(false)}>Abbrechen</Button>
-              <Button onClick={handleCreatePlan} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="create-plan-submit">Erstellen</Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,0 +1,96 @@
+{
+  "summary": "Iteration 17 - All features tested and PASSED. Service Plan: Ersatzteile section at top, Dateiablage with download endpoint working, no Plan bearbeiten button. Auto-create plan works without modal. Device Management: Image upload section with 'Bild hinzufügen' button visible for new devices, edit/save works without 500 error.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "serviceplan_ersatzteile_at_top": {
+      "status": "PASS",
+      "test": "DSE-HBF-001 detail view shows Ersatzteile section at top",
+      "result": "plan-parts-section found at y=308, shows 'Ersatzteile (1)' with Ölfilter FIL-001"
+    },
+    "serviceplan_dateiablage_with_download": {
+      "status": "PASS",
+      "test": "Dateiablage section with document download links",
+      "result": "plan-docs-section shows documents with links using /api/devices/{id}/documents/{docId}/download endpoint"
+    },
+    "serviceplan_no_plan_bearbeiten_button": {
+      "status": "PASS",
+      "test": "Detail view has NO 'Plan bearbeiten' button",
+      "result": "Button text 'Plan bearbeiten' not found in page content"
+    },
+    "serviceplan_auto_create": {
+      "status": "PASS",
+      "test": "Click device without plan auto-creates plan (no modal)",
+      "result": "Clicked TEST-IT13-0c20af8b, no modal appeared, plan auto-created (toast: 'Wartungsplan erstellt'), direct navigation to detail view"
+    },
+    "serviceplan_no_create_modal": {
+      "status": "PASS",
+      "test": "No separate create-plan modal (Bild 3 removed)",
+      "result": "Modal with role='dialog' not found after clicking device without plan"
+    },
+    "device_image_section_new_device": {
+      "status": "PASS",
+      "test": "New device form shows Gerätebild section with 'Bild hinzufügen' button",
+      "result": "device-image-section found, upload-device-image-btn shows 'Bild hinzufügen' text"
+    },
+    "device_edit_no_500_error": {
+      "status": "PASS",
+      "test": "Edit existing device save does not return 500",
+      "result": "Edited XBAP2021, modal closed successfully, toast shows 'Gerät aktualisiert'"
+    },
+    "document_download_endpoint": {
+      "status": "PASS",
+      "test": "GET /api/devices/{id}/documents/{docId}/download works",
+      "result": "Uploaded test_doc.txt, download endpoint returns HTTP 200 with content"
+    }
+  },
+  "backend_tests": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "tests": [
+      "TestDocumentDownloadEndpoint::test_download_document_success - PASS",
+      "TestDocumentDownloadEndpoint::test_download_document_not_found - PASS",
+      "TestDocumentDownloadEndpoint::test_download_document_wrong_device - PASS",
+      "TestDocumentDownloadEndpoint::test_download_document_unauthorized - PASS",
+      "TestDeviceParts::test_list_device_parts - PASS",
+      "TestDeviceDocuments::test_list_device_documents - PASS",
+      "TestServicePlanAutoCreate::test_create_serviceplan_auto - PASS",
+      "TestServicePlanAutoCreate::test_serviceplan_has_default_values - PASS",
+      "TestDeviceUpdate::test_update_device_success - PASS",
+      "TestHealthCheck::test_api_accessible - PASS",
+      "TestHealthCheck::test_login_works - PASS"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17.py",
+    "/app/test_reports/pytest/pytest_iteration17.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% (8/8 features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_creation": "Uploaded test_doc.txt to DSE-HBF-001 (device f268c2e1-3933-43b4-85d8-0595338a8287), document ID: a8f22141-b221-4974-b222-5d4a8b537b22. Auto-created service plan for TEST-IT13-0c20af8b.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 17 complete. All 5 user-requested features verified working: (1) Ersatzteile section displays at top of ServicePlan detail view with parts list, (2) Dateiablage button shows device documents with working download links using new endpoint /api/devices/{id}/documents/{docId}/download, (3) 'Plan bearbeiten' button removed from detail view, (4) Create-plan modal (Bild 3) removed - clicking device without plan auto-creates and navigates to detail, (5) New device form shows Gerätebild section with 'Bild hinzufügen' button. Device edit saves without 500 error. Test device DSE-HBF-001 has 1 Ersatzteil (Ölfilter FIL-001) and 1 document (test_doc.txt).",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}

@@ -64,6 +64,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
   const [showCopyDropdown, setShowCopyDropdown] = useState(false);
   const [deviceImageUrl, setDeviceImageUrl] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [pendingImage, setPendingImage] = useState(null);
   const [parts, setParts] = useState([]);
   const [showAddPart, setShowAddPart] = useState(false);
   const [newPart, setNewPart] = useState({ part_type: "", part_number: "", liters: "", notes: "" });
@@ -106,21 +107,30 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       setDeviceImageUrl(null);
       setShowAddPart(false);
       setNewPart({ part_type: "", part_number: "", liters: "", notes: "" });
+      setPendingImage(null);
     }
   }, [open, editing, loadDocuments, loadParts]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || !editing) return;
-    setUploadingImage(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      await api.post(`/devices/${editing.id}/image`, fd, { headers: { "Content-Type": "multipart/form-data" } });
-      toast.success("Gerätebild hochgeladen");
-      setDeviceImageUrl(`${BACKEND_URL}/api/devices/${editing.id}/image?t=${Date.now()}`);
-    } catch { toast.error("Bild-Upload fehlgeschlagen"); }
-    finally { setUploadingImage(false); if (imageInputRef.current) imageInputRef.current.value = ""; }
+    if (!file) return;
+    if (editing) {
+      // Existing device: upload immediately
+      setUploadingImage(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        await api.post(`/devices/${editing.id}/image`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+        toast.success("Gerätebild hochgeladen");
+        setDeviceImageUrl(`${BACKEND_URL}/api/devices/${editing.id}/image?t=${Date.now()}`);
+      } catch { toast.error("Bild-Upload fehlgeschlagen"); }
+      finally { setUploadingImage(false); if (imageInputRef.current) imageInputRef.current.value = ""; }
+    } else {
+      // New device: store file for upload after creation
+      setPendingImage(file);
+      setDeviceImageUrl(URL.createObjectURL(file));
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
   };
 
   const handleUpload = async (e) => {
@@ -261,26 +271,24 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               )}
             </div>
           )}
-          {/* Device Image */}
-          {editing && (
-            <div className="flex items-center gap-4 bg-gray-50 rounded-lg p-4" data-testid="device-image-section">
-              <input ref={imageInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
-              {deviceImageUrl ? (
-                <img src={deviceImageUrl} alt="Gerät" className="w-20 h-20 rounded-lg object-cover border border-gray-200" data-testid="device-image-preview" />
-              ) : (
-                <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
-                  <Camera className="w-6 h-6" />
-                </div>
-              )}
-              <div>
-                <p className="text-sm font-medium text-gray-700">Gerätebild</p>
-                <p className="text-xs text-gray-400 mb-2">Bild zur visuellen Identifikation</p>
-                <Button size="sm" variant="outline" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} data-testid="upload-device-image-btn">
-                  <Camera className="w-3.5 h-3.5 mr-1" /> {uploadingImage ? "Wird hochgeladen..." : deviceImageUrl ? "Bild ändern" : "Bild hinzufügen"}
-                </Button>
+          {/* Device Image - available for both new and existing devices */}
+          <div className="flex items-center gap-4 bg-gray-50 rounded-lg p-4" data-testid="device-image-section">
+            <input ref={imageInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
+            {deviceImageUrl ? (
+              <img src={deviceImageUrl} alt="Gerät" className="w-20 h-20 rounded-lg object-cover border border-gray-200" data-testid="device-image-preview" />
+            ) : (
+              <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
+                <Camera className="w-6 h-6" />
               </div>
+            )}
+            <div>
+              <p className="text-sm font-medium text-gray-700">Gerätebild</p>
+              <p className="text-xs text-gray-400 mb-2">Bild zur visuellen Identifikation</p>
+              <Button size="sm" variant="outline" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} data-testid="upload-device-image-btn">
+                <Camera className="w-3.5 h-3.5 mr-1" /> {uploadingImage ? "Wird hochgeladen..." : deviceImageUrl ? "Bild ändern" : "Bild hinzufügen"}
+              </Button>
             </div>
-          )}
+          </div>
 
           {/* Ersatzteile (Parts) - at the top of the form */}
           {editing && (
@@ -602,7 +610,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
 
         <div className="flex justify-end gap-3 p-5 border-t border-gray-200">
           <Button variant="outline" onClick={onClose} data-testid="cancel-btn">Abbrechen</Button>
-          <Button onClick={onSave} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-device-btn">
+          <Button onClick={() => onSave(pendingImage)} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-device-btn">
             {editing ? "Speichern" : "Anlegen"}
           </Button>
         </div>
@@ -668,7 +676,7 @@ export default function DeviceManagementPage() {
     setModalOpen(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (pendingImageFile) => {
     if (!formData.serial_number.trim()) {
       toast.error("Seriennummer ist erforderlich");
       return;
@@ -687,17 +695,16 @@ export default function DeviceManagementPage() {
         setModalOpen(false);
       } else {
         const res = await api.post("/devices", payload);
-        toast.success("Gerät angelegt – Sie können jetzt ein Bild und Dateien hinzufügen");
-        // Auto-open in edit mode so user can upload image/docs
+        // Upload pending image if exists
+        if (pendingImageFile && res.data?.id) {
+          try {
+            const fd = new FormData();
+            fd.append("file", pendingImageFile);
+            await api.post(`/devices/${res.data.id}/image`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+          } catch { /* silent - device created but image upload failed */ }
+        }
+        toast.success("Gerät angelegt");
         setModalOpen(false);
-        await loadDevices();
-        setTimeout(() => {
-          const newDevice = devices.find(d => d.serial_number === formData.serial_number) || res.data;
-          if (newDevice) {
-            openEdit(newDevice);
-          }
-        }, 500);
-        return;
       }
       loadDevices();
     } catch (err) {
