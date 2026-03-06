@@ -39,8 +39,6 @@ const EMPTY_FORM = {
   device_type: "stromerzeuger",
   serial_number: "",
   user_field: "",
-  latitude: "",
-  longitude: "",
   model: "",
   engine_manufacturer: "",
   engine_type: "",
@@ -51,8 +49,8 @@ const EMPTY_FORM = {
   year_of_manufacture: "",
   power_output: "",
   controller: "",
-  last_maintenance: "",
-  next_maintenance: "",
+  acquired_date: "",
+  portal_link: "",
   notes: "",
 };
 
@@ -134,8 +132,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       device_type: device.device_type || "stromerzeuger",
       serial_number: "",
       user_field: device.user_field || "",
-      latitude: device.latitude ?? "",
-      longitude: device.longitude ?? "",
       model: device.model || "",
       engine_manufacturer: device.engine_manufacturer || "",
       engine_type: device.engine_type || "",
@@ -146,14 +142,15 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       year_of_manufacture: device.year_of_manufacture ?? "",
       power_output: device.power_output || "",
       controller: device.controller || "",
-      last_maintenance: "",
-      next_maintenance: "",
+      acquired_date: "",
+      portal_link: device.portal_link || "",
       notes: "",
       copy_image_from: device.image_gridfs_id ? device.id : null,
+      copy_docs_from: device.id,
     });
     setCopySearch("");
     setShowCopyDropdown(false);
-    toast.success("Daten übernommen – bitte Seriennummer eintragen");
+    toast.success("Daten übernommen – Dokumente können nach dem Speichern übernommen werden");
   };
 
   const copyFilteredDevices = (allDevices || []).filter(d => {
@@ -366,35 +363,20 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               </div>
 
               <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Wartung</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Weitere Daten</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-gray-700 text-sm">Letzte Wartung</Label>
-                    <Input type="date" value={formData.last_maintenance} onChange={e => update("last_maintenance", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="last-maint-input" />
+                    <Label className="text-gray-700 text-sm">Erworben am</Label>
+                    <Input type="date" value={formData.acquired_date} onChange={e => update("acquired_date", e.target.value)} className="mt-1" data-testid="acquired-date-input" />
                   </div>
                   <div>
-                    <Label className="text-gray-700 text-sm">Nächste Wartung</Label>
-                    <Input type="date" value={formData.next_maintenance} onChange={e => update("next_maintenance", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="next-maint-input" />
+                    <Label className="text-gray-700 text-sm">Portal-Verknüpfung</Label>
+                    <Input value={formData.portal_link} onChange={e => update("portal_link", e.target.value)} placeholder="Link oder ID für Monitoring" className="mt-1" data-testid="portal-link-input" />
                   </div>
                 </div>
               </div>
             </>
           )}
-
-          {/* GPS */}
-          <div className="border-t border-gray-100 pt-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">Standort (GPS)</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-gray-700 text-sm">Breitengrad</Label>
-                <Input type="number" step="any" value={formData.latitude} onChange={e => update("latitude", e.target.value)} placeholder="z.B. 50.1109" className="mt-1" data-testid="lat-input" />
-              </div>
-              <div>
-                <Label className="text-gray-700 text-sm">Längengrad</Label>
-                <Input type="number" step="any" value={formData.longitude} onChange={e => update("longitude", e.target.value)} placeholder="z.B. 8.6821" className="mt-1" data-testid="lng-input" />
-              </div>
-            </div>
-          </div>
 
           {/* Notes */}
           <div>
@@ -408,26 +390,29 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
             />
           </div>
 
-          {/* Documents */}
+          {/* Dateiablage (documents) */}
           {editing && (
             <div className="border-t border-gray-100 pt-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-gray-900">Dokumente ({documents.length})</h3>
+                <div>
+                  <h3 className="text-sm font-medium text-gray-900">Dateiablage ({documents.length})</h3>
+                  <p className="text-[10px] text-gray-400">Handbücher, Schaltpläne, Motornummern etc.</p>
+                </div>
                 <label className="cursor-pointer">
-                  <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" />
+                  <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" />
                   <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-fuchsia-50 text-fuchsia-600 rounded-lg text-xs font-medium hover:bg-fuchsia-100 transition-colors" data-testid="upload-doc-btn">
-                    <Upload className="w-3.5 h-3.5" /> {uploading ? "Lädt..." : "Hochladen"}
+                    <Upload className="w-3.5 h-3.5" /> {uploading ? "Lädt..." : "Datei hochladen"}
                   </span>
                 </label>
               </div>
               {documents.length === 0 ? (
-                <p className="text-xs text-gray-400">Keine Dokumente vorhanden</p>
+                <p className="text-xs text-gray-400 py-3 text-center bg-gray-50 rounded-lg">Keine Dateien vorhanden</p>
               ) : (
                 <div className="space-y-1.5">
                   {documents.map(doc => (
                     <div key={doc.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg" data-testid={`doc-${doc.id}`}>
                       <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <FileText className="w-4 h-4 text-fuchsia-400 flex-shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm text-gray-900 truncate">{doc.filename}</p>
                           <p className="text-[10px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB · {new Date(doc.uploaded_at).toLocaleDateString("de-DE")}</p>
@@ -521,19 +506,30 @@ export default function DeviceManagementPage() {
     }
     const payload = {
       ...formData,
-      latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-      longitude: formData.longitude ? parseFloat(formData.longitude) : null,
       year_of_manufacture: formData.year_of_manufacture ? parseInt(formData.year_of_manufacture) : null,
     };
+    // Remove frontend-only fields
+    delete payload.copy_image_from;
+    delete payload.copy_docs_from;
     try {
       if (editing) {
         await api.put(`/devices/${editing.id}`, payload);
         toast.success("Gerät aktualisiert");
+        setModalOpen(false);
       } else {
-        await api.post("/devices", payload);
-        toast.success("Gerät angelegt");
+        const res = await api.post("/devices", payload);
+        toast.success("Gerät angelegt – Sie können jetzt ein Bild und Dateien hinzufügen");
+        // Auto-open in edit mode so user can upload image/docs
+        setModalOpen(false);
+        await loadDevices();
+        setTimeout(() => {
+          const newDevice = devices.find(d => d.serial_number === formData.serial_number) || res.data;
+          if (newDevice) {
+            openEdit(newDevice);
+          }
+        }, 500);
+        return;
       }
-      setModalOpen(false);
       loadDevices();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Fehler beim Speichern");

@@ -166,6 +166,31 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             else:
                 generators = []
 
+    # Auto-include Stromerzeuger/Lichtmast devices as generators
+    existing_serials = {g.get("serial_number") for g in generators}
+    active_devices = await db.devices.find(
+        {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
+        {"_id": 0}
+    ).to_list(2000)
+    for dev in active_devices:
+        if dev.get("serial_number") not in existing_serials:
+            # Create a virtual generator entry from the device
+            vg = {
+                "id": f"dev-{dev['id']}",
+                "name": dev.get("user_field") or dev.get("model") or dev["serial_number"],
+                "serial_number": dev["serial_number"],
+                "model": dev.get("controller") or dev.get("model") or "–",
+                "location_name": dev.get("user_field", ""),
+                "latitude": None,
+                "longitude": None,
+                "status": "standby",
+                "is_active": True,
+                "device_id": dev["id"],
+                "from_device": True,
+            }
+            generators.append(vg)
+            existing_serials.add(dev["serial_number"])
+
     # P1: Filter out generators whose matching device is "ausser_betrieb"
     out_of_service_serials = set()
     oos_devices = await db.devices.find(

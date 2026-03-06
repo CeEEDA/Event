@@ -620,6 +620,7 @@ export default function ServiceplanPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ device_id: "", current_hours: 0, interval_hours: 500, interval_months: 12, tasks: [] });
 
@@ -636,9 +637,20 @@ export default function ServiceplanPage() {
 
   const devicesWithPlans = devices.map(d => ({ ...d, plan: plans.find(p => p.device_id === d.id) }));
   const filtered = devicesWithPlans.filter(d => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (d.serial_number || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) || (d.user_field || "").toLowerCase().includes(q);
+    // Search filter
+    if (search) {
+      const q = search.toLowerCase();
+      const match = (d.serial_number || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) || (d.user_field || "").toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    // Status filter
+    if (statusFilter) {
+      const st = d.plan ? getServiceStatus(d.plan) : null;
+      if (statusFilter === "einsatzbereit") return d.plan && st && st.label === "OK";
+      if (statusFilter === "bald_faellig") return d.plan && st && st.label === "Bald fällig";
+      if (statusFilter === "ueberfaellig") return d.plan && st && st.label === "Überfällig";
+    }
+    return true;
   });
 
   const handleCreatePlan = async () => {
@@ -675,10 +687,23 @@ export default function ServiceplanPage() {
             </div>
 
             {plans.length > 0 && (
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-gray-900">{plans.length}</p><p className="text-xs text-gray-500">Wartungspläne</p></div>
-                <div className="bg-white border border-gray-200 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-amber-600">{plans.filter(p => getServiceStatus(p).label === "Bald fällig").length}</p><p className="text-xs text-gray-500">Bald fällig</p></div>
-                <div className="bg-white border border-gray-200 rounded-lg p-4 text-center"><p className="text-2xl font-bold text-red-600">{plans.filter(p => getServiceStatus(p).label === "Überfällig").length}</p><p className="text-xs text-gray-500">Überfällig</p></div>
+              <div className="grid grid-cols-4 gap-3 mb-6">
+                <button onClick={() => setStatusFilter(statusFilter === "einsatzbereit" ? null : "einsatzbereit")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "einsatzbereit" ? "border-emerald-400 ring-2 ring-emerald-100" : "border-gray-200 hover:border-emerald-300"}`} data-testid="filter-einsatzbereit">
+                  <p className="text-2xl font-bold text-emerald-600">{plans.filter(p => getServiceStatus(p).label === "OK").length}</p>
+                  <p className="text-xs text-gray-500">Einsatzbereit</p>
+                </button>
+                <button onClick={() => setStatusFilter(statusFilter === "bald_faellig" ? null : "bald_faellig")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "bald_faellig" ? "border-amber-400 ring-2 ring-amber-100" : "border-gray-200 hover:border-amber-300"}`} data-testid="filter-bald-faellig">
+                  <p className="text-2xl font-bold text-amber-600">{plans.filter(p => getServiceStatus(p).label === "Bald fällig").length}</p>
+                  <p className="text-xs text-gray-500">Bald fällig</p>
+                </button>
+                <button onClick={() => setStatusFilter(statusFilter === "ueberfaellig" ? null : "ueberfaellig")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "ueberfaellig" ? "border-red-400 ring-2 ring-red-100" : "border-gray-200 hover:border-red-300"}`} data-testid="filter-ueberfaellig">
+                  <p className="text-2xl font-bold text-red-600">{plans.filter(p => getServiceStatus(p).label === "Überfällig").length}</p>
+                  <p className="text-xs text-gray-500">Überfällig</p>
+                </button>
+                <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-gray-900">{plans.length}</p>
+                  <p className="text-xs text-gray-500">Gesamt</p>
+                </div>
               </div>
             )}
 

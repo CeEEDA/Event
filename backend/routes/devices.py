@@ -32,8 +32,6 @@ class DeviceCreate(BaseModel):
     device_type: str
     serial_number: str
     user_field: str = ""
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     model: Optional[str] = None
     engine_manufacturer: Optional[str] = None
     engine_type: Optional[str] = None
@@ -44,8 +42,8 @@ class DeviceCreate(BaseModel):
     year_of_manufacture: Optional[int] = None
     power_output: Optional[str] = None
     controller: Optional[str] = None
-    last_maintenance: Optional[str] = None
-    next_maintenance: Optional[str] = None
+    acquired_date: Optional[str] = None
+    portal_link: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -53,8 +51,6 @@ class DeviceUpdate(BaseModel):
     device_type: Optional[str] = None
     serial_number: Optional[str] = None
     user_field: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     model: Optional[str] = None
     engine_manufacturer: Optional[str] = None
     engine_type: Optional[str] = None
@@ -65,8 +61,8 @@ class DeviceUpdate(BaseModel):
     year_of_manufacture: Optional[int] = None
     power_output: Optional[str] = None
     controller: Optional[str] = None
-    last_maintenance: Optional[str] = None
-    next_maintenance: Optional[str] = None
+    acquired_date: Optional[str] = None
+    portal_link: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
 
@@ -112,8 +108,6 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "device_type": data.device_type,
         "serial_number": data.serial_number,
         "user_field": data.user_field,
-        "latitude": data.latitude,
-        "longitude": data.longitude,
         "model": data.model,
         "engine_manufacturer": data.engine_manufacturer,
         "engine_type": data.engine_type,
@@ -125,8 +119,8 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "operating_hours": None,
         "power_output": data.power_output,
         "controller": data.controller,
-        "last_maintenance": data.last_maintenance,
-        "next_maintenance": data.next_maintenance,
+        "acquired_date": data.acquired_date,
+        "portal_link": data.portal_link,
         "notes": data.notes,
         "status": "aktiv",
         "created_at": datetime.now(timezone.utc).isoformat(),

@@ -30,8 +30,7 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
-        with smtplib.SMTP(cfg["host"], cfg["port"], timeout=15) as server:
-            server.starttls()
+        with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
             server.login(cfg["user"], cfg["password"])
             server.sendmail(cfg["user"], to_email, msg.as_string())
         logger.info(f"Email sent to {to_email}")
