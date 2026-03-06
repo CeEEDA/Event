@@ -21,7 +21,10 @@ import {
   Settings,
   Power,
   PowerOff,
+  Camera,
 } from "lucide-react";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const DEVICE_TYPES = [
   { value: "stromerzeuger", label: "Stromerzeuger", icon: Zap },
@@ -55,10 +58,13 @@ const EMPTY_FORM = {
 
 function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, isAdmin, allDevices }) {
   const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [copySearch, setCopySearch] = useState("");
   const [showCopyDropdown, setShowCopyDropdown] = useState(false);
+  const [deviceImageUrl, setDeviceImageUrl] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const isGenerator = formData.device_type === "stromerzeuger" || formData.device_type === "lichtmast";
 
@@ -70,7 +76,33 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
     } catch { setDocuments([]); }
   }, [editing]);
 
-  useEffect(() => { if (open && editing) loadDocuments(); else setDocuments([]); }, [open, editing, loadDocuments]);
+  useEffect(() => {
+    if (open && editing) {
+      loadDocuments();
+      if (editing.image_gridfs_id) {
+        setDeviceImageUrl(`${BACKEND_URL}/api/devices/${editing.id}/image`);
+      } else {
+        setDeviceImageUrl(null);
+      }
+    } else {
+      setDocuments([]);
+      setDeviceImageUrl(null);
+    }
+  }, [open, editing, loadDocuments]);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !editing) return;
+    setUploadingImage(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post(`/devices/${editing.id}/image`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Gerätebild hochgeladen");
+      setDeviceImageUrl(`${BACKEND_URL}/api/devices/${editing.id}/image?t=${Date.now()}`);
+    } catch { toast.error("Bild-Upload fehlgeschlagen"); }
+    finally { setUploadingImage(false); if (imageInputRef.current) imageInputRef.current.value = ""; }
+  };
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -117,6 +149,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       last_maintenance: "",
       next_maintenance: "",
       notes: "",
+      copy_image_from: device.image_gridfs_id ? device.id : null,
     });
     setCopySearch("");
     setShowCopyDropdown(false);
@@ -186,6 +219,27 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               )}
             </div>
           )}
+          {/* Device Image */}
+          {editing && (
+            <div className="flex items-center gap-4 bg-gray-50 rounded-lg p-4" data-testid="device-image-section">
+              <input ref={imageInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
+              {deviceImageUrl ? (
+                <img src={deviceImageUrl} alt="Gerät" className="w-20 h-20 rounded-lg object-cover border border-gray-200" data-testid="device-image-preview" />
+              ) : (
+                <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
+                  <Camera className="w-6 h-6" />
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-medium text-gray-700">Gerätebild</p>
+                <p className="text-xs text-gray-400 mb-2">Bild zur visuellen Identifikation</p>
+                <Button size="sm" variant="outline" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} data-testid="upload-device-image-btn">
+                  <Camera className="w-3.5 h-3.5 mr-1" /> {uploadingImage ? "Wird hochgeladen..." : deviceImageUrl ? "Bild ändern" : "Bild hinzufügen"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Device Type - selectable only on create OR for admin editing */}
           {!editing ? (
             <div>
@@ -635,7 +689,11 @@ export default function DeviceManagementPage() {
                       <tr key={device.id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isOutOfService ? "opacity-60" : ""}`} data-testid={`device-row-${device.serial_number}`}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <TypeIcon className="w-4 h-4 text-fuchsia-500" />
+                            {device.image_gridfs_id ? (
+                              <img src={`${BACKEND_URL}/api/devices/${device.id}/image`} alt="" className="w-8 h-8 rounded object-cover border border-gray-200" />
+                            ) : (
+                              <TypeIcon className="w-4 h-4 text-fuchsia-500" />
+                            )}
                             <span className="text-xs text-gray-500">{TYPE_LABELS[device.device_type] || device.device_type}</span>
                           </div>
                         </td>

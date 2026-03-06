@@ -1376,7 +1376,7 @@ app.include_router(device_router)
 
 # Service Plan routes
 from routes.serviceplan import router as serviceplan_router, init_serviceplan_routes
-init_serviceplan_routes(db, decode_jwt_token)
+init_serviceplan_routes(db, decode_jwt_token, fs)
 app.include_router(serviceplan_router)
 
 app.add_middleware(

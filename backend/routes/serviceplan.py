@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
 import uuid
 import logging
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -13,18 +15,21 @@ security = HTTPBearer()
 
 db = None
 decode_jwt_token = None
+fs = None
 
 
-def init_serviceplan_routes(_db, _decode_jwt_token):
-    global db, decode_jwt_token
+def init_serviceplan_routes(_db, _decode_jwt_token, _fs=None):
+    global db, decode_jwt_token, fs
     db = _db
     decode_jwt_token = _decode_jwt_token
+    fs = _fs
 
 
 # ============== Models ==============
 
 class ServicePlanCreate(BaseModel):
     device_id: str
+    current_hours: Optional[float] = 0
     interval_hours: Optional[int] = 500
     interval_months: Optional[int] = 12
     tasks: List[str] = []
@@ -32,6 +37,7 @@ class ServicePlanCreate(BaseModel):
 
 
 class ServicePlanUpdate(BaseModel):
+    current_hours: Optional[float] = None
     interval_hours: Optional[int] = None
     interval_months: Optional[int] = None
     tasks: Optional[List[str]] = None
@@ -44,6 +50,7 @@ class MaintenanceEntryCreate(BaseModel):
     hours_at_service: Optional[float] = None
     tasks_completed: List[str] = []
     notes: Optional[str] = ""
+    remarks: Optional[str] = ""
 
 
 # ============== Helpers ==============
@@ -116,6 +123,7 @@ async def create_service_plan(data: ServicePlanCreate, user: dict = Depends(requ
     plan_doc = {
         "id": str(uuid.uuid4()),
         "device_id": data.device_id,
+        "current_hours": data.current_hours or 0,
         "interval_hours": data.interval_hours,
         "interval_months": data.interval_months,
         "tasks": data.tasks,
@@ -161,6 +169,8 @@ async def update_service_plan(plan_id: str, data: ServicePlanUpdate, user: dict 
         raise HTTPException(status_code=404, detail="Serviceplan nicht gefunden")
 
     update_data = {}
+    if data.current_hours is not None:
+        update_data["current_hours"] = data.current_hours
     if data.interval_hours is not None:
         update_data["interval_hours"] = data.interval_hours
     if data.interval_months is not None:
@@ -203,6 +213,8 @@ async def add_maintenance_entry(plan_id: str, data: MaintenanceEntryCreate, user
         "hours_at_service": data.hours_at_service,
         "tasks_completed": data.tasks_completed,
         "notes": data.notes or "",
+        "remarks": data.remarks or "",
+        "images": [],
         "created_by_user_id": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -249,3 +261,61 @@ async def get_device_service_info(device_id: str, user: dict = Depends(require_s
     plan["has_plan"] = True
 
     return plan
+
+
+# ============== Entry Image Upload ==============
+
+@router.post("/{plan_id}/entries/{entry_id}/images")
+async def upload_entry_image(plan_id: str, entry_id: str, file: UploadFile = File(...), user: dict = Depends(require_staff)):
+    entry = await db.maintenance_entries.find_one({"id": entry_id, "service_plan_id": plan_id}, {"_id": 0})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Datei zu groß (max 20MB)")
+
+    gridfs_id = await fs.upload_from_stream(file.filename, content)
+    image_doc = {
+        "id": str(uuid.uuid4()),
+        "entry_id": entry_id,
+        "filename": file.filename,
+        "content_type": file.content_type or "image/jpeg",
+        "size": len(content),
+        "gridfs_id": gridfs_id,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.maintenance_images.insert_one(image_doc)
+
+    # Update entry images list
+    images = entry.get("images", [])
+    images.append(image_doc["id"])
+    await db.maintenance_entries.update_one({"id": entry_id}, {"$set": {"images": images}})
+
+    result = {k: v for k, v in image_doc.items() if k != "_id"}
+    result["gridfs_id"] = str(result["gridfs_id"])
+    return result
+
+
+@router.get("/images/{image_id}")
+async def get_entry_image(image_id: str):
+    img = await db.maintenance_images.find_one({"id": image_id})
+    if not img:
+        raise HTTPException(status_code=404, detail="Bild nicht gefunden")
+
+    grid_out = await fs.open_download_stream(img["gridfs_id"])
+    content = await grid_out.read()
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=img.get("content_type", "image/jpeg"),
+        headers={"Content-Disposition": f'inline; filename="{img["filename"]}"'}
+    )
+
+
+@router.get("/{plan_id}/entries/{entry_id}/images")
+async def list_entry_images(plan_id: str, entry_id: str, user: dict = Depends(require_staff)):
+    images = await db.maintenance_images.find({"entry_id": entry_id}, {"_id": 0}).to_list(50)
+    for img in images:
+        if "gridfs_id" in img:
+            img["gridfs_id"] = str(img["gridfs_id"])
+    return images

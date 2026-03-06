@@ -144,6 +144,9 @@ async def list_devices(user: dict = Depends(require_staff)):
     for d in devices:
         doc_count = await db.device_documents.count_documents({"device_id": d["id"]})
         d["document_count"] = doc_count
+        # Convert ObjectId to string for JSON serialization
+        if "image_gridfs_id" in d and d["image_gridfs_id"]:
+            d["image_gridfs_id"] = str(d["image_gridfs_id"])
     return devices
 
 
@@ -157,6 +160,9 @@ async def get_device(device_id: str, user: dict = Depends(require_staff)):
         if "gridfs_id" in d:
             d["gridfs_id"] = str(d["gridfs_id"])
     device["documents"] = docs
+    # Convert ObjectId to string for JSON serialization
+    if "image_gridfs_id" in device and device["image_gridfs_id"]:
+        device["image_gridfs_id"] = str(device["image_gridfs_id"])
     return device
 
 
@@ -232,6 +238,7 @@ async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
     new_device["status"] = "aktiv"
     new_device["created_at"] = datetime.now(timezone.utc).isoformat()
     new_device["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Keep image_gridfs_id from source so copied device has same image
 
     await db.devices.insert_one(new_device)
     result = {k: v for k, v in new_device.items() if k != "_id"}
@@ -299,6 +306,54 @@ async def delete_document(device_id: str, doc_id: str, admin: dict = Depends(req
             pass
     await db.device_documents.delete_one({"id": doc_id})
     return {"message": "Dokument gelöscht"}
+
+
+# ============== Device Image ==============
+
+@router.post("/{device_id}/image")
+async def upload_device_image(device_id: str, file: UploadFile = File(...), user: dict = Depends(require_staff)):
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Bild zu groß (max 10MB)")
+
+    # Delete old image if exists
+    old_gridfs_id = device.get("image_gridfs_id")
+    if old_gridfs_id:
+        try:
+            await fs.delete(old_gridfs_id)
+        except Exception:
+            pass
+
+    gridfs_id = await fs.upload_from_stream(file.filename, content)
+    await db.devices.update_one({"id": device_id}, {"$set": {
+        "image_gridfs_id": gridfs_id,
+        "image_filename": file.filename,
+        "image_content_type": file.content_type or "image/jpeg",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }})
+
+    return {"message": "Bild hochgeladen", "image_gridfs_id": str(gridfs_id)}
+
+
+@router.get("/{device_id}/image")
+async def get_device_image(device_id: str):
+    from fastapi.responses import StreamingResponse
+    import io
+    device = await db.devices.find_one({"id": device_id})
+    if not device or not device.get("image_gridfs_id"):
+        raise HTTPException(status_code=404, detail="Kein Bild vorhanden")
+
+    grid_out = await fs.open_download_stream(device["image_gridfs_id"])
+    content = await grid_out.read()
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=device.get("image_content_type", "image/jpeg"),
+        headers={"Content-Disposition": f'inline; filename="{device.get("image_filename", "device.jpg")}"'}
+    )
 
 
 # ============== Stats ==============
