@@ -1,10 +1,4 @@
 Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
-%GROUP%/%TYPE%/%UID%/status,,P,,0,1,,R,11,%GWUID%:Connected,,,,,,,,Gateway online status retained
-%GROUP%/%TYPE%/%UID%/status,,P,,0,1,,W,11,%GWUID%:Disconnected,,,,,,,,Gateway offline last will
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Genset control key subscribe topic
-%GROUP%/%TYPE%/%UID%/alarm,,P,,0,1,,,4,,,,,,,,,Publish alarms on change
-%GROUP%/%TYPE%/%UID%/gps,,P,,60,0,,,10,,,,,,,,,Publish GPS location every 60s
-%GROUP%/%TYPE%/%UID%/topic_file,,S,,,1,,,9,,,,,,,,,Remote topic file update
 %GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
 %GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,1,1,0,,,,,,Coolant temp degC
 %GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,2,1,0,,,,,,Oil temp degC
@@ -26,3 +20,5 @@ Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 
 %GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,36,2,0,,,,,,Mains L1-N voltage 0.1V
 %GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,38,2,0,,,,,,Mains L2-N voltage 0.1V
 %GROUP%/%TYPE%/%UID%/mains,,P,,10,0,,,1,4,40,2,0,,,,,,Mains L3-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/alarm,,P,,0,1,,,4,,,,,,,,,Alarms on change
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control subscribe

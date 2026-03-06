@@ -1365,6 +1365,10 @@ async def health_check():
 async def download_topic_file():
     return FileResponse("/app/dse8610_module_topics.csv", media_type="text/csv", filename="dse8610_module_topics.csv")
 
+@api_router.get("/download-gateway-topic-file")
+async def download_gateway_topic_file():
+    return FileResponse("/app/dse890_gateway_topics.csv", media_type="text/csv", filename="dse890_gateway_topics.csv")
+
 # Include the router in the main app
 app.include_router(api_router)
 
