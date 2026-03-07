@@ -833,35 +833,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               {editing && isAdmin && (
                 <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} />
               )}
-
-              <div className="border-t border-gray-100 pt-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Server className="w-4 h-4 text-fuchsia-600" />
-                  <h3 className="text-sm font-medium text-gray-900">Raspberry Pi Anbindung</h3>
-                </div>
-                <p className="text-[10px] text-gray-400 mb-3">Zugangsdaten für den Datenlogger (Pi)</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-gray-700 text-sm">Benutzername</Label>
-                    <Input value={formData.pi_username} onChange={e => update("pi_username", e.target.value)} placeholder="z.B. pi" className="mt-1" data-testid="pi-username-input" />
-                  </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">Passwort</Label>
-                    <Input type="password" value={formData.pi_password || ""} onChange={e => update("pi_password", e.target.value)} placeholder="Pi-Passwort" className="mt-1" data-testid="pi-password-input" />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <Label className="text-gray-700 text-sm">Pi Notizen</Label>
-                  <textarea
-                    value={formData.pi_notes}
-                    onChange={e => update("pi_notes", e.target.value)}
-                    rows={2}
-                    placeholder="SIM-Karte, Standort, Zugang..."
-                    className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500"
-                    data-testid="pi-notes-input"
-                  />
-                </div>
-              </div>
             </>
           )}
 
