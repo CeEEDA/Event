@@ -1434,6 +1434,24 @@ async def download_dse8610_module():
 async def download_dsel401_module():
     return FileResponse("/app/backend/static/dsel401_module_topics.csv", media_type="text/csv", filename="dsel401_module_topics.csv")
 
+# Dynamic topic file download based on controller type
+CONTROLLER_TOPIC_MAP = {
+    "DSE 8610 MKII": ("dse8610_module_topics.csv", "dse8610_module_topics.csv"),
+    "DSE 8610": ("dse8610_module_topics.csv", "dse8610_module_topics.csv"),
+    "DSE 7310": ("dse8610_module_topics.csv", "dse7310_module_topics.csv"),
+    "DSE L401": ("dsel401_module_topics.csv", "dsel401_module_topics.csv"),
+}
+
+@api_router.get("/download-controller-topics/{controller_type}")
+async def download_controller_topics(controller_type: str):
+    mapping = CONTROLLER_TOPIC_MAP.get(controller_type)
+    if not mapping:
+        raise HTTPException(status_code=404, detail=f"Keine Topic-Datei für Steuerung '{controller_type}' verfügbar")
+    file_path = f"/app/backend/static/{mapping[0]}"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Topic-Datei nicht gefunden")
+    return FileResponse(file_path, media_type="text/csv", filename=mapping[1])
+
 # Include the router in the main app
 app.include_router(api_router)
 

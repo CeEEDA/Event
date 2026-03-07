@@ -96,6 +96,115 @@ function PiSetupSection({ deviceId, deviceName }) {
   );
 }
 
+const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
+const CONTROLLER_TOPIC_INFO = {
+  "DSE 8610 MKII": { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" },
+  "DSE 8610": { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" },
+  "DSE 7310": { filename: "dse8610_module_topics.csv", label: "DSE 7310 Module Topics" },
+  "DSE L401": { filename: "dsel401_module_topics.csv", label: "DSE L401 Module Topics" },
+};
+
+function DseGatewaySetupSection({ controller, serialNumber, formData, update }) {
+  const topicInfo = CONTROLLER_TOPIC_INFO[controller];
+  const brokerUrl = "broker.hivemq.com";
+  const brokerPort = "1883";
+  const topicPrefix = `/${serialNumber || "SERIENNUMMER"}/`;
+
+  const handleDownloadModuleTopics = () => {
+    if (!controller || !topicInfo) return;
+    window.open(`${BACKEND_URL}/api/download-controller-topics/${encodeURIComponent(controller)}`, "_blank");
+  };
+
+  const handleDownloadGatewayTopics = () => {
+    window.open(`${BACKEND_URL}/api/download-dse890-gateway-topics`, "_blank");
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-4" data-testid="dse-gateway-section">
+      <div className="flex items-center gap-2 mb-1">
+        <Server className="w-4 h-4 text-fuchsia-600" />
+        <h3 className="text-sm font-medium text-gray-900">DSE890 Gateway Konfiguration</h3>
+      </div>
+      <p className="text-[10px] text-gray-400 mb-3">
+        Einstellungen und Topic-Dateien für das DSE890 WebNet Gateway.
+      </p>
+
+      {/* MQTT Configuration Info */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3" data-testid="dse-mqtt-info">
+        <p className="text-xs text-gray-700 font-medium mb-2">MQTT-Einstellungen im DSE890:</p>
+        <div className="space-y-1.5 text-xs font-mono">
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Broker</span>
+            <span className="text-gray-900 select-all">{brokerUrl}</span>
+          </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Port</span>
+            <span className="text-gray-900 select-all">{brokerPort}</span>
+          </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Topic-Prefix</span>
+            <span className="text-gray-900 select-all">{topicPrefix}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* MQTT Username & Password */}
+      <div className="grid grid-cols-2 gap-4 mb-3">
+        <div>
+          <Label className="text-gray-700 text-sm">MQTT Benutzer</Label>
+          <Input
+            value={formData.mqtt_username || ""}
+            onChange={e => update("mqtt_username", e.target.value)}
+            placeholder="Gateway-Benutzer"
+            className="mt-1"
+            data-testid="mqtt-username-input"
+          />
+        </div>
+        <div>
+          <Label className="text-gray-700 text-sm">MQTT Passwort</Label>
+          <Input
+            type="password"
+            value={formData.mqtt_password || ""}
+            onChange={e => update("mqtt_password", e.target.value)}
+            placeholder="Gateway-Passwort"
+            className="mt-1"
+            data-testid="mqtt-password-input"
+          />
+        </div>
+      </div>
+      <p className="text-[10px] text-gray-400 mb-3">Benutzer/Passwort werden nach dem Umzug auf den eigenen Broker aktiv.</p>
+
+      {/* Topic File Downloads */}
+      <div className="flex flex-wrap gap-2">
+        {controller && topicInfo ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadModuleTopics}
+            className="text-gray-600 hover:text-fuchsia-600"
+            data-testid="download-module-topics-btn"
+          >
+            <Download className="w-3.5 h-3.5 mr-1.5" />
+            {topicInfo.label}
+          </Button>
+        ) : (
+          <p className="text-[10px] text-gray-400">Bitte eine Steuerung auswählen, um die Topic-Datei herunterzuladen.</p>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDownloadGatewayTopics}
+          className="text-gray-600 hover:text-fuchsia-600"
+          data-testid="download-gateway-topics-btn"
+        >
+          <Download className="w-3.5 h-3.5 mr-1.5" />
+          DSE890 Gateway Topics
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const DEVICE_TYPES = [
   { value: "stromerzeuger", label: "Stromerzeuger", icon: Zap },
   { value: "lichtmast", label: "Lichtmast", icon: Lightbulb },
@@ -128,6 +237,8 @@ const EMPTY_FORM = {
   pi_username: "",
   pi_password: "",
   pi_notes: "",
+  mqtt_username: "",
+  mqtt_password: "",
 };
 
 function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, isAdmin, allDevices }) {
@@ -697,17 +808,21 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
 
               <div className="border-t border-gray-100 pt-4">
                 <h3 className="text-sm font-medium text-gray-900 mb-3">Weitere Daten</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-gray-700 text-sm">Erworben am</Label>
-                    <Input type="date" value={formData.acquired_date} onChange={e => update("acquired_date", e.target.value)} className="mt-1" data-testid="acquired-date-input" />
-                  </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">Portal-Verknüpfung</Label>
-                    <Input value={formData.portal_link} onChange={e => update("portal_link", e.target.value)} placeholder="Link oder ID für Monitoring" className="mt-1" data-testid="portal-link-input" />
-                  </div>
+                <div>
+                  <Label className="text-gray-700 text-sm">Erworben am</Label>
+                  <Input type="date" value={formData.acquired_date} onChange={e => update("acquired_date", e.target.value)} className="mt-1" data-testid="acquired-date-input" />
                 </div>
               </div>
+
+              {/* DSE890 Gateway Setup - only for existing devices with admin */}
+              {editing && isAdmin && (
+                <DseGatewaySetupSection
+                  controller={formData.controller}
+                  serialNumber={formData.serial_number}
+                  formData={formData}
+                  update={update}
+                />
+              )}
             </>
           )}
 
@@ -876,6 +991,8 @@ export default function DeviceManagementPage() {
       pi_username: device.pi_username || "",
       pi_password: device.pi_password || "",
       pi_notes: device.pi_notes || "",
+      mqtt_username: device.mqtt_username || "",
+      mqtt_password: device.mqtt_password || "",
     });
     setModalOpen(true);
   };

@@ -58,6 +58,9 @@ class DeviceCreate(BaseModel):
     pi_username: Optional[str] = None
     pi_password: Optional[str] = None
     pi_notes: Optional[str] = None
+    # MQTT Gateway fields for DSE890
+    mqtt_username: Optional[str] = None
+    mqtt_password: Optional[str] = None
 
 
 class DeviceUpdate(BaseModel):
@@ -85,6 +88,9 @@ class DeviceUpdate(BaseModel):
     pi_username: Optional[str] = None
     pi_password: Optional[str] = None
     pi_notes: Optional[str] = None
+    # MQTT Gateway fields for DSE890
+    mqtt_username: Optional[str] = None
+    mqtt_password: Optional[str] = None
 
 
 PART_TYPES = [
@@ -182,6 +188,8 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "pi_username": data.pi_username,
         "pi_password": data.pi_password,
         "pi_notes": data.pi_notes,
+        "mqtt_username": data.mqtt_username,
+        "mqtt_password": data.mqtt_password,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
