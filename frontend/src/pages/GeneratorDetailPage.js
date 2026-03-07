@@ -246,41 +246,70 @@ export default function GeneratorDetailPage() {
         {/* Control Buttons - only for Admin + Mitarbeiter */}
         {canControl && (() => {
           const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
+          const isAuto = generator.status === "online" || generator.status === "standby";
           return (
-            <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3" data-testid="generator-controls">
+            <div className="flex items-center gap-5 bg-white border border-gray-200 rounded-lg px-5 py-4" data-testid="generator-controls">
               <span className="text-xs text-gray-400 font-medium mr-1">Steuerung</span>
-              <Button
-                size="sm"
+              {/* Stop Button - DSE Style */}
+              <button
                 onClick={() => sendCommand("stop", "Generator stoppen")}
                 disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs rounded-full ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300 hover:bg-red-700" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
+                className="group relative disabled:opacity-50 focus:outline-none"
                 data-testid="cmd-stop-btn"
               >
-                <Square className="w-3.5 h-3.5 mr-1.5" />
-                {cmdLoading === "stop" ? "..." : "Stop"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150
+                  ${!isRunning
+                    ? "bg-gradient-to-b from-red-400 via-red-600 to-red-800 shadow-[0_4px_12px_rgba(220,38,38,0.5),inset_0_2px_4px_rgba(255,255,255,0.3)]"
+                    : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 shadow-[0_2px_6px_rgba(0,0,0,0.15),inset_0_2px_4px_rgba(255,255,255,0.4)] group-hover:from-red-300 group-hover:via-red-400 group-hover:to-red-600"
+                  }
+                  ring-[3px] ring-gray-300 ring-offset-1
+                  active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
+                  style={{boxShadow: !isRunning ? '0 4px 14px rgba(220,38,38,0.45), inset 0 2px 4px rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.2)' : '0 3px 8px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.1)'}}
+                >
+                  <span className={`text-xl font-bold ${!isRunning ? "text-white drop-shadow-md" : "text-gray-600 group-hover:text-white"}`}>O</span>
+                </div>
+                <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "stop" ? "..." : "Stop"}</span>
+              </button>
+              {/* Auto Button - DSE Style */}
+              <button
                 onClick={() => sendCommand(isRunning ? "auto_off" : "auto_on", isRunning ? "Auto AUS" : "Auto EIN")}
                 disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs rounded-full ${generator.status === "online" || generator.status === "standby" ? "border-teal-300 bg-teal-50 text-teal-700" : "border-gray-200 text-gray-400 hover:bg-teal-50"}`}
+                className="group relative disabled:opacity-50 focus:outline-none"
                 data-testid="cmd-auto-btn"
               >
-                {generator.status === "online" || generator.status === "standby" ? <ToggleRight className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> : <ToggleLeft className="w-3.5 h-3.5 mr-1.5 text-gray-400" />}
-                {cmdLoading === "auto_on" || cmdLoading === "auto_off" ? "..." : "Auto"}
-              </Button>
-              <div className="h-5 w-px bg-gray-200" />
-              <Button
-                size="sm"
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150
+                  ${isAuto
+                    ? "bg-gradient-to-b from-teal-200 via-teal-300 to-teal-500 shadow-[0_4px_12px_rgba(20,184,166,0.4),inset_0_2px_4px_rgba(255,255,255,0.3)]"
+                    : "bg-gradient-to-b from-gray-100 via-gray-200 to-gray-350 shadow-[0_2px_6px_rgba(0,0,0,0.12),inset_0_2px_4px_rgba(255,255,255,0.5)] group-hover:from-gray-200 group-hover:via-gray-300 group-hover:to-gray-400"
+                  }
+                  ring-[3px] ring-gray-300 ring-offset-1
+                  active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
+                  style={{boxShadow: isAuto ? '0 4px 14px rgba(20,184,166,0.35), inset 0 2px 4px rgba(255,255,255,0.3), 0 1px 2px rgba(0,0,0,0.15)' : '0 3px 8px rgba(0,0,0,0.1), inset 0 2px 6px rgba(255,255,255,0.5), 0 1px 2px rgba(0,0,0,0.08)'}}
+                >
+                  <span className={`text-[10px] font-extrabold tracking-tight ${isAuto ? "text-teal-900" : "text-gray-500 group-hover:text-gray-700"}`}>AUTO</span>
+                </div>
+                <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "auto_on" || cmdLoading === "auto_off" ? "..." : "Auto"}</span>
+              </button>
+              {/* Start Button - DSE Style */}
+              <button
                 onClick={() => sendCommand("start", "Generator starten")}
                 disabled={cmdLoading !== null}
-                className={`h-8 px-4 text-xs rounded-full ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300 hover:bg-emerald-700" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
+                className="group relative disabled:opacity-50 focus:outline-none"
                 data-testid="cmd-start-btn"
               >
-                <Play className="w-3.5 h-3.5 mr-1.5" />
-                {cmdLoading === "start" ? "..." : "Start"}
-              </Button>
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150
+                  ${isRunning
+                    ? "bg-gradient-to-b from-emerald-300 via-emerald-500 to-emerald-700 shadow-[0_4px_12px_rgba(16,185,129,0.5),inset_0_2px_4px_rgba(255,255,255,0.3)]"
+                    : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 shadow-[0_2px_6px_rgba(0,0,0,0.15),inset_0_2px_4px_rgba(255,255,255,0.4)] group-hover:from-emerald-300 group-hover:via-emerald-400 group-hover:to-emerald-600"
+                  }
+                  ring-[3px] ring-gray-300 ring-offset-1
+                  active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
+                  style={{boxShadow: isRunning ? '0 4px 14px rgba(16,185,129,0.45), inset 0 2px 4px rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.2)' : '0 3px 8px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.1)'}}
+                >
+                  <span className={`text-xl font-bold ${isRunning ? "text-white drop-shadow-md" : "text-gray-600 group-hover:text-white"}`}>I</span>
+                </div>
+                <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "start" ? "..." : "Start"}</span>
+              </button>
             </div>
           );
         })()}

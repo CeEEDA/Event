@@ -166,25 +166,53 @@ function GeneratorCard({ generator, onClick, canControl }) {
       )}
 
       {canControl && (
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-100 justify-center" onClick={e => e.stopPropagation()}>
           {(() => {
             const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
+            const isAuto = generator.status === "online" || generator.status === "standby";
             return (
               <>
+                {/* Stop */}
                 <button onClick={e => sendCmd(e, "stop", "Generator stoppen")} disabled={cmdLoading !== null}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors disabled:opacity-50 ${!isRunning ? "bg-red-600 text-white ring-2 ring-red-300" : "bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700"}`}
+                  className="group disabled:opacity-50 focus:outline-none"
                   data-testid={`cmd-stop-${generator.serial_number}`}>
-                  <Square className="w-3 h-3" />{cmdLoading === "stop" ? "..." : "Stop"}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-150
+                    ${!isRunning
+                      ? "bg-gradient-to-b from-red-400 via-red-600 to-red-800"
+                      : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 group-hover:from-red-300 group-hover:via-red-400 group-hover:to-red-600"
+                    } ring-2 ring-gray-300 ring-offset-1`}
+                    style={{boxShadow: !isRunning ? '0 3px 10px rgba(220,38,38,0.4), inset 0 1px 3px rgba(255,255,255,0.25)' : '0 2px 6px rgba(0,0,0,0.12), inset 0 1px 3px rgba(255,255,255,0.4)'}}>
+                    <span className={`text-sm font-bold ${!isRunning ? "text-white" : "text-gray-600 group-hover:text-white"}`}>O</span>
+                  </div>
+                  <span className="block text-[8px] text-gray-400 text-center mt-1 font-medium">{cmdLoading === "stop" ? "..." : "Stop"}</span>
                 </button>
+                {/* Auto */}
                 <button onClick={e => sendCmd(e, "auto_on", "Auto EIN")} disabled={cmdLoading !== null}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors disabled:opacity-50 ${generator.status === "online" || generator.status === "standby" ? "bg-teal-100 text-teal-700 border border-teal-300" : "bg-gray-100 text-gray-400 border border-gray-200 hover:bg-teal-50"}`}
+                  className="group disabled:opacity-50 focus:outline-none"
                   data-testid={`cmd-auto-${generator.serial_number}`}>
-                  <ToggleLeft className="w-3 h-3" />{cmdLoading === "auto_on" ? "..." : "Auto"}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-150
+                    ${isAuto
+                      ? "bg-gradient-to-b from-teal-200 via-teal-300 to-teal-500"
+                      : "bg-gradient-to-b from-gray-100 via-gray-200 to-gray-350 group-hover:from-gray-200 group-hover:via-gray-300 group-hover:to-gray-400"
+                    } ring-2 ring-gray-300 ring-offset-1`}
+                    style={{boxShadow: isAuto ? '0 3px 10px rgba(20,184,166,0.35), inset 0 1px 3px rgba(255,255,255,0.3)' : '0 2px 6px rgba(0,0,0,0.08), inset 0 1px 4px rgba(255,255,255,0.5)'}}>
+                    <span className={`text-[7px] font-extrabold ${isAuto ? "text-teal-900" : "text-gray-500 group-hover:text-gray-700"}`}>AUTO</span>
+                  </div>
+                  <span className="block text-[8px] text-gray-400 text-center mt-1 font-medium">{cmdLoading === "auto_on" ? "..." : "Auto"}</span>
                 </button>
+                {/* Start */}
                 <button onClick={e => sendCmd(e, "start", "Generator starten")} disabled={cmdLoading !== null}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors disabled:opacity-50 ${isRunning ? "bg-emerald-600 text-white ring-2 ring-emerald-300" : "bg-gray-100 text-gray-500 hover:bg-emerald-100 hover:text-emerald-700"}`}
+                  className="group disabled:opacity-50 focus:outline-none"
                   data-testid={`cmd-start-${generator.serial_number}`}>
-                  <Play className="w-3 h-3" />{cmdLoading === "start" ? "..." : "Start"}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-150
+                    ${isRunning
+                      ? "bg-gradient-to-b from-emerald-300 via-emerald-500 to-emerald-700"
+                      : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 group-hover:from-emerald-300 group-hover:via-emerald-400 group-hover:to-emerald-600"
+                    } ring-2 ring-gray-300 ring-offset-1`}
+                    style={{boxShadow: isRunning ? '0 3px 10px rgba(16,185,129,0.4), inset 0 1px 3px rgba(255,255,255,0.25)' : '0 2px 6px rgba(0,0,0,0.12), inset 0 1px 3px rgba(255,255,255,0.4)'}}>
+                    <span className={`text-sm font-bold ${isRunning ? "text-white" : "text-gray-600 group-hover:text-white"}`}>I</span>
+                  </div>
+                  <span className="block text-[8px] text-gray-400 text-center mt-1 font-medium">{cmdLoading === "start" ? "..." : "Start"}</span>
                 </button>
               </>
             );
