@@ -11,6 +11,7 @@ import {
   Settings,
   Wrench,
   Zap,
+  ClipboardList,
 } from "lucide-react";
 
 export default function HubPage() {
@@ -65,19 +66,19 @@ export default function HubPage() {
           </div>
 
           <div className="grid gap-4 md:gap-6">
-            {/* FileShare */}
-            {hasFilesharing && (
+            {/* Auftragsverwaltung - ganz oben */}
+            {isStaff && (
               <button
-                onClick={() => navigate("/fileshare")}
+                onClick={() => navigate("/orders")}
                 className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
-                data-testid="fileshare-btn"
+                data-testid="orders-btn"
               >
                 <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-fuchsia-100 flex items-center justify-center flex-shrink-0 group-hover:bg-fuchsia-600 transition-colors">
-                  <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
+                  <ClipboardList className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">FileShare</h2>
-                  <p className="text-sm text-gray-500">Dateien hochladen, verwalten und teilen</p>
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Auftragsverwaltung</h2>
+                  <p className="text-sm text-gray-500">Aufträge anlegen, verwalten und nachverfolgen</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
@@ -132,6 +133,24 @@ export default function HubPage() {
                 <div className="flex-1">
                   <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Geräteverwaltung</h2>
                   <p className="text-sm text-gray-500">Endgeräte anlegen, verwalten und konfigurieren</p>
+                </div>
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
+              </button>
+            )}
+
+            {/* FileShare - unter Geräteverwaltung */}
+            {hasFilesharing && (
+              <button
+                onClick={() => navigate("/fileshare")}
+                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
+                data-testid="fileshare-btn"
+              >
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-fuchsia-100 flex items-center justify-center flex-shrink-0 group-hover:bg-fuchsia-600 transition-colors">
+                  <FolderOpen className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">FileShare</h2>
+                  <p className="text-sm text-gray-500">Dateien hochladen, verwalten und teilen</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
