@@ -126,11 +126,82 @@ async def _process_message(msg):
 
         # Match by topic prefix
         if topic_prefix and topic.startswith(topic_prefix):
+            # Handle GPS topic separately (DSE890 gateway GPS)
+            if topic.endswith("/gps"):
+                await _process_gps(generator_id, payload_str, parsed, timestamp)
+                return
             await _ingest_telemetry(generator_id, topic, payload_str, parsed, timestamp)
+            return
+
+    # Also check if any generator has a dse_mqtt_topic_prefix that matches
+    generators = await _db.generators.find({"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}}, {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1}).to_list(100)
+    for gen in generators:
+        prefix = gen.get("dse_mqtt_topic_prefix", "")
+        if prefix and topic.startswith(prefix):
+            if topic.endswith("/gps"):
+                await _process_gps(gen["id"], payload_str, parsed, timestamp)
+                return
+            await _ingest_telemetry(gen["id"], topic, payload_str, parsed, timestamp)
             return
 
     # No mapping found - log for discovery
     logger.debug(f"MQTT: Unmatched message on topic '{topic}'")
+
+
+async def _process_gps(generator_id, raw_payload, parsed, timestamp):
+    """Process GPS data from DSE890 gateway (Function 10 format)."""
+    lat = None
+    lng = None
+
+    if isinstance(parsed, dict):
+        # DSE890 GPS format: {"GWUID": {"lat": 50.123, "lon": 7.456}} or similar
+        for uid_key, uid_data in parsed.items():
+            if isinstance(uid_data, dict):
+                lat = uid_data.get("lat") or uid_data.get("latitude")
+                lng = uid_data.get("lon") or uid_data.get("lng") or uid_data.get("longitude")
+                if lat is None and lng is None:
+                    # Try nested format: {"GWUID": {"P...": {"R...": val}}}
+                    for pk, pv in uid_data.items():
+                        if isinstance(pv, dict):
+                            lat = pv.get("lat") or pv.get("latitude")
+                            lng = pv.get("lon") or pv.get("lng") or pv.get("longitude")
+                break
+            elif uid_key in ("lat", "latitude"):
+                lat = uid_data
+            elif uid_key in ("lon", "lng", "longitude"):
+                lng = uid_data
+
+    # Also try flat format
+    if lat is None and isinstance(parsed, dict):
+        lat = parsed.get("lat") or parsed.get("latitude")
+        lng = parsed.get("lon") or parsed.get("lng") or parsed.get("longitude")
+
+    # Try comma-separated format: "50.123,7.456"
+    if lat is None and isinstance(raw_payload, str) and "," in raw_payload and not raw_payload.startswith("{"):
+        parts = raw_payload.strip().split(",")
+        if len(parts) >= 2:
+            try:
+                lat = float(parts[0])
+                lng = float(parts[1])
+            except ValueError:
+                pass
+
+    if lat is not None and lng is not None:
+        try:
+            lat = float(lat)
+            lng = float(lng)
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
+                await _db.generators.update_one(
+                    {"id": generator_id},
+                    {"$set": {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}}
+                )
+                logger.info(f"MQTT: GPS updated for generator {generator_id}: {lat}, {lng}")
+            else:
+                logger.debug(f"MQTT: GPS invalid coordinates for {generator_id}: {lat}, {lng}")
+        except (ValueError, TypeError):
+            logger.debug(f"MQTT: GPS parse error for {generator_id}: {raw_payload[:100]}")
+    else:
+        logger.debug(f"MQTT: GPS no coordinates found in payload for {generator_id}: {raw_payload[:200]}")
 
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):

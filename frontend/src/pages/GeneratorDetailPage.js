@@ -34,6 +34,9 @@ import {
   AreaChart,
 } from "recharts";
 
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import L from "leaflet";
+
 const statusConfig = {
   running: { label: "Läuft", bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500" },
   standby: { label: "Standby", bg: "bg-sky-50", border: "border-sky-200", text: "text-sky-700", dot: "bg-sky-500" },
@@ -361,6 +364,40 @@ export default function GeneratorDetailPage() {
             {alarms.map((a) => (
               <AlarmRow key={a.id} alarm={a} onAcknowledge={handleAcknowledge} onResolve={handleResolve} />
             ))}
+          </div>
+        )}
+
+        {/* GPS Location */}
+        {generator.latitude && generator.longitude && (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="generator-map">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-fuchsia-500" /> Standort
+              </h2>
+              <span className="text-xs text-gray-400">
+                {Number(generator.latitude).toFixed(5)}, {Number(generator.longitude).toFixed(5)}
+                {generator.last_gps_update && <span className="ml-2">({new Date(generator.last_gps_update).toLocaleString("de-DE")})</span>}
+              </span>
+            </div>
+            <div style={{ height: 260 }}>
+              <MapContainer
+                center={[generator.latitude, generator.longitude]}
+                zoom={14}
+                style={{ height: "100%", width: "100%" }}
+                scrollWheelZoom={false}
+              >
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OSM' />
+                <Marker
+                  position={[generator.latitude, generator.longitude]}
+                  icon={L.divIcon({
+                    className: "custom-marker",
+                    html: '<div style="width:16px;height:16px;background:#A855F7;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8],
+                  })}
+                />
+              </MapContainer>
+            </div>
           </div>
         )}
 

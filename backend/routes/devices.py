@@ -61,6 +61,8 @@ class DeviceCreate(BaseModel):
     # MQTT Gateway fields for DSE890
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class DeviceUpdate(BaseModel):
@@ -91,6 +93,8 @@ class DeviceUpdate(BaseModel):
     # MQTT Gateway fields for DSE890
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 PART_TYPES = [
@@ -190,6 +194,8 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
         "pi_notes": data.pi_notes,
         "mqtt_username": data.mqtt_username,
         "mqtt_password": data.mqtt_password,
+        "latitude": data.latitude,
+        "longitude": data.longitude,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -300,6 +306,22 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
 
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.devices.update_one({"id": device_id}, {"$set": update_data})
+
+    # Sync latitude/longitude to linked generator (if Stromerzeuger/Lichtmast)
+    if ("latitude" in update_data or "longitude" in update_data) and device.get("device_type") in ("stromerzeuger", "lichtmast"):
+        gen_update = {}
+        new_lat = update_data.get("latitude", device.get("latitude"))
+        new_lng = update_data.get("longitude", device.get("longitude"))
+        if new_lat is not None:
+            gen_update["latitude"] = new_lat
+        if new_lng is not None:
+            gen_update["longitude"] = new_lng
+        if gen_update:
+            serial = update_data.get("serial_number", device.get("serial_number"))
+            await db.generators.update_many(
+                {"serial_number": serial},
+                {"$set": gen_update}
+            )
 
     updated = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if "image_gridfs_id" in updated and updated["image_gridfs_id"]:
