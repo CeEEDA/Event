@@ -12,17 +12,67 @@ import {
   Plus,
   Pencil,
   Trash2,
-  Settings,
   Link2,
   CheckCircle,
   XCircle,
   Eye,
   EyeOff,
   Save,
-  RefreshCw,
+  Wifi,
+  WifiOff,
+  Loader2,
 } from "lucide-react";
 
-function IntegrationCard({ integration, onEdit, onDelete, onToggle }) {
+/* ───── EpiRent-specific field config ───── */
+const KENNZEICHNUNGEN = [
+  { key: "kaution_all_inclusive", label: "Kaution all inclusive" },
+  { key: "abgesagt", label: "Abgesagt" },
+  { key: "bestaetigt", label: "Bestätigt" },
+  { key: "versicherung", label: "Versicherung" },
+  { key: "mrp", label: "MRP" },
+  { key: "vermietung", label: "Vermietung" },
+  { key: "verkauf", label: "Verkauf" },
+  { key: "selbstabholer", label: "Selbstabholer" },
+  { key: "selbstruecklieferer", label: "Selbstrücklieferer" },
+  { key: "personalplanung", label: "Personalplanung" },
+  { key: "wochenend_tarif", label: "Wochenend-Tarif" },
+];
+
+const DEFAULT_SETTINGS = {
+  name: "",
+  type: "ERP",
+  api_url: "",
+  api_key: "",
+  active: true,
+  ssl_skip: true,
+  mandant_id: 0,
+  mandant_name: "",
+  auftraege_als: "jobs",
+  zeitraum: "event",
+  unterjobs: "keine",
+  mehrtaegig_splitten: false,
+  kennzeichnungen: Object.fromEntries(KENNZEICHNUNGEN.map(k => [k.key, "nicht_pruefen"])),
+  notes: "",
+};
+
+/* ───── Integration Card ───── */
+function IntegrationCard({ integration, onEdit, onDelete, onToggle, onTest }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.post(`/admin/integrations/${integration.id}/test`);
+      setTestResult(res.data);
+    } catch {
+      setTestResult({ success: false, message: "Fehler beim Testen" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-5 hover:border-fuchsia-300 transition-all" data-testid={`integration-${integration.id}`}>
       <div className="flex items-start justify-between mb-3">
@@ -35,32 +85,32 @@ function IntegrationCard({ integration, onEdit, onDelete, onToggle }) {
             <p className="text-xs text-gray-400">{integration.type || "ERP-System"}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${integration.active ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-            {integration.active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-            {integration.active ? "Aktiv" : "Inaktiv"}
-          </span>
-        </div>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${integration.active ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+          {integration.active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+          {integration.active ? "Aktiv" : "Inaktiv"}
+        </span>
       </div>
 
-      <div className="text-xs text-gray-400 mb-3 font-mono truncate">{integration.api_url || "Keine URL konfiguriert"}</div>
+      <div className="text-xs text-gray-400 mb-3 font-mono truncate">{integration.api_url || "—"}</div>
 
-      {integration.field_mappings && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {Object.entries(integration.field_mappings).filter(([, v]) => v).map(([key]) => (
-            <span key={key} className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-600 rounded text-[10px] font-medium">{key}</span>
-          ))}
+      {/* Test Result */}
+      {testResult && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-3 text-xs font-medium ${testResult.success ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`} data-testid="test-result">
+          {testResult.success ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+          {testResult.message}
+          {testResult.product_count !== undefined && (
+            <span className="text-gray-500 ml-1">({testResult.product_count} Artikel, {testResult.stock_count} Bestände)</span>
+          )}
         </div>
       )}
 
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={integration.active}
-            onCheckedChange={() => onToggle(integration)}
-            data-testid={`toggle-${integration.id}`}
-          />
-          <span className="text-[10px] text-gray-400">{integration.active ? "Deaktivieren" : "Aktivieren"}</span>
+        <div className="flex items-center gap-3">
+          <Switch checked={integration.active} onCheckedChange={() => onToggle(integration)} data-testid={`toggle-${integration.id}`} />
+          <Button variant="outline" size="sm" onClick={handleTest} disabled={testing} className="text-xs h-7" data-testid={`test-${integration.id}`}>
+            {testing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Wifi className="w-3 h-3 mr-1" />}
+            API testen
+          </Button>
         </div>
         <div className="flex items-center gap-1">
           <button onClick={() => onEdit(integration)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" data-testid={`edit-integration-${integration.id}`}>
@@ -75,63 +125,41 @@ function IntegrationCard({ integration, onEdit, onDelete, onToggle }) {
   );
 }
 
-const DEFAULT_FIELD_MAPPINGS = {
-  product_no: true,
-  inventory_no: true,
-  name: true,
-  serial_no: true,
-  is_active: true,
-  pricing: true,
-  stock_data: true,
-  tech_data: true,
-  group_of_goods: true,
-  notes: false,
-  accounting: false,
-};
+/* ───── Radio Group Helper ───── */
+function RadioOption({ name, value, current, onChange, label }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer py-1">
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        checked={current === value}
+        onChange={() => onChange(value)}
+        className="w-4 h-4 text-fuchsia-600 border-gray-300 focus:ring-fuchsia-500"
+      />
+      <span className="text-sm text-gray-700">{label}</span>
+    </label>
+  );
+}
 
-const FIELD_LABELS = {
-  product_no: "Artikelnummer",
-  inventory_no: "Inventarnummer",
-  name: "Bezeichnung",
-  serial_no: "Seriennummer",
-  is_active: "Aktiv-Status",
-  pricing: "Preise",
-  stock_data: "Bestandsdaten",
-  tech_data: "Technische Daten",
-  group_of_goods: "Warengruppen",
-  notes: "Notizen",
-  accounting: "Buchhaltung",
-};
-
-const EMPTY_INTEGRATION = {
-  name: "",
-  type: "ERP",
-  api_url: "",
-  api_key: "",
-  active: true,
-  field_mappings: { ...DEFAULT_FIELD_MAPPINGS },
-  username: "",
-  password: "",
-  sync_interval_minutes: 60,
-  notes: "",
-};
-
+/* ───── Main Page ───── */
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
   const [integrations, setIntegrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [formData, setFormData] = useState({ ...EMPTY_INTEGRATION });
+  const [formData, setFormData] = useState({ ...DEFAULT_SETTINGS });
   const [showApiKey, setShowApiKey] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   const loadIntegrations = useCallback(async () => {
     try {
       const res = await api.get("/admin/integrations");
       setIntegrations(res.data);
     } catch {
-      // No integrations yet
       setIntegrations([]);
     } finally {
       setLoading(false);
@@ -142,34 +170,26 @@ export default function AdminSettingsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setFormData({ ...EMPTY_INTEGRATION, field_mappings: { ...DEFAULT_FIELD_MAPPINGS } });
+    setFormData({ ...DEFAULT_SETTINGS, kennzeichnungen: Object.fromEntries(KENNZEICHNUNGEN.map(k => [k.key, "nicht_pruefen"])) });
     setShowApiKey(false);
+    setTestResult(null);
     setModalOpen(true);
   };
 
   const openEdit = (integration) => {
     setEditing(integration);
     setFormData({
-      name: integration.name || "",
-      type: integration.type || "ERP",
-      api_url: integration.api_url || "",
-      api_key: integration.api_key || "",
-      active: integration.active ?? true,
-      field_mappings: integration.field_mappings || { ...DEFAULT_FIELD_MAPPINGS },
-      username: integration.username || "",
-      password: integration.password || "",
-      sync_interval_minutes: integration.sync_interval_minutes || 60,
-      notes: integration.notes || "",
+      ...DEFAULT_SETTINGS,
+      ...integration,
+      kennzeichnungen: integration.kennzeichnungen || Object.fromEntries(KENNZEICHNUNGEN.map(k => [k.key, "nicht_pruefen"])),
     });
     setShowApiKey(false);
+    setTestResult(null);
     setModalOpen(true);
   };
 
   const handleSave = async () => {
-    if (!formData.name.trim()) {
-      toast.error("Name ist erforderlich");
-      return;
-    }
+    if (!formData.name.trim()) { toast.error("Name ist erforderlich"); return; }
     try {
       if (editing) {
         await api.put(`/admin/integrations/${editing.id}`, formData);
@@ -187,15 +207,10 @@ export default function AdminSettingsPage() {
 
   const handleToggle = async (integration) => {
     try {
-      await api.put(`/admin/integrations/${integration.id}`, {
-        ...integration,
-        active: !integration.active,
-      });
-      toast.success(integration.active ? "Schnittstelle deaktiviert" : "Schnittstelle aktiviert");
+      await api.put(`/admin/integrations/${integration.id}`, { ...integration, active: !integration.active });
+      toast.success(integration.active ? "Deaktiviert" : "Aktiviert");
       loadIntegrations();
-    } catch {
-      toast.error("Fehler");
-    }
+    } catch { toast.error("Fehler"); }
   };
 
   const handleDelete = async (id) => {
@@ -204,15 +219,38 @@ export default function AdminSettingsPage() {
       toast.success("Schnittstelle gelöscht");
       setDeleteConfirm(null);
       loadIntegrations();
-    } catch {
-      toast.error("Fehler beim Löschen");
+    } catch { toast.error("Fehler beim Löschen"); }
+  };
+
+  const handleTestInModal = async () => {
+    if (!formData.api_url || !formData.api_key) { toast.error("URL und API-Key erforderlich"); return; }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Save first if new, then test
+      let integrationId = editing?.id;
+      if (!integrationId) {
+        if (!formData.name.trim()) { toast.error("Name ist erforderlich"); setTesting(false); return; }
+        const res = await api.post("/admin/integrations", formData);
+        integrationId = res.data.id;
+        setEditing(res.data);
+      } else {
+        await api.put(`/admin/integrations/${integrationId}`, formData);
+      }
+      const res = await api.post(`/admin/integrations/${integrationId}/test`);
+      setTestResult(res.data);
+      if (res.data.success) toast.success("Verbindung erfolgreich!");
+      else toast.error(res.data.message);
+    } catch (err) {
+      setTestResult({ success: false, message: "Testfehler" });
+    } finally {
+      setTesting(false);
     }
   };
 
   const update = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
-  const toggleField = (field) => setFormData(prev => ({
-    ...prev,
-    field_mappings: { ...prev.field_mappings, [field]: !prev.field_mappings[field] }
+  const updateKennz = (key, value) => setFormData(prev => ({
+    ...prev, kennzeichnungen: { ...prev.kennzeichnungen, [key]: value }
   }));
 
   return (
@@ -255,130 +293,178 @@ export default function AdminSettingsPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="integrations-grid">
               {integrations.map(i => (
-                <IntegrationCard
-                  key={i.id}
-                  integration={i}
-                  onEdit={openEdit}
-                  onDelete={setDeleteConfirm}
-                  onToggle={handleToggle}
-                />
+                <IntegrationCard key={i.id} integration={i} onEdit={openEdit} onDelete={setDeleteConfirm} onToggle={handleToggle} />
               ))}
             </div>
           )}
         </div>
       </main>
 
-      {/* Create/Edit Modal */}
+      {/* ─── Create/Edit Modal ─── */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-8 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 mb-8" data-testid="integration-modal">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 mb-8" data-testid="integration-modal">
             <div className="flex items-center justify-between p-5 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
                 {editing ? "Schnittstelle bearbeiten" : "Neue Schnittstelle"}
               </h2>
-              <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <XCircle className="w-5 h-5" />
-              </button>
+              <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-gray-600"><XCircle className="w-5 h-5" /></button>
             </div>
 
-            <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
-              {/* Basic Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-gray-700 text-sm">Name *</Label>
-                  <Input value={formData.name} onChange={e => update("name", e.target.value)} placeholder="z.B. EpiRent ERP" className="mt-1" data-testid="integration-name-input" />
+            <div className="p-5 space-y-6 max-h-[75vh] overflow-y-auto">
+
+              {/* ── Verbindung ── */}
+              <section className="bg-gray-50 rounded-lg p-4 space-y-3" data-testid="section-connection">
+                <h3 className="text-sm font-semibold text-gray-900">Einstellungen</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-gray-600">Name *</Label>
+                    <Input value={formData.name} onChange={e => update("name", e.target.value)} placeholder="z.B. EpiRent ERP" className="mt-1" data-testid="integration-name-input" />
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-600">Typ</Label>
+                    <select value={formData.type} onChange={e => update("type", e.target.value)}
+                      className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" data-testid="integration-type-select">
+                      <option value="ERP">ERP-System</option>
+                      <option value="CRM">CRM</option>
+                      <option value="MQTT">MQTT Broker</option>
+                      <option value="API">Sonstige API</option>
+                    </select>
+                  </div>
                 </div>
+
                 <div>
-                  <Label className="text-gray-700 text-sm">Typ</Label>
-                  <select
-                    value={formData.type}
-                    onChange={e => update("type", e.target.value)}
-                    className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
-                    data-testid="integration-type-select"
-                  >
-                    <option value="ERP">ERP-System</option>
-                    <option value="CRM">CRM</option>
-                    <option value="MQTT">MQTT Broker</option>
-                    <option value="API">Sonstige API</option>
+                  <Label className="text-sm text-gray-600">URL</Label>
+                  <Input value={formData.api_url} onChange={e => update("api_url", e.target.value)} placeholder="http://217.86.214.29:18081/" className="mt-1 font-mono" data-testid="integration-url-input" />
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={formData.ssl_skip || false} onChange={e => update("ssl_skip", e.target.checked)}
+                    className="rounded border-gray-300 text-fuchsia-600" data-testid="ssl-skip-checkbox" />
+                  <span className="text-sm text-gray-600">SSL-Zertifikatprüfung deaktivieren <span className="text-gray-400 text-xs">(notwendig bei selbst signierten Zertifikaten)</span></span>
+                </label>
+
+                <div>
+                  <Label className="text-sm text-gray-600">API-Token</Label>
+                  <div className="flex gap-2 mt-1">
+                    <Input type={showApiKey ? "text" : "password"} value={formData.api_key} onChange={e => update("api_key", e.target.value)}
+                      placeholder="API-Schlüssel" className="font-mono flex-1" data-testid="integration-apikey-input" />
+                    <Button variant="outline" size="sm" onClick={() => setShowApiKey(!showApiKey)} className="shrink-0">
+                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Test Button + Result */}
+                <div className="flex items-center gap-3 pt-1">
+                  <Button variant="outline" size="sm" onClick={handleTestInModal} disabled={testing} className="bg-gray-800 text-white hover:bg-gray-900 border-0" data-testid="test-api-btn">
+                    {testing ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Wifi className="w-4 h-4 mr-1.5" />}
+                    API-Abruf testen
+                  </Button>
+                  {testResult && (
+                    <div className={`flex items-center gap-1.5 text-xs font-medium ${testResult.success ? "text-emerald-600" : "text-red-600"}`} data-testid="modal-test-result">
+                      {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                      {testResult.message}
+                      {testResult.product_count !== undefined && <span className="text-gray-400">({testResult.product_count} Artikel, {testResult.stock_count} Bestände)</span>}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* ── Mandanten ── */}
+              <section className="bg-gray-50 rounded-lg p-4" data-testid="section-mandanten">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Mandanten</h3>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={true} readOnly className="rounded border-gray-300 text-fuchsia-600" />
+                  <span className="text-sm text-gray-700">{formData.mandant_id || 0} - {formData.mandant_name || "Eventenergie Deutschland GmbH & Co. KG"}</span>
+                </label>
+              </section>
+
+              {/* ── Aufträge ── */}
+              <section className="bg-gray-50 rounded-lg p-4 space-y-3" data-testid="section-auftraege">
+                <h3 className="text-sm font-semibold text-gray-900">Aufträge</h3>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-gray-600">Epirent-Aufträge anlegen als</span>
+                  <select value={formData.auftraege_als || "jobs"} onChange={e => update("auftraege_als", e.target.value)}
+                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white" data-testid="auftraege-als-select">
+                    <option value="jobs">Jobs</option>
+                    <option value="projekte">Projekte</option>
+                    <option value="auftraege">Aufträge</option>
                   </select>
                 </div>
-              </div>
-
-              {/* Connection */}
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Verbindung</h3>
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-gray-700 text-sm">API-URL</Label>
-                    <Input value={formData.api_url} onChange={e => update("api_url", e.target.value)} placeholder="https://api.example.com/v1" className="mt-1 font-mono text-sm" data-testid="integration-url-input" />
-                  </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">API-Key</Label>
-                    <div className="flex gap-2 mt-1">
-                      <Input
-                        type={showApiKey ? "text" : "password"}
-                        value={formData.api_key}
-                        onChange={e => update("api_key", e.target.value)}
-                        placeholder="API-Schlüssel"
-                        className="font-mono text-sm flex-1"
-                        data-testid="integration-apikey-input"
-                      />
-                      <Button variant="outline" size="sm" onClick={() => setShowApiKey(!showApiKey)} className="shrink-0">
-                        {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-gray-700 text-sm">Benutzer</Label>
-                      <Input value={formData.username} onChange={e => update("username", e.target.value)} placeholder="Optional" className="mt-1" data-testid="integration-user-input" />
-                    </div>
-                    <div>
-                      <Label className="text-gray-700 text-sm">Passwort</Label>
-                      <Input type="password" value={formData.password} onChange={e => update("password", e.target.value)} placeholder="Optional" className="mt-1" data-testid="integration-pass-input" />
-                    </div>
-                  </div>
+                <div className="ml-4 space-y-1">
+                  <RadioOption name="zeitraum" value="event" current={formData.zeitraum || "event"} onChange={v => update("zeitraum", v)} label="Event-Zeitraum übernehmen" />
+                  <RadioOption name="zeitraum" value="dispo" current={formData.zeitraum || "event"} onChange={v => update("zeitraum", v)} label="Dispo-Zeitraum übernehmen" />
                 </div>
-              </div>
+              </section>
 
-              {/* Field Mapping */}
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-1">Feld-Zuordnung</h3>
-                <p className="text-[10px] text-gray-400 mb-3">Welche Datenfelder sollen synchronisiert werden?</p>
-                <div className="grid grid-cols-2 gap-2" data-testid="field-mappings">
-                  {Object.entries(FIELD_LABELS).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors" data-testid={`field-${key}`}>
-                      <input
-                        type="checkbox"
-                        checked={formData.field_mappings?.[key] ?? false}
-                        onChange={() => toggleField(key)}
-                        className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
-                      />
-                      <span className="text-xs text-gray-700">{label}</span>
-                    </label>
-                  ))}
+              {/* ── Unterjobs ── */}
+              <section className="bg-gray-50 rounded-lg p-4 space-y-1" data-testid="section-unterjobs">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Unterjobs</h3>
+                <RadioOption name="unterjobs" value="keine" current={formData.unterjobs || "keine"} onChange={v => update("unterjobs", v)} label="Keine Unterjobs anlegen" />
+                <RadioOption name="unterjobs" value="zeitplan" current={formData.unterjobs || "keine"} onChange={v => update("unterjobs", v)} label="Zeitplan als Unterjobs übernehmen" />
+                {formData.unterjobs === "zeitplan" && (
+                  <label className="flex items-center gap-2 ml-6 cursor-pointer py-1">
+                    <input type="checkbox" checked={formData.mehrtaegig_splitten || false} onChange={e => update("mehrtaegig_splitten", e.target.checked)}
+                      className="rounded border-gray-300 text-fuchsia-600" data-testid="mehrtaegig-checkbox" />
+                    <span className="text-sm text-gray-600">Mehrtägige Einträge in einzelne Tage splitten</span>
+                  </label>
+                )}
+                <RadioOption name="unterjobs" value="kapitel" current={formData.unterjobs || "keine"} onChange={v => update("unterjobs", v)} label="Kapitel des Auftrags als Unterjobs übernehmen" />
+              </section>
+
+              {/* ── Vorbedingungen / Kennzeichnungen ── */}
+              <section className="bg-gray-50 rounded-lg p-4" data-testid="section-kennzeichnungen">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Vorbedingungen</h3>
+                <p className="text-xs text-gray-400 mb-3 font-medium">Kennzeichnungen</p>
+                <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                  <table className="w-full text-sm" data-testid="kennzeichnungen-table">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-4 py-2 text-gray-600 font-medium">Feld</th>
+                        <th className="text-center px-2 py-2 text-gray-600 font-medium w-20">Ja</th>
+                        <th className="text-center px-2 py-2 text-gray-600 font-medium w-20">Nein</th>
+                        <th className="text-center px-2 py-2 text-gray-600 font-medium w-28">Nicht prüfen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {KENNZEICHNUNGEN.map((k, i) => (
+                        <tr key={k.key} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                          <td className="px-4 py-2.5 text-gray-700">{k.label}</td>
+                          {["ja", "nein", "nicht_pruefen"].map(val => (
+                            <td key={val} className="text-center px-2 py-2.5">
+                              <input
+                                type="radio"
+                                name={`kennz_${k.key}`}
+                                value={val}
+                                checked={(formData.kennzeichnungen?.[k.key] || "nicht_pruefen") === val}
+                                onChange={() => updateKennz(k.key, val)}
+                                className="w-4 h-4 text-fuchsia-600 border-gray-300 focus:ring-fuchsia-500"
+                                data-testid={`kennz-${k.key}-${val}`}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
+              </section>
 
-              {/* Notes */}
-              <div className="border-t border-gray-100 pt-4">
-                <Label className="text-gray-700 text-sm">Notizen</Label>
-                <textarea
-                  value={formData.notes}
-                  onChange={e => update("notes", e.target.value)}
-                  rows={2}
+              {/* ── Notizen ── */}
+              <section className="bg-gray-50 rounded-lg p-4">
+                <Label className="text-sm text-gray-600">Notizen</Label>
+                <textarea value={formData.notes} onChange={e => update("notes", e.target.value)} rows={2}
                   placeholder="Zusätzliche Informationen..."
-                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500"
-                  data-testid="integration-notes-input"
-                />
-              </div>
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
+                  data-testid="integration-notes-input" />
+              </section>
             </div>
 
             <div className="flex justify-end gap-3 p-5 border-t border-gray-200">
               <Button variant="outline" onClick={() => setModalOpen(false)} data-testid="cancel-integration-btn">Abbrechen</Button>
               <Button onClick={handleSave} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-integration-btn">
-                <Save className="w-4 h-4 mr-1" />
-                {editing ? "Speichern" : "Anlegen"}
+                <Save className="w-4 h-4 mr-1" /> {editing ? "Speichern" : "Anlegen"}
               </Button>
             </div>
           </div>
@@ -390,9 +476,7 @@ export default function AdminSettingsPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm mx-4" data-testid="delete-integration-confirm">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Schnittstelle löschen?</h3>
-            <p className="text-sm text-gray-500 mb-4">
-              <strong>{deleteConfirm.name}</strong> wird unwiderruflich gelöscht.
-            </p>
+            <p className="text-sm text-gray-500 mb-4"><strong>{deleteConfirm.name}</strong> wird unwiderruflich gelöscht.</p>
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Abbrechen</Button>
               <Button onClick={() => handleDelete(deleteConfirm.id)} className="bg-red-600 hover:bg-red-700 text-white" data-testid="confirm-delete-integration-btn">Löschen</Button>

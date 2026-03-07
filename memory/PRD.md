@@ -97,6 +97,8 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 - ✅ Live DSE890/L401 MQTT integration (bidirectional: data + control)
 
 - ✅ **DSE890 Gateway Setup**: Konfigurationssektion im Geräteformular mit MQTT-Info, Topic-Download, Benutzer/Passwort
+- ✅ **EpiRent ERP Integration**: Admin-Einstellungen mit API-Test, Mandanten, Aufträge, Unterjobs, Kennzeichnungen (Ja/Nein/Nicht prüfen)
+- ✅ **EpiRent API**: Live-Verbindung zu http://217.86.214.29:18081 (848 Artikel, 586 Bestände)
 
 ## Backlog
 ### P1
