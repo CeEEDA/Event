@@ -16,6 +16,7 @@ import ServiceplanPage from "./pages/ServiceplanPage";
 import MqttConfigPage from "./pages/MqttConfigPage";
 import EnergyMonitoringPage from "./pages/EnergyMonitoringPage";
 import EnergyMonitoringDetailPage from "./pages/EnergyMonitoringDetailPage";
+import AdminSettingsPage from "./pages/AdminSettingsPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -117,6 +118,14 @@ function AppRoutes() {
             <AdminPage />
           </ProtectedRoute>
         } 
+      />
+      <Route
+        path="/admin/settings"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminSettingsPage />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/generators"

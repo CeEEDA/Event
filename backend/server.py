@@ -1480,6 +1480,9 @@ from routes.energy_monitoring import router as energy_router, init_energy_monito
 init_energy_monitoring_routes(db, decode_jwt_token)
 app.include_router(energy_router)
 
+from routes.admin_settings import router as admin_settings_router
+app.include_router(admin_settings_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
