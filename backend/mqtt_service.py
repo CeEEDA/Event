@@ -149,42 +149,25 @@ async def _process_message(msg):
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
-    """Process GPS data from DSE890 gateway (Function 10 format)."""
+    """Process GPS data from DSE890 gateway (Function 10 format).
+    DSE890 GPS JSON format: {"UID":{"LAT": 54.176182,"LON": -0.311576}}
+    """
     lat = None
     lng = None
 
     if isinstance(parsed, dict):
-        # DSE890 GPS format: {"GWUID": {"lat": 50.123, "lon": 7.456}} or similar
         for uid_key, uid_data in parsed.items():
             if isinstance(uid_data, dict):
-                lat = uid_data.get("lat") or uid_data.get("latitude")
-                lng = uid_data.get("lon") or uid_data.get("lng") or uid_data.get("longitude")
-                if lat is None and lng is None:
-                    # Try nested format: {"GWUID": {"P...": {"R...": val}}}
-                    for pk, pv in uid_data.items():
-                        if isinstance(pv, dict):
-                            lat = pv.get("lat") or pv.get("latitude")
-                            lng = pv.get("lon") or pv.get("lng") or pv.get("longitude")
-                break
-            elif uid_key in ("lat", "latitude"):
-                lat = uid_data
-            elif uid_key in ("lon", "lng", "longitude"):
-                lng = uid_data
+                # DSE890 format: {"UID": {"LAT": x, "LON": y}}
+                lat = uid_data.get("LAT") or uid_data.get("lat") or uid_data.get("latitude")
+                lng = uid_data.get("LON") or uid_data.get("lon") or uid_data.get("lng") or uid_data.get("longitude")
+                if lat is not None:
+                    break
 
-    # Also try flat format
-    if lat is None and isinstance(parsed, dict):
-        lat = parsed.get("lat") or parsed.get("latitude")
-        lng = parsed.get("lon") or parsed.get("lng") or parsed.get("longitude")
-
-    # Try comma-separated format: "50.123,7.456"
-    if lat is None and isinstance(raw_payload, str) and "," in raw_payload and not raw_payload.startswith("{"):
-        parts = raw_payload.strip().split(",")
-        if len(parts) >= 2:
-            try:
-                lat = float(parts[0])
-                lng = float(parts[1])
-            except ValueError:
-                pass
+        # Flat format fallback
+        if lat is None:
+            lat = parsed.get("LAT") or parsed.get("lat") or parsed.get("latitude")
+            lng = parsed.get("LON") or parsed.get("lon") or parsed.get("lng") or parsed.get("longitude")
 
     if lat is not None and lng is not None:
         try:
@@ -201,7 +184,7 @@ async def _process_gps(generator_id, raw_payload, parsed, timestamp):
         except (ValueError, TypeError):
             logger.debug(f"MQTT: GPS parse error for {generator_id}: {raw_payload[:100]}")
     else:
-        logger.debug(f"MQTT: GPS no coordinates found in payload for {generator_id}: {raw_payload[:200]}")
+        logger.debug(f"MQTT: GPS no coordinates found for {generator_id}: {raw_payload[:200]}")
 
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):
