@@ -99,7 +99,7 @@ function PriceListModal({ open, onClose }) {
 }
 
 function EventModal({ open, onClose, onSaved, editing }) {
-  const [form, setForm] = useState({ name: "", location: "", start_date: "", end_date: "", notes: "", use_standard_prices: true });
+  const [form, setForm] = useState({ name: "", location: "", start_date: "", end_date: "", dispo_start: "", dispo_end: "", notes: "", use_standard_prices: true });
   const [customPrices, setCustomPrices] = useState([]);
   const [saving, setSaving] = useState(false);
 
@@ -111,12 +111,14 @@ function EventModal({ open, onClose, onSaved, editing }) {
         location: editing.location || "",
         start_date: editing.start_date || "",
         end_date: editing.end_date || "",
+        dispo_start: editing.dispo_start || "",
+        dispo_end: editing.dispo_end || "",
         notes: editing.notes || "",
         use_standard_prices: false,
       });
       setCustomPrices(editing.prices || []);
     } else {
-      setForm({ name: "", location: "", start_date: "", end_date: "", notes: "", use_standard_prices: true });
+      setForm({ name: "", location: "", start_date: "", end_date: "", dispo_start: "", dispo_end: "", notes: "", use_standard_prices: true });
       setCustomPrices([]);
     }
   }, [open, editing]);
@@ -182,6 +184,16 @@ function EventModal({ open, onClose, onSaved, editing }) {
             <div>
               <Label className="text-gray-700 text-sm">Enddatum *</Label>
               <Input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="mt-1" data-testid="event-end-input" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-gray-700 text-sm">Dispo-Start (Aufbau)</Label>
+              <Input type="date" value={form.dispo_start} onChange={e => setForm(f => ({ ...f, dispo_start: e.target.value }))} className="mt-1" data-testid="event-dispo-start-input" />
+            </div>
+            <div>
+              <Label className="text-gray-700 text-sm">Dispo-Ende (Abbau/kWh Ausbau)</Label>
+              <Input type="date" value={form.dispo_end} onChange={e => setForm(f => ({ ...f, dispo_end: e.target.value }))} className="mt-1" data-testid="event-dispo-end-input" />
             </div>
           </div>
           <div>

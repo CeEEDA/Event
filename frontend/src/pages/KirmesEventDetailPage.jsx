@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
+  Receipt, Clock, Pencil,
 } from "lucide-react";
+import { Input } from "../components/ui/input";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
@@ -34,6 +36,8 @@ export default function KirmesEventDetailPage() {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [editingKwh, setEditingKwh] = useState(null);
+  const [kwhForm, setKwhForm] = useState({ kwh_einbau: "", kwh_ausbau: "" });
 
   const loadEvent = useCallback(async () => {
     try {
@@ -126,6 +130,26 @@ export default function KirmesEventDetailPage() {
     toast.success("PDF heruntergeladen");
   };
 
+  const openKwhEdit = (signup) => {
+    setEditingKwh(signup.id);
+    setKwhForm({
+      kwh_einbau: signup.kwh_einbau ?? "",
+      kwh_ausbau: signup.kwh_ausbau ?? "",
+    });
+  };
+
+  const saveKwh = async (signupId) => {
+    try {
+      const payload = {};
+      if (kwhForm.kwh_einbau !== "") payload.kwh_einbau = parseFloat(kwhForm.kwh_einbau);
+      if (kwhForm.kwh_ausbau !== "") payload.kwh_ausbau = parseFloat(kwhForm.kwh_ausbau);
+      await api.put(`/kirmes/signups/${signupId}/kwh`, payload);
+      toast.success("Zählerstände gespeichert");
+      setEditingKwh(null);
+      loadEvent();
+    } catch { toast.error("Fehler beim Speichern"); }
+  };
+
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Laden...</div>;
   if (!event) return null;
 
@@ -145,9 +169,14 @@ export default function KirmesEventDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             {(event.signups || []).length > 0 && (
-              <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600" data-testid="export-pdf-btn">
-                <FileDown className="w-3.5 h-3.5 mr-1" /> Montageliste PDF
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600" data-testid="export-pdf-btn">
+                  <FileDown className="w-3.5 h-3.5 mr-1" /> Montageliste PDF
+                </Button>
+                <Button size="sm" onClick={() => toast.info("Abrechnung wird in einer kommenden Phase implementiert")} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="billing-btn">
+                  <Receipt className="w-3.5 h-3.5 mr-1" /> Abrechnung
+                </Button>
+              </>
             )}
             {event.status === "entwurf" && (
               <Button size="sm" variant="outline" onClick={handleRelease} className="text-blue-600 border-blue-200" data-testid="release-btn">
@@ -167,14 +196,23 @@ export default function KirmesEventDetailPage() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Event Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
-              <CalendarDays className="w-4 h-4" /> <span className="text-xs font-medium">Zeitraum</span>
+              <CalendarDays className="w-4 h-4" /> <span className="text-xs font-medium">Veranstaltung</span>
             </div>
             <p className="text-sm text-gray-900 font-medium">
               {new Date(event.start_date).toLocaleDateString("de-DE")} – {new Date(event.end_date).toLocaleDateString("de-DE")}
             </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-gray-500 mb-2">
+              <Clock className="w-4 h-4" /> <span className="text-xs font-medium">Dispo-Zeitraum</span>
+            </div>
+            <p className="text-sm text-gray-900 font-medium">
+              {event.dispo_start ? new Date(event.dispo_start).toLocaleDateString("de-DE") : "–"} – {event.dispo_end ? new Date(event.dispo_end).toLocaleDateString("de-DE") : "–"}
+            </p>
+            <p className="text-[10px] text-gray-400 mt-1">Aufbau bis Abbau (kWh Ausbau)</p>
           </div>
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
@@ -224,8 +262,10 @@ export default function KirmesEventDetailPage() {
                     <th className="px-4 py-3 text-left">Fahrgeschäft</th>
                     <th className="px-4 py-3 text-left">Platznr.</th>
                     <th className="px-4 py-3 text-left">Anschluss</th>
+                    <th className="px-4 py-3 text-right">kWh Einbau</th>
+                    <th className="px-4 py-3 text-right">kWh Ausbau</th>
+                    <th className="px-4 py-3 text-right">Verbrauch</th>
                     <th className="px-4 py-3 text-right">Preis</th>
-                    <th className="px-4 py-3 text-left">Zahlung</th>
                     <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-right">Aktionen</th>
                   </tr>
@@ -242,17 +282,53 @@ export default function KirmesEventDetailPage() {
                           <Zap className="w-3 h-3" /> {signup.connection_type}
                         </span>
                       </td>
+                      {/* kWh Einbau / Ausbau */}
+                      {editingKwh === signup.id ? (
+                        <>
+                          <td className="px-4 py-2">
+                            <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 w-24 text-right text-sm" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
+                          </td>
+                          <td className="px-4 py-2">
+                            <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 w-24 text-right text-sm" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 text-right font-mono text-sm text-gray-600">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</td>
+                          <td className="px-4 py-3 text-right font-mono text-sm text-gray-600">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</td>
+                        </>
+                      )}
+                      <td className="px-4 py-3 text-right font-mono text-sm font-medium text-gray-900">
+                        {signup.kwh_used != null ? `${signup.kwh_used.toFixed(2)} kWh` : "–"}
+                      </td>
                       <td className="px-4 py-3 text-right font-mono">{(signup.price || 0).toFixed(2)} EUR</td>
-                      <td className="px-4 py-3 text-gray-600 capitalize">{signup.payment_method}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
                           {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => handleDeleteSignup(signup.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-signup-${signup.id}`}>
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {editingKwh === signup.id ? (
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => saveKwh(signup.id)} className="h-7 text-xs text-emerald-600" data-testid={`save-kwh-${signup.id}`}>
+                                <Check className="w-3 h-3 mr-1" /> OK
+                              </Button>
+                              <button onClick={() => setEditingKwh(null)} className="p-1.5 text-gray-400 hover:text-gray-600">
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => openKwhEdit(signup)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Zählerstände bearbeiten" data-testid={`edit-kwh-${signup.id}`}>
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteSignup(signup.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-signup-${signup.id}`}>
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

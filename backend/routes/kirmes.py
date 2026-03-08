@@ -59,6 +59,8 @@ class EventCreate(BaseModel):
     location: str
     start_date: str
     end_date: str
+    dispo_start: Optional[str] = ""
+    dispo_end: Optional[str] = ""
     notes: Optional[str] = ""
     use_standard_prices: bool = True
     custom_prices: Optional[List[StandardPrice]] = None
@@ -69,6 +71,8 @@ class EventUpdate(BaseModel):
     location: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    dispo_start: Optional[str] = None
+    dispo_end: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
     custom_prices: Optional[List[StandardPrice]] = None
@@ -172,6 +176,8 @@ async def create_event(data: EventCreate, user: dict = Depends(_require_staff)):
         "location": data.location,
         "start_date": data.start_date,
         "end_date": data.end_date,
+        "dispo_start": data.dispo_start or "",
+        "dispo_end": data.dispo_end or "",
         "notes": data.notes or "",
         "status": "entwurf",  # entwurf, freigegeben, aktiv, abgeschlossen, abgerechnet
         "prices": prices,
@@ -207,7 +213,7 @@ async def update_event(event_id: str, data: EventUpdate, user: dict = Depends(_r
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
 
     update = {}
-    for field in ["name", "location", "start_date", "end_date", "notes", "status"]:
+    for field in ["name", "location", "start_date", "end_date", "dispo_start", "dispo_end", "notes", "status"]:
         val = getattr(data, field, None)
         if val is not None:
             update[field] = val
@@ -445,6 +451,35 @@ async def delete_signup(signup_id: str, user: dict = Depends(_require_staff)):
         raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
     await _db.kirmes_signups.delete_one({"id": signup_id})
     return {"message": "Anmeldung gelöscht"}
+
+
+class SignupKwhUpdate(BaseModel):
+    kwh_einbau: Optional[float] = None
+    kwh_ausbau: Optional[float] = None
+
+
+@router.put("/signups/{signup_id}/kwh")
+async def update_signup_kwh(signup_id: str, data: SignupKwhUpdate, user: dict = Depends(_require_staff)):
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+    update = {}
+    if data.kwh_einbau is not None:
+        update["kwh_einbau"] = data.kwh_einbau
+    if data.kwh_ausbau is not None:
+        update["kwh_ausbau"] = data.kwh_ausbau
+    if "kwh_einbau" in update and "kwh_ausbau" in update:
+        update["kwh_used"] = round(update["kwh_ausbau"] - update["kwh_einbau"], 2)
+    elif data.kwh_ausbau is not None and signup.get("kwh_einbau") is not None:
+        update["kwh_used"] = round(data.kwh_ausbau - signup["kwh_einbau"], 2)
+    elif data.kwh_einbau is not None and signup.get("kwh_ausbau") is not None:
+        update["kwh_used"] = round(signup["kwh_ausbau"] - data.kwh_einbau, 2)
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await _db.kirmes_signups.update_one({"id": signup_id}, {"$set": update})
+    updated = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    return updated
+
+
 
 
 # ============== Connection Types ==============
