@@ -21,6 +21,15 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
   - Admin scannt QR -> waehlt Anmeldung -> Zaehler wird zugewiesen
 - **Meter-Zuordnungsseite**: Zeigt Zaehler-Info, aktuelle Zuweisung, offene Anmeldungen
 
+### Dokumentenablage pro Veranstaltung (2026-03-08)
+- Upload per Drag & Drop (PDF, JPG, PNG, WebP, GIF, max 20MB)
+- Bildvorschau-Galerie mit Zoom-Modal
+- PDF-Liste mit Vorschau, Download, Loeschen
+- Neue Seite: /kirmes/{id}/dokumente
+- Card auf Event-Detailseite mit Dokumentenzaehler
+- Backend: CRUD auf /api/kirmes/events/{id}/documents
+- Dateispeicher: /app/storage/event_documents/{event_id}/
+
 ### Kamera-basierter QR-Scanner (2026-03-08)
 - Dropdown fuer Zaehler-Zuweisung ersetzt durch Kamera-QR-Scanner (html5-qrcode)
 - Primaer: "QR-Code scannen" Button oeffnet Kamera, scannt Label am Stromverteiler
