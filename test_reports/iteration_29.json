@@ -1,0 +1,117 @@
+{
+  "summary": "Iteration 29 - Kirmes Schausteller Email+Password Authentication testing completed. All 38 backend tests passed. Frontend registration/login/verification flows fully verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "registration_with_password": {
+      "POST /api/kirmes/public/register": "PASS - Registers with email+password, sends verification code, returns schausteller without password_hash/verification_code",
+      "validation_password_required": "PASS - Returns 422 if password missing",
+      "validation_password_min_length": "PASS - Returns 400 if password < 6 chars",
+      "duplicate_email_verified": "PASS - Returns 400 for already verified email"
+    },
+    "email_verification": {
+      "POST /api/kirmes/public/verify-email": "PASS - Verifies email with 6-digit code, strips sensitive data from response",
+      "wrong_code": "PASS - Returns 400 with clear error message",
+      "nonexistent_email": "PASS - Returns 404"
+    },
+    "resend_code": {
+      "GET /api/kirmes/public/resend-code": "PASS - Resends code, returns appropriate message for already verified",
+      "nonexistent_email": "PASS - Returns 404"
+    },
+    "login_with_password": {
+      "POST /api/kirmes/public/login": "PASS - Login with JSON body {email, password}, returns schausteller without password_hash/verification_code",
+      "wrong_password": "PASS - Returns 401 with clear error 'Falsches Passwort'",
+      "unverified_account": "PASS - Returns 403 'E-Mail noch nicht bestätigt'",
+      "no_password_account": "PASS - Returns 403 (email not verified check first) or 401 (no password)",
+      "nonexistent_email": "PASS - Returns 404"
+    },
+    "sensitive_data_protection": {
+      "password_hash_never_exposed": "PASS - All API responses exclude password_hash",
+      "verification_code_never_exposed": "PASS - All API responses exclude verification_code",
+      "staff_endpoints_also_protected": "PASS - GET /api/kirmes/schausteller excludes sensitive fields"
+    },
+    "frontend_register_tab": {
+      "fields": "PASS - Firma, Name, Straße, PLZ, Ort, Steuernummer, E-Mail, Passwort, Telefon, Rechnungs-E-Mail all present",
+      "password_field": "PASS - Has placeholder 'Mindestens 6 Zeichen' and eye icon for show/hide",
+      "submit": "PASS - Creates account and shows verification step"
+    },
+    "frontend_login_tab": {
+      "fields": "PASS - E-Mail and Passwort fields present",
+      "password_field": "PASS - Has eye icon for show/hide",
+      "submit": "PASS - On success shows event selection, on error shows toast"
+    },
+    "frontend_verify_step": {
+      "mail_icon": "PASS - Mail icon from lucide-react visible at top",
+      "code_input": "PASS - 6-digit code input with tracking spacing",
+      "resend_button": "PASS - 'Code erneut senden' link works"
+    },
+    "frontend_event_step": {
+      "after_login": "PASS - Shows event list after successful login",
+      "event_cards": "PASS - Shows event name, location, dates"
+    }
+  },
+  "backend_tests": {
+    "total": 38,
+    "passed": 38,
+    "failed": 0,
+    "test_file": "/app/backend/tests/test_kirmes.py",
+    "test_classes": [
+      "TestStandardPrices (4 tests)",
+      "TestEvents (6 tests)",
+      "TestEventRelease (1 test)",
+      "TestEventDelete (2 tests)",
+      "TestPublicAPI (2 tests)",
+      "TestSchaustellerRegistration (4 tests)",
+      "TestSchaustellerLogin (5 tests)",
+      "TestEmailVerification (3 tests)",
+      "TestResendCode (3 tests)",
+      "TestPublicSignup (3 tests)",
+      "TestSchaustellerManagement (4 tests)",
+      "TestCleanup (1 test)"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes.py",
+    "/app/test_reports/pytest/pytest_kirmes_iteration29.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_kirmes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (38/38 tests passed)",
+    "frontend": "100% (all features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password",
+    "mitarbeiter": "ma1@test.com / password",
+    "test_schausteller_verified": "test-verify@example.com / test1234",
+    "test_schausteller_no_password": "hans@test.de (has NO password, NOT verified - login returns 403)"
+  },
+  "seed_data_info": {
+    "existing_events": [
+      "Osterkirmes Neuwied (27.3-6.4.2026)",
+      "UI Test Event 2026 (15.6-20.6.2026)",
+      "Rheinkirmes 2026 Düsseldorf (10.7-19.7.2026)"
+    ],
+    "existing_schausteller": [
+      "hans@test.de (Hans Müller) - NOT verified, NO password",
+      "test-verify@example.com (Test User) - verified, password=test1234"
+    ]
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Kirmes auth module fully tested. New auth flow: register with email+password -> verify 6-digit code -> login with email+password. Key test user: test-verify@example.com / test1234 (verified, can login). hans@test.de has no password and is not verified. Backend checks email_verified BEFORE password_hash, so unverified accounts always get 'email not verified' error first.",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}

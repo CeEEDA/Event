@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { CalendarDays, MapPin, Zap, Check, ArrowRight, ArrowLeft, UserPlus, LogIn } from "lucide-react";
+import { CalendarDays, MapPin, Zap, Check, ArrowRight, ArrowLeft, UserPlus, LogIn, Mail, Eye, EyeOff } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -26,18 +26,20 @@ export default function SchaustellerAnmeldungPage() {
 
   // Steps: auth -> verify -> event -> signup -> done
   const [step, setStep] = useState("auth");
-  const [authMode, setAuthMode] = useState("register"); // register or login
+  const [authMode, setAuthMode] = useState("register");
   const [schausteller, setSchausteller] = useState(null);
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   // Registration form
   const [regForm, setRegForm] = useState({
     firma: "", name: "", strasse: "", plz: "", ort: "",
-    steuernummer: "", email: "", telefon: "", rechnungs_email: "",
+    steuernummer: "", email: "", password: "", telefon: "", rechnungs_email: "",
   });
   const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyEmail, setVerifyEmail] = useState("");
 
@@ -46,7 +48,6 @@ export default function SchaustellerAnmeldungPage() {
     platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte",
   });
 
-  // Load events when step is "event"
   useEffect(() => {
     if (step === "event" || step === "auth") {
       api.get("/kirmes/public/events").then(r => {
@@ -63,8 +64,12 @@ export default function SchaustellerAnmeldungPage() {
   }, [step, preselectedEvent]);
 
   const handleRegister = async () => {
-    if (!regForm.firma || !regForm.name || !regForm.email || !regForm.rechnungs_email) {
+    if (!regForm.firma || !regForm.name || !regForm.email || !regForm.password || !regForm.rechnungs_email) {
       toast.error("Bitte alle Pflichtfelder ausfüllen");
+      return;
+    }
+    if (regForm.password.length < 6) {
+      toast.error("Passwort muss mindestens 6 Zeichen lang sein");
       return;
     }
     setSaving(true);
@@ -110,10 +115,10 @@ export default function SchaustellerAnmeldungPage() {
   };
 
   const handleLogin = async () => {
-    if (!loginEmail) { toast.error("Bitte E-Mail eingeben"); return; }
+    if (!loginEmail || !loginPassword) { toast.error("Bitte E-Mail und Passwort eingeben"); return; }
     setSaving(true);
     try {
-      const r = await api.post(`/kirmes/public/login?email=${encodeURIComponent(loginEmail)}`, {});
+      const r = await api.post("/kirmes/public/login", { email: loginEmail, password: loginPassword });
       setSchausteller(r.data);
       toast.success(`Willkommen zurück, ${r.data.name}!`);
       if (preselectedEvent && selectedEvent) {
@@ -150,6 +155,27 @@ export default function SchaustellerAnmeldungPage() {
     const p = (selectedEvent.prices || []).find(p => p.connection_type === signupForm.connection_type);
     return p ? p.price : null;
   };
+
+  const PasswordInput = ({ value, onChange, placeholder, testId }) => (
+    <div className="relative">
+      <Input
+        type={showPw ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="mt-1 pr-10"
+        data-testid={testId}
+      />
+      <button
+        type="button"
+        onClick={() => setShowPw(!showPw)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        tabIndex={-1}
+      >
+        {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="schausteller-anmeldung">
@@ -223,6 +249,10 @@ export default function SchaustellerAnmeldungPage() {
                     <Input type="email" value={regForm.email} onChange={e => setRegForm(f => ({ ...f, email: e.target.value }))} className="mt-1" data-testid="reg-email" />
                   </div>
                   <div>
+                    <Label className="text-gray-700 text-sm">Passwort *</Label>
+                    <PasswordInput value={regForm.password} onChange={e => setRegForm(f => ({ ...f, password: e.target.value }))} placeholder="Mindestens 6 Zeichen" testId="reg-password" />
+                  </div>
+                  <div>
                     <Label className="text-gray-700 text-sm">Telefon</Label>
                     <Input value={regForm.telefon} onChange={e => setRegForm(f => ({ ...f, telefon: e.target.value }))} className="mt-1" data-testid="reg-telefon" />
                   </div>
@@ -240,6 +270,10 @@ export default function SchaustellerAnmeldungPage() {
                   <div>
                     <Label className="text-gray-700 text-sm">E-Mail</Label>
                     <Input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="Ihre registrierte E-Mail" className="mt-1" data-testid="login-email" />
+                  </div>
+                  <div>
+                    <Label className="text-gray-700 text-sm">Passwort</Label>
+                    <PasswordInput value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Ihr Passwort" testId="login-password" />
                   </div>
                   <Button onClick={handleLogin} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="login-btn">
                     {saving ? "Wird geprüft..." : "Anmelden"} <ArrowRight className="w-4 h-4 ml-1" />

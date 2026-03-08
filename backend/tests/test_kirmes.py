@@ -1,9 +1,14 @@
 """
-Kirmes Module - Backend API Tests
+Kirmes Module - Backend API Tests (Updated for Email+Password Auth)
 Tests for Veranstaltungsverwaltung (Event Management) and Schausteller Registration
 
-Connection Types: 16A, 32A, 63A, 125A, Festanschluss
+Connection Types: Schuko, 16A, 32A, 63A, 125A, Festanschluss
 Event Statuses: entwurf, freigegeben, aktiv, abgeschlossen, abgerechnet
+
+New Authentication Flow:
+1. Register with email+password (sends verification code via email)
+2. Verify email with 6-digit code
+3. Login with email+password (only works for verified accounts with password)
 """
 import pytest
 import requests
@@ -69,7 +74,8 @@ class TestStandardPrices:
     
     def test_get_standard_prices_requires_auth(self, api_client):
         """Standard prices endpoint requires staff auth"""
-        response = api_client.get(f"{BASE_URL}/api/kirmes/standard-prices")
+        session = requests.Session()
+        response = session.get(f"{BASE_URL}/api/kirmes/standard-prices")
         assert response.status_code in [401, 403], "Expected auth error without token"
     
     def test_get_standard_prices_as_staff(self, admin_client):
@@ -78,9 +84,12 @@ class TestStandardPrices:
         assert response.status_code == 200
         
         data = response.json()
-        assert isinstance(data, list)
-        # Should have 5 connection types
-        connection_types = [p["connection_type"] for p in data]
+        assert "prices" in data
+        prices = data["prices"]
+        assert isinstance(prices, list)
+        # Should have connection types including Schuko
+        connection_types = [p["connection_type"] for p in prices]
+        assert "Schuko" in connection_types
         assert "16A" in connection_types
         assert "32A" in connection_types
         assert "63A" in connection_types
@@ -89,7 +98,6 @@ class TestStandardPrices:
     
     def test_update_standard_prices_requires_admin(self, staff_client):
         """Only admin can update standard prices"""
-        # First get a fresh staff client (re-auth as mitarbeiter)
         session = requests.Session()
         session.headers.update({"Content-Type": "application/json"})
         login_response = session.post(f"{BASE_URL}/api/auth/login", json={
@@ -102,36 +110,32 @@ class TestStandardPrices:
         token = login_response.json().get("token")
         session.headers.update({"Authorization": f"Bearer {token}"})
         
-        payload = {"prices": [{"connection_type": "16A", "price": 10.0}]}
-        response = session.post(f"{BASE_URL}/api/kirmes/standard-prices", json=payload)
-        # Mitarbeiter should not be able to update (method not allowed or forbidden)
+        payload = {"prices": [{"connection_type": "16A", "price": 10.0, "avg_kwh": 0.0}]}
+        response = session.put(f"{BASE_URL}/api/kirmes/standard-prices", json=payload)
         assert response.status_code in [403, 405], f"Expected forbidden for mitarbeiter, got {response.status_code}"
     
     def test_update_standard_prices_as_admin(self, admin_client):
         """Admin can update standard prices"""
-        # Get current prices first
         get_response = admin_client.get(f"{BASE_URL}/api/kirmes/standard-prices")
         assert get_response.status_code == 200
-        original_prices = get_response.json()
         
-        # Update prices
         new_prices = [
-            {"connection_type": "16A", "price": 50.00},
-            {"connection_type": "32A", "price": 100.00},
-            {"connection_type": "63A", "price": 200.00},
-            {"connection_type": "125A", "price": 350.00},
-            {"connection_type": "Festanschluss", "price": 500.00},
+            {"connection_type": "Schuko", "price": 30.00, "avg_kwh": 0.0},
+            {"connection_type": "16A", "price": 50.00, "avg_kwh": 0.0},
+            {"connection_type": "32A", "price": 100.00, "avg_kwh": 0.0},
+            {"connection_type": "63A", "price": 200.00, "avg_kwh": 0.0},
+            {"connection_type": "125A", "price": 350.00, "avg_kwh": 0.0},
+            {"connection_type": "Festanschluss", "price": 500.00, "avg_kwh": 0.0},
         ]
         
         response = admin_client.put(f"{BASE_URL}/api/kirmes/standard-prices", json={"prices": new_prices})
         assert response.status_code == 200
         
-        # Verify update persisted
         verify_response = admin_client.get(f"{BASE_URL}/api/kirmes/standard-prices")
         assert verify_response.status_code == 200
-        updated_prices = verify_response.json()
+        updated = verify_response.json()
         
-        for p in updated_prices:
+        for p in updated["prices"]:
             if p["connection_type"] == "16A":
                 assert p["price"] == 50.00
             elif p["connection_type"] == "32A":
@@ -172,7 +176,6 @@ class TestEvents:
         assert "prices" in data
         assert isinstance(data["prices"], list)
         
-        # Store for cleanup
         return data
     
     def test_list_events(self, admin_client):
@@ -182,7 +185,6 @@ class TestEvents:
         
         data = response.json()
         assert isinstance(data, list)
-        # Should have at least the pre-existing 'Rheinkirmes 2026' event
         if len(data) > 0:
             event = data[0]
             assert "id" in event
@@ -201,7 +203,6 @@ class TestEvents:
     
     def test_get_event_by_id(self, admin_client):
         """Get single event with signups"""
-        # First list events to get an ID
         list_response = admin_client.get(f"{BASE_URL}/api/kirmes/events")
         assert list_response.status_code == 200
         events = list_response.json()
@@ -221,7 +222,6 @@ class TestEvents:
     
     def test_update_event(self, admin_client):
         """Update event details"""
-        # Create an event first
         create_payload = {
             "name": f"{TEST_PREFIX}UpdateTest_{uuid.uuid4().hex[:6]}",
             "location": "Old Location",
@@ -234,7 +234,6 @@ class TestEvents:
         assert create_response.status_code == 200
         event_id = create_response.json()["id"]
         
-        # Update it
         update_payload = {
             "name": f"{TEST_PREFIX}UpdateTest_UPDATED",
             "location": "New Location",
@@ -248,7 +247,6 @@ class TestEvents:
         assert updated["location"] == "New Location"
         assert updated["notes"] == "Updated notes"
         
-        # Verify persistence
         get_response = admin_client.get(f"{BASE_URL}/api/kirmes/events/{event_id}")
         assert get_response.status_code == 200
         assert get_response.json()["location"] == "New Location"
@@ -259,7 +257,6 @@ class TestEventRelease:
     
     def test_release_event(self, admin_client):
         """Release event changes status to freigegeben"""
-        # Create a new event
         create_payload = {
             "name": f"{TEST_PREFIX}ReleaseTest_{uuid.uuid4().hex[:6]}",
             "location": "Release Stadt",
@@ -272,19 +269,17 @@ class TestEventRelease:
         assert create_response.status_code == 200
         event_id = create_response.json()["id"]
         
-        # Release it
         release_response = admin_client.post(f"{BASE_URL}/api/kirmes/events/{event_id}/release")
         assert release_response.status_code == 200
         
         release_data = release_response.json()
         assert release_data["status"] == "freigegeben"
         
-        # Verify event status changed
         get_response = admin_client.get(f"{BASE_URL}/api/kirmes/events/{event_id}")
         assert get_response.status_code == 200
         assert get_response.json()["status"] == "freigegeben"
         
-        return event_id  # Return for use in public tests
+        return event_id
 
 
 class TestEventDelete:
@@ -292,7 +287,6 @@ class TestEventDelete:
     
     def test_delete_entwurf_event(self, admin_client):
         """Can delete event in entwurf status"""
-        # Create an event
         create_payload = {
             "name": f"{TEST_PREFIX}DeleteTest_{uuid.uuid4().hex[:6]}",
             "location": "Delete Stadt",
@@ -305,17 +299,14 @@ class TestEventDelete:
         assert create_response.status_code == 200
         event_id = create_response.json()["id"]
         
-        # Delete it
         delete_response = admin_client.delete(f"{BASE_URL}/api/kirmes/events/{event_id}")
         assert delete_response.status_code == 200
         
-        # Verify deleted
         get_response = admin_client.get(f"{BASE_URL}/api/kirmes/events/{event_id}")
         assert get_response.status_code == 404
     
     def test_cannot_delete_aktiv_event(self, admin_client):
         """Cannot delete event in aktiv status"""
-        # Create and set to aktiv
         create_payload = {
             "name": f"{TEST_PREFIX}NoDeleteTest_{uuid.uuid4().hex[:6]}",
             "location": "NoDelete Stadt",
@@ -328,11 +319,9 @@ class TestEventDelete:
         assert create_response.status_code == 200
         event_id = create_response.json()["id"]
         
-        # Set status to aktiv
         update_response = admin_client.put(f"{BASE_URL}/api/kirmes/events/{event_id}", json={"status": "aktiv"})
         assert update_response.status_code == 200
         
-        # Try to delete - should fail
         delete_response = admin_client.delete(f"{BASE_URL}/api/kirmes/events/{event_id}")
         assert delete_response.status_code == 400
 
@@ -350,7 +339,6 @@ class TestPublicAPI:
         data = response.json()
         assert isinstance(data, list)
         
-        # All events should be freigegeben or aktiv
         for event in data:
             assert event["status"] in ["freigegeben", "aktiv"], f"Event {event['name']} has invalid status {event['status']}"
     
@@ -360,6 +348,7 @@ class TestPublicAPI:
         assert response.status_code == 200
         
         data = response.json()
+        assert "Schuko" in data
         assert "16A" in data
         assert "32A" in data
         assert "63A" in data
@@ -367,21 +356,24 @@ class TestPublicAPI:
         assert "Festanschluss" in data
 
 
+# ===================== Schausteller Registration with Password Tests =====================
+
 class TestSchaustellerRegistration:
-    """Test schausteller registration flow"""
+    """Test schausteller registration flow with email+password authentication"""
     
-    def test_register_schausteller(self, api_client):
-        """Register new schausteller (public, no auth)"""
+    def test_register_schausteller_with_password(self, api_client):
+        """Register new schausteller with email+password (public, no auth)"""
         unique_email = f"test_{uuid.uuid4().hex[:8]}@test.de"
         
         payload = {
             "firma": f"{TEST_PREFIX}TestFirma",
             "name": "Max Mustermann",
-            "strasse": "Teststraße 123",
+            "strasse": "Teststrasse 123",
             "plz": "40210",
-            "ort": "Düsseldorf",
+            "ort": "Dusseldorf",
             "steuernummer": "DE123456789",
             "email": unique_email,
+            "password": "securepass123",
             "telefon": "+49 211 123456",
             "rechnungs_email": unique_email
         }
@@ -393,42 +385,236 @@ class TestSchaustellerRegistration:
         assert data["firma"] == f"{TEST_PREFIX}TestFirma"
         assert data["email"] == unique_email
         assert "id" in data
+        # IMPORTANT: password_hash should NOT be in response
+        assert "password_hash" not in data, "password_hash should not be exposed in API response"
+        # IMPORTANT: verification_code should NOT be in response
+        assert "verification_code" not in data, "verification_code should not be exposed in API response"
+        assert data.get("email_verified") == False
         
         return data
     
+    def test_register_requires_password(self, api_client):
+        """Registration without password should fail"""
+        unique_email = f"nopw_{uuid.uuid4().hex[:8]}@test.de"
+        
+        payload = {
+            "firma": "NoPwFirma",
+            "name": "No Password",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DE111",
+            "email": unique_email,
+            # No password field
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=payload)
+        assert response.status_code == 422, "Should fail validation without password"
+    
+    def test_register_password_too_short(self, api_client):
+        """Registration with password < 6 chars should fail"""
+        unique_email = f"shortpw_{uuid.uuid4().hex[:8]}@test.de"
+        
+        payload = {
+            "firma": "ShortPwFirma",
+            "name": "Short Password",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DE222",
+            "email": unique_email,
+            "password": "12345",  # Only 5 chars
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=payload)
+        assert response.status_code == 400, "Should fail with short password"
+        assert "6" in response.json().get("detail", ""), "Error should mention 6 character requirement"
+    
     def test_register_duplicate_email_fails(self, api_client):
-        """Cannot register with duplicate email"""
-        # Use existing test schausteller email
+        """Cannot register with duplicate email that is already verified"""
+        # Use the pre-existing verified test schausteller
         payload = {
             "firma": "Duplicate Firma",
             "name": "Hans Test",
-            "strasse": "Straße 1",
+            "strasse": "Strasse 1",
             "plz": "12345",
             "ort": "Stadt",
             "steuernummer": "DE987654321",
-            "email": "hans@test.de",  # Pre-existing test schausteller
+            "email": "test-verify@example.com",  # Pre-existing verified schausteller
+            "password": "password123",
             "telefon": "123456",
-            "rechnungs_email": "hans@test.de"
+            "rechnungs_email": "test-verify@example.com"
         }
         
         response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=payload)
         assert response.status_code == 400
         assert "bereits registriert" in response.json().get("detail", "").lower()
+
+
+class TestSchaustellerLogin:
+    """Test schausteller login with email+password"""
     
-    def test_login_schausteller(self, api_client):
-        """Login existing schausteller by email"""
-        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login?email=hans@test.de")
+    def test_login_verified_schausteller(self, api_client):
+        """Login verified schausteller with email+password"""
+        # test-verify@example.com / test1234 is pre-seeded as verified
+        payload = {"email": "test-verify@example.com", "password": "test1234"}
+        
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json=payload)
         assert response.status_code == 200
         
         data = response.json()
-        assert data["email"] == "hans@test.de"
+        assert data["email"] == "test-verify@example.com"
         assert "id" in data
+        # IMPORTANT: password_hash should NOT be in response
+        assert "password_hash" not in data, "password_hash should not be exposed in API response"
+        # IMPORTANT: verification_code should NOT be in response  
+        assert "verification_code" not in data, "verification_code should not be exposed in API response"
+    
+    def test_login_wrong_password_fails(self, api_client):
+        """Login with wrong password should fail"""
+        payload = {"email": "test-verify@example.com", "password": "wrongpassword"}
+        
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json=payload)
+        assert response.status_code == 401
+        assert "passwort" in response.json().get("detail", "").lower()
+    
+    def test_login_unverified_email_fails(self, api_client):
+        """Login with unverified email should fail"""
+        # First register a new user (unverified)
+        unique_email = f"unverified_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": "Unverified Firma",
+            "name": "Unverified User",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DE333",
+            "email": unique_email,
+            "password": "testpass123",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        
+        # Try to login - should fail because not verified
+        login_payload = {"email": unique_email, "password": "testpass123"}
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json=login_payload)
+        assert response.status_code == 403
+        assert "nicht best" in response.json().get("detail", "").lower()
+    
+    def test_login_no_password_schausteller_fails(self, api_client):
+        """Login for schausteller without password should show clear error"""
+        # hans@test.de exists but has no password_hash AND is not verified
+        # The system checks verification first, then password
+        # This is correct security behavior - don't reveal password status to unverified accounts
+        payload = {"email": "hans@test.de", "password": "anypassword"}
+        
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json=payload)
+        # Should return 401 or 403 with error message
+        assert response.status_code in [401, 403]
+        detail = response.json().get("detail", "").lower()
+        # Since hans@test.de is NOT verified, it should return verification error first
+        # OR if it was verified, it should return password error
+        assert ("passwort" in detail or "registr" in detail or "best" in detail), \
+            f"Expected clear error about verification or password, got: {detail}"
     
     def test_login_nonexistent_email_fails(self, api_client):
         """Login with non-existent email fails"""
-        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login?email=nonexistent@test.de")
+        payload = {"email": "nonexistent@test.de", "password": "anypassword"}
+        
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json=payload)
         assert response.status_code == 404
 
+
+class TestEmailVerification:
+    """Test email verification flow"""
+    
+    def test_verify_email_wrong_code_fails(self, api_client):
+        """Verify with wrong code should fail"""
+        # Register new user
+        unique_email = f"verify_test_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": "Verify Firma",
+            "name": "Verify User",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DE444",
+            "email": unique_email,
+            "password": "verifypass123",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        
+        # Try wrong code
+        verify_payload = {"email": unique_email, "code": "000000"}
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/verify-email", json=verify_payload)
+        assert response.status_code == 400
+        assert "ung" in response.json().get("detail", "").lower()  # "ungültig"
+    
+    def test_verify_email_nonexistent_email_fails(self, api_client):
+        """Verify with non-existent email should fail"""
+        verify_payload = {"email": "doesnotexist@test.de", "code": "123456"}
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/verify-email", json=verify_payload)
+        assert response.status_code == 404
+    
+    def test_verify_email_response_no_sensitive_data(self, api_client):
+        """Verify email response should not contain password_hash or verification_code"""
+        # Verify an already verified user (should return user data)
+        verify_payload = {"email": "test-verify@example.com", "code": "anything"}
+        response = api_client.post(f"{BASE_URL}/api/kirmes/public/verify-email", json=verify_payload)
+        
+        if response.status_code == 200:
+            data = response.json()
+            assert "password_hash" not in data, "password_hash should not be in verify response"
+            assert "verification_code" not in data, "verification_code should not be in verify response"
+
+
+class TestResendCode:
+    """Test resend verification code flow"""
+    
+    def test_resend_code_endpoint(self, api_client):
+        """Resend code endpoint should work"""
+        # Register a new unverified user
+        unique_email = f"resend_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": "Resend Firma",
+            "name": "Resend User",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DE555",
+            "email": unique_email,
+            "password": "resendpass123",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        
+        # Resend code (GET request)
+        response = api_client.get(f"{BASE_URL}/api/kirmes/public/resend-code?email={unique_email}")
+        assert response.status_code == 200
+        assert "gesendet" in response.json().get("message", "").lower() or "sent" in response.json().get("message", "").lower()
+    
+    def test_resend_code_already_verified(self, api_client):
+        """Resend code for already verified user should return appropriate message"""
+        response = api_client.get(f"{BASE_URL}/api/kirmes/public/resend-code?email=test-verify@example.com")
+        assert response.status_code == 200
+        # Should say already verified
+        assert "bereits" in response.json().get("message", "").lower()
+    
+    def test_resend_code_nonexistent_email_fails(self, api_client):
+        """Resend code for non-existent email should fail"""
+        response = api_client.get(f"{BASE_URL}/api/kirmes/public/resend-code?email=doesnotexist@test.de")
+        assert response.status_code == 404
+
+
+# ===================== Public Signup Tests =====================
 
 class TestPublicSignup:
     """Test public event signup flow"""
@@ -448,20 +634,20 @@ class TestPublicSignup:
         assert create_response.status_code == 200
         event_id = create_response.json()["id"]
         
-        # Release the event
         release_response = admin_client.post(f"{BASE_URL}/api/kirmes/events/{event_id}/release")
         assert release_response.status_code == 200
         
-        # 2. Register a new schausteller
+        # 2. Register a new schausteller with password
         unique_email = f"signup_test_{uuid.uuid4().hex[:8]}@test.de"
         sch_payload = {
             "firma": f"{TEST_PREFIX}SignupFirma",
             "name": "Signup Tester",
-            "strasse": "Signupstraße 1",
+            "strasse": "Signupstrasse 1",
             "plz": "50000",
             "ort": "Signupstadt",
             "steuernummer": "DE111222333",
             "email": unique_email,
+            "password": "signuppass123",
             "telefon": "555-1234",
             "rechnungs_email": unique_email
         }
@@ -475,6 +661,7 @@ class TestPublicSignup:
             "event_id": event_id,
             "schausteller_id": schausteller_id,
             "platznummer": "A42",
+            "fahrgeschaeft": "Achterbahn",
             "connection_type": "32A",
             "payment_method": "kreditkarte"
         }
@@ -491,7 +678,6 @@ class TestPublicSignup:
     
     def test_signup_invalid_connection_type_fails(self, api_client, admin_client):
         """Signup with invalid connection type fails"""
-        # Create and release an event
         event_payload = {
             "name": f"{TEST_PREFIX}InvalidConnTest_{uuid.uuid4().hex[:6]}",
             "location": "Test Stadt",
@@ -506,7 +692,6 @@ class TestPublicSignup:
         
         admin_client.post(f"{BASE_URL}/api/kirmes/events/{event_id}/release")
         
-        # Register schausteller
         unique_email = f"invalid_conn_{uuid.uuid4().hex[:8]}@test.de"
         reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json={
             "firma": "Invalid Test",
@@ -516,16 +701,17 @@ class TestPublicSignup:
             "ort": "Stadt",
             "steuernummer": "DE999",
             "email": unique_email,
+            "password": "invalidpass123",
             "telefon": "123",
             "rechnungs_email": unique_email
         })
         schausteller_id = reg_response.json()["id"]
         
-        # Try invalid connection type
         signup_payload = {
             "event_id": event_id,
             "schausteller_id": schausteller_id,
             "platznummer": "B1",
+            "fahrgeschaeft": "Test",
             "connection_type": "INVALID_TYPE",
             "payment_method": "kreditkarte"
         }
@@ -535,7 +721,6 @@ class TestPublicSignup:
     
     def test_signup_duplicate_fails(self, api_client, admin_client):
         """Cannot sign up twice for same event"""
-        # Create and release event
         event_payload = {
             "name": f"{TEST_PREFIX}DuplicateTest_{uuid.uuid4().hex[:6]}",
             "location": "Duplicate Stadt",
@@ -548,7 +733,6 @@ class TestPublicSignup:
         event_id = create_response.json()["id"]
         admin_client.post(f"{BASE_URL}/api/kirmes/events/{event_id}/release")
         
-        # Register schausteller
         unique_email = f"duplicate_{uuid.uuid4().hex[:8]}@test.de"
         reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json={
             "firma": "Duplicate Firma",
@@ -558,16 +742,17 @@ class TestPublicSignup:
             "ort": "Stadt",
             "steuernummer": "DE888",
             "email": unique_email,
+            "password": "duplicatepass123",
             "telefon": "123",
             "rechnungs_email": unique_email
         })
         schausteller_id = reg_response.json()["id"]
         
-        # First signup - should succeed
         signup_payload = {
             "event_id": event_id,
             "schausteller_id": schausteller_id,
             "platznummer": "C1",
+            "fahrgeschaeft": "Test",
             "connection_type": "16A",
             "payment_method": "paypal"
         }
@@ -575,8 +760,7 @@ class TestPublicSignup:
         first_signup = api_client.post(f"{BASE_URL}/api/kirmes/public/signup", json=signup_payload)
         assert first_signup.status_code == 200
         
-        # Second signup - should fail
-        signup_payload["platznummer"] = "C2"  # Different platz, same event
+        signup_payload["platznummer"] = "C2"
         second_signup = api_client.post(f"{BASE_URL}/api/kirmes/public/signup", json=signup_payload)
         assert second_signup.status_code == 400
         assert "bereits" in second_signup.json().get("detail", "").lower()
@@ -600,11 +784,29 @@ class TestSchaustellerManagement:
         
         data = response.json()
         assert isinstance(data, list)
+        # Verify no sensitive data in list response
+        for sch in data:
+            assert "password_hash" not in sch, "password_hash should not be exposed in list response"
+            assert "verification_code" not in sch, "verification_code should not be exposed in list response"
     
     def test_search_schausteller(self, admin_client):
         """Search schausteller by name/firma/email"""
         response = admin_client.get(f"{BASE_URL}/api/kirmes/schausteller?search=hans")
         assert response.status_code == 200
+    
+    def test_get_schausteller_no_sensitive_data(self, admin_client):
+        """Get single schausteller should not expose sensitive data"""
+        list_response = admin_client.get(f"{BASE_URL}/api/kirmes/schausteller")
+        if list_response.status_code != 200 or len(list_response.json()) == 0:
+            pytest.skip("No schausteller to test")
+        
+        sch_id = list_response.json()[0]["id"]
+        response = admin_client.get(f"{BASE_URL}/api/kirmes/schausteller/{sch_id}")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "password_hash" not in data, "password_hash should not be exposed"
+        assert "verification_code" not in data, "verification_code should not be exposed"
 
 
 # ===================== Cleanup =====================
@@ -623,7 +825,6 @@ class TestCleanup:
         
         for event in events:
             if event["name"].startswith(TEST_PREFIX):
-                # Set to entwurf first if needed (only entwurf can be deleted)
                 if event["status"] != "entwurf":
                     admin_client.put(f"{BASE_URL}/api/kirmes/events/{event['id']}", json={"status": "entwurf"})
                 

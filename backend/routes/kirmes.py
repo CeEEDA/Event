@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
+import bcrypt
 
 router = APIRouter(prefix="/api/kirmes", tags=["kirmes"])
 security = HTTPBearer()
@@ -13,6 +14,14 @@ _decode_jwt_token = None
 
 # Standard connection types
 CONNECTION_TYPES = ["Schuko", "16A", "32A", "63A", "125A", "Festanschluss"]
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 
 def init_kirmes_routes(db, decode_jwt_token):
@@ -86,12 +95,13 @@ class EventUpdate(BaseModel):
 class SchaustellerRegister(BaseModel):
     firma: str
     name: str
-    strasse: str
-    plz: str
-    ort: str
-    steuernummer: str
+    strasse: str = ""
+    plz: str = ""
+    ort: str = ""
+    steuernummer: str = ""
     email: EmailStr
-    telefon: str
+    password: str
+    telefon: str = ""
     rechnungs_email: EmailStr
 
 
@@ -373,20 +383,28 @@ async def invite_schausteller(event_id: str, data: InviteRequest, user: dict = D
 @router.post("/public/register")
 async def register_schausteller(data: SchaustellerRegister):
     """Public endpoint - no auth required. Registers schausteller and sends verification code."""
-    from email_service import send_email
     import random
+
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen lang sein.")
 
     existing = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     if existing:
         if existing.get("email_verified"):
             raise HTTPException(status_code=400, detail="Diese E-Mail-Adresse ist bereits registriert. Bitte melden Sie sich an.")
-        # Resend verification code
+        # Resend verification code and update password
         code = str(random.randint(100000, 999999))
         await _db.kirmes_schausteller.update_one(
             {"email": data.email},
-            {"$set": {"verification_code": code, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            {"$set": {
+                "verification_code": code,
+                "password_hash": _hash_password(data.password),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }}
         )
         _send_verification_email(data.email, data.name, code)
+        existing.pop("password_hash", None)
+        existing.pop("verification_code", None)
         existing["email_verified"] = False
         return existing
 
@@ -401,6 +419,7 @@ async def register_schausteller(data: SchaustellerRegister):
         "ort": data.ort,
         "steuernummer": data.steuernummer,
         "email": data.email,
+        "password_hash": _hash_password(data.password),
         "telefon": data.telefon,
         "rechnungs_email": data.rechnungs_email,
         "email_verified": False,
@@ -410,6 +429,7 @@ async def register_schausteller(data: SchaustellerRegister):
     await _db.kirmes_schausteller.insert_one(sch_doc)
     sch_doc.pop("_id", None)
     sch_doc.pop("verification_code", None)
+    sch_doc.pop("password_hash", None)
 
     _send_verification_email(data.email, data.name, code)
     return sch_doc
@@ -456,6 +476,8 @@ async def verify_email(data: VerifyEmailRequest):
     if not sch:
         raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden.")
     if sch.get("email_verified"):
+        sch.pop("password_hash", None)
+        sch.pop("verification_code", None)
         return sch
     if sch.get("verification_code") != data.code:
         raise HTTPException(status_code=400, detail="Ungültiger Code. Bitte erneut versuchen.")
@@ -465,10 +487,11 @@ async def verify_email(data: VerifyEmailRequest):
     )
     updated = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     updated.pop("verification_code", None)
+    updated.pop("password_hash", None)
     return updated
 
 
-@router.post("/public/resend-code")
+@router.get("/public/resend-code")
 async def resend_code(email: str = Query(...)):
     """Public endpoint - resend verification code."""
     import random
@@ -486,15 +509,25 @@ async def resend_code(email: str = Query(...)):
     return {"message": "Neuer Code wurde gesendet."}
 
 
+class SchaustellerLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
 @router.post("/public/login")
-async def login_schausteller(email: str = Query(...)):
-    """Public endpoint - Schausteller 'logs in' by email."""
-    sch = await _db.kirmes_schausteller.find_one({"email": email}, {"_id": 0})
+async def login_schausteller(data: SchaustellerLogin):
+    """Public endpoint - Schausteller logs in with email + password."""
+    sch = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     if not sch:
         raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden. Bitte zuerst registrieren.")
     if not sch.get("email_verified"):
         raise HTTPException(status_code=403, detail="E-Mail noch nicht bestätigt. Bitte prüfen Sie Ihren Posteingang.")
+    if not sch.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Kein Passwort hinterlegt. Bitte registrieren Sie sich erneut mit einem Passwort.")
+    if not _verify_password(data.password, sch["password_hash"]):
+        raise HTTPException(status_code=401, detail="Falsches Passwort.")
     sch.pop("verification_code", None)
+    sch.pop("password_hash", None)
     return sch
 
 
@@ -594,13 +627,13 @@ async def list_schausteller(
             {"name": {"$regex": search, "$options": "i"}},
             {"email": {"$regex": search, "$options": "i"}},
         ]
-    schausteller = await _db.kirmes_schausteller.find(query, {"_id": 0}).sort("firma", 1).to_list(500)
+    schausteller = await _db.kirmes_schausteller.find(query, {"_id": 0, "password_hash": 0, "verification_code": 0}).sort("firma", 1).to_list(500)
     return schausteller
 
 
 @router.get("/schausteller/{sch_id}")
 async def get_schausteller(sch_id: str, user: dict = Depends(_require_staff)):
-    sch = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0})
+    sch = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
     if not sch:
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
     # Get their signups
