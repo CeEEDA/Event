@@ -105,7 +105,16 @@ const CONTROLLER_TOPIC_INFO = {
 };
 
 function DseGatewaySetupSection({ controller, serialNumber, formData, update }) {
-  const topicInfo = CONTROLLER_TOPIC_INFO[controller];
+  // Flexible matching: find topic info regardless of naming variations
+  const resolveTopicInfo = (ctrl) => {
+    if (!ctrl) return null;
+    const c = ctrl.toLowerCase().replace(/\s+/g, "");
+    if (c.includes("l401")) return { filename: "dsel401_module_topics.csv", label: "DSE L401 Module Topics" };
+    if (c.includes("8610")) return { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" };
+    if (c.includes("7310")) return { filename: "dse8610_module_topics.csv", label: "DSE 7310 Module Topics" };
+    return CONTROLLER_TOPIC_INFO[ctrl] || null;
+  };
+  const topicInfo = resolveTopicInfo(controller);
   const brokerUrl = "broker.hivemq.com";
   const brokerPort = "1883";
   const topicPrefix = `/${serialNumber || "SERIENNUMMER"}/`;
