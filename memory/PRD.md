@@ -9,13 +9,21 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 
 ## What's Been Implemented
 
+### Kirmes: EMU Meter Data Integration (2026-03-08)
+- **Meter Linking**: Link/unlink EMU meters to Kirmes signups via admin panel
+- **Live Data Display**: Real-time power (kW), voltage (V), current (A), frequency (Hz) in expanded signup detail
+- **Power Chart**: Recharts LineChart showing historical Leistungsverlauf (kW)
+- **Online Status**: Shows if meter is online/offline based on last reading timestamp
+- **Meter Selection**: Dropdown of all available EMU meters with device info
+- **API Endpoints**: GET /api/kirmes/emu-meters, PUT/DELETE /api/kirmes/signups/{id}/link-meter, GET /api/kirmes/signups/{id}/meter-data
+
 ### Kirmes: Abrechnungsmodul mit Rechnungsstellung (2026-03-08)
 - **Invoice Generation**: Server-side PDF with company letterhead PDF as background (assets/briefpapier.pdf)
 - **Invoice Number**: Auto-incrementing R{YY}-K-{NNNN} format
 - **Billing Calculation**: Anschlussgebühr + Stromverbrauch (kWh) + Handlingaufschlag + 19% MwSt
 - **Single/Batch**: Generate invoice per signup or batch all signups in an event
 - **PDF Download**: Letterhead from uploaded PDF file, no hardcoded company data
-- **Email Sending**: Invoice PDF als Anhang per E-Mail versenden
+- **Email Sending**: Invoice PDF als Anhang per E-Mail versenden (auto-send on batch billing)
 - **Invoice Search**: Searchable in Kirmes-Verwaltung by number, company, event name
 - **Status**: payment_status changes to "abgerechnet" after invoice generation
 
@@ -37,6 +45,12 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 
 ## Key API Endpoints
 
+### Kirmes EMU Meters
+- `GET /api/kirmes/emu-meters` - List available EMU meters
+- `PUT /api/kirmes/signups/{id}/link-meter` - Link meter to signup
+- `DELETE /api/kirmes/signups/{id}/link-meter` - Unlink meter
+- `GET /api/kirmes/signups/{id}/meter-data` - Get telemetry data
+
 ### Kirmes Invoices
 - `POST /api/kirmes/signups/{id}/invoice` - Generate for single signup
 - `POST /api/kirmes/events/{id}/generate-invoices` - Batch generate all
@@ -47,13 +61,12 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 ## Backlog
 
 ### P0 (Next)
-- EMU Meter Data Integration
 - Stripe integration for deposit reservation
 
 ### P1
-- Billing history on Schausteller detail page
-- Self-hosted MQTT Broker (Mosquitto)
 - ZUGFeRD-compliant invoices
+- Self-hosted MQTT Broker (Mosquitto)
+- Billing history on Schausteller detail page
 
 ### P2
 - Admin file size limits
