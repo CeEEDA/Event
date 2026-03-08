@@ -1168,3 +1168,118 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
         return {"message": f"Rechnung an {sch_email} versendet."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"E-Mail konnte nicht gesendet werden: {str(e)}")
+
+
+
+# ============== EMU Meter Integration ==============
+
+class LinkMeterRequest(BaseModel):
+    emu_device_id: str
+    emu_meter_id: str
+
+@router.get("/emu-meters")
+async def list_emu_meters(user: dict = Depends(_require_staff)):
+    """List all available EMU meters for assignment to signups."""
+    meters = await _db.emu_meters.find({}, {"_id": 0}).to_list(500)
+    # Enrich each meter with its device info
+    for m in meters:
+        device = await _db.devices.find_one({"id": m["device_id"]}, {"_id": 0, "id": 1, "serial_number": 1, "name": 1})
+        m["device_name"] = device.get("serial_number") or device.get("name", "") if device else ""
+    return meters
+
+
+@router.put("/signups/{signup_id}/link-meter")
+async def link_meter_to_signup(signup_id: str, data: LinkMeterRequest, user: dict = Depends(_require_staff)):
+    """Link an EMU meter to a Kirmes signup."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    # Verify the meter exists
+    meter = await _db.emu_meters.find_one({"id": data.emu_meter_id, "device_id": data.emu_device_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="EMU-Zähler nicht gefunden")
+
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$set": {
+            "emu_device_id": data.emu_device_id,
+            "emu_meter_id": data.emu_meter_id,
+            "emu_meter_name": meter.get("meter_name", ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    updated = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    return updated
+
+
+@router.delete("/signups/{signup_id}/link-meter")
+async def unlink_meter_from_signup(signup_id: str, user: dict = Depends(_require_staff)):
+    """Unlink an EMU meter from a Kirmes signup."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$unset": {"emu_device_id": "", "emu_meter_id": "", "emu_meter_name": ""},
+         "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": "Zähler-Verknüpfung entfernt"}
+
+
+@router.get("/signups/{signup_id}/meter-data")
+async def get_signup_meter_data(
+    signup_id: str,
+    from_time: Optional[str] = None,
+    to_time: Optional[str] = None,
+    limit: int = Query(default=200, le=5000),
+    user: dict = Depends(_require_staff),
+):
+    """Get EMU meter telemetry data for a linked signup."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    device_id = signup.get("emu_device_id")
+    meter_id = signup.get("emu_meter_id")
+    if not device_id or not meter_id:
+        return {"linked": False, "latest": None, "history": [], "meter_name": None}
+
+    # Get latest reading
+    latest = await _db.emu_data.find_one(
+        {"device_id": device_id, "meter_id": meter_id},
+        {"_id": 0},
+        sort=[("ts_utc", -1)]
+    )
+
+    # Get historical data
+    query = {"device_id": device_id, "meter_id": meter_id}
+    if from_time or to_time:
+        query["ts_utc"] = {}
+        if from_time:
+            query["ts_utc"]["$gte"] = from_time
+        if to_time:
+            query["ts_utc"]["$lte"] = to_time
+
+    history = await _db.emu_data.find(
+        query, {"_id": 0, "ts_utc": 1, "P_sum_kW": 1, "I_sum": 1, "U_L1": 1, "F_Hz": 1, "E_imp_kWh": 1}
+    ).sort("ts_utc", -1).limit(limit).to_list(limit)
+    history.reverse()
+
+    # Check online status
+    is_online = False
+    if latest and latest.get("ts_utc"):
+        try:
+            last_ts = datetime.fromisoformat(latest["ts_utc"].replace("Z", "+00:00"))
+            is_online = (datetime.now(timezone.utc) - last_ts).total_seconds() < 300
+        except Exception:
+            pass
+
+    return {
+        "linked": True,
+        "meter_name": signup.get("emu_meter_name", ""),
+        "is_online": is_online,
+        "latest": latest,
+        "history": history,
+    }

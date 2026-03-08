@@ -8,7 +8,9 @@ import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
+  Activity, Link2, Unlink, Gauge, Wifi, WifiOff,
 } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Input } from "../components/ui/input";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -46,6 +48,10 @@ export default function KirmesEventDetailPage() {
   const [inviteSearch, setInviteSearch] = useState("");
   const [billingInProgress, setBillingInProgress] = useState(false);
   const [eventInvoices, setEventInvoices] = useState([]);
+  const [emuMeters, setEmuMeters] = useState([]);
+  const [meterDataMap, setMeterDataMap] = useState({});
+  const [linkingMeter, setLinkingMeter] = useState(null);
+  const [selectedMeterCombo, setSelectedMeterCombo] = useState("");
 
   const loadEvent = useCallback(async () => {
     try {
@@ -63,6 +69,34 @@ export default function KirmesEventDetailPage() {
   }, [id]);
 
   useEffect(() => { loadEvent(); loadInvoices(); }, [loadEvent, loadInvoices]);
+
+  // Load available EMU meters
+  useEffect(() => {
+    const loadMeters = async () => {
+      try {
+        const r = await api.get("/kirmes/emu-meters");
+        setEmuMeters(r.data);
+      } catch { /* ignore */ }
+    };
+    loadMeters();
+  }, []);
+
+  // Load meter data when a signup is expanded and has linked meter
+  const loadMeterData = useCallback(async (signupId) => {
+    try {
+      const r = await api.get(`/kirmes/signups/${signupId}/meter-data`);
+      setMeterDataMap(prev => ({ ...prev, [signupId]: r.data }));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (expandedSignup) {
+      const signup = (event?.signups || []).find(s => s.id === expandedSignup);
+      if (signup?.emu_device_id && signup?.emu_meter_id) {
+        loadMeterData(expandedSignup);
+      }
+    }
+  }, [expandedSignup, event, loadMeterData]);
 
   const handleRelease = async () => {
     if (!window.confirm(`"${event.name}" freigeben?`)) return;
@@ -118,7 +152,7 @@ export default function KirmesEventDetailPage() {
       s.fahrgeschaeft || "–",
       s.connection_type,
       s.schausteller?.telefon || "–",
-      s.meter_id ? "Ja" : "Nein",
+      s.emu_meter_name || (s.meter_id ? "Ja" : "Nein"),
     ]);
 
     autoTable(doc, {
@@ -243,6 +277,36 @@ export default function KirmesEventDetailPage() {
       loadInvoices();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Fehler beim Versenden");
+    }
+  };
+
+  const handleLinkMeter = async (signupId) => {
+    if (!selectedMeterCombo) return;
+    const [deviceId, meterId] = selectedMeterCombo.split("|");
+    try {
+      await api.put(`/kirmes/signups/${signupId}/link-meter`, {
+        emu_device_id: deviceId,
+        emu_meter_id: meterId,
+      });
+      toast.success("EMU-Zähler verknüpft");
+      setLinkingMeter(null);
+      setSelectedMeterCombo("");
+      loadEvent();
+      loadMeterData(signupId);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler beim Verknüpfen");
+    }
+  };
+
+  const handleUnlinkMeter = async (signupId) => {
+    if (!window.confirm("Zähler-Verknüpfung wirklich entfernen?")) return;
+    try {
+      await api.delete(`/kirmes/signups/${signupId}/link-meter`);
+      toast.success("Verknüpfung entfernt");
+      setMeterDataMap(prev => { const n = { ...prev }; delete n[signupId]; return n; });
+      loadEvent();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler");
     }
   };
 
@@ -486,7 +550,7 @@ export default function KirmesEventDetailPage() {
                                   <p><span className="text-gray-400 w-24 inline-block">Anschluss:</span> <span className="inline-flex items-center gap-1 text-xs bg-fuchsia-50 text-fuchsia-700 px-2 py-0.5 rounded-full"><Zap className="w-3 h-3" /> {signup.connection_type}</span></p>
                                   <p><span className="text-gray-400 w-24 inline-block">Zahlung:</span> <span className="text-gray-700 capitalize">{signup.payment_method}</span></p>
                                   <p><span className="text-gray-400 w-24 inline-block">Status:</span> <span className={`text-xs font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>{PAYMENT_LABELS[signup.payment_status] || signup.payment_status}</span></p>
-                                  <p><span className="text-gray-400 w-24 inline-block">Zähler-ID:</span> <span className="font-mono text-gray-700">{signup.meter_id || "Nicht verknüpft"}</span></p>
+                                  <p><span className="text-gray-400 w-24 inline-block">Zähler-ID:</span> <span className="font-mono text-gray-700">{signup.emu_meter_name || signup.meter_id || "Nicht verknüpft"}</span></p>
                                 </div>
                               </div>
 
@@ -532,12 +596,131 @@ export default function KirmesEventDetailPage() {
                                     </div>
                                   ) : null;
                                 })()}
-                                {/* EMU Zähler Platzhalter */}
-                                <div className="mt-4 bg-white rounded-lg p-4 border border-dashed border-gray-300 text-center">
-                                  <Zap className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                                  <p className="text-xs text-gray-400">EMU-Zähler Leistungsdaten</p>
-                                  <p className="text-[10px] text-gray-300 mt-1">Wird mit Kirmeskiste-Integration verfügbar</p>
-                                </div>
+                                {/* EMU Zähler Live-Daten */}
+                                {(() => {
+                                  const hasLinked = signup.emu_device_id && signup.emu_meter_id;
+                                  const md = meterDataMap[signup.id];
+                                  const isLinking = linkingMeter === signup.id;
+
+                                  if (!hasLinked && !isLinking) {
+                                    return (
+                                      <div className="mt-4 bg-white rounded-lg p-4 border border-dashed border-gray-300 text-center" data-testid={`emu-unlinked-${signup.id}`}>
+                                        <Zap className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+                                        <p className="text-xs text-gray-400 mb-2">Kein EMU-Zähler verknüpft</p>
+                                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                          className="text-xs text-fuchsia-600 border-fuchsia-200" data-testid={`link-meter-btn-${signup.id}`}>
+                                          <Link2 className="w-3 h-3 mr-1" /> Zähler verknüpfen
+                                        </Button>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (isLinking) {
+                                    return (
+                                      <div className="mt-4 bg-white rounded-lg p-4 border border-fuchsia-200" onClick={e => e.stopPropagation()} data-testid={`emu-linking-${signup.id}`}>
+                                        <h5 className="text-xs font-semibold text-gray-500 uppercase mb-2">EMU-Zähler auswählen</h5>
+                                        <select value={selectedMeterCombo} onChange={e => setSelectedMeterCombo(e.target.value)}
+                                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-fuchsia-500"
+                                          data-testid={`meter-select-${signup.id}`}>
+                                          <option value="">-- Zähler wählen --</option>
+                                          {emuMeters.map(m => (
+                                            <option key={m.id} value={`${m.device_id}|${m.id}`}>
+                                              {m.meter_name} ({m.device_name || m.device_id.slice(0,8)}) – {m.meter_ip}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <div className="flex gap-2">
+                                          <Button size="sm" onClick={() => handleLinkMeter(signup.id)} disabled={!selectedMeterCombo}
+                                            className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid={`confirm-link-${signup.id}`}>
+                                            <Link2 className="w-3 h-3 mr-1" /> Verknüpfen
+                                          </Button>
+                                          <Button size="sm" variant="outline" onClick={() => { setLinkingMeter(null); setSelectedMeterCombo(""); }}
+                                            className="text-xs">Abbrechen</Button>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  // Has linked meter - show data
+                                  return (
+                                    <div className="mt-4 space-y-3" data-testid={`emu-data-${signup.id}`}>
+                                      <div className="flex items-center justify-between">
+                                        <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                          <Activity className="w-3.5 h-3.5 text-fuchsia-500" /> EMU-Zähler
+                                        </h5>
+                                        <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
+                                          className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
+                                          <Unlink className="w-3 h-3" /> Trennen
+                                        </button>
+                                      </div>
+
+                                      {/* Meter name + status */}
+                                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <span className="text-xs font-medium text-gray-700">{signup.emu_meter_name || "EMU-Zähler"}</span>
+                                          {md?.is_online ? (
+                                            <span className="flex items-center gap-1 text-[10px] text-emerald-600"><Wifi className="w-3 h-3" /> Online</span>
+                                          ) : (
+                                            <span className="flex items-center gap-1 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
+                                          )}
+                                        </div>
+
+                                        {md?.latest ? (
+                                          <div className="grid grid-cols-4 gap-2">
+                                            <div className="text-center p-2 bg-gray-50 rounded">
+                                              <p className="text-[10px] text-gray-400">Leistung</p>
+                                              <p className="text-sm font-bold font-mono text-fuchsia-700">{(md.latest.P_sum_kW || 0).toFixed(2)}</p>
+                                              <p className="text-[9px] text-gray-400">kW</p>
+                                            </div>
+                                            <div className="text-center p-2 bg-gray-50 rounded">
+                                              <p className="text-[10px] text-gray-400">Spannung</p>
+                                              <p className="text-sm font-bold font-mono text-gray-900">{(md.latest.U_L1 || 0).toFixed(0)}</p>
+                                              <p className="text-[9px] text-gray-400">V (L1)</p>
+                                            </div>
+                                            <div className="text-center p-2 bg-gray-50 rounded">
+                                              <p className="text-[10px] text-gray-400">Strom</p>
+                                              <p className="text-sm font-bold font-mono text-gray-900">{(md.latest.I_sum || 0).toFixed(1)}</p>
+                                              <p className="text-[9px] text-gray-400">A</p>
+                                            </div>
+                                            <div className="text-center p-2 bg-gray-50 rounded">
+                                              <p className="text-[10px] text-gray-400">Frequenz</p>
+                                              <p className="text-sm font-bold font-mono text-gray-900">{(md.latest.F_Hz || 0).toFixed(1)}</p>
+                                              <p className="text-[9px] text-gray-400">Hz</p>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <p className="text-xs text-gray-400 text-center py-2">Keine aktuellen Messdaten verfügbar</p>
+                                        )}
+                                      </div>
+
+                                      {/* Power Chart */}
+                                      {md?.history?.length > 1 && (
+                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                          <p className="text-[10px] text-gray-400 mb-2">Leistungsverlauf (kW)</p>
+                                          <ResponsiveContainer width="100%" height={120}>
+                                            <LineChart data={md.history.map(h => ({
+                                              t: h.ts_utc ? new Date(h.ts_utc).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "",
+                                              kW: h.P_sum_kW || 0,
+                                            }))}>
+                                              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                              <XAxis dataKey="t" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                                              <YAxis tick={{ fontSize: 9 }} width={35} />
+                                              <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v) => [`${v.toFixed(3)} kW`, "Leistung"]} />
+                                              <Line type="monotone" dataKey="kW" stroke="#a832a8" strokeWidth={1.5} dot={false} />
+                                            </LineChart>
+                                          </ResponsiveContainer>
+                                        </div>
+                                      )}
+
+                                      {/* Last reading timestamp */}
+                                      {md?.latest?.ts_utc && (
+                                        <p className="text-[10px] text-gray-400 text-right">
+                                          Letzte Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>

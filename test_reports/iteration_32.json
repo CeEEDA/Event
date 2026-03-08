@@ -1,0 +1,87 @@
+{
+  "summary": "Iteration 32 - Tested new EMU Meter Data Integration for Kirmes module. All 17 backend tests passed. Frontend UI verified for meter linking/unlinking flow, live meter data display, and power chart rendering.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "backend_endpoints": {
+      "GET /api/kirmes/emu-meters": "PASS - Returns list of available EMU meters with device info",
+      "PUT /api/kirmes/signups/{id}/link-meter": "PASS - Links meter to signup, stores emu_device_id, emu_meter_id, emu_meter_name",
+      "DELETE /api/kirmes/signups/{id}/link-meter": "PASS - Unlinks meter from signup, removes emu fields",
+      "GET /api/kirmes/signups/{id}/meter-data": "PASS - Returns linked=true/false, meter_name, is_online, latest telemetry, history"
+    },
+    "frontend_emu_section": {
+      "emu_zaehler_section_in_expanded_panel": "PASS - Shows in expanded signup detail under ZÄHLERDATEN",
+      "zaehler_verknuepfen_button": "PASS - Shows 'Zähler verknüpfen' button when no meter linked",
+      "meter_selection_dropdown": "PASS - Dropdown shows available meters with name, device ID, IP",
+      "live_meter_data_display": "PASS - Shows Leistung (kW), Spannung (V), Strom (A), Frequenz (Hz)",
+      "power_chart": "PASS - Leistungsverlauf chart renders with historical data",
+      "trennen_button": "PASS - 'Trennen' button visible to unlink meter",
+      "meter_name_in_anmeldung": "PASS - Zähler-ID shows linked meter name (e.g., 'EMU Zähler 1')",
+      "online_offline_status": "PASS - Shows Online/Offline indicator based on last reading timestamp"
+    },
+    "data_quality": {
+      "existing_meter_data": "43874+ emu_data records in database",
+      "linked_signup": "d52ab189-28a4-424a-9b81-5421f27a8276 (Küss Kirmes 26) has EMU Zähler 1 linked",
+      "telemetry_fields": "P_sum_kW, U_L1, I_sum, F_Hz, ts_utc all present",
+      "history_data": "Returns up to 200 historical readings for power chart"
+    }
+  },
+  "backend_tests": {
+    "total": 17,
+    "passed": 17,
+    "failed": 0,
+    "test_file": "/app/backend/tests/test_kirmes_emu_meters.py",
+    "test_classes": [
+      "TestEmuMetersList (4 tests) - List meters, auth check, required fields",
+      "TestMeterData (4 tests) - Get linked/unlinked data, telemetry fields, 404 handling",
+      "TestLinkMeter (4 tests) - Link success, verification, invalid meter/signup 404",
+      "TestUnlinkMeter (3 tests) - Unlink success, verification, invalid signup 404",
+      "TestEmuMeterFullFlow (2 tests) - Complete link→verify→unlink→verify flow, existing linked data verification"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes_emu_meters.py",
+    "/app/test_reports/pytest/pytest_kirmes_emu_iteration32.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_kirmes_emu_meters.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 tests passed)",
+    "frontend": "100% (all EMU meter features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_info": {
+    "existing_linked_meter": {
+      "signup_id": "d52ab189-28a4-424a-9b81-5421f27a8276",
+      "event": "Küss Kirmes 26 (e1fdc56a-cb3f-4ad0-8ae9-586e38a59ac0)",
+      "emu_device_id": "1d35dfbf-c944-4127-abe6-c0f97ed3b165",
+      "emu_meter_id": "82ae1943-bed4-48b8-9375-0b79a34e49a4",
+      "meter_name": "EMU Zähler 1"
+    },
+    "available_meters": [
+      "EMU Zähler 1 (82ae1943...) - 10.210.11.198",
+      "Shelly Pro 3EM (765dac53...) - 192.168.88.252",
+      "Shelly Pro 3EM TEST-AUTO-SETUP (2f57a0c1...) - 192.168.88.252"
+    ],
+    "test_event_without_meters": "Testkirmes 3/26 (20de118d-9be2-42ef-8473-7683b0d7b1af) - 3 signups without linked meters"
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "EMU meter integration fully tested. Backend: GET /api/kirmes/emu-meters lists available meters, PUT/DELETE /api/kirmes/signups/{id}/link-meter handles meter assignment, GET /api/kirmes/signups/{id}/meter-data returns telemetry. Frontend: Expanded signup panel shows EMU-ZÄHLER section with live data (Leistung, Spannung, Strom, Frequenz), power chart (Leistungsverlauf), and link/unlink buttons. One signup already has linked meter for testing (Küss Kirmes 26). Test file: /app/backend/tests/test_kirmes_emu_meters.py",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}
