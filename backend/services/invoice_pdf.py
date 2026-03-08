@@ -142,11 +142,13 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
 
     # Line items table
     items = invoice.get("line_items", [])
+    styles.add(ParagraphStyle("CellText", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, textColor=DARK))
     table_data = [["Pos.", "Beschreibung", "Menge", "Einheit", "Einzelpreis", "Gesamt"]]
     for item in items:
+        desc = item.get("description", "").replace("\n", "<br/>")
         table_data.append([
             str(item.get("pos", "")),
-            item.get("description", ""),
+            Paragraph(desc, styles["CellText"]),
             item.get("quantity", ""),
             item.get("unit", ""),
             f"{item.get('unit_price', 0):.2f} \u20ac" if item.get("unit_price") is not None else "",

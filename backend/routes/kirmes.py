@@ -904,25 +904,28 @@ def _calculate_invoice(signup: dict, event: dict, schausteller: dict) -> dict:
     })
     pos += 1
 
-    # 2. kWh consumption
+    # 2. kWh consumption - always show Einbau, Ausbau, Verbrauch
     kwh_start = signup.get("kwh_einbau") or signup.get("kwh_start") or 0
     kwh_end = signup.get("kwh_ausbau") or signup.get("kwh_end") or 0
     kwh_used = max(0, kwh_end - kwh_start)
     kwh_price = event.get("kwh_price", 0)
-    if kwh_used > 0 and kwh_price > 0:
-        kwh_total = round(kwh_used * kwh_price, 2)
-        line_items.append({
-            "pos": pos, "description": f"Stromverbrauch ({kwh_start:.0f} → {kwh_end:.0f} kWh)",
-            "quantity": f"{kwh_used:.1f}", "unit": "kWh", "unit_price": kwh_price, "total": kwh_total,
-        })
-        pos += 1
 
-    # 3. Handling surcharge
-    handling = event.get("handling_surcharge", 0)
-    if handling > 0:
+    kwh_total = round(kwh_used * kwh_price, 2)
+    line_items.append({
+        "pos": pos,
+        "description": f"Energieverbrauch\nZählerstand Einbau: {kwh_start:.2f} kWh\nZählerstand Ausbau: {kwh_end:.2f} kWh\nVerbrauch: {kwh_used:.2f} kWh",
+        "quantity": f"{kwh_used:.2f}", "unit": "kWh", "unit_price": kwh_price, "total": kwh_total,
+    })
+    pos += 1
+
+    # 3. Handling surcharge = kWh consumed * handling price per kWh
+    handling_per_kwh = event.get("handling_surcharge", 0)
+    if handling_per_kwh > 0:
+        handling_total = round(kwh_used * handling_per_kwh, 2)
         line_items.append({
-            "pos": pos, "description": "Handlingaufschlag",
-            "quantity": "1", "unit": "pauschal", "unit_price": handling, "total": handling,
+            "pos": pos,
+            "description": f"Handlingpauschale ({kwh_used:.2f} kWh)",
+            "quantity": f"{kwh_used:.2f}", "unit": "kWh", "unit_price": handling_per_kwh, "total": handling_total,
         })
         pos += 1
 
