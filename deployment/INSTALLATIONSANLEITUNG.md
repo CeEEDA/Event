@@ -34,7 +34,14 @@
 - Download: https://git-scm.com/download/win
 - Standard-Installation
 
-### 1.6 NSSM (Windows Service Manager)
+### 1.6 Mosquitto MQTT Broker
+- Download: https://mosquitto.org/download/
+- "Windows 64-bit" waehlen (mosquitto-2.x.x-install-windows-x64.exe)
+- Installation als Windows-Dienst (Standard)
+- Startet automatisch auf Port 1883
+- Konfiguration: `C:\Program Files\mosquitto\mosquitto.conf`
+
+### 1.7 NSSM (Windows Service Manager)
 - Download: https://nssm.cc/download
 - Die nssm.exe nach `C:\nssm\nssm.exe` kopieren
 - Wird benoetigt um Backend/Frontend als Windows-Dienste zu registrieren
@@ -47,11 +54,11 @@
 |------|----------|-----------|-------|
 | **443** | Eingehend | TCP | HTTPS - Hauptanwendung + API + Stripe Webhooks + Pi-Sync |
 | **80** | Eingehend | TCP | HTTP - Weiterleitung auf HTTPS |
+| **1883** | Eingehend | TCP | MQTT - DSE WebNet Gateways senden Generatordaten hierher |
 
 ### Nur ausgehend (keine Firewall-Regel noetig):
 | Port | Zweck |
 |------|-------|
-| 1883 | MQTT ausgehend zu broker.hivemq.com (DSE Generatoren) |
 | 465 | SMTP ausgehend zu smtp.mail.de (E-Mail-Versand) |
 | 443 | HTTPS ausgehend zu api.stripe.com (Zahlungen) |
 
@@ -99,8 +106,15 @@ Bei der naechsten Pi-Einrichtung einfach die neue Portal-URL angeben:
 `https://portal.eventenergie-deutschland.de/api`
 
 ### DSE WebNet umstellen
-MQTT-Broker bleibt gleich (broker.hivemq.com).
-Keine Aenderung noetig, solange der Server ausgehend Port 1883 erreichen kann.
+MQTT-Broker-Adresse im DSE WebNet Gateway aendern:
+- Alte Adresse: `broker.hivemq.com:1883`
+- Neue Adresse: `217.86.214.29:1883`
+- Topics bleiben gleich (z.B. `eventenergie/35072/...`)
+
+Dann im Portal unter MQTT-Konfiguration:
+- Broker URL: `localhost` (oder `127.0.0.1`)
+- Port: `1883`
+- Das Portal verbindet sich dann lokal mit dem eigenen Mosquitto-Broker
 
 ---
 

@@ -27,7 +27,8 @@ $checks = @(
     @{ Name = "Node.js"; Cmd = "node --version" },
     @{ Name = "Yarn"; Cmd = "yarn --version" },
     @{ Name = "Git"; Cmd = "git --version" },
-    @{ Name = "MongoDB"; Cmd = "mongod --version" }
+    @{ Name = "MongoDB"; Cmd = "mongod --version" },
+    @{ Name = "Mosquitto"; Cmd = "mosquitto -h 2>&1 | Select-Object -First 1" }
 )
 
 foreach ($check in $checks) {
@@ -62,7 +63,7 @@ if (Test-Path "C:\nssm\nssm.exe") {
 # ---------------------------------------------------
 Write-Host "`n[2/8] Verzeichnisse erstellen..." -ForegroundColor Yellow
 
-$dirs = @("$InstallDir", "$InstallDir\logs", "$InstallDir\backups", "$InstallDir\storage")
+$dirs = @("$InstallDir", "$InstallDir\logs", "$InstallDir\backups", "$InstallDir\storage", "$InstallDir\data\mosquitto")
 foreach ($dir in $dirs) {
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -226,7 +227,8 @@ Write-Host "`n[8/8] Firewall-Regeln setzen..." -ForegroundColor Yellow
 
 $rules = @(
     @{ Name = "Eventenergie HTTPS (443)"; Port = 443 },
-    @{ Name = "Eventenergie HTTP (80)"; Port = 80 }
+    @{ Name = "Eventenergie HTTP (80)"; Port = 80 },
+    @{ Name = "Eventenergie MQTT (1883)"; Port = 1883 }
 )
 
 foreach ($rule in $rules) {
@@ -251,8 +253,16 @@ Write-Host "  1. Anwendungscode nach $InstallDir\backend und $InstallDir\fronten
 Write-Host "  2. $InstallDir\backend\.env anpassen (siehe env.backend.template)"
 Write-Host "  3. Frontend Build: cd $InstallDir\frontend && yarn install && yarn build"
 Write-Host "  4. DNS: $Domain -> A-Record -> 217.86.214.29"
-Write-Host "  5. Dienste starten:"
+Write-Host "  5. Mosquitto konfigurieren:"
+Write-Host "     Copy-Item $InstallDir\deployment\mosquitto.conf 'C:\Program Files\mosquitto\mosquitto.conf'"
+Write-Host "     Restart-Service mosquitto"
+Write-Host "  6. Dienste starten:"
 Write-Host "     Start-Service eventenergie-backend"
 Write-Host "     Start-Service eventenergie-caddy"
-Write-Host "  6. Im Browser oeffnen: https://$Domain"
+Write-Host "  7. Im Browser oeffnen: https://$Domain"
+Write-Host "  8. MQTT-Konfiguration im Portal aendern:"
+Write-Host "     Broker URL: localhost | Port: 1883"
+Write-Host "  9. DSE WebNet Gateway MQTT-Broker aendern:"
+Write-Host "     Alte Adresse: broker.hivemq.com"
+Write-Host "     Neue Adresse: 217.86.214.29"
 Write-Host ""
