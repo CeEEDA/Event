@@ -390,14 +390,12 @@ export default function AdminSettingsPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="admin-settings">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
-          <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-700" data-testid="back-to-admin-btn">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <Logo size="sm" />
-          <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-to-admin-btn">
+              <ArrowLeft className="w-4 h-4 mr-2" /> Zurück
+            </Button>
             <h1 className="text-lg font-semibold text-gray-900">Administrative Einstellungen</h1>
-            <p className="text-xs text-gray-500">Schnittstellen und Systemkonfiguration</p>
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={openCreate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-integration-btn">
@@ -406,6 +404,7 @@ export default function AdminSettingsPage() {
             <Button variant="outline" size="sm" onClick={() => navigate("/mqtt-config")} className="text-gray-600 hover:text-fuchsia-600" data-testid="mqtt-config-link">
               <Wifi className="w-4 h-4 mr-1" /> MQTT
             </Button>
+            <Logo size="small" />
           </div>
         </div>
       </header>

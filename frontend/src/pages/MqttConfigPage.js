@@ -179,18 +179,19 @@ export default function MqttConfigPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-          <button onClick={() => navigate("/admin")} className="text-gray-400 hover:text-gray-700" data-testid="mqtt-back-btn">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <Logo size="sm" />
-          <div className="flex-1">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/admin/settings")} className="text-gray-400 hover:text-gray-700 flex items-center gap-2 text-sm" data-testid="mqtt-back-btn">
+              <ArrowLeft className="w-4 h-4" /> Zurück
+            </button>
             <h1 className="text-lg font-semibold text-gray-900">MQTT-Integration</h1>
-            <p className="text-xs text-gray-500">DSE WebNet Gateway Anbindung</p>
           </div>
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm ${statusCfg.bg}`}>
-            <StatusIcon className={`w-4 h-4 ${statusCfg.color} ${status.connection_status === 'connecting' ? 'animate-spin' : ''}`} />
-            <span className={statusCfg.color}>{statusCfg.label}</span>
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm ${statusCfg.bg}`}>
+              <StatusIcon className={`w-4 h-4 ${statusCfg.color} ${status.connection_status === 'connecting' ? 'animate-spin' : ''}`} />
+              <span className={statusCfg.color}>{statusCfg.label}</span>
+            </div>
+            <Logo size="small" />
           </div>
         </div>
       </header>
