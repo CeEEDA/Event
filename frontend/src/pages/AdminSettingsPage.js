@@ -21,6 +21,9 @@ import {
   Wifi,
   WifiOff,
   Loader2,
+  Globe,
+  RefreshCw,
+  Terminal,
 } from "lucide-react";
 
 /* ───── EpiRent-specific field config ───── */
@@ -139,6 +142,137 @@ function RadioOption({ name, value, current, onChange, label }) {
       />
       <span className="text-sm text-gray-700">{label}</span>
     </label>
+  );
+}
+
+/* ───── Emergent.sh Bridge ───── */
+function EmergentBridge() {
+  const [config, setConfig] = useState({ name: "Emergent.sh", api_url: "", api_key: "", active: false });
+  const [loaded, setLoaded] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get("/admin/emergent-config").then(res => {
+      if (res.data.configured) {
+        setConfig(prev => ({ ...prev, ...res.data }));
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await api.post("/admin/emergent-config", { ...config, type: "EMERGENT" });
+      setConfig(prev => ({ ...prev, ...res.data }));
+      toast.success("Emergent-Konfiguration gespeichert");
+    } catch { toast.error("Fehler beim Speichern"); }
+    finally { setSaving(false); }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Save first to ensure ID exists
+      const saveRes = await api.post("/admin/emergent-config", { ...config, type: "EMERGENT" });
+      const id = saveRes.data.id;
+      setConfig(prev => ({ ...prev, ...saveRes.data }));
+      const res = await api.post(`/admin/integrations/${id}/test`);
+      setTestResult(res.data);
+    } catch { setTestResult({ success: false, message: "Testfehler" }); }
+    finally { setTesting(false); }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="emergent-bridge">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-gray-900 to-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+            <Terminal className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Emergent.sh</h3>
+            <p className="text-[10px] text-gray-400">Live-Entwicklungsbrücke zum lokalen Server</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {config.active && (
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+            </span>
+          )}
+          <Switch
+            checked={config.active}
+            onCheckedChange={v => setConfig(prev => ({ ...prev, active: v }))}
+            data-testid="emergent-toggle"
+          />
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <div>
+          <Label className="text-sm text-gray-600">Emergent URL</Label>
+          <Input
+            value={config.api_url}
+            onChange={e => setConfig(prev => ({ ...prev, api_url: e.target.value }))}
+            placeholder="https://your-app.preview.emergentagent.com"
+            className="mt-1 font-mono text-sm"
+            data-testid="emergent-url-input"
+          />
+        </div>
+        <div>
+          <Label className="text-sm text-gray-600">API-Key</Label>
+          <div className="flex gap-2 mt-1">
+            <Input
+              type={showKey ? "text" : "password"}
+              value={config.api_key}
+              onChange={e => setConfig(prev => ({ ...prev, api_key: e.target.value }))}
+              placeholder="Emergent API-Schlüssel"
+              className="font-mono text-sm flex-1"
+              data-testid="emergent-key-input"
+            />
+            <Button variant="outline" size="sm" onClick={() => setShowKey(!showKey)} className="shrink-0">
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
+          <Button size="sm" onClick={handleSave} disabled={saving} className="bg-gray-900 hover:bg-gray-800 text-white" data-testid="emergent-save-btn">
+            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+            Speichern
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleTest} disabled={testing} data-testid="emergent-test-btn">
+            {testing ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Globe className="w-4 h-4 mr-1.5" />}
+            Verbindung testen
+          </Button>
+          {testResult && (
+            <span className={`flex items-center gap-1.5 text-xs font-medium ${testResult.success ? "text-emerald-600" : "text-red-600"}`} data-testid="emergent-test-result">
+              {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              {testResult.message}
+            </span>
+          )}
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            <strong>Sync-Modus:</strong> Frontend + Backend + Konfiguration. Nach dem Umzug auf den lokalen Server ermöglicht diese Verbindung
+            Live-Entwicklung über die Emergent-Plattform. Änderungen werden direkt auf den lokalen Server übertragen.
+          </p>
+          <div className="flex gap-3 mt-2">
+            <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-600 rounded text-[10px] font-medium">Frontend</span>
+            <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-600 rounded text-[10px] font-medium">Backend</span>
+            <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-600 rounded text-[10px] font-medium">Konfiguration</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -277,11 +411,16 @@ export default function AdminSettingsPage() {
       </header>
 
       <main className="flex-1 p-4 md:p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="mb-6">
-            <h2 className="text-sm font-semibold text-gray-900 mb-1">Schnittstellen</h2>
-            <p className="text-xs text-gray-400">Externe Systeme und API-Verbindungen verwalten</p>
-          </div>
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Emergent.sh Bridge */}
+          <EmergentBridge />
+
+          {/* Schnittstellen */}
+          <div>
+            <div className="mb-4">
+              <h2 className="text-sm font-semibold text-gray-900 mb-1">Schnittstellen</h2>
+              <p className="text-xs text-gray-400">Externe Systeme und API-Verbindungen verwalten</p>
+            </div>
 
           {loading ? (
             <div className="text-center py-20 text-gray-400">Laden...</div>
@@ -295,11 +434,12 @@ export default function AdminSettingsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="integrations-grid">
-              {integrations.map(i => (
+              {integrations.filter(i => i.type !== "EMERGENT").map(i => (
                 <IntegrationCard key={i.id} integration={i} onEdit={openEdit} onDelete={setDeleteConfirm} onToggle={handleToggle} />
               ))}
             </div>
           )}
+          </div>
         </div>
       </main>
 

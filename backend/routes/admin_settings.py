@@ -119,7 +119,7 @@ async def delete_integration(integration_id: str):
 
 @router.post("/integrations/{integration_id}/test")
 async def test_integration(integration_id: str):
-    """Test the EpiRent API connection and return available mandants."""
+    """Test integration connection based on type."""
     import httpx
     db = get_db()
     integration = await db.integrations.find_one({"id": integration_id}, {"_id": 0})
@@ -128,39 +128,83 @@ async def test_integration(integration_id: str):
 
     api_url = integration.get("api_url", "").rstrip("/")
     api_key = integration.get("api_key", "")
+    int_type = integration.get("type", "ERP")
 
     if not api_url or not api_key:
         return {"success": False, "message": "URL oder API-Key fehlt"}
 
-    headers = {
-        "X-EPI-NO-SESSION": "True",
-        "X-EPI-ACC-TOK": api_key,
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            # Test with product/all (small request)
-            resp = await client.get(f"{api_url}/v1/product/all?pgs=1", headers=headers)
-            data = resp.json()
-            if data.get("success") is False:
-                return {"success": False, "message": data.get("message", "Verbindung fehlgeschlagen")}
-
-            # Get product count
-            product_count = data.get("payload_length", 0)
-
-            # Try stock count
-            resp2 = await client.get(f"{api_url}/v1/stock/all?pgs=1&ipg=true", headers=headers)
-            data2 = resp2.json()
-            stock_count = data2.get("payload_length", 0)
-
-            return {
-                "success": True,
-                "message": "Verbindung erfolgreich",
-                "product_count": product_count,
-                "stock_count": stock_count,
-                "server_time": data.get("req_datetime", {}).get("formatedDateTime", ""),
-            }
+        async with httpx.AsyncClient(timeout=10, verify=not integration.get("ssl_skip", False)) as client:
+            if int_type == "EMERGENT":
+                return await _test_emergent(client, api_url, api_key)
+            else:
+                return await _test_epirent(client, api_url, api_key)
     except httpx.ConnectError:
         return {"success": False, "message": "Server nicht erreichbar"}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+
+async def _test_epirent(client, api_url, api_key):
+    headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+    resp = await client.get(f"{api_url}/v1/product/all?pgs=1", headers=headers)
+    data = resp.json()
+    if data.get("success") is False:
+        return {"success": False, "message": data.get("message", "Verbindung fehlgeschlagen")}
+    product_count = data.get("payload_length", 0)
+    resp2 = await client.get(f"{api_url}/v1/stock/all?pgs=1&ipg=true", headers=headers)
+    data2 = resp2.json()
+    stock_count = data2.get("payload_length", 0)
+    return {
+        "success": True, "message": "Verbindung erfolgreich",
+        "product_count": product_count, "stock_count": stock_count,
+        "server_time": data.get("req_datetime", {}).get("formatedDateTime", ""),
+    }
+
+
+async def _test_emergent(client, api_url, api_key):
+    headers = {"Authorization": f"Bearer {api_key}"}
+    resp = await client.get(f"{api_url}/api/health", headers=headers)
+    if resp.status_code == 200:
+        data = resp.json()
+        return {
+            "success": True,
+            "message": "Verbindung zu Emergent aktiv",
+            "status": data.get("status", "ok"),
+            "version": data.get("version", "—"),
+        }
+    return {"success": False, "message": f"HTTP {resp.status_code}"}
+
+
+# ── Emergent Sync Config ──
+@router.get("/emergent-config")
+async def get_emergent_config():
+    db = get_db()
+    config = await db.integrations.find_one({"type": "EMERGENT"}, {"_id": 0})
+    if not config:
+        return {"configured": False}
+    return {**config, "configured": True}
+
+
+@router.post("/emergent-config")
+async def save_emergent_config(data: IntegrationCreate):
+    db = get_db()
+    data.type = "EMERGENT"
+    existing = await db.integrations.find_one({"type": "EMERGENT"}, {"_id": 0})
+    if existing:
+        update_data = {k: v for k, v in data.dict().items() if v is not None}
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.integrations.update_one({"type": "EMERGENT"}, {"$set": update_data})
+        updated = await db.integrations.find_one({"type": "EMERGENT"}, {"_id": 0})
+        return updated
+    else:
+        doc = {
+            "id": str(uuid.uuid4()),
+            **data.dict(),
+            "type": "EMERGENT",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.integrations.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
