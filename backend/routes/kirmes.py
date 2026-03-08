@@ -12,7 +12,7 @@ _db = None
 _decode_jwt_token = None
 
 # Standard connection types
-CONNECTION_TYPES = ["16A", "32A", "63A", "125A", "Festanschluss"]
+CONNECTION_TYPES = ["Schuko", "16A", "32A", "63A", "125A", "Festanschluss"]
 
 
 def init_kirmes_routes(db, decode_jwt_token):
@@ -48,10 +48,13 @@ async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(sec
 class StandardPrice(BaseModel):
     connection_type: str
     price: float
+    avg_kwh: float = 0.0  # Durchschnittlicher Verbrauch für Kautionsberechnung
 
 
 class StandardPriceUpdate(BaseModel):
     prices: List[StandardPrice]
+    kwh_price: Optional[float] = None
+    handling_surcharge: Optional[float] = None
 
 
 class EventCreate(BaseModel):
@@ -115,19 +118,33 @@ class EventSignup(BaseModel):
 
 @router.get("/standard-prices")
 async def get_standard_prices(user: dict = Depends(_require_staff)):
-    prices = await _db.kirmes_standard_prices.find({}, {"_id": 0}).to_list(100)
+    prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}}, {"_id": 0}).to_list(100)
     if not prices:
-        # Initialize with defaults
-        defaults = [
-            {"id": str(uuid.uuid4()), "connection_type": "16A", "price": 0.0, "updated_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "connection_type": "32A", "price": 0.0, "updated_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "connection_type": "63A", "price": 0.0, "updated_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "connection_type": "125A", "price": 0.0, "updated_at": datetime.now(timezone.utc).isoformat()},
-            {"id": str(uuid.uuid4()), "connection_type": "Festanschluss", "price": 0.0, "updated_at": datetime.now(timezone.utc).isoformat()},
-        ]
+        now = datetime.now(timezone.utc).isoformat()
+        defaults = []
+        for ct in CONNECTION_TYPES:
+            defaults.append({"id": str(uuid.uuid4()), "connection_type": ct, "price": 0.0, "avg_kwh": 0.0, "updated_at": now})
         await _db.kirmes_standard_prices.insert_many(defaults)
-        prices = defaults
-    return prices
+        # Re-fetch to avoid _id issues
+        prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}}, {"_id": 0}).to_list(100)
+    # Ensure Schuko exists
+    existing_types = [p["connection_type"] for p in prices]
+    if "Schuko" not in existing_types:
+        now = datetime.now(timezone.utc).isoformat()
+        schuko = {"id": str(uuid.uuid4()), "connection_type": "Schuko", "price": 0.0, "avg_kwh": 0.0, "updated_at": now}
+        await _db.kirmes_standard_prices.insert_one(schuko)
+        schuko.pop("_id", None)
+        prices.insert(0, schuko)
+    # Sort by CONNECTION_TYPES order
+    type_order = {t: i for i, t in enumerate(CONNECTION_TYPES)}
+    prices.sort(key=lambda p: type_order.get(p["connection_type"], 99))
+    # Get global settings
+    global_settings = await _db.kirmes_standard_prices.find_one({"type": "global"}, {"_id": 0})
+    return {
+        "prices": prices,
+        "kwh_price": global_settings.get("kwh_price", 0.0) if global_settings else 0.0,
+        "handling_surcharge": global_settings.get("handling_surcharge", 0.0) if global_settings else 0.0,
+    }
 
 
 @router.put("/standard-prices")
@@ -135,12 +152,22 @@ async def update_standard_prices(data: StandardPriceUpdate, user: dict = Depends
     now = datetime.now(timezone.utc).isoformat()
     for p in data.prices:
         await _db.kirmes_standard_prices.update_one(
-            {"connection_type": p.connection_type},
-            {"$set": {"price": p.price, "updated_at": now}},
+            {"connection_type": p.connection_type, "type": {"$ne": "global"}},
+            {"$set": {"price": p.price, "avg_kwh": p.avg_kwh, "updated_at": now}},
             upsert=True
         )
-    prices = await _db.kirmes_standard_prices.find({}, {"_id": 0}).to_list(100)
-    return prices
+    # Save global settings
+    await _db.kirmes_standard_prices.update_one(
+        {"type": "global"},
+        {"$set": {
+            "type": "global",
+            "kwh_price": data.kwh_price if data.kwh_price is not None else 0.0,
+            "handling_surcharge": data.handling_surcharge if data.handling_surcharge is not None else 0.0,
+            "updated_at": now,
+        }},
+        upsert=True
+    )
+    return await get_standard_prices(user)
 
 
 # ============== Events ==============
@@ -164,10 +191,15 @@ async def list_events(
 async def create_event(data: EventCreate, user: dict = Depends(_require_staff)):
     # Get prices
     if data.use_standard_prices:
-        std_prices = await _db.kirmes_standard_prices.find({}, {"_id": 0}).to_list(100)
-        prices = [{"connection_type": p["connection_type"], "price": p["price"]} for p in std_prices]
+        std_prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}}, {"_id": 0}).to_list(100)
+        prices = [{"connection_type": p["connection_type"], "price": p["price"], "avg_kwh": p.get("avg_kwh", 0.0)} for p in std_prices]
+        global_settings = await _db.kirmes_standard_prices.find_one({"type": "global"}, {"_id": 0})
+        kwh_price = global_settings.get("kwh_price", 0.0) if global_settings else 0.0
+        handling_surcharge = global_settings.get("handling_surcharge", 0.0) if global_settings else 0.0
     else:
         prices = [p.dict() for p in (data.custom_prices or [])]
+        kwh_price = 0.0
+        handling_surcharge = 0.0
 
     event_id = str(uuid.uuid4())
     event_doc = {
@@ -179,8 +211,10 @@ async def create_event(data: EventCreate, user: dict = Depends(_require_staff)):
         "dispo_start": data.dispo_start or "",
         "dispo_end": data.dispo_end or "",
         "notes": data.notes or "",
-        "status": "entwurf",  # entwurf, freigegeben, aktiv, abgeschlossen, abgerechnet
+        "status": "entwurf",
         "prices": prices,
+        "kwh_price": kwh_price,
+        "handling_surcharge": handling_surcharge,
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }

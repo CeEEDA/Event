@@ -29,10 +29,12 @@ const STATUS_COLORS = {
   abgerechnet: "bg-fuchsia-100 text-fuchsia-700",
 };
 
-const CONNECTION_TYPES = ["16A", "32A", "63A", "125A", "Festanschluss"];
+const CONNECTION_TYPES = ["Schuko", "16A", "32A", "63A", "125A", "Festanschluss"];
 
 function PriceListModal({ open, onClose }) {
   const [prices, setPrices] = useState([]);
+  const [kwhPrice, setKwhPrice] = useState(0);
+  const [handlingSurcharge, setHandlingSurcharge] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -40,7 +42,11 @@ function PriceListModal({ open, onClose }) {
     if (!open) return;
     setLoading(true);
     api.get("/kirmes/standard-prices")
-      .then(r => setPrices(r.data))
+      .then(r => {
+        setPrices(r.data.prices || []);
+        setKwhPrice(r.data.kwh_price || 0);
+        setHandlingSurcharge(r.data.handling_surcharge || 0);
+      })
       .catch(() => toast.error("Fehler beim Laden der Preisliste"))
       .finally(() => setLoading(false));
   }, [open]);
@@ -48,7 +54,11 @@ function PriceListModal({ open, onClose }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { prices: prices.map(p => ({ connection_type: p.connection_type, price: p.price })) };
+      const payload = {
+        prices: prices.map(p => ({ connection_type: p.connection_type, price: p.price, avg_kwh: p.avg_kwh || 0 })),
+        kwh_price: kwhPrice,
+        handling_surcharge: handlingSurcharge,
+      };
       await api.put("/kirmes/standard-prices", payload);
       toast.success("Preisliste gespeichert");
       onClose();
@@ -58,34 +68,63 @@ function PriceListModal({ open, onClose }) {
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4" data-testid="price-list-modal">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-8 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 mb-8" data-testid="price-list-modal">
         <div className="flex items-center justify-between p-5 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Standard-Preisliste</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-5">
           {loading ? <p className="text-gray-400 text-center py-8">Laden...</p> : (
-            prices.map((p, i) => (
-              <div key={p.connection_type} className="flex items-center gap-3">
-                <span className="w-32 text-sm font-medium text-gray-700">{p.connection_type}</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={p.price}
-                  onChange={e => {
-                    const updated = [...prices];
-                    updated[i] = { ...p, price: parseFloat(e.target.value) || 0 };
-                    setPrices(updated);
-                  }}
-                  className="flex-1"
-                  data-testid={`price-${p.connection_type}`}
-                />
-                <span className="text-sm text-gray-400">EUR</span>
+            <>
+              {/* Global Settings */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                <h3 className="text-sm font-medium text-gray-900">Allgemeine Einstellungen</h3>
+                <div className="flex items-center gap-3">
+                  <span className="w-40 text-sm text-gray-600">kWh-Preis</span>
+                  <Input type="number" step="0.01" value={kwhPrice} onChange={e => setKwhPrice(parseFloat(e.target.value) || 0)} className="flex-1" data-testid="kwh-price-input" />
+                  <span className="text-sm text-gray-400">EUR/kWh</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-40 text-sm text-gray-600">Handlingaufschlag</span>
+                  <Input type="number" step="0.01" value={handlingSurcharge} onChange={e => setHandlingSurcharge(parseFloat(e.target.value) || 0)} className="flex-1" data-testid="handling-surcharge-input" />
+                  <span className="text-sm text-gray-400">EUR</span>
+                </div>
               </div>
-            ))
+
+              {/* Per Connection Type */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Preise pro Anschluss</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-[10px] text-gray-400 uppercase tracking-wider px-1">
+                    <span className="w-28">Typ</span>
+                    <span className="flex-1 text-center">Anschlussgebühr</span>
+                    <span className="flex-1 text-center">Durchschn. kWh</span>
+                  </div>
+                  {prices.map((p, i) => (
+                    <div key={p.connection_type} className="flex items-center gap-2">
+                      <span className="w-28 text-sm font-medium text-gray-700">{p.connection_type}</span>
+                      <Input
+                        type="number" step="0.01" value={p.price}
+                        onChange={e => { const u = [...prices]; u[i] = { ...p, price: parseFloat(e.target.value) || 0 }; setPrices(u); }}
+                        className="flex-1" data-testid={`price-${p.connection_type}`}
+                      />
+                      <Input
+                        type="number" step="0.1" value={p.avg_kwh || 0}
+                        onChange={e => { const u = [...prices]; u[i] = { ...p, avg_kwh: parseFloat(e.target.value) || 0 }; setPrices(u); }}
+                        className="flex-1" data-testid={`avg-kwh-${p.connection_type}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-[10px] text-gray-400">
+                Kaution = Anschlussgebühr + (Durchschn. kWh x kWh-Preis) + Handlingaufschlag.
+                Pro Veranstaltung anpassbar.
+              </p>
+            </>
           )}
-          <p className="text-[10px] text-gray-400">Diese Preise werden als Standard für neue Veranstaltungen übernommen. Pro Veranstaltung können die Preise angepasst werden.</p>
         </div>
         <div className="flex justify-end gap-3 p-5 border-t border-gray-200">
           <Button variant="outline" onClick={onClose}>Abbrechen</Button>
@@ -153,7 +192,7 @@ function EventModal({ open, onClose, onSaved, editing }) {
   const loadStandardPrices = async () => {
     try {
       const r = await api.get("/kirmes/standard-prices");
-      setCustomPrices(r.data.map(p => ({ connection_type: p.connection_type, price: p.price })));
+      setCustomPrices((r.data.prices || []).map(p => ({ connection_type: p.connection_type, price: p.price })));
     } catch { /* ignore */ }
   };
 
