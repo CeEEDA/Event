@@ -268,6 +268,9 @@ export default function AdminSettingsPage() {
             <Button size="sm" onClick={openCreate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-integration-btn">
               <Plus className="w-4 h-4 mr-1" /> Neue Schnittstelle
             </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/mqtt-config")} className="text-gray-600 hover:text-fuchsia-600" data-testid="mqtt-config-link">
+              <Wifi className="w-4 h-4 mr-1" /> MQTT
+            </Button>
             <Logo size="small" />
           </div>
         </div>

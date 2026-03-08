@@ -454,16 +454,6 @@ export default function AdminPage() {
               <Settings className="w-4 h-4 mr-1" />
               Administrative Einstellungen
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/mqtt-config")}
-              className="text-gray-600 hover:text-fuchsia-600"
-              data-testid="mqtt-config-link"
-            >
-              <Radio className="w-4 h-4 mr-1" />
-              MQTT
-            </Button>
             <Logo size="small" />
           </div>
         </div>
