@@ -698,15 +698,21 @@ export default function KirmesEventDetailPage() {
                                         <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                                           <Activity className="w-3.5 h-3.5 text-fuchsia-500" /> EMU-Zähler
                                         </h5>
-                                        <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
-                                          className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
-                                          <Unlink className="w-3 h-3" /> Trennen
-                                        </button>
-                                        <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
-                                          target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                                          className="text-[10px] text-gray-400 hover:text-fuchsia-600 flex items-center gap-0.5 ml-2" data-testid={`qr-label-${signup.id}`}>
-                                          QR
-                                        </a>
+                                        <div className="flex items-center gap-3">
+                                          <button onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                            className="text-[10px] text-fuchsia-500 hover:text-fuchsia-700 flex items-center gap-0.5" data-testid={`relink-meter-${signup.id}`}>
+                                            <Link2 className="w-3 h-3" /> Neu verknüpfen
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
+                                            className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
+                                            <Unlink className="w-3 h-3" /> Trennen
+                                          </button>
+                                          <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
+                                            target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                            className="text-[10px] text-gray-400 hover:text-fuchsia-600 flex items-center gap-0.5" data-testid={`qr-label-${signup.id}`}>
+                                            QR
+                                          </a>
+                                        </div>
                                       </div>
 
                                       {/* Meter name + status */}
