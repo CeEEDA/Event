@@ -57,7 +57,7 @@ export default function SchaustellerAnmeldungPage() {
   const [myBookings, setMyBookings] = useState({ signups: [], invoices: [] });
 
   const [regForm, setRegForm] = useState({
-    firma: "", name: "", strasse: "", plz: "", ort: "",
+    firma: "", vorname: "", name: "", strasse: "", plz: "", ort: "",
     steuernummer: "", email: "", telefon: "", rechnungs_email: "",
   });
   const [loginEmail, setLoginEmail] = useState("");
@@ -218,9 +218,10 @@ export default function SchaustellerAnmeldungPage() {
               {authMode === "register" ? (
                 <div className="space-y-3" data-testid="register-form">
                   <div className="grid grid-cols-2 gap-3">
-                    <div><Label className="text-gray-700 text-sm">Firma</Label><Input value={regForm.firma} onChange={e => setRegForm(f => ({ ...f, firma: e.target.value }))} className="mt-1" data-testid="reg-firma" /></div>
+                    <div><Label className="text-gray-700 text-sm">Vorname</Label><Input value={regForm.vorname} onChange={e => setRegForm(f => ({ ...f, vorname: e.target.value }))} className="mt-1" data-testid="reg-vorname" /></div>
                     <div><Label className="text-gray-700 text-sm">Name *</Label><Input value={regForm.name} onChange={e => setRegForm(f => ({ ...f, name: e.target.value }))} className="mt-1" data-testid="reg-name" /></div>
                   </div>
+                  <div><Label className="text-gray-700 text-sm">Firma</Label><Input value={regForm.firma} onChange={e => setRegForm(f => ({ ...f, firma: e.target.value }))} className="mt-1" data-testid="reg-firma" /></div>
                   <div><Label className="text-gray-700 text-sm">Straße</Label><Input value={regForm.strasse} onChange={e => setRegForm(f => ({ ...f, strasse: e.target.value }))} className="mt-1" data-testid="reg-strasse" /></div>
                   <div className="grid grid-cols-3 gap-3">
                     <div><Label className="text-gray-700 text-sm">PLZ</Label><Input value={regForm.plz} onChange={e => setRegForm(f => ({ ...f, plz: e.target.value }))} className="mt-1" data-testid="reg-plz" /></div>

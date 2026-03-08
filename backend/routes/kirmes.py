@@ -95,6 +95,7 @@ class EventUpdate(BaseModel):
 
 class SchaustellerRegister(BaseModel):
     firma: str = ""
+    vorname: str = ""
     name: str
     strasse: str = ""
     plz: str = ""
@@ -409,6 +410,7 @@ async def register_schausteller(data: SchaustellerRegister):
     sch_doc = {
         "id": sch_id,
         "firma": data.firma,
+        "vorname": data.vorname,
         "name": data.name,
         "strasse": data.strasse,
         "plz": data.plz,
