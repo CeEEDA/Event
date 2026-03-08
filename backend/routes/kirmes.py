@@ -103,6 +103,7 @@ class SchaustellerUpdate(BaseModel):
     email: Optional[EmailStr] = None
     telefon: Optional[str] = None
     rechnungs_email: Optional[EmailStr] = None
+    kauf_auf_rechnung: Optional[bool] = None
 
 
 class EventSignup(BaseModel):
@@ -284,6 +285,85 @@ async def release_event(event_id: str, user: dict = Depends(_require_staff)):
         {"$set": {"status": "freigegeben", "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     return {"message": "Veranstaltung freigegeben", "status": "freigegeben"}
+
+
+
+class InviteRequest(BaseModel):
+    schausteller_ids: List[str]
+
+
+@router.post("/events/{event_id}/invite")
+async def invite_schausteller(event_id: str, data: InviteRequest, user: dict = Depends(_require_staff)):
+    """Send invitation emails to schausteller for an event."""
+    from email_service import send_email
+    import os
+
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    frontend_url = os.environ.get("FRONTEND_URL", "")
+    if not frontend_url:
+        # Try to construct from environment
+        frontend_url = ""
+
+    sent = 0
+    failed = 0
+    for sch_id in data.schausteller_ids:
+        sch = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0})
+        if not sch:
+            continue
+
+        signup_link = f"{frontend_url}/kirmes/anmeldung?event={event_id}"
+        start = event.get("start_date", "")
+        end = event.get("end_date", "")
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f5f5;">
+<div style="max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5;">
+  <div style="background:#d946ef;padding:28px 32px;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">Eventenergie Deutschland</h1>
+  </div>
+  <div style="padding:32px;">
+    <p style="color:#333;font-size:15px;line-height:1.6;">Hallo {sch['name']},</p>
+    <p style="color:#555;font-size:14px;line-height:1.6;">
+      Sie sind eingeladen zur Veranstaltung <strong>{event['name']}</strong>
+      ({start} – {end}{', ' + event.get('location', '') if event.get('location') else ''}).
+    </p>
+    <p style="color:#555;font-size:14px;line-height:1.6;">
+      Bitte melden Sie sich über den folgenden Link an und geben Sie Ihre Platznummer und den gewünschten Stromanschluss an:
+    </p>
+    <div style="text-align:center;margin:28px 0;">
+      <a href="{signup_link}" style="display:inline-block;background:#d946ef;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:600;">
+        Jetzt anmelden
+      </a>
+    </div>
+    <p style="color:#888;font-size:12px;line-height:1.5;">
+      Sie sind bereits registriert. Melden Sie sich mit Ihrer E-Mail-Adresse ({sch['email']}) an.
+    </p>
+  </div>
+  <div style="background:#fafafa;padding:16px 32px;border-top:1px solid #eee;">
+    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
+  </div>
+</div>
+</body></html>"""
+
+        subject = f"Einladung: {event['name']} – Stromanschluss anmelden"
+        ok = send_email(sch["email"], subject, html)
+        if ok:
+            sent += 1
+            # Track invitation
+            await _db.kirmes_invitations.update_one(
+                {"event_id": event_id, "schausteller_id": sch_id},
+                {"$set": {"sent_at": datetime.now(timezone.utc).isoformat(), "email": sch["email"]}},
+                upsert=True
+            )
+        else:
+            failed += 1
+
+    return {"sent": sent, "failed": failed, "message": f"{sent} Einladung(en) versendet, {failed} fehlgeschlagen"}
+
 
 
 # ============== Schausteller (Public Registration) ==============

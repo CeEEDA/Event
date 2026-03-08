@@ -174,6 +174,7 @@ export default function AdminPage() {
       firma: sch.firma || "", name: sch.name || "", strasse: sch.strasse || "",
       plz: sch.plz || "", ort: sch.ort || "", steuernummer: sch.steuernummer || "",
       email: sch.email || "", telefon: sch.telefon || "", rechnungs_email: sch.rechnungs_email || "",
+      kauf_auf_rechnung: sch.kauf_auf_rechnung || false,
     });
     setSchaustellerModalOpen(true);
   };
@@ -1460,6 +1461,19 @@ export default function AdminPage() {
               <Label className="text-gray-700 text-sm">Rechnungs-E-Mail</Label>
               <Input type="email" value={schaustellerForm.rechnungs_email} onChange={e => setSchaustellerForm(f => ({ ...f, rechnungs_email: e.target.value }))} className="border-gray-300" data-testid="sch-rechnungs-email-input" />
               <p className="text-[10px] text-gray-400">Rechnungen werden an diese Adresse versendet</p>
+            </div>
+            <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+              <input
+                type="checkbox"
+                id="kauf_auf_rechnung"
+                checked={schaustellerForm.kauf_auf_rechnung || false}
+                onChange={e => setSchaustellerForm(f => ({ ...f, kauf_auf_rechnung: e.target.checked }))}
+                className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                data-testid="sch-kauf-auf-rechnung"
+              />
+              <label htmlFor="kauf_auf_rechnung" className="text-sm text-gray-700 cursor-pointer">
+                Kauf auf Rechnung <span className="text-xs text-gray-400">(keine Zahlungsmittel-Hinterlegung nötig)</span>
+              </label>
             </div>
           </div>
           <DialogFooter>
