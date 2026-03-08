@@ -18,7 +18,7 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 7. **Email Notifications**: Password reset via SMTP.
 8. **MQTT Integration**: DSE WebNet Gateways via MQTT.
 9. **Pi Data Sync**: Raspberry Pi records locally (SQLite) and syncs via HTTPS API.
-10. **EpiRent ERP Integration**: Order management page with live data from EpiRent ERP API.
+10. **EpiRent ERP Integration**: Order management with live data from EpiRent API.
 
 ## Tech Stack
 - **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx
@@ -41,7 +41,7 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 │       ├── mqtt_config.py
 │       ├── energy_monitoring.py
 │       ├── admin_settings.py
-│       └── orders.py              # NEW: EpiRent order proxy
+│       └── orders.py              # EpiRent order proxy with delivery addresses
 └── frontend/src/pages/
     ├── AdminPage.js
     ├── AdminSettingsPage.js
@@ -50,57 +50,36 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
     ├── EnergyMonitoringDetailPage.js
     ├── GeneratorDashboardPage.js
     ├── GeneratorDetailPage.js
-    └── OrdersPage.js              # NEW: Auftragsverwaltung
+    └── OrdersPage.js              # Auftragsverwaltung
 ```
 
 ## What's Been Implemented
 - All device CRUD with image uploads, document attachments, parts management
 - QR code system, service plans with cascade delete
-- Generator monitoring dashboard
+- Generator monitoring dashboard with live MQTT data
 - SMTP Email, MQTT Integration backend
 - Energy Monitoring Dashboard with real EMU data
 - OpenStreetMap GPS locations
 - HTTPS Ingest API for Pi sync
 - Pi Sync Script (downloadable)
 - Account-level time-based access for Kunden
-- Pi connection fields in Messkoffer device form
-- Date range picker (Von/Bis) with CSV export
-- Online filtering - overview only shows devices with data
-- Data access range for Kunden
 - DSE890 Gateway Setup with MQTT-Info and Topic-Download
 - EpiRent ERP Integration: Admin-Einstellungen with API-Test
 - **Auftragsverwaltung (Order Management) Page** (2026-03-08):
-  - Backend proxy to EpiRent `/v1/order/filter` API with authentication
-  - Contact address resolution via parallel API calls
+  - Backend proxy to EpiRent `/v1/order/filter` API with JWT authentication
+  - **Lieferanschrift** (delivery address) from `address_delivery` field via order detail API
+  - Optimized: date/search filters applied BEFORE fetching addresses (reduces API calls)
   - Date range filter (default: -1 week to +4 weeks)
-  - Free-text search (order number, event, customer, address)
-  - Sortable table columns
+  - Free-text search (order number, event, customer)
+  - Sortable table columns with sort indicators
   - Status badges (Offen, Bestätigt, Storniert, Archiviert)
-  - Auth-protected endpoint
 
 ## Key API Endpoints
 - `GET /api/orders/epirent` - Proxy to EpiRent orders (auth required, params: date_from, date_to, search, page, page_size)
 - `GET, POST, PUT, DELETE /api/admin/integrations` - CRUD for third-party integrations
 - `POST /api/admin/integrations/{id}/test` - Test integration connection
 - `GET /api/energy-monitoring/devices` - List energy monitoring devices
-- `GET /api/energy-monitoring/devices/:id/telemetry` - Device telemetry data
 - `POST /api/energy-monitoring/ingest` - Pi batch upload
-
-## User Permission Structure
-```json
-{
-  "access_type": "permanent",
-  "apps": {
-    "energy_monitoring": {
-      "enabled": false,
-      "access_all": false,
-      "device_ids": [],
-      "data_access_start": null,
-      "data_access_end": null
-    }
-  }
-}
-```
 
 ## Backlog
 ### P0
@@ -109,14 +88,12 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ### P1
 - Self-hosted MQTT Broker (Mosquitto) — move broker URL to .env
 - "Kirmeskiste" device type support
-- Scale MQTT to 9+ gateways
 
 ### P2
 - Admin file size limits
 
 ### Refactoring
 - Move MQTT broker URL from hardcoded to backend/.env
-- Break down ServiceplanPage.js, DeviceManagementPage.js
 
 ## Test Credentials
 - Admin: admin@test.com / password

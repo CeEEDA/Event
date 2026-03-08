@@ -219,7 +219,7 @@ export default function OrdersPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Suche: Auftrag, Event, Kunde, Adresse..."
+              placeholder="Suche: Auftrag, Event, Kunde, Lieferanschrift..."
               className="pl-9 h-9 text-sm"
               data-testid="order-search-input"
             />
@@ -295,7 +295,7 @@ export default function OrdersPage() {
                         Kunde <SortIcon field="contact_name" />
                       </th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">
-                        Adresse
+                        Lieferanschrift
                       </th>
                       <th
                         className="text-left px-4 py-3 font-medium text-gray-600 cursor-pointer hover:text-gray-900 select-none whitespace-nowrap"

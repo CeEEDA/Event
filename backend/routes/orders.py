@@ -33,24 +33,33 @@ async def _get_epirent_config():
     return config
 
 
-async def _fetch_contact_address(client, api_url, headers, contact_pk):
-    """Fetch a single contact's address from EpiRent."""
+def _format_delivery_address(addr):
+    """Format an EpiRent address_delivery object into a readable string."""
+    if not addr or not isinstance(addr, dict):
+        return ""
+    name = addr.get("name", "")
+    street = addr.get("street", "")
+    plz = addr.get("postal_code", "")
+    city = addr.get("city", "")
+    plz_city = f"{plz} {city}".strip()
+    parts = [p for p in [name, street, plz_city] if p]
+    return ", ".join(parts)
+
+
+async def _fetch_order_delivery_address(client, api_url, headers, order_pk):
+    """Fetch delivery address from a single order's detail endpoint."""
     try:
-        resp = await client.get(f"{api_url}/v1/contact/{contact_pk}", headers=headers)
+        resp = await client.get(f"{api_url}/v1/order/{order_pk}", headers=headers)
         data = resp.json()
         payload = data.get("payload")
         if isinstance(payload, list) and len(payload) > 0:
             payload = payload[0]
         if isinstance(payload, dict):
-            addr = payload.get("address") or {}
-            street = addr.get("street", "")
-            plz = addr.get("postal_code", "")
-            city = addr.get("city", "")
-            parts = [p for p in [street, f"{plz} {city}".strip()] if p]
-            return contact_pk, ", ".join(parts)
+            addr = payload.get("address_delivery")
+            return order_pk, _format_delivery_address(addr)
     except Exception:
         pass
-    return contact_pk, ""
+    return order_pk, ""
 
 
 @router.get("/epirent")
@@ -88,29 +97,7 @@ async def get_epirent_orders(
 
             orders_raw = data.get("payload", [])
 
-            # Collect unique contact PKs for address lookup
-            contact_pks = set()
-            for o in orders_raw:
-                ct = o.get("contact")
-                if ct and ct.get("primary_key"):
-                    contact_pks.add(ct["primary_key"])
-
-            # Batch-fetch contact addresses concurrently
-            address_map = {}
-            if contact_pks:
-                sem = asyncio.Semaphore(10)
-
-                async def _fetch_with_sem(pk):
-                    async with sem:
-                        return await _fetch_contact_address(client, api_url, {
-                            "X-EPI-NO-SESSION": "True",
-                            "X-EPI-ACC-TOK": api_key,
-                        }, pk)
-
-                results = await asyncio.gather(*[_fetch_with_sem(pk) for pk in contact_pks])
-                address_map = {pk: addr for pk, addr in results}
-
-            # Parse orders
+            # Step 1: Parse orders (without addresses yet)
             result = []
             for o in orders_raw:
                 event_start = None
@@ -128,9 +115,6 @@ async def get_epirent_orders(
                         dispo_end = sched.get("date_end")
 
                 contact = o.get("contact") or {}
-                contact_pk = contact.get("primary_key")
-                contact_name = contact.get("name", "")
-                address = address_map.get(contact_pk, "") if contact_pk else ""
 
                 order = {
                     "primary_key": o.get("primary_key"),
@@ -142,9 +126,9 @@ async def get_epirent_orders(
                     "dispo_start": dispo_start,
                     "dispo_end": dispo_end,
                     "date_shipping": o.get("date_shipping"),
-                    "contact_name": contact_name,
-                    "contact_pk": contact_pk,
-                    "address": address,
+                    "contact_name": contact.get("name", ""),
+                    "contact_pk": contact.get("primary_key"),
+                    "address": "",
                     "customer_no": o.get("customer_no"),
                     "is_confirmed": o.get("is_confirmed", False),
                     "is_canceled": o.get("is_canceled", False),
@@ -157,7 +141,7 @@ async def get_epirent_orders(
                 }
                 result.append(order)
 
-            # Date filtering
+            # Step 2: Apply date filtering BEFORE fetching addresses
             if date_from or date_to:
                 filtered = []
                 for o in result:
@@ -174,16 +158,33 @@ async def get_epirent_orders(
                     filtered.append(o)
                 result = filtered
 
-            # Free-text search
+            # Step 3: Apply text search (except address) BEFORE fetching addresses
             if search:
                 s = search.lower()
                 result = [o for o in result if
                     s in o.get("event", "").lower() or
                     s in o.get("order_no", "").lower() or
                     s in o.get("contact_name", "").lower() or
-                    s in o.get("address", "").lower() or
                     s in str(o.get("customer_no", "")).lower()
                 ]
+
+            # Step 4: Fetch delivery addresses only for filtered results
+            order_pks = [o["primary_key"] for o in result if o.get("primary_key")]
+            if order_pks:
+                epi_headers = {
+                    "X-EPI-NO-SESSION": "True",
+                    "X-EPI-ACC-TOK": api_key,
+                }
+                sem = asyncio.Semaphore(15)
+
+                async def _fetch_with_sem(pk):
+                    async with sem:
+                        return await _fetch_order_delivery_address(client, api_url, epi_headers, pk)
+
+                addr_results = await asyncio.gather(*[_fetch_with_sem(pk) for pk in order_pks])
+                delivery_map = {pk: addr for pk, addr in addr_results}
+                for o in result:
+                    o["address"] = delivery_map.get(o["primary_key"], "")
 
             return {
                 "orders": result,
