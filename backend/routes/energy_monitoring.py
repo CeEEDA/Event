@@ -693,15 +693,209 @@ async def download_setup_script(token: str):
     )
 
 
+
+# ============== Kirmeskiste Setup ==============
+
+class KirmeskisteSetupRequest(BaseModel):
+    meter_ips: list[str] = ["192.168.1.101", "192.168.1.102", "192.168.1.103", "192.168.1.104"]
+
+@router.post("/devices/{device_id}/kirmeskiste-setup")
+async def generate_kirmeskiste_setup(device_id: str, body: KirmeskisteSetupRequest = None, admin: dict = Depends(require_admin)):
+    """Generate an all-in-one bash installer for Kirmeskiste with 4x EMU Pro II meters."""
+    if body is None:
+        body = KirmeskisteSetupRequest()
+
+    device = await db.devices.find_one({"id": device_id, "device_type": "kirmeskiste"}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Kirmeskiste nicht gefunden")
+
+    # Generate a new device key
+    plain_key = secrets.token_hex(24)
+    key_hash = _hash_key(plain_key)
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"device_key_hash": key_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    # Create 4 meters (if not already existing)
+    meter_ids = []
+    existing_meters = await db.emu_meters.find({"device_id": device_id}, {"_id": 0}).to_list(10)
+    existing_by_ip = {m.get("meter_ip", ""): m for m in existing_meters}
+
+    for i, ip in enumerate(body.meter_ips[:4]):
+        if ip in existing_by_ip:
+            meter_ids.append(existing_by_ip[ip]["id"])
+        else:
+            meter_id = str(uuid.uuid4())
+            await db.emu_meters.insert_one({
+                "id": meter_id,
+                "device_id": device_id,
+                "meter_name": f"EMU Zaehler {i+1}",
+                "meter_ip": ip,
+                "meter_port": 502,
+                "meter_type": "EMU Professional II 3/5",
+                "modbus_slave_id": 1,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            meter_ids.append(meter_id)
+
+    # Update device with meter count
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"meter_count": len(meter_ids)}}
+    )
+
+    # Get API URL
+    api_url = os.environ.get("FRONTEND_URL", "").rstrip("/") + "/api"
+
+    # Read the kirmeskiste_sync.py template
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "kirmeskiste_sync.py")
+    with open(script_path, "r") as f:
+        sync_script = f.read()
+
+    # Build meter config sections
+    meter_conf_sections = ""
+    for i, (ip, mid) in enumerate(zip(body.meter_ips[:4], meter_ids)):
+        meter_conf_sections += f"""
+[meter_{i+1}]
+meter_id = {mid}
+ip = {ip}
+port = 502
+slave_id = 1
+name = Zaehler {i+1}
+"""
+
+    # Generate the all-in-one setup script
+    bash_script = f"""#!/bin/bash
+# ==============================================================
+#  Kirmeskiste Auto-Setup - {device.get('serial_number', device_id[:12])}
+#  Generiert am {datetime.now().strftime('%d.%m.%Y %H:%M')}
+#  4x EMU Professional II 3/5 via Modbus TCP
+# ==============================================================
+set -e
+
+echo "========================================================"
+echo "  Kirmeskiste Auto-Setup"
+echo "  Geraet: {device.get('serial_number', device_id[:12])}"
+echo "========================================================"
+
+# ----- System aktualisieren -----
+echo "[1/5] System aktualisieren..."
+sudo apt-get update -qq
+sudo apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients
+
+# ----- Python-Umgebung -----
+echo "[2/5] Python-Umgebung einrichten..."
+INSTALL_DIR="/opt/kirmeskiste"
+sudo mkdir -p "$INSTALL_DIR"
+sudo python3 -m venv "$INSTALL_DIR/venv"
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet pymodbus requests gpsd-py3
+
+# ----- Sync-Skript installieren -----
+echo "[3/5] Sync-Skript installieren..."
+sudo tee "$INSTALL_DIR/kirmeskiste_sync.py" > /dev/null << 'SYNC_SCRIPT'
+{sync_script}
+SYNC_SCRIPT
+sudo chmod +x "$INSTALL_DIR/kirmeskiste_sync.py"
+
+# ----- Konfiguration -----
+echo "[4/5] Konfiguration schreiben..."
+sudo mkdir -p /var/lib/kirmeskiste
+
+sudo tee /etc/kirmeskiste.conf > /dev/null << 'CONF'
+[kirmeskiste]
+api_url = {api_url}
+device_key = {plain_key}
+device_id = {device_id}
+db_path = /var/lib/kirmeskiste/kirmeskiste.sqlite
+read_interval = 1
+sync_interval = 30
+retry_delay = 30
+batch_size = 500
+{meter_conf_sections}
+CONF
+
+sudo chmod 600 /etc/kirmeskiste.conf
+
+# ----- Systemd Service -----
+echo "[5/5] Systemd-Service einrichten..."
+sudo tee /etc/systemd/system/kirmeskiste_sync.service > /dev/null << 'SERVICE'
+[Unit]
+Description=Kirmeskiste Sync - Eventenergie Portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/kirmeskiste/venv/bin/python3 /opt/kirmeskiste/kirmeskiste_sync.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/kirmeskiste
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable kirmeskiste_sync
+sudo systemctl start kirmeskiste_sync
+
+echo ""
+echo "========================================================"
+echo "  Setup abgeschlossen!"
+echo "========================================================"
+echo ""
+echo "  Geraet-ID:     {device_id}"
+echo "  Geraet-Key:    {plain_key[:8]}..."
+echo "  Portal:        {api_url}"
+echo "  Konfiguration: /etc/kirmeskiste.conf"
+echo "  Datenbank:     /var/lib/kirmeskiste/kirmeskiste.sqlite"
+echo ""
+echo "  Zaehler:"
+"""
+    for i, (ip, mid) in enumerate(zip(body.meter_ips[:4], meter_ids)):
+        bash_script += f'echo "    Zaehler {i+1}: {ip} -> {mid[:12]}..."\n'
+
+    bash_script += """echo ""
+echo "  Service pruefen:"
+echo "    sudo systemctl status kirmeskiste_sync"
+echo "    sudo journalctl -u kirmeskiste_sync -f"
+echo ""
+"""
+
+    # Store script for download
+    download_token = secrets.token_urlsafe(32)
+    _setup_downloads[download_token] = {
+        "script": bash_script,
+        "device_id": device_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    }
+
+    download_url = f"/api/energy-monitoring/setup-download/{download_token}"
+
+    return {
+        "download_url": download_url,
+        "download_token": download_token,
+        "device_id": device_id,
+        "device_key": plain_key,
+        "meter_ids": meter_ids,
+        "meter_ips": body.meter_ips[:4],
+        "message": f"Setup-Skript generiert fuer {device.get('serial_number', '')}",
+    }
+
+
 # ============== Ingest API (Pi Push) ==============
 
 @router.post("/ingest")
 async def ingest_data(data: IngestBatch):
     """Receive batch of EMU data from Pi sync script. Authenticated via per-device key."""
     # First try per-device key authentication
-    device = await db.devices.find_one({"id": data.device_id, "device_type": "messkoffer"})
+    device = await db.devices.find_one({"id": data.device_id, "device_type": {"$in": ["messkoffer", "kirmeskiste"]}})
     if not device:
-        raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden (Messkoffer/Kirmeskiste)")
 
     # Verify device key
     key_hash = device.get("device_key_hash")

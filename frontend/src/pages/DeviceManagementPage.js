@@ -33,15 +33,19 @@ import { QRCodeSVG } from "qrcode.react";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 // Pi Setup Section for Messkoffer - generates all-in-one installer
-function PiSetupSection({ deviceId, deviceName }) {
+function PiSetupSection({ deviceId, deviceName, deviceType }) {
   const [loading, setLoading] = useState(false);
   const [wgetCommand, setWgetCommand] = useState(null);
+  const isKirmeskiste = deviceType === "kirmeskiste";
 
   const handleGenerateSetup = async () => {
     if (!window.confirm("Ein neuer Geräteschlüssel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schlüssel existiert, wird er ersetzt.\n\nFortfahren?")) return;
     setLoading(true);
     try {
-      const res = await api.post(`/energy-monitoring/devices/${deviceId}/setup-script`);
+      const endpoint = isKirmeskiste
+        ? `/energy-monitoring/devices/${deviceId}/kirmeskiste-setup`
+        : `/energy-monitoring/devices/${deviceId}/setup-script`;
+      const res = await api.post(endpoint);
       const url = res.data.download_url;
       setWgetCommand(`wget "${url}" -O setup.sh && sudo bash setup.sh`);
       toast.success("Setup-Skript generiert!");
@@ -64,7 +68,9 @@ function PiSetupSection({ deviceId, deviceName }) {
         <h3 className="text-sm font-medium text-gray-900">Pi Setup</h3>
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
-        Generiert ein Installations-Skript mit Shelly-Logger, GPS-Anbindung, lokaler Datenbank und Portal-Sync.
+        {isKirmeskiste
+          ? "Generiert ein Installations-Skript mit 4x EMU Pro II Modbus-Anbindung, GPS, lokaler Datenbank und Portal-Sync."
+          : "Generiert ein Installations-Skript mit Shelly-Logger, GPS-Anbindung, lokaler Datenbank und Portal-Sync."}
       </p>
 
       {wgetCommand && (
@@ -91,7 +97,11 @@ function PiSetupSection({ deviceId, deviceName }) {
         <Download className="w-3.5 h-3.5 mr-1.5" />
         {loading ? "Wird generiert..." : "Setup generieren"}
       </Button>
-      <p className="text-[10px] text-gray-400 mt-2">Enthält: Shelly-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst</p>
+      <p className="text-[10px] text-gray-400 mt-2">
+        {isKirmeskiste
+          ? "Enthält: 4x EMU Modbus-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst"
+          : "Enthält: Shelly-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst"}
+      </p>
     </div>
   );
 }
@@ -870,11 +880,11 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           )}
 
           {/* Messkoffer-specific fields: Pi connection + Setup */}
-          {formData.device_type === "messkoffer" && (
+          {(formData.device_type === "messkoffer" || formData.device_type === "kirmeskiste") && (
             <>
               {/* Pi Setup - all-in-one installer (only for existing devices) */}
               {editing && isAdmin && (
-                <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} />
+                <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} deviceType={formData.device_type} />
               )}
             </>
           )}
