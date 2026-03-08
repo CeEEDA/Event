@@ -809,6 +809,215 @@ class TestSchaustellerManagement:
         assert "verification_code" not in data, "verification_code should not be exposed"
 
 
+# ===================== Admin Set Schausteller Password Tests =====================
+
+class TestSchaustellerSetPassword:
+    """Test admin/staff set password for schausteller (POST /api/kirmes/schausteller/{id}/set-password)"""
+    
+    def test_set_password_requires_auth(self, api_client):
+        """Set password endpoint requires staff auth"""
+        session = requests.Session()
+        session.headers.update({"Content-Type": "application/json"})
+        response = session.post(f"{BASE_URL}/api/kirmes/schausteller/some-id/set-password", json={"password": "test123"})
+        assert response.status_code in [401, 403], "Should require authentication"
+    
+    def test_set_password_as_admin(self, admin_client, api_client):
+        """Admin can set password for schausteller"""
+        # 1. Create a new schausteller (unverified)
+        unique_email = f"setpw_admin_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": f"{TEST_PREFIX}SetPwAdminFirma",
+            "name": "SetPw Admin Test",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DESETPW1",
+            "email": unique_email,
+            "password": "initialpass",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        assert reg_response.status_code == 200
+        sch_id = reg_response.json()["id"]
+        
+        # Verify initially not verified
+        sch_data = reg_response.json()
+        assert sch_data.get("email_verified") == False
+        
+        # 2. Admin sets password
+        new_password = "newadminset123"
+        set_response = admin_client.post(f"{BASE_URL}/api/kirmes/schausteller/{sch_id}/set-password", json={"password": new_password})
+        assert set_response.status_code == 200
+        
+        response_data = set_response.json()
+        assert "message" in response_data
+        assert "gesetzt" in response_data["message"].lower() or "set" in response_data["message"].lower()
+        
+        # 3. Verify schausteller is now verified and can login
+        login_response = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json={
+            "email": unique_email,
+            "password": new_password
+        })
+        assert login_response.status_code == 200, f"Should login with new password, got {login_response.status_code}: {login_response.text}"
+        
+        login_data = login_response.json()
+        assert login_data["email"] == unique_email
+        assert "password_hash" not in login_data
+    
+    def test_set_password_as_mitarbeiter(self, staff_client, api_client):
+        """Mitarbeiter (staff) can also set password for schausteller"""
+        # Create a new schausteller
+        unique_email = f"setpw_staff_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": f"{TEST_PREFIX}SetPwStaffFirma",
+            "name": "SetPw Staff Test",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DESETPW2",
+            "email": unique_email,
+            "password": "initialpass",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        assert reg_response.status_code == 200
+        sch_id = reg_response.json()["id"]
+        
+        # Staff sets password
+        new_password = "staffsetpw123"
+        set_response = staff_client.post(f"{BASE_URL}/api/kirmes/schausteller/{sch_id}/set-password", json={"password": new_password})
+        assert set_response.status_code == 200
+    
+    def test_set_password_too_short_fails(self, admin_client, api_client):
+        """Set password with < 6 chars should fail"""
+        # Create schausteller
+        unique_email = f"setpw_short_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": f"{TEST_PREFIX}SetPwShortFirma",
+            "name": "SetPw Short Test",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DESETPW3",
+            "email": unique_email,
+            "password": "initialpass",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        sch_id = reg_response.json()["id"]
+        
+        # Try to set short password
+        short_password = "12345"  # Only 5 chars
+        set_response = admin_client.post(f"{BASE_URL}/api/kirmes/schausteller/{sch_id}/set-password", json={"password": short_password})
+        assert set_response.status_code == 400
+        assert "6" in set_response.json().get("detail", ""), "Error should mention 6 character requirement"
+    
+    def test_set_password_nonexistent_schausteller_fails(self, admin_client):
+        """Set password for non-existent schausteller returns 404"""
+        fake_id = f"nonexistent_{uuid.uuid4().hex}"
+        set_response = admin_client.post(f"{BASE_URL}/api/kirmes/schausteller/{fake_id}/set-password", json={"password": "somepassword123"})
+        assert set_response.status_code == 404
+    
+    def test_set_password_marks_email_verified(self, admin_client, api_client):
+        """Setting password via admin should mark email as verified"""
+        # Create unverified schausteller
+        unique_email = f"setpw_verify_{uuid.uuid4().hex[:8]}@test.de"
+        reg_payload = {
+            "firma": f"{TEST_PREFIX}SetPwVerifyFirma",
+            "name": "SetPw Verify Test",
+            "strasse": "Str 1",
+            "plz": "12345",
+            "ort": "Stadt",
+            "steuernummer": "DESETPW4",
+            "email": unique_email,
+            "password": "initialpass",
+            "telefon": "123",
+            "rechnungs_email": unique_email
+        }
+        reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=reg_payload)
+        sch_id = reg_response.json()["id"]
+        
+        # Try to login before set-password (should fail - not verified)
+        login_before = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json={
+            "email": unique_email,
+            "password": "initialpass"
+        })
+        assert login_before.status_code == 403, "Should fail login because not verified"
+        
+        # Admin sets password
+        admin_client.post(f"{BASE_URL}/api/kirmes/schausteller/{sch_id}/set-password", json={"password": "adminset123"})
+        
+        # Now login should work (email verified by set-password)
+        login_after = api_client.post(f"{BASE_URL}/api/kirmes/public/login", json={
+            "email": unique_email,
+            "password": "adminset123"
+        })
+        assert login_after.status_code == 200, "Should login after admin set password (email now verified)"
+
+
+# ===================== Booking Confirmation Email Test =====================
+
+class TestBookingConfirmationEmail:
+    """Test that signup sends booking confirmation email (no error returned)"""
+    
+    def test_signup_sends_confirmation_email_no_error(self, api_client, admin_client):
+        """Signup for event should send confirmation email (check no API error)"""
+        # 1. Create and release an event
+        event_payload = {
+            "name": f"{TEST_PREFIX}EmailConfirmTest_{uuid.uuid4().hex[:6]}",
+            "location": "Email Stadt",
+            "start_date": "2027-02-01",
+            "end_date": "2027-02-10",
+            "use_standard_prices": True
+        }
+        create_response = admin_client.post(f"{BASE_URL}/api/kirmes/events", json=event_payload)
+        assert create_response.status_code == 200
+        event_id = create_response.json()["id"]
+        
+        admin_client.post(f"{BASE_URL}/api/kirmes/events/{event_id}/release")
+        
+        # 2. Register schausteller with valid email (for email sending)
+        unique_email = f"emailconfirm_{uuid.uuid4().hex[:8]}@test.de"
+        sch_payload = {
+            "firma": f"{TEST_PREFIX}EmailConfirmFirma",
+            "name": "Email Confirm Tester",
+            "strasse": "Emailstr 1",
+            "plz": "50000",
+            "ort": "Emailstadt",
+            "steuernummer": "DEEMAIL1",
+            "email": unique_email,
+            "password": "emailpass123",
+            "telefon": "555-9999",
+            "rechnungs_email": unique_email
+        }
+        reg_response = api_client.post(f"{BASE_URL}/api/kirmes/public/register", json=sch_payload)
+        assert reg_response.status_code == 200
+        schausteller_id = reg_response.json()["id"]
+        
+        # 3. Sign up for the event (this should trigger confirmation email)
+        signup_payload = {
+            "event_id": event_id,
+            "schausteller_id": schausteller_id,
+            "platznummer": "EMAIL1",
+            "fahrgeschaeft": "Testriesenrad",
+            "connection_type": "32A",
+            "payment_method": "kreditkarte"
+        }
+        
+        signup_response = api_client.post(f"{BASE_URL}/api/kirmes/public/signup", json=signup_payload)
+        
+        # The signup should succeed even if email sending fails (wrapped in try/except)
+        assert signup_response.status_code == 200, f"Signup should succeed, got {signup_response.status_code}: {signup_response.text}"
+        
+        signup_data = signup_response.json()
+        assert signup_data["event_id"] == event_id
+        assert signup_data["platznummer"] == "EMAIL1"
+        # Verify the response contains expected data (email is sent async, but signup succeeds)
+
+
 # ===================== Cleanup =====================
 
 class TestCleanup:

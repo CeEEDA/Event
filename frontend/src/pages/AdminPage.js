@@ -84,6 +84,7 @@ export default function AdminPage() {
     firma: "", name: "", strasse: "", plz: "", ort: "",
     steuernummer: "", email: "", telefon: "", rechnungs_email: "",
   });
+  const [schaustellerNewPassword, setSchaustellerNewPassword] = useState("");
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -176,6 +177,7 @@ export default function AdminPage() {
       email: sch.email || "", telefon: sch.telefon || "", rechnungs_email: sch.rechnungs_email || "",
       kauf_auf_rechnung: sch.kauf_auf_rechnung || false,
     });
+    setSchaustellerNewPassword("");
     setSchaustellerModalOpen(true);
   };
 
@@ -198,6 +200,22 @@ export default function AdminPage() {
       loadSchausteller();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Fehler beim Speichern");
+    }
+  };
+
+  const handleSetSchaustellerPassword = async () => {
+    if (!schaustellerNewPassword || schaustellerNewPassword.length < 6) {
+      toast.error("Passwort muss mindestens 6 Zeichen haben");
+      return;
+    }
+    try {
+      await api.post(`/kirmes/schausteller/${editingSchausteller.id}/set-password`, {
+        password: schaustellerNewPassword,
+      });
+      toast.success("Passwort wurde gesetzt");
+      setSchaustellerNewPassword("");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler beim Setzen des Passworts");
     }
   };
 
@@ -1474,6 +1492,37 @@ export default function AdminPage() {
               <label htmlFor="kauf_auf_rechnung" className="text-sm text-gray-700 cursor-pointer">
                 Kauf auf Rechnung <span className="text-xs text-gray-400">(keine Zahlungsmittel-Hinterlegung nötig)</span>
               </label>
+            </div>
+
+            {/* Password Management */}
+            <div className="pt-3 border-t border-gray-200 space-y-3">
+              <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-fuchsia-600" />
+                Passwort verwalten
+              </h4>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm text-gray-500 mb-2">Neues Passwort setzen</p>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={schaustellerNewPassword}
+                    onChange={(e) => setSchaustellerNewPassword(e.target.value)}
+                    placeholder="Neues Passwort (min. 6 Zeichen)"
+                    className="border-gray-300 flex-1"
+                    data-testid="sch-new-password-input"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleSetSchaustellerPassword}
+                    disabled={!schaustellerNewPassword || schaustellerNewPassword.length < 6}
+                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    data-testid="sch-set-password-btn"
+                  >
+                    Setzen
+                  </Button>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">Setzt das Passwort und markiert die E-Mail als bestätigt</p>
+              </div>
             </div>
           </div>
           <DialogFooter>

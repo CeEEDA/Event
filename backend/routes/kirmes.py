@@ -464,6 +464,63 @@ def _send_verification_email(email, name, code):
     send_email(email, "Ihr Bestätigungscode – Eventenergie", html)
 
 
+def _send_booking_confirmation_email(schausteller, event, signup):
+    from email_service import send_email
+    name = schausteller.get("name", "")
+    email = schausteller.get("email", "")
+    event_name = event.get("name", "")
+    location = event.get("location", "")
+    start = event.get("start_date", "")
+    end = event.get("end_date", "")
+    platznummer = signup.get("platznummer", "")
+    fahrgeschaeft = signup.get("fahrgeschaeft", "")
+    conn_type = signup.get("connection_type", "")
+    price = signup.get("price", 0)
+    payment = signup.get("payment_method", "")
+
+    payment_labels = {"kreditkarte": "Kreditkarte", "paypal": "PayPal", "rechnung": "Auf Rechnung"}
+    payment_label = payment_labels.get(payment, payment)
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f5f5;">
+<div style="max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5;">
+  <div style="background:#d946ef;padding:28px 32px;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">Eventenergie Deutschland</h1>
+  </div>
+  <div style="padding:32px;">
+    <p style="color:#333;font-size:15px;line-height:1.6;">Hallo {name},</p>
+    <p style="color:#555;font-size:14px;line-height:1.6;">
+      Ihre Anmeldung für die Veranstaltung <strong>{event_name}</strong> wurde erfolgreich entgegengenommen.
+    </p>
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin:20px 0;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;width:140px;">Veranstaltung</td><td style="padding:6px 0;color:#333;font-size:13px;font-weight:600;">{event_name}</td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Ort</td><td style="padding:6px 0;color:#333;font-size:13px;">{location}</td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Zeitraum</td><td style="padding:6px 0;color:#333;font-size:13px;">{start} – {end}</td></tr>
+        <tr><td colspan="2" style="padding:8px 0;"><hr style="border:none;border-top:1px solid #e5e7eb;"></td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Platznummer</td><td style="padding:6px 0;color:#333;font-size:13px;font-weight:600;">{platznummer}</td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Fahrgeschäft</td><td style="padding:6px 0;color:#333;font-size:13px;">{fahrgeschaeft}</td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Stromanschluss</td><td style="padding:6px 0;color:#333;font-size:13px;font-weight:600;">{conn_type}</td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Anschlussgebühr</td><td style="padding:6px 0;color:#333;font-size:13px;font-weight:600;">{price:.2f} EUR</td></tr>
+        <tr><td style="padding:6px 0;color:#888;font-size:13px;">Zahlungsmittel</td><td style="padding:6px 0;color:#333;font-size:13px;">{payment_label}</td></tr>
+      </table>
+    </div>
+    <p style="color:#555;font-size:13px;line-height:1.6;">
+      Bei Fragen wenden Sie sich bitte an unser Team.
+    </p>
+  </div>
+  <div style="background:#fafafa;padding:16px 32px;border-top:1px solid #eee;">
+    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
+  </div>
+</div>
+</body></html>"""
+    try:
+        send_email(email, f"Buchungsbestätigung: {event_name} – Platz {platznummer}", html)
+    except Exception:
+        pass  # Don't fail signup if email fails
+
+
 class VerifyEmailRequest(BaseModel):
     email: str
     code: str
@@ -610,6 +667,10 @@ async def signup_for_event(data: EventSignup):
     await _db.kirmes_signups.insert_one(signup_doc)
     signup_doc.pop("_id", None)
     signup_doc["schausteller"] = sch
+
+    # Send booking confirmation email
+    _send_booking_confirmation_email(sch, event, signup_doc)
+
     return signup_doc
 
 
@@ -643,6 +704,29 @@ async def get_schausteller(sch_id: str, user: dict = Depends(_require_staff)):
         s["event_name"] = event["name"] if event else "Unbekannt"
     sch["signups"] = signups
     return sch
+
+
+class SchaustellerSetPassword(BaseModel):
+    password: str
+
+
+@router.post("/schausteller/{sch_id}/set-password")
+async def set_schausteller_password(sch_id: str, data: SchaustellerSetPassword, user: dict = Depends(_require_staff)):
+    """Staff endpoint - Set password for a schausteller."""
+    sch = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen lang sein.")
+    await _db.kirmes_schausteller.update_one(
+        {"id": sch_id},
+        {"$set": {
+            "password_hash": _hash_password(data.password),
+            "email_verified": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    return {"message": "Passwort wurde gesetzt und E-Mail als bestätigt markiert."}
 
 
 @router.put("/schausteller/{sch_id}")
