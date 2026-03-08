@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, field_validator
@@ -1606,8 +1606,21 @@ async def list_event_documents(event_id: str, user: dict = Depends(_require_staf
 
 
 @router.get("/events/{event_id}/documents/{doc_id}/file")
-async def get_event_document_file(event_id: str, doc_id: str, token: Optional[str] = None, user: dict = Depends(_require_staff)):
-    """Download or preview a document file."""
+async def get_event_document_file(event_id: str, doc_id: str, token: str = None, request: Request = None):
+    """Download or preview a document file. Accepts token via query param."""
+    from server import get_user_from_token_param, get_current_user
+    # Auth via query token or header
+    user = None
+    if token:
+        user = await get_user_from_token_param(token)
+    else:
+        # Try header auth
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            user = await get_user_from_token_param(auth[7:])
+    if not user:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+
     doc = await _db.kirmes_event_documents.find_one({"id": doc_id, "event_id": event_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
