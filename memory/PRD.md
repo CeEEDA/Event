@@ -4,28 +4,34 @@
 Comprehensive monitoring and management portal for DSE power generators with EpiRent ERP integration, energy monitoring, fleet management, and Kirmes billing system.
 
 ## Tech Stack
-- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx, bcrypt
+- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx, bcrypt, reportlab
 - **Frontend**: React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet/OpenStreetMap, open-location-code, jspdf, jspdf-autotable
 
 ## What's Been Implemented
 
-### Kirmes: Booking Confirmation Email + Admin Password Management (2026-03-08)
-- **Booking Confirmation Email**: Schausteller receive detailed HTML email after successful event signup (event name, location, dates, Platznummer, Fahrgeschäft, connection type, price, payment method)
-- **Admin Password Management**: Staff/Admins can set passwords for Schausteller directly in the edit modal. Sets password_hash + marks email as verified.
-- **Endpoint**: `POST /api/kirmes/schausteller/{id}/set-password`
+### Kirmes: Abrechnungsmodul mit Rechnungsstellung (2026-03-08)
+- **Invoice Generation**: Server-side PDF generation with reportlab and custom company letterhead
+- **Invoice Number**: Auto-incrementing R{YY}-K-{NNNN} format (e.g., R26-K-0001)
+- **Billing Calculation**: Anschlussgebühr + Stromverbrauch (kWh) + Handlingaufschlag + 19% MwSt
+- **Single/Batch**: Generate invoice per signup or batch all signups in an event
+- **PDF Download**: Full letterhead with company data (Eventenergie Deutschland GmbH & Co. KG)
+- **Email Sending**: Invoice PDF als Anhang per E-Mail versenden
+- **Invoice Search**: Searchable in Kirmes-Verwaltung by number, company, event name
+- **Endpoints**: POST/GET /api/kirmes/invoices, /invoices/{id}/pdf, /invoices/{id}/send
+
+### Kirmes: Booking Confirmation + Admin Password (2026-03-08)
+- Booking confirmation email after successful signup
+- Admin password management for Schausteller
+- "Auf Rechnung" only with admin approval
 
 ### Kirmes Auth: Email+Password + Verification (2026-03-08)
-- **Registration**: Schausteller register with full contact info + email + password
-- **Email Verification**: 6-digit code sent via SMTP, must be verified before login
-- **Login**: Email + password authentication (bcrypt hashed)
-- **Security**: password_hash and verification_code never exposed in API responses
+- Registration with email + password + email verification (6-digit code)
+- Login with bcrypt hashed password
 
 ### Kirmes-Verwaltung Phase 1 & 2 (2026-03-08)
-- **Event Management** (`/kirmes`): CRUD with status flow
-- **Standard-Preisliste**: Per connection type pricing with avg kWh and deposit calculation
-- **Schausteller-Portal** (`/kirmes/anmeldung`): Public registration + login, event selection, signup
-- **Event Detail** (`/kirmes/:id`): Info cards, prices, signups table, kWh fields, PDF export
-- **Exhibitor invitation, Purchase on Account, Schausteller Management, Detail Page**
+- Event Management, Standard-Preisliste, Public Portal
+- Event Detail, Exhibitor invitation, Purchase on Account
+- PDF Montageliste, Schausteller Management, History
 
 ### Earlier Completed Work
 - Generator monitoring, energy monitoring (Messkoffer), device management
@@ -34,38 +40,35 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 
 ## Key API Endpoints
 
-### Kirmes Auth
-- `POST /api/kirmes/public/register` - Register with email+password
-- `POST /api/kirmes/public/verify-email` - Verify email with code
-- `GET /api/kirmes/public/resend-code?email=X` - Resend code
-- `POST /api/kirmes/public/login` - Login with {email, password}
+### Kirmes Invoices
+- `POST /api/kirmes/signups/{id}/invoice` - Generate invoice for signup
+- `POST /api/kirmes/events/{id}/generate-invoices` - Batch generate all
+- `GET /api/kirmes/invoices` - List/search invoices (?search=, ?event_id=)
+- `GET /api/kirmes/invoices/{id}` - Invoice detail
+- `GET /api/kirmes/invoices/{id}/pdf` - Download PDF
+- `POST /api/kirmes/invoices/{id}/send` - Send via email
 
-### Kirmes Admin
-- `POST /api/kirmes/schausteller/{id}/set-password` - Admin sets Schausteller password
-- `GET/PUT/DELETE /api/kirmes/schausteller/{id}` - Schausteller CRUD
+### DB Collections
+- `kirmes_invoices`: {id, invoice_number, signup_id, event_id, event_name, schausteller_id, schausteller_firma, schausteller_name, schausteller_email, invoice_date, line_items[], netto, mwst_rate, mwst_amount, brutto, status, schausteller{}, event{}, created_at, created_by, sent_at, sent_to}
 
-### Kirmes Events
-- `POST/GET/PUT/DELETE /api/kirmes/events` - Event CRUD
-- `POST /api/kirmes/events/{id}/release` - Release for signups
-- `POST /api/kirmes/events/{id}/invite` - Email invitations
-- `GET /api/kirmes/public/events` - Public event list
-- `POST /api/kirmes/public/signup` - Event signup (sends confirmation email)
-
-## DB Collections (Kirmes)
-- `kirmes_schausteller`: {id, firma, name, strasse, plz, ort, steuernummer, email, password_hash, telefon, rechnungs_email, email_verified, verification_code, kauf_auf_rechnung}
-- `kirmes_events`: {id, name, location, start_date, end_date, dispo_start, dispo_end, status, prices[], kwh_price, handling_surcharge}
-- `kirmes_signups`: {id, event_id, schausteller_id, platznummer, fahrgeschaeft, connection_type, price, payment_method, payment_status, deposit_amount, meter_id, kwh_einbau, kwh_ausbau, kwh_used}
+## Company Letterhead Data
+- Eventenergie Deutschland GmbH & Co. KG
+- Thyssenstraße 10, 56626 Andernach
+- Tel: +49 (0) 2632 30921-0, Hotline: +49 (0) 800 POWER24
+- Amtsgericht Koblenz: HRA 22723, Ust.-ID: DE 333489815
+- Geschäftsführung: Christian Ecker
+- IBAN: DE86 7413 1000 0002 6260 00, BIC: TEKRDE71
 
 ## Backlog
 
 ### P0 (Next)
 - EMU Meter Data Integration
-- "Abrechnung" button logic with ZUGFeRD e-invoices
 - Stripe integration for deposit reservation
 
 ### P1
 - Billing history on Schausteller detail page
 - Self-hosted MQTT Broker (Mosquitto)
+- ZUGFeRD-compliant invoices
 
 ### P2
 - Admin file size limits
