@@ -13,26 +13,33 @@ export default function QrScanner({ onScan, onError, onClose }) {
     }
 
     let cancelled = false;
-    let isRunning = false;
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
     // Suppress media abort errors (expected when stopping camera)
     const suppressAbortError = (e) => {
-      const msg = e?.message || e?.reason?.message || "";
+      const msg = e?.message || e?.reason?.message || String(e?.reason || "");
       if (msg.includes("fetching process") || msg.includes("aborted")) {
         e.preventDefault?.();
         e.stopPropagation?.();
+        return true;
       }
     };
-    window.addEventListener("error", suppressAbortError);
-    window.addEventListener("unhandledrejection", suppressAbortError);
+    window.addEventListener("error", suppressAbortError, true);
+    window.addEventListener("unhandledrejection", suppressAbortError, true);
 
-    const stopScanner = async () => {
-      if (!isRunning) return;
-      isRunning = false;
-      try { await scanner.stop(); } catch { /* expected */ }
-      try { scanner.clear(); } catch { /* expected */ }
+    // Force-kill all camera tracks from the container
+    const killCameraTracks = () => {
+      try {
+        const videos = containerRef.current?.querySelectorAll("video");
+        videos?.forEach((v) => {
+          const stream = v.srcObject;
+          if (stream) {
+            stream.getTracks().forEach((t) => t.stop());
+            v.srcObject = null;
+          }
+        });
+      } catch { /* ignore */ }
     };
 
     scanner
@@ -41,7 +48,7 @@ export default function QrScanner({ onScan, onError, onClose }) {
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (text) => {
           if (!cancelled) {
-            stopScanner();
+            scanner.stop().catch(() => {}).finally(() => killCameraTracks());
             onScan(text);
           }
         },
@@ -49,9 +56,7 @@ export default function QrScanner({ onScan, onError, onClose }) {
       )
       .then(() => {
         if (cancelled) {
-          stopScanner();
-        } else {
-          isRunning = true;
+          scanner.stop().catch(() => {}).finally(() => killCameraTracks());
         }
       })
       .catch((err) => {
@@ -63,17 +68,35 @@ export default function QrScanner({ onScan, onError, onClose }) {
 
     return () => {
       cancelled = true;
-      stopScanner();
-      // Remove listeners after a delay to catch async errors
+      // Try library stop first, then force-kill tracks as fallback
+      scanner.stop().catch(() => {}).finally(() => {
+        killCameraTracks();
+        try { scanner.clear(); } catch { /* ignore */ }
+      });
       setTimeout(() => {
-        window.removeEventListener("error", suppressAbortError);
-        window.removeEventListener("unhandledrejection", suppressAbortError);
-      }, 1000);
+        killCameraTracks(); // Extra safety after async operations
+        window.removeEventListener("error", suppressAbortError, true);
+        window.removeEventListener("unhandledrejection", suppressAbortError, true);
+      }, 500);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleClose = () => {
+    // Force stop camera tracks immediately
+    try {
+      const videos = containerRef.current?.querySelectorAll("video");
+      videos?.forEach((v) => {
+        const stream = v.srcObject;
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          v.srcObject = null;
+        }
+      });
+    } catch { /* ignore */ }
+    if (scannerRef.current) {
+      scannerRef.current.stop().catch(() => {});
+    }
     if (onClose) onClose();
   };
 
