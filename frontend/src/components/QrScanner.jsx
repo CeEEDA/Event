@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 
+// Safe stop: html5-qrcode throws synchronous errors if not running
+const safeStop = (scanner) => {
+  try {
+    const state = scanner.getState();
+    // 2 = SCANNING, 3 = PAUSED
+    if (state === 2 || state === 3) {
+      return scanner.stop().catch(() => {});
+    }
+  } catch {
+    // getState() itself can throw if scanner is in bad state
+    try { return scanner.stop().catch(() => {}); } catch { /* ignore */ }
+  }
+  return Promise.resolve();
+};
+
 export default function QrScanner({ onScan, onError, onClose }) {
   const containerRef = useRef(null);
   const scannerRef = useRef(null);
@@ -16,26 +31,24 @@ export default function QrScanner({ onScan, onError, onClose }) {
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
-    // Suppress media abort errors (expected when stopping camera)
-    const suppressAbortError = (e) => {
+    // Suppress known errors from html5-qrcode (dev overlay only)
+    const suppressError = (e) => {
       const msg = e?.message || e?.reason?.message || String(e?.reason || "");
-      if (msg.includes("fetching process") || msg.includes("aborted")) {
+      if (msg.includes("Cannot stop") || msg.includes("fetching process") || msg.includes("aborted")) {
         e.preventDefault?.();
         e.stopPropagation?.();
         return true;
       }
     };
-    window.addEventListener("error", suppressAbortError, true);
-    window.addEventListener("unhandledrejection", suppressAbortError, true);
+    window.addEventListener("error", suppressError, true);
+    window.addEventListener("unhandledrejection", suppressError, true);
 
-    // Force-kill all camera tracks from the container
-    const killCameraTracks = () => {
+    // Force-kill camera tracks directly from video elements
+    const killTracks = () => {
       try {
-        const videos = containerRef.current?.querySelectorAll("video");
-        videos?.forEach((v) => {
-          const stream = v.srcObject;
-          if (stream) {
-            stream.getTracks().forEach((t) => t.stop());
+        containerRef.current?.querySelectorAll("video").forEach((v) => {
+          if (v.srcObject) {
+            v.srcObject.getTracks().forEach((t) => t.stop());
             v.srcObject = null;
           }
         });
@@ -48,16 +61,14 @@ export default function QrScanner({ onScan, onError, onClose }) {
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (text) => {
           if (!cancelled) {
-            scanner.stop().catch(() => {}).finally(() => killCameraTracks());
+            safeStop(scanner).finally(killTracks);
             onScan(text);
           }
         },
         () => {}
       )
       .then(() => {
-        if (cancelled) {
-          scanner.stop().catch(() => {}).finally(() => killCameraTracks());
-        }
+        if (cancelled) safeStop(scanner).finally(killTracks);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -68,35 +79,33 @@ export default function QrScanner({ onScan, onError, onClose }) {
 
     return () => {
       cancelled = true;
-      // Try library stop first, then force-kill tracks as fallback
-      scanner.stop().catch(() => {}).finally(() => {
-        killCameraTracks();
+      safeStop(scanner).finally(() => {
+        killTracks();
         try { scanner.clear(); } catch { /* ignore */ }
       });
       setTimeout(() => {
-        killCameraTracks(); // Extra safety after async operations
-        window.removeEventListener("error", suppressAbortError, true);
-        window.removeEventListener("unhandledrejection", suppressAbortError, true);
-      }, 500);
+        killTracks();
+        window.removeEventListener("error", suppressError, true);
+        window.removeEventListener("unhandledrejection", suppressError, true);
+      }, 1000);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleClose = () => {
-    // Force stop camera tracks immediately
+    const scanner = scannerRef.current;
+    if (scanner) {
+      safeStop(scanner);
+    }
+    // Force-kill tracks directly
     try {
-      const videos = containerRef.current?.querySelectorAll("video");
-      videos?.forEach((v) => {
-        const stream = v.srcObject;
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
+      containerRef.current?.querySelectorAll("video").forEach((v) => {
+        if (v.srcObject) {
+          v.srcObject.getTracks().forEach((t) => t.stop());
           v.srcObject = null;
         }
       });
     } catch { /* ignore */ }
-    if (scannerRef.current) {
-      scannerRef.current.stop().catch(() => {});
-    }
     if (onClose) onClose();
   };
 
