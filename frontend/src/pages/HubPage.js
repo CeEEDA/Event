@@ -95,7 +95,7 @@ export default function HubPage() {
                   <Activity className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Monitoring</h2>
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Power Monitoring</h2>
                   <p className="text-sm text-gray-500">Überwachung und Steuern von Stromerzeugern, Lichtmasten und Batteriesysteme</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
