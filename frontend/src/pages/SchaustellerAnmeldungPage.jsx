@@ -69,6 +69,9 @@ export default function SchaustellerAnmeldungPage() {
   const [signupForm, setSignupForm] = useState({
     platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte",
   });
+  const [lastSignupId, setLastSignupId] = useState(null);
+  const [depositAmounts, setDepositAmounts] = useState({});
+  const [paymentChecking, setPaymentChecking] = useState(false);
 
   const loadBookings = useCallback(async (schId) => {
     try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch { /* ignore */ }
@@ -159,13 +162,75 @@ export default function SchaustellerAnmeldungPage() {
     }
     setSaving(true);
     try {
-      await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm });
+      const r = await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm });
+      const signupId = r.data?.signup_id || r.data?.id;
+      setLastSignupId(signupId);
       toast.success("Anmeldung erfolgreich!");
-      setStep("done");
+      setStep("payment");
     } catch (err) {
       toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Anmeldung");
     } finally { setSaving(false); }
   };
+
+  const handlePayDeposit = async () => {
+    if (!lastSignupId || !selectedEvent) return;
+    setSaving(true);
+    try {
+      const r = await api.post("/payments/checkout/deposit", {
+        signup_id: lastSignupId,
+        event_id: selectedEvent.id,
+        origin_url: window.location.origin,
+      });
+      if (r.data?.url) {
+        window.location.href = r.data.url;
+      }
+    } catch (err) {
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Zahlung");
+    } finally { setSaving(false); }
+  };
+
+  const pollPaymentStatus = useCallback(async (sessionId, attempts = 0) => {
+    if (attempts >= 10) { setPaymentChecking(false); return; }
+    try {
+      const r = await api.get(`/payments/checkout/status/${sessionId}`);
+      if (r.data?.payment_status === "paid") {
+        toast.success("Kaution erfolgreich bezahlt!");
+        setPaymentChecking(false);
+        setStep("done");
+        if (schausteller) loadBookings(schausteller.id);
+        return;
+      }
+      if (r.data?.status === "expired") {
+        toast.error("Zahlungssitzung abgelaufen");
+        setPaymentChecking(false);
+        setStep("done");
+        return;
+      }
+    } catch { /* ignore */ }
+    setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
+  }, [schausteller, loadBookings]);
+
+  // Check for Stripe return
+  useEffect(() => {
+    const sessionId = searchParams.get("session_id");
+    const paymentResult = searchParams.get("payment");
+    if (sessionId && paymentResult === "success") {
+      setPaymentChecking(true);
+      setStep("payment_check");
+      pollPaymentStatus(sessionId);
+    } else if (paymentResult === "cancelled") {
+      toast.error("Zahlung abgebrochen");
+    }
+  }, [searchParams, pollPaymentStatus]);
+
+  // Load deposit amounts when event is selected
+  useEffect(() => {
+    if (selectedEvent) {
+      api.get(`/payments/deposit-info/${selectedEvent.id}`)
+        .then(r => setDepositAmounts(r.data))
+        .catch(() => {});
+    }
+  }, [selectedEvent]);
 
   const handleLogout = () => { setSchausteller(null); setMyBookings({ signups: [], invoices: [] }); setStep("auth"); };
 
@@ -433,20 +498,82 @@ export default function SchaustellerAnmeldungPage() {
                   </div>
                   {signupForm.connection_type && (() => {
                     const p = (selectedEvent.prices || []).find(pr => pr.connection_type === signupForm.connection_type);
-                    return p ? (
-                      <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-fuchsia-700 font-medium">Anschlussgebühr</span>
-                          <span className="text-lg font-bold text-fuchsia-800">{p.price.toFixed(2)} EUR</span>
-                        </div>
+                    const depositAmt = depositAmounts[signupForm.connection_type];
+                    return (
+                      <div className="space-y-2">
+                        {p && (
+                          <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-fuchsia-700 font-medium">Anschlussgebühr</span>
+                              <span className="text-lg font-bold text-fuchsia-800">{p.price.toFixed(2)} EUR</span>
+                            </div>
+                          </div>
+                        )}
+                        {depositAmt > 0 && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-amber-700 font-medium">Kaution ({signupForm.connection_type})</span>
+                              <span className="text-lg font-bold text-amber-800">{depositAmt.toFixed(2)} EUR</span>
+                            </div>
+                            <p className="text-[10px] text-amber-600 mt-1">Wird nach der Anmeldung per Kreditkarte fällig</p>
+                          </div>
+                        )}
                       </div>
-                    ) : null;
+                    );
                   })()}
                 </div>
                 <Button onClick={handleSignup} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="submit-signup-btn">
                   {saving ? "Wird angemeldet..." : "Verbindlich anmelden"} <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
+            </div>
+          )}
+
+          {/* Payment – Kaution bezahlen */}
+          {step === "payment" && (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center" data-testid="payment-step">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+                <Zap className="w-8 h-8 text-amber-600" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Kaution bezahlen</h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Ihre Anmeldung für <strong>{selectedEvent?.name}</strong> war erfolgreich. Bitte bezahlen Sie jetzt die Kaution.
+              </p>
+              <div className="bg-gray-50 rounded-lg p-4 text-left text-sm space-y-1 mb-4">
+                <p><span className="text-gray-500">Platz:</span> <strong>{signupForm.platznummer}</strong></p>
+                <p><span className="text-gray-500">Fahrgeschäft:</span> <strong>{signupForm.fahrgeschaeft}</strong></p>
+                <p><span className="text-gray-500">Anschluss:</span> <strong>{signupForm.connection_type}</strong></p>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-amber-700 font-medium">Kaution</span>
+                  <span className="text-2xl font-bold text-amber-800">{(depositAmounts[signupForm.connection_type] || 0).toFixed(2)} EUR</span>
+                </div>
+                <p className="text-[10px] text-amber-600 mt-1">Wird nach der Veranstaltung erstattet</p>
+              </div>
+              <Button onClick={handlePayDeposit} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mb-3" data-testid="pay-deposit-btn">
+                {saving ? "Weiterleitung..." : "Jetzt bezahlen"} <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+              <button onClick={() => { setStep("done"); }} className="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="skip-payment-btn">
+                Später bezahlen
+              </button>
+            </div>
+          )}
+
+          {/* Payment Check – polling */}
+          {step === "payment_check" && (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center" data-testid="payment-check-step">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
+                <Check className="w-8 h-8 text-blue-600" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Zahlung wird geprüft...</h2>
+              <p className="text-sm text-gray-500 mb-4">Bitte warten Sie, während wir Ihre Zahlung bestätigen.</p>
+              {paymentChecking && (
+                <div className="flex items-center justify-center gap-2 text-sm text-blue-600">
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor"/></svg>
+                  Prüfe Zahlungsstatus...
+                </div>
+              )}
             </div>
           )}
 

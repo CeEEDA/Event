@@ -1491,6 +1491,11 @@ from routes.kirmes import router as kirmes_router, init_kirmes_routes
 init_kirmes_routes(db, decode_jwt_token)
 app.include_router(kirmes_router)
 
+from routes.payments import router as payments_router, init_payments
+init_payments(db, decode_jwt_token)
+app.include_router(payments_router)
+
+
 
 app.add_middleware(
     CORSMiddleware,
