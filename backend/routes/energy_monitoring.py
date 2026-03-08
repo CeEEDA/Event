@@ -705,6 +705,19 @@ async def generate_kirmeskiste_setup(device_id: str, body: KirmeskisteSetupReque
     if body is None:
         body = KirmeskisteSetupRequest()
 
+    # Determine API URL
+    api_base = os.environ.get("API_BASE_URL", "")
+    if not api_base:
+        fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
+        try:
+            with open(fe_env) as f:
+                for line in f:
+                    if line.startswith("REACT_APP_BACKEND_URL="):
+                        api_base = line.split("=", 1)[1].strip() + "/api"
+                        break
+        except Exception:
+            api_base = "https://BITTE_URL_EINTRAGEN/api"
+
     device = await db.devices.find_one({"id": device_id, "device_type": "kirmeskiste"}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Kirmeskiste nicht gefunden")
@@ -874,7 +887,7 @@ echo ""
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
     }
 
-    download_url = f"/api/energy-monitoring/setup-download/{download_token}"
+    download_url = f"{api_base}/energy-monitoring/setup-download/{download_token}"
 
     return {
         "download_url": download_url,
