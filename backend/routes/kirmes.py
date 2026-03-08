@@ -567,6 +567,26 @@ async def resend_code(email: str = Query(...)):
     return {"message": "Neuer Code wurde gesendet."}
 
 
+@router.get("/public/my-bookings")
+async def get_my_bookings(schausteller_id: str = Query(...)):
+    """Public endpoint - Get all bookings and invoices for a schausteller."""
+    sch = await _db.kirmes_schausteller.find_one({"id": schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+
+    signups = await _db.kirmes_signups.find({"schausteller_id": schausteller_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    for s in signups:
+        event = await _db.kirmes_events.find_one({"id": s["event_id"]}, {"_id": 0, "name": 1, "location": 1, "start_date": 1, "end_date": 1})
+        s["event"] = event or {}
+
+    invoices = await _db.kirmes_invoices.find(
+        {"schausteller_id": schausteller_id},
+        {"_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "invoice_date": 1, "brutto": 1, "status": 1}
+    ).sort("created_at", -1).to_list(100)
+
+    return {"signups": signups, "invoices": invoices}
+
+
 class SchaustellerLogin(BaseModel):
     email: EmailStr
     password: str
@@ -811,6 +831,22 @@ async def update_signup_kwh(signup_id: str, data: SignupKwhUpdate, user: dict = 
     return updated
 
 
+
+
+@router.get("/public/invoice/{invoice_id}/pdf")
+async def public_download_invoice_pdf(invoice_id: str, schausteller_id: str = Query(...)):
+    """Public endpoint - Schausteller downloads their own invoice PDF."""
+    from services.invoice_pdf import generate_invoice_pdf
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id, "schausteller_id": schausteller_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    pdf_bytes = generate_invoice_pdf(inv)
+    filename = f"{inv['invoice_number']}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 # ============== Connection Types ==============
