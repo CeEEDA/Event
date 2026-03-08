@@ -22,6 +22,7 @@ import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
 import KirmesEventDetailPage from "./pages/KirmesEventDetailPage";
 import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
+import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -162,6 +163,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <KirmesEventDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/schausteller/:id"
+        element={
+          <ProtectedRoute>
+            <SchaustellerDetailPage />
           </ProtectedRoute>
         }
       />

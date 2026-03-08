@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
@@ -39,6 +39,7 @@ export default function KirmesEventDetailPage() {
   const [editingKwh, setEditingKwh] = useState(null);
   const [kwhForm, setKwhForm] = useState({ kwh_einbau: "", kwh_ausbau: "" });
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [expandedSignup, setExpandedSignup] = useState(null);
   const [allSchausteller, setAllSchausteller] = useState([]);
   const [selectedInvites, setSelectedInvites] = useState([]);
   const [inviting, setInviting] = useState(false);
@@ -308,10 +309,18 @@ export default function KirmesEventDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(event.signups || []).map(signup => (
-                    <tr key={signup.id} className="border-b border-gray-100 hover:bg-gray-50" data-testid={`signup-${signup.id}`}>
-                      <td className="px-4 py-3 font-medium text-gray-900">{signup.schausteller?.firma || "–"}</td>
-                      <td className="px-4 py-3 text-gray-600">{signup.schausteller?.name || "–"}</td>
+                  {(event.signups || []).map(signup => {
+                    const sch = signup.schausteller;
+                    const isExpanded = expandedSignup === signup.id;
+                    return (
+                    <React.Fragment key={signup.id}>
+                    <tr
+                      className={`border-b border-gray-100 cursor-pointer transition-colors ${isExpanded ? "bg-fuchsia-50" : "hover:bg-gray-50"}`}
+                      onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
+                      data-testid={`signup-${signup.id}`}
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-900">{sch?.firma || "–"}</td>
+                      <td className="px-4 py-3 text-gray-600">{sch?.name || "–"}</td>
                       <td className="px-4 py-3 text-gray-600">{signup.fahrgeschaeft || "–"}</td>
                       <td className="px-4 py-3 font-mono text-gray-900">{signup.platznummer}</td>
                       <td className="px-4 py-3">
@@ -319,13 +328,12 @@ export default function KirmesEventDetailPage() {
                           <Zap className="w-3 h-3" /> {signup.connection_type}
                         </span>
                       </td>
-                      {/* kWh Einbau / Ausbau */}
                       {editingKwh === signup.id ? (
                         <>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
                             <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 w-24 text-right text-sm" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
                             <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 w-24 text-right text-sm" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
                           </td>
                         </>
@@ -344,7 +352,7 @@ export default function KirmesEventDetailPage() {
                           {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           {editingKwh === signup.id ? (
                             <>
@@ -368,7 +376,74 @@ export default function KirmesEventDetailPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    {/* Expanded Detail Panel */}
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={11} className="p-0">
+                          <div className="bg-gray-50 border-y border-gray-200 p-5" data-testid={`detail-${signup.id}`}>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              {/* Kontaktdaten */}
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Kontaktdaten</h4>
+                                <div className="space-y-2 text-sm">
+                                  <p><span className="text-gray-400 w-20 inline-block">Firma:</span> <span className="font-medium text-gray-900">{sch?.firma || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">Name:</span> <span className="text-gray-700">{sch?.name || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">Adresse:</span> <span className="text-gray-700">{sch?.strasse || "–"}, {sch?.plz || ""} {sch?.ort || ""}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">Telefon:</span> <span className="text-gray-700">{sch?.telefon || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">E-Mail:</span> <span className="text-gray-700">{sch?.email || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">Rechnung:</span> <span className="text-gray-700">{sch?.rechnungs_email || "–"}</span></p>
+                                  {sch?.steuernummer && <p><span className="text-gray-400 w-20 inline-block">Steuer-Nr:</span> <span className="text-gray-700 font-mono">{sch.steuernummer}</span></p>}
+                                  {sch?.kauf_auf_rechnung && <span className="inline-block mt-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">Kauf auf Rechnung</span>}
+                                </div>
+                              </div>
+
+                              {/* Anmeldungsdaten */}
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Anmeldung</h4>
+                                <div className="space-y-2 text-sm">
+                                  <p><span className="text-gray-400 w-24 inline-block">Fahrgeschäft:</span> <span className="font-medium text-gray-900">{signup.fahrgeschaeft || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-24 inline-block">Platznummer:</span> <span className="font-mono text-gray-900">{signup.platznummer}</span></p>
+                                  <p><span className="text-gray-400 w-24 inline-block">Anschluss:</span> <span className="inline-flex items-center gap-1 text-xs bg-fuchsia-50 text-fuchsia-700 px-2 py-0.5 rounded-full"><Zap className="w-3 h-3" /> {signup.connection_type}</span></p>
+                                  <p><span className="text-gray-400 w-24 inline-block">Zahlung:</span> <span className="text-gray-700 capitalize">{signup.payment_method}</span></p>
+                                  <p><span className="text-gray-400 w-24 inline-block">Status:</span> <span className={`text-xs font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>{PAYMENT_LABELS[signup.payment_status] || signup.payment_status}</span></p>
+                                  <p><span className="text-gray-400 w-24 inline-block">Zähler-ID:</span> <span className="font-mono text-gray-700">{signup.meter_id || "Nicht verknüpft"}</span></p>
+                                </div>
+                              </div>
+
+                              {/* Zählerdaten / Verbrauch */}
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Zählerdaten</h4>
+                                <div className="space-y-2 text-sm">
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                      <p className="text-[10px] text-gray-400 mb-1">kWh Einbau</p>
+                                      <p className="text-lg font-semibold font-mono text-gray-900">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</p>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                      <p className="text-[10px] text-gray-400 mb-1">kWh Ausbau</p>
+                                      <p className="text-lg font-semibold font-mono text-gray-900">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</p>
+                                    </div>
+                                  </div>
+                                  <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                    <p className="text-[10px] text-gray-400 mb-1">Gesamtverbrauch</p>
+                                    <p className="text-xl font-bold font-mono text-fuchsia-700">{signup.kwh_used != null ? `${signup.kwh_used.toFixed(2)} kWh` : "–"}</p>
+                                  </div>
+                                </div>
+                                {/* EMU Zähler Platzhalter */}
+                                <div className="mt-4 bg-white rounded-lg p-4 border border-dashed border-gray-300 text-center">
+                                  <Zap className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+                                  <p className="text-xs text-gray-400">EMU-Zähler Leistungsdaten</p>
+                                  <p className="text-[10px] text-gray-300 mt-1">Wird mit Kirmeskiste-Integration verfügbar</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

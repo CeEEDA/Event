@@ -685,7 +685,7 @@ export default function AdminPage() {
                           </tr>
                         ) : (
                           schausteller.map(sch => (
-                            <tr key={sch.id} className="hover:bg-gray-50" data-testid={`sch-row-${sch.id}`}>
+                            <tr key={sch.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/admin/schausteller/${sch.id}`)} data-testid={`sch-row-${sch.id}`}>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
@@ -699,7 +699,7 @@ export default function AdminPage() {
                               <td className="px-4 py-3 hidden sm:table-cell text-gray-500 text-sm">{sch.telefon}</td>
                               <td className="px-4 py-3 hidden lg:table-cell text-gray-500 text-sm">{sch.plz} {sch.ort}</td>
                               <td className="px-4 py-3 hidden lg:table-cell text-gray-500 text-sm font-mono">{sch.steuernummer}</td>
-                              <td className="px-4 py-3 text-right">
+                              <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                                 <div className="flex items-center justify-end gap-1">
                                   <Button
                                     variant="ghost"
