@@ -101,7 +101,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     if sch.get("steuernummer"):
         meta_data.append(["Steuernummer Kunde:", sch["steuernummer"]])
 
-    meta_table = Table(meta_data, colWidths=[40 * mm, 55 * mm])
+    meta_table = Table(meta_data, colWidths=[38 * mm, 52 * mm])
     meta_table.setStyle(TableStyle([
         ("ALIGN", (0, 0), (0, -1), "RIGHT"),
         ("ALIGN", (1, 0), (1, -1), "LEFT"),
@@ -115,7 +115,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
     usable_w = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT
-    table_w = 95 * mm
+    table_w = 90 * mm
     spacer_w = usable_w - table_w
     meta_wrapper = Table([[None, meta_table]], colWidths=[spacer_w, table_w])
     meta_wrapper.setStyle(TableStyle([
