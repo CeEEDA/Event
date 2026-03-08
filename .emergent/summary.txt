@@ -8,175 +8,191 @@ The user initially requested a portal for monitoring power generation assets. Th
 4.  **Billing & Invoicing (Abrechnung):**
     *   A single button processes billing for an entire event.
     *   The system calculates costs from connection fees, surcharges, and energy consumption.
-    *   It generates **ZUGFeRD-compliant** e-invoices, merging data onto a corporate letterhead PDF.
+    *   It generates **ZUGFeRD-compliant** e-invoices, merging data onto a corporate letterhead PDF. Invoices now include a **GiroCode** QR code for direct bank transfers.
     *   Invoices are automatically emailed upon generation.
     *   Admins can search for invoices and resend them.
-5.  **EMU Meter Integration:** Live energy consumption data from EMU meters can be linked to exhibitor signups and is displayed on the event detail page.
+5.  **EMU Meter Integration:** Live energy consumption data from EMU meters can be linked to exhibitor signups and is displayed on the event detail page. A dedicated page shows detailed analytics and allows data export.
 6.  **Kirmeskiste (Fairground Box) Integration:**
     *   A new device type representing a Raspberry Pi connected to 4 EMU meters with fixed IP addresses.
     *   A feature to automatically generate a setup script ( & ) to configure the Pi for data collection and syncing with the portal.
     *   A system to generate and print QR codes for each of the 4 meters.
-    *   A mechanism for an admin to scan the QR code on-site to assign a specific meter to an exhibitor's signup.
+    *   A mechanism for an admin to scan the QR code on-site to assign a specific meter to an exhibitor's signup using the device's camera.
+7.  **Event Document Storage:** Admins can upload, view, and manage event-specific documents (e.g., site plans).
+8.  **Stripe Payment Integration:** Exhibitors must pay a security deposit via Stripe upon registration. An admin can flag specific exhibitors to allow Purchase on Account, bypassing the upfront payment.
 
 **User's preferred language**: Deutsch
 
 **what currently exists?**
-The application is a full-stack portal with a React frontend and FastAPI backend. The Kirmes Billing System is the primary feature and is highly functional. It includes complete CRUD for events and exhibitors, a multi-step public registration/login portal for exhibitors, and a detailed admin dashboard.
-
-The billing module can generate and email ZUGFeRD-compliant PDF invoices. The system is integrated with EMU meters to display live energy data for exhibitor signups.
-
-A Kirmeskiste device management feature has been added, which automates the setup of the remote hardware (Raspberry Pi with 4 EMU meters) and provides a QR-code-based system for linking meters to exhibitors.
+A full-stack application (React frontend, FastAPI backend) serving as a Kirmes (Fairground) Billing System. Core functionalities include:
+-   Admin dashboards for managing events, exhibitors, and payments.
+-   A public portal for exhibitor registration and management.
+-   Automated ZUGFeRD-compliant invoicing with GiroCode QR codes for payment.
+-   Integration with EMU meters for live energy data tracking, including a detailed analytics and export page.
+-   Kirmeskiste hardware provisioning, which generates setup scripts for a Raspberry Pi with 4 EMU meters.
+-   A camera-based QR code scanner for on-site meter assignment.
+-   Stripe integration for handling security deposit payments.
+-   A document management system for events.
+The UI has been optimized for mobile and tablet devices.
 
 **Last working item**:
--   Last item agent was working: The user requested to replace the dropdown menu for assigning a meter to an exhibitor with a camera-based QR code scanner. This allows admins to scan a label on the physical power distributor to make the assignment. The agent has installed the  library to begin this implementation.
--   Status: IN PROGRESS
+-   Last item agent was working: The user reported a critical bug: when a user cancels the Stripe payment during registration, the system still confirms the signup and sends a confirmation email. The user requested a new flow where the signup is only finalized *after* a successful payment confirmation from Stripe, unless an admin has explicitly enabled Purchase on Account for that exhibitor. The agent acknowledged this and was about to begin implementation.
+-   Status: NOT STARTED
 -   Agent Testing Done: N
 -   Which testing method agent to use? both
 -   User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P0) Implement Camera-Based QR Scanner for Meter Assignment**
-    -   This is the current task. The dropdown for assigning a meter on the event detail page needs to be replaced with a component that uses the device's camera to scan a QR code.
+-   **Issue 1: (P0) Fix Payment Confirmation Logic**
+    -   Signups are incorrectly confirmed even if the user aborts the Stripe payment. The booking should only be finalized after a successful payment webhook is received from Stripe.
 -   **Issue 2: (BLOCKED) Email Sending is Rate-Limited**
-    -   The SMTP provider () is blocking emails (registration confirmations, invoices) due to a daily sending limit.
-    -   The code for sending emails is correct and has been verified to execute. The user is aware and has stated they will resolve the issue with the provider (das klÃ¤re ich).
+    -   The SMTP provider () is blocking emails due to a daily sending limit. This is an external infrastructure issue that the user is aware of.
+-   **Issue 3: (P2) Hardcoded MQTT Broker URL**
+    -   The MQTT broker URL is still hardcoded in . This is a technical debt item that needs to be refactored to use an environment variable.
+
+**Issues Detail:**
+-   **Issue 1: Fix Payment Confirmation Logic**
+    -   Attempted fixes: None. The issue was just reported.
+    -   Next debug checklist:
+        1.  **Backend:** Modify the signup endpoint (). It should no longer finalize the booking. Instead, it should create a 'pending' record and initiate the Stripe checkout.
+        2.  **Backend:** The Stripe webhook handler () must be updated to listen for the  event. Upon receiving this event, it should find the corresponding 'pending' signup, mark it as 'confirmed', set  to , and trigger the confirmation email.
+        3.  **Backend:** Add a flag to the  (exhibitor) model (e.g., ). The signup endpoint must check this flag to bypass the immediate Stripe payment flow and confirm the booking directly.
+        4.  **Frontend:** Update . After the initial signup API call, it should not proceed to the done step. It should redirect to Stripe and then poll a new backend endpoint (e.g., ) until the payment is confirmed.
+    -   Why fix this issue and what will be achieved with the fix? This is a critical business logic flaw. Fixing it ensures that only paid (or explicitly authorized) signups are confirmed, preventing revenue loss and administrative overhead.
+    -   Status: NOT STARTED
+    -   Is recurring issue? N
+    -   Should Test frontend/backend/both after fix? both
+    -   Blocked on other issue: None.
+
+-   **Issue 2: (BLOCKED) Email Sending is Rate-Limited**
     -   Status: BLOCKED
     -   Is recurring issue? Y
--   **Issue 3: (P1) Hardcoded MQTT Broker URL**
-    -   The MQTT broker URL is still hardcoded in . This is a carry-over issue that needs to be refactored to use an environment variable.
+
+-   **Issue 3: (P2) Hardcoded MQTT Broker URL**
+    -   Status: NOT STARTED
+    -   Is recurring issue? Y
 
 **In progress Task List**:
--   **Task 1: (P0) Implement Camera-Based QR Scanner for Meter Assignment**
-    -   **Where to resume:** The  library is installed. The next step is to modify  to replace the meter assignment dropdown with the new QR scanner component. A handler function needs to be implemented that takes the scanned QR code data (URL), extracts the meter ID, and calls the backend to link it to the selected exhibitor signup.
-    -   **What will be achieved with this?** A streamlined, on-site workflow for linking physical meters to exhibitor signups, improving operational efficiency.
-    -   **Status:** IN PROGRESS
+-   **Task 1: (P0) Implement Correct Payment Confirmation Flow**
+    -   **Where to resume:** Start by modifying the backend  endpoint in  and the Stripe webhook handler in .
+    -   **What will be achieved with this?** A robust and correct payment workflow where signups are only confirmed post-payment.
+    -   **Status:** NOT STARTED
     -   **Should Test frontend/backend/both after fix?** both
     -   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   (P1) **Integrate Stripe Payments:** Implement Stripe to handle security deposit payments during the exhibitor signup process.
-    -   (P1) **Direct QR Label Printing:** The user mentioned a future enhancement to add a Print button that sends the QR code labels directly to a specific printer, rather than just downloading a PDF.
-
+    -   (P1) **Direct QR Label Printing:** Add a Print button that sends QR code labels directly to a specific printer.
 -   **Future Tasks:**
-    -   (P1) **Self-Hosted MQTT Broker:** Refactor the service to use a self-hosted Mosquitto MQTT broker, removing the hardcoded URL.
-    -   (P2) **File Size Limits:** Implement admin-controlled file size limits for a legacy file-sharing feature.
+    -   (P1) **Self-Hosted MQTT Broker:** Refactor the service to use a self-hosted Mosquitto MQTT broker.
+    -   (P2) **File Size Limits:** Implement admin-controlled file size limits for the legacy file-sharing feature.
 
 **Completed work in this session**
--   **ZUGFeRD E-Invoicing:** The invoice generation was upgraded to create and embed  compliant XML, making all invoices e-invoices.
--   **Kirmeskiste Setup Automation:**
-    -   Created a Kirmeskiste device type with 4 associated EMU meters at fixed IP addresses.
-    -   Implemented a Generate Setup feature that creates a PK-Ä•h\ÿÿÿÿÿÿÿÿ-PKPK-Ä•h\¶!-PK/M file containing  and  to automate Pi deployment.
--   **QR Code System for Meter Assignment:**
-    -   Developed backend endpoints and frontend UI to generate and download PDF labels for each of the 4 meters in a Kirmeskiste.
-    -   Created the assignment page () that the QR codes link to.
--   **EMU Meter Live Data Integration:** Fully integrated live EMU meter data (power, voltage, etc.) and a historical performance chart into the . The feature was successfully verified by the testing agent.
--   **Exhibitor Invoice Management:** Implemented a view on the exhibitor detail page to list all their past invoices, with options to download or re-send them via email.
--   **Major Bug Fixes:**
-    -   Resolved a recurring frontend crash by creating a centralized  utility to correctly parse and display backend validation errors (string vs. object array).
-    -   Fixed backend Pydantic validation failures by adding validators to models (, ) to gracefully handle empty strings for optional numeric fields.
--   **UI/UX Enhancements:**
-    -   Fixed multiple PDF invoice layout issues (address position, metadata block alignment).
-    -   Granted admins the ability to delete events regardless of their status.
-    -   Standardized the font weight and display of exhibitor names in lists for a consistent look.
+-   **Stripe Integration:** Implemented Stripe for security deposit payments during exhibitor registration.
+-   **Admin Payments Dashboard:** Created a comprehensive dashboard for admins to track the status of all deposits and invoices, with KPI cards and transaction lists.
+-   **GiroCode on Invoices:** Integrated  to generate and embed a GiroCode (EPC QR) on all PDF invoices for easy bank transfers. IBAN/BIC are now configurable via .
+-   **Camera QR Scanner:** Replaced the meter assignment dropdown with a camera-based QR code scanner using . Fixed numerous bugs related to camera initialization, cleanup, and browser-specific errors.
+-   **Event Document Storage:** Implemented a full feature for uploading (drag-and-drop), viewing, and deleting event-specific documents.
+-   **EMU Meter Data Page:** Created a new page () to display detailed live data, historical charts, and allow CSV export for linked EMU meters within the event's timeframe.
+-   **Mobile/Responsive UI Overhaul:** Systematically fixed layout and usability issues across all key pages (, , etc.) for iPhone and iPad viewports.
+-   **Kirmeskiste Setup Script Fixes:**
+    -   Fixed multiple critical bugs in the Raspberry Pi setup script generation, including an invalid  URL, a / type mismatch causing a 500 error, and  version compatibility issues by replacing deprecated  and  calls with version-agnostic  logic. The Pi sync service now runs successfully.
 
 **Earlier issues found/mentioned but not fixed**
 -   **Issue 1: Hardcoded MQTT Broker URL**
     -   **Debug checklist:** The URL in  needs to be replaced with a call to  and the variable added to .
-    -   **Why to solve this issue and what will be achieved with this?** To allow for flexible environment configurations and prepare for the migration to a self-hosted MQTT broker.
+    -   **Why to solve this issue and what will be achieved with this?** To allow for flexible environment configurations.
     -   **Should Test frontend/backend/both after fix:** backend
     -   **Is recurring issue?** Y
 
 **Known issue recurrence from previous fork**
--   The issue of email delivery failure due to SMTP rate limiting occurred multiple times during this session. While the code is correct, the underlying infrastructure is the blocker. The user is aware.
+-   Email delivery failure due to SMTP rate limiting persists. This is an external issue.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **ZUGFeRD (Factur-X):** Embedding structured XML invoice data into a PDF to create a compliant e-invoice, using the  Python library.
--   **QR Code Workflows:** Generating QR codes on the backend ( library) that link to specific frontend pages, and preparing to scan QR codes on the frontend ().
--   **Dynamic PDF Generation ():** Used to create complex, multi-label PDF sheets for the QR codes, including cut-marks.
--   **Hardware Provisioning Scripting:** Generating shell scripts and Python code (, ) to automate the setup of remote IoT devices (Raspberry Pi).
--   **Centralized Frontend Error Handling:** A  utility function was created in  to gracefully handle different error response structures from the FastAPI backend (string vs. Pydantic validation object array), preventing UI crashes.
+-   **Stripe Integration:** Using Stripe Checkout Sessions for payments and Webhooks () for server-side confirmation.
+-   **GiroCode (EPC QR):** Generating QR codes for SEPA credit transfers using the  library.
+-   **Camera QR Scanning:** Using  to access the device camera and scan QR codes in the browser.
+-   **Robust Hardware Scripting:** Debugging and fixing Python scripts for remote devices () to handle dependency and versioning issues ().
+-   **Responsive Design:** Using TailwindCSS mobile-first utilities (, , ) and flexbox/grid layouts to ensure the application is usable on various screen sizes.
 
 **key DB schema**
--   **devices:** Now supports . Associated EMU meters are stored as sub-devices.
--   **kirmes_signups:** Contains fields for linking to an EMU meter (, ).
--   **invoices:** Schema is stable. The generated PDF artifact now contains embedded ZUGFeRD XML.
+-   **kirmes_signups:** Now includes Stripe-related fields like  (boolean),  (string), and  (string).
+-   **events:** Now includes a list of associated document metadata (filename, path, etc.).
+-   **schausteller:** Will require a new boolean field like  to enable the Purchase on Account feature.
 
 **changes in tech stack**
--   **Backend:** Added  for ZUGFeRD compliance, and  for generating QR code images.
--   **Frontend:** Added  for camera-based QR code scanning.
+-   **Backend:** Added  for payments,  for GiroCode generation.
+-   **Frontend:** Added  for camera QR scanning.
 
 **All files of reference**
--   : Core logic for billing, meter assignment, and ZUGFeRD integration.
--   : Logic for generating the Kirmeskiste setup script.
--   : PDF generation service, now with ZUGFeRD XML embedding.
--   : The new script that will run on the Raspberry Pi.
--   : Main admin view for an event, where EMU data is shown and meter assignment will be triggered.
--   : UI for managing Kirmeskiste devices and generating setup scripts/QR labels.
--   : Contains the critical  error handling utility.
+-   : Contains all new Stripe and payment dashboard logic.
+-   : Contains the exhibitor signup logic that needs to be reworked.
+-   : Contains the GiroCode integration.
+-   : The fixed Python script for the Raspberry Pi.
+-   : The exhibitor signup page where the payment flow is initiated and needs to be fixed.
+-   : The new admin dashboard for payments.
+-   : The component used for meter assignment.
 
 **Areas that need refactoring**:
 -   The hardcoded MQTT broker URL in  must be moved to an environment variable.
+-   The signup flow in  and  needs a major refactor to handle the pay before confirm logic.
 
 **key api endpoints**
--   : GET - Generates and downloads the setup script for a Kirmeskiste.
--   : GET - Generates a single PDF with QR labels for all 4 meters of a Kirmeskiste.
--   : GET - Generates a PDF with a single, simple QR label for one meter.
--   : GET - Provides data for the meter assignment page.
--   : POST - Links a meter to a signup.
--   : POST - Resends an invoice email.
--   : GET - Endpoint was extended to include all invoices for the exhibitor.
+-   : GET - Data for the admin payment dashboard.
+-   : POST - Creates and returns a Stripe checkout URL.
+-   : POST - The Stripe webhook handler for confirming payments.
+-   : GET, POST, DELETE - CRUD for event documents.
+-   : POST - The signup endpoint that needs refactoring.
 
 **Critical Info for New Agent**
 -   The user communicates in **Deutsch**. All responses must be in German.
--   The highest priority task is to replace the meter assignment dropdown with a camera-based QR code scanner in .
--   The email functionality is currently blocked by an external SMTP provider's rate limit. This is not a code bug. The user is aware. Do not spend time debugging email sending unless the user provides new information.
+-   **Highest Priority (P0):** Fix the payment confirmation flow. A signup should only be finalized *after* a successful Stripe payment, unless the exhibitor is flagged for Purchase on Account. This is a critical business logic change.
+-   The email functionality is blocked by an external SMTP provider's rate limit. Do not spend time debugging email sending.
 
 **documents and test reports created in this job**
--   
--   
--    (and preceding reports)
+-   Test reports up to  (and possibly higher) were created.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **Request:** Change the meter assignment from a dropdown to a camera-based QR scanner. (IN PROGRESS)
-2.  **Request:** Simplify the QR code labels to just the code and Zaehler X, with individual buttons. (COMPLETED)
-3.  **Request:** Generate QR codes for meters to stick on them. (COMPLETED)
-4.  **Request:** Display the fixed IP addresses in the Kirmeskiste setup UI. (COMPLETED)
-5.  **Request:** Hardcode the fixed IP addresses for Kirmeskiste meters in the setup scripts. (COMPLETED)
-6.  **Request:** Replicate the Messkoffer setup generation flow for the new Kirmeskiste. (COMPLETED)
-7.  **Bug Report:** Validation error when creating a device with empty location fields. (COMPLETED)
-8.  **Bug Report:** Another validation error (Name erforderlich) after the first bug fix. (COMPLETED)
-9.  **Bug Report:** The app crashed when creating a Kirmeskiste due to a React rendering error with Pydantic validation messages. (COMPLETED)
-10. **Request:** Implement ZUGFeRD e-invoicing. (COMPLETED)
+1.  **Request:** Fix the critical bug where signups are confirmed even if Stripe payment is canceled. Implement a pay to confirm flow, with an admin-controlled override for Purchase on Account. (NOT STARTED)
+2.  **Log:** Provided logs showing the Kirmeskiste sync service is now running correctly. (RESOLVED)
+3.  **Log:** Provided -- No entries -- logs showing a  for  on the Pi. (RESOLVED)
+4.  **Log:** Provided -- No entries -- logs showing an  for  from  on the Pi. (RESOLVED)
+5.  **Log:** Provided  status showing the Kirmeskiste sync service was failing to start on the Pi. (RESOLVED)
+6.  **Log:** Provided  output showing a 500 Internal Server Error when downloading the setup script. (RESOLVED)
+7.  **Bug Report:** The  command for Kirmeskiste setup fails with an Invalid host name error. (RESOLVED)
+8.  **Request:** Enter specific IBAN/BIC details for the GiroCode feature. (COMPLETED)
+9.  **Request:** Build an admin payments dashboard and add GiroCode to invoices. (COMPLETED)
+10. **Request:** Implement Stripe integration for security deposits. (COMPLETED)
 
 **Project Health Check:**
 -   **Broken:**
-    -   Email sending is non-functional due to the external SMTP provider's rate limits.
+    -   **Payment Flow:** The core signup logic is flawed; it confirms bookings before payment is complete.
+    -   **Email Sending:** Non-functional due to external SMTP provider's rate limits.
 -   **Mocked:**
-    -   Stripe payment integration is not implemented.
+    -   None.
 
 **3rd Party Integrations**
--   **factur-x:** (NEW & Active) For ZUGFeRD e-invoicing.
--   **qrcode:** (NEW & Active) For generating QR codes.
--   **react-qr-reader:** (NEW & In Progress) For scanning QR codes.
+-   **Stripe:** (Active) For security deposit payments.
+-   **html5-qrcode:** (Active) For camera-based QR code scanning.
+-   **segno:** (Active) For GiroCode PDF generation.
+-   **factur-x:** (Active) For ZUGFeRD e-invoicing.
+-   **qrcode:** (Active) For generating QR codes.
 -   **EpiRent ERP:** (Stable) Reading order data.
 -   **DSE (Deep Sea Electronics):** (Stable) MQTT for generator data.
 -   **Nominatim (OpenStreetMap):** (Stable) Geocoding.
 -   **SMTP Server:** (Active but rate-limited) For all outbound emails.
--   **Stripe:** (Planned) Payment processing.
 
 **Testing status**
--   **Testing agent used after significant changes:** YES (after EMU meter integration)
--   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** None
--   **Known regressions:** None
+-   Testing agent used after significant changes: YES (multiple times, for payments and documents).
+-   Troubleshoot agent used after agent stuck in loop: NO
+-   Test files created: None
+-   Known regressions: The payment confirmation logic introduced with Stripe is critically flawed as reported by the user.
 
 **Credentials to test flow:**
 -   **Administrator:**  / 
 -   **Mitarbeiter (Staff):**  / 
 
 **What agent forgot to execute**
--   The refactoring of the hardcoded MQTT broker URL in  to use an environment variable is still pending from the previous fork.</analysis>
+-   The refactoring of the hardcoded MQTT broker URL in  to use an environment variable is still pending.</analysis>

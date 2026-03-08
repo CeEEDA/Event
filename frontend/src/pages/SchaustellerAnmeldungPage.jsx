@@ -24,6 +24,7 @@ const PAYMENT_METHODS = [
 ];
 
 const STATUS_LABELS = {
+  pending: { text: "Ausstehend (Zahlung offen)", cls: "bg-amber-100 text-amber-700" },
   ausstehend: { text: "Ausstehend", cls: "bg-amber-100 text-amber-700" },
   bestaetigt: { text: "Bestätigt", cls: "bg-blue-100 text-blue-700" },
   abgerechnet: { text: "Abgerechnet", cls: "bg-emerald-100 text-emerald-700" },
@@ -165,36 +166,47 @@ export default function SchaustellerAnmeldungPage() {
       const r = await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm });
       const signupId = r.data?.signup_id || r.data?.id;
       setLastSignupId(signupId);
-      toast.success("Anmeldung erfolgreich!");
-      setStep("payment");
+
+      if (r.data?.payment_required === false) {
+        // kauf_auf_rechnung – confirmed immediately, no payment needed
+        toast.success("Anmeldung erfolgreich bestätigt!");
+        setStep("done");
+        return;
+      }
+
+      // Payment required – create Stripe checkout session and redirect immediately
+      toast.info("Weiterleitung zur Zahlung...");
+      try {
+        const pr = await api.post("/payments/checkout/deposit", {
+          signup_id: signupId,
+          event_id: selectedEvent.id,
+          origin_url: window.location.origin,
+        });
+        if (pr.data?.url) {
+          window.location.href = pr.data.url;
+          return;
+        }
+      } catch (payErr) {
+        toast.error("Fehler beim Erstellen der Zahlungssitzung. Bitte versuchen Sie es erneut.");
+        // Delete the pending signup since payment failed to initiate
+        try { await api.post("/kirmes/public/cancel-pending-signup", { signup_id: signupId }); } catch {}
+      }
     } catch (err) {
       toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Anmeldung");
     } finally { setSaving(false); }
   };
 
-  const handlePayDeposit = async () => {
-    if (!lastSignupId || !selectedEvent) return;
-    setSaving(true);
-    try {
-      const r = await api.post("/payments/checkout/deposit", {
-        signup_id: lastSignupId,
-        event_id: selectedEvent.id,
-        origin_url: window.location.origin,
-      });
-      if (r.data?.url) {
-        window.location.href = r.data.url;
-      }
-    } catch (err) {
-      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Zahlung");
-    } finally { setSaving(false); }
-  };
-
   const pollPaymentStatus = useCallback(async (sessionId, attempts = 0) => {
-    if (attempts >= 10) { setPaymentChecking(false); return; }
+    if (attempts >= 15) {
+      setPaymentChecking(false);
+      toast.error("Zeitüberschreitung bei der Zahlungsbestätigung. Bitte kontaktieren Sie den Support.");
+      setStep("payment_failed");
+      return;
+    }
     try {
       const r = await api.get(`/payments/checkout/status/${sessionId}`);
       if (r.data?.payment_status === "paid") {
-        toast.success("Kaution erfolgreich bezahlt!");
+        toast.success("Kaution bezahlt – Anmeldung bestätigt!");
         setPaymentChecking(false);
         setStep("done");
         if (schausteller) loadBookings(schausteller.id);
@@ -203,7 +215,7 @@ export default function SchaustellerAnmeldungPage() {
       if (r.data?.status === "expired") {
         toast.error("Zahlungssitzung abgelaufen");
         setPaymentChecking(false);
-        setStep("done");
+        setStep("payment_failed");
         return;
       }
     } catch { /* ignore */ }
@@ -219,7 +231,8 @@ export default function SchaustellerAnmeldungPage() {
       setStep("payment_check");
       pollPaymentStatus(sessionId);
     } else if (paymentResult === "cancelled") {
-      toast.error("Zahlung abgebrochen");
+      toast.error("Zahlung abgebrochen. Ihre Anmeldung wurde nicht bestätigt.");
+      setStep("payment_failed");
     }
   }, [searchParams, pollPaymentStatus]);
 
@@ -529,34 +542,20 @@ export default function SchaustellerAnmeldungPage() {
             </div>
           )}
 
-          {/* Payment – Kaution bezahlen */}
-          {step === "payment" && (
-            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center" data-testid="payment-step">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
-                <Zap className="w-8 h-8 text-amber-600" />
+          {/* Payment Failed – Zahlung abgebrochen oder fehlgeschlagen */}
+          {step === "payment_failed" && (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center" data-testid="payment-failed-step">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+                <Zap className="w-8 h-8 text-red-600" />
               </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Kaution bezahlen</h2>
-              <p className="text-sm text-gray-500 mb-4">
-                Ihre Anmeldung für <strong>{selectedEvent?.name}</strong> war erfolgreich. Bitte bezahlen Sie jetzt die Kaution.
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Zahlung nicht abgeschlossen</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Ihre Anmeldung wurde <strong>nicht bestätigt</strong>, da die Zahlung nicht abgeschlossen wurde.
+                Bitte versuchen Sie es erneut oder kontaktieren Sie den Veranstalter.
               </p>
-              <div className="bg-gray-50 rounded-lg p-4 text-left text-sm space-y-1 mb-4">
-                <p><span className="text-gray-500">Platz:</span> <strong>{signupForm.platznummer}</strong></p>
-                <p><span className="text-gray-500">Fahrgeschäft:</span> <strong>{signupForm.fahrgeschaeft}</strong></p>
-                <p><span className="text-gray-500">Anschluss:</span> <strong>{signupForm.connection_type}</strong></p>
-              </div>
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-amber-700 font-medium">Kaution</span>
-                  <span className="text-2xl font-bold text-amber-800">{(depositAmounts[signupForm.connection_type] || 0).toFixed(2)} EUR</span>
-                </div>
-                <p className="text-[10px] text-amber-600 mt-1">Wird nach der Veranstaltung erstattet</p>
-              </div>
-              <Button onClick={handlePayDeposit} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mb-3" data-testid="pay-deposit-btn">
-                {saving ? "Weiterleitung..." : "Jetzt bezahlen"} <ArrowRight className="w-4 h-4 ml-1" />
+              <Button onClick={() => { setStep("dashboard"); if (schausteller) loadBookings(schausteller.id); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="back-dashboard-from-failed-btn">
+                <LayoutDashboard className="w-4 h-4 mr-1" /> Zu meinem Bereich
               </Button>
-              <button onClick={() => { setStep("done"); }} className="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="skip-payment-btn">
-                Später bezahlen
-              </button>
             </div>
           )}
 

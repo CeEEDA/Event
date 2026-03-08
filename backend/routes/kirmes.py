@@ -644,6 +644,22 @@ async def list_public_events():
     return events
 
 
+class CancelPendingSignupRequest(BaseModel):
+    signup_id: str
+
+
+@router.post("/public/cancel-pending-signup")
+async def cancel_pending_signup(data: CancelPendingSignupRequest):
+    """Public endpoint - Cancel a pending signup that failed payment initiation."""
+    signup = await _db.kirmes_signups.find_one({"id": data.signup_id}, {"_id": 0})
+    if not signup:
+        return {"message": "OK"}
+    # Only allow cancellation of pending signups
+    if signup.get("payment_status") == "pending":
+        await _db.kirmes_signups.delete_one({"id": data.signup_id})
+    return {"message": "Anmeldung storniert"}
+
+
 @router.get("/public/events/{event_id}")
 async def get_public_event(event_id: str):
     """Public endpoint - Get event details for signup."""
@@ -658,7 +674,10 @@ async def get_public_event(event_id: str):
 
 @router.post("/public/signup")
 async def signup_for_event(data: EventSignup):
-    """Public endpoint - Schausteller signs up for an event."""
+    """Public endpoint - Schausteller signs up for an event.
+    If kauf_auf_rechnung is enabled, signup is confirmed immediately.
+    Otherwise, signup stays 'pending' until deposit is paid via Stripe.
+    """
     # Validate event exists and is released
     event = await _db.kirmes_events.find_one(
         {"id": data.event_id, "status": {"$in": ["freigegeben", "aktiv"]}},
@@ -684,8 +703,11 @@ async def signup_for_event(data: EventSignup):
     if data.connection_type not in CONNECTION_TYPES:
         raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {data.connection_type}")
 
+    # Determine if payment is required
+    is_kauf_auf_rechnung = bool(sch.get("kauf_auf_rechnung"))
+
     # Validate payment method - "rechnung" only allowed if kauf_auf_rechnung is enabled
-    if data.payment_method == "rechnung" and not sch.get("kauf_auf_rechnung"):
+    if data.payment_method == "rechnung" and not is_kauf_auf_rechnung:
         raise HTTPException(status_code=400, detail="Kauf auf Rechnung ist für diesen Schausteller nicht freigeschaltet.")
 
     # Find price for this connection type
@@ -694,6 +716,9 @@ async def signup_for_event(data: EventSignup):
         if p["connection_type"] == data.connection_type:
             price = p["price"]
             break
+
+    # If kauf_auf_rechnung: confirm immediately. Otherwise: pending until payment.
+    initial_status = "bestaetigt" if is_kauf_auf_rechnung else "pending"
 
     signup_id = str(uuid.uuid4())
     signup_doc = {
@@ -705,9 +730,10 @@ async def signup_for_event(data: EventSignup):
         "connection_type": data.connection_type,
         "price": price,
         "payment_method": data.payment_method,
-        "payment_status": "ausstehend",  # ausstehend, reserviert, bezahlt, erstattet
+        "payment_status": initial_status,
+        "deposit_paid": is_kauf_auf_rechnung,
         "deposit_amount": 0.0,
-        "meter_id": None,  # Will be linked later via QR code
+        "meter_id": None,
         "meter_start": None,
         "meter_end": None,
         "kwh_used": None,
@@ -718,9 +744,12 @@ async def signup_for_event(data: EventSignup):
     signup_doc.pop("_id", None)
     signup_doc["schausteller"] = sch
 
-    # Send booking confirmation email
-    _send_booking_confirmation_email(sch, event, signup_doc)
+    # Only send confirmation email if already confirmed (kauf_auf_rechnung)
+    if is_kauf_auf_rechnung:
+        _send_booking_confirmation_email(sch, event, signup_doc)
 
+    # Return payment_required flag so frontend knows whether to redirect to Stripe
+    signup_doc["payment_required"] = not is_kauf_auf_rechnung
     return signup_doc
 
 

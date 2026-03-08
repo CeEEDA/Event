@@ -221,7 +221,7 @@ function EmergentBridge() {
           <Input
             value={config.api_url}
             onChange={e => setConfig(prev => ({ ...prev, api_url: e.target.value }))}
-            placeholder="https://kirmeskiste-portal.preview.emergentagent.com"
+            placeholder="https://event-invoicing.preview.emergentagent.com"
             className="mt-1 font-mono text-sm"
             data-testid="emergent-url-input"
           />

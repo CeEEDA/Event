@@ -27,6 +27,36 @@ def init_payments(db, decode_jwt_token):
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY")
 
 
+# ============== Signup confirmation helper ==============
+
+async def _confirm_signup_after_payment(signup_id: str, deposit_amount: float):
+    """Confirm a pending signup after successful payment and send confirmation email."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        return
+    # Only confirm if still pending
+    if signup.get("payment_status") not in ("pending", "ausstehend"):
+        return
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$set": {
+            "payment_status": "bestaetigt",
+            "deposit_paid": True,
+            "deposit_amount": deposit_amount,
+            "deposit_paid_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    # Send booking confirmation email
+    try:
+        sch = await _db.kirmes_schausteller.find_one({"id": signup.get("schausteller_id")}, {"_id": 0})
+        event = await _db.kirmes_events.find_one({"id": signup.get("event_id")}, {"_id": 0})
+        if sch and event:
+            from routes.kirmes import _send_booking_confirmation_email
+            _send_booking_confirmation_email(sch, event, signup)
+    except Exception:
+        pass  # Don't fail payment confirmation if email fails
+
+
 # ============== Auth helpers ==============
 
 async def _auth_user(credentials: HTTPAuthorizationCredentials):
@@ -264,10 +294,7 @@ async def check_payment_status(session_id: str):
     # If paid, update related records (only once)
     if new_status == "paid" and tx.get("payment_status") != "paid":
         if tx.get("type") == "deposit":
-            await _db.kirmes_signups.update_one(
-                {"id": tx["signup_id"]},
-                {"$set": {"deposit_paid": True, "deposit_amount": tx["amount"], "deposit_paid_at": datetime.now(timezone.utc).isoformat()}},
-            )
+            await _confirm_signup_after_payment(tx["signup_id"], tx["amount"])
         elif tx.get("type") == "invoice":
             await _db.invoices.update_one(
                 {"id": tx["invoice_id"]},
@@ -303,10 +330,7 @@ async def stripe_webhook(request: Request):
                     {"$set": {"payment_status": "paid", "updated_at": datetime.now(timezone.utc).isoformat()}},
                 )
                 if tx.get("type") == "deposit":
-                    await _db.kirmes_signups.update_one(
-                        {"id": tx["signup_id"]},
-                        {"$set": {"deposit_paid": True, "deposit_amount": tx["amount"], "deposit_paid_at": datetime.now(timezone.utc).isoformat()}},
-                    )
+                    await _confirm_signup_after_payment(tx["signup_id"], tx["amount"])
                 elif tx.get("type") == "invoice":
                     await _db.invoices.update_one(
                         {"id": tx["invoice_id"]},
@@ -316,6 +340,18 @@ async def stripe_webhook(request: Request):
         pass  # Webhook verification may fail in test mode
 
     return {"status": "ok"}
+
+
+@router.get("/signups/{signup_id}/status")
+async def get_signup_status(signup_id: str):
+    """Public endpoint - Check if a signup has been confirmed after payment."""
+    signup = await _db.kirmes_signups.find_one(
+        {"id": signup_id},
+        {"_id": 0, "id": 1, "payment_status": 1, "deposit_paid": 1, "deposit_amount": 1}
+    )
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+    return signup
 
 
 # ============== Admin: View payments ==============
