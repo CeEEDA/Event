@@ -21,6 +21,13 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
   - Admin scannt QR -> waehlt Anmeldung -> Zaehler wird zugewiesen
 - **Meter-Zuordnungsseite**: Zeigt Zaehler-Info, aktuelle Zuweisung, offene Anmeldungen
 
+### Kamera-basierter QR-Scanner (2026-03-08)
+- Dropdown fuer Zaehler-Zuweisung ersetzt durch Kamera-QR-Scanner (html5-qrcode)
+- Primaer: "QR-Code scannen" Button oeffnet Kamera, scannt Label am Stromverteiler
+- Fallback: Manuelles Dropdown bleibt als Alternative
+- Extrahiert meter_id aus URL und ruft POST /api/kirmes/meters/{id}/assign-signup auf
+- QrScanner-Komponente: frontend/src/components/QrScanner.jsx
+
 ### ZUGFeRD E-Rechnungen (2026-03-08)
 - PDF-Rechnungen mit eingebetteter factur-x.xml (Basic Profil, XSD-validiert)
 
@@ -46,14 +53,15 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 ## Backlog
 
 ### P0 (Next)
+- MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
 - Stripe Integration fuer Kaution-Zahlung
 
 ### P1
 - SMTP-Anbieter Upgrade (mail.de Tageslimit)
 - Self-hosted MQTT Broker (Mosquitto)
+- Direkter QR-Label-Druck (Print-Button statt PDF)
 
 ### P2
-- MQTT Broker URL -> .env Refactoring
 - Admin File Size Limits
 
 ## Test Credentials
