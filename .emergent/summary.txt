@@ -2,90 +2,88 @@
 The user is building a comprehensive portal for monitoring and managing power generation assets. The core features include:
 1.  **Live Monitoring:** Dashboards for Deep Sea Electronics (DSE) generators and mobile Messkoffer energy measurement cases, using live MQTT and API data.
 2.  **Remote Control:** Start/Stop/Auto remote control for DSE generators.
-3.  **ERP Integration (EpiRent):** A new major feature to integrate with their EpiRent ERP system. This involves creating an Auftragsverwaltung (Order Management) page to fetch, display, and search for orders from the EpiRent API. The goal is to eventually link generators to these orders.
-4.  **Device & User Management:** Full CRUD for devices and a role-based permission system.
-5.  **Automated Pi Deployment:** A one-click setup script for the Messkoffer Raspberry Pi.
-6.  **Future Self-Hosting:** The user plans to migrate the entire application to a local server, which will require setting up a self-hosted MQTT broker and a Live Bridge to the Emergent platform for continued development.
+3.  **ERP Integration (EpiRent):** A major feature to integrate with their EpiRent ERP system. This involves creating an Auftragsverwaltung (Order Management) page to fetch, display, and search for orders from the EpiRent API.
+4.  **Order-to-Asset Linking:** On a new order detail page, display a map centered on the job's delivery address, show generators within an adjustable radius, and allow manual placement of untracked assets (e.g., light masts).
+5.  **Device & User Management:** Full CRUD for devices and a role-based permission system, including an Einsatzhistorie (deployment history) for each generator.
+6.  **Future Self-Hosting:** The user plans to migrate the entire application to a local server.
 
 **User's preferred language**: Deutsch
 
 **what currently exists?**
-The application is a functional full-stack portal with several live features:
--   **Live Monitoring & Control:** The Messkoffer and DSE Generator monitoring systems are fully operational with live data. The DSE remote control UI/UX has been refined with a 3D-button style as requested.
--   **GPS & Mapping:** The bug preventing GPS data from being displayed has been fixed. DSE generator locations are now shown on maps on both the dashboard and detail pages, with a manual coordinate entry feature as a fallback.
--   **EpiRent Integration Setup:** A new Administrative Einstellungen page has been created. It allows for the configuration of third-party integrations. The EpiRent ERP integration has been set up and successfully tested; the application can connect to the EpiRent API, authenticate, and fetch data.
--   **Emergent Live Bridge:** An interface has been created in the admin settings to manage a future connection between the user's local server and the Emergent platform, to allow for continued live development after migration.
--   **Order Management Page:** A new, empty page for Auftragsverwaltung has been created and placed at the top of the main navigation menu, ready for implementation.
+The application is a full-stack portal with a React frontend and FastAPI backend.
+-   **Order Management (Auftragsverwaltung):** A fully functional page that fetches orders from the EpiRent ERP. It includes filters for date range and order status (defaulting to active jobs for today) and a free-text search.
+-   **Order Detail Page:** A new page, accessible by clicking an order, that displays order details and a  map. The map is centered on the order's geocoded delivery address.
+-   **Asset-to-Order Linking:** The order detail page allows manual placement of assets (Lichtmast, Stromerzeuger, etc.). It captures the user's device location, converts it to a Plus Code, and displays the assets as orange markers on the map and in a list. It also lists all portal generators that are within a user-configurable radius of the job site.
+-   **Deployment History:** A placeholder Einsatzhistorie section has been added to the .
+-   **DSE Integration:** Live monitoring and remote control are functional. The CSV topic files required for the DSE gateway have been corrected to fix formatting bugs.
+-   **Authentication:** All EpiRent proxy endpoints are secured with JWT authentication.
 
 **Last working item**:
--   Last item agent was working: The agent was beginning the implementation of the Auftragsverwaltung (Order Management) page. The user has provided the requirements: fetch order data (Project Number, Project Name, Event Period, Delivery Address) from the EpiRent API, display it, and add date range and free-text search filters. The agent had just finished analyzing the EpiRent API's  endpoint and was about to create a backend proxy for it.
+-   Last item agent was working: Debugging an issue where GPS data from a DSE890 gateway was not being received by the backend via MQTT, even though the gateway itself had a satellite fix. The root cause was identified as a missing Group Name in the gateway's MQTT configuration. The user has just set this group name to eventenergie and restarted the gateway.
 -   Status: IN PROGRESS
 -   Agent Testing Done: N
--   Which testing method agent to use? both
+-   Which testing method agent to use? manual testing by curl
 -   User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P0) Implement Auftragsverwaltung (Order Management) Page**
-    -   **Description:** Build the frontend and backend to fetch and display orders from the EpiRent ERP API.
+-   **Issue 1: (P0) Verify GPS Data Reception from DSE Gateway**
+    -   **Description:** After the user set the Group Name to eventenergie on the DSE gateway, the agent must verify if the GPS data is now being published to the correct MQTT topic and received by the backend.
     -   **Status:** IN PROGRESS
 
   **Issues Detail:**
-  - **Issue 1: Implement Auftragsverwaltung (Order Management) Page**
-     - **Attempted fixes:** The agent has successfully explored the EpiRent API using  and identified the correct endpoint () and data structure. The placeholder page  and the backend route file  exist.
+  - **Issue 1: Verify GPS Data Reception from DSE Gateway**
+     - **Attempted fixes:**
+        - Corrected a bug in the generated DSE topic CSV files where a missing comma caused Invalid field value errors.
+        - Fixed a bug where module topic files weren't offered for download due to an overly strict string match on the controller name.
+        - Listened to MQTT topics and confirmed GPS data was not arriving.
+        - Identified the missing Group Name in the gateway configuration as the likely cause.
      - **Next debug checklist:**
-        1.  Create a new backend proxy endpoint (e.g., ) in . This endpoint will securely call the EpiRent API () using the stored credentials.
-        2.  Implement the frontend UI in .
-        3.  Add a date range picker (defaulting to -1 week from today to +4 weeks from today).
-        4.  Add a search input for free-text filtering (Project Number, Project Name, Address).
-        5.  Create a table/list to display the fetched order data.
-     - **Why fix this issue and what will be achieved with the fix?** This is a major new feature requested by the user, forming the basis for linking assets to jobs.
+        1.  Modify the MQTT subscription in  to listen to topics under the new group name, e.g., by subscribing to .
+        2.  Restart the backend service to apply the new subscription.
+        3.  Monitor the MQTT logs/messages for the GPS topic (e.g., ).
+        4.  Once the message arrives, verify that the  function correctly parses the data and updates the generator's location in the database.
+     - **Why fix this issue and what will be achieved with the fix?** This is critical for the generators in radius feature to work. Without live GPS data, generators cannot be automatically associated with jobs on the order detail map.
      - **Status:** IN PROGRESS
-     - **Is recurring issue?** N
-     - **Should Test frontend/backend/both after fix?** Both
+     - **Is recurring issue?** Y
+     - **Should Test frontend/backend/both after fix?** Backend
      - **Blocked on other issue:** None
 
 **In progress Task List**:
--   **Task 1: (P0) Implement Auftragsverwaltung (Order Management) Page**
-    -   **Where to resume:** Start by creating the backend proxy endpoint in .
-    -   **What will be achieved with this?** The first version of the Order Management page will be functional, displaying live data from the ERP.
+-   **Task 1: (P0) Verify GPS Data Reception**
+    -   **Where to resume:** Update the MQTT subscription path in  to include the  group name.
+    -   **What will be achieved with this?** Live GPS tracking for DSE generators will become functional.
     -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Should Test frontend/backend/both after fix?** Backend
     -   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   (P0) **Link Generators to Orders:** After the order list is functional, the next step is to create a mechanism to associate generators from the portal with the orders fetched from EpiRent.
+    -   (P0) **Implement Deployment History Logic:** The Einsatzhistorie section on the generator detail page is currently a placeholder. The backend logic needs to be created to record which orders a generator was associated with, along with key metrics like runtime, start/stop times, and energy consumption.
 -   **Future Tasks:**
-    -   (P1) **Self-Hosted MQTT Broker:** Install and configure a Mosquitto MQTT broker for the eventual server migration. This will involve updating the backend configuration to use the local broker.
+    -   (P1) **Self-Hosted MQTT Broker:** Install and configure a Mosquitto MQTT broker for server migration.
     -   (P1) **Full Kirmeskiste Support:** Add full support for the Kirmeskiste device type.
     -   (P2) **File Size Limits:** Implement admin-controlled file size limits for the file-sharing feature.
 
 **Completed work in this session**
--   **DSE Remote Control UI:**
-    -   Reordered control buttons to Stop, Auto, Start.
-    -   Removed the confirmation popup for direct command execution.
-    -   Redesigned buttons with a 3D, DSE-panel-inspired look with dynamic status lighting.
--   **Messkoffer Pi Connectivity:**
-    -   Diagnosed and fixed the Portal nicht erreichbar error by remotely updating the  in the Pi's configuration file to point to the new server URL.
--   **Device Management Overhaul:**
-    -   Added a controller selection dropdown for DSE generators.
-    -   Created a DSE890 Gateway Konfiguration section with fields for MQTT credentials and dynamic topic file downloads.
-    -   Simplified the Messkoffer device management UI, removing redundant fields.
--   **GPS/Map Bug Fix:**
-    -   Implemented a backend parser for DSE GPS data.
-    -   Added a map to the generator detail page.
-    -   Added manual latitude/longitude fields in device management as a fallback.
-    -   Fixed the dashboard map, which now correctly displays generator markers.
--   **EpiRent ERP Integration:**
-    -   Created a new Administrative Einstellungen page accessible only to admins.
-    -   Built a generic backend/frontend system for managing API integrations.
-    -   Successfully connected to the live EpiRent API, handling its specific authentication headers.
-    -   Designed the integration form to match the user's specification, including a Test Connection button that provides live feedback.
--   **UI & Navigation:**
-    -   Created the Auftragsverwaltung page and re-ordered the main navigation.
-    -   Standardized page headers across admin sections for a consistent look and feel.
--   **Emergent Live Bridge:**
-    -   Created a dedicated UI in the admin settings to manage a future live bridge connection for development after the server migration.
+-   **Auftragsverwaltung (Order Management) Implemented:**
+    -   Created a backend proxy to the EpiRent API to fetch orders ().
+    -   Built the frontend page () with a table displaying orders.
+    -   Added authentication to the order endpoint.
+    -   Fixed a bug where the customer address was shown instead of the delivery address.
+    -   Optimized performance by fetching detailed address data only for filtered results.
+    -   Added a status filter, defaulting to Bestätigt (Confirmed).
+    -   Set the default view to show only active jobs for the current day.
+-   **Order Detail Page & Asset Linking:**
+    -   Created a new  that shows order details and a map.
+    -   Implemented backend geocoding for delivery addresses using Nominatim.
+    -   Implemented a feature to find and display generators within a user-defined radius of the job site.
+-   **Manual Asset Placement:**
+    -   Added a feature on the order detail page to manually place untracked assets (e.g., light masts) on the map.
+    -   Uses the device's GPS and Google's Plus Codes for location identification.
+    -   Created backend models and CRUD endpoints to store these manually placed assets.
+-   **DSE Gateway Bug Fixes:**
+    -   Resolved a critical Invalid field value error by correcting a missing comma in all generated CSV topic files (, ).
+    -   Fixed a UI bug preventing module topic file downloads.
 
 **Earlier issues found/mentioned but not fixed**
 -   None.
@@ -97,77 +95,75 @@ The application is a functional full-stack portal with several live features:
 
 
 **Key Technical Concepts**
--   **Backend:** FastAPI, Python, MongoDB, Pydantic
--   **Frontend:** React, Tailwind CSS, Shadcn/UI
--   **External API Integration:** Calling the third-party EpiRent ERP API via a secure backend proxy. This involves handling custom HTTP headers (, ) for authentication.
--   **Dynamic UI:** The integrations page dynamically renders forms based on the integration type.
--   **State Management:** Complex forms (like device management and admin settings) use React state () to manage form data, conditional UI rendering, and API responses.
--   **MQTT:** Bidirectional communication with DSE generators for live data and remote control. Includes parsing multiple data formats (Gencomm JSON, DSE-specific GPS JSON).
+-   **External API Integration:** Secure proxy to the EpiRent ERP, handling authentication and data transformation.
+-   **Geocoding & Geospatial Queries:** Using  with Nominatim (OpenStreetMap) to convert addresses to coordinates. Performing radius-based searches in MongoDB to find nearby generators.
+-   **Location Encoding:** Using Google's  (Plus Codes) library as a human-readable alternative to lat/lon for manually placed assets.
+-   **Frontend State Management:** Heavy use of  and  in React to manage complex UI state, including filters, search queries, map interactions, and data fetching from multiple endpoints.
+-   **Performance Optimization:** Refactored a backend process from fetching N details upfront to fetching details for a small, filtered subset on demand, drastically improving UI responsiveness.
+-   **CSV File Generation:** Dynamically generating and correcting complex, multi-column CSV files based on strict third-party hardware specifications (DSE890 Gateway).
 
 **key DB schema**
--   **integrations:** (New Collection)
+-   **orders:** (New Collection, implicitly created for storing order-specific settings)
     -   
-    -   Stores configuration for third-party services like EpiRent and the Emergent Bridge.
--   **devices:**
-    -   Added ,  for manual location setting.
-    -   Added ,  for future MQTT broker authentication.
+-   **assets:** (New Collection)
+    -   
 
 **changes in tech stack**
--   **Backend:**  library was added to  for making asynchronous HTTP requests to the EpiRent API.
+-   **Backend:**  library added to .
+-   **Frontend:**  is now a key dependency for map-based features.
 
 **All files of reference**
--   : The new page to be implemented for order management.
--   : The page for managing all third-party integrations.
--   : The backend file containing the API for integrations and where the EpiRent proxy will be built.
--   : Contains the new map section for displaying generator location.
--   : Contains the new 3D-styled remote control buttons.
--   : Contains the updated modal for editing DSE generators, including the new location fields.
+-   : Needs to be modified to check for GPS data under the new  group topic.
+-   : Contains all new backend logic for orders, geocoding, and asset management.
+-   : The main order list page.
+-   : The new detail page with the map and asset features.
+-   : The corrected gateway topic file.
+-   : The corrected module topic file.
 
 **Areas that need refactoring**:
--   The MQTT broker URL is still hardcoded in . This should be moved to an environment variable in  to prepare for the future migration to a self-hosted broker.
+- The MQTT broker URL is still hardcoded in . This should be moved to .
 
 **key api endpoints**
--   : **(To be created)** The proxy endpoint to fetch orders from the EpiRent ERP.
--   : Full CRUD API for managing third-party integrations.
--   : Endpoint to test the connection to a configured integration.
--   : Endpoints to manage the Emergent Live Bridge configuration.
--   : Dynamically serves the correct DSE topic CSV file based on the selected controller.
+-   : Fetches and filters a list of orders from EpiRent.
+-   : Fetches details for a single order, including geocoded coordinates.
+-   : Gets generators within the specified radius of an order.
+-   : Full CRUD for manually placed assets on an order.
 
 **Critical Info for New Agent**
--   Your immediate task is to build the Auftragsverwaltung (Order Management) page.
--   Start by creating the backend proxy endpoint in  to call the EpiRent API at . Use the credentials already stored in the  collection.
--   Then, build the frontend in , including the date picker and search bar.
--   The user wants the date range to default to one week in the past and four weeks in the future.
--   The user has explicitly stated that the step *after* this is to link generators to the orders. Keep this in mind for the data structure.
+-   Your immediate and highest-priority task is to fix the missing GPS data.
+-   The user has set the DSE gateway's MQTT Group Name to . You must update the backend's MQTT subscription logic in  to listen to topics on this new path (e.g., ).
+-   Once the subscription is updated, restart the backend and monitor for incoming GPS messages. The existing parsing logic should handle the data once it's received.
+-   Do not proceed to other tasks until the live GPS data is confirmed to be arriving and stored in the database.
 
 **documents and test reports created in this job**
--   : Corrected version created.
+-   
+-   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** Requests to build the Auftragsverwaltung page, specifying data fields (Project #, Name, Period, Address), a date range filter (default -1 week to +4 weeks), and a free-text search. (PENDING IMPLEMENTATION)
-2.  **User:** Asks to re-order the main page icons, moving Auftragsverwaltung to the top and FileShare down. (DONE)
-3.  **User:** Reports that maps are not showing generator locations. (DONE)
-4.  **User:** Asks for the DSE890 gateway topic file again to fix GPS. (DONE)
-5.  **User:** Reports an error after uploading the file. (INVESTIGATED)
-6.  **User:** Asks to remove the Demo button from the login page. (DONE)
-7.  **User:** Asks to move the MQTT button from user management to admin settings. (DONE)
-8.  **User:** Requests a new Emergent.sh interface in admin settings to act as a live bridge for future local development. (DONE)
-9.  **User:** Asks to standardize the page headers to a consistent layout. (DONE)
-10. **Agent:** Confirmed header layout is fixed and awaits next instruction. (LAST AGENT ACTION)
+1.  **User:** the group name is eventenergie. DSE has been restarted and is connecting. (PENDING AGENT ACTION)
+2.  **Agent:** Explains the missing group name is the problem and recommends setting it. (RESOLVED)
+3.  **User:** Shares screenshots of all DSE gateway configuration pages. (RESOLVED)
+4.  **Agent:** Asks user to check for specific settings on the gateway. (RESOLVED)
+5.  **User:** the gateway is running. Check again if something is arriving. The satellites have to send something first. That can take a while. (RESOLVED)
+6.  **Agent:** Confirms the gateway is not publishing GPS/status topics and asks user to try an MQTT reconnect or gateway restart. (RESOLVED)
+7.  **User:** the file is uploaded. There is also no error. (RESOLVED)
+8.  **Agent:** Confirms the topic file is likely not active and asks the user to re-upload the corrected version. (RESOLVED)
+9.  **User:** I did a restart. GPS is also on again. Check the status again. (RESOLVED)
+10. **Agent:** Confirms still no GPS topic is being received from the gateway. (RESOLVED)
 
 **Project Health Check:**
--   **Broken:** None.
+-   **Broken:** Live GPS data feed from DSE gateways.
 -   **Mocked:** None.
 -   **Blocked:** None.
 
 **3rd Party Integrations**
--   **EpiRent ERP:** Live integration for reading order, product, and stock data. Connection is configured and tested.
--   **DSE (Deep Sea Electronics):** Live integration with DSE890 gateway via MQTT for data and control.
--   **Shelly:** Reading data from Shelly Pro 3EM devices via local HTTP API on the Raspberry Pi.
--   **gpsd:** Reading data from a USB GPS antenna on the Raspberry Pi.
+-   **EpiRent ERP:** Live integration for reading order data.
+-   **DSE (Deep Sea Electronics):** Live integration via MQTT for data and control. Currently experiencing an issue with GPS data reception.
+-   **Nominatim (OpenStreetMap):** Used for geocoding delivery addresses.
+-   **Shelly / gpsd:** Existing integrations on the Raspberry Pi devices.
 
 **Testing status**
--   **Testing agent used after significant changes:** NO
+-   **Testing agent used after significant changes:** YES
 -   **Troubleshoot agent used after agent stuck in loop:** NO
 -   **Test files created:** None
 -   **Known regressions:** None
@@ -177,4 +173,4 @@ The application is a functional full-stack portal with several live features:
 -   **Mitarbeiter:**  / 
 
 **What agent forgot to execute**
--   Nothing was forgotten. The agent was actively starting the implementation of the Auftragsverwaltung feature as requested by the user.</analysis>
+-   The agent did not forget anything; it was actively debugging the final step of a complex issue when the session ended. The next logical step is to act on the latest information provided by the user.</analysis>
