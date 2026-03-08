@@ -108,14 +108,13 @@ export default function KirmesEventDetailPage() {
       s.schausteller?.name || "–",
       s.fahrgeschaeft || "–",
       s.connection_type,
-      `${(s.price || 0).toFixed(2)} EUR`,
       s.schausteller?.telefon || "–",
       s.meter_id ? "Ja" : "Nein",
     ]);
 
     autoTable(doc, {
       startY: 32,
-      head: [["#", "Platz", "Firma", "Name", "Fahrgeschäft", "Anschluss", "Preis", "Telefon", "Zähler"]],
+      head: [["#", "Platz", "Firma", "Name", "Fahrgeschäft", "Anschluss", "Telefon", "Zähler"]],
       body: rows,
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: [168, 50, 168], textColor: 255 },
