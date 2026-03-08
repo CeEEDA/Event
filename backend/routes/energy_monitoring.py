@@ -805,7 +805,7 @@ echo "[2/5] Python-Umgebung einrichten..."
 INSTALL_DIR="/opt/kirmeskiste"
 sudo mkdir -p "$INSTALL_DIR"
 sudo python3 -m venv "$INSTALL_DIR/venv"
-sudo "$INSTALL_DIR/venv/bin/pip" install --quiet pymodbus requests gpsd-py3
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet "pymodbus>=3.7" requests gpsd-py3
 
 # ----- Sync-Skript installieren -----
 echo "[3/5] Sync-Skript installieren..."

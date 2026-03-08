@@ -35,8 +35,12 @@ from datetime import datetime, timezone
 
 import requests
 from pymodbus.client import ModbusTcpClient
-from pymodbus.constants import Endian
 from pymodbus.payload import BinaryPayloadDecoder
+
+# pymodbus 3.7+ removed Endian from constants – use raw byte order chars
+class _Endian:
+    BIG = ">"
+Endian = _Endian()
 
 
 # ====== Konstanten: EMU Professional II Modbus Register ======
