@@ -78,6 +78,8 @@ class EventUpdate(BaseModel):
     dispo_end: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    kwh_price: Optional[float] = None
+    handling_surcharge: Optional[float] = None
     custom_prices: Optional[List[StandardPrice]] = None
 
 
@@ -248,7 +250,7 @@ async def update_event(event_id: str, data: EventUpdate, user: dict = Depends(_r
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
 
     update = {}
-    for field in ["name", "location", "start_date", "end_date", "dispo_start", "dispo_end", "notes", "status"]:
+    for field in ["name", "location", "start_date", "end_date", "dispo_start", "dispo_end", "notes", "status", "kwh_price", "handling_surcharge"]:
         val = getattr(data, field, None)
         if val is not None:
             update[field] = val
