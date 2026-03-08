@@ -94,17 +94,11 @@ const getOrderStatus = (order) => {
 export default function OrdersPage() {
   const navigate = useNavigate();
 
-  // Default date range: -1 week to +4 weeks
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return toISODate(d);
-  });
-  const [dateTo, setDateTo] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 28);
-    return toISODate(d);
-  });
+  const today = toISODate(new Date());
+
+  // Default: nur aktive Jobs (heute im Veranstaltungszeitraum)
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("confirmed");
   const [orders, setOrders] = useState([]);
