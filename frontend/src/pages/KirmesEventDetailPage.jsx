@@ -766,8 +766,8 @@ export default function KirmesEventDetailPage() {
                   <label key={sch.id} className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${selectedInvites.includes(sch.id) ? "bg-fuchsia-50 border border-fuchsia-200" : "hover:bg-gray-50 border border-transparent"}`} data-testid={`invite-sch-${sch.id}`}>
                     <input type="checkbox" checked={selectedInvites.includes(sch.id)} onChange={() => toggleInvite(sch.id)} className="rounded border-gray-300 text-fuchsia-600" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{sch.firma}</p>
-                      <p className="text-xs text-gray-500">{sch.name} – {sch.email}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{sch.firma || sch.name}</p>
+                      <p className="text-xs text-gray-500">{sch.firma ? `${sch.name} – ` : ""}{sch.email}</p>
                     </div>
                     {sch.kauf_auf_rechnung && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Rechnung</span>}
                   </label>
