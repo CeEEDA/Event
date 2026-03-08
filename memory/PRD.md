@@ -41,9 +41,20 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 - Status-Polling nach Stripe-Rueckkehr (GET /api/payments/checkout/status/{session_id})
 - Webhook-Handler (POST /api/payments/webhook/stripe)
 - Transaktionsuebersicht fuer Admin (GET /api/payments/transactions)
-- Frontend: Payment-Step nach Signup, "Jetzt bezahlen" + "Spaeter bezahlen"
-- Backend: /app/backend/routes/payments.py
 - Uses emergentintegrations Stripe checkout library
+
+### Pay-to-Confirm Flow Fix (2026-03-08)
+- **Kritischer Bugfix**: Anmeldungen bleiben jetzt "pending" bis Stripe-Zahlung bestaetigt
+- Keine Bestaetigungsmail bei pending-Anmeldungen
+- `kauf_auf_rechnung`-Schausteller werden sofort bestaetigt (Admin-Override)
+- Signup-Endpoint gibt `payment_required` Flag zurueck
+- Frontend leitet direkt zu Stripe weiter (kein "Spaeter bezahlen" mehr)
+- Bei Zahlungsabbruch: "Zahlung nicht abgeschlossen" Seite, Anmeldung bleibt unbestaetigt
+- Neuer Endpoint: GET /api/payments/signups/{id}/status (Signup-Status-Polling)
+- Neuer Endpoint: POST /api/kirmes/public/cancel-pending-signup
+- `_confirm_signup_after_payment()` Helper in payments.py sendet Bestaetigungsmail nach Zahlung
+- Backend: routes/payments.py, routes/kirmes.py
+- Frontend: SchaustellerAnmeldungPage.jsx
 
 ### Zaehlerdaten-Detailseite (2026-03-08)
 - Neue Seite: /kirmes/{eventId}/zaehler/{signupId}
@@ -94,17 +105,14 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 
 ## Backlog
 
-### P0 (Next)
-- MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
-
 ### P1
-- SMTP-Anbieter Upgrade (mail.de Tageslimit)
-- Self-hosted MQTT Broker (Mosquitto)
 - Direkter QR-Label-Druck (Print-Button statt PDF)
-- Admin-Kautionskonfiguration in Event-UI einbauen
 
 ### P2
+- MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
+- Self-hosted MQTT Broker (Mosquitto)
 - Admin File Size Limits
+- SMTP-Anbieter Upgrade (mail.de Tageslimit)
 
 ## Test Credentials
 - Admin: admin@test.com / password
