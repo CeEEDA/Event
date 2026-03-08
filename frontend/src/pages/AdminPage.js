@@ -156,6 +156,7 @@ export default function AdminPage() {
   useEffect(() => {
     loadData();
     loadUsersWithFiles();
+    loadSchausteller();
   }, []);
 
   const loadSchausteller = async () => {
