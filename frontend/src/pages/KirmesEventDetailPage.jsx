@@ -812,6 +812,12 @@ export default function KirmesEventDetailPage() {
                                           Letzte Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}
                                         </p>
                                       )}
+
+                                      {/* Button to detailed meter data page */}
+                                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
+                                        className="w-full text-xs text-fuchsia-600 border-fuchsia-200 hover:bg-fuchsia-50 hover:border-fuchsia-400 mt-2" data-testid={`zaehler-detail-btn-${signup.id}`}>
+                                        <Gauge className="w-3.5 h-3.5 mr-1" /> Zählerdaten & Export
+                                      </Button>
                                     </div>
                                   );
                                 })()}

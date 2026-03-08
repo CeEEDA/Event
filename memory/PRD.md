@@ -21,6 +21,15 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
   - Admin scannt QR -> waehlt Anmeldung -> Zaehler wird zugewiesen
 - **Meter-Zuordnungsseite**: Zeigt Zaehler-Info, aktuelle Zuweisung, offene Anmeldungen
 
+### Zaehlerdaten-Detailseite (2026-03-08)
+- Neue Seite: /kirmes/{eventId}/zaehler/{signupId}
+- Live-Metriken: Leistung, Strom, Spannung, Energie, Frequenz
+- Charts: Leistungsverlauf, Stromverlauf, Energieverbrauch (Recharts)
+- CSV-Export im Veranstaltungszeitraum
+- Datums-Filter (Von/Bis) aus Event-Daten vorbelegt
+- Auto-Refresh alle 30 Sekunden
+- Button auf Event-Detailseite: "Zaehlerdaten & Export"
+
 ### Dokumentenablage pro Veranstaltung (2026-03-08)
 - Upload per Drag & Drop (PDF, JPG, PNG, WebP, GIF, max 20MB)
 - Bildvorschau-Galerie mit Zoom-Modal
