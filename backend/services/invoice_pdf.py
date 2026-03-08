@@ -65,7 +65,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN_LEFT, rightMargin=MARGIN_RIGHT,
-        topMargin=48 * mm,
+        topMargin=68 * mm,
         bottomMargin=30 * mm,
     )
 
