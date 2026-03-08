@@ -353,7 +353,7 @@ export default function KirmesPage() {
         ) : (
           <div className="grid gap-4">
             {filtered.map(event => (
-              <div key={event.id} className="bg-white border border-gray-200 rounded-xl p-5 hover:border-fuchsia-300 transition-colors" data-testid={`event-${event.id}`}>
+              <div key={event.id} onClick={() => navigate(`/kirmes/${event.id}`)} className="bg-white border border-gray-200 rounded-xl p-5 hover:border-fuchsia-300 transition-colors cursor-pointer" data-testid={`event-${event.id}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
@@ -375,7 +375,7 @@ export default function KirmesPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
                     {event.status === "entwurf" && (
                       <Button size="sm" variant="outline" onClick={() => handleRelease(event)} className="text-blue-600 border-blue-200 hover:bg-blue-50" data-testid={`release-${event.id}`}>
                         <Send className="w-3.5 h-3.5 mr-1" /> Freigeben
@@ -386,9 +386,6 @@ export default function KirmesPage() {
                         {copiedLink === event.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                       </button>
                     )}
-                    <button onClick={() => navigate(`/kirmes/${event.id}`)} className="p-2 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Details" data-testid={`view-${event.id}`}>
-                      <Eye className="w-4 h-4" />
-                    </button>
                     <button onClick={() => { setEditingEvent(event); setShowEventModal(true); }} className="p-2 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Bearbeiten" data-testid={`edit-${event.id}`}>
                       <Pencil className="w-4 h-4" />
                     </button>
@@ -397,6 +394,7 @@ export default function KirmesPage() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
+                    <ChevronRight className="w-5 h-5 text-gray-300 ml-1" />
                   </div>
                 </div>
               </div>

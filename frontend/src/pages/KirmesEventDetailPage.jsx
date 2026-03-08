@@ -6,8 +6,10 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import {
-  ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send,
+  ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
 } from "lucide-react";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 
 const STATUS_LABELS = {
   entwurf: "Entwurf", freigegeben: "Freigegeben", aktiv: "Aktiv",
@@ -69,6 +71,61 @@ export default function KirmesEventDetailPage() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const exportPDF = () => {
+    if (!event) return;
+    const doc = new jsPDF({ orientation: "landscape" });
+
+    // Header
+    doc.setFontSize(16);
+    doc.text(`Montageliste: ${event.name}`, 14, 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    const info = [
+      event.location && `Ort: ${event.location}`,
+      `Zeitraum: ${new Date(event.start_date).toLocaleDateString("de-DE")} – ${new Date(event.end_date).toLocaleDateString("de-DE")}`,
+      `Anmeldungen: ${(event.signups || []).length}`,
+      `Erstellt: ${new Date().toLocaleDateString("de-DE")} ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`,
+    ].filter(Boolean);
+    doc.text(info.join("  |  "), 14, 26);
+    doc.setTextColor(0);
+
+    // Table
+    const signups = event.signups || [];
+    const rows = signups.map((s, i) => [
+      i + 1,
+      s.platznummer,
+      s.schausteller?.firma || "–",
+      s.schausteller?.name || "–",
+      s.fahrgeschaeft || "–",
+      s.connection_type,
+      `${(s.price || 0).toFixed(2)} EUR`,
+      s.schausteller?.telefon || "–",
+      s.meter_id ? "Ja" : "Nein",
+    ]);
+
+    doc.autoTable({
+      startY: 32,
+      head: [["#", "Platz", "Firma", "Name", "Fahrgeschäft", "Anschluss", "Preis", "Telefon", "Zähler"]],
+      body: rows,
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [168, 50, 168], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 248, 248] },
+      columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 18 } },
+    });
+
+    // Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Eventenergie Deutschland GmbH & Co. KG – Seite ${i}/${pageCount}`, 14, doc.internal.pageSize.height - 10);
+    }
+
+    doc.save(`Montageliste_${event.name.replace(/\s+/g, "_")}.pdf`);
+    toast.success("PDF heruntergeladen");
+  };
+
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Laden...</div>;
   if (!event) return null;
 
@@ -87,6 +144,11 @@ export default function KirmesEventDetailPage() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {(event.signups || []).length > 0 && (
+              <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600" data-testid="export-pdf-btn">
+                <FileDown className="w-3.5 h-3.5 mr-1" /> Montageliste PDF
+              </Button>
+            )}
             {event.status === "entwurf" && (
               <Button size="sm" variant="outline" onClick={handleRelease} className="text-blue-600 border-blue-200" data-testid="release-btn">
                 <Send className="w-3.5 h-3.5 mr-1" /> Freigeben
