@@ -117,7 +117,7 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
   const topicInfo = resolveTopicInfo(controller);
   const brokerUrl = "broker.hivemq.com";
   const brokerPort = "1883";
-  const topicPrefix = `/${serialNumber || "SERIENNUMMER"}/`;
+  const groupName = "eventenergie";
 
   const handleDownloadModuleTopics = () => {
     if (!controller || !topicInfo) return;
@@ -150,11 +150,14 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
             <span className="text-gray-400">Port</span>
             <span className="text-gray-900 select-all">{brokerPort}</span>
           </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Topic-Prefix</span>
-            <span className="text-gray-900 select-all">{topicPrefix}</span>
+          <div className="flex justify-between items-center bg-amber-50 px-2 py-1.5 rounded border border-amber-200">
+            <span className="text-amber-600">Group Name</span>
+            <span className="text-amber-800 font-semibold select-all">{groupName}</span>
           </div>
         </div>
+        <p className="text-[10px] text-amber-600 mt-2 font-medium">
+          Der Group Name muss im DSE890 unter MQTT &gt; Group Name eingetragen werden. Ohne Group Name werden keine Daten empfangen.
+        </p>
       </div>
 
       {/* MQTT Username & Password */}
