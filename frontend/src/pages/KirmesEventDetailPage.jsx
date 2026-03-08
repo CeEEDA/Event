@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Input } from "../components/ui/input";
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 
 const STATUS_LABELS = {
   entwurf: "Entwurf", freigegeben: "Freigegeben", aktiv: "Aktiv",
@@ -107,7 +107,7 @@ export default function KirmesEventDetailPage() {
       s.meter_id ? "Ja" : "Nein",
     ]);
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 32,
       head: [["#", "Platz", "Firma", "Name", "Fahrgeschäft", "Anschluss", "Preis", "Telefon", "Zähler"]],
       body: rows,
