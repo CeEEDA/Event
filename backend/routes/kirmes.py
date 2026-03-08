@@ -1290,3 +1290,190 @@ async def get_signup_meter_data(
         "latest": latest,
         "history": history,
     }
+
+
+
+# ============== QR Code System ==============
+
+@router.get("/meters/{meter_id}/qr-code")
+async def generate_meter_qr_code(meter_id: str, user: dict = Depends(_require_staff)):
+    """Generate a QR code for a meter that links to the assignment page."""
+    import qrcode
+    import io as _io
+
+    meter = await _db.emu_meters.find_one({"id": meter_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zaehler nicht gefunden")
+
+    # Build the QR URL
+    import os
+    base_url = os.environ.get("FRONTEND_URL", "")
+    qr_url = f"{base_url}/kirmes/meter-zuordnung/{meter_id}"
+
+    # Generate QR code
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4)
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    return Response(content=buf.getvalue(), media_type="image/png",
+                    headers={"Content-Disposition": f'inline; filename="meter_{meter_id[:8]}_qr.png"'})
+
+
+@router.get("/meters/{meter_id}/qr-label")
+async def generate_meter_qr_label(meter_id: str, token: Optional[str] = None, user: dict = Depends(_require_staff)):
+    """Generate a printable QR label (QR code + meter info) as PDF."""
+    import qrcode
+    import io as _io
+    from reportlab.lib.pagesizes import A6
+    from reportlab.lib.units import mm as _mm
+    from reportlab.pdfgen import canvas as _canvas
+
+    meter = await _db.emu_meters.find_one({"id": meter_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zaehler nicht gefunden")
+
+    device = await _db.devices.find_one({"id": meter.get("device_id", "")}, {"_id": 0, "serial_number": 1, "name": 1})
+    device_name = device.get("serial_number") or device.get("name", "") if device else ""
+
+    import os
+    base_url = os.environ.get("FRONTEND_URL", "")
+    qr_url = f"{base_url}/kirmes/meter-zuordnung/{meter_id}"
+
+    # Generate QR
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_buf = _io.BytesIO()
+    qr_img.save(qr_buf, format="PNG")
+    qr_buf.seek(0)
+
+    # Generate PDF label (A6 size)
+    from reportlab.lib.utils import ImageReader
+    pdf_buf = _io.BytesIO()
+    c = _canvas.Canvas(pdf_buf, pagesize=A6)
+    w, h = A6
+
+    # Title
+    c.setFont("Helvetica-Bold", 14)
+    c.drawCentredString(w / 2, h - 15 * _mm, "Eventenergie")
+    c.setFont("Helvetica", 10)
+    c.drawCentredString(w / 2, h - 22 * _mm, "Zaehler-Zuordnung")
+
+    # QR Code
+    qr_size = 45 * _mm
+    qr_x = (w - qr_size) / 2
+    c.drawImage(ImageReader(qr_buf), qr_x, h - 72 * _mm, qr_size, qr_size)
+
+    # Meter info
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString(w / 2, h - 80 * _mm, meter.get("meter_name", "Zaehler"))
+    c.setFont("Helvetica", 9)
+    c.drawCentredString(w / 2, h - 86 * _mm, f"IP: {meter.get('meter_ip', '?')}")
+    c.drawCentredString(w / 2, h - 91 * _mm, f"Geraet: {device_name}")
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(w / 2, h - 98 * _mm, f"ID: {meter_id[:16]}...")
+
+    c.save()
+    pdf_buf.seek(0)
+
+    return Response(content=pdf_buf.getvalue(), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="qr_label_{meter_id[:8]}.pdf"'})
+
+
+@router.post("/meters/{meter_id}/assign-signup")
+async def assign_meter_to_signup_via_qr(meter_id: str, data: dict, user: dict = Depends(_require_staff)):
+    """Assign a meter to a signup (used from QR code scan page)."""
+    signup_id = data.get("signup_id")
+    if not signup_id:
+        raise HTTPException(status_code=400, detail="signup_id fehlt")
+
+    meter = await _db.emu_meters.find_one({"id": meter_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zaehler nicht gefunden")
+
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$set": {
+            "emu_device_id": meter["device_id"],
+            "emu_meter_id": meter_id,
+            "emu_meter_name": meter.get("meter_name", ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+
+    return {"message": f"Zaehler {meter.get('meter_name', '')} wurde der Anmeldung zugewiesen"}
+
+
+@router.get("/meters/{meter_id}/info")
+async def get_meter_info(meter_id: str, user: dict = Depends(_require_staff)):
+    """Get meter info for the QR assignment page."""
+    meter = await _db.emu_meters.find_one({"id": meter_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zaehler nicht gefunden")
+
+    device = await _db.devices.find_one({"id": meter.get("device_id", "")}, {"_id": 0, "serial_number": 1, "name": 1})
+    device_name = device.get("serial_number") or device.get("name", "") if device else ""
+    meter["device_name"] = device_name
+
+    # Get current assignment if any
+    current_signup = await _db.kirmes_signups.find_one(
+        {"emu_meter_id": meter_id},
+        {"_id": 0, "id": 1, "schausteller_id": 1, "event_id": 1}
+    )
+    if current_signup:
+        sch = await _db.kirmes_schausteller.find_one(
+            {"id": current_signup["schausteller_id"]},
+            {"_id": 0, "id": 1, "name": 1, "vorname": 1, "firma": 1}
+        )
+        event = await _db.kirmes_events.find_one(
+            {"id": current_signup["event_id"]},
+            {"_id": 0, "id": 1, "name": 1}
+        )
+        meter["current_assignment"] = {
+            "signup_id": current_signup["id"],
+            "schausteller": sch,
+            "event": event,
+        }
+    else:
+        meter["current_assignment"] = None
+
+    # Available signups (without meter) for quick assignment
+    unlinked = await _db.kirmes_signups.find(
+        {"emu_meter_id": {"$exists": False}},
+        {"_id": 0, "id": 1, "schausteller_id": 1, "event_id": 1}
+    ).to_list(100)
+
+    # Also find ones where emu_meter_id is empty string or None
+    unlinked2 = await _db.kirmes_signups.find(
+        {"emu_meter_id": {"$in": [None, ""]}},
+        {"_id": 0, "id": 1, "schausteller_id": 1, "event_id": 1}
+    ).to_list(100)
+
+    # Merge and dedupe
+    seen = set()
+    all_unlinked = []
+    for s in unlinked + unlinked2:
+        if s["id"] not in seen:
+            seen.add(s["id"])
+            all_unlinked.append(s)
+
+    # Enrich with names
+    for s in all_unlinked:
+        sch = await _db.kirmes_schausteller.find_one({"id": s["schausteller_id"]}, {"_id": 0, "name": 1, "vorname": 1, "firma": 1})
+        event = await _db.kirmes_events.find_one({"id": s["event_id"]}, {"_id": 0, "name": 1})
+        s["schausteller_name"] = f"{sch.get('firma') or ''} {sch.get('vorname', '')} {sch.get('name', '')}".strip() if sch else "?"
+        s["event_name"] = event.get("name", "?") if event else "?"
+
+    meter["available_signups"] = all_unlinked
+
+    return meter

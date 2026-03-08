@@ -652,6 +652,11 @@ export default function KirmesEventDetailPage() {
                                           className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
                                           <Unlink className="w-3 h-3" /> Trennen
                                         </button>
+                                        <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
+                                          target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                          className="text-[10px] text-gray-400 hover:text-fuchsia-600 flex items-center gap-0.5 ml-2" data-testid={`qr-label-${signup.id}`}>
+                                          QR
+                                        </a>
                                       </div>
 
                                       {/* Meter name + status */}

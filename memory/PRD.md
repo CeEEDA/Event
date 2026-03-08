@@ -4,46 +4,57 @@
 Comprehensive monitoring and management portal for DSE power generators with EpiRent ERP integration, energy monitoring, fleet management, and Kirmes billing system.
 
 ## Tech Stack
-- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx, bcrypt, reportlab, pdfrw, factur-x
+- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx, bcrypt, reportlab, pdfrw, factur-x, qrcode
 - **Frontend**: React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet/OpenStreetMap, open-location-code, jspdf, jspdf-autotable
+- **Pi Skripte**: pymodbus (Modbus TCP), requests, sqlite3
 
 ## What's Been Implemented
 
+### Kirmeskiste Anbindung (2026-03-08)
+- **kirmeskiste_sync.py**: Pi-Skript liest 4x EMU Professional II 3/5 via Modbus TCP
+  - Modbus Register: Leistung (9000-9006), Strom (9100-9106), Spannung (9200-9204), Power Factor (9300-9304), Frequenz (9310), Energie (7000/7020), Stromausfaelle (11000)
+  - Lokale SQLite-Zwischenspeicherung mit Batch-Sync zum Portal
+  - Automatische Wiederverbindung bei Netzwerkausfaellen
+- **setup_kirmeskiste.sh**: Vollautomatisches Pi-Setup (systemd, venv, Konfiguration)
+- **QR-Code System**: Generiert druckbare QR-Labels (A6 PDF) fuer jeden Zaehler
+  - QR verlinkt zu /kirmes/meter-zuordnung/{meterId} im Portal
+  - Admin scannt QR -> waehlt Anmeldung -> Zaehler wird zugewiesen
+- **Meter-Zuordnungsseite**: Zeigt Zaehler-Info, aktuelle Zuweisung, offene Anmeldungen
+
 ### ZUGFeRD E-Rechnungen (2026-03-08)
-- PDF invoices now include embedded factur-x.xml (ZUGFeRD 2.0 / Factur-X Basic profile)
-- XSD-validated XML with seller/buyer info, line items, tax, and totals
-- Uses `factur-x` Python library for PDF/A-3 embedding
-- Fallback: returns normal PDF if XML validation fails
+- PDF-Rechnungen mit eingebetteter factur-x.xml (Basic Profil, XSD-validiert)
 
 ### Kirmes: EMU Meter Data Integration (2026-03-08)
 - Link/unlink EMU meters to signups, live data display, power chart
-- API: GET /api/kirmes/emu-meters, PUT/DELETE /api/kirmes/signups/{id}/link-meter, GET /api/kirmes/signups/{id}/meter-data
 
 ### Kirmes: Abrechnungsmodul (2026-03-08)
-- Invoice generation with letterhead, auto-incrementing numbers, billing calculation
-- Batch billing, PDF download, email sending, invoice search
-- Rechnungen auf Schausteller-Detailseite mit Download + erneuter Versand
+- Invoice generation with letterhead, batch billing, email sending
 
-### Kirmes: Auth + Admin Features
-- Email+Password registration with verification, admin password management
-- Booking confirmation email, conditional "Auf Rechnung"
+## Key New API Endpoints
 
-### Earlier Completed Work
-- Generator/energy monitoring, MQTT, GPS/maps, EpiRent ERP, DSE remote control
-- Service plans, user permissions, file management, Auftragsverwaltung
+### Kirmeskiste QR System
+- `GET /api/kirmes/meters/{id}/qr-code` - QR-Code als PNG
+- `GET /api/kirmes/meters/{id}/qr-label` - Druckbares QR-Label als PDF (A6)
+- `GET /api/kirmes/meters/{id}/info` - Zaehler-Info mit Zuweisungen
+- `POST /api/kirmes/meters/{id}/assign-signup` - Zaehler einer Anmeldung zuweisen
+
+## Pi-Skripte (zum Download unter /static/)
+- `kirmeskiste_sync.py` - Sync-Skript fuer Kirmeskiste
+- `setup_kirmeskiste.sh` - Auto-Setup fuer Raspberry Pi
+- `emu_sync.py` - Sync-Skript fuer Messkoffer (Shelly Pro 4EM)
 
 ## Backlog
 
 ### P0 (Next)
-- Stripe integration for deposit reservation
+- Stripe Integration fuer Kaution-Zahlung
 
 ### P1
+- SMTP-Anbieter Upgrade (mail.de Tageslimit)
 - Self-hosted MQTT Broker (Mosquitto)
-- SMTP provider upgrade (mail.de daily limit reached)
 
 ### P2
-- MQTT Broker URL -> .env refactoring
-- Admin file size limits
+- MQTT Broker URL -> .env Refactoring
+- Admin File Size Limits
 
 ## Test Credentials
 - Admin: admin@test.com / password
