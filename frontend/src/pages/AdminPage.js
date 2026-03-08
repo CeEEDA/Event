@@ -47,6 +47,7 @@ import {
   Zap,
   CalendarDays,
   Settings,
+  Tent,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -75,6 +76,14 @@ export default function AdminPage() {
   const [usersWithFiles, setUsersWithFiles] = useState([]);
   const [allGenerators, setAllGenerators] = useState([]);
   const [allMesskoffer, setAllMesskoffer] = useState([]);
+  const [schausteller, setSchausteller] = useState([]);
+  const [schaustellerSearch, setSchaustellerSearch] = useState("");
+  const [editingSchausteller, setEditingSchausteller] = useState(null);
+  const [schaustellerModalOpen, setSchaustellerModalOpen] = useState(false);
+  const [schaustellerForm, setSchaustellerForm] = useState({
+    firma: "", name: "", strasse: "", plz: "", ort: "",
+    steuernummer: "", email: "", telefon: "", rechnungs_email: "",
+  });
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -147,6 +156,38 @@ export default function AdminPage() {
     loadData();
     loadUsersWithFiles();
   }, []);
+
+  const loadSchausteller = async () => {
+    try {
+      const res = await api.get("/kirmes/schausteller", { params: schaustellerSearch ? { search: schaustellerSearch } : {} });
+      setSchausteller(res.data);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    if (userRoleFilter === "schausteller") loadSchausteller();
+  }, [userRoleFilter, schaustellerSearch]);
+
+  const openEditSchausteller = (sch) => {
+    setEditingSchausteller(sch);
+    setSchaustellerForm({
+      firma: sch.firma || "", name: sch.name || "", strasse: sch.strasse || "",
+      plz: sch.plz || "", ort: sch.ort || "", steuernummer: sch.steuernummer || "",
+      email: sch.email || "", telefon: sch.telefon || "", rechnungs_email: sch.rechnungs_email || "",
+    });
+    setSchaustellerModalOpen(true);
+  };
+
+  const handleSaveSchausteller = async () => {
+    try {
+      await api.put(`/kirmes/schausteller/${editingSchausteller.id}`, schaustellerForm);
+      toast.success("Schausteller aktualisiert");
+      setSchaustellerModalOpen(false);
+      loadSchausteller();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler beim Speichern");
+    }
+  };
 
   const openCreateModal = () => {
     setEditingUser(null);
@@ -555,31 +596,117 @@ export default function AdminPage() {
                     Mitarbeiter
                     <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{users.filter(u => u.role === "mitarbeiter").length}</span>
                   </button>
+                  <button
+                    onClick={() => { setUserRoleFilter("schausteller"); setSchaustellerSearch(""); }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                      userRoleFilter === "schausteller"
+                        ? "bg-fuchsia-50 text-fuchsia-700 border-b-2 border-fuchsia-600"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
+                    data-testid="filter-schausteller"
+                  >
+                    <Tent className="w-4 h-4" />
+                    Schausteller
+                    <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{schausteller.length}</span>
+                  </button>
                 </div>
                 
                 <div className="flex items-center gap-2 flex-1">
-                  <div className="relative flex-1 max-w-xs">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      placeholder="Benutzer suchen..."
-                      value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
-                      className="pl-8 h-9 border-gray-300 text-sm"
-                      data-testid="user-search-input"
-                    />
-                  </div>
-                  <Button
-                    onClick={openCreateModal}
-                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white flex-shrink-0"
-                    data-testid="create-user-btn"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Neuer Benutzer
-                  </Button>
+                  {userRoleFilter !== "schausteller" ? (
+                    <>
+                      <div className="relative flex-1 max-w-xs">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                          placeholder="Benutzer suchen..."
+                          value={userSearch}
+                          onChange={(e) => setUserSearch(e.target.value)}
+                          className="pl-8 h-9 border-gray-300 text-sm"
+                          data-testid="user-search-input"
+                        />
+                      </div>
+                      <Button
+                        onClick={openCreateModal}
+                        className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white flex-shrink-0"
+                        data-testid="create-user-btn"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Neuer Benutzer
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="relative flex-1 max-w-xs">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        placeholder="Schausteller suchen..."
+                        value={schaustellerSearch}
+                        onChange={(e) => setSchaustellerSearch(e.target.value)}
+                        className="pl-8 h-9 border-gray-300 text-sm"
+                        data-testid="schausteller-search-input"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Users Table */}
+              {/* Schausteller Table */}
+              {userRoleFilter === "schausteller" ? (
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full" data-testid="schausteller-table">
+                      <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Firma</th>
+                          <th className="px-4 py-3 text-left">Name</th>
+                          <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
+                          <th className="px-4 py-3 text-left hidden sm:table-cell">Telefon</th>
+                          <th className="px-4 py-3 text-left hidden lg:table-cell">Ort</th>
+                          <th className="px-4 py-3 text-left hidden lg:table-cell">Steuernr.</th>
+                          <th className="px-4 py-3 text-right">Aktionen</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {schausteller.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                              {schaustellerSearch ? "Keine Schausteller gefunden" : "Noch keine Schausteller registriert"}
+                            </td>
+                          </tr>
+                        ) : (
+                          schausteller.map(sch => (
+                            <tr key={sch.id} className="hover:bg-gray-50" data-testid={`sch-row-${sch.id}`}>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
+                                    <Tent className="w-4 h-4 text-amber-600" />
+                                  </div>
+                                  <span className="font-medium text-gray-900">{sch.firma}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-600">{sch.name}</td>
+                              <td className="px-4 py-3 hidden md:table-cell text-gray-500 text-sm">{sch.email}</td>
+                              <td className="px-4 py-3 hidden sm:table-cell text-gray-500 text-sm">{sch.telefon}</td>
+                              <td className="px-4 py-3 hidden lg:table-cell text-gray-500 text-sm">{sch.plz} {sch.ort}</td>
+                              <td className="px-4 py-3 hidden lg:table-cell text-gray-500 text-sm font-mono">{sch.steuernummer}</td>
+                              <td className="px-4 py-3 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditSchausteller(sch)}
+                                  className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
+                                  data-testid={`edit-sch-${sch.id}`}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+              /* Users Table */
               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full" data-testid="users-table">
@@ -741,6 +868,7 @@ export default function AdminPage() {
                   </table>
                 </div>
               </div>
+              )}
             </TabsContent>
 
             {/* Files Tab - View all users' files */}
@@ -1255,6 +1383,65 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Schausteller Edit Modal */}
+      <Dialog open={schaustellerModalOpen} onOpenChange={setSchaustellerModalOpen}>
+        <DialogContent className="bg-white max-w-lg max-h-[90vh] overflow-y-auto" data-testid="schausteller-modal">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900 flex items-center gap-2">
+              <Tent className="w-5 h-5 text-amber-600" />
+              Schausteller bearbeiten
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-gray-700 text-sm">Firma</Label>
+                <Input value={schaustellerForm.firma} onChange={e => setSchaustellerForm(f => ({ ...f, firma: e.target.value }))} className="border-gray-300" data-testid="sch-firma-input" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-gray-700 text-sm">Name</Label>
+                <Input value={schaustellerForm.name} onChange={e => setSchaustellerForm(f => ({ ...f, name: e.target.value }))} className="border-gray-300" data-testid="sch-name-input" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-700 text-sm">Straße</Label>
+              <Input value={schaustellerForm.strasse} onChange={e => setSchaustellerForm(f => ({ ...f, strasse: e.target.value }))} className="border-gray-300" data-testid="sch-strasse-input" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-gray-700 text-sm">PLZ</Label>
+                <Input value={schaustellerForm.plz} onChange={e => setSchaustellerForm(f => ({ ...f, plz: e.target.value }))} className="border-gray-300" data-testid="sch-plz-input" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-gray-700 text-sm">Ort</Label>
+                <Input value={schaustellerForm.ort} onChange={e => setSchaustellerForm(f => ({ ...f, ort: e.target.value }))} className="border-gray-300" data-testid="sch-ort-input" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-700 text-sm">Steuernummer</Label>
+              <Input value={schaustellerForm.steuernummer} onChange={e => setSchaustellerForm(f => ({ ...f, steuernummer: e.target.value }))} className="border-gray-300" data-testid="sch-steuernummer-input" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-700 text-sm">E-Mail</Label>
+              <Input type="email" value={schaustellerForm.email} onChange={e => setSchaustellerForm(f => ({ ...f, email: e.target.value }))} className="border-gray-300" data-testid="sch-email-input" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-700 text-sm">Telefon</Label>
+              <Input value={schaustellerForm.telefon} onChange={e => setSchaustellerForm(f => ({ ...f, telefon: e.target.value }))} className="border-gray-300" data-testid="sch-telefon-input" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-700 text-sm">Rechnungs-E-Mail</Label>
+              <Input type="email" value={schaustellerForm.rechnungs_email} onChange={e => setSchaustellerForm(f => ({ ...f, rechnungs_email: e.target.value }))} className="border-gray-300" data-testid="sch-rechnungs-email-input" />
+              <p className="text-[10px] text-gray-400">Rechnungen werden an diese Adresse versendet</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSchaustellerModalOpen(false)}>Abbrechen</Button>
+            <Button onClick={handleSaveSchausteller} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-schausteller-btn">Speichern</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
