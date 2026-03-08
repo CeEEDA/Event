@@ -322,17 +322,6 @@ export default function EnergyMonitoringPage() {
                 data-testid="energy-search-input"
               />
             </div>
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSeedDemo}
-                className="text-gray-600 hover:text-fuchsia-600"
-                data-testid="seed-demo-btn"
-              >
-                Demo-Daten laden
-              </Button>
-            )}
           </div>
 
           {/* Device Grid */}
