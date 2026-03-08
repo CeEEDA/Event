@@ -356,9 +356,10 @@ export default function OrdersPage() {
                       sortedOrders.map((order) => (
                         <tr
                           key={order.primary_key}
-                          className={`border-b border-gray-100 hover:bg-fuchsia-50/50 transition-colors ${
+                          className={`border-b border-gray-100 hover:bg-fuchsia-50/50 transition-colors cursor-pointer ${
                             order.is_canceled ? "opacity-50" : ""
                           }`}
+                          onClick={() => navigate(`/orders/${order.primary_key}`)}
                           data-testid={`order-row-${order.primary_key}`}
                         >
                           <td className="px-4 py-3 font-mono font-medium text-fuchsia-700 whitespace-nowrap" data-testid="order-no">

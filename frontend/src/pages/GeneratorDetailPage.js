@@ -23,6 +23,7 @@ import {
   Square,
   ToggleLeft,
   ToggleRight,
+  ClipboardList,
 } from "lucide-react";
 import {
   XAxis,
@@ -45,6 +46,95 @@ const statusConfig = {
   alarm: { label: "Alarm", bg: "bg-red-50", border: "border-red-200", text: "text-red-700", dot: "bg-red-500" },
   offline: { label: "Offline", bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-500", dot: "bg-gray-400" },
 };
+
+function DeploymentHistory({ generatorId }) {
+  const [deployments, setDeployments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        const { data } = await api.get(`/orders/deployments/by-generator/${generatorId}`);
+        setDeployments(data.deployments || []);
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetch();
+  }, [generatorId]);
+
+  const fmtDate = (d) => {
+    if (!d) return "—";
+    try {
+      return new Date(d).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return d;
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200" data-testid="deployment-history">
+      <div className="p-4 border-b border-gray-100 flex items-center gap-2">
+        <ClipboardList className="w-4 h-4 text-fuchsia-500" />
+        <h3 className="text-sm font-semibold text-gray-700">Einsatzhistorie</h3>
+      </div>
+      {loading ? (
+        <div className="p-6 text-center text-gray-400 text-sm">Laden...</div>
+      ) : deployments.length === 0 ? (
+        <div className="p-6 text-center text-gray-400 text-sm">Keine Einsätze erfasst</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Auftrag</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Eingeschaltet</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Ausgeschaltet</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-600">Betriebsstd.</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-600">kWh Start</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-600">kWh Ende</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Störungen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deployments.map((d) => (
+                <tr
+                  key={d.id}
+                  className="border-b border-gray-100 hover:bg-fuchsia-50/50 cursor-pointer"
+                  onClick={() => d.order_pk && navigate(`/orders/${d.order_pk}`)}
+                  data-testid={`deployment-${d.id}`}
+                >
+                  <td className="px-4 py-2.5 font-medium text-fuchsia-700">
+                    {d.generator_name || `Auftrag #${d.order_pk}`}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtDate(d.started_at)}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtDate(d.stopped_at)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-gray-700">{d.operating_hours || "—"}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-gray-700">{d.kwh_start ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-gray-700">{d.kwh_end ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-500">
+                    {d.faults ? (
+                      <span className="text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> {d.faults}
+                      </span>
+                    ) : (
+                      <span className="text-emerald-600 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Keine
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MetricBox({ icon: Icon, label, value, unit, color = "text-gray-900" }) {
   return (
@@ -460,6 +550,9 @@ export default function GeneratorDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Einsatzhistorie */}
+        <DeploymentHistory generatorId={id} />
       </main>
     </div>
   );

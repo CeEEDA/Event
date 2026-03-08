@@ -1,0 +1,150 @@
+{
+  "summary": "Iteration 27 - Order Detail Page, Deployment History, and Generators in Radius testing completed. All 14 backend tests passed. All frontend features verified working including map display, radius configuration, generator discovery, and navigation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "order_detail_endpoint": {
+      "status": "PASS",
+      "endpoint": "GET /api/orders/epirent/{pk}",
+      "description": "Returns full order detail with geocoded coordinates (center_lat, center_lng), radius_km, address_raw"
+    },
+    "order_settings_update": {
+      "status": "PASS",
+      "endpoint": "PUT /api/orders/epirent/{pk}/settings",
+      "description": "Updates order radius_km, persists to MongoDB"
+    },
+    "generators_in_radius": {
+      "status": "PASS",
+      "endpoint": "GET /api/orders/epirent/{pk}/generators",
+      "description": "Returns generators within configured radius, sorted by distance"
+    },
+    "deployment_create": {
+      "status": "PASS",
+      "endpoint": "POST /api/orders/epirent/{pk}/deployments",
+      "description": "Creates deployment history entry with generator_id, operating_hours, kwh, etc."
+    },
+    "deployment_get_by_order": {
+      "status": "PASS",
+      "endpoint": "GET /api/orders/epirent/{pk}/deployments",
+      "description": "Returns all deployments for an order"
+    },
+    "deployment_get_by_generator": {
+      "status": "PASS",
+      "endpoint": "GET /api/orders/deployments/by-generator/{generator_id}",
+      "description": "Returns all deployments for a specific generator"
+    },
+    "auth_required": {
+      "status": "PASS",
+      "description": "All new endpoints require JWT Bearer authentication"
+    },
+    "frontend_order_row_click": {
+      "status": "PASS",
+      "description": "Clicking order row in /orders navigates to /orders/:pk detail page"
+    },
+    "frontend_order_info_cards": {
+      "status": "PASS",
+      "test_ids": "order-info-event, order-info-customer, order-info-address",
+      "description": "Shows Event/Projekt, Kunde, Lieferanschrift cards with data"
+    },
+    "frontend_map_display": {
+      "status": "PASS",
+      "test_id": "order-map-container",
+      "description": "Leaflet map displays centered on delivery address with radius circle"
+    },
+    "frontend_radius_input": {
+      "status": "PASS",
+      "test_id": "radius-input, save-radius-btn",
+      "description": "Radius can be changed and saved, shows toast on success"
+    },
+    "frontend_generators_panel": {
+      "status": "PASS",
+      "test_id": "generators-panel",
+      "description": "Shows generators within radius with name, model, serial, distance"
+    },
+    "frontend_generator_click": {
+      "status": "PASS",
+      "description": "Clicking generator item navigates to /generators/{id}"
+    },
+    "frontend_back_button": {
+      "status": "PASS",
+      "test_id": "back-to-orders-btn",
+      "description": "Back button returns to /orders list"
+    },
+    "frontend_status_filter": {
+      "status": "PASS",
+      "test_id": "status-filter-select",
+      "description": "Status dropdown defaults to 'Bestätigt' (confirmed)"
+    },
+    "frontend_deployment_history": {
+      "status": "PASS",
+      "test_id": "deployment-history",
+      "description": "Einsatzhistorie section displayed on generator detail page"
+    },
+    "frontend_no_coordinates": {
+      "status": "PASS",
+      "description": "Orders without geocoded address show 'Keine Koordinaten verfügbar' message"
+    }
+  },
+  "backend_tests": {
+    "total": 14,
+    "passed": 14,
+    "failed": 0,
+    "tests": [
+      "TestOrderDetail::test_order_detail_returns_order - PASS",
+      "TestOrderDetail::test_order_detail_has_address_raw - PASS",
+      "TestOrderDetail::test_order_detail_not_found - PASS",
+      "TestOrderDetail::test_order_detail_requires_auth - PASS",
+      "TestOrderSettings::test_update_radius - PASS",
+      "TestOrderSettings::test_update_requires_auth - PASS",
+      "TestGeneratorsInRadius::test_get_generators_in_radius - PASS",
+      "TestGeneratorsInRadius::test_generators_sorted_by_distance - PASS",
+      "TestGeneratorsInRadius::test_generators_without_coordinates - PASS",
+      "TestDeploymentHistory::test_create_deployment - PASS",
+      "TestDeploymentHistory::test_get_order_deployments - PASS",
+      "TestDeploymentHistory::test_get_generator_deployments - PASS",
+      "TestDeploymentHistory::test_deployment_requires_auth - PASS",
+      "TestIntegration::test_full_order_workflow - PASS"
+    ]
+  },
+  "frontend_tests": {
+    "orders_page": "PASS - Table with clickable rows, status filter defaulting to Bestätigt",
+    "order_detail_page": "PASS - Info cards, map, radius input, generators panel all working",
+    "map_functionality": "PASS - Leaflet map with radius circle, center marker, generator markers",
+    "radius_save": "PASS - Radius updates saved and reflected in generator list",
+    "generator_navigation": "PASS - Click generator in panel navigates to detail page",
+    "back_navigation": "PASS - Back button returns to orders list",
+    "deployment_history": "PASS - Einsatzhistorie section visible on generator detail"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_order_detail_iteration27.py",
+    "/app/test_reports/pytest/pytest_order_detail_iteration27.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_order_detail_iteration27.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "100% (all features verified working)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_info": "Deployment history entries created during testing via POST /api/orders/epirent/4/deployments",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 27 testing complete. All new order detail features working: /orders/:pk page shows map with geocoded delivery address, configurable radius, generators within radius. Deployment history CRUD working. Generator detail page has Einsatzhistorie section. Order PK 4 (Rheinkirmes Düsseldorf) has coordinates (51.2276, 6.7654). DSE L401 Testaufbau generator is at ~35km from Düsseldorf. Deployment history initially empty - test entries created during testing.",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": [],
+    "note": "All data from live EpiRent ERP system. Geocoding via Nominatim OSM API."
+  }
+}
