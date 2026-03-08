@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
@@ -57,8 +57,15 @@ async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(sec
 
 class StandardPrice(BaseModel):
     connection_type: str
-    price: float
-    avg_kwh: float = 0.0  # Durchschnittlicher Verbrauch für Kautionsberechnung
+    price: float = 0.0
+    avg_kwh: float = 0.0
+
+    @field_validator("price", "avg_kwh", mode="before")
+    @classmethod
+    def coerce_float(cls, v):
+        if v is None or v == "":
+            return 0.0
+        return float(v)
 
 
 class StandardPriceUpdate(BaseModel):

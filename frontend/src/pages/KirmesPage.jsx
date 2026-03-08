@@ -178,19 +178,22 @@ function EventModal({ open, onClose, onSaved, editing }) {
       if (editing) {
         await api.put(`/kirmes/events/${editing.id}`, {
           ...form,
-          custom_prices: customPrices.map(p => ({ connection_type: p.connection_type, price: p.price, avg_kwh: p.avg_kwh || 0 })),
+          custom_prices: customPrices.map(p => ({ connection_type: p.connection_type, price: parseFloat(p.price) || 0, avg_kwh: parseFloat(p.avg_kwh) || 0 })),
         });
         toast.success("Veranstaltung aktualisiert");
       } else {
         await api.post("/kirmes/events", {
           ...form,
-          custom_prices: form.use_standard_prices ? null : customPrices.map(p => ({ connection_type: p.connection_type, price: p.price, avg_kwh: p.avg_kwh || 0 })),
+          custom_prices: form.use_standard_prices ? null : customPrices.map(p => ({ connection_type: p.connection_type, price: parseFloat(p.price) || 0, avg_kwh: parseFloat(p.avg_kwh) || 0 })),
         });
         toast.success("Veranstaltung angelegt");
       }
       onSaved();
       onClose();
-    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+    } catch (err) {
+      const d = err.response?.data?.detail;
+      toast.error(typeof d === "string" ? d : Array.isArray(d) ? d.map(e => e.msg).join(", ") : "Fehler");
+    }
     finally { setSaving(false); }
   };
 
