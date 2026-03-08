@@ -79,10 +79,10 @@ DEFAULT_CONF = {
 }
 
 DEFAULT_METERS = [
-    {"meter_id": "", "ip": "192.168.1.101", "port": 502, "slave_id": 1, "name": "Zaehler 1"},
-    {"meter_id": "", "ip": "192.168.1.102", "port": 502, "slave_id": 1, "name": "Zaehler 2"},
-    {"meter_id": "", "ip": "192.168.1.103", "port": 502, "slave_id": 1, "name": "Zaehler 3"},
-    {"meter_id": "", "ip": "192.168.1.104", "port": 502, "slave_id": 1, "name": "Zaehler 4"},
+    {"meter_id": "", "ip": "192.168.88.240", "port": 502, "slave_id": 1, "name": "Zaehler 1"},
+    {"meter_id": "", "ip": "192.168.88.241", "port": 502, "slave_id": 1, "name": "Zaehler 2"},
+    {"meter_id": "", "ip": "192.168.88.242", "port": 502, "slave_id": 1, "name": "Zaehler 3"},
+    {"meter_id": "", "ip": "192.168.88.243", "port": 502, "slave_id": 1, "name": "Zaehler 4"},
 ]
 
 

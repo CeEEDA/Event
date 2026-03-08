@@ -697,7 +697,7 @@ async def download_setup_script(token: str):
 # ============== Kirmeskiste Setup ==============
 
 class KirmeskisteSetupRequest(BaseModel):
-    meter_ips: list[str] = ["192.168.1.101", "192.168.1.102", "192.168.1.103", "192.168.1.104"]
+    meter_ips: list[str] = ["192.168.88.240", "192.168.88.241", "192.168.88.242", "192.168.88.243"]
 
 @router.post("/devices/{device_id}/kirmeskiste-setup")
 async def generate_kirmeskiste_setup(device_id: str, body: KirmeskisteSetupRequest = None, admin: dict = Depends(require_admin)):

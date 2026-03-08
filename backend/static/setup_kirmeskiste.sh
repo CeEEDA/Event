@@ -25,7 +25,7 @@ echo ""
 METER_IDS=()
 METER_IPS=()
 for i in 1 2 3 4; do
-    DEFAULT_IP="192.168.1.$((100+i))"
+    DEFAULT_IP="192.168.88.$((239+i))"
     read -p "Zaehler $i - IP [$DEFAULT_IP]: " IP
     IP=${IP:-$DEFAULT_IP}
     read -p "Zaehler $i - Meter-ID (aus dem Portal): " MID
