@@ -94,16 +94,16 @@ class EventUpdate(BaseModel):
 
 
 class SchaustellerRegister(BaseModel):
-    firma: str
+    firma: str = ""
     name: str
     strasse: str = ""
     plz: str = ""
     ort: str = ""
     steuernummer: str = ""
     email: EmailStr
-    password: str
+    password: str = ""
     telefon: str = ""
-    rechnungs_email: EmailStr
+    rechnungs_email: str = ""
 
 
 class SchaustellerUpdate(BaseModel):
@@ -386,28 +386,23 @@ async def register_schausteller(data: SchaustellerRegister):
     """Public endpoint - no auth required. Registers schausteller and sends verification code."""
     import random
 
-    if len(data.password) < 6:
-        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen lang sein.")
-
     existing = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     if existing:
-        if existing.get("email_verified"):
+        if existing.get("email_verified") and existing.get("password_hash"):
             raise HTTPException(status_code=400, detail="Diese E-Mail-Adresse ist bereits registriert. Bitte melden Sie sich an.")
-        # Resend verification code and update password
+        # Resend verification code
         code = str(random.randint(100000, 999999))
-        await _db.kirmes_schausteller.update_one(
-            {"email": data.email},
-            {"$set": {
-                "verification_code": code,
-                "password_hash": _hash_password(data.password),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }}
-        )
-        _send_verification_email(data.email, data.name, code)
-        existing.pop("password_hash", None)
-        existing.pop("verification_code", None)
-        existing["email_verified"] = False
-        return existing
+        update = {"verification_code": code, "updated_at": datetime.now(timezone.utc).isoformat()}
+        # Update name/firma if provided
+        if data.name:
+            update["name"] = data.name
+        if data.firma:
+            update["firma"] = data.firma
+        await _db.kirmes_schausteller.update_one({"email": data.email}, {"$set": update})
+        _send_verification_email(data.email, data.name or existing.get("name", ""), code)
+        result = {k: v for k, v in existing.items() if k not in ("password_hash", "verification_code")}
+        result["email_verified"] = False
+        return result
 
     code = str(random.randint(100000, 999999))
     sch_id = str(uuid.uuid4())
@@ -420,9 +415,8 @@ async def register_schausteller(data: SchaustellerRegister):
         "ort": data.ort,
         "steuernummer": data.steuernummer,
         "email": data.email,
-        "password_hash": _hash_password(data.password),
         "telefon": data.telefon,
-        "rechnungs_email": data.rechnungs_email,
+        "rechnungs_email": data.rechnungs_email or data.email,
         "email_verified": False,
         "verification_code": code,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -430,7 +424,6 @@ async def register_schausteller(data: SchaustellerRegister):
     await _db.kirmes_schausteller.insert_one(sch_doc)
     sch_doc.pop("_id", None)
     sch_doc.pop("verification_code", None)
-    sch_doc.pop("password_hash", None)
 
     _send_verification_email(data.email, data.name, code)
     return sch_doc
@@ -533,7 +526,7 @@ async def verify_email(data: VerifyEmailRequest):
     sch = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     if not sch:
         raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden.")
-    if sch.get("email_verified"):
+    if sch.get("email_verified") and sch.get("password_hash"):
         sch.pop("password_hash", None)
         sch.pop("verification_code", None)
         return sch
@@ -546,6 +539,29 @@ async def verify_email(data: VerifyEmailRequest):
     updated = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     updated.pop("verification_code", None)
     updated.pop("password_hash", None)
+    return updated
+
+
+class SetPasswordPublic(BaseModel):
+    email: EmailStr
+    password: str
+
+
+@router.post("/public/set-password")
+async def public_set_password(data: SetPasswordPublic):
+    """Public endpoint - Set password after email verification."""
+    sch = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Kein Konto gefunden.")
+    if not sch.get("email_verified"):
+        raise HTTPException(status_code=403, detail="E-Mail noch nicht bestätigt.")
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen lang sein.")
+    await _db.kirmes_schausteller.update_one(
+        {"email": data.email},
+        {"$set": {"password_hash": _hash_password(data.password), "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    updated = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0, "password_hash": 0, "verification_code": 0})
     return updated
 
 

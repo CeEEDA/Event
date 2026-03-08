@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
   CalendarDays, MapPin, Zap, Check, ArrowRight, ArrowLeft, UserPlus, LogIn,
-  Mail, Eye, EyeOff, FileText, Download, LayoutDashboard, Plus, LogOut,
+  Mail, Eye, EyeOff, FileText, Download, LayoutDashboard, Plus, LogOut, KeyRound,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -31,11 +31,23 @@ const STATUS_LABELS = {
   versendet: { text: "Versendet", cls: "bg-blue-100 text-blue-700" },
 };
 
+function PasswordInput({ value, onChange, placeholder, testId }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Input type={visible ? "text" : "password"} value={value} onChange={onChange} placeholder={placeholder} className="mt-1 pr-10" data-testid={testId} />
+      <button type="button" onMouseDown={e => { e.preventDefault(); setVisible(v => !v); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabIndex={-1}>
+        {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
+
 export default function SchaustellerAnmeldungPage() {
   const [searchParams] = useSearchParams();
   const preselectedEvent = searchParams.get("event");
 
-  // Steps: auth -> verify -> dashboard -> event -> signup -> done
+  // Steps: auth -> verify -> setpw -> dashboard -> event -> signup -> done
   const [step, setStep] = useState("auth");
   const [authMode, setAuthMode] = useState("register");
   const [schausteller, setSchausteller] = useState(null);
@@ -46,21 +58,20 @@ export default function SchaustellerAnmeldungPage() {
 
   const [regForm, setRegForm] = useState({
     firma: "", name: "", strasse: "", plz: "", ort: "",
-    steuernummer: "", email: "", password: "", telefon: "", rechnungs_email: "",
+    steuernummer: "", email: "", telefon: "", rechnungs_email: "",
   });
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyEmail, setVerifyEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [signupForm, setSignupForm] = useState({
     platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte",
   });
 
   const loadBookings = useCallback(async (schId) => {
-    try {
-      const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`);
-      setMyBookings(r.data);
-    } catch { /* ignore */ }
+    try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch { /* ignore */ }
   }, []);
 
   const loadEvents = useCallback(async () => {
@@ -79,19 +90,13 @@ export default function SchaustellerAnmeldungPage() {
   const goToDashboard = (sch) => {
     setSchausteller(sch);
     loadBookings(sch.id);
-    if (preselectedEvent && selectedEvent) {
-      setStep("signup");
-    } else {
-      setStep("dashboard");
-    }
+    if (preselectedEvent && selectedEvent) { setStep("signup"); }
+    else { setStep("dashboard"); }
   };
 
   const handleRegister = async () => {
-    if (!regForm.firma || !regForm.name || !regForm.email || !regForm.password || !regForm.rechnungs_email) {
-      toast.error("Bitte alle Pflichtfelder ausfüllen"); return;
-    }
-    if (regForm.password.length < 6) {
-      toast.error("Passwort muss mindestens 6 Zeichen lang sein"); return;
+    if (!regForm.name || !regForm.email) {
+      toast.error("Bitte Name und E-Mail eingeben"); return;
     }
     setSaving(true);
     try {
@@ -110,10 +115,24 @@ export default function SchaustellerAnmeldungPage() {
     setSaving(true);
     try {
       const r = await api.post("/kirmes/public/verify-email", { email: verifyEmail, code: verifyCode });
-      toast.success("E-Mail bestätigt!");
-      goToDashboard(r.data);
+      toast.success("E-Mail bestätigt! Bitte setzen Sie jetzt Ihr Passwort.");
+      setSchausteller(r.data);
+      setStep("setpw");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Ungültiger Code");
+    } finally { setSaving(false); }
+  };
+
+  const handleSetPassword = async () => {
+    if (!newPassword || newPassword.length < 6) { toast.error("Passwort muss mindestens 6 Zeichen lang sein"); return; }
+    if (newPassword !== newPasswordConfirm) { toast.error("Passwörter stimmen nicht überein"); return; }
+    setSaving(true);
+    try {
+      const r = await api.post("/kirmes/public/set-password", { email: verifyEmail, password: newPassword });
+      toast.success("Passwort gesetzt!");
+      goToDashboard(r.data);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler");
     } finally { setSaving(false); }
   };
 
@@ -140,9 +159,7 @@ export default function SchaustellerAnmeldungPage() {
     }
     setSaving(true);
     try {
-      await api.post("/kirmes/public/signup", {
-        event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm,
-      });
+      await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm });
       toast.success("Anmeldung erfolgreich!");
       setStep("done");
     } catch (err) {
@@ -150,34 +167,17 @@ export default function SchaustellerAnmeldungPage() {
     } finally { setSaving(false); }
   };
 
-  const handleLogout = () => {
-    setSchausteller(null);
-    setMyBookings({ signups: [], invoices: [] });
-    setStep("auth");
-  };
+  const handleLogout = () => { setSchausteller(null); setMyBookings({ signups: [], invoices: [] }); setStep("auth"); };
 
   const handleDownloadInvoice = async (invoiceId) => {
-    // Public invoice download - no auth needed for schausteller's own invoices
     try {
       const response = await fetch(`${BACKEND_URL}/api/kirmes/public/invoice/${invoiceId}/pdf?schausteller_id=${schausteller.id}`);
       if (!response.ok) throw new Error();
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = `Rechnung.pdf`; a.click();
+      const a = document.createElement("a"); a.href = url; a.download = "Rechnung.pdf"; a.click();
       window.URL.revokeObjectURL(url);
     } catch { toast.error("PDF konnte nicht heruntergeladen werden"); }
-  };
-
-  const PasswordInput = ({ value, onChange, placeholder, testId }) => {
-    const [visible, setVisible] = useState(false);
-    return (
-      <div className="relative">
-        <Input type={visible ? "text" : "password"} value={value} onChange={onChange} placeholder={placeholder} className="mt-1 pr-10" data-testid={testId} />
-        <button type="button" onMouseDown={e => { e.preventDefault(); setVisible(v => !v); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabIndex={-1}>
-          {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-        </button>
-      </div>
-    );
   };
 
   return (
@@ -186,12 +186,10 @@ export default function SchaustellerAnmeldungPage() {
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <Logo size="normal" />
           <div className="flex items-center gap-3">
-            {schausteller && (
+            {schausteller && step !== "auth" && step !== "verify" && step !== "setpw" && (
               <>
                 <span className="text-xs text-gray-500 hidden sm:inline">{schausteller.name}</span>
-                <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600" title="Abmelden" data-testid="logout-btn">
-                  <LogOut className="w-4 h-4" />
-                </button>
+                <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600" title="Abmelden" data-testid="logout-btn"><LogOut className="w-4 h-4" /></button>
               </>
             )}
             <p className="text-xs text-gray-400">Schausteller-Portal</p>
@@ -220,7 +218,7 @@ export default function SchaustellerAnmeldungPage() {
               {authMode === "register" ? (
                 <div className="space-y-3" data-testid="register-form">
                   <div className="grid grid-cols-2 gap-3">
-                    <div><Label className="text-gray-700 text-sm">Firma *</Label><Input value={regForm.firma} onChange={e => setRegForm(f => ({ ...f, firma: e.target.value }))} className="mt-1" data-testid="reg-firma" /></div>
+                    <div><Label className="text-gray-700 text-sm">Firma</Label><Input value={regForm.firma} onChange={e => setRegForm(f => ({ ...f, firma: e.target.value }))} className="mt-1" data-testid="reg-firma" /></div>
                     <div><Label className="text-gray-700 text-sm">Name *</Label><Input value={regForm.name} onChange={e => setRegForm(f => ({ ...f, name: e.target.value }))} className="mt-1" data-testid="reg-name" /></div>
                   </div>
                   <div><Label className="text-gray-700 text-sm">Straße</Label><Input value={regForm.strasse} onChange={e => setRegForm(f => ({ ...f, strasse: e.target.value }))} className="mt-1" data-testid="reg-strasse" /></div>
@@ -230,9 +228,8 @@ export default function SchaustellerAnmeldungPage() {
                   </div>
                   <div><Label className="text-gray-700 text-sm">Steuernummer</Label><Input value={regForm.steuernummer} onChange={e => setRegForm(f => ({ ...f, steuernummer: e.target.value }))} className="mt-1" data-testid="reg-steuernummer" /></div>
                   <div><Label className="text-gray-700 text-sm">E-Mail *</Label><Input type="email" value={regForm.email} onChange={e => setRegForm(f => ({ ...f, email: e.target.value }))} className="mt-1" data-testid="reg-email" /></div>
-                  <div><Label className="text-gray-700 text-sm">Passwort *</Label><PasswordInput value={regForm.password} onChange={e => setRegForm(f => ({ ...f, password: e.target.value }))} placeholder="Mindestens 6 Zeichen" testId="reg-password" /></div>
                   <div><Label className="text-gray-700 text-sm">Telefon</Label><Input value={regForm.telefon} onChange={e => setRegForm(f => ({ ...f, telefon: e.target.value }))} className="mt-1" data-testid="reg-telefon" /></div>
-                  <div><Label className="text-gray-700 text-sm">Rechnungs-E-Mail *</Label><Input type="email" value={regForm.rechnungs_email} onChange={e => setRegForm(f => ({ ...f, rechnungs_email: e.target.value }))} placeholder="Falls abweichend" className="mt-1" data-testid="reg-rechnungs-email" /><p className="text-[10px] text-gray-400 mt-1">Rechnungen werden an diese Adresse versendet</p></div>
+                  <div><Label className="text-gray-700 text-sm">Rechnungs-E-Mail</Label><Input type="email" value={regForm.rechnungs_email} onChange={e => setRegForm(f => ({ ...f, rechnungs_email: e.target.value }))} placeholder="Falls abweichend von E-Mail" className="mt-1" data-testid="reg-rechnungs-email" /></div>
                   <Button onClick={handleRegister} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mt-2" data-testid="register-btn">
                     {saving ? "Wird registriert..." : "Registrieren"} <ArrowRight className="w-4 h-4 ml-1" />
                   </Button>
@@ -267,20 +264,37 @@ export default function SchaustellerAnmeldungPage() {
             </div>
           )}
 
-          {/* Dashboard Step */}
+          {/* Set Password Step */}
+          {step === "setpw" && (
+            <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="setpw-step">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-fuchsia-100 flex items-center justify-center"><KeyRound className="w-8 h-8 text-fuchsia-600" /></div>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Passwort festlegen</h2>
+                <p className="text-sm text-gray-500">Legen Sie ein Passwort für Ihr Konto fest.</p>
+              </div>
+              <div className="space-y-4">
+                <div><Label className="text-gray-700 text-sm">Neues Passwort</Label><PasswordInput value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Mindestens 6 Zeichen" testId="setpw-password" /></div>
+                <div><Label className="text-gray-700 text-sm">Passwort wiederholen</Label><PasswordInput value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)} placeholder="Passwort bestätigen" testId="setpw-confirm" /></div>
+                <Button onClick={handleSetPassword} disabled={saving || newPassword.length < 6} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="setpw-btn">
+                  {saving ? "Wird gespeichert..." : "Passwort setzen"} <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Dashboard */}
           {step === "dashboard" && schausteller && (
             <div data-testid="dashboard-step">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">Mein Bereich</h2>
-                  <p className="text-sm text-gray-500">{schausteller.firma} · {schausteller.name}</p>
+                  <p className="text-sm text-gray-500">{schausteller.firma ? `${schausteller.firma} · ` : ""}{schausteller.name}</p>
                 </div>
                 <Button size="sm" onClick={() => { loadEvents(); setStep("event"); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-booking-btn">
                   <Plus className="w-4 h-4 mr-1" /> Neue Anmeldung
                 </Button>
               </div>
 
-              {/* Bookings */}
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-4">
                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
                   <LayoutDashboard className="w-4 h-4 text-fuchsia-600" />
@@ -305,14 +319,11 @@ export default function SchaustellerAnmeldungPage() {
                                 <span>Platz: <strong>{s.platznummer}</strong></span>
                                 <span>{s.fahrgeschaeft}</span>
                                 <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{s.connection_type}</span>
-                                {s.price > 0 && <span>{s.price.toFixed(2)} EUR</span>}
                               </div>
                             </div>
                             <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${st.cls}`}>{st.text}</span>
                           </div>
-                          {s.invoice_number && (
-                            <div className="mt-2 text-xs text-emerald-600 font-medium">Rechnung: {s.invoice_number}</div>
-                          )}
+                          {s.invoice_number && <div className="mt-2 text-xs text-emerald-600 font-medium">Rechnung: {s.invoice_number}</div>}
                         </div>
                       );
                     })}
@@ -320,7 +331,6 @@ export default function SchaustellerAnmeldungPage() {
                 )}
               </div>
 
-              {/* Invoices */}
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-emerald-600" />
@@ -421,7 +431,7 @@ export default function SchaustellerAnmeldungPage() {
                     </select>
                   </div>
                   {signupForm.connection_type && (() => {
-                    const p = (selectedEvent.prices || []).find(p => p.connection_type === signupForm.connection_type);
+                    const p = (selectedEvent.prices || []).find(pr => pr.connection_type === signupForm.connection_type);
                     return p ? (
                       <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4">
                         <div className="flex justify-between items-center">
