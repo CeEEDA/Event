@@ -19,6 +19,7 @@ import {
   MapPin,
   ChevronUp,
   ChevronDown,
+  Filter,
 } from "lucide-react";
 
 const formatDate = (d) => {
@@ -75,6 +76,21 @@ const StatusBadge = ({ order }) => {
   );
 };
 
+const STATUS_OPTIONS = [
+  { value: "all", label: "Alle Status" },
+  { value: "confirmed", label: "Bestätigt" },
+  { value: "open", label: "Offen" },
+  { value: "canceled", label: "Storniert" },
+  { value: "archived", label: "Archiviert" },
+];
+
+const getOrderStatus = (order) => {
+  if (order.is_canceled) return "canceled";
+  if (order.is_confirmed) return "confirmed";
+  if (order.is_archived) return "archived";
+  return "open";
+};
+
 export default function OrdersPage() {
   const navigate = useNavigate();
 
@@ -90,6 +106,7 @@ export default function OrdersPage() {
     return toISODate(d);
   });
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("confirmed");
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -130,7 +147,9 @@ export default function OrdersPage() {
     }
   };
 
-  const sortedOrders = [...orders].sort((a, b) => {
+  const sortedOrders = [...orders]
+    .filter((o) => statusFilter === "all" || getOrderStatus(o) === statusFilter)
+    .sort((a, b) => {
     let va = a[sortField] ?? "";
     let vb = b[sortField] ?? "";
     if (typeof va === "string") va = va.toLowerCase();
@@ -211,6 +230,25 @@ export default function OrdersPage() {
                 className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-500"
                 data-testid="date-to-input"
               />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-400" />
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-500 bg-white min-w-[140px]"
+                data-testid="status-filter-select"
+              >
+                {STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
