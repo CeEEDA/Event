@@ -65,16 +65,16 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN_LEFT, rightMargin=MARGIN_RIGHT,
-        topMargin=58 * mm,   # Below letterhead header + sender line
-        bottomMargin=42 * mm,  # Above letterhead footer
+        topMargin=48 * mm,
+        bottomMargin=30 * mm,
     )
 
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle("InvNormal", parent=styles["Normal"], fontName="Helvetica", fontSize=9, leading=13, textColor=DARK))
-    styles.add(ParagraphStyle("InvBold", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9, leading=13, textColor=DARK))
-    styles.add(ParagraphStyle("InvSmall", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=11, textColor=GRAY))
-    styles.add(ParagraphStyle("InvTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=18, textColor=DARK))
-    styles.add(ParagraphStyle("InvRight", parent=styles["Normal"], fontName="Helvetica", fontSize=9, leading=13, textColor=DARK, alignment=TA_RIGHT))
+    styles.add(ParagraphStyle("InvNormal", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=DARK))
+    styles.add(ParagraphStyle("InvBold", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8.5, leading=11, textColor=DARK))
+    styles.add(ParagraphStyle("InvSmall", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=10, textColor=GRAY))
+    styles.add(ParagraphStyle("InvTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=DARK))
+    styles.add(ParagraphStyle("InvRight", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=DARK, alignment=TA_RIGHT))
 
     elements = []
     sch = invoice.get("schausteller", {})
@@ -88,7 +88,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         elements.append(Paragraph(sch["strasse"], styles["InvNormal"]))
     if sch.get("plz") or sch.get("ort"):
         elements.append(Paragraph(f"{sch.get('plz', '')} {sch.get('ort', '')}", styles["InvNormal"]))
-    elements.append(Spacer(1, 12 * mm))
+    elements.append(Spacer(1, 8 * mm))
 
     # Invoice metadata (right-aligned table)
     inv_date = invoice.get("invoice_date", datetime.now().strftime("%d.%m.%Y"))
@@ -107,7 +107,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("ALIGN", (1, 0), (1, -1), "LEFT"),
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
         ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("TEXTCOLOR", (0, 0), (-1, -1), DARK),
         ("TOPPADDING", (0, 0), (-1, -1), 1.5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
@@ -124,11 +124,11 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     elements.append(meta_wrapper)
-    elements.append(Spacer(1, 8 * mm))
+    elements.append(Spacer(1, 5 * mm))
 
     # Title
     elements.append(Paragraph("Rechnung", styles["InvTitle"]))
-    elements.append(Spacer(1, 4 * mm))
+    elements.append(Spacer(1, 3 * mm))
 
     # Introduction
     event_name = event.get("name", "")
@@ -138,7 +138,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         f"<b>{event_name}</b>:",
         styles["InvNormal"]
     ))
-    elements.append(Spacer(1, 6 * mm))
+    elements.append(Spacer(1, 4 * mm))
 
     # Line items table
     items = invoice.get("line_items", [])
@@ -197,7 +197,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("ALIGN", (2, 0), (2, -1), "RIGHT"),
         ("FONTNAME", (0, 0), (-1, 1), "Helvetica"),
         ("FONTNAME", (0, 2), (-1, 2), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
         ("TEXTCOLOR", (0, 0), (-1, -1), DARK),
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
@@ -206,7 +206,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     elements.append(totals_table)
-    elements.append(Spacer(1, 8 * mm))
+    elements.append(Spacer(1, 5 * mm))
 
     # Payment info
     elements.append(Paragraph(
@@ -215,16 +215,15 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         "angegebene Konto.",
         styles["InvNormal"]
     ))
-    elements.append(Spacer(1, 8 * mm))
+    elements.append(Spacer(1, 5 * mm))
 
     # Closing
     elements.append(Paragraph("Bei Rückfragen stehen wir Ihnen gerne zur Verfügung.", styles["InvNormal"]))
-    elements.append(Spacer(1, 4 * mm))
+    elements.append(Spacer(1, 3 * mm))
     elements.append(Paragraph("Mit freundlichen Grüßen", styles["InvNormal"]))
-    elements.append(Spacer(1, 2 * mm))
     elements.append(Paragraph("<b>Eventenergie Deutschland GmbH &amp; Co. KG</b>", styles["InvNormal"]))
 
-    doc.build(elements, canvasmaker=LetterheadCanvas)
+    doc.build(elements)
     content_bytes = buf.getvalue()
 
     # Merge with letterhead background
