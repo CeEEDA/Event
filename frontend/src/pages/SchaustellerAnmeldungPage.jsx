@@ -24,7 +24,7 @@ export default function SchaustellerAnmeldungPage() {
   const [searchParams] = useSearchParams();
   const preselectedEvent = searchParams.get("event");
 
-  // Steps: auth -> event -> signup -> done
+  // Steps: auth -> verify -> event -> signup -> done
   const [step, setStep] = useState("auth");
   const [authMode, setAuthMode] = useState("register"); // register or login
   const [schausteller, setSchausteller] = useState(null);
@@ -38,6 +38,8 @@ export default function SchaustellerAnmeldungPage() {
     steuernummer: "", email: "", telefon: "", rechnungs_email: "",
   });
   const [loginEmail, setLoginEmail] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyEmail, setVerifyEmail] = useState("");
 
   // Signup form
   const [signupForm, setSignupForm] = useState({
@@ -69,15 +71,42 @@ export default function SchaustellerAnmeldungPage() {
     try {
       const r = await api.post("/kirmes/public/register", regForm);
       setSchausteller(r.data);
-      toast.success("Registrierung erfolgreich!");
+      setVerifyEmail(regForm.email);
+      setVerifyCode("");
+      toast.success("Bestätigungscode wurde an Ihre E-Mail gesendet!");
+      setStep("verify");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler bei der Registrierung");
+    } finally { setSaving(false); }
+  };
+
+  const handleVerify = async () => {
+    if (!verifyCode || verifyCode.length !== 6) {
+      toast.error("Bitte den 6-stelligen Code eingeben");
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await api.post("/kirmes/public/verify-email", { email: verifyEmail, code: verifyCode });
+      setSchausteller(r.data);
+      toast.success("E-Mail bestätigt!");
       if (preselectedEvent && selectedEvent) {
         setStep("signup");
       } else {
         setStep("event");
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler bei der Registrierung");
+      toast.error(err.response?.data?.detail || "Ungültiger Code");
     } finally { setSaving(false); }
+  };
+
+  const handleResendCode = async () => {
+    try {
+      await api.get(`/kirmes/public/resend-code?email=${encodeURIComponent(verifyEmail)}`);
+      toast.success("Neuer Code wurde gesendet");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler");
+    }
   };
 
   const handleLogin = async () => {
@@ -217,6 +246,43 @@ export default function SchaustellerAnmeldungPage() {
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Step: Verify Email */}
+          {step === "verify" && (
+            <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="verify-step">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-fuchsia-100 flex items-center justify-center">
+                  <Mail className="w-8 h-8 text-fuchsia-600" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">E-Mail bestätigen</h2>
+                <p className="text-sm text-gray-500">
+                  Wir haben einen 6-stelligen Code an <strong>{verifyEmail}</strong> gesendet.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-gray-700 text-sm">Bestätigungscode</Label>
+                  <Input
+                    type="text"
+                    maxLength={6}
+                    value={verifyCode}
+                    onChange={e => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    className="mt-1 text-center text-2xl tracking-[0.5em] font-mono"
+                    data-testid="verify-code-input"
+                  />
+                </div>
+                <Button onClick={handleVerify} disabled={saving || verifyCode.length !== 6} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="verify-btn">
+                  {saving ? "Wird geprüft..." : "Bestätigen"} <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+                <div className="text-center">
+                  <button onClick={handleResendCode} className="text-sm text-fuchsia-600 hover:text-fuchsia-700 underline" data-testid="resend-code-btn">
+                    Code erneut senden
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

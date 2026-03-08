@@ -1,92 +1,107 @@
 <analysis>**original_problem_statement:**
-The user is building a comprehensive portal for monitoring and managing power generation assets. The core features include:
-1.  **Live Monitoring:** Dashboards for Deep Sea Electronics (DSE) generators and mobile Messkoffer energy measurement cases, using live MQTT and API data.
-2.  **Remote Control:** Start/Stop/Auto remote control for DSE generators.
-3.  **ERP Integration (EpiRent):** A major feature to integrate with their EpiRent ERP system. This involves creating an Auftragsverwaltung (Order Management) page to fetch, display, and search for orders from the EpiRent API.
-4.  **Order-to-Asset Linking:** On a new order detail page, display a map centered on the job's delivery address, show generators within an adjustable radius, and allow manual placement of untracked assets (e.g., light masts).
-5.  **Device & User Management:** Full CRUD for devices and a role-based permission system, including an Einsatzhistorie (deployment history) for each generator.
-6.  **Future Self-Hosting:** The user plans to migrate the entire application to a local server.
+The user initially requested a portal for monitoring power generation assets (DSE generators, Messkoffer cases) with remote control capabilities and integration with their EpiRent ERP system.
+
+The project has since expanded significantly with a new major feature: a complete **Kirmes (Fairground) Billing System**.
+
+**PRODUCT REQUIREMENTS (Kirmes Billing System):**
+1.  **Event Management:** Admins can create/manage events, defining dates, planning periods (Dispo-Zeitraum), and pricing.
+2.  **Price Management:** Admins can set a standard price list and override it per event. The pricing model includes:
+    *   Per-connection-type fees (Schuko, 16A, 32A, etc.).
+    *   A general kWh price.
+    *   A general handling surcharge.
+    *   An estimated average kWh consumption per connection type to calculate a security deposit.
+3.  **Public Exhibitor Portal:** A public-facing page where exhibitors (Schausteller) can:
+    *   Register a new account (with email verification).
+    *   Log in with an existing account.
+    *   Select a published event and sign up by providing their ride name (Fahrgeschäft), plot number, and required power connection.
+4.  **Exhibitor Management:** Admins can view and manage all registered exhibitors, edit their details, and enable a Purchase on Account () option, allowing them to book without an upfront payment method. Admins can also delete exhibitor accounts.
+5.  **Exhibitor Invitations:** Admins can invite registered exhibitors to an event via email, which contains a direct link to the signup page.
+6.  **Event Detail View:** An admin-facing page showing all signups for an event. It must include:
+    *   Expandable rows to show full exhibitor contact and signup details.
+    *   Columns for kWh Einbau (meter reading at installation) and kWh Ausbau (meter reading at removal), with an editable field for staff to input these values.
+    *   A PDF export for the assembly list ().
+    *   Placeholders for EMU meter data integration (live consumption, outages).
+    *   A button to initiate the final billing process (Abrechnung).
+7.  **Exhibitor History:** A new detail page for each exhibitor showing their contact info, a history of events they've attended, and a placeholder for their billing history.
+8.  **Payment & Invoicing (Future):**
+    *   Integrate Stripe for credit card payments to reserve a security deposit.
+    *   Automate the final billing process (Abrechnung), which calculates final costs based on meter readings, generates ZUGFeRD-compliant e-invoices, and emails them to the exhibitor and the accounting department.
 
 **User's preferred language**: Deutsch
 
 **what currently exists?**
-The application is a full-stack portal with a React frontend and FastAPI backend.
--   **Order Management (Auftragsverwaltung):** A fully functional page that fetches orders from the EpiRent ERP. It includes filters for date range and order status (defaulting to active jobs for today) and a free-text search.
--   **Order Detail Page:** A new page, accessible by clicking an order, that displays order details and a  map. The map is centered on the order's geocoded delivery address.
--   **Asset-to-Order Linking:** The order detail page allows manual placement of assets (Lichtmast, Stromerzeuger, etc.). It captures the user's device location, converts it to a Plus Code, and displays the assets as orange markers on the map and in a list. It also lists all portal generators that are within a user-configurable radius of the job site.
--   **Deployment History:** A placeholder Einsatzhistorie section has been added to the .
--   **DSE Integration:** Live monitoring and remote control are functional. The CSV topic files required for the DSE gateway have been corrected to fix formatting bugs.
--   **Authentication:** All EpiRent proxy endpoints are secured with JWT authentication.
+The application is a full-stack portal with a React frontend and a FastAPI backend.
+-   **Power Monitoring Portal:** The initial features for DSE generator monitoring, remote control, and EpiRent order management are stable and functional. The previously blocking GPS data reception issue has been resolved.
+-   **Kirmes Billing System:** A substantial part of this new feature has been implemented:
+    -   **Backend:** Full CRUD APIs for Events, Exhibitors, and Signups (). Endpoints for price management, PDF export, and exhibitor invitations are in place. An SMTP service is configured for sending emails.
+    -   **Frontend Pages:**  (event list), ,  (public registration/signup), and  (admin view of exhibitor history) have been created and are functional.
+    -   **Admin UI:** The User Management page now has a Schausteller tab for full CRUD operations. Event creation/editing modals include the detailed pricing structure.
+    -   **Features:** Exhibitor invitation flow, PDF export for assembly lists, and Purchase on Account logic are implemented. The event detail page features an expandable table to show signup details.
 
 **Last working item**:
--   Last item agent was working: Debugging an issue where GPS data from a DSE890 gateway was not being received by the backend via MQTT, even though the gateway itself had a satellite fix. The root cause was identified as a missing Group Name in the gateway's MQTT configuration. The user has just set this group name to eventenergie and restarted the gateway.
+-   Last item agent was working: Implementing a mandatory email verification step for new exhibitor registrations. The agent created the backend logic to generate a verification token, send an email, and verify the token. On the frontend, the agent added a new verify step to the  registration flow but did not finish testing the complete user journey.
 -   Status: IN PROGRESS
 -   Agent Testing Done: N
--   Which testing method agent to use? manual testing by curl
+-   Which testing method agent to use? frontend testing agent
 -   User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P0) Verify GPS Data Reception from DSE Gateway**
-    -   **Description:** After the user set the Group Name to eventenergie on the DSE gateway, the agent must verify if the GPS data is now being published to the correct MQTT topic and received by the backend.
+-   **Issue 1: (P0) Complete and Test Email Verification Flow**
+    -   **Description:** The email verification process for new exhibitors is implemented but untested. The full flow (register -> receive email -> enter code -> get verified -> proceed to event signup) needs to be validated end-to-end.
     -   **Status:** IN PROGRESS
 
   **Issues Detail:**
-  - **Issue 1: Verify GPS Data Reception from DSE Gateway**
-     - **Attempted fixes:**
-        - Corrected a bug in the generated DSE topic CSV files where a missing comma caused Invalid field value errors.
-        - Fixed a bug where module topic files weren't offered for download due to an overly strict string match on the controller name.
-        - Listened to MQTT topics and confirmed GPS data was not arriving.
-        - Identified the missing Group Name in the gateway configuration as the likely cause.
+  - **Issue 1: Complete and Test Email Verification Flow**
+     - **Attempted fixes:** Backend endpoints (, ) and a new frontend UI step () have been created in .
      - **Next debug checklist:**
-        1.  Modify the MQTT subscription in  to listen to topics under the new group name, e.g., by subscribing to .
-        2.  Restart the backend service to apply the new subscription.
-        3.  Monitor the MQTT logs/messages for the GPS topic (e.g., ).
-        4.  Once the message arrives, verify that the  function correctly parses the data and updates the generator's location in the database.
-     - **Why fix this issue and what will be achieved with the fix?** This is critical for the generators in radius feature to work. Without live GPS data, generators cannot be automatically associated with jobs on the order detail map.
+        1.  Finalize the UI for the verification code input form in .
+        2.  Trigger the registration, ensuring the verification email is sent and received correctly.
+        3.  Enter the verification code on the frontend and confirm the  function successfully calls the backend.
+        4.  Confirm that upon successful verification, the user is correctly redirected to the event signup step.
+        5.  Test edge cases: incorrect code, expired code (if applicable), trying to sign up without verifying.
+     - **Why fix this issue and what will be achieved with the fix?** This ensures that all registered exhibitors have a valid, confirmed email address, which is critical for sending invitations, invoices, and other communications.
      - **Status:** IN PROGRESS
-     - **Is recurring issue?** Y
-     - **Should Test frontend/backend/both after fix?** Backend
+     - **Is recurring issue?** N
+     - **Should Test frontend/backend/both after fix?** both
      - **Blocked on other issue:** None
 
 **In progress Task List**:
--   **Task 1: (P0) Verify GPS Data Reception**
-    -   **Where to resume:** Update the MQTT subscription path in  to include the  group name.
-    -   **What will be achieved with this?** Live GPS tracking for DSE generators will become functional.
+-   **Task 1: (P0) Complete and Test Email Verification Flow**
+    -   **Where to resume:** . The UI and logic for the  case needs to be reviewed and tested.
+    -   **What will be achieved with this?** A secure and complete registration process for new exhibitors.
     -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** Backend
+    -   **Should Test frontend/backend/both after fix?** both
     -   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   (P0) **Implement Deployment History Logic:** The Einsatzhistorie section on the generator detail page is currently a placeholder. The backend logic needs to be created to record which orders a generator was associated with, along with key metrics like runtime, start/stop times, and energy consumption.
+    -   (P0) **Integrate EMU Meter Data:** Implement the logic to connect signups to EMU meters (via QR code scanning by staff). Display live/historical energy consumption data (, power outages) in the expandable detail panel on the .
+    -   (P1) **Implement Abrechnung (Billing) Logic:** Build the functionality behind the Abrechnung button. This includes:
+        -   Calculating the final bill for each exhibitor based on , , and actual consumption ( - ).
+        -   Integrating a library to generate ZUGFeRD-compliant e-invoices.
+        -   Sending invoices via email to the exhibitor and the accounting department.
+    -   (P1) **Integrate Stripe Payments:** Implement Stripe integration to handle the security deposit payment during the exhibitor's signup process. This requires using the pre-existing test keys.
 -   **Future Tasks:**
+    -   (P1) **Display Billing History:** Populate the Rechnungen (Invoices) section on the  with a list of all past invoices, allowing exhibitors to view and download them.
     -   (P1) **Self-Hosted MQTT Broker:** Install and configure a Mosquitto MQTT broker for server migration.
-    -   (P1) **Full Kirmeskiste Support:** Add full support for the Kirmeskiste device type.
     -   (P2) **File Size Limits:** Implement admin-controlled file size limits for the file-sharing feature.
 
 **Completed work in this session**
--   **Auftragsverwaltung (Order Management) Implemented:**
-    -   Created a backend proxy to the EpiRent API to fetch orders ().
-    -   Built the frontend page () with a table displaying orders.
-    -   Added authentication to the order endpoint.
-    -   Fixed a bug where the customer address was shown instead of the delivery address.
-    -   Optimized performance by fetching detailed address data only for filtered results.
-    -   Added a status filter, defaulting to Bestätigt (Confirmed).
-    -   Set the default view to show only active jobs for the current day.
--   **Order Detail Page & Asset Linking:**
-    -   Created a new  that shows order details and a map.
-    -   Implemented backend geocoding for delivery addresses using Nominatim.
-    -   Implemented a feature to find and display generators within a user-defined radius of the job site.
--   **Manual Asset Placement:**
-    -   Added a feature on the order detail page to manually place untracked assets (e.g., light masts) on the map.
-    -   Uses the device's GPS and Google's Plus Codes for location identification.
-    -   Created backend models and CRUD endpoints to store these manually placed assets.
--   **DSE Gateway Bug Fixes:**
-    -   Resolved a critical Invalid field value error by correcting a missing comma in all generated CSV topic files (, ).
-    -   Fixed a UI bug preventing module topic file downloads.
+-   **DSE GPS Issue Resolved:** Fixed the critical bug preventing GPS data reception by correcting MQTT topic mapping in the database and adding a UI hint for setting the Group Name on the DSE gateway.
+-   **Kirmes Billing System (MVP Built):**
+    -   Created all necessary backend models and API endpoints for Events, Exhibitors, and Signups ().
+    -   Built all core frontend pages: , , , and .
+    -   Implemented a detailed, per-event pricing engine (kWh price, handling fee, deposit calculation).
+    -   Added an exhibitor invitation system with email sending.
+    -   Added a Purchase on Account () feature.
+    -   Implemented client-side PDF generation for the  and fixed a critical bug with the  import.
+    -   Created dynamic, expandable detail panels in the event signup table.
+    -   Created a dedicated Schausteller management tab in the admin user panel with full CRUD functionality.
+    -   Made table rows clickable for navigation to detail pages.
+    -   Started implementation of the exhibitor email verification flow.
 
 **Earlier issues found/mentioned but not fixed**
--   None.
+-   The MQTT broker URL is still hardcoded in . This should be moved to the  file to prepare for future self-hosting.
 
 **Known issue recurrence from previous fork**
 -   None.
@@ -95,72 +110,80 @@ The application is a full-stack portal with a React frontend and FastAPI backend
 
 
 **Key Technical Concepts**
--   **External API Integration:** Secure proxy to the EpiRent ERP, handling authentication and data transformation.
--   **Geocoding & Geospatial Queries:** Using  with Nominatim (OpenStreetMap) to convert addresses to coordinates. Performing radius-based searches in MongoDB to find nearby generators.
--   **Location Encoding:** Using Google's  (Plus Codes) library as a human-readable alternative to lat/lon for manually placed assets.
--   **Frontend State Management:** Heavy use of  and  in React to manage complex UI state, including filters, search queries, map interactions, and data fetching from multiple endpoints.
--   **Performance Optimization:** Refactored a backend process from fetching N details upfront to fetching details for a small, filtered subset on demand, drastically improving UI responsiveness.
--   **CSV File Generation:** Dynamically generating and correcting complex, multi-column CSV files based on strict third-party hardware specifications (DSE890 Gateway).
+-   **Multi-Step Public Forms:** A multi-step registration and signup flow on a public page () that manages auth state, verification, and form data.
+-   **Email Integration:** Sending transactional emails (invitations, verification codes) via a configured SMTP service.
+-   **Client-Side PDF Generation:** Using  and  to dynamically create and download PDF documents from table data in the browser.
+-   **Complex UI State:** Extensive use of React hooks (, ) to manage complex UI states, including modals with nested forms, dynamic tables with expandable rows, and multi-step processes.
+-   **Component-Based Architecture:** Breaking down complex pages into manageable components (e.g., , , ).
+-   **Role-Based Access Control (RBAC):** Extended the existing user roles to include schausteller and implemented conditional UI rendering and API access based on roles (e.g., admin-only delete buttons).
 
 **key DB schema**
--   **orders:** (New Collection, implicitly created for storing order-specific settings)
-    -   
--   **assets:** (New Collection)
-    -   
+-   **kirmes_events:** 
+-   **schaustellers:**  (likely an extension of the  collection or a new collection)
+-   **kirmes_signups:** 
+-   **standard_prices:** 
 
 **changes in tech stack**
--   **Backend:**  library added to .
--   **Frontend:**  is now a key dependency for map-based features.
+-   **Frontend:** Added  and  for PDF generation.
 
 **All files of reference**
--   : Needs to be modified to check for GPS data under the new  group topic.
--   : Contains all new backend logic for orders, geocoding, and asset management.
--   : The main order list page.
--   : The new detail page with the map and asset features.
--   : The corrected gateway topic file.
--   : The corrected module topic file.
+-   : The heart of the new Kirmes feature's backend logic.
+-   : The public-facing entry point for exhibitors. The  logic is the immediate focus.
+-   : The main admin dashboard for a single event, containing the signup list and action buttons.
+-   : The admin page for managing all events, contains the  and .
+-   : Contains the new Schausteller management tab.
+-   : The exhibitor history page.
+-   : Still contains the hardcoded broker URL that needs refactoring.
 
 **Areas that need refactoring**:
-- The MQTT broker URL is still hardcoded in . This should be moved to .
+-   The MQTT broker URL is hardcoded in . It should be moved to .
 
 **key api endpoints**
--   : Fetches and filters a list of orders from EpiRent.
--   : Fetches details for a single order, including geocoded coordinates.
--   : Gets generators within the specified radius of an order.
--   : Full CRUD for manually placed assets on an order.
+-   : CRUD for Kirmes events.
+-   : GET signups for an event.
+-   : POST to send email invitations to exhibitors.
+-   : POST for new exhibitor registration.
+-   : POST to verify an email with a token.
+-   : POST for exhibitor login.
+-   : PUT, DELETE for admin management of exhibitors.
+-   : GET, PUT for the standard price list.
+-   : GET a list of published events for the public signup page.
 
 **Critical Info for New Agent**
--   Your immediate and highest-priority task is to fix the missing GPS data.
--   The user has set the DSE gateway's MQTT Group Name to . You must update the backend's MQTT subscription logic in  to listen to topics on this new path (e.g., ).
--   Once the subscription is updated, restart the backend and monitor for incoming GPS messages. The existing parsing logic should handle the data once it's received.
--   Do not proceed to other tasks until the live GPS data is confirmed to be arriving and stored in the database.
+-   Your first priority is to complete and thoroughly test the exhibitor email verification flow. This is a critical security and usability feature.
+-   After verifying the registration flow, the next major user requests are the integration of live EMU meter data and the implementation of the final billing (Abrechnung) process.
+-   The user has chosen **Stripe** for payment processing and requires **ZUGFeRD** for e-invoicing.
+-   Remember to respond in **Deutsch**.
 
 **documents and test reports created in this job**
 -   
--   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** the group name is eventenergie. DSE has been restarted and is connecting. (PENDING AGENT ACTION)
-2.  **Agent:** Explains the missing group name is the problem and recommends setting it. (RESOLVED)
-3.  **User:** Shares screenshots of all DSE gateway configuration pages. (RESOLVED)
-4.  **Agent:** Asks user to check for specific settings on the gateway. (RESOLVED)
-5.  **User:** the gateway is running. Check again if something is arriving. The satellites have to send something first. That can take a while. (RESOLVED)
-6.  **Agent:** Confirms the gateway is not publishing GPS/status topics and asks user to try an MQTT reconnect or gateway restart. (RESOLVED)
-7.  **User:** the file is uploaded. There is also no error. (RESOLVED)
-8.  **Agent:** Confirms the topic file is likely not active and asks the user to re-upload the corrected version. (RESOLVED)
-9.  **User:** I did a restart. GPS is also on again. Check the status again. (RESOLVED)
-10. **Agent:** Confirms still no GPS topic is being received from the gateway. (RESOLVED)
+1.  **User:** Requests email verification for new exhibitor registrations. (IN PROGRESS)
+2.  **User:** Asks for the event creation/editing form to have the same detailed pricing structure as the standard price list modal (kWh price, handling fee, average kWh). (COMPLETED)
+3.  **User:** Wants a detail view for signups (as a modal) and a separate detail page for exhibitors to see their history. (COMPLETED - Implemented as an expandable panel and a new page, respectively).
+4.  **User:** Requests Kauf auf Rechnung (purchase on account) checkbox, an exhibitor invitation system, and for exhibitor data to be reused for future events. (COMPLETED)
+5.  **User:** Reports the Montageliste PDF export button is broken (). (COMPLETED - Fixed).
+6.  **User:** Points out several missing features on the event detail page (Abrechnung button, kWh fields) that were implemented but not showing due to a browser cache issue. (COMPLETED - Verified correct implementation).
+7.  **User:** Requests more advanced pricing: Schuko connection type, a general Handlingaufschlag (handling surcharge), a general kWh price, and a way to define average kWh consumption per connection for deposit calculation. (COMPLETED)
+8.  **User:** Requests an Abrechnung (Billing) button, kWH Einbau & kWH Ausbau columns, and a separate Dispo (planning) time period for events. (COMPLETED)
+9.  **User:** Wants the entire event row in the Kirmes list to be clickable to navigate to the detail page, and a PDF export button for the signup list. (COMPLETED)
+10. **User:** Asks to add a delete button for exhibitor accounts (admin-only) and a Fahrgeschäft (ride name) field to the signup form. (COMPLETED)
 
 **Project Health Check:**
--   **Broken:** Live GPS data feed from DSE gateways.
--   **Mocked:** None.
--   **Blocked:** None.
+-   **Broken:** The exhibitor email verification flow is incomplete and untested.
+-   **Mocked:**
+    -   The Abrechnung (Billing) button is a placeholder.
+    -   The EMU meter data display in the detail panel is a placeholder.
+    -   Payment processing (Stripe) is not yet implemented.
 
 **3rd Party Integrations**
--   **EpiRent ERP:** Live integration for reading order data.
--   **DSE (Deep Sea Electronics):** Live integration via MQTT for data and control. Currently experiencing an issue with GPS data reception.
--   **Nominatim (OpenStreetMap):** Used for geocoding delivery addresses.
--   **Shelly / gpsd:** Existing integrations on the Raspberry Pi devices.
+-   **EpiRent ERP:** (Stable) Live integration for reading order data.
+-   **DSE (Deep Sea Electronics):** (Stable) Live integration via MQTT for data and control.
+-   **Nominatim (OpenStreetMap):** (Stable) Used for geocoding.
+-   **SMTP Server:** (Active) Used for sending transactional emails (invitations, verification).
+-   **Stripe:** (Planned) Chosen by the user for payment processing. Test keys are available.
+-   **ZUGFeRD library:** (Planned) Required for generating e-invoices.
 
 **Testing status**
 -   **Testing agent used after significant changes:** YES
@@ -170,7 +193,7 @@ The application is a full-stack portal with a React frontend and FastAPI backend
 
 **Credentials to test flow:**
 -   **Administrator:**  / 
--   **Mitarbeiter:**  / 
+-   **Mitarbeiter (Staff):**  / 
 
 **What agent forgot to execute**
--   The agent did not forget anything; it was actively debugging the final step of a complex issue when the session ended. The next logical step is to act on the latest information provided by the user.</analysis>
+-   The refactoring of the hardcoded MQTT broker URL in  to use an environment variable is still pending from the previous fork.</analysis>

@@ -372,11 +372,25 @@ async def invite_schausteller(event_id: str, data: InviteRequest, user: dict = D
 
 @router.post("/public/register")
 async def register_schausteller(data: SchaustellerRegister):
-    """Public endpoint - no auth required. Schausteller registers once."""
+    """Public endpoint - no auth required. Registers schausteller and sends verification code."""
+    from email_service import send_email
+    import random
+
     existing = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
     if existing:
-        raise HTTPException(status_code=400, detail="Diese E-Mail-Adresse ist bereits registriert. Bitte melden Sie sich an.")
+        if existing.get("email_verified"):
+            raise HTTPException(status_code=400, detail="Diese E-Mail-Adresse ist bereits registriert. Bitte melden Sie sich an.")
+        # Resend verification code
+        code = str(random.randint(100000, 999999))
+        await _db.kirmes_schausteller.update_one(
+            {"email": data.email},
+            {"$set": {"verification_code": code, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        _send_verification_email(data.email, data.name, code)
+        existing["email_verified"] = False
+        return existing
 
+    code = str(random.randint(100000, 999999))
     sch_id = str(uuid.uuid4())
     sch_doc = {
         "id": sch_id,
@@ -389,19 +403,98 @@ async def register_schausteller(data: SchaustellerRegister):
         "email": data.email,
         "telefon": data.telefon,
         "rechnungs_email": data.rechnungs_email,
+        "email_verified": False,
+        "verification_code": code,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await _db.kirmes_schausteller.insert_one(sch_doc)
     sch_doc.pop("_id", None)
+    sch_doc.pop("verification_code", None)
+
+    _send_verification_email(data.email, data.name, code)
     return sch_doc
+
+
+def _send_verification_email(email, name, code):
+    from email_service import send_email
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f5f5;">
+<div style="max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5;">
+  <div style="background:#d946ef;padding:28px 32px;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">Eventenergie Deutschland</h1>
+  </div>
+  <div style="padding:32px;">
+    <p style="color:#333;font-size:15px;">Hallo {name},</p>
+    <p style="color:#555;font-size:14px;line-height:1.6;">
+      Bitte bestätigen Sie Ihre E-Mail-Adresse mit folgendem Code:
+    </p>
+    <div style="text-align:center;margin:28px 0;">
+      <div style="display:inline-block;background:#f3e8ff;border:2px solid #d946ef;border-radius:12px;padding:16px 40px;">
+        <span style="font-size:32px;font-weight:700;letter-spacing:8px;color:#d946ef;">{code}</span>
+      </div>
+    </div>
+    <p style="color:#888;font-size:12px;">Der Code ist 30 Minuten gültig.</p>
+  </div>
+  <div style="background:#fafafa;padding:16px 32px;border-top:1px solid #eee;">
+    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
+  </div>
+</div>
+</body></html>"""
+    send_email(email, "Ihr Bestätigungscode – Eventenergie", html)
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+
+@router.post("/public/verify-email")
+async def verify_email(data: VerifyEmailRequest):
+    """Public endpoint - verify email with code."""
+    sch = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden.")
+    if sch.get("email_verified"):
+        return sch
+    if sch.get("verification_code") != data.code:
+        raise HTTPException(status_code=400, detail="Ungültiger Code. Bitte erneut versuchen.")
+    await _db.kirmes_schausteller.update_one(
+        {"email": data.email},
+        {"$set": {"email_verified": True, "verification_code": None, "verified_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    updated = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
+    updated.pop("verification_code", None)
+    return updated
+
+
+@router.post("/public/resend-code")
+async def resend_code(email: str = Query(...)):
+    """Public endpoint - resend verification code."""
+    import random
+    sch = await _db.kirmes_schausteller.find_one({"email": email}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Kein Konto gefunden.")
+    if sch.get("email_verified"):
+        return {"message": "E-Mail bereits bestätigt."}
+    code = str(random.randint(100000, 999999))
+    await _db.kirmes_schausteller.update_one(
+        {"email": email},
+        {"$set": {"verification_code": code}}
+    )
+    _send_verification_email(email, sch["name"], code)
+    return {"message": "Neuer Code wurde gesendet."}
 
 
 @router.post("/public/login")
 async def login_schausteller(email: str = Query(...)):
-    """Public endpoint - Schausteller 'logs in' by email to see their events."""
+    """Public endpoint - Schausteller 'logs in' by email."""
     sch = await _db.kirmes_schausteller.find_one({"email": email}, {"_id": 0})
     if not sch:
         raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden. Bitte zuerst registrieren.")
+    if not sch.get("email_verified"):
+        raise HTTPException(status_code=403, detail="E-Mail noch nicht bestätigt. Bitte prüfen Sie Ihren Posteingang.")
+    sch.pop("verification_code", None)
     return sch
 
 
