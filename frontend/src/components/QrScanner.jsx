@@ -4,7 +4,6 @@ import { Html5Qrcode } from "html5-qrcode";
 export default function QrScanner({ onScan, onError, onClose }) {
   const containerRef = useRef(null);
   const scannerRef = useRef(null);
-  const startedRef = useRef(false);
   const [camError, setCamError] = useState(null);
 
   useEffect(() => {
@@ -17,13 +16,12 @@ export default function QrScanner({ onScan, onError, onClose }) {
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
-    scanner
+    const startPromise = scanner
       .start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (text) => {
           if (!cancelled) {
-            startedRef.current = false;
             scanner.stop().catch(() => {});
             onScan(text);
           }
@@ -31,7 +29,10 @@ export default function QrScanner({ onScan, onError, onClose }) {
         () => {}
       )
       .then(() => {
-        if (!cancelled) startedRef.current = true;
+        // If already cancelled while starting, stop immediately
+        if (cancelled) {
+          scanner.stop().catch(() => {});
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -42,19 +43,35 @@ export default function QrScanner({ onScan, onError, onClose }) {
 
     return () => {
       cancelled = true;
-      if (startedRef.current) {
-        startedRef.current = false;
-        scanner.stop().catch(() => {});
-      }
-      try { scanner.clear(); } catch { /* ignore */ }
+      // Wait for start to finish, then stop
+      startPromise.then(() => {
+        try {
+          const state = scanner.getState();
+          if (state === 2 /* SCANNING */ || state === 3 /* PAUSED */) {
+            scanner.stop().catch(() => {});
+          }
+        } catch {
+          scanner.stop().catch(() => {});
+        }
+        try { scanner.clear(); } catch { /* ignore */ }
+      }).catch(() => {
+        try { scanner.clear(); } catch { /* ignore */ }
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleClose = () => {
-    if (startedRef.current) {
-      startedRef.current = false;
-      scannerRef.current?.stop().catch(() => {});
+    const scanner = scannerRef.current;
+    if (scanner) {
+      try {
+        const state = scanner.getState();
+        if (state === 2 || state === 3) {
+          scanner.stop().catch(() => {});
+        }
+      } catch {
+        scanner.stop().catch(() => {});
+      }
     }
     if (onClose) onClose();
   };

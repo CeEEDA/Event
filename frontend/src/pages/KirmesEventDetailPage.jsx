@@ -649,10 +649,12 @@ export default function KirmesEventDetailPage() {
                                               onClose={() => setScanningMeter(null)}
                                             />
                                             <p className="text-[10px] text-gray-400 mt-2 text-center">QR-Code auf dem Stromverteiler scannen</p>
-                                            <div className="border-t border-gray-100 mt-3 pt-3">
-                                              <button onClick={() => setScanningMeter(null)} className="text-xs text-gray-500 hover:text-fuchsia-600 underline w-full text-center" data-testid={`switch-manual-${signup.id}`}>
+                                            <div className="border-t border-gray-100 mt-3 pt-3 flex items-center justify-center gap-4">
+                                              <button onClick={() => setScanningMeter(null)} className="text-xs text-gray-500 hover:text-fuchsia-600 underline" data-testid={`switch-manual-${signup.id}`}>
                                                 Manuell auswählen
                                               </button>
+                                              <Button size="sm" variant="outline" onClick={() => { setScanningMeter(null); setLinkingMeter(null); }}
+                                                className="text-xs" data-testid={`cancel-scan-${signup.id}`}>Abbrechen</Button>
                                             </div>
                                           </>
                                         ) : (
