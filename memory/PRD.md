@@ -21,6 +21,18 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
   - Admin scannt QR -> waehlt Anmeldung -> Zaehler wird zugewiesen
 - **Meter-Zuordnungsseite**: Zeigt Zaehler-Info, aktuelle Zuweisung, offene Anmeldungen
 
+### Stripe Payment Integration (2026-03-08)
+- Kaution nach Anmeldung per Stripe Checkout (abhaengig vom Anschlusstyp)
+- Standard-Kautionsbetraege: Schuko=50€, 16A=100€, 32A=200€, 63A=400€, 125A=800€
+- Admin kann Kautionsbetraege konfigurieren (GET/PUT /api/payments/deposits/config)
+- Rechnungszahlung per Stripe Checkout (POST /api/payments/checkout/invoice)
+- Status-Polling nach Stripe-Rueckkehr (GET /api/payments/checkout/status/{session_id})
+- Webhook-Handler (POST /api/payments/webhook/stripe)
+- Transaktionsuebersicht fuer Admin (GET /api/payments/transactions)
+- Frontend: Payment-Step nach Signup, "Jetzt bezahlen" + "Spaeter bezahlen"
+- Backend: /app/backend/routes/payments.py
+- Uses emergentintegrations Stripe checkout library
+
 ### Zaehlerdaten-Detailseite (2026-03-08)
 - Neue Seite: /kirmes/{eventId}/zaehler/{signupId}
 - Live-Metriken: Leistung, Strom, Spannung, Energie, Frequenz
@@ -72,12 +84,12 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 
 ### P0 (Next)
 - MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
-- Stripe Integration fuer Kaution-Zahlung
 
 ### P1
 - SMTP-Anbieter Upgrade (mail.de Tageslimit)
 - Self-hosted MQTT Broker (Mosquitto)
 - Direkter QR-Label-Druck (Print-Button statt PDF)
+- Admin-Kautionskonfiguration in Event-UI einbauen
 
 ### P2
 - Admin File Size Limits
