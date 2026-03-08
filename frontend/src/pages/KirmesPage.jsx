@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
-  ArrowLeft, Plus, Search, Pencil, Trash2, X, Eye, Send,
+  ArrowLeft, Plus, Search, Pencil, Trash2, X, Eye, Send, CreditCard,
   CalendarDays, MapPin, Users, ChevronRight, Copy, Check, Receipt, Download,
 } from "lucide-react";
 
@@ -431,6 +431,11 @@ export default function KirmesPage() {
             {isAdmin && (
               <Button size="sm" variant="outline" onClick={() => setShowPriceList(true)} className="text-gray-600 hidden sm:flex" data-testid="price-list-btn">
                 Standard-Preise
+              </Button>
+            )}
+            {isAdmin && (
+              <Button size="sm" variant="outline" onClick={() => navigate("/kirmes/zahlungen")} className="text-gray-600" data-testid="payments-btn">
+                <CreditCard className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Zahlungen</span>
               </Button>
             )}
             <Button size="sm" onClick={() => { setEditingEvent(null); setShowEventModal(true); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-event-btn">

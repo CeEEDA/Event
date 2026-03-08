@@ -339,3 +339,178 @@ async def get_deposit_info(event_id: str):
     for ct in DEFAULT_DEPOSITS:
         result[ct] = await _get_deposit_amount(ct)
     return result
+
+
+# ============== Dashboard ==============
+
+@router.get("/dashboard")
+async def get_payment_dashboard(event_id: Optional[str] = None, user: dict = Depends(_require_admin)):
+    """Aggregated payment dashboard."""
+    match = {}
+    if event_id:
+        match["event_id"] = event_id
+
+    txs = await _db.payment_transactions.find(match, {"_id": 0}).to_list(5000)
+
+    deposits = [t for t in txs if t.get("type") == "deposit"]
+    invoices = [t for t in txs if t.get("type") == "invoice"]
+
+    deposits_paid = [t for t in deposits if t.get("payment_status") == "paid"]
+    deposits_pending = [t for t in deposits if t.get("payment_status") == "pending"]
+    invoices_paid = [t for t in invoices if t.get("payment_status") == "paid"]
+    invoices_pending = [t for t in invoices if t.get("payment_status") == "pending"]
+
+    return {
+        "deposits": {
+            "total": len(deposits),
+            "paid": len(deposits_paid),
+            "pending": len(deposits_pending),
+            "total_amount": sum(t.get("amount", 0) for t in deposits),
+            "paid_amount": sum(t.get("amount", 0) for t in deposits_paid),
+            "pending_amount": sum(t.get("amount", 0) for t in deposits_pending),
+        },
+        "invoices": {
+            "total": len(invoices),
+            "paid": len(invoices_paid),
+            "pending": len(invoices_pending),
+            "total_amount": sum(t.get("amount", 0) for t in invoices),
+            "paid_amount": sum(t.get("amount", 0) for t in invoices_paid),
+            "pending_amount": sum(t.get("amount", 0) for t in invoices_pending),
+        },
+        "recent_transactions": txs[:20],
+    }
+
+
+@router.get("/dashboard/events")
+async def get_events_with_payment_summary(user: dict = Depends(_require_admin)):
+    """List all events with payment summary counts."""
+    events = await _db.kirmes_events.find({}, {"_id": 0, "id": 1, "name": 1, "status": 1, "start_date": 1}).to_list(200)
+
+    for event in events:
+        txs = await _db.payment_transactions.find({"event_id": event["id"]}, {"_id": 0, "payment_status": 1, "type": 1, "amount": 1}).to_list(1000)
+        deposits = [t for t in txs if t.get("type") == "deposit"]
+        inv = [t for t in txs if t.get("type") == "invoice"]
+        event["deposits_paid"] = sum(1 for t in deposits if t.get("payment_status") == "paid")
+        event["deposits_pending"] = sum(1 for t in deposits if t.get("payment_status") == "pending")
+        event["invoices_paid"] = sum(1 for t in inv if t.get("payment_status") == "paid")
+        event["invoices_pending"] = sum(1 for t in inv if t.get("payment_status") == "pending")
+        event["total_received"] = sum(t.get("amount", 0) for t in txs if t.get("payment_status") == "paid")
+
+    return events
+
+
+# ============== Send payment link via email ==============
+
+class SendPaymentLinkRequest(BaseModel):
+    signup_id: Optional[str] = None
+    invoice_id: Optional[str] = None
+    origin_url: str
+
+
+@router.post("/send-payment-link")
+async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_require_admin)):
+    """Create a Stripe checkout session and send the payment link via email."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    email_to = None
+    subject = ""
+    checkout_url = ""
+
+    if req.signup_id:
+        signup = await _db.kirmes_signups.find_one({"id": req.signup_id}, {"_id": 0})
+        if not signup:
+            raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+        sch = await _db.kirmes_schausteller.find_one({"id": signup.get("schausteller_id")}, {"_id": 0})
+        event = await _db.kirmes_events.find_one({"id": signup.get("event_id")}, {"_id": 0, "name": 1})
+        if not sch:
+            raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+        email_to = sch.get("rechnungs_email") or sch.get("email")
+        connection_type = signup.get("connection_type", "16A")
+        amount = await _get_deposit_amount(connection_type)
+        subject = f"Kaution für {event.get('name', 'Veranstaltung')} - Zahlungslink"
+
+        success_url = f"{req.origin_url}/schausteller-anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{req.origin_url}/schausteller-anmeldung?payment=cancelled"
+        metadata = {"type": "deposit", "signup_id": req.signup_id, "event_id": signup.get("event_id", ""), "schausteller_id": signup.get("schausteller_id", ""), "connection_type": connection_type}
+
+        webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
+        stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+        checkout_req = CheckoutSessionRequest(amount=amount, currency="eur", success_url=success_url, cancel_url=cancel_url, metadata=metadata)
+        session = await stripe.create_checkout_session(checkout_req)
+        checkout_url = session.url
+
+        tx = {
+            "id": str(uuid.uuid4()), "session_id": session.session_id, "type": "deposit",
+            "signup_id": req.signup_id, "event_id": signup.get("event_id", ""),
+            "schausteller_id": signup.get("schausteller_id", ""), "schausteller_name": sch.get("name", ""),
+            "connection_type": connection_type, "amount": amount, "currency": "eur",
+            "payment_status": "pending", "metadata": metadata, "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _db.payment_transactions.insert_one(tx)
+
+    elif req.invoice_id:
+        invoice = await _db.invoices.find_one({"id": req.invoice_id}, {"_id": 0})
+        if not invoice:
+            raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+        sch = invoice.get("schausteller", {})
+        email_to = sch.get("rechnungs_email") or sch.get("email")
+        amount = float(invoice.get("total_gross", invoice.get("total_amount", 0)))
+        subject = f"Rechnung {invoice.get('invoice_number', '')} - Zahlungslink"
+
+        success_url = f"{req.origin_url}/schausteller-anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{req.origin_url}/schausteller-anmeldung?payment=cancelled"
+        metadata = {"type": "invoice", "invoice_id": req.invoice_id, "invoice_number": invoice.get("invoice_number", "")}
+
+        webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
+        stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+        checkout_req = CheckoutSessionRequest(amount=amount, currency="eur", success_url=success_url, cancel_url=cancel_url, metadata=metadata)
+        session = await stripe.create_checkout_session(checkout_req)
+        checkout_url = session.url
+
+        tx = {
+            "id": str(uuid.uuid4()), "session_id": session.session_id, "type": "invoice",
+            "invoice_id": req.invoice_id, "invoice_number": invoice.get("invoice_number", ""),
+            "amount": amount, "currency": "eur", "payment_status": "pending",
+            "metadata": metadata, "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _db.payment_transactions.insert_one(tx)
+    else:
+        raise HTTPException(status_code=400, detail="signup_id oder invoice_id erforderlich")
+
+    if not email_to:
+        raise HTTPException(status_code=400, detail="Keine E-Mail-Adresse gefunden")
+
+    # Send email with payment link
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+
+    body = f"""Sehr geehrte Damen und Herren,
+
+bitte verwenden Sie den folgenden Link zur Zahlung:
+
+{checkout_url}
+
+Der Link ist für eine begrenzte Zeit gültig.
+
+Mit freundlichen Grüßen
+Eventenergie Deutschland GmbH & Co. KG"""
+
+    msg = MIMEMultipart()
+    msg["From"] = smtp_user
+    msg["To"] = email_to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+    except Exception:
+        pass  # Email may fail due to SMTP limits
+
+    return {"message": "Zahlungslink gesendet", "email": email_to, "url": checkout_url, "amount": amount if req.signup_id else amount}

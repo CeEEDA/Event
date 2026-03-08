@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
-  Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen,
+  Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Input } from "../components/ui/input";
@@ -55,6 +55,7 @@ export default function KirmesEventDetailPage() {
   const [selectedMeterCombo, setSelectedMeterCombo] = useState("");
   const [scanningMeter, setScanningMeter] = useState(null);
   const [docCount, setDocCount] = useState(0);
+  const [paymentStats, setPaymentStats] = useState(null);
 
   const loadEvent = useCallback(async () => {
     try {
@@ -78,7 +79,14 @@ export default function KirmesEventDetailPage() {
     } catch { /* ignore */ }
   }, [id]);
 
-  useEffect(() => { loadEvent(); loadInvoices(); loadDocCount(); }, [loadEvent, loadInvoices, loadDocCount]);
+  const loadPaymentStats = useCallback(async () => {
+    try {
+      const r = await api.get(`/payments/dashboard?event_id=${id}`);
+      setPaymentStats(r.data);
+    } catch { /* ignore */ }
+  }, [id]);
+
+  useEffect(() => { loadEvent(); loadInvoices(); loadDocCount(); loadPaymentStats(); }, [loadEvent, loadInvoices, loadDocCount, loadPaymentStats]);
 
   // Load available EMU meters
   useEffect(() => {
@@ -460,6 +468,37 @@ export default function KirmesEventDetailPage() {
             ))}
           </div>
         </div>
+
+        {/* Payment Summary */}
+        {paymentStats && (paymentStats.deposits?.total > 0 || paymentStats.invoices?.total > 0) && (
+          <div className="bg-white border border-gray-200 rounded-xl p-5 cursor-pointer hover:border-fuchsia-300 transition-colors"
+            onClick={() => navigate("/kirmes/zahlungen")} data-testid="payment-summary-card">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-fuchsia-500" /> Zahlungen
+              </h2>
+              <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div className="bg-emerald-50 rounded-lg p-2">
+                <p className="text-lg font-bold text-emerald-700 font-mono">{paymentStats.deposits?.paid || 0}</p>
+                <p className="text-[10px] text-emerald-600">Kaut. bezahlt</p>
+              </div>
+              <div className="bg-amber-50 rounded-lg p-2">
+                <p className="text-lg font-bold text-amber-700 font-mono">{paymentStats.deposits?.pending || 0}</p>
+                <p className="text-[10px] text-amber-600">Kaut. offen</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-2">
+                <p className="text-lg font-bold text-blue-700 font-mono">{paymentStats.invoices?.paid || 0}</p>
+                <p className="text-[10px] text-blue-600">Rechn. bezahlt</p>
+              </div>
+              <div className="bg-red-50 rounded-lg p-2">
+                <p className="text-lg font-bold text-red-700 font-mono">{paymentStats.invoices?.pending || 0}</p>
+                <p className="text-[10px] text-red-600">Rechn. offen</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Signups Table */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">

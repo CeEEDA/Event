@@ -218,6 +218,47 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         "angegebene Konto.",
         styles["InvNormal"]
     ))
+    elements.append(Spacer(1, 3 * mm))
+
+    # GiroCode (EPC QR Code) for bank transfer + optional Stripe payment link
+    girocode_img = _generate_girocode(invoice)
+    stripe_url = invoice.get("stripe_payment_url")
+    if girocode_img or stripe_url:
+        qr_row = []
+        if girocode_img:
+            from reportlab.platypus import Image as RLImage
+            qr_image = RLImage(girocode_img, width=30*mm, height=30*mm)
+            qr_left = Table(
+                [[qr_image], [Paragraph("GiroCode scannen", styles["InvSmall"])]],
+                colWidths=[32*mm],
+            )
+            qr_left.setStyle(TableStyle([
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ]))
+            qr_row.append(qr_left)
+        
+        if stripe_url:
+            qr_row.append(Paragraph(
+                f'<b>Online bezahlen:</b><br/><font color="blue"><u>{stripe_url[:60]}...</u></font>',
+                styles["InvSmall"]
+            ))
+        elif girocode_img:
+            qr_row.append(Paragraph(
+                "Scannen Sie den QR-Code mit Ihrer Banking-App,<br/>um die Überweisung automatisch auszufüllen.",
+                styles["InvSmall"]
+            ))
+        
+        if qr_row:
+            qr_table = Table([qr_row], colWidths=[34*mm, usable_w - 36*mm])
+            qr_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            elements.append(qr_table)
+    
     elements.append(Spacer(1, 5 * mm))
 
     # Closing
@@ -422,3 +463,49 @@ def _build_zugferd_xml(invoice: dict) -> bytes:
 </rsm:CrossIndustryInvoice>"""
 
     return xml.encode("utf-8")
+
+
+def _generate_girocode(invoice: dict):
+    """Generate an EPC QR code (GiroCode) for SEPA bank transfer.
+    
+    Returns BytesIO with PNG image, or None if IBAN not configured.
+    """
+    import qrcode
+    
+    # Company bank details - from environment or invoice settings
+    iban = os.environ.get("COMPANY_IBAN", "")
+    bic = os.environ.get("COMPANY_BIC", "")
+    company_name = "Eventenergie Deutschland GmbH"
+    
+    if not iban:
+        return None
+    
+    amount = float(invoice.get("total_gross", invoice.get("total_amount", 0)))
+    reference = invoice.get("invoice_number", "")
+    
+    # EPC QR Code format (GiroCode v002)
+    # See: https://www.europeanpaymentscouncil.eu/sites/default/files/KB/files/EPC069-12%20v2.1%20Quick%20Response%20Code%20-%20Guidelines%20to%20Enable%20the%20Data%20Capture%20for%20the%20Initiation%20of%20a%20SCT.pdf
+    epc_data = "\n".join([
+        "BCD",                          # Service Tag
+        "002",                          # Version
+        "1",                            # Encoding (UTF-8)
+        "SCT",                          # Identification
+        bic,                            # BIC
+        company_name[:70],              # Beneficiary Name (max 70)
+        iban.replace(" ", ""),           # IBAN
+        f"EUR{amount:.2f}",             # Amount
+        "",                             # Purpose (empty)
+        reference[:35],                 # Remittance Reference (max 35)
+        f"Rechnung {reference}",        # Remittance Text (max 140)
+        "",                             # Information (empty)
+    ])
+    
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+    qr.add_data(epc_data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf

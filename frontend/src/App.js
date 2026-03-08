@@ -23,6 +23,7 @@ import KirmesPage from "./pages/KirmesPage";
 import KirmesEventDetailPage from "./pages/KirmesEventDetailPage";
 import KirmesEventDocumentsPage from "./pages/KirmesEventDocumentsPage";
 import KirmesZaehlerPage from "./pages/KirmesZaehlerPage";
+import PaymentDashboardPage from "./pages/PaymentDashboardPage";
 import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
@@ -190,6 +191,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <KirmesZaehlerPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/kirmes/zahlungen"
+        element={
+          <ProtectedRoute>
+            <PaymentDashboardPage />
           </ProtectedRoute>
         }
       />
