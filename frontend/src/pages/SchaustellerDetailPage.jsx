@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Tent, MapPin, CalendarDays, Zap, Mail, Phone, Building2,
-  FileText, Receipt, ChevronRight,
+  FileText, Receipt, ChevronRight, Download, Send,
 } from "lucide-react";
 
 const PAYMENT_LABELS = {
@@ -22,6 +22,7 @@ export default function SchaustellerDetailPage() {
   const navigate = useNavigate();
   const [sch, setSch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sendingInvoice, setSendingInvoice] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -32,6 +33,35 @@ export default function SchaustellerDetailPage() {
       navigate("/admin");
     } finally { setLoading(false); }
   }, [id, navigate]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDownloadInvoice = async (invoiceId, invoiceNumber) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/invoices/${invoiceId}/pdf`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!response.ok) throw new Error("Fehler");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${invoiceNumber}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error("PDF konnte nicht heruntergeladen werden"); }
+  };
+
+  const handleSendInvoice = async (invoiceId) => {
+    setSendingInvoice(invoiceId);
+    try {
+      const r = await api.post(`/kirmes/invoices/${invoiceId}/send`);
+      toast.success(r.data.message);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler beim Versenden");
+    } finally { setSendingInvoice(null); }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -157,18 +187,62 @@ export default function SchaustellerDetailPage() {
           )}
         </div>
 
-        {/* Rechnungen (Platzhalter) */}
+        {/* Rechnungen */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-fuchsia-500" /> Rechnungen
+              <FileText className="w-4 h-4 text-fuchsia-500" /> Rechnungen ({(sch.invoices || []).length})
             </h2>
           </div>
-          <div className="px-5 py-12 text-center">
-            <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-sm text-gray-400">Rechnungen werden nach der Abrechnung hier angezeigt</p>
-            <p className="text-[10px] text-gray-300 mt-1">ZUGFeRD E-Rechnungen mit Verbrauchsdaten</p>
-          </div>
+          {(sch.invoices || []).length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">Noch keine Rechnungen vorhanden</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {(sch.invoices || []).map(inv => (
+                <div key={inv.id} className="px-5 py-4 flex items-center gap-4" data-testid={`invoice-${inv.id}`}>
+                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                    <Receipt className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">{inv.invoice_number}</p>
+                    <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-500">
+                      <span>{inv.event_name}</span>
+                      <span>{inv.invoice_date}</span>
+                      {inv.sent_to && <span className="text-emerald-600">Gesendet an {inv.sent_to}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0 mr-2">
+                    <p className="text-sm font-mono font-semibold text-gray-900">{(inv.brutto || 0).toFixed(2)} EUR</p>
+                    <span className={`inline-block mt-1 text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                      inv.status === "versendet" ? "text-emerald-600 bg-emerald-50" : "text-gray-500 bg-gray-100"
+                    }`}>{inv.status}</span>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => handleDownloadInvoice(inv.id, inv.invoice_number)}
+                      className="p-2 text-gray-400 hover:text-emerald-600 transition-colors"
+                      title="PDF herunterladen"
+                      data-testid={`download-inv-${inv.id}`}
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleSendInvoice(inv.id)}
+                      disabled={sendingInvoice === inv.id}
+                      className="p-2 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50"
+                      title="Rechnung per E-Mail senden"
+                      data-testid={`send-inv-${inv.id}`}
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>
