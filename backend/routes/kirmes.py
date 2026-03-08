@@ -1055,6 +1055,29 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
             {"id": signup["id"]},
             {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
         )
+
+        # Auto-send invoice via email
+        try:
+            from services.invoice_pdf import generate_invoice_pdf
+            from email_service import send_email_with_attachment
+            pdf_bytes = generate_invoice_pdf(invoice_doc)
+            sch_email = sch.get("rechnungs_email") or sch.get("email", "")
+            if sch_email:
+                filename = f"{inv_number}.pdf"
+                subject = f"Rechnung {inv_number} – {event.get('name', '')}"
+                html = f"""<p>Sehr geehrte Damen und Herren,</p>
+<p>anbei erhalten Sie die Rechnung <b>{inv_number}</b> für die Veranstaltung <b>{event.get('name', '')}</b>.</p>
+<p>Rechnungsbetrag: <b>{calc['brutto']:.2f} EUR</b></p>
+<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>
+<p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
+                send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename)
+                await _db.kirmes_invoices.update_one(
+                    {"id": invoice_doc["id"]},
+                    {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
+                )
+        except Exception:
+            pass  # Don't fail batch if single email fails
+
         generated.append({"signup_id": signup["id"], "invoice_number": inv_number, "brutto": calc["brutto"]})
 
     # Update event status
