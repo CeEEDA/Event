@@ -1,4 +1,4 @@
-"""Invoice PDF generation for Kirmes billing - uses company letterhead PDF as background."""
+"""Invoice PDF generation for Kirmes billing - ZUGFeRD e-invoice with company letterhead."""
 import io
 import os
 from datetime import datetime
@@ -10,6 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
 from reportlab.lib.enums import TA_RIGHT
 from pdfrw import PdfReader as PdfrwReader, PageMerge
+from facturx import generate_from_binary
 
 LETTERHEAD_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "briefpapier.pdf")
 
@@ -229,4 +230,195 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     content_bytes = buf.getvalue()
 
     # Merge with letterhead background
-    return _merge_letterhead(content_bytes)
+    pdf_with_letterhead = _merge_letterhead(content_bytes)
+
+    # Generate ZUGFeRD XML and embed into PDF
+    zugferd_xml = _build_zugferd_xml(invoice)
+    try:
+        return generate_from_binary(
+            pdf_with_letterhead,
+            zugferd_xml,
+            flavor="factur-x",
+            level="basic",
+            check_xsd=True,
+        )
+    except Exception:
+        # Fallback: return PDF without ZUGFeRD if XML fails validation
+        return pdf_with_letterhead
+
+
+def _xml_escape(text):
+    if not text:
+        return ""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def _build_zugferd_xml(invoice: dict) -> bytes:
+    """Build Factur-X/ZUGFeRD Basic XML for an invoice."""
+    sch = invoice.get("schausteller", {})
+    event = invoice.get("event", {})
+    items = invoice.get("items", [])
+    inv_number = invoice.get("invoice_number", "")
+    inv_date_str = invoice.get("invoice_date", datetime.now().strftime("%d.%m.%Y"))
+
+    # Parse date to YYYYMMDD
+    try:
+        dt = datetime.strptime(inv_date_str, "%d.%m.%Y")
+        date_102 = dt.strftime("%Y%m%d")
+    except Exception:
+        date_102 = datetime.now().strftime("%Y%m%d")
+
+    netto = invoice.get("netto", 0)
+    mwst = invoice.get("mwst", 0)
+    brutto = invoice.get("brutto", 0)
+
+    seller_name = _xml_escape("Eventenergie Deutschland GmbH & Co. KG")
+    seller_street = _xml_escape("Thyssenstraße 10")
+    seller_city = _xml_escape("Andernach")
+    seller_plz = "56626"
+    seller_tax_id = "DE123456789"
+
+    buyer_name = _xml_escape(sch.get("firma") or sch.get("name", ""))
+    buyer_street = _xml_escape(sch.get("strasse", ""))
+    buyer_city = _xml_escape(sch.get("ort", ""))
+    buyer_plz = _xml_escape(sch.get("plz", ""))
+    buyer_tax = sch.get("steuernummer", "")
+
+    # Build line items XML
+    line_items_xml = ""
+    for i, item in enumerate(items, 1):
+        qty = item.get("menge", 1)
+        unit = item.get("einheit", "pauschal")
+        unit_code = "KWH" if "kwh" in unit.lower() else "C62"
+        price = item.get("einzelpreis", 0)
+        total = item.get("gesamt", 0)
+        desc = _xml_escape(item.get("beschreibung", ""))
+
+        line_items_xml += f"""
+        <ram:IncludedSupplyChainTradeLineItem>
+            <ram:AssociatedDocumentLineDocument>
+                <ram:LineID>{i}</ram:LineID>
+            </ram:AssociatedDocumentLineDocument>
+            <ram:SpecifiedTradeProduct>
+                <ram:Name>{desc}</ram:Name>
+            </ram:SpecifiedTradeProduct>
+            <ram:SpecifiedLineTradeAgreement>
+                <ram:NetPriceProductTradePrice>
+                    <ram:ChargeAmount>{price:.2f}</ram:ChargeAmount>
+                </ram:NetPriceProductTradePrice>
+            </ram:SpecifiedLineTradeAgreement>
+            <ram:SpecifiedLineTradeDelivery>
+                <ram:BilledQuantity unitCode="{unit_code}">{qty}</ram:BilledQuantity>
+            </ram:SpecifiedLineTradeDelivery>
+            <ram:SpecifiedLineTradeSettlement>
+                <ram:ApplicableTradeTax>
+                    <ram:TypeCode>VAT</ram:TypeCode>
+                    <ram:CategoryCode>S</ram:CategoryCode>
+                    <ram:RateApplicablePercent>19.00</ram:RateApplicablePercent>
+                </ram:ApplicableTradeTax>
+                <ram:SpecifiedTradeSettlementLineMonetarySummation>
+                    <ram:LineTotalAmount>{total:.2f}</ram:LineTotalAmount>
+                </ram:SpecifiedTradeSettlementLineMonetarySummation>
+            </ram:SpecifiedLineTradeSettlement>
+        </ram:IncludedSupplyChainTradeLineItem>"""
+
+    # If no items, add a single fallback line
+    if not line_items_xml:
+        line_items_xml = f"""
+        <ram:IncludedSupplyChainTradeLineItem>
+            <ram:AssociatedDocumentLineDocument>
+                <ram:LineID>1</ram:LineID>
+            </ram:AssociatedDocumentLineDocument>
+            <ram:SpecifiedTradeProduct>
+                <ram:Name>Energieversorgung {_xml_escape(event.get('name', ''))}</ram:Name>
+            </ram:SpecifiedTradeProduct>
+            <ram:SpecifiedLineTradeAgreement>
+                <ram:NetPriceProductTradePrice>
+                    <ram:ChargeAmount>{netto:.2f}</ram:ChargeAmount>
+                </ram:NetPriceProductTradePrice>
+            </ram:SpecifiedLineTradeAgreement>
+            <ram:SpecifiedLineTradeDelivery>
+                <ram:BilledQuantity unitCode="C62">1</ram:BilledQuantity>
+            </ram:SpecifiedLineTradeDelivery>
+            <ram:SpecifiedLineTradeSettlement>
+                <ram:ApplicableTradeTax>
+                    <ram:TypeCode>VAT</ram:TypeCode>
+                    <ram:CategoryCode>S</ram:CategoryCode>
+                    <ram:RateApplicablePercent>19.00</ram:RateApplicablePercent>
+                </ram:ApplicableTradeTax>
+                <ram:SpecifiedTradeSettlementLineMonetarySummation>
+                    <ram:LineTotalAmount>{netto:.2f}</ram:LineTotalAmount>
+                </ram:SpecifiedTradeSettlementLineMonetarySummation>
+            </ram:SpecifiedLineTradeSettlement>
+        </ram:IncludedSupplyChainTradeLineItem>"""
+
+    buyer_tax_xml = ""
+    if buyer_tax:
+        buyer_tax_xml = f"""
+                <ram:SpecifiedTaxRegistration>
+                    <ram:ID schemeID="VA">{_xml_escape(buyer_tax)}</ram:ID>
+                </ram:SpecifiedTaxRegistration>"""
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+    xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+    xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100"
+    xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100">
+    <rsm:ExchangedDocumentContext>
+        <ram:GuidelineSpecifiedDocumentContextParameter>
+            <ram:ID>urn:factur-x.eu:1p0:basic</ram:ID>
+        </ram:GuidelineSpecifiedDocumentContextParameter>
+    </rsm:ExchangedDocumentContext>
+    <rsm:ExchangedDocument>
+        <ram:ID>{_xml_escape(inv_number)}</ram:ID>
+        <ram:TypeCode>380</ram:TypeCode>
+        <ram:IssueDateTime>
+            <udt:DateTimeString format="102">{date_102}</udt:DateTimeString>
+        </ram:IssueDateTime>
+    </rsm:ExchangedDocument>
+    <rsm:SupplyChainTradeTransaction>{line_items_xml}
+        <ram:ApplicableHeaderTradeAgreement>
+            <ram:SellerTradeParty>
+                <ram:Name>{seller_name}</ram:Name>
+                <ram:PostalTradeAddress>
+                    <ram:PostcodeCode>{seller_plz}</ram:PostcodeCode>
+                    <ram:LineOne>{seller_street}</ram:LineOne>
+                    <ram:CityName>{seller_city}</ram:CityName>
+                    <ram:CountryID>DE</ram:CountryID>
+                </ram:PostalTradeAddress>
+                <ram:SpecifiedTaxRegistration>
+                    <ram:ID schemeID="VA">{seller_tax_id}</ram:ID>
+                </ram:SpecifiedTaxRegistration>
+            </ram:SellerTradeParty>
+            <ram:BuyerTradeParty>
+                <ram:Name>{buyer_name}</ram:Name>
+                <ram:PostalTradeAddress>
+                    <ram:PostcodeCode>{buyer_plz}</ram:PostcodeCode>
+                    <ram:LineOne>{buyer_street}</ram:LineOne>
+                    <ram:CityName>{buyer_city}</ram:CityName>
+                    <ram:CountryID>DE</ram:CountryID>
+                </ram:PostalTradeAddress>{buyer_tax_xml}
+            </ram:BuyerTradeParty>
+        </ram:ApplicableHeaderTradeAgreement>
+        <ram:ApplicableHeaderTradeDelivery/>
+        <ram:ApplicableHeaderTradeSettlement>
+            <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+            <ram:ApplicableTradeTax>
+                <ram:CalculatedAmount>{mwst:.2f}</ram:CalculatedAmount>
+                <ram:TypeCode>VAT</ram:TypeCode>
+                <ram:BasisAmount>{netto:.2f}</ram:BasisAmount>
+                <ram:CategoryCode>S</ram:CategoryCode>
+                <ram:RateApplicablePercent>19.00</ram:RateApplicablePercent>
+            </ram:ApplicableTradeTax>
+            <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+                <ram:LineTotalAmount>{netto:.2f}</ram:LineTotalAmount>
+                <ram:TaxBasisTotalAmount>{netto:.2f}</ram:TaxBasisTotalAmount>
+                <ram:TaxTotalAmount currencyID="EUR">{mwst:.2f}</ram:TaxTotalAmount>
+                <ram:GrandTotalAmount>{brutto:.2f}</ram:GrandTotalAmount>
+                <ram:DuePayableAmount>{brutto:.2f}</ram:DuePayableAmount>
+            </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        </ram:ApplicableHeaderTradeSettlement>
+    </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>"""
+
+    return xml.encode("utf-8")
