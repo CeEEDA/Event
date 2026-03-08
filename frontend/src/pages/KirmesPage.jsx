@@ -419,24 +419,24 @@ export default function KirmesPage() {
   return (
     <div className="min-h-screen bg-gray-50" data-testid="kirmes-page">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Zurück
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600 hover:text-fuchsia-600 flex-shrink-0" data-testid="back-btn">
+              <ArrowLeft className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">Zurück</span>
             </Button>
-            <div className="h-5 w-px bg-gray-200" />
-            <h1 className="text-base font-semibold text-gray-900">Kirmes-Verwaltung</h1>
+            <div className="h-5 w-px bg-gray-200 hidden sm:block" />
+            <h1 className="text-sm sm:text-base font-semibold text-gray-900 truncate">Kirmes-Verwaltung</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {isAdmin && (
-              <Button size="sm" variant="outline" onClick={() => setShowPriceList(true)} className="text-gray-600" data-testid="price-list-btn">
+              <Button size="sm" variant="outline" onClick={() => setShowPriceList(true)} className="text-gray-600 hidden sm:flex" data-testid="price-list-btn">
                 Standard-Preise
               </Button>
             )}
             <Button size="sm" onClick={() => { setEditingEvent(null); setShowEventModal(true); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-event-btn">
-              <Plus className="w-4 h-4 mr-1" /> Neue Veranstaltung
+              <Plus className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Neue Veranstaltung</span>
             </Button>
-            <Logo size="small" />
+            <Logo size="small" className="hidden sm:block" />
           </div>
         </div>
       </header>

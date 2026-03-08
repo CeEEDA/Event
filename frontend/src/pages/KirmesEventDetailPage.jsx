@@ -344,18 +344,18 @@ export default function KirmesEventDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50" data-testid="kirmes-event-detail">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Button variant="ghost" size="sm" onClick={() => navigate("/kirmes")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Zurück
+              <ArrowLeft className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">Zurück</span>
             </Button>
-            <div className="h-5 w-px bg-gray-200" />
-            <h1 className="text-base font-semibold text-gray-900 truncate">{event.name}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[event.status]}`}>
+            <div className="h-5 w-px bg-gray-200 hidden sm:block" />
+            <h1 className="text-sm sm:text-base font-semibold text-gray-900 truncate max-w-[100px] sm:max-w-none">{event.name}</h1>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${STATUS_COLORS[event.status]}`}>
               {STATUS_LABELS[event.status]}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto flex-shrink-0 scrollbar-hide">
             {(event.signups || []).length > 0 && (
               <>
                 <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600" data-testid="export-pdf-btn">
@@ -471,8 +471,8 @@ export default function KirmesEventDetailPage() {
               Noch keine Anmeldungen vorhanden
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="signups-table">
+            <div className="overflow-x-auto -mx-5 px-5">
+              <table className="w-full text-sm min-w-[900px]" data-testid="signups-table">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
                     <th className="px-4 py-3 text-left">Firma</th>
@@ -581,17 +581,17 @@ export default function KirmesEventDetailPage() {
                       <tr>
                         <td colSpan={11} className="p-0">
                           <div className="bg-gray-50 border-y border-gray-200 p-5" data-testid={`detail-${signup.id}`}>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                               {/* Kontaktdaten */}
                               <div>
                                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Kontaktdaten</h4>
                                 <div className="space-y-2 text-sm">
                                   <p><span className="text-gray-400 w-20 inline-block">Firma:</span> <span className="font-medium text-gray-900">{sch?.firma || "–"}</span></p>
                                   <p><span className="text-gray-400 w-20 inline-block">Name:</span> <span className="text-gray-700">{sch?.name || "–"}</span></p>
-                                  <p><span className="text-gray-400 w-20 inline-block">Adresse:</span> <span className="text-gray-700">{sch?.strasse || "–"}, {sch?.plz || ""} {sch?.ort || ""}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">Adresse:</span> <span className="text-gray-700 break-words">{sch?.strasse || "–"}, {sch?.plz || ""} {sch?.ort || ""}</span></p>
                                   <p><span className="text-gray-400 w-20 inline-block">Telefon:</span> <span className="text-gray-700">{sch?.telefon || "–"}</span></p>
-                                  <p><span className="text-gray-400 w-20 inline-block">E-Mail:</span> <span className="text-gray-700">{sch?.email || "–"}</span></p>
-                                  <p><span className="text-gray-400 w-20 inline-block">Rechnung:</span> <span className="text-gray-700">{sch?.rechnungs_email || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">E-Mail:</span> <span className="text-gray-700 break-all">{sch?.email || "–"}</span></p>
+                                  <p><span className="text-gray-400 w-20 inline-block">Rechnung:</span> <span className="text-gray-700 break-all">{sch?.rechnungs_email || "–"}</span></p>
                                   {sch?.steuernummer && <p><span className="text-gray-400 w-20 inline-block">Steuer-Nr:</span> <span className="text-gray-700 font-mono">{sch.steuernummer}</span></p>}
                                   {sch?.kauf_auf_rechnung && <span className="inline-block mt-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">Kauf auf Rechnung</span>}
                                 </div>

@@ -145,27 +145,27 @@ export default function KirmesZaehlerPage() {
   return (
     <div className="min-h-screen bg-gray-50" data-testid="zaehler-page">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate(`/kirmes/${eventId}`)} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Zurück
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size="sm" onClick={() => navigate(`/kirmes/${eventId}`)} className="text-gray-600 hover:text-fuchsia-600 flex-shrink-0" data-testid="back-btn">
+              <ArrowLeft className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Zurück</span>
             </Button>
-            <div className="h-5 w-px bg-gray-200" />
-            <div>
-              <h1 className="text-base font-semibold text-gray-900">Zählerdaten</h1>
-              <p className="text-xs text-gray-500">
+            <div className="h-5 w-px bg-gray-200 hidden sm:block" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-semibold text-gray-900">Zählerdaten</h1>
+              <p className="text-[10px] sm:text-xs text-gray-500 truncate">
                 {signup?.emu_meter_name || "–"} · {schausteller?.name || "–"} · {signup?.fahrgeschaeft || "–"}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {isOnline != null && (
-              <span className={`text-xs px-2 py-1 rounded-full ${isOnline ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+              <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full ${isOnline ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                 {isOnline ? "Online" : "Offline"}
               </span>
             )}
             <Button size="sm" variant="outline" onClick={loadMeterData} className="text-xs" data-testid="refresh-btn">
-              <RefreshCw className="w-3 h-3 mr-1" /> Aktualisieren
+              <RefreshCw className="w-3 h-3 sm:mr-1" /> <span className="hidden sm:inline">Aktualisieren</span>
             </Button>
           </div>
         </div>
@@ -174,7 +174,7 @@ export default function KirmesZaehlerPage() {
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {/* Event Period Info */}
         <div className="bg-white border border-gray-200 rounded-xl p-4" data-testid="event-period">
-          <div className="flex flex-wrap items-center gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
             <div className="flex items-center gap-2">
               <CalendarDays className="w-4 h-4 text-fuchsia-500" />
               <span className="text-sm font-semibold text-gray-900">{event?.name}</span>
@@ -183,16 +183,16 @@ export default function KirmesZaehlerPage() {
               <div>
                 <label className="text-[10px] text-gray-400 block">Von</label>
                 <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                  className="h-8 text-xs w-36" data-testid="date-from" />
+                  className="h-8 text-xs w-full sm:w-36" data-testid="date-from" />
               </div>
               <div>
                 <label className="text-[10px] text-gray-400 block">Bis</label>
                 <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                  className="h-8 text-xs w-36" data-testid="date-to" />
+                  className="h-8 text-xs w-full sm:w-36" data-testid="date-to" />
               </div>
             </div>
             <Button size="sm" onClick={handleExportCSV} disabled={exporting || !linked}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs ml-auto" data-testid="export-csv-btn">
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:ml-auto w-full sm:w-auto" data-testid="export-csv-btn">
               <Download className="w-3 h-3 mr-1" /> {exporting ? "Exportiert..." : "CSV Export"}
             </Button>
           </div>
