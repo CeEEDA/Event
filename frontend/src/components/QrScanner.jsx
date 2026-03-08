@@ -4,7 +4,7 @@ import { Html5Qrcode } from "html5-qrcode";
 export default function QrScanner({ onScan, onError, onClose }) {
   const containerRef = useRef(null);
   const scannerRef = useRef(null);
-  const [started, setStarted] = useState(false);
+  const startedRef = useRef(false);
   const [camError, setCamError] = useState(null);
 
   useEffect(() => {
@@ -12,6 +12,8 @@ export default function QrScanner({ onScan, onError, onClose }) {
     if (containerRef.current) {
       containerRef.current.id = regionId;
     }
+
+    let cancelled = false;
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
@@ -20,30 +22,42 @@ export default function QrScanner({ onScan, onError, onClose }) {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (text) => {
-          scanner.stop().catch(() => {});
-          onScan(text);
+          if (!cancelled) {
+            startedRef.current = false;
+            scanner.stop().catch(() => {});
+            onScan(text);
+          }
         },
         () => {}
       )
-      .then(() => setStarted(true))
+      .then(() => {
+        if (!cancelled) startedRef.current = true;
+      })
       .catch((err) => {
-        setCamError(err?.message || "Kamera konnte nicht gestartet werden");
-        if (onError) onError(err);
+        if (!cancelled) {
+          setCamError(err?.message || "Kamera konnte nicht gestartet werden");
+          if (onError) onError(err);
+        }
       });
 
     return () => {
-      if (scannerRef.current) {
-        // Only try to stop if scanner was started successfully
-        scannerRef.current.stop().catch(() => {});
-        try {
-          scannerRef.current.clear();
-        } catch {
-          // Ignore clear errors
-        }
+      cancelled = true;
+      if (startedRef.current) {
+        startedRef.current = false;
+        scanner.stop().catch(() => {});
       }
+      try { scanner.clear(); } catch { /* ignore */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleClose = () => {
+    if (startedRef.current) {
+      startedRef.current = false;
+      scannerRef.current?.stop().catch(() => {});
+    }
+    if (onClose) onClose();
+  };
 
   return (
     <div className="relative rounded-lg overflow-hidden bg-black" data-testid="qr-scanner">
@@ -56,10 +70,7 @@ export default function QrScanner({ onScan, onError, onClose }) {
       )}
       {onClose && (
         <button
-          onClick={() => {
-            if (scannerRef.current && started) scannerRef.current.stop().catch(() => {});
-            onClose();
-          }}
+          onClick={handleClose}
           className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm hover:bg-black/80"
           data-testid="qr-scanner-close"
         >
