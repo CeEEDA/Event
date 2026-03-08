@@ -1483,6 +1483,11 @@ app.include_router(energy_router)
 from routes.admin_settings import router as admin_settings_router
 app.include_router(admin_settings_router)
 
+from routes.orders import router as orders_router, init_orders_routes
+init_orders_routes(db)
+app.include_router(orders_router)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
