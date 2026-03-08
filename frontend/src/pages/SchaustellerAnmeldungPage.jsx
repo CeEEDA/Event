@@ -42,7 +42,6 @@ export default function SchaustellerAnmeldungPage() {
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [showPw, setShowPw] = useState(false);
   const [myBookings, setMyBookings] = useState({ signups: [], invoices: [] });
 
   const [regForm, setRegForm] = useState({
@@ -169,14 +168,17 @@ export default function SchaustellerAnmeldungPage() {
     } catch { toast.error("PDF konnte nicht heruntergeladen werden"); }
   };
 
-  const PasswordInput = ({ value, onChange, placeholder, testId }) => (
-    <div className="relative">
-      <Input type={showPw ? "text" : "password"} value={value} onChange={onChange} placeholder={placeholder} className="mt-1 pr-10" data-testid={testId} />
-      <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabIndex={-1}>
-        {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-      </button>
-    </div>
-  );
+  const PasswordInput = ({ value, onChange, placeholder, testId }) => {
+    const [visible, setVisible] = useState(false);
+    return (
+      <div className="relative">
+        <Input type={visible ? "text" : "password"} value={value} onChange={onChange} placeholder={placeholder} className="mt-1 pr-10" data-testid={testId} />
+        <button type="button" onMouseDown={e => { e.preventDefault(); setVisible(v => !v); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabIndex={-1}>
+          {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="schausteller-anmeldung">
