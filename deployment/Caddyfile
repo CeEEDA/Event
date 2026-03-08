@@ -1,0 +1,24 @@
+portal.eventenergie-deutschland.de {
+    # API-Anfragen an FastAPI Backend
+    handle /api/* {
+        reverse_proxy localhost:8001
+    }
+
+    # Statische Backend-Dateien (z.B. Kirmeskiste-Skripte)
+    handle /static/* {
+        reverse_proxy localhost:8001
+    }
+
+    # Frontend (React Production Build)
+    handle {
+        root * C:/eventenergie/frontend/build
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Logging
+    log {
+        output file C:/eventenergie/logs/caddy-access.log
+        format json
+    }
+}

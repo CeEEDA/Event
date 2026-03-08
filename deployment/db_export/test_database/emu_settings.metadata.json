@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"62f19a08663e4d179bd0835e1cd5de6e","collectionName":"emu_settings","type":"collection"}
