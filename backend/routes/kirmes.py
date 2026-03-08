@@ -1300,6 +1300,89 @@ async def get_signup_meter_data(
 
 
 
+
+@router.get("/devices/{device_id}/qr-labels-pdf")
+async def generate_all_qr_labels(device_id: str, user: dict = Depends(_require_staff)):
+    """Generate a single A4 PDF with QR labels for all meters of a device (4 per page)."""
+    import qrcode
+    import io as _io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm as _mm
+    from reportlab.pdfgen import canvas as _canvas
+    from reportlab.lib.utils import ImageReader
+
+    meters = await _db.emu_meters.find({"device_id": device_id}, {"_id": 0}).to_list(20)
+    if not meters:
+        raise HTTPException(status_code=404, detail="Keine Zaehler fuer dieses Geraet gefunden")
+
+    device = await _db.devices.find_one({"id": device_id}, {"_id": 0, "serial_number": 1, "name": 1})
+    device_name = device.get("serial_number") or device.get("name", "") if device else ""
+
+    import os
+    base_url = os.environ.get("FRONTEND_URL", "")
+
+    pdf_buf = _io.BytesIO()
+    c = _canvas.Canvas(pdf_buf, pagesize=A4)
+    w, h = A4
+
+    # 4 labels in a 2x2 grid on A4
+    positions = [
+        (20 * _mm, h - 148 * _mm),    # Top left
+        (w / 2 + 5 * _mm, h - 148 * _mm),  # Top right
+        (20 * _mm, h / 2 - 128 * _mm),     # Bottom left
+        (w / 2 + 5 * _mm, h / 2 - 128 * _mm),  # Bottom right
+    ]
+
+    for i, meter in enumerate(meters[:4]):
+        if i >= 4:
+            break
+        px, py = positions[i]
+
+        qr_url = f"{base_url}/kirmes/meter-zuordnung/{meter['id']}"
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+        qr.add_data(qr_url)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        qr_io = _io.BytesIO()
+        qr_img.save(qr_io, format="PNG")
+        qr_io.seek(0)
+
+        # Draw border
+        label_w = 80 * _mm
+        label_h = 120 * _mm
+        c.setStrokeColorRGB(0.8, 0.8, 0.8)
+        c.setDash(3, 3)
+        c.rect(px - 5 * _mm, py - 5 * _mm, label_w, label_h)
+        c.setDash()
+
+        # Title
+        c.setFont("Helvetica-Bold", 11)
+        c.drawCentredString(px + label_w / 2 - 5 * _mm, py + label_h - 18 * _mm, "Eventenergie")
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(px + label_w / 2 - 5 * _mm, py + label_h - 26 * _mm, device_name)
+
+        # QR Code
+        qr_size = 40 * _mm
+        qr_x = px + (label_w - qr_size) / 2 - 5 * _mm
+        c.drawImage(ImageReader(qr_io), qr_x, py + 25 * _mm, qr_size, qr_size)
+
+        # Meter info
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(px + label_w / 2 - 5 * _mm, py + 18 * _mm, meter.get("meter_name", f"Zaehler {i+1}"))
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(px + label_w / 2 - 5 * _mm, py + 11 * _mm, f"IP: {meter.get('meter_ip', '?')}")
+        c.setFont("Helvetica", 6)
+        c.drawCentredString(px + label_w / 2 - 5 * _mm, py + 5 * _mm, f"ID: {meter['id'][:20]}...")
+
+    c.save()
+    pdf_buf.seek(0)
+
+    return Response(
+        content=pdf_buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="qr_labels_{device_name or device_id[:8]}.pdf"'},
+    )
+
 # ============== QR Code System ==============
 
 @router.get("/meters/{meter_id}/qr-code")
