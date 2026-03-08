@@ -130,6 +130,10 @@ async def _process_message(msg):
             if topic.endswith("/gps"):
                 await _process_gps(generator_id, payload_str, parsed, timestamp)
                 return
+            # Handle status topic - only update online status, don't store as telemetry
+            if topic.endswith("/status"):
+                await _process_status(generator_id, payload_str, timestamp)
+                return
             await _ingest_telemetry(generator_id, topic, payload_str, parsed, timestamp)
             return
 
@@ -140,6 +144,9 @@ async def _process_message(msg):
         if prefix and topic.startswith(prefix):
             if topic.endswith("/gps"):
                 await _process_gps(gen["id"], payload_str, parsed, timestamp)
+                return
+            if topic.endswith("/status"):
+                await _process_status(gen["id"], payload_str, timestamp)
                 return
             await _ingest_telemetry(gen["id"], topic, payload_str, parsed, timestamp)
             return
@@ -185,6 +192,19 @@ async def _process_gps(generator_id, raw_payload, parsed, timestamp):
             logger.debug(f"MQTT: GPS parse error for {generator_id}: {raw_payload[:100]}")
     else:
         logger.debug(f"MQTT: GPS no coordinates found for {generator_id}: {raw_payload[:200]}")
+
+
+async def _process_status(generator_id, raw_payload, timestamp):
+    """Process status messages (e.g. 'UID:Connected') - just update online status."""
+    status = "online"
+    if "disconnected" in raw_payload.lower():
+        status = "offline"
+    await _db.generators.update_one(
+        {"id": generator_id},
+        {"$set": {"last_seen": timestamp, "status": status}}
+    )
+    logger.debug(f"MQTT: Status '{raw_payload.strip()}' for generator {generator_id}")
+
 
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):
