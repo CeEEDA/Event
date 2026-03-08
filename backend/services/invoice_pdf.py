@@ -65,7 +65,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN_LEFT, rightMargin=MARGIN_RIGHT,
-        topMargin=68 * mm,
+        topMargin=55 * mm,
         bottomMargin=30 * mm,
     )
 
@@ -115,10 +115,9 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
     usable_w = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT
-    table_w = 90 * mm
-    spacer_w = usable_w - table_w
-    meta_wrapper = Table([[None, meta_table]], colWidths=[spacer_w, table_w])
+    meta_wrapper = Table([[meta_table]], colWidths=[usable_w])
     meta_wrapper.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (0, 0), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
