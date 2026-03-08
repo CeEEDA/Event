@@ -46,6 +46,14 @@ class DeploymentCreate(BaseModel):
     notes: Optional[str] = ""
 
 
+class OrderAssetCreate(BaseModel):
+    asset_type: str  # Lichtmast, Stromerzeuger, Verteiler, Sonstiges
+    latitude: float
+    longitude: float
+    label: Optional[str] = ""
+    plus_code: Optional[str] = ""
+
+
 def _haversine_km(lat1, lng1, lat2, lng2):
     """Calculate distance between two GPS points in km."""
     R = 6371.0
@@ -488,3 +496,44 @@ async def get_generator_deployments(generator_id: str, user: dict = Depends(_aut
         {"generator_id": generator_id}, {"_id": 0}
     ).sort("started_at", -1).to_list(100)
     return {"deployments": deployments}
+
+
+
+# ── Order Assets (manual placement) ──
+
+@router.get("/epirent/{order_pk}/assets")
+async def get_order_assets(order_pk: int, user: dict = Depends(_auth_user)):
+    """Get all manually placed assets for an order."""
+    assets = await _db.order_assets.find(
+        {"order_pk": order_pk}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return {"assets": assets}
+
+
+@router.post("/epirent/{order_pk}/assets")
+async def create_order_asset(order_pk: int, data: OrderAssetCreate, user: dict = Depends(_auth_user)):
+    """Create a manually placed asset for an order."""
+    import uuid
+    doc = {
+        "id": str(uuid.uuid4()),
+        "order_pk": order_pk,
+        "asset_type": data.asset_type,
+        "latitude": data.latitude,
+        "longitude": data.longitude,
+        "label": data.label or data.asset_type,
+        "plus_code": data.plus_code,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user.get("name", user.get("email", "")),
+    }
+    await _db.order_assets.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.delete("/epirent/{order_pk}/assets/{asset_id}")
+async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(_auth_user)):
+    """Delete a manually placed asset."""
+    result = await _db.order_assets.delete_one({"id": asset_id, "order_pk": order_pk})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Asset nicht gefunden")
+    return {"ok": True}
