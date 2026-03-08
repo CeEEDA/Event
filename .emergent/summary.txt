@@ -1,160 +1,180 @@
 <analysis>**original_problem_statement:**
-The user's initial request was for a secure file exchange application. This has evolved into a comprehensive monitoring and management portal for Deep Sea Electronics (DSE) power generators and Messkoffer (mobile energy measurement cases).
-
-**PRODUCT REQUIREMENTS:**
-1.  **Generator Monitoring:** A dashboard for real-time analytics and location of DSE generators, with a pending upgrade from simulated to live data via MQTT.
-2.  **Energy Monitoring (Messkoffer):** A new dashboard for real-time monitoring of mobile energy measurement cases. This includes live data ingestion from a Raspberry Pi, GPS location tracking on a map, and detailed analytics charts.
-3.  **Device Management (Geräteverwaltung):** A system for full CRUD operations on all assets (generators, Messkoffer). This includes image/document uploads, parts management, and QR code generation. It has been extended to manage Raspberry Pi connection settings and secure, per-device API keys.
-4.  **Data Ingestion & Offline Capability:** A robust system for Raspberry Pi devices to push local SQLite data to a central server via a secure HTTPS API. The system is designed to buffer data locally during internet outages and sync automatically when connectivity is restored.
-5.  **Service Planning (Serviceplan):** A feature to create and track maintenance schedules for all devices.
-6.  **User & Permissions System:** Role-based access (, , ) controlling feature and data visibility. This now includes account-level time restrictions and data-access time windows for customers.
-7.  **File Management & Export:** Secure storage for device-specific files and the ability to export time-series data as a CSV file.
-8.  **Email Notifications:** A functional password reset system that sends emails to users.
+The user is building a comprehensive portal for monitoring and managing power generation assets. The core features include:
+1.  **Live Monitoring:** Dashboards for Deep Sea Electronics (DSE) generators and mobile Messkoffer energy measurement cases, using live MQTT and API data.
+2.  **Remote Control:** Start/Stop/Auto remote control for DSE generators.
+3.  **ERP Integration (EpiRent):** A new major feature to integrate with their EpiRent ERP system. This involves creating an Auftragsverwaltung (Order Management) page to fetch, display, and search for orders from the EpiRent API. The goal is to eventually link generators to these orders.
+4.  **Device & User Management:** Full CRUD for devices and a role-based permission system.
+5.  **Automated Pi Deployment:** A one-click setup script for the Messkoffer Raspberry Pi.
+6.  **Future Self-Hosting:** The user plans to migrate the entire application to a local server, which will require setting up a self-hosted MQTT broker and a Live Bridge to the Emergent platform for continued development.
 
 **User's preferred language**: Deutsch
 
 **what currently exists?**
-A full-stack application (React, FastAPI, MongoDB) with a feature-rich frontend and a robust backend.
--   **Authentication:** JWT-based system with three user roles.
--   **Dashboards:** Separate monitoring dashboards exist for DSE Generators (using simulated data) and the new Energy Monitoring for Messkoffer (using real data imported from the user's DB file).
--   **Energy Monitoring:** This new feature is fully implemented. It includes a dashboard with a Leaflet map for GPS tracking and a detail page with Recharts for time-series data visualization. It supports a von/bis date range picker and CSV export.
--   **Data Ingestion:** A secure  endpoint is live. It authenticates using a per-device, bcrypt-hashed API key.
--   **Device Management:** The UI has been significantly enhanced. For Messkoffer devices, an administrator can now manage Raspberry Pi connection details (IP, hostname, etc.) and a unique, secure API key for data transmission.
--   **Pi Deployment Kit:** The system provides downloadable files to easily set up a new Raspberry Pi:
-    -   : A Python script to read local SQLite data and push it to the server.
-    -   : A configuration file for the API endpoint and device credentials.
-    -   : A  service file to ensure the script runs reliably in the background.
--   **Advanced Permissions:** Admins can set both account-level expiration dates and data-level access windows (e.g., a customer can only view data from the last 30 days) for users.
+The application is a functional full-stack portal with several live features:
+-   **Live Monitoring & Control:** The Messkoffer and DSE Generator monitoring systems are fully operational with live data. The DSE remote control UI/UX has been refined with a 3D-button style as requested.
+-   **GPS & Mapping:** The bug preventing GPS data from being displayed has been fixed. DSE generator locations are now shown on maps on both the dashboard and detail pages, with a manual coordinate entry feature as a fallback.
+-   **EpiRent Integration Setup:** A new Administrative Einstellungen page has been created. It allows for the configuration of third-party integrations. The EpiRent ERP integration has been set up and successfully tested; the application can connect to the EpiRent API, authenticate, and fetch data.
+-   **Emergent Live Bridge:** An interface has been created in the admin settings to manage a future connection between the user's local server and the Emergent platform, to allow for continued live development after migration.
+-   **Order Management Page:** A new, empty page for Auftragsverwaltung has been created and placed at the top of the main navigation menu, ready for implementation.
 
 **Last working item**:
--   **Last item agent was working:** The agent finished implementing a complete solution for the user to connect their Raspberry Pi to the application securely. This involved creating a per-device, encrypted API key system, updating the Device Management UI to manage these keys, and creating a full deployment kit (Python script, config file, systemd service) for the Pi. The user has just confirmed their Pi is online and is waiting for these files and instructions.
--   **Status:** IN PROGRESS
--   **Agent Testing Done:** Y
--   **Which testing method agent to use?** Manual testing by user. The next agent's primary task is to guide the user through deploying the provided files onto their physical Raspberry Pi.
--   **User Testing Done:** N
+-   Last item agent was working: The agent was beginning the implementation of the Auftragsverwaltung (Order Management) page. The user has provided the requirements: fetch order data (Project Number, Project Name, Event Period, Delivery Address) from the EpiRent API, display it, and add date range and free-text search filters. The agent had just finished analyzing the EpiRent API's  endpoint and was about to create a backend proxy for it.
+-   Status: IN PROGRESS
+-   Agent Testing Done: N
+-   Which testing method agent to use? both
+-   User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: (P1) DSE Gateway MQTT Configuration**
-    -   **Description:** A previously paused task. The user needs to upload specific CSV files to their DSE890 gateway hardware to enable live data for the generator monitoring dashboard.
-    -   **Status:** BLOCKED (Paused by user). This should be addressed after the current Messkoffer task is completed.
+-   **Issue 1: (P0) Implement Auftragsverwaltung (Order Management) Page**
+    -   **Description:** Build the frontend and backend to fetch and display orders from the EpiRent ERP API.
+    -   **Status:** IN PROGRESS
+
+  **Issues Detail:**
+  - **Issue 1: Implement Auftragsverwaltung (Order Management) Page**
+     - **Attempted fixes:** The agent has successfully explored the EpiRent API using  and identified the correct endpoint () and data structure. The placeholder page  and the backend route file  exist.
+     - **Next debug checklist:**
+        1.  Create a new backend proxy endpoint (e.g., ) in . This endpoint will securely call the EpiRent API () using the stored credentials.
+        2.  Implement the frontend UI in .
+        3.  Add a date range picker (defaulting to -1 week from today to +4 weeks from today).
+        4.  Add a search input for free-text filtering (Project Number, Project Name, Address).
+        5.  Create a table/list to display the fetched order data.
+     - **Why fix this issue and what will be achieved with the fix?** This is a major new feature requested by the user, forming the basis for linking assets to jobs.
+     - **Status:** IN PROGRESS
+     - **Is recurring issue?** N
+     - **Should Test frontend/backend/both after fix?** Both
+     - **Blocked on other issue:** None
 
 **In progress Task List**:
--   **Task 1: (P0) Guide User Through Raspberry Pi Setup**
-    -   **Where to resume:** Present the user with the generated deployment kit and provide clear, step-by-step instructions.
-    -   **What will be achieved:** The user's physical Messkoffer device will begin sending live data to the application, completing the energy monitoring feature loop.
+-   **Task 1: (P0) Implement Auftragsverwaltung (Order Management) Page**
+    -   **Where to resume:** Start by creating the backend proxy endpoint in .
+    -   **What will be achieved with this?** The first version of the Order Management page will be functional, displaying live data from the ERP.
     -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** Both. Verify that data from the user's Pi appears correctly in the database and is rendered on the frontend dashboard and charts.
-    -   **Blocked on something:** User action (deploying files to their hardware).
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   (P1) Resume and complete the MQTT setup for DSE Generators.
-    -   (P2) Update the Generator Dashboard to display the live MQTT data once it is flowing.
+    -   (P0) **Link Generators to Orders:** After the order list is functional, the next step is to create a mechanism to associate generators from the portal with the orders fetched from EpiRent.
 -   **Future Tasks:**
-    -   (P1) Add full support for the Kirmeskiste device type, similar to how Messkoffer was added.
-    -   (P2) Implement admin-controlled file size limits for the file-sharing feature.
+    -   (P1) **Self-Hosted MQTT Broker:** Install and configure a Mosquitto MQTT broker for the eventual server migration. This will involve updating the backend configuration to use the local broker.
+    -   (P1) **Full Kirmeskiste Support:** Add full support for the Kirmeskiste device type.
+    -   (P2) **File Size Limits:** Implement admin-controlled file size limits for the file-sharing feature.
 
 **Completed work in this session**
--   **Energy Monitoring Feature (Messkoffer):** Implemented a complete, multi-phase feature including a new dashboard, detail page with charts, a Leaflet map for GPS tracking, and a von/bis date range picker with CSV export.
--   **Live Data Ingestion from Pi:** Created a secure HTTPS endpoint and a full deployment kit ( script,  file,  file) for Raspberry Pi devices to push local SQLite data, with offline buffering support.
--   **Per-Device API Keys:** Built a secure authentication system where each Messkoffer has its own bcrypt-hashed API key, managed through the Device Management UI.
--   **Advanced User Access Control:** Moved time-based account access to the user level and added a new data-level time restriction, allowing admins to limit the historical data a customer can view.
--   **UI/UX Enhancements:** Refined the Device Management and Admin modals to incorporate all new settings for Messkoffer and user permissions.
+-   **DSE Remote Control UI:**
+    -   Reordered control buttons to Stop, Auto, Start.
+    -   Removed the confirmation popup for direct command execution.
+    -   Redesigned buttons with a 3D, DSE-panel-inspired look with dynamic status lighting.
+-   **Messkoffer Pi Connectivity:**
+    -   Diagnosed and fixed the Portal nicht erreichbar error by remotely updating the  in the Pi's configuration file to point to the new server URL.
+-   **Device Management Overhaul:**
+    -   Added a controller selection dropdown for DSE generators.
+    -   Created a DSE890 Gateway Konfiguration section with fields for MQTT credentials and dynamic topic file downloads.
+    -   Simplified the Messkoffer device management UI, removing redundant fields.
+-   **GPS/Map Bug Fix:**
+    -   Implemented a backend parser for DSE GPS data.
+    -   Added a map to the generator detail page.
+    -   Added manual latitude/longitude fields in device management as a fallback.
+    -   Fixed the dashboard map, which now correctly displays generator markers.
+-   **EpiRent ERP Integration:**
+    -   Created a new Administrative Einstellungen page accessible only to admins.
+    -   Built a generic backend/frontend system for managing API integrations.
+    -   Successfully connected to the live EpiRent API, handling its specific authentication headers.
+    -   Designed the integration form to match the user's specification, including a Test Connection button that provides live feedback.
+-   **UI & Navigation:**
+    -   Created the Auftragsverwaltung page and re-ordered the main navigation.
+    -   Standardized page headers across admin sections for a consistent look and feel.
+-   **Emergent Live Bridge:**
+    -   Created a dedicated UI in the admin settings to manage a future live bridge connection for development after the server migration.
 
 **Earlier issues found/mentioned but not fixed**
 -   None.
 
 **Known issue recurrence from previous fork**
--   **Issue recurrence in previous fork:** SMTP Email Sending Failure
--   **Recurrence count:** 2+
--   **Status:** RESOLVED
+-   None.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
 -   **Backend:** FastAPI, Python, MongoDB, Pydantic
--   **Frontend:** React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet
--   **Data Ingestion:** HTTPS-based push from edge devices (Raspberry Pi) with local SQLite for offline buffering.
--   **Device Authentication:** Per-device, hashed API keys using .
--   **System Services:** Deployment via  for robust background script execution on the Pi.
+-   **Frontend:** React, Tailwind CSS, Shadcn/UI
+-   **External API Integration:** Calling the third-party EpiRent ERP API via a secure backend proxy. This involves handling custom HTTP headers (, ) for authentication.
+-   **Dynamic UI:** The integrations page dynamically renders forms based on the integration type.
+-   **State Management:** Complex forms (like device management and admin settings) use React state () to manage form data, conditional UI rendering, and API responses.
+-   **MQTT:** Bidirectional communication with DSE generators for live data and remote control. Includes parsing multiple data formats (Gencomm JSON, DSE-specific GPS JSON).
 
 **key DB schema**
--   **users:** Added , , . Inside , added , , .
--   **devices:** For Messkoffer type, added , , , , , , , and .
--   **telemetry:** Schema now includes an optional  field containing .
+-   **integrations:** (New Collection)
+    -   
+    -   Stores configuration for third-party services like EpiRent and the Emergent Bridge.
+-   **devices:**
+    -   Added ,  for manual location setting.
+    -   Added ,  for future MQTT broker authentication.
 
 **changes in tech stack**
--   **Backend:** Added  for hashing device API keys.
+-   **Backend:**  library was added to  for making asynchronous HTTP requests to the EpiRent API.
 
 **All files of reference**
--   : Core logic for data ingestion, telemetry fetching, and API key management.
--   : The Python script to be deployed on the user's Raspberry Pi.
--   : Contains the complex modal for managing Messkoffer devices, including the new Pi and API key sections.
--   : Contains the UI for setting account-level and data-level time restrictions.
--   : Defines the database structure for the new device fields and user permissions.
+-   : The new page to be implemented for order management.
+-   : The page for managing all third-party integrations.
+-   : The backend file containing the API for integrations and where the EpiRent proxy will be built.
+-   : Contains the new map section for displaying generator location.
+-   : Contains the new 3D-styled remote control buttons.
+-   : Contains the updated modal for editing DSE generators, including the new location fields.
 
 **Areas that need refactoring**:
--    and  have become very large and complex due to the addition of multiple new features. The main modal in each of these pages should be broken down into smaller, more focused components to improve maintainability.
+-   The MQTT broker URL is still hardcoded in . This should be moved to an environment variable in  to prepare for the future migration to a self-hosted broker.
 
 **key api endpoints**
--   : The endpoint for the Raspberry Pi to push data, authenticated with a per-device key.
--   : Creates a new, single-use API key for a device.
--   : Fetches telemetry data, now enforces user-specific data access time windows.
--   : Serves the  file.
--   : Serves the  template file.
--   : Serves the  file.
--   : Now checks if a user's account access has expired.
+-   : **(To be created)** The proxy endpoint to fetch orders from the EpiRent ERP.
+-   : Full CRUD API for managing third-party integrations.
+-   : Endpoint to test the connection to a configured integration.
+-   : Endpoints to manage the Emergent Live Bridge configuration.
+-   : Dynamically serves the correct DSE topic CSV file based on the selected controller.
 
 **Critical Info for New Agent**
--   **Your immediate task is to guide the user in setting up their Raspberry Pi.** The user is ready and waiting. You need to provide the download links for the three deployment files (, , ) and give clear, step-by-step instructions on how to configure them (especially adding the device ID and the newly generated API key to the  file) and install the  service on their Pi.
--   **Authentication has changed.** The previous global API key is deprecated. The Pi script now authenticates using a per-device key that must be generated in the Device Management UI. This is a critical point to explain to the user.
--   The task to configure the DSE generator via MQTT is still pending but was explicitly paused by the user. Do not address it until the current Pi setup is successfully completed and verified.
+-   Your immediate task is to build the Auftragsverwaltung (Order Management) page.
+-   Start by creating the backend proxy endpoint in  to call the EpiRent API at . Use the credentials already stored in the  collection.
+-   Then, build the frontend in , including the date picker and search bar.
+-   The user wants the date range to default to one week in the past and four weeks in the future.
+-   The user has explicitly stated that the step *after* this is to link generators to the orders. Keep this in mind for the data structure.
 
 **documents and test reports created in this job**
--   
--   
--   
--   
--   
--   
--   
--   
+-   : Corrected version created.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (msg 300):** Requests several major features: adding Pi connection fields to device management, showing only online devices in the overview, implementing a von/bis date range picker with CSV export, and adding data access time limits for customers.
-2.  **Agent (msg 301):** Confirms understanding and creates a plan to implement all requests.
-3.  **(Agent implements all requested features across multiple steps)**
-4.  **User (msg 381):** States their Pi is now online and asks for the script and setup instructions. They also request that device management be updated to include a device-specific password/key with encryption for the Pi connection.
-5.  **Agent (msg 382-428):** Acknowledges the final request, implements the per-device encrypted API key system, enhances the device management UI accordingly, creates all necessary downloadables (script, config, service file), and verifies the entire setup is working via API tests and screenshots. The agent is now prepared to deliver the complete solution to the user.
+1.  **User:** Requests to build the Auftragsverwaltung page, specifying data fields (Project #, Name, Period, Address), a date range filter (default -1 week to +4 weeks), and a free-text search. (PENDING IMPLEMENTATION)
+2.  **User:** Asks to re-order the main page icons, moving Auftragsverwaltung to the top and FileShare down. (DONE)
+3.  **User:** Reports that maps are not showing generator locations. (DONE)
+4.  **User:** Asks for the DSE890 gateway topic file again to fix GPS. (DONE)
+5.  **User:** Reports an error after uploading the file. (INVESTIGATED)
+6.  **User:** Asks to remove the Demo button from the login page. (DONE)
+7.  **User:** Asks to move the MQTT button from user management to admin settings. (DONE)
+8.  **User:** Requests a new Emergent.sh interface in admin settings to act as a live bridge for future local development. (DONE)
+9.  **User:** Asks to standardize the page headers to a consistent layout. (DONE)
+10. **Agent:** Confirmed header layout is fixed and awaits next instruction. (LAST AGENT ACTION)
 
 **Project Health Check:**
--   **Broken:**
-    -   None.
--   **Mocked:**
-    -   The DSE generator dashboard still relies on simulated data, as the live MQTT integration is blocked.
--   **Blocked:**
-    -   **DSE Live Data:** Blocked on user action to configure their physical DSE gateway.
-    -   **Messkoffer Live Data:** Blocked on user action to deploy the provided scripts on their Raspberry Pi.
+-   **Broken:** None.
+-   **Mocked:** None.
+-   **Blocked:** None.
 
 **3rd Party Integrations**
--    / : Map visualization.
--   : Charting library.
--   : File storage in MongoDB.
--    / : Backend QR code generation.
--   : Email sending (via ).
--   : For MQTT communication (setup is paused).
--   : For hashing per-device API keys.
+-   **EpiRent ERP:** Live integration for reading order, product, and stock data. Connection is configured and tested.
+-   **DSE (Deep Sea Electronics):** Live integration with DSE890 gateway via MQTT for data and control.
+-   **Shelly:** Reading data from Shelly Pro 3EM devices via local HTTP API on the Raspberry Pi.
+-   **gpsd:** Reading data from a USB GPS antenna on the Raspberry Pi.
 
 **Testing status**
--   **Testing agent used after significant changes:** YES, used successfully after each major feature phase.
+-   **Testing agent used after significant changes:** NO
 -   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** , , 
--   **Known regressions:** None.
+-   **Test files created:** None
+-   **Known regressions:** None
 
 **Credentials to test flow:**
 -   **Administrator:**  / 
 -   **Mitarbeiter:**  / 
 
 **What agent forgot to execute**
--   The agent successfully implemented all user requests from the session. The final step of providing the instructions and files to the user is the immediate next action and has not been forgotten, but is the natural handoff point.</analysis>
+-   Nothing was forgotten. The agent was actively starting the implementation of the Auftragsverwaltung feature as requested by the user.</analysis>
