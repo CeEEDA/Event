@@ -638,6 +638,10 @@ async def signup_for_event(data: EventSignup):
     if data.connection_type not in CONNECTION_TYPES:
         raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {data.connection_type}")
 
+    # Validate payment method - "rechnung" only allowed if kauf_auf_rechnung is enabled
+    if data.payment_method == "rechnung" and not sch.get("kauf_auf_rechnung"):
+        raise HTTPException(status_code=400, detail="Kauf auf Rechnung ist für diesen Schausteller nicht freigeschaltet.")
+
     # Find price for this connection type
     price = 0.0
     for p in event.get("prices", []):
