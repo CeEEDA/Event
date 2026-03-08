@@ -1,0 +1,86 @@
+{
+  "summary": "Iteration 34 - Tested Document Storage (Dokumentenablage) feature for Kirmes events. All 15 backend API tests passed. Frontend UI verified for document card on event detail page, documents page with drag & drop upload, image gallery with preview, and PDF list with download/delete buttons.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "backend_endpoints": {
+      "POST /api/kirmes/events/{event_id}/documents (PDF)": "PASS - Upload PDF file, returns {id, original_name, message}",
+      "POST /api/kirmes/events/{event_id}/documents (JPG)": "PASS - Upload JPG image, stores with correct content_type",
+      "POST /api/kirmes/events/{event_id}/documents (PNG)": "PASS - Upload PNG image successfully",
+      "POST /api/kirmes/events/{event_id}/documents (reject txt)": "PASS - Returns 400 with 'Nur PDF und Bilder' message",
+      "POST /api/kirmes/events/{event_id}/documents (reject exe)": "PASS - Returns 400 for executable files",
+      "POST /api/kirmes/events/{event_id}/documents (nonexistent event)": "PASS - Returns 404",
+      "GET /api/kirmes/events/{event_id}/documents": "PASS - Returns list of documents with {id, event_id, filename, original_name, content_type, size, uploaded_by, uploaded_at}",
+      "GET /api/kirmes/events/{event_id}/documents (unauthorized)": "PASS - Returns 401/403 without auth",
+      "GET /api/kirmes/events/{event_id}/documents/{doc_id}/file (PDF)": "PASS - Returns PDF with correct content-type and inline disposition",
+      "GET /api/kirmes/events/{event_id}/documents/{doc_id}/file (image)": "PASS - Returns image with correct content-type",
+      "GET /api/kirmes/events/{event_id}/documents/{doc_id}/file (nonexistent)": "PASS - Returns 404",
+      "DELETE /api/kirmes/events/{event_id}/documents/{doc_id}": "PASS - Deletes document and removes from database",
+      "DELETE /api/kirmes/events/{event_id}/documents/{doc_id} (nonexistent)": "PASS - Returns 404",
+      "DELETE /api/kirmes/events/{event_id}/documents/{doc_id} (unauthorized)": "PASS - Returns 401/403"
+    },
+    "frontend_ui": {
+      "documents_card_on_event_detail": "PASS - 'Dokumentenablage' card visible between info cards and prices section",
+      "documents_card_with_badge": "PASS - Shows document count badge (e.g., '1' or '2')",
+      "documents_card_navigation": "PASS - Clicking card navigates to /kirmes/{id}/dokumente",
+      "upload_dropzone": "PASS - Drag & drop area with 'Dateien hierher ziehen oder klicken' text",
+      "file_type_info": "PASS - Shows 'PDF, JPG, PNG, WebP, GIF – max. 20 MB'",
+      "file_input_accept": "PASS - File input accepts '.pdf,.jpg,.jpeg,.png,.webp,.gif'",
+      "image_gallery_section": "PASS - 'Bilder (N)' section displays uploaded images as thumbnails",
+      "pdf_list_section": "PASS - 'PDFs (N)' section shows PDF files with metadata",
+      "pdf_action_buttons": "PASS - Preview (eye), Download, Delete buttons present",
+      "back_button": "PASS - Returns to event detail page",
+      "document_count_header": "PASS - Header shows 'N Dokumente'"
+    }
+  },
+  "backend_tests": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "test_file": "/app/backend/tests/test_kirmes_documents.py",
+    "test_classes": [
+      "TestDocumentUpload (6 tests) - Upload PDF/JPG/PNG, reject unsupported types, 404 for nonexistent event",
+      "TestListDocuments (2 tests) - List documents, unauthorized access",
+      "TestDownloadDocument (3 tests) - Download PDF/image, 404 for nonexistent",
+      "TestDeleteDocument (3 tests) - Delete success, 404, unauthorized",
+      "TestCleanup (1 test) - Cleanup test data"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes_documents.py",
+    "/app/test_reports/pytest/pytest_kirmes_documents_iteration34.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Image preview modal uses CSS hover animations (opacity-0 -> opacity-100) which can cause timing issues in automated tests, but works correctly in manual testing",
+    "File storage uses /app/storage/event_documents/{event_id}/ directory structure - ensure proper disk space and backup considerations"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_kirmes_documents.py"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 tests passed)",
+    "frontend": "100% (all UI elements verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_info": {
+    "test_event": "4b4f740b-16be-496b-aabf-e0b2667f8316 (Event 'Test', status: freigegeben)",
+    "existing_document": "Messung.pdf (17 KB, uploaded by Christian Ecker)"
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Document storage feature fully tested. Backend: CRUD operations for PDF/image documents on /api/kirmes/events/{event_id}/documents endpoints. Frontend: KirmesEventDetailPage shows 'Dokumentenablage' card between info cards and prices section. KirmesEventDocumentsPage shows drag & drop upload, image gallery for images, and PDF list. Files stored in /app/storage/event_documents/{event_id}/. MongoDB collection: kirmes_event_documents. Test file: /app/backend/tests/test_kirmes_documents.py",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}

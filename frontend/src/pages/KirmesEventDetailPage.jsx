@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
-  Activity, Link2, Unlink, Gauge, Wifi, WifiOff,
+  Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Input } from "../components/ui/input";
@@ -54,6 +54,7 @@ export default function KirmesEventDetailPage() {
   const [linkingMeter, setLinkingMeter] = useState(null);
   const [selectedMeterCombo, setSelectedMeterCombo] = useState("");
   const [scanningMeter, setScanningMeter] = useState(null);
+  const [docCount, setDocCount] = useState(0);
 
   const loadEvent = useCallback(async () => {
     try {
@@ -70,7 +71,14 @@ export default function KirmesEventDetailPage() {
     } catch { /* ignore */ }
   }, [id]);
 
-  useEffect(() => { loadEvent(); loadInvoices(); }, [loadEvent, loadInvoices]);
+  const loadDocCount = useCallback(async () => {
+    try {
+      const r = await api.get(`/kirmes/events/${id}/documents`);
+      setDocCount(r.data.length);
+    } catch { /* ignore */ }
+  }, [id]);
+
+  useEffect(() => { loadEvent(); loadInvoices(); loadDocCount(); }, [loadEvent, loadInvoices, loadDocCount]);
 
   // Load available EMU meters
   useEffect(() => {
@@ -410,6 +418,31 @@ export default function KirmesEventDetailPage() {
               <Users className="w-4 h-4" /> <span className="text-xs font-medium">Anmeldungen</span>
             </div>
             <p className="text-sm text-gray-900 font-medium">{event.signup_count || 0}</p>
+          </div>
+        </div>
+
+        {/* Documents Card */}
+        <div
+          className="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:border-fuchsia-300 hover:bg-fuchsia-50/30 transition-colors"
+          onClick={() => navigate(`/kirmes/${id}/dokumente`)}
+          data-testid="documents-card"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-fuchsia-50 rounded-lg flex items-center justify-center">
+                <FolderOpen className="w-5 h-5 text-fuchsia-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Dokumentenablage</p>
+                <p className="text-xs text-gray-500">Lageplan, Fotos & Unterlagen</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {docCount > 0 && (
+                <span className="text-xs bg-fuchsia-100 text-fuchsia-700 px-2 py-0.5 rounded-full font-medium">{docCount}</span>
+              )}
+              <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
+            </div>
           </div>
         </div>
 

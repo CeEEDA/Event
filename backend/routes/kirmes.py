@@ -1536,3 +1536,106 @@ async def get_meter_info(meter_id: str, user: dict = Depends(_require_staff)):
     meter["available_signups"] = all_unlinked
 
     return meter
+
+
+# ============== Event Documents (Dokumentenablage) ==============
+
+import os as _os
+import shutil as _shutil
+from fastapi import UploadFile, File
+
+ALLOWED_DOC_TYPES = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+DOC_STORAGE = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "storage", "event_documents")
+_os.makedirs(DOC_STORAGE, exist_ok=True)
+
+
+@router.post("/events/{event_id}/documents")
+async def upload_event_document(event_id: str, file: UploadFile = File(...), user: dict = Depends(_require_staff)):
+    """Upload a document (PDF or image) to an event."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0, "id": 1})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    ct = file.content_type or ""
+    if ct not in ALLOWED_DOC_TYPES:
+        raise HTTPException(status_code=400, detail="Nur PDF und Bilder (JPG, PNG, WebP, GIF) erlaubt")
+
+    # Read file (max 20MB)
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Datei zu groß (max. 20 MB)")
+
+    doc_id = str(uuid.uuid4())
+    ext = ALLOWED_DOC_TYPES[ct]
+    stored_name = f"{doc_id}{ext}"
+    event_dir = _os.path.join(DOC_STORAGE, event_id)
+    _os.makedirs(event_dir, exist_ok=True)
+
+    file_path = _os.path.join(event_dir, stored_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    doc = {
+        "id": doc_id,
+        "event_id": event_id,
+        "filename": stored_name,
+        "original_name": file.filename or "Dokument",
+        "content_type": ct,
+        "size": len(content),
+        "uploaded_by": user.get("name", user.get("email", "")),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _db.kirmes_event_documents.insert_one(doc)
+
+    return {"id": doc_id, "original_name": doc["original_name"], "message": "Dokument hochgeladen"}
+
+
+@router.get("/events/{event_id}/documents")
+async def list_event_documents(event_id: str, user: dict = Depends(_require_staff)):
+    """List all documents for an event."""
+    docs = await _db.kirmes_event_documents.find(
+        {"event_id": event_id}, {"_id": 0}
+    ).sort("uploaded_at", -1).to_list(200)
+    return docs
+
+
+@router.get("/events/{event_id}/documents/{doc_id}/file")
+async def get_event_document_file(event_id: str, doc_id: str, token: Optional[str] = None, user: dict = Depends(_require_staff)):
+    """Download or preview a document file."""
+    doc = await _db.kirmes_event_documents.find_one({"id": doc_id, "event_id": event_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    file_path = _os.path.join(DOC_STORAGE, event_id, doc["filename"])
+    if not _os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+
+    with open(file_path, "rb") as f:
+        data = f.read()
+
+    return Response(
+        content=data,
+        media_type=doc["content_type"],
+        headers={"Content-Disposition": f'inline; filename="{doc["original_name"]}"'},
+    )
+
+
+@router.delete("/events/{event_id}/documents/{doc_id}")
+async def delete_event_document(event_id: str, doc_id: str, user: dict = Depends(_require_staff)):
+    """Delete a document from an event."""
+    doc = await _db.kirmes_event_documents.find_one({"id": doc_id, "event_id": event_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    file_path = _os.path.join(DOC_STORAGE, event_id, doc["filename"])
+    if _os.path.exists(file_path):
+        _os.remove(file_path)
+
+    await _db.kirmes_event_documents.delete_one({"id": doc_id})
+    return {"message": "Dokument gelöscht"}

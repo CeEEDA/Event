@@ -21,6 +21,7 @@ import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
 import KirmesEventDetailPage from "./pages/KirmesEventDetailPage";
+import KirmesEventDocumentsPage from "./pages/KirmesEventDocumentsPage";
 import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
@@ -172,6 +173,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <KirmesEventDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/kirmes/:id/dokumente"
+        element={
+          <ProtectedRoute>
+            <KirmesEventDocumentsPage />
           </ProtectedRoute>
         }
       />
