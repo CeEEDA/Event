@@ -102,6 +102,7 @@ class EventSignup(BaseModel):
     event_id: str
     schausteller_id: str
     platznummer: str
+    fahrgeschaeft: str
     connection_type: str
     payment_method: str = "kreditkarte"  # kreditkarte, paypal, rechnung
 
@@ -345,6 +346,7 @@ async def signup_for_event(data: EventSignup):
         "event_id": data.event_id,
         "schausteller_id": data.schausteller_id,
         "platznummer": data.platznummer,
+        "fahrgeschaeft": data.fahrgeschaeft,
         "connection_type": data.connection_type,
         "price": price,
         "payment_method": data.payment_method,
@@ -406,6 +408,21 @@ async def update_schausteller(sch_id: str, data: SchaustellerUpdate, user: dict 
         await _db.kirmes_schausteller.update_one({"id": sch_id}, {"$set": update})
     updated = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0})
     return updated
+
+
+@router.delete("/schausteller/{sch_id}")
+async def delete_schausteller(sch_id: str, user: dict = Depends(_require_admin)):
+    sch = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+    # Check for active signups
+    active_signups = await _db.kirmes_signups.count_documents({"schausteller_id": sch_id, "payment_status": {"$in": ["reserviert", "bezahlt"]}})
+    if active_signups > 0:
+        raise HTTPException(status_code=400, detail="Schausteller hat aktive Buchungen und kann nicht gelöscht werden")
+    await _db.kirmes_signups.delete_many({"schausteller_id": sch_id})
+    await _db.kirmes_schausteller.delete_one({"id": sch_id})
+    return {"message": "Schausteller gelöscht"}
+
 
 
 # ============== Signup Management (Staff) ==============

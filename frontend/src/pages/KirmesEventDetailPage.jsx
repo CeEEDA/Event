@@ -159,6 +159,7 @@ export default function KirmesEventDetailPage() {
                   <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
                     <th className="px-4 py-3 text-left">Firma</th>
                     <th className="px-4 py-3 text-left">Name</th>
+                    <th className="px-4 py-3 text-left">Fahrgeschäft</th>
                     <th className="px-4 py-3 text-left">Platznr.</th>
                     <th className="px-4 py-3 text-left">Anschluss</th>
                     <th className="px-4 py-3 text-right">Preis</th>
@@ -172,6 +173,7 @@ export default function KirmesEventDetailPage() {
                     <tr key={signup.id} className="border-b border-gray-100 hover:bg-gray-50" data-testid={`signup-${signup.id}`}>
                       <td className="px-4 py-3 font-medium text-gray-900">{signup.schausteller?.firma || "–"}</td>
                       <td className="px-4 py-3 text-gray-600">{signup.schausteller?.name || "–"}</td>
+                      <td className="px-4 py-3 text-gray-600">{signup.fahrgeschaeft || "–"}</td>
                       <td className="px-4 py-3 font-mono text-gray-900">{signup.platznummer}</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1 text-xs bg-fuchsia-50 text-fuchsia-700 px-2 py-0.5 rounded-full">

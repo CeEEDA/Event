@@ -63,7 +63,7 @@ const ROLE_COLORS = {
 };
 
 export default function AdminPage() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -176,6 +176,17 @@ export default function AdminPage() {
       email: sch.email || "", telefon: sch.telefon || "", rechnungs_email: sch.rechnungs_email || "",
     });
     setSchaustellerModalOpen(true);
+  };
+
+  const handleDeleteSchausteller = async (sch) => {
+    if (!window.confirm(`"${sch.firma}" wirklich löschen? Alle zugehörigen Anmeldungen werden ebenfalls gelöscht.`)) return;
+    try {
+      await api.delete(`/kirmes/schausteller/${sch.id}`);
+      toast.success("Schausteller gelöscht");
+      loadSchausteller();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Fehler beim Löschen");
+    }
   };
 
   const handleSaveSchausteller = async () => {
@@ -688,15 +699,28 @@ export default function AdminPage() {
                               <td className="px-4 py-3 hidden lg:table-cell text-gray-500 text-sm">{sch.plz} {sch.ort}</td>
                               <td className="px-4 py-3 hidden lg:table-cell text-gray-500 text-sm font-mono">{sch.steuernummer}</td>
                               <td className="px-4 py-3 text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => openEditSchausteller(sch)}
-                                  className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
-                                  data-testid={`edit-sch-${sch.id}`}
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => openEditSchausteller(sch)}
+                                    className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
+                                    data-testid={`edit-sch-${sch.id}`}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                  {isAdmin && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleDeleteSchausteller(sch)}
+                                      className="h-8 w-8 text-gray-500 hover:text-red-500"
+                                      data-testid={`delete-sch-${sch.id}`}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))

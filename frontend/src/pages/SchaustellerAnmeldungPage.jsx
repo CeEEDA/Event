@@ -41,7 +41,7 @@ export default function SchaustellerAnmeldungPage() {
 
   // Signup form
   const [signupForm, setSignupForm] = useState({
-    platznummer: "", connection_type: "", payment_method: "kreditkarte",
+    platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte",
   });
 
   // Load events when step is "event"
@@ -98,8 +98,8 @@ export default function SchaustellerAnmeldungPage() {
   };
 
   const handleSignup = async () => {
-    if (!signupForm.platznummer || !signupForm.connection_type) {
-      toast.error("Bitte Platznummer und Anschluss angeben");
+    if (!signupForm.platznummer || !signupForm.fahrgeschaeft || !signupForm.connection_type) {
+      toast.error("Bitte Platznummer, Fahrgeschäft und Anschluss angeben");
       return;
     }
     setSaving(true);
@@ -279,6 +279,10 @@ export default function SchaustellerAnmeldungPage() {
                     <Input value={signupForm.platznummer} onChange={e => setSignupForm(f => ({ ...f, platznummer: e.target.value }))} placeholder="z.B. A12" className="mt-1" data-testid="signup-platznummer" />
                   </div>
                   <div>
+                    <Label className="text-gray-700 text-sm">Fahrgeschäft / Betrieb *</Label>
+                    <Input value={signupForm.fahrgeschaeft} onChange={e => setSignupForm(f => ({ ...f, fahrgeschaeft: e.target.value }))} placeholder="z.B. Achterbahn, Autoscooter, Imbissbude" className="mt-1" data-testid="signup-fahrgeschaeft" />
+                  </div>
+                  <div>
                     <Label className="text-gray-700 text-sm">Stromanschluss *</Label>
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-1">
                       {(selectedEvent.prices || []).map(p => (
@@ -342,10 +346,11 @@ export default function SchaustellerAnmeldungPage() {
               </p>
               <div className="bg-gray-50 rounded-lg p-4 text-left text-sm space-y-1 mb-6">
                 <p><span className="text-gray-500">Platz:</span> <strong>{signupForm.platznummer}</strong></p>
+                <p><span className="text-gray-500">Fahrgeschäft:</span> <strong>{signupForm.fahrgeschaeft}</strong></p>
                 <p><span className="text-gray-500">Anschluss:</span> <strong>{signupForm.connection_type}</strong></p>
                 <p><span className="text-gray-500">Zahlung:</span> <strong className="capitalize">{signupForm.payment_method}</strong></p>
               </div>
-              <Button variant="outline" onClick={() => { setStep("event"); setSignupForm({ platznummer: "", connection_type: "", payment_method: "kreditkarte" }); }} data-testid="another-event-btn">
+              <Button variant="outline" onClick={() => { setStep("event"); setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); }} data-testid="another-event-btn">
                 Für weitere Veranstaltung anmelden
               </Button>
             </div>
