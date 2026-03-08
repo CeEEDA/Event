@@ -538,7 +538,7 @@ export default function KirmesPage() {
                     <button onClick={() => { setEditingEvent(event); setShowEventModal(true); }} className="p-2 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Bearbeiten" data-testid={`edit-${event.id}`}>
                       <Pencil className="w-4 h-4" />
                     </button>
-                    {event.status === "entwurf" && (
+                    {isAdmin && (
                       <button onClick={() => handleDelete(event)} className="p-2 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-${event.id}`}>
                         <Trash2 className="w-4 h-4" />
                       </button>

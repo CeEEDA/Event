@@ -281,10 +281,10 @@ async def delete_event(event_id: str, user: dict = Depends(_require_admin)):
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
-    if event.get("status") in ("aktiv", "abgerechnet"):
-        raise HTTPException(status_code=400, detail="Aktive/abgerechnete Veranstaltungen können nicht gelöscht werden")
-    await _db.kirmes_events.delete_one({"id": event_id})
+    # Delete associated data
+    await _db.kirmes_invoices.delete_many({"event_id": event_id})
     await _db.kirmes_signups.delete_many({"event_id": event_id})
+    await _db.kirmes_events.delete_one({"id": event_id})
     return {"message": "Veranstaltung gelöscht"}
 
 
