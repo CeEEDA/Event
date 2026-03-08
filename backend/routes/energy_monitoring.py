@@ -681,7 +681,10 @@ async def download_setup_script(token: str):
         raise HTTPException(status_code=404, detail="Download-Link abgelaufen oder ungueltig")
 
     # Check expiry (1 hour)
-    age = (datetime.now(timezone.utc) - entry["created_at"]).total_seconds()
+    created = entry["created_at"]
+    if isinstance(created, str):
+        created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    age = (datetime.now(timezone.utc) - created).total_seconds()
     if age > 3600:
         del _setup_downloads[token]
         raise HTTPException(status_code=410, detail="Download-Link abgelaufen")
