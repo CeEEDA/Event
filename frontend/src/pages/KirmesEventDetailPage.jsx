@@ -14,6 +14,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { Input } from "../components/ui/input";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import QrScanner from "../components/QrScanner";
 
 const STATUS_LABELS = {
   entwurf: "Entwurf", freigegeben: "Freigegeben", aktiv: "Aktiv",
@@ -52,6 +53,7 @@ export default function KirmesEventDetailPage() {
   const [meterDataMap, setMeterDataMap] = useState({});
   const [linkingMeter, setLinkingMeter] = useState(null);
   const [selectedMeterCombo, setSelectedMeterCombo] = useState("");
+  const [scanningMeter, setScanningMeter] = useState(null);
 
   const loadEvent = useCallback(async () => {
     try {
@@ -291,6 +293,27 @@ export default function KirmesEventDetailPage() {
       toast.success("EMU-Zähler verknüpft");
       setLinkingMeter(null);
       setSelectedMeterCombo("");
+      loadEvent();
+      loadMeterData(signupId);
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler beim Verknüpfen"));
+    }
+  };
+
+  const handleQrScan = async (scannedText, signupId) => {
+    // Extract meter ID from URL like: .../kirmes/meter-zuordnung/{meterId}
+    const match = scannedText.match(/meter-zuordnung\/([a-zA-Z0-9_-]+)/);
+    if (!match) {
+      toast.error("Ungültiger QR-Code – kein Zähler erkannt");
+      setScanningMeter(null);
+      return;
+    }
+    const meterId = match[1];
+    setScanningMeter(null);
+    try {
+      await api.post(`/kirmes/meters/${meterId}/assign-signup`, { signup_id: signupId });
+      toast.success("Zähler per QR-Code verknüpft!");
+      setLinkingMeter(null);
       loadEvent();
       loadMeterData(signupId);
     } catch (err) {
@@ -618,25 +641,50 @@ export default function KirmesEventDetailPage() {
                                   if (isLinking) {
                                     return (
                                       <div className="mt-4 bg-white rounded-lg p-4 border border-fuchsia-200" onClick={e => e.stopPropagation()} data-testid={`emu-linking-${signup.id}`}>
-                                        <h5 className="text-xs font-semibold text-gray-500 uppercase mb-2">EMU-Zähler auswählen</h5>
-                                        <select value={selectedMeterCombo} onChange={e => setSelectedMeterCombo(e.target.value)}
-                                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-fuchsia-500"
-                                          data-testid={`meter-select-${signup.id}`}>
-                                          <option value="">-- Zähler wählen --</option>
-                                          {emuMeters.map(m => (
-                                            <option key={m.id} value={`${m.device_id}|${m.id}`}>
-                                              {m.meter_name} ({m.device_name || m.device_id.slice(0,8)}) – {m.meter_ip}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <div className="flex gap-2">
-                                          <Button size="sm" onClick={() => handleLinkMeter(signup.id)} disabled={!selectedMeterCombo}
-                                            className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid={`confirm-link-${signup.id}`}>
-                                            <Link2 className="w-3 h-3 mr-1" /> Verknüpfen
-                                          </Button>
-                                          <Button size="sm" variant="outline" onClick={() => { setLinkingMeter(null); setSelectedMeterCombo(""); }}
-                                            className="text-xs">Abbrechen</Button>
-                                        </div>
+                                        {scanningMeter === signup.id ? (
+                                          <>
+                                            <h5 className="text-xs font-semibold text-gray-500 uppercase mb-2">QR-Code scannen</h5>
+                                            <QrScanner
+                                              onScan={(text) => handleQrScan(text, signup.id)}
+                                              onClose={() => setScanningMeter(null)}
+                                            />
+                                            <p className="text-[10px] text-gray-400 mt-2 text-center">QR-Code auf dem Stromverteiler scannen</p>
+                                            <div className="border-t border-gray-100 mt-3 pt-3">
+                                              <button onClick={() => setScanningMeter(null)} className="text-xs text-gray-500 hover:text-fuchsia-600 underline w-full text-center" data-testid={`switch-manual-${signup.id}`}>
+                                                Manuell auswählen
+                                              </button>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <h5 className="text-xs font-semibold text-gray-500 uppercase mb-2">EMU-Zähler zuweisen</h5>
+                                            <Button size="sm" onClick={() => setScanningMeter(signup.id)} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs mb-3" data-testid={`scan-qr-btn-${signup.id}`}>
+                                              <svg className="w-3.5 h-3.5 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                                              QR-Code scannen
+                                            </Button>
+                                            <div className="border-t border-gray-100 pt-3">
+                                              <p className="text-[10px] text-gray-400 mb-2">Oder manuell auswählen:</p>
+                                              <select value={selectedMeterCombo} onChange={e => setSelectedMeterCombo(e.target.value)}
+                                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-fuchsia-500"
+                                                data-testid={`meter-select-${signup.id}`}>
+                                                <option value="">-- Zähler wählen --</option>
+                                                {emuMeters.map(m => (
+                                                  <option key={m.id} value={`${m.device_id}|${m.id}`}>
+                                                    {m.meter_name} ({m.device_name || m.device_id.slice(0,8)}) – {m.meter_ip}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              <div className="flex gap-2">
+                                                <Button size="sm" onClick={() => handleLinkMeter(signup.id)} disabled={!selectedMeterCombo}
+                                                  className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid={`confirm-link-${signup.id}`}>
+                                                  <Link2 className="w-3 h-3 mr-1" /> Verknüpfen
+                                                </Button>
+                                                <Button size="sm" variant="outline" onClick={() => { setLinkingMeter(null); setSelectedMeterCombo(""); setScanningMeter(null); }}
+                                                  className="text-xs">Abbrechen</Button>
+                                              </div>
+                                            </div>
+                                          </>
+                                        )}
                                       </div>
                                     );
                                   }
