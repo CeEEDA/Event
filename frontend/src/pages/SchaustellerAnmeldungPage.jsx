@@ -384,7 +384,7 @@ export default function SchaustellerAnmeldungPage() {
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Stromanschluss *</Label>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-1">
+                    <div className="grid grid-cols-3 gap-2 mt-1">
                       {(selectedEvent.prices || []).map(p => (
                         <button
                           key={p.connection_type}
