@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, timezone
@@ -818,3 +819,272 @@ async def update_signup_kwh(signup_id: str, data: SignupKwhUpdate, user: dict = 
 async def get_connection_types():
     """Public endpoint - Get available connection types."""
     return CONNECTION_TYPES
+
+
+# ============== Invoice / Abrechnung ==============
+
+async def _get_next_invoice_number():
+    """Generate next invoice number: R{YY}-K-{NNNN}."""
+    year_prefix = f"R{datetime.now().strftime('%y')}-K-"
+    last = await _db.kirmes_invoices.find(
+        {"invoice_number": {"$regex": f"^{year_prefix}"}},
+        {"_id": 0, "invoice_number": 1}
+    ).sort("invoice_number", -1).limit(1).to_list(1)
+    if last:
+        last_num = int(last[0]["invoice_number"].split("-K-")[1])
+        return f"{year_prefix}{str(last_num + 1).zfill(4)}"
+    return f"{year_prefix}0001"
+
+
+def _calculate_invoice(signup: dict, event: dict, schausteller: dict) -> dict:
+    """Calculate invoice amounts for a signup."""
+    line_items = []
+    pos = 1
+
+    # 1. Connection fee (Anschlussgebühr)
+    conn_fee = signup.get("price", 0)
+    conn_type = signup.get("connection_type", "")
+    line_items.append({
+        "pos": pos, "description": f"Stromanschluss {conn_type} – Platz {signup.get('platznummer', '')}",
+        "quantity": "1", "unit": "pauschal", "unit_price": conn_fee, "total": conn_fee,
+    })
+    pos += 1
+
+    # 2. kWh consumption
+    kwh_start = signup.get("kwh_einbau") or signup.get("kwh_start") or 0
+    kwh_end = signup.get("kwh_ausbau") or signup.get("kwh_end") or 0
+    kwh_used = max(0, kwh_end - kwh_start)
+    kwh_price = event.get("kwh_price", 0)
+    if kwh_used > 0 and kwh_price > 0:
+        kwh_total = round(kwh_used * kwh_price, 2)
+        line_items.append({
+            "pos": pos, "description": f"Stromverbrauch ({kwh_start:.0f} → {kwh_end:.0f} kWh)",
+            "quantity": f"{kwh_used:.1f}", "unit": "kWh", "unit_price": kwh_price, "total": kwh_total,
+        })
+        pos += 1
+
+    # 3. Handling surcharge
+    handling = event.get("handling_surcharge", 0)
+    if handling > 0:
+        line_items.append({
+            "pos": pos, "description": "Handlingaufschlag",
+            "quantity": "1", "unit": "pauschal", "unit_price": handling, "total": handling,
+        })
+        pos += 1
+
+    netto = round(sum(item["total"] for item in line_items), 2)
+    mwst_rate = 19
+    mwst_amount = round(netto * mwst_rate / 100, 2)
+    brutto = round(netto + mwst_amount, 2)
+
+    return {
+        "line_items": line_items,
+        "netto": netto,
+        "mwst_rate": mwst_rate,
+        "mwst_amount": mwst_amount,
+        "brutto": brutto,
+    }
+
+
+@router.post("/signups/{signup_id}/invoice")
+async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_require_staff)):
+    """Generate an invoice for a single signup."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    # Check if invoice already exists
+    existing = await _db.kirmes_invoices.find_one({"signup_id": signup_id}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Rechnung {existing['invoice_number']} existiert bereits für diese Anmeldung.")
+
+    event = await _db.kirmes_events.find_one({"id": signup["event_id"]}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+    sch = await _db.kirmes_schausteller.find_one({"id": signup["schausteller_id"]}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+
+    calc = _calculate_invoice(signup, event, sch)
+    inv_number = await _get_next_invoice_number()
+
+    invoice_doc = {
+        "id": str(uuid.uuid4()),
+        "invoice_number": inv_number,
+        "signup_id": signup_id,
+        "event_id": signup["event_id"],
+        "event_name": event.get("name", ""),
+        "schausteller_id": signup["schausteller_id"],
+        "schausteller_firma": sch.get("firma", ""),
+        "schausteller_name": sch.get("name", ""),
+        "schausteller_email": sch.get("email", ""),
+        "invoice_date": datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+        "line_items": calc["line_items"],
+        "netto": calc["netto"],
+        "mwst_rate": calc["mwst_rate"],
+        "mwst_amount": calc["mwst_amount"],
+        "brutto": calc["brutto"],
+        "status": "erstellt",
+        "schausteller": sch,
+        "event": {"name": event.get("name", ""), "location": event.get("location", ""),
+                  "start_date": event.get("start_date", ""), "end_date": event.get("end_date", "")},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user.get("name", ""),
+    }
+    await _db.kirmes_invoices.insert_one(invoice_doc)
+    invoice_doc.pop("_id", None)
+
+    # Update signup status
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number}}
+    )
+
+    return invoice_doc
+
+
+@router.post("/events/{event_id}/generate-invoices")
+async def generate_all_invoices(event_id: str, user: dict = Depends(_require_staff)):
+    """Generate invoices for all signups in an event that don't have one yet."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    signups = await _db.kirmes_signups.find({"event_id": event_id}, {"_id": 0}).to_list(500)
+    generated = []
+    skipped = []
+
+    for signup in signups:
+        existing = await _db.kirmes_invoices.find_one({"signup_id": signup["id"]}, {"_id": 0})
+        if existing:
+            skipped.append({"signup_id": signup["id"], "invoice_number": existing["invoice_number"], "reason": "Bereits abgerechnet"})
+            continue
+
+        sch = await _db.kirmes_schausteller.find_one({"id": signup["schausteller_id"]}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+        if not sch:
+            skipped.append({"signup_id": signup["id"], "reason": "Schausteller nicht gefunden"})
+            continue
+
+        calc = _calculate_invoice(signup, event, sch)
+        inv_number = await _get_next_invoice_number()
+
+        invoice_doc = {
+            "id": str(uuid.uuid4()),
+            "invoice_number": inv_number,
+            "signup_id": signup["id"],
+            "event_id": event_id,
+            "event_name": event.get("name", ""),
+            "schausteller_id": signup["schausteller_id"],
+            "schausteller_firma": sch.get("firma", ""),
+            "schausteller_name": sch.get("name", ""),
+            "schausteller_email": sch.get("email", ""),
+            "invoice_date": datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+            "line_items": calc["line_items"],
+            "netto": calc["netto"],
+            "mwst_rate": calc["mwst_rate"],
+            "mwst_amount": calc["mwst_amount"],
+            "brutto": calc["brutto"],
+            "status": "erstellt",
+            "schausteller": sch,
+            "event": {"name": event.get("name", ""), "location": event.get("location", ""),
+                      "start_date": event.get("start_date", ""), "end_date": event.get("end_date", "")},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": user.get("name", ""),
+        }
+        await _db.kirmes_invoices.insert_one(invoice_doc)
+        invoice_doc.pop("_id", None)
+
+        await _db.kirmes_signups.update_one(
+            {"id": signup["id"]},
+            {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number}}
+        )
+        generated.append({"signup_id": signup["id"], "invoice_number": inv_number, "brutto": calc["brutto"]})
+
+    # Update event status
+    await _db.kirmes_events.update_one({"id": event_id}, {"$set": {"status": "abgerechnet"}})
+
+    return {"generated": len(generated), "skipped": len(skipped), "invoices": generated, "skipped_details": skipped}
+
+
+@router.get("/invoices")
+async def list_invoices(
+    search: Optional[str] = None,
+    event_id: Optional[str] = None,
+    user: dict = Depends(_require_staff)
+):
+    """List/search invoices."""
+    query = {}
+    if event_id:
+        query["event_id"] = event_id
+    if search:
+        query["$or"] = [
+            {"invoice_number": {"$regex": search, "$options": "i"}},
+            {"schausteller_firma": {"$regex": search, "$options": "i"}},
+            {"schausteller_name": {"$regex": search, "$options": "i"}},
+            {"event_name": {"$regex": search, "$options": "i"}},
+        ]
+    invoices = await _db.kirmes_invoices.find(query, {
+        "_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "event_id": 1,
+        "schausteller_firma": 1, "schausteller_name": 1, "schausteller_email": 1,
+        "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "created_at": 1,
+    }).sort("created_at", -1).to_list(500)
+    return invoices
+
+
+@router.get("/invoices/{invoice_id}")
+async def get_invoice(invoice_id: str, user: dict = Depends(_require_staff)):
+    """Get full invoice details."""
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    return inv
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def download_invoice_pdf(invoice_id: str, user: dict = Depends(_require_staff)):
+    """Download invoice as PDF."""
+    from services.invoice_pdf import generate_invoice_pdf
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+
+    pdf_bytes = generate_invoice_pdf(inv)
+    filename = f"{inv['invoice_number'].replace('/', '-')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@router.post("/invoices/{invoice_id}/send")
+async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staff)):
+    """Send invoice PDF via email to the schausteller."""
+    from services.invoice_pdf import generate_invoice_pdf
+    from email_service import send_email_with_attachment
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+
+    pdf_bytes = generate_invoice_pdf(inv)
+    sch_email = inv.get("schausteller", {}).get("rechnungs_email") or inv.get("schausteller_email", "")
+    if not sch_email:
+        raise HTTPException(status_code=400, detail="Keine E-Mail-Adresse vorhanden")
+
+    filename = f"{inv['invoice_number']}.pdf"
+    subject = f"Rechnung {inv['invoice_number']} – {inv.get('event_name', '')}"
+    html = f"""<p>Sehr geehrte Damen und Herren,</p>
+<p>anbei erhalten Sie die Rechnung <b>{inv['invoice_number']}</b> für die Veranstaltung <b>{inv.get('event_name', '')}</b>.</p>
+<p>Rechnungsbetrag: <b>{inv['brutto']:.2f} EUR</b></p>
+<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>
+<p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
+
+    try:
+        send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename)
+        await _db.kirmes_invoices.update_one(
+            {"id": invoice_id},
+            {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
+        )
+        return {"message": f"Rechnung an {sch_email} versendet."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"E-Mail konnte nicht gesendet werden: {str(e)}")

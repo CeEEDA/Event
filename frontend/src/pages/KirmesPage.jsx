@@ -9,7 +9,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
   ArrowLeft, Plus, Search, Pencil, Trash2, X, Eye, Send,
-  CalendarDays, MapPin, Users, ChevronRight, Copy, Check,
+  CalendarDays, MapPin, Users, ChevronRight, Copy, Check, Receipt, Download,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -342,6 +342,7 @@ export default function KirmesPage() {
   const [showEventModal, setShowEventModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [copiedLink, setCopiedLink] = useState(null);
+  const [invoiceResults, setInvoiceResults] = useState([]);
 
   const loadEvents = useCallback(async () => {
     try {
@@ -386,6 +387,33 @@ export default function KirmesPage() {
     return e.name.toLowerCase().includes(q) || (e.location || "").toLowerCase().includes(q);
   });
 
+  // Search invoices when search text looks like an invoice number or company name
+  useEffect(() => {
+    if (!search || search.length < 2) { setInvoiceResults([]); return; }
+    const timer = setTimeout(() => {
+      api.get(`/kirmes/invoices?search=${encodeURIComponent(search)}`)
+        .then(r => setInvoiceResults(r.data))
+        .catch(() => setInvoiceResults([]));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const handleDownloadInvoice = async (invoiceId) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/kirmes/invoices/${invoiceId}/pdf`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!response.ok) throw new Error();
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Rechnung.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error("PDF konnte nicht heruntergeladen werden"); }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50" data-testid="kirmes-page">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
@@ -426,6 +454,42 @@ export default function KirmesPage() {
             ))}
           </div>
         </div>
+
+        {/* Invoice search results */}
+        {invoiceResults.length > 0 && (
+          <div className="mb-6 bg-white border border-emerald-200 rounded-xl overflow-hidden" data-testid="invoice-results">
+            <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-semibold text-emerald-800">Rechnungen ({invoiceResults.length})</span>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {invoiceResults.map(inv => (
+                <div key={inv.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50" data-testid={`invoice-${inv.id}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-semibold text-gray-900 font-mono">{inv.invoice_number}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${inv.status === "versendet" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
+                        {inv.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {inv.schausteller_firma} · {inv.event_name} · {inv.invoice_date}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-gray-900">{inv.brutto?.toFixed(2)} EUR</span>
+                    <button onClick={() => handleDownloadInvoice(inv.id)} className="p-1.5 text-emerald-500 hover:text-emerald-700" title="PDF herunterladen" data-testid={`dl-inv-${inv.id}`}>
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => navigate(`/kirmes/${inv.event_id}`)} className="p-1.5 text-gray-400 hover:text-fuchsia-600" title="Zur Veranstaltung">
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Event List */}
         {loading ? (

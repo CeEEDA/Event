@@ -3,6 +3,7 @@ import os
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,35 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
     except Exception as e:
         logger.error(f"Email send failed: {e}")
         return False
+
+
+def send_email_with_attachment(to_email: str, subject: str, html_body: str, attachment_bytes: bytes, attachment_filename: str) -> bool:
+    cfg = _get_smtp_config()
+    if not all([cfg["host"], cfg["user"], cfg["password"]]):
+        logger.error("SMTP not configured")
+        raise Exception("SMTP nicht konfiguriert")
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = f"{cfg['sender_name']} <{cfg['user']}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    att = MIMEApplication(attachment_bytes, _subtype="pdf")
+    att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+    msg.attach(att)
+
+    try:
+        with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
+            server.login(cfg["user"], cfg["password"])
+            server.sendmail(cfg["user"], to_email, msg.as_string())
+        logger.info(f"Email with attachment sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Email send with attachment failed: {e}")
+        raise
+
+
 
 
 def send_password_reset_email(to_email: str, user_name: str, reset_link: str) -> bool:

@@ -1,0 +1,94 @@
+{
+  "summary": "Iteration 31 - Tested new Kirmes-Abrechnungsmodul (Invoice Module). All 23 backend invoice tests passed. Frontend invoice search, display, and action buttons verified. Invoice number auto-increment (R26-K-NNNN), PDF generation, duplicate prevention, and netto/brutto calculation with 19% MwSt all working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "features_tested": {
+    "invoice_endpoints": {
+      "POST /api/kirmes/signups/{id}/invoice": "PASS - Generates invoice with R26-K-NNNN format, correct line items, netto/brutto calculation",
+      "POST /api/kirmes/signups/{id}/invoice (duplicate)": "PASS - Returns 400 if invoice already exists",
+      "POST /api/kirmes/events/{id}/generate-invoices": "PASS - Batch generates invoices, skips existing",
+      "GET /api/kirmes/invoices": "PASS - Lists all invoices with proper fields",
+      "GET /api/kirmes/invoices?search=R26": "PASS - Search by invoice number works",
+      "GET /api/kirmes/invoices?search=Müller": "PASS - Search by company name works",
+      "GET /api/kirmes/invoices/{id}": "PASS - Returns full invoice details with line items",
+      "GET /api/kirmes/invoices/{id}/pdf": "PASS - Returns valid PDF bytes"
+    },
+    "invoice_number_format": {
+      "format": "R{YY}-K-{NNNN} (e.g., R26-K-0001, R26-K-0002)",
+      "auto_increment": "PASS - Numbers increment correctly",
+      "uniqueness": "PASS - All numbers unique"
+    },
+    "invoice_calculation": {
+      "netto": "PASS - Sum of line items",
+      "mwst_rate": "PASS - 19%",
+      "brutto": "PASS - netto + 19% MwSt"
+    },
+    "frontend_kirmes_page": {
+      "invoice_search": "PASS - Type R26 or company name in search field",
+      "invoice_results_display": "PASS - Shows invoice number, company, event, amount",
+      "download_button": "PASS - Download button visible on each invoice result",
+      "navigation_to_event": "PASS - Arrow navigates to event detail"
+    },
+    "frontend_event_detail": {
+      "abrechnung_button": "PASS - Present in header for batch invoice generation",
+      "per_signup_actions": "PASS - Edit kWh, download PDF, send email buttons",
+      "expanded_invoice_info": "PASS - Shows invoice number, date, status, amount, PDF/email links"
+    }
+  },
+  "backend_tests": {
+    "total": 23,
+    "passed": 23,
+    "failed": 0,
+    "test_file": "/app/backend/tests/test_kirmes_invoice.py",
+    "test_classes": [
+      "TestInvoiceList (5 tests)",
+      "TestInvoiceDetail (3 tests)",
+      "TestInvoiceNumberAutoIncrement (2 tests)",
+      "TestInvoicePDF (2 tests)",
+      "TestGenerateSingleInvoice (3 tests)",
+      "TestBatchInvoiceGeneration (3 tests)",
+      "TestInvoiceCalculation (1 test)",
+      "TestInvoiceSendEmail (2 tests)",
+      "TestInvoiceFullFlow (1 test)",
+      "TestCleanup (1 test)"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes_invoice.py",
+    "/app/test_reports/pytest/pytest_kirmes_invoice_iteration31.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_kirmes_invoice.py"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 tests passed)",
+    "frontend": "100% (all invoice features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_info": {
+    "invoices_created": [
+      "R26-K-0001 (Achterbahn Müller, Rheinkirmes 2026, 0.00 EUR - test event with 0 prices)",
+      "R26-K-0002 (Meyer, Osterkirmes Neuwied, 416.50 EUR - 350 netto + 66.50 MwSt)",
+      "R26-K-0003 (Meyer, Rheinkirmes 2026, 0.00 EUR)",
+      "R26-K-0004 (TEST_INV_InvoiceFlowFirma, test event, 119.00 EUR - 100 netto + 19 MwSt)"
+    ]
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full invoice module verified: POST /api/kirmes/signups/{id}/invoice generates invoice with R{YY}-K-{NNNN} number format, includes line items (Anschlussgebühr, Stromverbrauch, Handlingaufschlag), calculates netto/brutto with 19% MwSt. PDF generation uses reportlab with custom LetterheadCanvas showing Eventenergie Deutschland GmbH & Co. KG letterhead. Search in /kirmes page finds invoices by number or company name. Event detail page has per-signup invoice actions (download PDF, send email). Existing test invoices: R26-K-0001 through R26-K-0004.",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}
