@@ -4,34 +4,31 @@
 Comprehensive monitoring and management portal for DSE power generators with EpiRent ERP integration, energy monitoring, fleet management, and Kirmes billing system.
 
 ## Tech Stack
-- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx, bcrypt, reportlab
+- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx, bcrypt, reportlab, pdfrw
 - **Frontend**: React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet/OpenStreetMap, open-location-code, jspdf, jspdf-autotable
 
 ## What's Been Implemented
 
 ### Kirmes: Abrechnungsmodul mit Rechnungsstellung (2026-03-08)
-- **Invoice Generation**: Server-side PDF generation with reportlab and custom company letterhead
-- **Invoice Number**: Auto-incrementing R{YY}-K-{NNNN} format (e.g., R26-K-0001)
+- **Invoice Generation**: Server-side PDF with company letterhead PDF as background (assets/briefpapier.pdf)
+- **Invoice Number**: Auto-incrementing R{YY}-K-{NNNN} format
 - **Billing Calculation**: Anschlussgebühr + Stromverbrauch (kWh) + Handlingaufschlag + 19% MwSt
 - **Single/Batch**: Generate invoice per signup or batch all signups in an event
-- **PDF Download**: Full letterhead with company data (Eventenergie Deutschland GmbH & Co. KG)
+- **PDF Download**: Letterhead from uploaded PDF file, no hardcoded company data
 - **Email Sending**: Invoice PDF als Anhang per E-Mail versenden
 - **Invoice Search**: Searchable in Kirmes-Verwaltung by number, company, event name
-- **Endpoints**: POST/GET /api/kirmes/invoices, /invoices/{id}/pdf, /invoices/{id}/send
+- **Status**: payment_status changes to "abgerechnet" after invoice generation
 
-### Kirmes: Booking Confirmation + Admin Password (2026-03-08)
-- Booking confirmation email after successful signup
+### Kirmes: Auth + Admin Features (2026-03-08)
+- Email+Password registration with 6-digit verification code
 - Admin password management for Schausteller
-- "Auf Rechnung" only with admin approval
+- Booking confirmation email after signup
+- "Auf Rechnung" only with admin approval (kauf_auf_rechnung flag)
 
-### Kirmes Auth: Email+Password + Verification (2026-03-08)
-- Registration with email + password + email verification (6-digit code)
-- Login with bcrypt hashed password
-
-### Kirmes-Verwaltung Phase 1 & 2 (2026-03-08)
-- Event Management, Standard-Preisliste, Public Portal
-- Event Detail, Exhibitor invitation, Purchase on Account
-- PDF Montageliste, Schausteller Management, History
+### Kirmes-Verwaltung (2026-03-08)
+- Event Management with status flow, Standard-Preisliste, Public Portal
+- Event Detail with signups, kWh fields, PDF Montageliste
+- Exhibitor invitation, Schausteller Management + Detail Page
 
 ### Earlier Completed Work
 - Generator monitoring, energy monitoring (Messkoffer), device management
@@ -41,23 +38,11 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 ## Key API Endpoints
 
 ### Kirmes Invoices
-- `POST /api/kirmes/signups/{id}/invoice` - Generate invoice for signup
+- `POST /api/kirmes/signups/{id}/invoice` - Generate for single signup
 - `POST /api/kirmes/events/{id}/generate-invoices` - Batch generate all
-- `GET /api/kirmes/invoices` - List/search invoices (?search=, ?event_id=)
-- `GET /api/kirmes/invoices/{id}` - Invoice detail
-- `GET /api/kirmes/invoices/{id}/pdf` - Download PDF
+- `GET /api/kirmes/invoices` - List/search (?search=, ?event_id=)
+- `GET /api/kirmes/invoices/{id}/pdf` - Download PDF with letterhead
 - `POST /api/kirmes/invoices/{id}/send` - Send via email
-
-### DB Collections
-- `kirmes_invoices`: {id, invoice_number, signup_id, event_id, event_name, schausteller_id, schausteller_firma, schausteller_name, schausteller_email, invoice_date, line_items[], netto, mwst_rate, mwst_amount, brutto, status, schausteller{}, event{}, created_at, created_by, sent_at, sent_to}
-
-## Company Letterhead Data
-- Eventenergie Deutschland GmbH & Co. KG
-- Thyssenstraße 10, 56626 Andernach
-- Tel: +49 (0) 2632 30921-0, Hotline: +49 (0) 800 POWER24
-- Amtsgericht Koblenz: HRA 22723, Ust.-ID: DE 333489815
-- Geschäftsführung: Christian Ecker
-- IBAN: DE86 7413 1000 0002 6260 00, BIC: TEKRDE71
 
 ## Backlog
 
@@ -77,4 +62,3 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 ## Test Credentials
 - Admin: admin@test.com / password
 - Mitarbeiter: ma1@test.com / password
-- Test Schausteller: test-verify@example.com / test1234

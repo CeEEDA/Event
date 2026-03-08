@@ -937,7 +937,7 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
     # Update signup status
     await _db.kirmes_signups.update_one(
         {"id": signup_id},
-        {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number}}
+        {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
     )
 
     return invoice_doc
@@ -996,7 +996,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
 
         await _db.kirmes_signups.update_one(
             {"id": signup["id"]},
-            {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number}}
+            {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
         )
         generated.append({"signup_id": signup["id"], "invoice_number": inv_number, "brutto": calc["brutto"]})
 
