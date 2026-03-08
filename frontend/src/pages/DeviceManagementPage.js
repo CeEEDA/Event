@@ -112,30 +112,35 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
             <span>Zaehler 4: 192.168.88.243</span>
             <span className="col-span-2 mt-1 text-gray-500">Pi: 192.168.88.249</span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3 w-full text-gray-600 hover:text-fuchsia-600"
-            data-testid="download-qr-labels-btn"
-            onClick={async (e) => {
-              e.preventDefault();
-              try {
-                const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/devices/${deviceId}/qr-labels-pdf`, {
-                  headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-                });
-                if (!resp.ok) throw new Error();
-                const blob = await resp.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `qr_labels_${deviceName || "kirmeskiste"}.pdf`;
-                a.click();
-                window.URL.revokeObjectURL(url);
-              } catch { toast.error("QR-Labels konnten nicht generiert werden"); }
-            }}
-          >
-            <QrCode className="w-3.5 h-3.5 mr-1.5" /> QR-Labels herunterladen (4x)
-          </Button>
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            {[1,2,3,4].map(i => (
+              <Button
+                key={i}
+                variant="outline"
+                size="sm"
+                className="text-xs text-gray-600 hover:text-fuchsia-600"
+                data-testid={`qr-label-${i}`}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  try {
+                    const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/devices/${deviceId}/qr-label/${i}`, {
+                      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+                    });
+                    if (!resp.ok) throw new Error();
+                    const blob = await resp.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `qr_zaehler_${i}.pdf`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                  } catch { toast.error("QR konnte nicht generiert werden"); }
+                }}
+              >
+                <QrCode className="w-3 h-3 mr-1" /> Zaehler {i}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
     </div>
