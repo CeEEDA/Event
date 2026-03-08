@@ -1487,6 +1487,10 @@ from routes.orders import router as orders_router, init_orders_routes
 init_orders_routes(db, decode_jwt_token)
 app.include_router(orders_router)
 
+from routes.kirmes import router as kirmes_router, init_kirmes_routes
+init_kirmes_routes(db, decode_jwt_token)
+app.include_router(kirmes_router)
+
 
 app.add_middleware(
     CORSMiddleware,

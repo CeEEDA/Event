@@ -1,0 +1,115 @@
+{
+  "summary": "Iteration 28 - Kirmes-Abrechnungstool (Event Management & Schausteller Registration) testing completed. All 26 backend tests passed. Frontend admin pages and public registration flow fully verified. Fixed bug in schausteller login (was using GET instead of POST).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Schausteller Login",
+        "issue": "Login was using api.get() instead of api.post() - FIXED",
+        "affected_selectors": ["[data-testid='login-btn']"],
+        "status": "FIXED"
+      }
+    ],
+    "design_issues": []
+  },
+  "features_tested": {
+    "standard_prices": {
+      "GET /api/kirmes/standard-prices": "PASS - Returns all 5 connection types (16A, 32A, 63A, 125A, Festanschluss)",
+      "PUT /api/kirmes/standard-prices": "PASS - Admin can update prices, mitarbeiter cannot"
+    },
+    "events_crud": {
+      "POST /api/kirmes/events": "PASS - Creates event with standard or custom prices, status=entwurf",
+      "GET /api/kirmes/events": "PASS - Lists events with signup_count, supports status filter",
+      "GET /api/kirmes/events/{id}": "PASS - Returns event with signups and schausteller info",
+      "PUT /api/kirmes/events/{id}": "PASS - Updates event details",
+      "DELETE /api/kirmes/events/{id}": "PASS - Only deletes entwurf events, rejects aktiv/abgerechnet"
+    },
+    "event_release": {
+      "POST /api/kirmes/events/{id}/release": "PASS - Changes status to freigegeben"
+    },
+    "public_endpoints": {
+      "POST /api/kirmes/public/register": "PASS - Public schausteller registration, rejects duplicate emails",
+      "POST /api/kirmes/public/login": "PASS - Login by email returns schausteller data",
+      "GET /api/kirmes/public/events": "PASS - Only returns freigegeben/aktiv events",
+      "POST /api/kirmes/public/signup": "PASS - Creates signup, validates connection type, prevents duplicates",
+      "GET /api/kirmes/connection-types": "PASS - Returns all 5 connection types"
+    },
+    "staff_management": {
+      "GET /api/kirmes/schausteller": "PASS - Lists all schausteller with search",
+      "GET /api/kirmes/schausteller/{id}": "PASS - Returns schausteller with signups"
+    },
+    "frontend_admin": {
+      "kirmes_page": "PASS - Events list with filters (Alle, Entwurf, Freigegeben, Aktiv, Abgeschlossen, Abgerechnet)",
+      "standard_prices_modal": "PASS - Admin can view and edit standard prices",
+      "new_event_modal": "PASS - Creates events with form validation",
+      "event_detail_page": "PASS - Shows event info, prices, signups table",
+      "release_button": "PASS - Releases event from entwurf to freigegeben"
+    },
+    "frontend_public": {
+      "auth_step": "PASS - Registration and login tabs working",
+      "register_form": "PASS - All fields present, registration creates schausteller",
+      "login_form": "PASS - Login by email works (after fix)",
+      "event_selection": "PASS - Shows only released events",
+      "signup_form": "PASS - Platznummer, connection type buttons, payment dropdown",
+      "done_step": "PASS - Shows success with signup summary"
+    }
+  },
+  "backend_tests": {
+    "total": 26,
+    "passed": 26,
+    "failed": 0,
+    "test_file": "/app/backend/tests/test_kirmes.py",
+    "test_classes": [
+      "TestStandardPrices (4 tests)",
+      "TestEvents (6 tests)",
+      "TestEventRelease (1 test)",
+      "TestEventDelete (2 tests)",
+      "TestPublicAPI (2 tests)",
+      "TestSchaustellerRegistration (4 tests)",
+      "TestPublicSignup (3 tests)",
+      "TestSchaustellerManagement (3 tests)",
+      "TestCleanup (1 test)"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes.py",
+    "/app/test_reports/pytest/pytest_kirmes_iteration28.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_kirmes.py",
+    "/app/frontend/src/pages/SchaustellerAnmeldungPage.jsx"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26 tests passed)",
+    "frontend": "100% (all features verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password",
+    "mitarbeiter": "ma1@test.com / password",
+    "test_schausteller": "hans@test.de"
+  },
+  "seed_data_info": {
+    "existing_event": "Rheinkirmes 2026 (Düsseldorf, 10.7-19.7.2026) - released to freigegeben",
+    "existing_schausteller": "hans@test.de (Hans Müller, Achterbahn Müller)",
+    "test_signup": "UITEST01 @ 16A created during testing"
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Kirmes module fully tested. Key flows: Admin creates event (entwurf) -> releases event (freigegeben) -> Public schausteller registers/logs in -> selects event -> fills signup form -> submits. Signups visible in admin event detail page. Fixed: SchaustellerAnmeldungPage.jsx line 87 was using api.get() for login, changed to api.post() to match backend POST endpoint.",
+  "bug_fix_applied": {
+    "file": "/app/frontend/src/pages/SchaustellerAnmeldungPage.jsx",
+    "line": 87,
+    "issue": "Login was using api.get() but backend /api/kirmes/public/login is a POST endpoint",
+    "fix": "Changed from api.get(`/kirmes/public/login?email=...`) to api.post(`/kirmes/public/login?email=...`, {})"
+  },
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  }
+}

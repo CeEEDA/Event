@@ -19,6 +19,9 @@ import EnergyMonitoringDetailPage from "./pages/EnergyMonitoringDetailPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
+import KirmesPage from "./pages/KirmesPage";
+import KirmesEventDetailPage from "./pages/KirmesEventDetailPage";
+import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -142,6 +145,23 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <OrderDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/kirmes/anmeldung" element={<SchaustellerAnmeldungPage />} />
+      <Route
+        path="/kirmes"
+        element={
+          <ProtectedRoute>
+            <KirmesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/kirmes/:id"
+        element={
+          <ProtectedRoute>
+            <KirmesEventDetailPage />
           </ProtectedRoute>
         }
       />
