@@ -33,14 +33,9 @@ import configparser
 from pathlib import Path
 from datetime import datetime, timezone
 
+import struct
 import requests
 from pymodbus.client import ModbusTcpClient
-from pymodbus.payload import BinaryPayloadDecoder
-
-# pymodbus 3.7+ removed Endian from constants – use raw byte order chars
-class _Endian:
-    BIG = ">"
-Endian = _Endian()
 
 
 # ====== Konstanten: EMU Professional II Modbus Register ======
@@ -151,10 +146,8 @@ def read_float32(client, register, slave_id=1):
         result = client.read_input_registers(register - 1, 2, slave=slave_id)
         if result.isError():
             return None
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            result.registers, byteorder=Endian.BIG, wordorder=Endian.BIG
-        )
-        return round(decoder.decode_32bit_float(), 4)
+        raw = struct.pack('>HH', result.registers[0], result.registers[1])
+        return round(struct.unpack('>f', raw)[0], 4)
     except Exception:
         return None
 
@@ -165,10 +158,8 @@ def read_uint64(client, register, slave_id=1):
         result = client.read_input_registers(register - 1, 4, slave=slave_id)
         if result.isError():
             return None
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            result.registers, byteorder=Endian.BIG, wordorder=Endian.BIG
-        )
-        return decoder.decode_64bit_uint()
+        raw = struct.pack('>HHHH', *result.registers[:4])
+        return struct.unpack('>Q', raw)[0]
     except Exception:
         return None
 
@@ -179,10 +170,8 @@ def read_uint32(client, register, slave_id=1):
         result = client.read_input_registers(register - 1, 2, slave=slave_id)
         if result.isError():
             return None
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            result.registers, byteorder=Endian.BIG, wordorder=Endian.BIG
-        )
-        return decoder.decode_32bit_uint()
+        raw = struct.pack('>HH', result.registers[0], result.registers[1])
+        return struct.unpack('>I', raw)[0]
     except Exception:
         return None
 
