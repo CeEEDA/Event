@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime, timezone
 import uuid
@@ -64,6 +64,20 @@ class DeviceCreate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
+    @field_validator("latitude", "longitude", mode="before")
+    @classmethod
+    def coerce_optional_float(cls, v):
+        if v is None or v == "":
+            return None
+        return float(v)
+
+    @field_validator("year_of_manufacture", mode="before")
+    @classmethod
+    def coerce_optional_int(cls, v):
+        if v is None or v == "":
+            return None
+        return int(v)
+
 
 class DeviceUpdate(BaseModel):
     device_type: Optional[str] = None
@@ -95,6 +109,20 @@ class DeviceUpdate(BaseModel):
     mqtt_password: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+    @field_validator("latitude", "longitude", mode="before")
+    @classmethod
+    def coerce_optional_float(cls, v):
+        if v is None or v == "":
+            return None
+        return float(v)
+
+    @field_validator("year_of_manufacture", mode="before")
+    @classmethod
+    def coerce_optional_int(cls, v):
+        if v is None or v == "":
+            return None
+        return int(v)
 
 
 PART_TYPES = [
