@@ -13,25 +13,45 @@ export default function QrScanner({ onScan, onError, onClose }) {
     }
 
     let cancelled = false;
+    let isRunning = false;
     const scanner = new Html5Qrcode(regionId);
     scannerRef.current = scanner;
 
-    const startPromise = scanner
+    // Suppress media abort errors (expected when stopping camera)
+    const suppressAbortError = (e) => {
+      const msg = e?.message || e?.reason?.message || "";
+      if (msg.includes("fetching process") || msg.includes("aborted")) {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+      }
+    };
+    window.addEventListener("error", suppressAbortError);
+    window.addEventListener("unhandledrejection", suppressAbortError);
+
+    const stopScanner = async () => {
+      if (!isRunning) return;
+      isRunning = false;
+      try { await scanner.stop(); } catch { /* expected */ }
+      try { scanner.clear(); } catch { /* expected */ }
+    };
+
+    scanner
       .start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 220, height: 220 } },
         (text) => {
           if (!cancelled) {
-            scanner.stop().catch(() => {});
+            stopScanner();
             onScan(text);
           }
         },
         () => {}
       )
       .then(() => {
-        // If already cancelled while starting, stop immediately
         if (cancelled) {
-          scanner.stop().catch(() => {});
+          stopScanner();
+        } else {
+          isRunning = true;
         }
       })
       .catch((err) => {
@@ -43,36 +63,17 @@ export default function QrScanner({ onScan, onError, onClose }) {
 
     return () => {
       cancelled = true;
-      // Wait for start to finish, then stop
-      startPromise.then(() => {
-        try {
-          const state = scanner.getState();
-          if (state === 2 /* SCANNING */ || state === 3 /* PAUSED */) {
-            scanner.stop().catch(() => {});
-          }
-        } catch {
-          scanner.stop().catch(() => {});
-        }
-        try { scanner.clear(); } catch { /* ignore */ }
-      }).catch(() => {
-        try { scanner.clear(); } catch { /* ignore */ }
-      });
+      stopScanner();
+      // Remove listeners after a delay to catch async errors
+      setTimeout(() => {
+        window.removeEventListener("error", suppressAbortError);
+        window.removeEventListener("unhandledrejection", suppressAbortError);
+      }, 1000);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleClose = () => {
-    const scanner = scannerRef.current;
-    if (scanner) {
-      try {
-        const state = scanner.getState();
-        if (state === 2 || state === 3) {
-          scanner.stop().catch(() => {});
-        }
-      } catch {
-        scanner.stop().catch(() => {});
-      }
-    }
     if (onClose) onClose();
   };
 
