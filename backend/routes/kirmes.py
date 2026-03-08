@@ -1231,9 +1231,21 @@ async def list_emu_meters(user: dict = Depends(_require_staff)):
     return meters
 
 
+async def _get_current_meter_kwh(device_id: str, meter_id: str) -> float:
+    """Get the latest E_imp_kWh reading from an EMU meter."""
+    latest = await _db.emu_data.find_one(
+        {"device_id": device_id, "meter_id": meter_id},
+        {"_id": 0, "E_imp_kWh": 1},
+        sort=[("ts_utc", -1)]
+    )
+    if latest and latest.get("E_imp_kWh") is not None:
+        return float(latest["E_imp_kWh"])
+    return None
+
+
 @router.put("/signups/{signup_id}/link-meter")
 async def link_meter_to_signup(signup_id: str, data: LinkMeterRequest, user: dict = Depends(_require_staff)):
-    """Link an EMU meter to a Kirmes signup."""
+    """Link an EMU meter to a Kirmes signup and auto-capture kWh Einbau."""
     signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
     if not signup:
         raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
@@ -1243,15 +1255,20 @@ async def link_meter_to_signup(signup_id: str, data: LinkMeterRequest, user: dic
     if not meter:
         raise HTTPException(status_code=404, detail="EMU-Zähler nicht gefunden")
 
-    await _db.kirmes_signups.update_one(
-        {"id": signup_id},
-        {"$set": {
-            "emu_device_id": data.emu_device_id,
-            "emu_meter_id": data.emu_meter_id,
-            "emu_meter_name": meter.get("meter_name", ""),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }}
-    )
+    update_fields = {
+        "emu_device_id": data.emu_device_id,
+        "emu_meter_id": data.emu_meter_id,
+        "emu_meter_name": meter.get("meter_name", ""),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Auto-capture current kWh reading as Einbau (only if not already set)
+    if signup.get("kwh_einbau") is None:
+        current_kwh = await _get_current_meter_kwh(data.emu_device_id, data.emu_meter_id)
+        if current_kwh is not None:
+            update_fields["kwh_einbau"] = current_kwh
+
+    await _db.kirmes_signups.update_one({"id": signup_id}, {"$set": update_fields})
     updated = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
     return updated
 
@@ -1476,7 +1493,7 @@ async def generate_meter_qr_label(meter_id: str, token: Optional[str] = None, us
 
 @router.post("/meters/{meter_id}/assign-signup")
 async def assign_meter_to_signup_via_qr(meter_id: str, data: dict, user: dict = Depends(_require_staff)):
-    """Assign a meter to a signup (used from QR code scan page)."""
+    """Assign a meter to a signup (used from QR code scan page). Auto-captures kWh Einbau."""
     signup_id = data.get("signup_id")
     if not signup_id:
         raise HTTPException(status_code=400, detail="signup_id fehlt")
@@ -1489,17 +1506,23 @@ async def assign_meter_to_signup_via_qr(meter_id: str, data: dict, user: dict = 
     if not signup:
         raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
 
-    await _db.kirmes_signups.update_one(
-        {"id": signup_id},
-        {"$set": {
-            "emu_device_id": meter["device_id"],
-            "emu_meter_id": meter_id,
-            "emu_meter_name": meter.get("meter_name", ""),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }}
-    )
+    update_fields = {
+        "emu_device_id": meter["device_id"],
+        "emu_meter_id": meter_id,
+        "emu_meter_name": meter.get("meter_name", ""),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
-    return {"message": f"Zaehler {meter.get('meter_name', '')} wurde der Anmeldung zugewiesen"}
+    # Auto-capture current kWh reading as Einbau (only if not already set)
+    if signup.get("kwh_einbau") is None:
+        current_kwh = await _get_current_meter_kwh(meter["device_id"], meter_id)
+        if current_kwh is not None:
+            update_fields["kwh_einbau"] = current_kwh
+
+    await _db.kirmes_signups.update_one({"id": signup_id}, {"$set": update_fields})
+
+    kwh_msg = f" (Einbau: {update_fields.get('kwh_einbau', '?')} kWh)" if "kwh_einbau" in update_fields else ""
+    return {"message": f"Zaehler {meter.get('meter_name', '')} wurde der Anmeldung zugewiesen{kwh_msg}"}
 
 
 @router.get("/meters/{meter_id}/info")

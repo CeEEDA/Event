@@ -56,6 +56,12 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 - Backend: routes/payments.py, routes/kirmes.py
 - Frontend: SchaustellerAnmeldungPage.jsx
 
+### Auto kWh Einbau beim Meter-Link (2026-03-08)
+- Beim Verknuepfen eines EMU-Zaehlers (link-meter / QR-Scan) wird automatisch der aktuelle E_imp_kWh-Wert als kwh_einbau gespeichert
+- Gilt fuer PUT /api/kirmes/signups/{id}/link-meter und POST /api/kirmes/meters/{id}/assign-signup
+- Nur wenn kwh_einbau noch nicht gesetzt ist (kein Ueberschreiben bestehender Werte)
+- Backend: routes/kirmes.py (_get_current_meter_kwh Hilfsfunktion)
+
 ### Zaehlerdaten-Detailseite (2026-03-08)
 - Neue Seite: /kirmes/{eventId}/zaehler/{signupId}
 - Live-Metriken: Leistung, Strom, Spannung, Energie, Frequenz
