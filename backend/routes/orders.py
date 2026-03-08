@@ -1,17 +1,29 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 import httpx
 import asyncio
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
+security = HTTPBearer()
 
 _db = None
+_decode_jwt_token = None
 
 
-def init_orders_routes(db):
-    global _db
+def init_orders_routes(db, decode_jwt_token):
+    global _db, _decode_jwt_token
     _db = db
+    _decode_jwt_token = decode_jwt_token
+
+
+async def _auth_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+    return user
 
 
 async def _get_epirent_config():
@@ -48,6 +60,7 @@ async def get_epirent_orders(
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    user: dict = Depends(_auth_user),
 ):
     """Fetch orders from EpiRent API with optional date range and search."""
     config = await _get_epirent_config()

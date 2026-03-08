@@ -18,9 +18,10 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 7. **Email Notifications**: Password reset via SMTP.
 8. **MQTT Integration**: DSE WebNet Gateways via MQTT.
 9. **Pi Data Sync**: Raspberry Pi records locally (SQLite) and syncs via HTTPS API.
+10. **EpiRent ERP Integration**: Order management page with live data from EpiRent ERP API.
 
 ## Tech Stack
-- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt
+- **Backend**: FastAPI, Python, MongoDB (Motor), GridFS, paho-mqtt, httpx
 - **Frontend**: React, Tailwind CSS, Shadcn/UI, Recharts, Leaflet/OpenStreetMap
 - **Auth**: JWT with role-based access
 - **Maps**: Leaflet + OpenStreetMap (react-leaflet)
@@ -32,50 +33,63 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 ├── backend/
 │   ├── server.py
 │   ├── mqtt_service.py
-│   ├── static/emu_sync.py          # Pi sync script
+│   ├── static/emu_sync.py
 │   └── routes/
 │       ├── generators.py
-│       ├── devices.py               # Pi fields for Messkoffer
+│       ├── devices.py
 │       ├── serviceplan.py
 │       ├── mqtt_config.py
-│       └── energy_monitoring.py     # Ingest, GPS, telemetry, data access
+│       ├── energy_monitoring.py
+│       ├── admin_settings.py
+│       └── orders.py              # NEW: EpiRent order proxy
 └── frontend/src/pages/
-    ├── AdminPage.js                 # User perms + data access range
-    ├── DeviceManagementPage.js      # Pi connection fields for Messkoffer
-    ├── EnergyMonitoringPage.js      # Dashboard + map + online filter
-    └── EnergyMonitoringDetailPage.js # Date picker + charts + CSV export
+    ├── AdminPage.js
+    ├── AdminSettingsPage.js
+    ├── DeviceManagementPage.js
+    ├── EnergyMonitoringPage.js
+    ├── EnergyMonitoringDetailPage.js
+    ├── GeneratorDashboardPage.js
+    ├── GeneratorDetailPage.js
+    └── OrdersPage.js              # NEW: Auftragsverwaltung
 ```
 
 ## What's Been Implemented
-- ✅ Full device CRUD with image uploads, document attachments, parts management
-- ✅ QR code system, service plans with cascade delete
-- ✅ Generator monitoring dashboard
-- ✅ SMTP Email, MQTT Integration backend
-- ✅ Energy Monitoring Dashboard with real EMU data (34,277 records)
-- ✅ OpenStreetMap GPS locations
-- ✅ HTTPS Ingest API for Pi sync
-- ✅ Pi Sync Script (downloadable)
-- ✅ Account-level time-based access for Kunden
-- ✅ **Pi connection fields** in Messkoffer device form (username, password, notes only — hostname/IP/SSH removed)
-- ✅ **Date range picker** (Von/Bis) replacing fixed time range selector, default = last 24h
-- ✅ **CSV Export** for selected time range (semicolon separator for German Excel)
-- ✅ **Online filtering** - overview only shows devices with data
-- ✅ **Data access range** for Kunden - admin restricts which measurement period is visible
+- All device CRUD with image uploads, document attachments, parts management
+- QR code system, service plans with cascade delete
+- Generator monitoring dashboard
+- SMTP Email, MQTT Integration backend
+- Energy Monitoring Dashboard with real EMU data
+- OpenStreetMap GPS locations
+- HTTPS Ingest API for Pi sync
+- Pi Sync Script (downloadable)
+- Account-level time-based access for Kunden
+- Pi connection fields in Messkoffer device form
+- Date range picker (Von/Bis) with CSV export
+- Online filtering - overview only shows devices with data
+- Data access range for Kunden
+- DSE890 Gateway Setup with MQTT-Info and Topic-Download
+- EpiRent ERP Integration: Admin-Einstellungen with API-Test
+- **Auftragsverwaltung (Order Management) Page** (2026-03-08):
+  - Backend proxy to EpiRent `/v1/order/filter` API with authentication
+  - Contact address resolution via parallel API calls
+  - Date range filter (default: -1 week to +4 weeks)
+  - Free-text search (order number, event, customer, address)
+  - Sortable table columns
+  - Status badges (Offen, Bestätigt, Storniert, Archiviert)
+  - Auth-protected endpoint
 
-## Key API Endpoints (Energy Monitoring)
-- `GET /api/energy-monitoring/devices` - List (with is_online field, online_only param)
-- `GET /api/energy-monitoring/devices/:id/telemetry` - Data (enforces Kunde data range)
-- `GET /api/energy-monitoring/data-access-range` - Get user's allowed data range
-- `GET /api/energy-monitoring/locations` - GPS locations
+## Key API Endpoints
+- `GET /api/orders/epirent` - Proxy to EpiRent orders (auth required, params: date_from, date_to, search, page, page_size)
+- `GET, POST, PUT, DELETE /api/admin/integrations` - CRUD for third-party integrations
+- `POST /api/admin/integrations/{id}/test` - Test integration connection
+- `GET /api/energy-monitoring/devices` - List energy monitoring devices
+- `GET /api/energy-monitoring/devices/:id/telemetry` - Device telemetry data
 - `POST /api/energy-monitoring/ingest` - Pi batch upload
-- `GET /api/download-sync-script` - Pi sync script
 
 ## User Permission Structure
 ```json
 {
   "access_type": "permanent",
-  "access_start": null,
-  "access_end": null,
   "apps": {
     "energy_monitoring": {
       "enabled": false,
@@ -88,19 +102,10 @@ A comprehensive monitoring and management portal for Deep Sea Electronics (DSE) 
 }
 ```
 
-- ✅ **Messkoffer form cleanup**: "Seriennummer" → "Gerätenummer", removed Modell/Leistung, simplified Pi section to username+password only
-- ✅ **All-in-One Pi Setup-Skript**: Single bash installer with embedded Messkoffer Logger (Shelly Pro 3EM readout + USB GPS via gpsd + local SQLite + background portal sync + 60GB auto-cleanup). One-click download from Device Management UI
-
-## Recent Changes (2026-03-06)
-- ✅ DSE Remote Control UI finalized: Button order Stop → Auto → Start, confirmation popup removed
-- ✅ Dynamic button colors based on generator status (running/stopped/standby)
-- ✅ Live DSE890/L401 MQTT integration (bidirectional: data + control)
-
-- ✅ **DSE890 Gateway Setup**: Konfigurationssektion im Geräteformular mit MQTT-Info, Topic-Download, Benutzer/Passwort
-- ✅ **EpiRent ERP Integration**: Admin-Einstellungen mit API-Test, Mandanten, Aufträge, Unterjobs, Kennzeichnungen (Ja/Nein/Nicht prüfen)
-- ✅ **EpiRent API**: Live-Verbindung zu http://217.86.214.29:18081 (848 Artikel, 586 Bestände)
-
 ## Backlog
+### P0
+- Link Generators to Orders (next step after order list)
+
 ### P1
 - Self-hosted MQTT Broker (Mosquitto) — move broker URL to .env
 - "Kirmeskiste" device type support

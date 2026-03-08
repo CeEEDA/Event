@@ -1484,7 +1484,7 @@ from routes.admin_settings import router as admin_settings_router
 app.include_router(admin_settings_router)
 
 from routes.orders import router as orders_router, init_orders_routes
-init_orders_routes(db)
+init_orders_routes(db, decode_jwt_token)
 app.include_router(orders_router)
 
 
