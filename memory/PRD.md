@@ -21,6 +21,18 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
   - Admin scannt QR -> waehlt Anmeldung -> Zaehler wird zugewiesen
 - **Meter-Zuordnungsseite**: Zeigt Zaehler-Info, aktuelle Zuweisung, offene Anmeldungen
 
+### Admin Zahlungs-Dashboard (2026-03-08)
+- Neue Seite: /kirmes/zahlungen
+- KPI-Karten: Kautionen/Rechnungen bezahlt/offen (Anzahl + EUR-Betraege)
+- Gesamteinnahmen, Veranstaltungs-Uebersicht mit Zahlungsstand
+- Transaktionsliste mit "Link senden" Button (erstellt Stripe-Link, sendet per Mail)
+- Filter nach Veranstaltung
+- Payment-Summary-Card auf Event-Detailseite
+- "Zahlungen" Button im KirmesPage Header (nur Admin)
+- Backend: GET /api/payments/dashboard, /dashboard/events, POST /send-payment-link
+- GiroCode (EPC QR Code) in Rechnungs-PDFs: COMPANY_IBAN und COMPANY_BIC in .env setzen
+- Mobile-responsive (390px iPhone)
+
 ### Stripe Payment Integration (2026-03-08)
 - Kaution nach Anmeldung per Stripe Checkout (abhaengig vom Anschlusstyp)
 - Standard-Kautionsbetraege: Schuko=50€, 16A=100€, 32A=200€, 63A=400€, 125A=800€
