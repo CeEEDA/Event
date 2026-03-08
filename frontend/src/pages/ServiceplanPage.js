@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -609,7 +609,7 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
       setShowAddEntry(false);
       loadDetail();
       onUpdate();
-    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
   };
 
   const handleDeleteEntry = async (entryId) => {
@@ -788,7 +788,7 @@ export default function ServiceplanPage() {
       toast.success("Wartungsplan erstellt");
       setSelectedPlan(res.data);
       loadData();
-    } catch (err) { toast.error(err.response?.data?.detail || "Fehler beim Erstellen"); }
+    } catch (err) { toast.error(getErrorMsg(err, "Fehler beim Erstellen")); }
     finally { setCreatingPlan(false); }
   };
 

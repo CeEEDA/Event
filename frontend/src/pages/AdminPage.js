@@ -23,7 +23,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { 
   Users, 
   Plus, 
@@ -189,7 +189,7 @@ export default function AdminPage() {
       toast.success("Schausteller gelöscht");
       loadSchausteller();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Löschen");
+      toast.error(getErrorMsg(err, "Fehler beim Löschen"));
     }
   };
 
@@ -200,7 +200,7 @@ export default function AdminPage() {
       setSchaustellerModalOpen(false);
       loadSchausteller();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Speichern");
+      toast.error(getErrorMsg(err, "Fehler beim Speichern"));
     }
   };
 
@@ -216,7 +216,7 @@ export default function AdminPage() {
       toast.success("Passwort wurde gesetzt");
       setSchaustellerNewPassword("");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Setzen des Passworts");
+      toast.error(getErrorMsg(err, "Fehler beim Setzen des Passworts"));
     }
   };
 

@@ -51,7 +51,7 @@ export default function MeterZuordnungPage() {
       load();
       setSelectedSignup("");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler bei Zuordnung");
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei Zuordnung");
     } finally { setAssigning(false); }
   };
 

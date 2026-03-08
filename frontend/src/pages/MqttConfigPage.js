@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -111,7 +111,7 @@ export default function MqttConfigPage() {
         setStatus(s.data);
       }, 2000);
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Speichern");
+      toast.error(getErrorMsg(err, "Fehler beim Speichern"));
     } finally {
       setSaving(false);
     }
@@ -152,7 +152,7 @@ export default function MqttConfigPage() {
       const res = await api.get("/mqtt/mappings");
       setMappings(res.data);
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler");
+      toast.error(getErrorMsg(err, "Fehler"));
     }
   };
 

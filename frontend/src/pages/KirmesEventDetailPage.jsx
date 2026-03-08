@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import {
@@ -239,7 +239,7 @@ export default function KirmesEventDetailPage() {
       loadEvent();
       loadInvoices();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler bei der Abrechnung");
+      toast.error(getErrorMsg(err, "Fehler bei der Abrechnung"));
     } finally { setBillingInProgress(false); }
   };
 
@@ -250,7 +250,7 @@ export default function KirmesEventDetailPage() {
       loadEvent();
       loadInvoices();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler");
+      toast.error(getErrorMsg(err, "Fehler"));
     }
   };
 
@@ -276,7 +276,7 @@ export default function KirmesEventDetailPage() {
       toast.success(r.data.message);
       loadInvoices();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Versenden");
+      toast.error(getErrorMsg(err, "Fehler beim Versenden"));
     }
   };
 
@@ -294,7 +294,7 @@ export default function KirmesEventDetailPage() {
       loadEvent();
       loadMeterData(signupId);
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Verknüpfen");
+      toast.error(getErrorMsg(err, "Fehler beim Verknüpfen"));
     }
   };
 
@@ -306,7 +306,7 @@ export default function KirmesEventDetailPage() {
       setMeterDataMap(prev => { const n = { ...prev }; delete n[signupId]; return n; });
       loadEvent();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler");
+      toast.error(getErrorMsg(err, "Fehler"));
     }
   };
 

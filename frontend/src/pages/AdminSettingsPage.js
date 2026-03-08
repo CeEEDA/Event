@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -335,7 +335,7 @@ export default function AdminSettingsPage() {
       setModalOpen(false);
       loadIntegrations();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Speichern");
+      toast.error(getErrorMsg(err, "Fehler beim Speichern"));
     }
   };
 

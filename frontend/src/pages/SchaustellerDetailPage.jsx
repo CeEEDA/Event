@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import {
@@ -59,7 +59,7 @@ export default function SchaustellerDetailPage() {
       toast.success(r.data.message);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler beim Versenden");
+      toast.error(getErrorMsg(err, "Fehler beim Versenden"));
     } finally { setSendingInvoice(null); }
   };
 

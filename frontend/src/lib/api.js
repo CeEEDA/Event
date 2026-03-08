@@ -34,6 +34,15 @@ api.interceptors.response.use(
 
 export default api;
 
+/** Extract human-readable error message from axios error (handles Pydantic validation arrays). */
+export const getErrorMsg = (err, fallback = "Fehler") => {
+  const d = err?.response?.data?.detail;
+  if (!d) return fallback;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map(e => (typeof e === "string" ? e : e?.msg || "")).filter(Boolean).join(", ") || fallback;
+  return fallback;
+};
+
 // Check if running inside a sandboxed iframe
 const isInSandboxedIframe = () => {
   try {

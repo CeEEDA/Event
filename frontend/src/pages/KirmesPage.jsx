@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
+import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -191,8 +191,7 @@ function EventModal({ open, onClose, onSaved, editing }) {
       onSaved();
       onClose();
     } catch (err) {
-      const d = err.response?.data?.detail;
-      toast.error(typeof d === "string" ? d : Array.isArray(d) ? d.map(e => e.msg).join(", ") : "Fehler");
+      toast.error(getErrorMsg(err, "Fehler"));
     }
     finally { setSaving(false); }
   };
@@ -373,7 +372,7 @@ export default function KirmesPage() {
       await api.delete(`/kirmes/events/${event.id}`);
       toast.success("Veranstaltung gelöscht");
       loadEvents();
-    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
   };
 
   const copyRegistrationLink = (eventId) => {

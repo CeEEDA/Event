@@ -106,7 +106,7 @@ export default function SchaustellerAnmeldungPage() {
       toast.success("Bestätigungscode wurde an Ihre E-Mail gesendet!");
       setStep("verify");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler bei der Registrierung");
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Registrierung");
     } finally { setSaving(false); }
   };
 
@@ -119,7 +119,7 @@ export default function SchaustellerAnmeldungPage() {
       setSchausteller(r.data);
       setStep("setpw");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Ungültiger Code");
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Ungültiger Code");
     } finally { setSaving(false); }
   };
 
@@ -132,13 +132,13 @@ export default function SchaustellerAnmeldungPage() {
       toast.success("Passwort gesetzt!");
       goToDashboard(r.data);
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler");
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler");
     } finally { setSaving(false); }
   };
 
   const handleResendCode = async () => {
     try { await api.get(`/kirmes/public/resend-code?email=${encodeURIComponent(verifyEmail)}`); toast.success("Neuer Code wurde gesendet"); }
-    catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+    catch (err) { toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler"); }
   };
 
   const handleLogin = async () => {
@@ -149,7 +149,7 @@ export default function SchaustellerAnmeldungPage() {
       toast.success(`Willkommen zurück, ${r.data.name}!`);
       goToDashboard(r.data);
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler bei der Anmeldung");
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Anmeldung");
     } finally { setSaving(false); }
   };
 
@@ -163,7 +163,7 @@ export default function SchaustellerAnmeldungPage() {
       toast.success("Anmeldung erfolgreich!");
       setStep("done");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Fehler bei der Anmeldung");
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Anmeldung");
     } finally { setSaving(false); }
   };
 
