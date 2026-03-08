@@ -102,6 +102,18 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
           ? "Enthält: 4x EMU Modbus-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst"
           : "Enthält: Shelly-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst"}
       </p>
+      {isKirmeskiste && (
+        <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-3">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Feste LAN-Adressen</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] font-mono text-gray-600">
+            <span>Zaehler 1: 192.168.88.240</span>
+            <span>Zaehler 2: 192.168.88.241</span>
+            <span>Zaehler 3: 192.168.88.242</span>
+            <span>Zaehler 4: 192.168.88.243</span>
+            <span className="col-span-2 mt-1 text-gray-500">Pi: 192.168.88.249</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
