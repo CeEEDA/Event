@@ -1518,3 +1518,9 @@ async def startup_event():
     from mqtt_service import start_mqtt_client
     loop = asyncio.get_event_loop()
     await start_mqtt_client(db, loop)
+    # Load SMTP config from DB into env vars
+    try:
+        from routes.admin_settings import load_smtp_config_from_db
+        await load_smtp_config_from_db()
+    except Exception:
+        pass

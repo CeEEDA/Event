@@ -24,6 +24,7 @@ import {
   Globe,
   RefreshCw,
   Terminal,
+  Mail,
 } from "lucide-react";
 
 /* ───── EpiRent-specific field config ───── */
@@ -276,6 +277,109 @@ function EmergentBridge() {
   );
 }
 
+/* ───── SMTP / E-Mail Config ───── */
+function SmtpConfig() {
+  const [config, setConfig] = useState({ smtp_host: "", smtp_port: 465, smtp_user: "", smtp_password: "", smtp_sender_name: "" });
+  const [loaded, setLoaded] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  useEffect(() => {
+    api.get("/admin/smtp-config").then(res => { setConfig(res.data); setLoaded(true); }).catch(() => setLoaded(true));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put("/admin/smtp-config", config);
+      toast.success("E-Mail-Konfiguration gespeichert");
+    } catch { toast.error("Fehler beim Speichern"); }
+    finally { setSaving(false); }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      await api.put("/admin/smtp-config", config);
+      const res = await api.post("/admin/smtp-config/test");
+      setTestResult(res.data);
+      if (res.data.success) toast.success(res.data.message);
+      else toast.error(res.data.message);
+    } catch { setTestResult({ success: false, message: "Testfehler" }); }
+    finally { setTesting(false); }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="smtp-config">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-fuchsia-600 to-fuchsia-500">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Mail className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">E-Mail-Konfiguration</h3>
+            <p className="text-[10px] text-fuchsia-100">SMTP-Zugangsdaten für den E-Mail-Versand</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-sm text-gray-600">SMTP-Host</Label>
+            <Input value={config.smtp_host} onChange={e => setConfig(prev => ({ ...prev, smtp_host: e.target.value }))} placeholder="smtp.example.com" className="mt-1 font-mono text-sm" data-testid="smtp-host-input" />
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Port</Label>
+            <Input type="number" value={config.smtp_port} onChange={e => setConfig(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || 465 }))} placeholder="465" className="mt-1 font-mono text-sm" data-testid="smtp-port-input" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-sm text-gray-600">Benutzername / E-Mail</Label>
+            <Input value={config.smtp_user} onChange={e => setConfig(prev => ({ ...prev, smtp_user: e.target.value }))} placeholder="user@example.com" className="mt-1 font-mono text-sm" data-testid="smtp-user-input" />
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Passwort</Label>
+            <div className="flex gap-2 mt-1">
+              <Input type={showPw ? "text" : "password"} value={config.smtp_password} onChange={e => setConfig(prev => ({ ...prev, smtp_password: e.target.value }))} placeholder="SMTP-Passwort" className="font-mono text-sm flex-1" data-testid="smtp-password-input" />
+              <Button variant="outline" size="sm" onClick={() => setShowPw(!showPw)} className="shrink-0">
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <Label className="text-sm text-gray-600">Absender-Name</Label>
+          <Input value={config.smtp_sender_name} onChange={e => setConfig(prev => ({ ...prev, smtp_sender_name: e.target.value }))} placeholder="Eventenergie Portal" className="mt-1 text-sm" data-testid="smtp-sender-input" />
+        </div>
+
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
+          <Button size="sm" onClick={handleSave} disabled={saving} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="smtp-save-btn">
+            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+            Speichern
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleTest} disabled={testing} data-testid="smtp-test-btn">
+            {testing ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Mail className="w-4 h-4 mr-1.5" />}
+            Verbindung testen
+          </Button>
+          {testResult && (
+            <span className={`flex items-center gap-1.5 text-xs font-medium ${testResult.success ? "text-emerald-600" : "text-red-600"}`} data-testid="smtp-test-result">
+              {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              {testResult.message}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Main Page ───── */
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
@@ -413,6 +517,9 @@ export default function AdminSettingsPage() {
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Emergent.sh Bridge */}
           <EmergentBridge />
+
+          {/* SMTP / E-Mail */}
+          <SmtpConfig />
 
           {/* Schnittstellen */}
           <div>

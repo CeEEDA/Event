@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
+import os
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -208,3 +209,97 @@ async def save_emergent_config(data: IntegrationCreate):
         await db.integrations.insert_one(doc)
         doc.pop("_id", None)
         return doc
+
+
+# ── SMTP / E-Mail Configuration ──
+
+SMTP_ENV_KEYS = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_SENDER_NAME"]
+
+
+class SmtpConfigUpdate(BaseModel):
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_sender_name: str = "Eventenergie Portal"
+
+
+@router.get("/smtp-config")
+async def get_smtp_config():
+    """Return current SMTP settings (password masked)."""
+    return {
+        "smtp_host": os.environ.get("SMTP_HOST", ""),
+        "smtp_port": int(os.environ.get("SMTP_PORT", "465")),
+        "smtp_user": os.environ.get("SMTP_USER", ""),
+        "smtp_password": os.environ.get("SMTP_PASSWORD", ""),
+        "smtp_sender_name": os.environ.get("SMTP_SENDER_NAME", "Eventenergie Portal"),
+    }
+
+
+@router.put("/smtp-config")
+async def update_smtp_config(data: SmtpConfigUpdate):
+    """Save SMTP settings to DB and update in-process env vars."""
+    db = get_db()
+
+    # Update os.environ so email_service picks up changes immediately
+    os.environ["SMTP_HOST"] = data.smtp_host
+    os.environ["SMTP_PORT"] = str(data.smtp_port)
+    os.environ["SMTP_USER"] = data.smtp_user
+    os.environ["SMTP_PASSWORD"] = data.smtp_password
+    os.environ["SMTP_SENDER_NAME"] = data.smtp_sender_name
+
+    # Persist to MongoDB
+    doc = {
+        "smtp_host": data.smtp_host,
+        "smtp_port": data.smtp_port,
+        "smtp_user": data.smtp_user,
+        "smtp_password": data.smtp_password,
+        "smtp_sender_name": data.smtp_sender_name,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.app_config.update_one(
+        {"config_type": "smtp"},
+        {"$set": {**doc, "config_type": "smtp"}},
+        upsert=True,
+    )
+
+    return {"message": "E-Mail-Konfiguration gespeichert", **doc}
+
+
+@router.post("/smtp-config/test")
+async def test_smtp_config():
+    """Send a test email to verify SMTP settings."""
+    import smtplib
+    host = os.environ.get("SMTP_HOST", "")
+    port = int(os.environ.get("SMTP_PORT", "465"))
+    user = os.environ.get("SMTP_USER", "")
+    password = os.environ.get("SMTP_PASSWORD", "")
+
+    if not all([host, user, password]):
+        return {"success": False, "message": "SMTP-Konfiguration unvollständig"}
+
+    try:
+        with smtplib.SMTP_SSL(host, port, timeout=10) as server:
+            server.login(user, password)
+        return {"success": True, "message": f"Verbindung zu {host}:{port} erfolgreich"}
+    except smtplib.SMTPAuthenticationError:
+        return {"success": False, "message": "Authentifizierung fehlgeschlagen (falsches Passwort oder Benutzername)"}
+    except Exception as e:
+        return {"success": False, "message": f"Verbindungsfehler: {str(e)}"}
+
+
+async def load_smtp_config_from_db():
+    """Load SMTP config from DB into os.environ on startup."""
+    db = get_db()
+    config = await db.app_config.find_one({"config_type": "smtp"}, {"_id": 0})
+    if config:
+        if config.get("smtp_host"):
+            os.environ["SMTP_HOST"] = config["smtp_host"]
+        if config.get("smtp_port"):
+            os.environ["SMTP_PORT"] = str(config["smtp_port"])
+        if config.get("smtp_user"):
+            os.environ["SMTP_USER"] = config["smtp_user"]
+        if config.get("smtp_password"):
+            os.environ["SMTP_PASSWORD"] = config["smtp_password"]
+        if config.get("smtp_sender_name"):
+            os.environ["SMTP_SENDER_NAME"] = config["smtp_sender_name"]

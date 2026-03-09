@@ -53,7 +53,11 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 - Sicherheitsfix: password_hash aus Signup-Response entfernt
 - Bug behoben: payments.py nutzte falsche Collection 'schausteller' statt 'kirmes_schausteller'
 
-### P1: Strengere Passwort-Richtlinie (2026-03-09)
+### E-Mail-Konfiguration in Admin-Einstellungen (2026-03-09)
+- SMTP-Zugangsdaten (Host, Port, User, Passwort, Absendername) editierbar
+- Sofortige Uebernahme ohne Neustart (os.environ + MongoDB Persistenz)
+- Verbindungstest-Button zum Pruefen der SMTP-Verbindung
+- Automatisches Laden der DB-Konfiguration beim Serverstart
 - Min. 8 Zeichen, 1 Ziffer, 1 Grossbuchstabe, 1 Kleinbuchstabe, 1 Sonderzeichen
 - Backend: _validate_password() in kirmes.py (public + staff endpoints)
 - Frontend: Live-Feedback mit Haekchen im Passwort-Formular
