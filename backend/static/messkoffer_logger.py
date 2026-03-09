@@ -37,7 +37,7 @@ except ImportError:
 
 def load_config():
     config = {
-        "shelly_ip": "192.168.88.252",
+        "shelly_ip": "192.168.88.240",
         "api_url": "",
         "device_key": "",
         "device_id": "",

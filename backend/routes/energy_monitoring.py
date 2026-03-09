@@ -441,7 +441,7 @@ async def generate_setup_script(device_id: str, admin: dict = Depends(require_ad
         meter = {
             "id": str(uuid.uuid4()),
             "device_id": device_id,
-            "meter_ip": "192.168.88.252",
+            "meter_ip": "192.168.88.240",
             "meter_name": f"Shelly Pro 3EM ({device_name})",
             "description": "Automatisch erstellt beim Setup",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -552,7 +552,7 @@ echo "  /opt/messkoffer_logger.py erstellt"
 echo -e "${{YELLOW}}[3/5] Schreibe Konfiguration...${{NC}}"
 cat > /etc/messkoffer.conf << 'CONFIG_EOF'
 [messkoffer]
-shelly_ip = 192.168.88.252
+shelly_ip = 192.168.88.240
 api_url = {api_base}
 device_key = {plain_key}
 device_id = {device_id}
@@ -618,7 +618,7 @@ if systemctl is-active --quiet messkoffer; then
     echo -e "${{GREEN}}==========================================${{NC}}"
     echo ""
     echo "  Geraet:      {device_name}"
-    echo "  Shelly IP:   192.168.88.252"
+    echo "  Shelly IP:   192.168.88.240"
     echo "  Device-ID:   {device_id}"
     echo "  Meter-ID:    {meter_id}"
     echo "  Datenbank:   /var/lib/messkoffer/messkoffer.sqlite"
@@ -643,7 +643,7 @@ else
     echo "  sudo journalctl -u messkoffer -n 30"
     echo ""
     echo "  Haeufige Ursachen:"
-    echo "  - Shelly nicht erreichbar (ping 192.168.88.252)"
+    echo "  - Shelly nicht erreichbar (ping 192.168.88.240)"
     echo "  - Python-Modul fehlt"
     echo ""
 fi

@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $INSTALL_DIR = "C:\eventenergie"
-$DOMAIN = "portal.eventenergie-deutschland.de"
+$DOMAIN = "portal.eventenergie.com"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Eventenergie Portal - Setup" -ForegroundColor Cyan
