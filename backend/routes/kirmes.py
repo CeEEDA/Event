@@ -668,7 +668,7 @@ async def signup_for_event(data: EventSignup):
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden oder nicht freigegeben")
 
     # Validate schausteller exists
-    sch = await _db.kirmes_schausteller.find_one({"id": data.schausteller_id}, {"_id": 0})
+    sch = await _db.kirmes_schausteller.find_one({"id": data.schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
     if not sch:
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
 

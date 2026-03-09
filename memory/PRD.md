@@ -45,6 +45,15 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 - Backend: /app/backend/routes/payments.py
 - Uses emergentintegrations Stripe checkout library
 
+### P0 Fix: Zahlungslogik korrigiert (2026-03-09)
+- Buchungen werden bei Kartenzahlung/PayPal mit Status 'pending_payment' erstellt
+- Bestaetigung + E-Mail erst nach erfolgreicher Stripe-Zahlung (Webhook/Polling)
+- 'Kauf auf Rechnung' wird sofort bestaetigt (Status 'ausstehend')
+- Frontend: Korrekte Step-Weiterleitung basierend auf payment_status
+- Sicherheitsfix: password_hash aus Signup-Response entfernt
+- Bug behoben: payments.py nutzte falsche Collection 'schausteller' statt 'kirmes_schausteller'
+
+
 ### Zaehlerdaten-Detailseite (2026-03-08)
 - Neue Seite: /kirmes/{eventId}/zaehler/{signupId}
 - Live-Metriken: Leistung, Strom, Spannung, Energie, Frequenz
@@ -95,13 +104,14 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 ## Backlog
 
 ### P0 (Next)
-- MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
+- Strengere Passwort-Richtlinie (min. 1 Ziffer, 1 Grossbuchstabe, 1 Kleinbuchstabe, 1 Sonderzeichen)
 
 ### P1
-- SMTP-Anbieter Upgrade (mail.de Tageslimit)
-- Self-hosted MQTT Broker (Mosquitto)
+- MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
+- PayPal-Integration als alternative Zahlungsmethode
 - Direkter QR-Label-Druck (Print-Button statt PDF)
-- Admin-Kautionskonfiguration in Event-UI einbauen
+- Self-hosted MQTT Broker (Mosquitto)
+- SMTP-Anbieter Upgrade (mail.de Tageslimit)
 
 ### P2
 - Admin File Size Limits
