@@ -1434,6 +1434,14 @@ async def download_dse8610_module():
 async def download_dsel401_module():
     return FileResponse("/app/backend/static/dsel401_module_topics.csv", media_type="text/csv", filename="dsel401_module_topics.csv")
 
+@api_router.get("/download/desktop-app-mac")
+async def download_desktop_app_mac():
+    file_path = "/app/backend/static/eventenergie-portal-mac.zip"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    return FileResponse(file_path, media_type="application/zip", filename="Eventenergie Portal-1.0.0-mac.zip")
+
+
 # Dynamic topic file download based on controller type
 CONTROLLER_TOPIC_MAP = {
     "DSE 8610 MKII": ("dse8610_module_topics.csv", "dse8610_module_topics.csv"),
