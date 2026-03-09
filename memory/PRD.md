@@ -53,6 +53,12 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 - Sicherheitsfix: password_hash aus Signup-Response entfernt
 - Bug behoben: payments.py nutzte falsche Collection 'schausteller' statt 'kirmes_schausteller'
 
+### P1: Strengere Passwort-Richtlinie (2026-03-09)
+- Min. 8 Zeichen, 1 Ziffer, 1 Grossbuchstabe, 1 Kleinbuchstabe, 1 Sonderzeichen
+- Backend: _validate_password() in kirmes.py (public + staff endpoints)
+- Frontend: Live-Feedback mit Haekchen im Passwort-Formular
+- Passwort fuer christian.ecker@eventenergie-deutschland.de zurueckgesetzt
+
 
 ### Zaehlerdaten-Detailseite (2026-03-08)
 - Neue Seite: /kirmes/{eventId}/zaehler/{signupId}
@@ -104,7 +110,7 @@ Comprehensive monitoring and management portal for DSE power generators with Epi
 ## Backlog
 
 ### P0 (Next)
-- Strengere Passwort-Richtlinie (min. 1 Ziffer, 1 Grossbuchstabe, 1 Kleinbuchstabe, 1 Sonderzeichen)
+- (keine offenen P0 Items)
 
 ### P1
 - MQTT Broker URL -> .env Refactoring (hardcoded in mqtt_service.py)
