@@ -26,8 +26,8 @@
       "language": "1031"
     },
     "mac": {
-      "target": ["dmg"],
-      "icon": "assets/icon.icns",
+      "target": ["zip", "dir"],
+      "icon": "assets/icon.png",
       "category": "public.app-category.business"
     },
     "files": [

@@ -121,3 +121,9 @@ frontend/node_modules/.cache/default-development/8.pack
 *.env
 *.env.*
 desktop/node_modules/electron/dist/electron
+desktop/dist/Eventenergie
+Portal-1.0.0-arm64-mac.zip
+desktop/dist/mac-arm64/Eventenergie
+Portal.app/Contents/Frameworks/Electron
+Framework.framework/Versions/A/Electron
+Framework
