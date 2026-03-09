@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 import uuid
 import bcrypt
 
+import re
+
 router = APIRouter(prefix="/api/kirmes", tags=["kirmes"])
 security = HTTPBearer()
 
@@ -23,6 +25,20 @@ def _hash_password(password: str) -> str:
 
 def _verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+
+def _validate_password(password: str):
+    """Enforce strict password policy: min 8 chars, 1 digit, 1 uppercase, 1 lowercase, 1 special char."""
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens 8 Zeichen lang sein.")
+    if not re.search(r'[0-9]', password):
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens eine Ziffer enthalten.")
+    if not re.search(r'[A-Z]', password):
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens einen Großbuchstaben enthalten.")
+    if not re.search(r'[a-z]', password):
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens einen Kleinbuchstaben enthalten.")
+    if not re.search(r'[^A-Za-z0-9]', password):
+        raise HTTPException(status_code=400, detail="Passwort muss mindestens ein Sonderzeichen enthalten.")
 
 
 def init_kirmes_routes(db, decode_jwt_token):
@@ -564,8 +580,7 @@ async def public_set_password(data: SetPasswordPublic):
         raise HTTPException(status_code=404, detail="Kein Konto gefunden.")
     if not sch.get("email_verified"):
         raise HTTPException(status_code=403, detail="E-Mail noch nicht bestätigt.")
-    if len(data.password) < 6:
-        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen lang sein.")
+    _validate_password(data.password)
     await _db.kirmes_schausteller.update_one(
         {"email": data.email},
         {"$set": {"password_hash": _hash_password(data.password), "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -779,8 +794,7 @@ async def set_schausteller_password(sch_id: str, data: SchaustellerSetPassword, 
     sch = await _db.kirmes_schausteller.find_one({"id": sch_id}, {"_id": 0})
     if not sch:
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
-    if len(data.password) < 6:
-        raise HTTPException(status_code=400, detail="Passwort muss mindestens 6 Zeichen lang sein.")
+    _validate_password(data.password)
     await _db.kirmes_schausteller.update_one(
         {"id": sch_id},
         {"$set": {

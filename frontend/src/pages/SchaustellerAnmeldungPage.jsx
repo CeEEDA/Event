@@ -12,6 +12,18 @@ import {
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+const PASSWORD_RULES = [
+  { re: /.{8,}/, label: "Mindestens 8 Zeichen" },
+  { re: /[0-9]/, label: "Mindestens eine Ziffer" },
+  { re: /[A-Z]/, label: "Mindestens ein Großbuchstabe" },
+  { re: /[a-z]/, label: "Mindestens ein Kleinbuchstabe" },
+  { re: /[^A-Za-z0-9]/, label: "Mindestens ein Sonderzeichen" },
+];
+
+function isPasswordValid(pw) {
+  return PASSWORD_RULES.every(r => r.re.test(pw));
+}
+
 const api = {
   post: (path, data) => fetch(`${BACKEND_URL}/api${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(async r => { const d = await r.json(); if (!r.ok) throw { response: { data: d } }; return { data: d }; }),
   get: (path) => fetch(`${BACKEND_URL}/api${path}`).then(async r => { const d = await r.json(); if (!r.ok) throw { response: { data: d } }; return { data: d }; }),
@@ -128,7 +140,7 @@ export default function SchaustellerAnmeldungPage() {
   };
 
   const handleSetPassword = async () => {
-    if (!newPassword || newPassword.length < 6) { toast.error("Passwort muss mindestens 6 Zeichen lang sein"); return; }
+    if (!isPasswordValid(newPassword)) { toast.error("Passwort erfüllt nicht alle Anforderungen"); return; }
     if (newPassword !== newPasswordConfirm) { toast.error("Passwörter stimmen nicht überein"); return; }
     setSaving(true);
     try {
@@ -343,12 +355,22 @@ export default function SchaustellerAnmeldungPage() {
               <div className="text-center mb-6">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-fuchsia-100 flex items-center justify-center"><KeyRound className="w-8 h-8 text-fuchsia-600" /></div>
                 <h2 className="text-xl font-bold text-gray-900 mb-1">Passwort festlegen</h2>
-                <p className="text-sm text-gray-500">Legen Sie ein Passwort für Ihr Konto fest.</p>
+                <p className="text-sm text-gray-500">Legen Sie ein sicheres Passwort für Ihr Konto fest.</p>
               </div>
               <div className="space-y-4">
-                <div><Label className="text-gray-700 text-sm">Neues Passwort</Label><PasswordInput value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Mindestens 6 Zeichen" testId="setpw-password" /></div>
+                <div><Label className="text-gray-700 text-sm">Neues Passwort</Label><PasswordInput value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 8 Zeichen, Groß-/Kleinbuchstaben, Ziffer, Sonderzeichen" testId="setpw-password" /></div>
+                {newPassword && (
+                  <div className="space-y-1" data-testid="password-rules">
+                    {PASSWORD_RULES.map((r, i) => (
+                      <div key={i} className={`flex items-center gap-2 text-xs ${r.re.test(newPassword) ? "text-emerald-600" : "text-gray-400"}`}>
+                        <Check className={`w-3 h-3 ${r.re.test(newPassword) ? "opacity-100" : "opacity-30"}`} />
+                        <span>{r.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div><Label className="text-gray-700 text-sm">Passwort wiederholen</Label><PasswordInput value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)} placeholder="Passwort bestätigen" testId="setpw-confirm" /></div>
-                <Button onClick={handleSetPassword} disabled={saving || newPassword.length < 6} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="setpw-btn">
+                <Button onClick={handleSetPassword} disabled={saving || !isPasswordValid(newPassword)} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="setpw-btn">
                   {saving ? "Wird gespeichert..." : "Passwort setzen"} <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
