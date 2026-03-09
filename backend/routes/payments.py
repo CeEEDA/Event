@@ -27,6 +27,30 @@ def init_payments(db, decode_jwt_token):
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY")
 
 
+async def _confirm_deposit_and_send_email(signup_id, amount):
+    """After successful deposit payment: activate booking and send confirmation email."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        return
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$set": {
+            "deposit_paid": True,
+            "deposit_amount": amount,
+            "deposit_paid_at": datetime.now(timezone.utc).isoformat(),
+            "payment_status": "ausstehend",
+        }},
+    )
+    try:
+        sch = await _db.kirmes_schausteller.find_one({"id": signup["schausteller_id"]}, {"_id": 0})
+        event = await _db.kirmes_events.find_one({"id": signup["event_id"]}, {"_id": 0})
+        if sch and event:
+            from routes.kirmes import _send_booking_confirmation_email
+            _send_booking_confirmation_email(sch, event, signup)
+    except Exception:
+        pass
+
+
 # ============== Auth helpers ==============
 
 async def _auth_user(credentials: HTTPAuthorizationCredentials):
@@ -122,7 +146,7 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
         raise HTTPException(status_code=400, detail="Kaution bereits bezahlt")
 
     event = await _db.kirmes_events.find_one({"id": req.event_id}, {"_id": 0, "name": 1})
-    schausteller = await _db.schausteller.find_one({"id": signup.get("schausteller_id")}, {"_id": 0})
+    schausteller = await _db.kirmes_schausteller.find_one({"id": signup.get("schausteller_id")}, {"_id": 0})
 
     connection_type = signup.get("connection_type", "16A")
     amount = await _get_deposit_amount(connection_type)
@@ -264,10 +288,7 @@ async def check_payment_status(session_id: str):
     # If paid, update related records (only once)
     if new_status == "paid" and tx.get("payment_status") != "paid":
         if tx.get("type") == "deposit":
-            await _db.kirmes_signups.update_one(
-                {"id": tx["signup_id"]},
-                {"$set": {"deposit_paid": True, "deposit_amount": tx["amount"], "deposit_paid_at": datetime.now(timezone.utc).isoformat()}},
-            )
+            await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"])
         elif tx.get("type") == "invoice":
             await _db.invoices.update_one(
                 {"id": tx["invoice_id"]},
@@ -303,10 +324,7 @@ async def stripe_webhook(request: Request):
                     {"$set": {"payment_status": "paid", "updated_at": datetime.now(timezone.utc).isoformat()}},
                 )
                 if tx.get("type") == "deposit":
-                    await _db.kirmes_signups.update_one(
-                        {"id": tx["signup_id"]},
-                        {"$set": {"deposit_paid": True, "deposit_amount": tx["amount"], "deposit_paid_at": datetime.now(timezone.utc).isoformat()}},
-                    )
+                    await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"])
                 elif tx.get("type") == "invoice":
                     await _db.invoices.update_one(
                         {"id": tx["invoice_id"]},

@@ -695,6 +695,11 @@ async def signup_for_event(data: EventSignup):
             price = p["price"]
             break
 
+    # Determine if upfront payment is required
+    # "rechnung" (purchase on account) = immediate confirmation
+    # "kreditkarte" / "paypal" = pending until payment confirmed
+    requires_payment = data.payment_method != "rechnung"
+
     signup_id = str(uuid.uuid4())
     signup_doc = {
         "id": signup_id,
@@ -705,9 +710,9 @@ async def signup_for_event(data: EventSignup):
         "connection_type": data.connection_type,
         "price": price,
         "payment_method": data.payment_method,
-        "payment_status": "ausstehend",  # ausstehend, reserviert, bezahlt, erstattet
+        "payment_status": "pending_payment" if requires_payment else "ausstehend",
         "deposit_amount": 0.0,
-        "meter_id": None,  # Will be linked later via QR code
+        "meter_id": None,
         "meter_start": None,
         "meter_end": None,
         "kwh_used": None,
@@ -718,8 +723,9 @@ async def signup_for_event(data: EventSignup):
     signup_doc.pop("_id", None)
     signup_doc["schausteller"] = sch
 
-    # Send booking confirmation email
-    _send_booking_confirmation_email(sch, event, signup_doc)
+    # Only send confirmation email for "Kauf auf Rechnung" (immediate confirmation)
+    if not requires_payment:
+        _send_booking_confirmation_email(sch, event, signup_doc)
 
     return signup_doc
 

@@ -24,6 +24,7 @@ const PAYMENT_METHODS = [
 ];
 
 const STATUS_LABELS = {
+  pending_payment: { text: "Zahlung ausstehend", cls: "bg-orange-100 text-orange-700" },
   ausstehend: { text: "Ausstehend", cls: "bg-amber-100 text-amber-700" },
   bestaetigt: { text: "Bestätigt", cls: "bg-blue-100 text-blue-700" },
   abgerechnet: { text: "Abgerechnet", cls: "bg-emerald-100 text-emerald-700" },
@@ -165,8 +166,14 @@ export default function SchaustellerAnmeldungPage() {
       const r = await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm });
       const signupId = r.data?.signup_id || r.data?.id;
       setLastSignupId(signupId);
-      toast.success("Anmeldung erfolgreich!");
-      setStep("payment");
+
+      if (r.data?.payment_status === "pending_payment") {
+        toast.success("Anmeldung vorgemerkt! Bitte bezahlen Sie die Kaution.");
+        setStep("payment");
+      } else {
+        toast.success("Anmeldung erfolgreich!");
+        setStep("done");
+      }
     } catch (err) {
       toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Anmeldung");
     } finally { setSaving(false); }
@@ -537,7 +544,7 @@ export default function SchaustellerAnmeldungPage() {
               </div>
               <h2 className="text-xl font-bold text-gray-900 mb-2">Kaution bezahlen</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Ihre Anmeldung für <strong>{selectedEvent?.name}</strong> war erfolgreich. Bitte bezahlen Sie jetzt die Kaution.
+                Ihre Anmeldung für <strong>{selectedEvent?.name}</strong> wurde vorgemerkt. Die Buchung wird erst nach Zahlungseingang bestätigt.
               </p>
               <div className="bg-gray-50 rounded-lg p-4 text-left text-sm space-y-1 mb-4">
                 <p><span className="text-gray-500">Platz:</span> <strong>{signupForm.platznummer}</strong></p>
@@ -554,8 +561,8 @@ export default function SchaustellerAnmeldungPage() {
               <Button onClick={handlePayDeposit} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mb-3" data-testid="pay-deposit-btn">
                 {saving ? "Weiterleitung..." : "Jetzt bezahlen"} <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
-              <button onClick={() => { setStep("done"); }} className="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="skip-payment-btn">
-                Später bezahlen
+              <button onClick={() => { loadBookings(schausteller.id); setStep("dashboard"); setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); }} className="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="skip-payment-btn">
+                Später bezahlen (Buchung bleibt unbestätigt)
               </button>
             </div>
           )}

@@ -1,0 +1,70 @@
+{
+  "summary": "Iteration 37 - Tested P0 Fix: Booking Payment Status Flow. All 9 backend tests passed. P0 fix verified: Bookings with kreditkarte/paypal now correctly return payment_status='pending_payment'. Bookings with rechnung (for authorized schausteller with kauf_auf_rechnung=True) correctly return payment_status='ausstehend'. Rechnung payment method correctly rejected (400 error) for schausteller without kauf_auf_rechnung flag.",
+  "p0_fix_verification": {
+    "fix_description": "Bookings were being confirmed (DB entry + email) BEFORE Stripe payment was completed. Now bookings are created with 'pending_payment' status for credit card/paypal. Only after successful payment (via webhook/polling), booking is activated to 'ausstehend' and confirmation email sent.",
+    "tests_passed": {
+      "kreditkarte_creates_pending_payment": "PASS - POST /api/kirmes/public/signup with payment_method='kreditkarte' returns payment_status='pending_payment'",
+      "paypal_creates_pending_payment": "PASS - POST /api/kirmes/public/signup with payment_method='paypal' returns payment_status='pending_payment'",
+      "rechnung_authorized_creates_ausstehend": "PASS - POST /api/kirmes/public/signup with payment_method='rechnung' (kauf_auf_rechnung=True) returns payment_status='ausstehend'",
+      "rechnung_unauthorized_returns_400": "PASS - POST /api/kirmes/public/signup with payment_method='rechnung' (kauf_auf_rechnung=False) returns 400 error 'nicht freigeschaltet'",
+      "checkout_deposit_works": "PASS - POST /api/payments/checkout/deposit works for pending_payment signups",
+      "checkout_status_polling": "PASS - GET /api/payments/checkout/status/{session_id} returns correct status"
+    }
+  },
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "frontend_verification": {
+    "step_transition_logic": "PASS - handleSignup() at line 170 checks payment_status === 'pending_payment' and goes to 'payment' step, otherwise goes to 'done' step",
+    "status_labels": "PASS - STATUS_LABELS maps pending_payment to 'Zahlung ausstehend' (orange badge)",
+    "payment_step_ui": "PASS - Shows 'Kaution bezahlen' heading, deposit amount, 'Jetzt bezahlen' and 'Später bezahlen' buttons",
+    "data_testids": "PASS - pay-deposit-btn and skip-payment-btn present with correct testids",
+    "signup_form_deposit_display": "PASS - Shows Kaution amount next to connection fee with note 'Wird nach der Anmeldung per Kreditkarte fällig'"
+  },
+  "backend_code_review": {
+    "kirmes.py_line_659_signup": "CORRECT - Line 701: requires_payment = data.payment_method != 'rechnung', Line 713: payment_status='pending_payment' if requires_payment else 'ausstehend'",
+    "kirmes.py_line_688_rechnung_check": "CORRECT - Validates kauf_auf_rechnung flag before allowing rechnung payment method",
+    "kirmes.py_line_727_email": "CORRECT - Only sends confirmation email for 'Kauf auf Rechnung' (not requires_payment)",
+    "payments.py_line_28_confirm_helper": "CORRECT - _confirm_deposit_and_send_email() updates payment_status to 'ausstehend' and sends email",
+    "payments.py_line_289_status_polling": "CORRECT - Calls _confirm_deposit_and_send_email when payment is paid",
+    "payments.py_line_327_webhook": "CORRECT - Calls _confirm_deposit_and_send_email when webhook confirms payment"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_payment_status_fix.py",
+    "/app/test_reports/pytest/pytest_payment_status_fix_iteration37.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "P0 fix correctly implemented: payment_status now drives booking confirmation flow",
+    "schausteller response in signup includes password_hash - should exclude sensitive fields",
+    "Email confirmation only sent for immediate confirmations (rechnung) - correct behavior"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_payment_status_fix.py"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "100% (all UI elements verified)"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password",
+    "test_schausteller": "test_stripe@test.de / testpass123",
+    "test_schausteller_with_rechnung_id": "044d0b7a-1f0b-422e-a4df-a5c422a513b8 (Hans Müller, kauf_auf_rechnung=True)",
+    "test_schausteller_without_rechnung_id": "e57c0a4b-245c-45e5-86ce-876855703afa (Ulf, kauf_auf_rechnung=False)"
+  },
+  "seed_data_created": "None - Used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P0 fix for payment flow fully verified. Backend: /api/kirmes/public/signup now returns payment_status based on payment_method (pending_payment for kreditkarte/paypal, ausstehend for rechnung). Frontend: SchaustellerAnmeldungPage.jsx checks payment_status in response at line 170 to determine next step. STATUS_LABELS at line 27 maps pending_payment to 'Zahlung ausstehend' (orange badge). Stripe checkout endpoints work correctly. Test file: /app/backend/tests/test_payment_status_fix.py",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": []
+  },
+  "security_note": "schausteller object in signup response includes password_hash - should be excluded for security"
+}
