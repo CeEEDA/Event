@@ -608,6 +608,63 @@ async def resend_code(email: str = Query(...)):
 
 
 @router.get("/public/my-bookings")
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    email: EmailStr
+    code: str
+    password: str
+
+
+@router.post("/public/request-password-reset")
+async def request_password_reset(data: PasswordResetRequest):
+    """Send a reset code to the schausteller's email."""
+    import random
+    sch = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden.")
+    if not sch.get("email_verified"):
+        raise HTTPException(status_code=403, detail="E-Mail ist noch nicht verifiziert.")
+    code = str(random.randint(100000, 999999))
+    await _db.kirmes_schausteller.update_one(
+        {"email": data.email},
+        {"$set": {"reset_code": code, "reset_requested_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    try:
+        from email_service import send_email
+        html = f"""<h2>Passwort zurücksetzen</h2>
+        <p>Hallo {sch['name']},</p>
+        <p>Ihr Code zum Zurücksetzen des Passworts lautet:</p>
+        <h1 style="text-align:center;font-size:36px;letter-spacing:8px;color:#a21caf;">{code}</h1>
+        <p>Falls Sie diese Anfrage nicht gestellt haben, ignorieren Sie diese E-Mail.</p>"""
+        send_email(data.email, "Passwort zurücksetzen – Eventenergie Portal", html)
+    except Exception:
+        pass
+    return {"message": "Ein Code wurde an Ihre E-Mail gesendet."}
+
+
+@router.post("/public/confirm-password-reset")
+async def confirm_password_reset(data: PasswordResetConfirm):
+    """Verify reset code and set new password."""
+    sch = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Kein Konto gefunden.")
+    if sch.get("reset_code") != data.code:
+        raise HTTPException(status_code=400, detail="Ungültiger Code.")
+    _validate_password(data.password)
+    await _db.kirmes_schausteller.update_one(
+        {"email": data.email},
+        {"$set": {"password_hash": _hash_password(data.password), "reset_code": None, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    updated = await _db.kirmes_schausteller.find_one({"email": data.email}, {"_id": 0, "password_hash": 0, "verification_code": 0, "reset_code": 0})
+    return updated
+
+
+@router.get("/public/my-bookings")
 async def get_my_bookings(schausteller_id: str = Query(...)):
     """Public endpoint - Get all bookings and invoices for a schausteller."""
     sch = await _db.kirmes_schausteller.find_one({"id": schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
