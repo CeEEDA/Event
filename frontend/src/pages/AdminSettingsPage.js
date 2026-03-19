@@ -25,6 +25,12 @@ import {
   RefreshCw,
   Terminal,
   Mail,
+  Download,
+  Cpu,
+  FileCode,
+  Settings2,
+  FileText,
+  Package,
 } from "lucide-react";
 
 /* ───── EpiRent-specific field config ───── */
@@ -273,7 +279,7 @@ function EmergentBridge() {
           <Input
             value={config.api_url}
             onChange={e => setConfig(prev => ({ ...prev, api_url: e.target.value }))}
-            placeholder="https://tankbeleg-portal.preview.emergentagent.com"
+            placeholder="https://tankbeleg-staging.preview.emergentagent.com"
             className="mt-1 font-mono text-sm"
             data-testid="emergent-url-input"
           />
@@ -431,6 +437,82 @@ function SmtpConfig() {
   );
 }
 
+/* ───── Tankbeleg Pi Downloads ───── */
+function TankbelegPiSection() {
+  const API = process.env.REACT_APP_BACKEND_URL;
+
+  const piFiles = [
+    { name: "Komplettpaket (ZIP)", desc: "Alle Dateien als Bundle", icon: Package, url: `${API}/api/download/tankbeleg-pi-bundle`, filename: "tankbeleg_pi_bundle.zip" },
+    { name: "tankbeleg_pi.py", desc: "Hauptskript - ESC/POS Parser + Sync", icon: FileCode, url: `${API}/api/download/tankbeleg-pi-script`, filename: "tankbeleg_pi.py" },
+    { name: "tankbeleg_pi.conf", desc: "Konfigurationsdatei", icon: Settings2, url: `${API}/api/download/tankbeleg-pi-config`, filename: "tankbeleg_pi.conf" },
+    { name: "tankbeleg_pi.service", desc: "Systemd-Service", icon: FileText, url: `${API}/api/download/tankbeleg-pi-service`, filename: "tankbeleg_pi.service" },
+    { name: "setup_tankbeleg_pi.sh", desc: "Installations-Skript", icon: Terminal, url: `${API}/api/download/tankbeleg-pi-setup`, filename: "setup_tankbeleg_pi.sh" },
+  ];
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="tankbeleg-pi-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-600 to-orange-500">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Cpu className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Tankbeleg Pi - Drucker-Emulator</h3>
+            <p className="text-[10px] text-amber-100">Raspberry Pi Script fuer Epson TM-U295 Belegerfassung</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-3">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Der Tankbeleg Pi emuliert einen Drucker ueber die serielle Schnittstelle (USB-zu-RS232),
+          parst die ESC/POS Belegdaten des Epson TM-U295 und synchronisiert sie automatisch mit dem Portal.
+          GPS-Erfassung und Offline-Pufferung (SQLite) sind integriert.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {piFiles.map((file) => {
+            const Icon = file.icon;
+            return (
+              <a
+                key={file.filename}
+                href={file.url}
+                download={file.filename}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all hover:shadow-sm ${
+                  file.filename.endsWith('.zip')
+                    ? 'border-amber-200 bg-amber-50 hover:border-amber-400'
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                }`}
+                data-testid={`download-${file.filename.replace(/\./g, '-')}`}
+              >
+                <Icon className={`w-4 h-4 shrink-0 ${file.filename.endsWith('.zip') ? 'text-amber-600' : 'text-gray-500'}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium text-gray-900 truncate">{file.name}</div>
+                  <div className="text-[10px] text-gray-400 truncate">{file.desc}</div>
+                </div>
+                <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              </a>
+            );
+          })}
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 mt-3">
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            <strong>Installation:</strong> Dateien auf den Raspberry Pi kopieren und <code className="bg-gray-200 px-1 rounded">sudo bash setup_tankbeleg_pi.sh</code> ausfuehren.
+            Danach <code className="bg-gray-200 px-1 rounded">/etc/tankbeleg_pi.conf</code> mit der Portal-URL konfigurieren.
+          </p>
+          <div className="flex gap-2 mt-2 flex-wrap">
+            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">ESC/POS Parser</span>
+            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">GPS (gpsd)</span>
+            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">SQLite Offline</span>
+            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">Auto-Sync</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Main Page ───── */
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
@@ -571,6 +653,9 @@ export default function AdminSettingsPage() {
 
           {/* SMTP / E-Mail */}
           <SmtpConfig />
+
+          {/* Tankbeleg Pi */}
+          <TankbelegPiSection />
 
           {/* Schnittstellen */}
           <div>

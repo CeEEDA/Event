@@ -124,10 +124,17 @@ async def _run_epirent_sync():
                 for o in parsed:
                     o["address"] = addr_map.get(o["primary_key"], "")
 
-        # Store in DB - upsert each order
+        # Store in DB - upsert each order, preserve manual address overrides
         now = datetime.now(timezone.utc).isoformat()
         for o in parsed:
             o["_synced_at"] = now
+            # Check if manual address override exists
+            existing = await _db.orders_cache.find_one(
+                {"primary_key": o["primary_key"]}, {"address_manual": 1, "address": 1}
+            )
+            if existing and existing.get("address_manual"):
+                o["address"] = existing.get("address", o["address"])
+                o["address_manual"] = True
             await _db.orders_cache.update_one(
                 {"primary_key": o["primary_key"]},
                 {"$set": o},
@@ -223,6 +230,36 @@ async def update_sync_settings(data: dict, user: dict = Depends(_auth_user)):
         upsert=True,
     )
     return {"interval_minutes": int(interval)}
+
+
+@router.get("/address-override/{order_pk}")
+async def get_address_override(order_pk: str, user: dict = Depends(_auth_user)):
+    """Get manual address override for an order."""
+    doc = await _db.order_address_overrides.find_one({"order_pk": str(order_pk)}, {"_id": 0})
+    return doc or {"order_pk": str(order_pk), "address": ""}
+
+
+@router.post("/address-override/{order_pk}")
+async def set_address_override(order_pk: str, data: dict, user: dict = Depends(_auth_user)):
+    """Set manual address override for an order."""
+    address = data.get("address", "").strip()
+    now = datetime.now(timezone.utc).isoformat()
+    await _db.order_address_overrides.update_one(
+        {"order_pk": str(order_pk)},
+        {"$set": {
+            "order_pk": str(order_pk),
+            "address": address,
+            "updated_by": user.get("name", user.get("email", "")),
+            "updated_at": now,
+        }},
+        upsert=True,
+    )
+    # Also update the cached order
+    await _db.orders_cache.update_one(
+        {"primary_key": int(order_pk) if order_pk.isdigit() else order_pk},
+        {"$set": {"address": address, "address_manual": True}},
+    )
+    return {"order_pk": str(order_pk), "address": address, "updated_at": now}
 
 
 class OrderSettingsUpdate(BaseModel):
@@ -463,6 +500,38 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
         addr_raw = raw.get("address_delivery") or {}
         address_str = _format_delivery_address(addr_raw)
 
+        # Check for manual address override
+        override = await _db.order_address_overrides.find_one({"order_pk": str(order_pk)}, {"_id": 0})
+        address_manual = False
+        if override and override.get("address"):
+            address_str = override["address"]
+            address_manual = True
+        elif not address_str:
+            # Fallback to contact address
+            contact_pk = contact.get("primary_key")
+            if contact_pk:
+                try:
+                    config2 = await _get_epirent_config()
+                    epi_headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": config2.get("api_key", "")}
+                    async with httpx.AsyncClient(timeout=10, verify=not ssl_skip) as c:
+                        c_resp = await c.get(f"{api_url}/v1/contact/{contact_pk}", headers=epi_headers)
+                        c_data = c_resp.json()
+                        c_payload = c_data.get("payload")
+                        if isinstance(c_payload, list) and len(c_payload) > 0:
+                            c_payload = c_payload[0]
+                        if isinstance(c_payload, dict):
+                            c_addr = c_payload.get("address")
+                            if isinstance(c_addr, dict):
+                                parts = []
+                                if c_addr.get("street"):
+                                    parts.append(c_addr["street"])
+                                if c_addr.get("postal_code") or c_addr.get("city"):
+                                    parts.append(f"{c_addr.get('postal_code', '')} {c_addr.get('city', '')}".strip())
+                                if parts:
+                                    address_str = ", ".join(parts)
+                except Exception:
+                    pass
+
         # Get stored settings for this order
         settings = await _db.order_settings.find_one(
             {"order_pk": order_pk}, {"_id": 0}
@@ -506,6 +575,7 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
             "contact_name": contact.get("name", ""),
             "customer_no": raw.get("customer_no"),
             "address": address_str,
+            "address_manual": address_manual,
             "address_raw": {
                 "name": addr_raw.get("name", ""),
                 "street": addr_raw.get("street", ""),

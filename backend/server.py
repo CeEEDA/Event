@@ -1441,6 +1441,45 @@ async def download_desktop_app_mac():
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     return FileResponse(file_path, media_type="application/zip", filename="Eventenergie Portal-1.0.0-mac.zip")
 
+# ============== Tankbeleg Pi Downloads ==============
+
+@api_router.get("/download/tankbeleg-pi-script")
+async def download_tankbeleg_pi_script():
+    return FileResponse("/app/backend/static/tankbeleg_pi.py", media_type="text/x-python", filename="tankbeleg_pi.py")
+
+@api_router.get("/download/tankbeleg-pi-config")
+async def download_tankbeleg_pi_config():
+    return FileResponse("/app/backend/static/tankbeleg_pi.conf", media_type="text/plain", filename="tankbeleg_pi.conf")
+
+@api_router.get("/download/tankbeleg-pi-service")
+async def download_tankbeleg_pi_service():
+    return FileResponse("/app/backend/static/tankbeleg_pi.service", media_type="text/plain", filename="tankbeleg_pi.service")
+
+@api_router.get("/download/tankbeleg-pi-setup")
+async def download_tankbeleg_pi_setup():
+    return FileResponse("/app/backend/static/setup_tankbeleg_pi.sh", media_type="application/x-sh", filename="setup_tankbeleg_pi.sh")
+
+@api_router.get("/download/tankbeleg-pi-bundle")
+async def download_tankbeleg_pi_bundle():
+    """Download all Tankbeleg Pi files as a ZIP bundle."""
+    files = [
+        ("tankbeleg_pi.py", "/app/backend/static/tankbeleg_pi.py"),
+        ("tankbeleg_pi.conf", "/app/backend/static/tankbeleg_pi.conf"),
+        ("tankbeleg_pi.service", "/app/backend/static/tankbeleg_pi.service"),
+        ("setup_tankbeleg_pi.sh", "/app/backend/static/setup_tankbeleg_pi.sh"),
+    ]
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, path in files:
+            if os.path.exists(path):
+                zf.write(path, name)
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="tankbeleg_pi_bundle.zip"'}
+    )
+
 
 # Dynamic topic file download based on controller type
 CONTROLLER_TOPIC_MAP = {

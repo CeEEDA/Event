@@ -199,6 +199,8 @@ export default function OrderDetailPage() {
   const [editFuelReceipt, setEditFuelReceipt] = useState(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [gpsMapReceipt, setGpsMapReceipt] = useState(null);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressInput, setAddressInput] = useState("");
   const { isAdmin } = useAuth();
 
   const fetchOrder = useCallback(async () => {
@@ -368,6 +370,15 @@ export default function OrderDetailPage() {
     window.open(`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`, "_blank");
   };
 
+  const saveAddress = async () => {
+    try {
+      await api.post(`/orders/address-override/${pk}`, { address: addressInput });
+      toast.success("Adresse gespeichert");
+      setEditingAddress(false);
+      fetchOrder();
+    } catch { toast.error("Fehler"); }
+  };
+
   // Liter summary helpers
   const fuelSummary = fuelReceipts.reduce((acc, r) => {
     acc.total += r.quantity_liters || 0;
@@ -447,15 +458,43 @@ export default function OrderDetailPage() {
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="order-info-address">
               <p className="text-xs text-gray-500 mb-1">Lieferanschrift</p>
-              <p className="font-semibold text-gray-900 flex items-center gap-1">
-                {order?.address ? (
-                  <>
-                    <MapPin className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
-                    {order.address}
-                  </>
-                ) : "—"}
-              </p>
-              {center && (
+              {editingAddress ? (
+                <div className="space-y-2">
+                  <Input
+                    value={addressInput}
+                    onChange={e => setAddressInput(e.target.value)}
+                    placeholder="z.B. Nuerburgring Nordschleife, 53520 Nuerburg"
+                    className="text-sm"
+                    data-testid="address-input"
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white" onClick={saveAddress} data-testid="address-save-btn">
+                      Speichern
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingAddress(false)}>
+                      Abbrechen
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-gray-900 flex items-center gap-1">
+                    {order?.address ? (
+                      <>
+                        <MapPin className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
+                        {order.address}
+                        {order.address_manual && <span className="text-[10px] text-fuchsia-500 ml-1">(manuell)</span>}
+                      </>
+                    ) : "—"}
+                  </p>
+                  {isAdmin && (
+                    <button onClick={() => { setAddressInput(order?.address || ""); setEditingAddress(true); }} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-fuchsia-600 shrink-0" title="Adresse bearbeiten" data-testid="address-edit-btn">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {center && !editingAddress && (
                 <p className="text-xs text-gray-400 mt-1">
                   {center[0].toFixed(4)}, {center[1].toFixed(4)}
                 </p>
