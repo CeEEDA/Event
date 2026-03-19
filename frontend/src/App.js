@@ -27,6 +27,7 @@ import PaymentDashboardPage from "./pages/PaymentDashboardPage";
 import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
+import FuelReceiptsPage from "./pages/FuelReceiptsPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -263,6 +264,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <EnergyMonitoringDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/fuel-receipts"
+        element={
+          <ProtectedRoute>
+            <FuelReceiptsPage />
           </ProtectedRoute>
         }
       />
