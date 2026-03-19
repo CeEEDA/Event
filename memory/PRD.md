@@ -12,38 +12,43 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ## What's Been Implemented
 
 ### Phase 1 - Portal Grundfunktionen (abgeschlossen)
-- Benutzerauthentifizierung (JWT)
-- Auftragsverwaltung (EpiRent-Integration)
-- Energiemonitoring (MQTT)
-- Zahlungsabwicklung (Stripe)
-- QR-Code-System fuer Kirmeskisten
-- Rechnungserstellung (PDF)
-- Admin-Einstellungen
-- Desktop App (Electron)
+- Auth, Auftragsverwaltung, Energiemonitoring, Zahlungen, QR, Rechnungen, Admin, Desktop
 
 ### Phase 1b - Tankbeleg Portal UI (abgeschlossen)
-- Tankbeleg-Verwaltung in OrderDetailPage.js
 - CRUD, PDF, Auto-Nummerierung, GPS-Karte, Admin-Funktionen
 
 ### Phase 1c - EpiRent API Optimierung (abgeschlossen)
 - Background-Sync, Cache, Manueller Sync, Adress-Ueberschreibung
 
 ### Phase 2 - Tankbeleg Pi Script (abgeschlossen)
-- tankbeleg_pi.py + tankbeleg_simulator.py (48 Tests)
-- ESC/POS Parser, Serial, GPS, SQLite, Auto-Sync
+- ESC/POS Parser, Serial, GPS, SQLite, Auto-Sync, 48 Tests
 
 ### Self-Hosted MQTT Broker (abgeschlossen)
-- setup_mosquitto.sh + mosquitto_eventenergie.conf
-- Let's Encrypt TLS, 3 Listener (8883, 9883, 1883)
+- Mosquitto + Let's Encrypt TLS, 3 Listener
 
-### Serviceplan Anpassungen (abgeschlossen - 2026-03-19)
-- Messkoffer/Kirmeskiste: Reduzierter Plan (nur Elektrisch + Diagnose)
-- PDF + Bilder Upload in Wartungseintraegen (max 25 MB)
-  - Sektion umbenannt: "Anhänge (Fotos & Dokumente)"
-  - Backend: attachments Array mit Metadaten (id, filename, content_type, size)
-  - Frontend: PDFs als Download-Link mit Icon, Bilder als Thumbnails
-  - Drag & Drop fuer PDFs und Bilder
-  - Größenvalidierung (25 MB) mit Fehlermeldung
+### Serviceplan Anpassungen (abgeschlossen)
+- Messkoffer/Kirmeskiste: Reduzierter Plan
+- PDF + Bilder Upload (max 25 MB)
+
+### Artikel positionieren - Status & Detail (abgeschlossen - 2026-03-19)
+- **Zeilen-Farbe**: Magenta-Hintergrund wenn Artikel gestellt, normal wenn abgebaut
+- **"Abgebaut"-Button**: Toggle-Button in jeder Zeile (gestellt <-> abgebaut)
+- **Detail-Modal**: Klick auf Zeile oeffnet Modal mit:
+  - OpenStreetMap-Karte mit genauem Standort
+  - Gestellt von (Name) und Gestellt am (Datum/Uhrzeit)
+  - Koordinaten + Plus Code
+  - Aktueller Status (gestellt/abgebaut)
+  - Link "In Google Maps oeffnen"
+- **Backend**: PATCH /api/orders/epirent/{pk}/assets/{id}/status Toggle-Endpoint
+- **Status-Zaehler**: "X gestellt · Y abgebaut" in der Sektions-Kopfzeile
+- Leaflet Marker-Icon Fix fuer Karte
+
+## Key API Endpoints
+- `/api/orders/epirent/{pk}/assets` - GET/POST Assets
+- `/api/orders/epirent/{pk}/assets/{id}/status` - PATCH Toggle Status
+- `/api/fuel-receipts/sync` - Pi-Sync
+- `/api/download/tankbeleg-pi-bundle` - Pi-Script ZIP
+- `/api/download/mosquitto-bundle` - Mosquitto ZIP
 
 ## Prioritized Backlog
 

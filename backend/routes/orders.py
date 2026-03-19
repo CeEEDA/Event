@@ -733,12 +733,40 @@ async def create_order_asset(order_pk: int, data: OrderAssetCreate, user: dict =
         "longitude": data.longitude,
         "label": data.label or data.asset_type,
         "plus_code": data.plus_code,
+        "status": "placed",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user.get("name", user.get("email", "")),
     }
     await _db.order_assets.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+
+@router.patch("/epirent/{order_pk}/assets/{asset_id}/status")
+async def update_asset_status(order_pk: int, asset_id: str, user: dict = Depends(_auth_user)):
+    """Toggle asset status between placed and dismantled."""
+    asset = await _db.order_assets.find_one({"id": asset_id, "order_pk": order_pk})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset nicht gefunden")
+
+    current = asset.get("status", "placed")
+    if current == "placed":
+        new_status = "dismantled"
+        update = {
+            "status": new_status,
+            "dismantled_at": datetime.now(timezone.utc).isoformat(),
+            "dismantled_by": user.get("name", user.get("email", "")),
+        }
+    else:
+        new_status = "placed"
+        update = {
+            "status": new_status,
+            "dismantled_at": None,
+            "dismantled_by": None,
+        }
+
+    await _db.order_assets.update_one({"id": asset_id}, {"$set": update})
+    return {"ok": True, "status": new_status}
 
 
 @router.delete("/epirent/{order_pk}/assets/{asset_id}")

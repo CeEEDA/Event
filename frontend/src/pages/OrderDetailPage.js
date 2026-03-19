@@ -34,10 +34,25 @@ import {
   Droplets,
   FileDown,
   Percent,
+  PackageMinus,
+  PackageCheck,
+  Clock,
+  User,
+  Eye,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
 import { OpenLocationCode } from "open-location-code";
 
 const olcInstance = new OpenLocationCode();
@@ -191,6 +206,7 @@ export default function OrderDetailPage() {
   const [assetLng, setAssetLng] = useState("");
   const [locating, setLocating] = useState(false);
   const [addingAsset, setAddingAsset] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState(null);
 
   // Tankbelege
   const [fuelReceipts, setFuelReceipts] = useState([]);
@@ -332,6 +348,17 @@ export default function OrderDetailPage() {
       fetchAssets();
     } catch {
       toast.error("Fehler beim Löschen");
+    }
+  };
+
+  const toggleAssetStatus = async (assetId, e) => {
+    e.stopPropagation();
+    try {
+      const { data } = await api.patch(`/orders/epirent/${pk}/assets/${assetId}/status`);
+      toast.success(data.status === "dismantled" ? "Artikel als abgebaut markiert" : "Artikel wieder als gestellt markiert");
+      fetchAssets();
+    } catch {
+      toast.error("Fehler beim Statuswechsel");
     }
   };
 
@@ -636,7 +663,7 @@ export default function OrderDetailPage() {
                 <MapPin className="w-4 h-4 text-orange-500" />
                 Artikel positionieren
               </h2>
-              <span className="text-xs text-gray-400">{assets.length} Artikel platziert</span>
+              <span className="text-xs text-gray-400">{assets.filter(a => (a.status || "placed") === "placed").length} gestellt · {assets.filter(a => a.status === "dismantled").length} abgebaut</span>
             </div>
 
             {/* Add Form */}
@@ -726,14 +753,25 @@ export default function OrderDetailPage() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Plus Code</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Koordinaten</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Erstellt von</th>
-                      <th className="w-10"></th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
+                      <th className="w-20"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {assets.map((a) => {
                       const TypeIcon = assetTypeIcon(a.asset_type).icon;
+                      const isPlaced = (a.status || "placed") === "placed";
                       return (
-                        <tr key={a.id} className="border-b border-gray-100 hover:bg-orange-50/30" data-testid={`asset-row-${a.id}`}>
+                        <tr
+                          key={a.id}
+                          className={`border-b border-gray-100 cursor-pointer transition-colors ${
+                            isPlaced
+                              ? "bg-fuchsia-50/60 hover:bg-fuchsia-100/60"
+                              : "hover:bg-gray-50"
+                          }`}
+                          data-testid={`asset-row-${a.id}`}
+                          onClick={() => setSelectedAsset(a)}
+                        >
                           <td className="px-4 py-2.5">
                             <span className="inline-flex items-center gap-1.5 text-orange-600">
                               <TypeIcon className="w-4 h-4" />
@@ -746,9 +784,28 @@ export default function OrderDetailPage() {
                             {a.latitude.toFixed(5)}, {a.longitude.toFixed(5)}
                           </td>
                           <td className="px-4 py-2.5 text-xs text-gray-400">{a.created_by}</td>
+                          <td className="px-4 py-2.5">
+                            {isPlaced ? (
+                              <button
+                                onClick={(e) => toggleAssetStatus(a.id, e)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 transition-colors"
+                                data-testid={`asset-dismantle-${a.id}`}
+                              >
+                                <PackageMinus className="w-3 h-3" /> Abgebaut
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => toggleAssetStatus(a.id, e)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+                                data-testid={`asset-restore-${a.id}`}
+                              >
+                                <PackageCheck className="w-3 h-3" /> Gestellt
+                              </button>
+                            )}
+                          </td>
                           <td className="px-2 py-2.5">
                             <button
-                              onClick={() => deleteAsset(a.id)}
+                              onClick={(e) => { e.stopPropagation(); deleteAsset(a.id); }}
                               className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors"
                               data-testid={`delete-asset-${a.id}`}
                             >
@@ -763,6 +820,115 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Asset Detail Modal */}
+          {selectedAsset && (
+            <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={() => setSelectedAsset(null)} data-testid="asset-detail-modal">
+              <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-fuchsia-600 to-fuchsia-500">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+                      <Eye className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">{selectedAsset.label || selectedAsset.asset_type}</h3>
+                      <p className="text-[11px] text-fuchsia-100">{selectedAsset.asset_type}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedAsset(null)} className="text-white/80 hover:text-white p-1" data-testid="close-asset-modal">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Map */}
+                <div className="h-56 w-full">
+                  <MapContainer
+                    center={[selectedAsset.latitude, selectedAsset.longitude]}
+                    zoom={17}
+                    style={{ height: "100%", width: "100%" }}
+                    scrollWheelZoom={true}
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <Marker position={[selectedAsset.latitude, selectedAsset.longitude]}>
+                      <Popup>{selectedAsset.label || selectedAsset.asset_type}</Popup>
+                    </Marker>
+                  </MapContainer>
+                </div>
+
+                {/* Details */}
+                <div className="p-5 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <User className="w-3.5 h-3.5 text-fuchsia-500" />
+                        <span className="text-[10px] text-gray-400 font-medium">Gestellt von</span>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900" data-testid="asset-detail-created-by">{selectedAsset.created_by}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Clock className="w-3.5 h-3.5 text-fuchsia-500" />
+                        <span className="text-[10px] text-gray-400 font-medium">Gestellt am</span>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900" data-testid="asset-detail-created-at">
+                        {selectedAsset.created_at ? new Date(selectedAsset.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <MapPin className="w-3.5 h-3.5 text-fuchsia-500" />
+                        <span className="text-[10px] text-gray-400 font-medium">Koordinaten</span>
+                      </div>
+                      <p className="text-xs font-mono text-gray-700" data-testid="asset-detail-coords">{selectedAsset.latitude.toFixed(6)}, {selectedAsset.longitude.toFixed(6)}</p>
+                      {selectedAsset.plus_code && <p className="text-[10px] font-mono text-gray-400 mt-0.5">{selectedAsset.plus_code}</p>}
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {(selectedAsset.status || "placed") === "placed" ? (
+                          <PackageCheck className="w-3.5 h-3.5 text-fuchsia-500" />
+                        ) : (
+                          <PackageMinus className="w-3.5 h-3.5 text-gray-400" />
+                        )}
+                        <span className="text-[10px] text-gray-400 font-medium">Status</span>
+                      </div>
+                      {(selectedAsset.status || "placed") === "placed" ? (
+                        <p className="text-sm font-medium text-fuchsia-700">Gestellt</p>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-gray-500">Abgebaut</p>
+                          {selectedAsset.dismantled_by && (
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              von {selectedAsset.dismantled_by}
+                              {selectedAsset.dismantled_at && ` am ${new Date(selectedAsset.dismantled_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Open in Google Maps */}
+                  <a
+                    href={`https://www.google.com/maps?q=${selectedAsset.latitude},${selectedAsset.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-fuchsia-50 text-fuchsia-700 rounded-lg text-sm font-medium hover:bg-fuchsia-100 transition-colors"
+                    data-testid="asset-detail-google-maps"
+                  >
+                    <MapPin className="w-4 h-4" />
+                    In Google Maps öffnen
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Tankbelege Section */}
           <div className="bg-white rounded-lg border border-gray-200" data-testid="fuel-receipts-section">
