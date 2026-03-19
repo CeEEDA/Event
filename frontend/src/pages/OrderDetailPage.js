@@ -758,7 +758,11 @@ export default function OrderDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {assets.map((a) => {
+                    {[...assets].sort((a, b) => {
+                      const aPlaced = (a.status || "placed") === "placed" ? 0 : 1;
+                      const bPlaced = (b.status || "placed") === "placed" ? 0 : 1;
+                      return aPlaced - bPlaced;
+                    }).map((a) => {
                       const TypeIcon = assetTypeIcon(a.asset_type).icon;
                       const isPlaced = (a.status || "placed") === "placed";
                       return (
@@ -766,8 +770,8 @@ export default function OrderDetailPage() {
                           key={a.id}
                           className={`border-b border-gray-100 cursor-pointer transition-colors ${
                             isPlaced
-                              ? "bg-fuchsia-50/60 hover:bg-fuchsia-100/60"
-                              : "hover:bg-gray-50"
+                              ? "bg-fuchsia-100 border-l-[5px] border-l-fuchsia-500 hover:bg-fuchsia-200"
+                              : "bg-white hover:bg-gray-50"
                           }`}
                           data-testid={`asset-row-${a.id}`}
                           onClick={() => setSelectedAsset(a)}
