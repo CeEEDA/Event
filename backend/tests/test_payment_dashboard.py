@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://tankbeleg-staging.preview.emergentagent.com"
+                "origin_url": "https://tanker-receipt.preview.emergentagent.com"
             },
             timeout=30
         )

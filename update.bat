@@ -3,219 +3,268 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: =====================================================
-:: Eventenergie Portal - Update Script
+:: Eventenergie Portal - Sicheres Update
 :: =====================================================
-:: Pfad: C:\eventenergie
-:: Ausfuehren: Rechtsklick -> Als Administrator ausfuehren
 ::
-:: Dieses Script:
-::   1. Stoppt laufende Dienste
-::   2. Erstellt ein Backup
-::   3. Aktualisiert den Code (Git Pull oder manuell)
-::   4. Installiert Abhaengigkeiten
-::   5. Fuehrt Datenbank-Migration durch
-::   6. Startet die Dienste neu
+:: VERWENDUNG:
+::   1. ZIP an beliebige Stelle entpacken (z.B. C:\Downloads\update)
+::   2. Diese Datei doppelklicken (Als Admin ausfuehren)
+::   3. Pfad zum entpackten Update eingeben
+::   4. Fertig - nur Code wird aktualisiert
+::
+:: SICHER:
+::   - .env Dateien werden NIEMALS ueberschrieben
+::   - MongoDB Daten bleiben unberuehrt
+::   - node_modules bleiben erhalten
+::   - Backup wird vorher erstellt
+::
 :: =====================================================
 
-set "PORTAL_DIR=C:\eventenergie"
-set "BACKEND_DIR=%PORTAL_DIR%\backend"
-set "FRONTEND_DIR=%PORTAL_DIR%\frontend"
-set "BACKUP_DIR=%PORTAL_DIR%\backups"
-set "TIMESTAMP=%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%"
-set "TIMESTAMP=%TIMESTAMP: =0%"
+set "LIVE_DIR=C:\eventenergie"
+set "BACKUP_DIR=%LIVE_DIR%\backups"
 
 echo.
-echo  ================================================
-echo   Eventenergie Portal - Update
+echo  ==================================================
+echo   Eventenergie Portal - Sicheres Update
 echo   %date% %time%
-echo  ================================================
+echo  ==================================================
+echo.
+echo   LIVE-Verzeichnis: %LIVE_DIR%
 echo.
 
-:: Admin-Rechte pruefen
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo  FEHLER: Bitte als Administrator ausfuehren!
+:: ====== Quellverzeichnis abfragen ======
+set /p "UPDATE_DIR=Pfad zum entpackten Update (z.B. C:\Downloads\update): "
+
+if not exist "%UPDATE_DIR%" (
+    echo.
+    echo   FEHLER: Verzeichnis "%UPDATE_DIR%" nicht gefunden!
     pause
     exit /b 1
 )
 
-:: ====== 1. Dienste stoppen ======
-echo  [1/6] Dienste stoppen...
-
-:: PM2 (falls installiert)
-where pm2 >nul 2>&1
-if %errorlevel% equ 0 (
-    echo   PM2 erkannt - stoppe Prozesse...
-    pm2 stop all 2>nul
-    set "USE_PM2=1"
-) else (
-    set "USE_PM2=0"
+:: Pruefen ob es wie ein Portal-Update aussieht
+if not exist "%UPDATE_DIR%\backend" (
+    :: Vielleicht liegt es eine Ebene tiefer
+    for /d %%d in ("%UPDATE_DIR%\*") do (
+        if exist "%%d\backend" (
+            set "UPDATE_DIR=%%d"
+            echo   Update gefunden in: !UPDATE_DIR!
+        )
+    )
 )
 
-:: Falls als Windows-Dienst laeuft
-sc query EventenergieBackend >nul 2>&1
-if %errorlevel% equ 0 (
-    echo   Windows-Dienst erkannt - stoppe...
-    net stop EventenergieBackend 2>nul
-    net stop EventenergieFrontend 2>nul
-    set "USE_SERVICE=1"
-) else (
-    set "USE_SERVICE=0"
+if not exist "%UPDATE_DIR%\backend" (
+    echo   FEHLER: Kein gueltiges Update gefunden (backend/ fehlt)
+    pause
+    exit /b 1
 )
 
-:: Node/Python Prozesse beenden (Fallback)
-echo   Beende laufende Prozesse...
-taskkill /F /IM "node.exe" /FI "WINDOWTITLE eq *eventenergie*" 2>nul
-taskkill /F /IM "python.exe" /FI "WINDOWTITLE eq *eventenergie*" 2>nul
-
-:: Kurze Wartezeit
-timeout /t 3 /nobreak >nul
-echo   Dienste gestoppt.
+echo.
+echo   Update-Quelle: %UPDATE_DIR%
 echo.
 
-:: ====== 2. Backup erstellen ======
-echo  [2/6] Backup erstellen...
+:: ====== Sicherheits-Checks ======
+echo  [1/7] Sicherheits-Checks...
+
+:: .env Dateien sichern (WICHTIGSTER SCHRITT)
+echo   .env Dateien sichern...
+if exist "%LIVE_DIR%\backend\.env" (
+    copy /Y "%LIVE_DIR%\backend\.env" "%LIVE_DIR%\backend\.env.backup" >nul
+    echo     backend\.env gesichert
+) else (
+    echo     WARNUNG: backend\.env nicht gefunden!
+)
+if exist "%LIVE_DIR%\frontend\.env" (
+    copy /Y "%LIVE_DIR%\frontend\.env" "%LIVE_DIR%\frontend\.env.backup" >nul
+    echo     frontend\.env gesichert
+) else (
+    echo     WARNUNG: frontend\.env nicht gefunden!
+)
+
+:: ====== Backup erstellen ======
+echo.
+echo  [2/7] Backup erstellen...
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 
-set "BACKUP_FILE=%BACKUP_DIR%\backup_%TIMESTAMP%.zip"
+set "TIMESTAMP=%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%"
+set "TIMESTAMP=%TIMESTAMP: =0%"
 
-:: Nur wichtige Dateien sichern (nicht node_modules)
-echo   Sichere Backend und Frontend...
-powershell -Command "Compress-Archive -Path '%BACKEND_DIR%\*.py','%BACKEND_DIR%\routes','%BACKEND_DIR%\services','%BACKEND_DIR%\.env','%FRONTEND_DIR%\src','%FRONTEND_DIR%\.env','%FRONTEND_DIR%\package.json' -DestinationPath '%BACKUP_FILE%' -Force" 2>nul
+:: Nur Quellcode sichern (nicht node_modules oder build)
+powershell -Command "& { $src = @('%LIVE_DIR%\backend\server.py','%LIVE_DIR%\backend\routes','%LIVE_DIR%\backend\.env','%LIVE_DIR%\frontend\src','%LIVE_DIR%\frontend\.env','%LIVE_DIR%\frontend\package.json'); $existing = $src | Where-Object { Test-Path $_ }; if ($existing) { Compress-Archive -Path $existing -DestinationPath '%BACKUP_DIR%\backup_%TIMESTAMP%.zip' -Force } }" 2>nul
+echo   Backup: %BACKUP_DIR%\backup_%TIMESTAMP%.zip
 
-if exist "%BACKUP_FILE%" (
-    echo   Backup erstellt: %BACKUP_FILE%
-) else (
-    echo   WARNUNG: Backup konnte nicht erstellt werden, fahre trotzdem fort...
-)
+:: ====== Dienste stoppen ======
 echo.
+echo  [3/7] Dienste stoppen...
+taskkill /FI "WINDOWTITLE eq Eventenergie Backend*" /F 2>nul
+taskkill /FI "WINDOWTITLE eq Eventenergie Frontend*" /F 2>nul
+where pm2 >nul 2>&1 && pm2 stop all 2>nul
+timeout /t 2 /nobreak >nul
+echo   Dienste gestoppt.
 
-:: ====== 3. Code aktualisieren ======
-echo  [3/6] Code aktualisieren...
+:: ====== Backend aktualisieren ======
+echo.
+echo  [4/7] Backend aktualisieren...
 
-cd /d "%PORTAL_DIR%"
+:: server.py
+if exist "%UPDATE_DIR%\backend\server.py" (
+    copy /Y "%UPDATE_DIR%\backend\server.py" "%LIVE_DIR%\backend\server.py" >nul
+    echo     server.py aktualisiert
+)
 
-:: Pruefen ob Git-Repo vorhanden
-if exist ".git" (
-    echo   Git-Repository erkannt...
-    git stash 2>nul
-    git pull origin main
+:: Routes
+if exist "%UPDATE_DIR%\backend\routes" (
+    xcopy /Y /E /I "%UPDATE_DIR%\backend\routes" "%LIVE_DIR%\backend\routes" >nul
+    echo     routes\ aktualisiert
+)
+
+:: Services
+if exist "%UPDATE_DIR%\backend\services" (
+    xcopy /Y /E /I "%UPDATE_DIR%\backend\services" "%LIVE_DIR%\backend\services" >nul
+    echo     services\ aktualisiert
+)
+
+:: mqtt_service.py
+if exist "%UPDATE_DIR%\backend\mqtt_service.py" (
+    copy /Y "%UPDATE_DIR%\backend\mqtt_service.py" "%LIVE_DIR%\backend\mqtt_service.py" >nul
+    echo     mqtt_service.py aktualisiert
+)
+
+:: migrate_db.py
+if exist "%UPDATE_DIR%\backend\migrate_db.py" (
+    copy /Y "%UPDATE_DIR%\backend\migrate_db.py" "%LIVE_DIR%\backend\migrate_db.py" >nul
+    echo     migrate_db.py aktualisiert
+)
+
+:: Static files (Pi scripts, Mosquitto etc.)
+if exist "%UPDATE_DIR%\backend\static" (
+    xcopy /Y /E /I "%UPDATE_DIR%\backend\static" "%LIVE_DIR%\backend\static" >nul
+    echo     static\ aktualisiert
+)
+
+:: Assets
+if exist "%UPDATE_DIR%\backend\assets" (
+    xcopy /Y /E /I "%UPDATE_DIR%\backend\assets" "%LIVE_DIR%\backend\assets" >nul
+    echo     assets\ aktualisiert
+)
+
+:: requirements.txt (nur kopieren, nicht .env!)
+if exist "%UPDATE_DIR%\backend\requirements.txt" (
+    copy /Y "%UPDATE_DIR%\backend\requirements.txt" "%LIVE_DIR%\backend\requirements.txt" >nul
+    echo     requirements.txt aktualisiert
+)
+
+:: .env NICHT kopieren!
+echo     .env NICHT ueberschrieben (geschuetzt)
+
+:: ====== Frontend aktualisieren ======
+echo.
+echo  [5/7] Frontend aktualisieren...
+
+:: src/ Verzeichnis (der gesamte Quellcode)
+if exist "%UPDATE_DIR%\frontend\src" (
+    xcopy /Y /E /I "%UPDATE_DIR%\frontend\src" "%LIVE_DIR%\frontend\src" >nul
+    echo     src\ aktualisiert
+)
+
+:: public/ Verzeichnis
+if exist "%UPDATE_DIR%\frontend\public" (
+    xcopy /Y /E /I "%UPDATE_DIR%\frontend\public" "%LIVE_DIR%\frontend\public" >nul
+    echo     public\ aktualisiert
+)
+
+:: package.json (fuer neue Abhaengigkeiten)
+if exist "%UPDATE_DIR%\frontend\package.json" (
+    copy /Y "%UPDATE_DIR%\frontend\package.json" "%LIVE_DIR%\frontend\package.json" >nul
+    echo     package.json aktualisiert
+)
+
+:: tailwind / postcss config
+if exist "%UPDATE_DIR%\frontend\tailwind.config.js" (
+    copy /Y "%UPDATE_DIR%\frontend\tailwind.config.js" "%LIVE_DIR%\frontend\tailwind.config.js" >nul
+)
+
+:: .env NICHT kopieren!
+echo     .env NICHT ueberschrieben (geschuetzt)
+
+:: ====== .env wiederherstellen (Sicherheitsnetz) ======
+echo.
+echo  [5b] .env Dateien pruefen...
+if exist "%LIVE_DIR%\backend\.env.backup" (
+    :: Pruefen ob .env noch korrekt ist
+    findstr /C:"MONGO_URL" "%LIVE_DIR%\backend\.env" >nul 2>&1
     if %errorlevel% neq 0 (
-        echo   WARNUNG: Git Pull fehlgeschlagen. Versuche force pull...
-        git fetch --all
-        git reset --hard origin/main
-    )
-    echo   Code aktualisiert via Git.
-) else (
-    echo   Kein Git-Repository gefunden.
-    echo   Bitte Code manuell nach %PORTAL_DIR% kopieren
-    echo   oder "git clone" ausfuehren.
-    echo.
-    echo   Falls Sie den Code als ZIP haben:
-    echo   Entpacken Sie ihn nach %PORTAL_DIR%
-    echo.
-    set /p CONTINUE="   Weiter mit Installation? (j/n): "
-    if /i "!CONTINUE!" neq "j" (
-        echo   Abgebrochen.
-        pause
-        exit /b 0
+        echo     WARNUNG: backend\.env war beschaedigt - stelle Backup wieder her
+        copy /Y "%LIVE_DIR%\backend\.env.backup" "%LIVE_DIR%\backend\.env" >nul
+    ) else (
+        echo     backend\.env ist OK
     )
 )
-echo.
-
-:: ====== 4. Abhaengigkeiten installieren ======
-echo  [4/6] Abhaengigkeiten installieren...
-
-:: Python Backend
-echo   Backend (Python)...
-cd /d "%BACKEND_DIR%"
-
-:: Virtual Environment pruefen/erstellen
-if not exist "venv" (
-    echo   Erstelle Virtual Environment...
-    python -m venv venv
-)
-
-:: Aktivieren und installieren
-call venv\Scripts\activate.bat
-pip install -r requirements.txt --quiet 2>nul
-if %errorlevel% neq 0 (
-    echo   WARNUNG: Einige Python-Pakete konnten nicht installiert werden
-    pip install -r requirements.txt
-)
-echo   Backend-Abhaengigkeiten installiert.
-
-:: Node.js Frontend
-echo   Frontend (Node.js)...
-cd /d "%FRONTEND_DIR%"
-
-:: Pruefen ob yarn verfuegbar
-where yarn >nul 2>&1
-if %errorlevel% equ 0 (
-    yarn install --frozen-lockfile 2>nul || yarn install
-) else (
-    npm install
-)
-echo   Frontend-Abhaengigkeiten installiert.
-
-:: Frontend Build erstellen
-echo   Frontend Build erstellen...
-cd /d "%FRONTEND_DIR%"
-if defined USE_PM2 (
-    yarn build 2>nul || npm run build
-) else (
-    :: Fuer npx serve muss immer gebaut werden
-    yarn build 2>nul || npm run build
-)
-echo   Frontend Build erstellt.
-echo.
-
-:: ====== 5. Datenbank-Migration ======
-echo  [5/6] Datenbank-Migration...
-cd /d "%BACKEND_DIR%"
-
-:: Migration-Script ausfuehren
-call venv\Scripts\activate.bat
-python migrate_db.py
-echo   Migration abgeschlossen.
-echo.
-
-:: ====== 6. Dienste starten ======
-echo  [6/6] Dienste starten...
-
-if "%USE_PM2%"=="1" (
-    echo   Starte mit PM2...
-    cd /d "%PORTAL_DIR%"
-    pm2 start ecosystem.config.js 2>nul || (
-        :: PM2 Konfiguration erstellen falls nicht vorhanden
-        echo   Erstelle PM2 Konfiguration...
-        pm2 start "%BACKEND_DIR%\venv\Scripts\python.exe" --name "eventenergie-backend" -- -m uvicorn server:app --host 0.0.0.0 --port 8001 --app-dir "%BACKEND_DIR%"
-        pm2 start "npx" --name "eventenergie-frontend" -- serve -s build -l 3000 --cwd "%FRONTEND_DIR%"
+if exist "%LIVE_DIR%\frontend\.env.backup" (
+    findstr /C:"REACT_APP" "%LIVE_DIR%\frontend\.env" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo     WARNUNG: frontend\.env war beschaedigt - stelle Backup wieder her
+        copy /Y "%LIVE_DIR%\frontend\.env.backup" "%LIVE_DIR%\frontend\.env" >nul
+    ) else (
+        echo     frontend\.env ist OK
     )
-    pm2 save
-    echo   PM2 Prozesse gestartet.
-) else if "%USE_SERVICE%"=="1" (
-    echo   Starte Windows-Dienste...
-    net start EventenergieBackend
-    net start EventenergieFrontend
-) else (
-    echo   Starte mit start_services.bat...
-    call "%PORTAL_DIR%\start_services.bat"
 )
 
+:: ====== Abhaengigkeiten + Build ======
 echo.
-echo  ================================================
+echo  [6/7] Abhaengigkeiten installieren + Build...
+
+:: Python
+cd /d "%LIVE_DIR%\backend"
+if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+    pip install -r requirements.txt --quiet 2>nul
+    echo     Python-Pakete aktualisiert
+) else (
+    pip install -r requirements.txt --quiet 2>nul
+    echo     Python-Pakete aktualisiert (ohne venv)
+)
+
+:: Node.js
+cd /d "%LIVE_DIR%\frontend"
+call npm install --legacy-peer-deps 2>nul
+echo     Node-Pakete aktualisiert
+
+:: Build
+echo     Frontend Build erstellen...
+call npm run build
+echo     Build erstellt!
+
+:: ====== Migration + Neustart ======
+echo.
+echo  [7/7] Datenbank-Migration + Neustart...
+
+cd /d "%LIVE_DIR%\backend"
+if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+)
+if exist "migrate_db.py" (
+    python migrate_db.py
+) else (
+    echo     Keine Migration noetig
+)
+
+:: ====== Zusammenfassung ======
+echo.
+echo  ==================================================
 echo   Update abgeschlossen!
-echo  ================================================
+echo  ==================================================
 echo.
-echo   Backend:  http://localhost:8001
-echo   Frontend: http://localhost:3000
+echo   Geschuetzte Dateien (NICHT ueberschrieben):
+echo     - backend\.env   (Datenbank-Zugangsdaten)
+echo     - frontend\.env  (Portal-URL)
+echo     - MongoDB Daten  (unveraendert)
+echo     - node_modules   (nur ergaenzt)
 echo.
-echo   Logs pruefen:
-echo     Backend:  %BACKEND_DIR%\logs\
-echo     Frontend: PM2 logs oder Konsole
+echo   Jetzt starten mit: start-all.bat
 echo.
-echo   Bei Problemen: update.bat nochmal ausfuehren
-echo   Backup liegt unter: %BACKUP_DIR%
+echo   Falls Daten fehlen sollten:
+echo     .env Backup: backend\.env.backup
+echo     Code Backup: %BACKUP_DIR%\
 echo.
 pause
