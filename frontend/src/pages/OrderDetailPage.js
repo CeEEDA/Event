@@ -198,6 +198,7 @@ export default function OrderDetailPage() {
   const [showFuelModal, setShowFuelModal] = useState(false);
   const [editFuelReceipt, setEditFuelReceipt] = useState(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [gpsMapReceipt, setGpsMapReceipt] = useState(null);
   const { isAdmin } = useAuth();
 
   const fetchOrder = useCallback(async () => {
@@ -810,6 +811,11 @@ export default function OrderDetailPage() {
                         {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {isAdmin && r.gps_lat && r.gps_lng && (
+                          <button onClick={() => setGpsMapReceipt(r)} className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600" title="GPS-Position" data-testid={`fuel-gps-${r.id}`}>
+                            <MapPin className="w-4 h-4" />
+                          </button>
+                        )}
                         {isAdmin && (
                           <button onClick={() => { setEditFuelReceipt(r); setShowFuelModal(true); }} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="Bearbeiten" data-testid={`fuel-edit-${r.id}`}>
                             <Pencil className="w-4 h-4" />
@@ -849,6 +855,14 @@ export default function OrderDetailPage() {
               receipts={fuelReceipts}
               onClose={() => setShowAdjustModal(false)}
               onSave={() => { setShowAdjustModal(false); fetchFuelReceipts(); }}
+            />
+          )}
+
+          {/* GPS Map Modal */}
+          {gpsMapReceipt && (
+            <GpsMapModal
+              receipt={gpsMapReceipt}
+              onClose={() => setGpsMapReceipt(null)}
             />
           )}
         </div>
@@ -1054,6 +1068,47 @@ function FuelAdjustModal({ orderPk, receipts, onClose, onSave }) {
             Speichern
           </Button>
           <Button variant="outline" onClick={onClose} className="flex-1">Abbrechen</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function GpsMapModal({ receipt, onClose }) {
+  const lat = receipt.gps_lat;
+  const lng = receipt.gps_lng;
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.003},${lng + 0.005},${lat + 0.003}&layer=mapnik&marker=${lat},${lng}`;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()} data-testid="gps-map-modal">
+        <div className="p-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-blue-500" />
+            GPS-Position Tankvorgang
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Beleg #{receipt.beleg_nr || "—"} | {receipt.date} {receipt.time} | {receipt.fuel_type_label} {receipt.quantity_liters?.toFixed(0)} L
+          </p>
+          <p className="text-xs font-mono text-gray-400 mt-0.5">{lat?.toFixed(6)}, {lng?.toFixed(6)}</p>
+        </div>
+        <iframe
+          title="GPS Position"
+          src={mapUrl}
+          className="w-full h-72 border-0"
+          loading="lazy"
+        />
+        <div className="p-3 flex justify-end gap-2">
+          <Button
+            size="sm" variant="outline"
+            onClick={() => window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank")}
+            className="text-xs"
+            data-testid="gps-google-maps-btn"
+          >
+            In Google Maps oeffnen
+          </Button>
+          <Button size="sm" variant="outline" onClick={onClose} className="text-xs">Schliessen</Button>
         </div>
       </div>
     </div>
