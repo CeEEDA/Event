@@ -752,13 +752,6 @@ export default function OrderDetailPage() {
                           }`}>
                             {r.fuel_type_label || r.fuel_type}
                           </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            r.status === "pending" ? "bg-amber-100 text-amber-700" :
-                            r.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>
-                            {r.status === "pending" ? "Offen" : r.status === "confirmed" ? "Bestaetigt" : "Abgelehnt"}
-                          </span>
                           {r.beleg_nr && <span className="text-xs text-gray-400 font-mono">Beleg #{r.beleg_nr}</span>}
                           <span className="text-xs text-gray-400">{r.date} {r.time}</span>
                         </div>
@@ -775,16 +768,6 @@ export default function OrderDetailPage() {
                         {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {r.status === "pending" && (
-                          <>
-                            <button onClick={() => confirmFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600" title="Bestätigen" data-testid={`fuel-confirm-${r.id}`}>
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => rejectFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600" title="Ablehnen" data-testid={`fuel-reject-${r.id}`}>
-                              <X className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
                         <button onClick={() => { setEditFuelReceipt(r); setShowFuelModal(true); }} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="Bearbeiten" data-testid={`fuel-edit-${r.id}`}>
                           <Pencil className="w-4 h-4" />
                         </button>
