@@ -461,7 +461,7 @@ async def generate_setup_script(device_id: str, admin: dict = Depends(require_ad
                         api_base = line.split("=", 1)[1].strip() + "/api"
                         break
         except Exception:
-            api_base = "https://BITTE_URL_EINTRAGEN/api"
+            api_base = "http://portal.eventenergie.com:8001/api"
 
     # Read the logger python script
     with open(LOGGER_SCRIPT_PATH, "r") as f:
@@ -719,7 +719,7 @@ async def generate_kirmeskiste_setup(device_id: str, body: KirmeskisteSetupReque
                         api_base = line.split("=", 1)[1].strip() + "/api"
                         break
         except Exception:
-            api_base = "https://BITTE_URL_EINTRAGEN/api"
+            api_base = "http://portal.eventenergie.com:8001/api"
 
     device = await db.devices.find_one({"id": device_id, "device_type": "kirmeskiste"}, {"_id": 0})
     if not device:
