@@ -1,99 +1,85 @@
 # Eventenergie Portal - PRD
 
 ## Original Problem Statement
-Full-stack Kirmes (Fairground) Billing System with:
-- Admin dashboard, public exhibitor portal, Stripe payments, ZUGFeRD invoicing with GiroCode
-- Live EMU meter data integration via MQTT, "Kirmeskiste" Raspberry Pi device management
-- Fuel Receipt Digitization (Tankbeleg-Digitalisierung)
-- Desktop App (Electron) for macOS/Windows
+Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung, Auftragsverwaltung, Energiemonitoring, Zahlungsabwicklung und mehr.
 
-## Tech Stack
-- **Frontend:** React, Tailwind CSS, Shadcn/UI
-- **Backend:** FastAPI (Python)
-- **Database:** MongoDB (Motor async driver)
-- **Auth:** JWT-based
-- **Payments:** Stripe
-- **MQTT:** paho-mqtt (HiveMQ broker)
-- **E-Invoicing:** factur-x (ZUGFeRD), girocode
-- **Desktop:** Electron
-
-## Architecture
-```
-/app/
-├── backend/
-│   ├── routes/
-│   │   ├── admin_settings.py   # SMTP config
-│   │   ├── devices.py          # Device management
-│   │   ├── energy_monitoring.py# EMU meters
-│   │   ├── fuel_receipts.py    # Tankbeleg CRUD, PDF, sync
-│   │   ├── generators.py       # Generator monitoring
-│   │   ├── kirmes.py           # Kirmes events, exhibitors
-│   │   ├── mqtt_config.py      # MQTT configuration
-│   │   ├── orders.py           # Order management
-│   │   ├── payments.py         # Stripe payments
-│   │   └── serviceplan.py      # Service plans
-│   ├── server.py               # Main FastAPI app
-│   ├── email_service.py        # SMTP email sending
-│   └── mqtt_service.py         # MQTT client
-├── frontend/src/
-│   ├── pages/
-│   │   ├── FuelReceiptsPage.js # Tankbeleg UI (NEW)
-│   │   ├── HubPage.js          # Main navigation hub
-│   │   ├── AdminPage.js        # User management
-│   │   ├── OrdersPage.js       # Order management
-│   │   ├── KirmesPage.js       # Kirmes events
-│   │   └── ...
-│   └── App.js                  # Routing
-└── desktop/                    # Electron app
-```
+## Core Architecture
+- **Frontend:** React (CRA) + Tailwind CSS + Shadcn/UI
+- **Backend:** FastAPI (Python) + MongoDB
+- **Desktop:** Electron Wrapper
+- **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
 
 ## What's Been Implemented
 
-### Core System (Complete)
-- User management (admin/staff/customer roles)
-- FileShare with folder management, sharing, ZIP download
-- Order management with EpiRent integration
-- Generator monitoring with MQTT real-time data
-- Energy monitoring with Shelly meters
-- Device management (Kirmeskiste configuration)
-- Service plan management
-- Kirmes event management with exhibitor registration
-- Stripe payment integration
-- ZUGFeRD e-invoicing with GiroCode
-- QR-code meter assignment
-- Password reset flow
-- Admin SMTP configuration
-- Desktop app (macOS ARM64 build)
+### Phase 1 - Portal Grundfunktionen (abgeschlossen)
+- Benutzerauthentifizierung (JWT)
+- Auftragsverwaltung (EpiRent-Integration)
+- Energiemonitoring (MQTT)
+- Zahlungsabwicklung (Stripe)
+- QR-Code-System fuer Kirmeskisten
+- Rechnungserstellung (PDF)
+- Admin-Einstellungen
+- Desktop App (Electron)
 
-### Fuel Receipt Digitization - Phase 1 (Complete, 2026-03-19)
-- Full CRUD API for fuel receipts (`/api/fuel-receipts`)
-- Stats endpoint with aggregation by fuel type
-- Confirm/Reject workflow with audit trail (confirmed_by, confirmed_at)
-- PDF export (ReportLab)
-- Pi sync endpoint (`/sync`) - no auth, dedup by pi_local_id
-- Filter by status and fuel type
-- Order/project linking via dropdown
-- GPS coordinates (admin-only visibility)
-- Navigation from Hub page
-- **Integrated into OrderDetailPage** - Tankbelege section shows order-specific receipts with full CRUD, confirm/reject, PDF export directly in the order view
+### Phase 1b - Tankbeleg Portal UI (abgeschlossen)
+- Tankbeleg-Verwaltung direkt in OrderDetailPage.js integriert
+- CRUD fuer Tankbelege (erstellen, bearbeiten, loeschen)
+- PDF-Generierung (Einzelbeleg + Sammel-PDF pro Auftrag)
+- Automatische Belegnummerierung (X12000, X12001, ...)
+- GPS-Karten-Modal fuer Belegstandorte
+- Admin-Funktionen: Liter-Zusammenfassung, %-Mengenanpassung
+- Firmenlogo auf PDF-Belegen
 
-## Pending Issues
-- **P1: Hardcoded MQTT Broker URL** - `mqtt_service.py` uses hardcoded `broker.hivemq.com` instead of DB/env config
+### Phase 1c - EpiRent API Optimierung (abgeschlossen)
+- Background-Sync mit konfigurierbarem Intervall
+- Lokaler Cache (orders_cache Collection)
+- Manueller Sync-Button
+- Manuelle Adress-Ueberschreibung (Workaround fuer EpiRent API)
 
-## Backlog (P0-P2)
+### Phase 2 - Tankbeleg Pi Script (abgeschlossen - 2026-03-19)
+- **tankbeleg_pi.py:** Python-Script fuer Raspberry Pi
+  - ESC/POS Druckdaten-Parser fuer Epson TM-U295
+  - Serielle Schnittstelle (USB-zu-RS232)
+  - GPS-Erfassung via gpsd
+  - SQLite Offline-Pufferung
+  - Automatische Synchronisation mit Portal-API
+- **tankbeleg_pi.conf:** Konfigurationsdatei
+- **tankbeleg_pi.service:** Systemd-Service fuer Autostart
+- **setup_tankbeleg_pi.sh:** Installations-Skript
+- Download-Bereich in Admin-Einstellungen (ZIP-Bundle + Einzeldateien)
 
-### P0
-- Fuel Receipt Phase 2: Raspberry Pi serial printer emulator (BLOCKED on sample receipt)
+### Refactoring (2026-03-19)
+- FuelReceiptsPage.js geloescht (Funktionalitaet in OrderDetailPage)
+- Route /fuel-receipts aus App.js entfernt
+- MQTT-Issue bestaetigt: Kein hardcoded URL im Produktionscode
 
-### P1
+## Key DB Schema
+- **fuel_receipts:** `{id, order_pk, beleg_nr, zaehler_nr, fuel_type, quantity_liters, original_quantity_liters, adjustment_percent, location, fahrer, receipt_date, gps_lat, gps_lon, pi_local_id, source, ...}`
+- **orders_cache:** `{...epirent_order_data, address, address_source}`
+- **manual_address_overrides:** `{order_pk, address}`
+
+## Key API Endpoints
+- `/api/fuel-receipts/by-order/{pk}` - Belege pro Auftrag
+- `/api/fuel-receipts/sync` - Pi-Sync (ohne Auth)
+- `/api/fuel-receipts/pdf/all/{pk}` - Sammel-PDF
+- `/api/fuel-receipts/adjust/{pk}` - Mengenanpassung
+- `/api/orders/sync/trigger` - EpiRent Sync manuell
+- `/api/orders/{pk}/address-override` - Adress-Ueberschreibung
+- `/api/download/tankbeleg-pi-bundle` - Pi-Script ZIP-Download
+
+## Prioritized Backlog
+
+### P1 - Kommend
 - PayPal Integration
-- Direct QR Label Printing
-- Windows Installer for Electron desktop app
-- Self-Hosted MQTT Broker migration
+- Direkter QR-Label-Druck an Drucker
+- Windows Installer (.exe) fuer Electron Desktop App
 
-### P2
-- Configurable file size limits for uploads
+### P1 - Spaeter
+- Self-Hosted MQTT Broker (Mosquitto)
 
-## Key Credentials
-- Admin: `admin@test.com` / `password`
-- Production Admin: `christian.ecker@eventenergie-deutschland.de` / `Kirmes#2026`
+### P2 - Backlog
+- Admin File Size Limits fuer Uploads
+
+## Credentials
+- **Admin (lokal):** admin@test.com / password
+- **Admin (Server):** christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
