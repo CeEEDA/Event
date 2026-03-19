@@ -167,6 +167,32 @@ async def create_generator(data: GeneratorCreate, admin: dict = Depends(require_
     return result
 
 
+@router.delete("/demo-data")
+async def delete_demo_data(admin: dict = Depends(require_admin_user)):
+    """Delete all demo generators and their telemetry/alarm data."""
+    demo_serials = ["DSE-HBF-001", "DSE-EVT-002", "DSE-KLN-003", "DSE-RZ-004", "DSE-FST-005"]
+
+    # Find demo generator IDs
+    demo_gens = await db.generators.find(
+        {"serial_number": {"$in": demo_serials}}, {"_id": 0, "id": 1}
+    ).to_list(100)
+    demo_ids = [g["id"] for g in demo_gens]
+
+    if not demo_ids:
+        return {"message": "Keine Demo-Daten gefunden"}
+
+    # Delete telemetry, alarms, and generators
+    tel_result = await db.generator_telemetry.delete_many({"generator_id": {"$in": demo_ids}})
+    alarm_result = await db.generator_alarms.delete_many({"generator_id": {"$in": demo_ids}})
+    gen_result = await db.generators.delete_many({"serial_number": {"$in": demo_serials}})
+
+    return {
+        "message": f"{gen_result.deleted_count} Demo-Generatoren gelöscht",
+        "deleted_telemetry": tel_result.deleted_count,
+        "deleted_alarms": alarm_result.deleted_count,
+    }
+
+
 @router.get("")
 async def list_generators(user: dict = Depends(get_authenticated_user)):
     if user["role"] == "admin":
@@ -644,30 +670,6 @@ async def simulate_generator_data(admin: dict = Depends(require_admin_user)):
     return {"message": f"{len(created)} Demo-Generatoren erstellt", "generators": created}
 
 
-@router.delete("/demo-data")
-async def delete_demo_data(admin: dict = Depends(require_admin_user)):
-    """Delete all demo generators and their telemetry/alarm data."""
-    demo_serials = ["DSE-HBF-001", "DSE-EVT-002", "DSE-KLN-003", "DSE-RZ-004", "DSE-FST-005"]
-
-    # Find demo generator IDs
-    demo_gens = await db.generators.find(
-        {"serial_number": {"$in": demo_serials}}, {"_id": 0, "id": 1}
-    ).to_list(100)
-    demo_ids = [g["id"] for g in demo_gens]
-
-    if not demo_ids:
-        return {"message": "Keine Demo-Daten gefunden"}
-
-    # Delete telemetry, alarms, and generators
-    tel_result = await db.generator_telemetry.delete_many({"generator_id": {"$in": demo_ids}})
-    alarm_result = await db.generator_alarms.delete_many({"generator_id": {"$in": demo_ids}})
-    gen_result = await db.generators.delete_many({"serial_number": {"$in": demo_serials}})
-
-    return {
-        "message": f"{gen_result.deleted_count} Demo-Generatoren gelöscht",
-        "deleted_telemetry": tel_result.deleted_count,
-        "deleted_alarms": alarm_result.deleted_count,
-    }
 
 
 # ============== Dashboard Stats ==============
