@@ -31,6 +31,8 @@ import {
   Pencil,
   Download,
   Droplets,
+  FileDown,
+  Percent,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -194,6 +196,7 @@ export default function OrderDetailPage() {
   const [fuelLoading, setFuelLoading] = useState(false);
   const [showFuelModal, setShowFuelModal] = useState(false);
   const [editFuelReceipt, setEditFuelReceipt] = useState(null);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const isAdmin = user.role === "admin";
 
@@ -358,6 +361,19 @@ export default function OrderDetailPage() {
     const token = localStorage.getItem("token");
     window.open(`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/${id}/pdf?token=${token}`, "_blank");
   };
+
+  const downloadAllPdfs = () => {
+    const token = localStorage.getItem("token");
+    window.open(`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`, "_blank");
+  };
+
+  // Liter summary helpers
+  const fuelSummary = fuelReceipts.reduce((acc, r) => {
+    acc.total += r.quantity_liters || 0;
+    const key = r.fuel_type || "other";
+    acc[key] = (acc[key] || 0) + (r.quantity_liters || 0);
+    return acc;
+  }, { total: 0 });
 
   if (loading) {
     return (
@@ -710,27 +726,56 @@ export default function OrderDetailPage() {
 
           {/* Tankbelege Section */}
           <div className="bg-white rounded-lg border border-gray-200" data-testid="fuel-receipts-section">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <Fuel className="w-4 h-4 text-amber-500" />
-                Tankbelege
-                {fuelLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
-              </h2>
-              <div className="flex items-center gap-2">
-                {fuelReceipts.length > 0 && (
-                  <span className="text-xs text-gray-400">
-                    {fuelReceipts.reduce((s, r) => s + (r.quantity_liters || 0), 0).toFixed(0)} Liter gesamt
-                  </span>
-                )}
-                <Button
-                  size="sm"
-                  className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
-                  onClick={() => { setEditFuelReceipt(null); setShowFuelModal(true); }}
-                  data-testid="add-fuel-receipt-btn"
-                >
-                  <Plus className="w-3 h-3 mr-1" /> Neuer Beleg
-                </Button>
+            <div className="p-4 border-b border-gray-100">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Fuel className="w-4 h-4 text-amber-500" />
+                  Tankbelege
+                  {fuelLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                </h2>
+                <div className="flex items-center gap-2">
+                  {isAdmin && fuelReceipts.length > 0 && (
+                    <>
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-7 text-xs border-gray-300"
+                        onClick={() => setShowAdjustModal(true)}
+                        data-testid="fuel-adjust-btn"
+                      >
+                        <Percent className="w-3 h-3 mr-1" /> Anpassen
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        className="h-7 text-xs border-gray-300"
+                        onClick={downloadAllPdfs}
+                        data-testid="fuel-download-all-btn"
+                      >
+                        <FileDown className="w-3 h-3 mr-1" /> Alle PDFs
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                    onClick={() => { setEditFuelReceipt(null); setShowFuelModal(true); }}
+                    data-testid="add-fuel-receipt-btn"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Neuer Beleg
+                  </Button>
+                </div>
               </div>
+              {/* Liter Summary */}
+              {fuelReceipts.length > 0 && (
+                <div className="flex items-center gap-4 mt-2 text-xs flex-wrap">
+                  <span className="font-semibold text-gray-700">{fuelSummary.total.toFixed(0)} L gesamt</span>
+                  {fuelSummary.diesel > 0 && <span className="text-amber-600">Diesel: {fuelSummary.diesel.toFixed(0)} L</span>}
+                  {fuelSummary.heizoel_leicht > 0 && <span className="text-blue-600">HEL: {fuelSummary.heizoel_leicht.toFixed(0)} L</span>}
+                  {fuelSummary.hvo > 0 && <span className="text-emerald-600">HVO: {fuelSummary.hvo.toFixed(0)} L</span>}
+                  {fuelReceipts[0]?.adjustment_percent !== 0 && fuelReceipts[0]?.adjustment_percent != null && (
+                    <span className="text-fuchsia-600 font-medium">({fuelReceipts[0].adjustment_percent > 0 ? "+" : ""}{fuelReceipts[0].adjustment_percent}%)</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {fuelReceipts.length === 0 && !fuelLoading ? (
@@ -768,15 +813,19 @@ export default function OrderDetailPage() {
                         {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => { setEditFuelReceipt(r); setShowFuelModal(true); }} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="Bearbeiten" data-testid={`fuel-edit-${r.id}`}>
-                          <Pencil className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button onClick={() => { setEditFuelReceipt(r); setShowFuelModal(true); }} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="Bearbeiten" data-testid={`fuel-edit-${r.id}`}>
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
                         <button onClick={() => openFuelPdf(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="PDF" data-testid={`fuel-pdf-${r.id}`}>
                           <Download className="w-4 h-4" />
                         </button>
-                        <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Löschen" data-testid={`fuel-delete-${r.id}`}>
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isAdmin && (
+                          <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Loeschen" data-testid={`fuel-delete-${r.id}`}>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -793,6 +842,16 @@ export default function OrderDetailPage() {
               orderName={`${order?.order_no} - ${order?.event || order?.contact_name || ""}`}
               onClose={() => { setShowFuelModal(false); setEditFuelReceipt(null); }}
               onSave={() => { setShowFuelModal(false); setEditFuelReceipt(null); fetchFuelReceipts(); }}
+            />
+          )}
+
+          {/* Adjust Modal */}
+          {showAdjustModal && (
+            <FuelAdjustModal
+              orderPk={pk}
+              receipts={fuelReceipts}
+              onClose={() => setShowAdjustModal(false)}
+              onSave={() => { setShowAdjustModal(false); fetchFuelReceipts(); }}
             />
           )}
         </div>
@@ -908,6 +967,94 @@ function FuelReceiptModal({ receipt, orderPk, orderName, onClose, onSave }) {
           <Button onClick={handleSave} disabled={saving} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white" data-testid="fuel-modal-save">
             {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
             {receipt ? "Speichern" : "Erstellen"}
+          </Button>
+          <Button variant="outline" onClick={onClose} className="flex-1">Abbrechen</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function FuelAdjustModal({ orderPk, receipts, onClose, onSave }) {
+  const [pct, setPct] = useState(receipts[0]?.adjustment_percent || 0);
+  const [saving, setSaving] = useState(false);
+
+  // Calculate original totals (before adjustment)
+  const originals = receipts.map(r => ({
+    ...r,
+    orig: r.original_quantity_liters || r.quantity_liters,
+  }));
+  const origTotal = originals.reduce((s, r) => s + r.orig, 0);
+  const adjustedTotal = origTotal * (1 + pct / 100);
+
+  const byType = originals.reduce((acc, r) => {
+    const k = r.fuel_type || "other";
+    acc[k] = (acc[k] || 0) + r.orig;
+    return acc;
+  }, {});
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/fuel-receipts/by-order/${orderPk}/adjustment`, { adjustment_percent: parseFloat(pct) });
+      toast.success("Anpassung gespeichert");
+      onSave();
+    } catch { toast.error("Fehler"); }
+    finally { setSaving(false); }
+  };
+
+  const typeLabels = { diesel: "Diesel", heizoel_leicht: "HEL schwefelarm", hvo: "HVO" };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()} data-testid="fuel-adjust-modal">
+        <h2 className="text-lg font-bold text-gray-900 mb-1">Liter-Anpassung</h2>
+        <p className="text-sm text-gray-500 mb-4">Alle Tankbelege dieses Auftrags prozentual anpassen</p>
+
+        {/* Original totals */}
+        <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="font-medium text-gray-700">Tatsaechliche Menge gesamt</span>
+            <span className="font-bold text-gray-900">{origTotal.toFixed(0)} L</span>
+          </div>
+          {Object.entries(byType).map(([k, v]) => (
+            <div key={k} className="flex justify-between text-xs text-gray-500">
+              <span>{typeLabels[k] || k}</span>
+              <span>{v.toFixed(0)} L</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Adjustment slider */}
+        <div className="mb-4">
+          <Label className="text-sm text-gray-600">Anpassung (%)</Label>
+          <div className="flex items-center gap-3 mt-1">
+            <Input
+              type="number" step="0.5" value={pct}
+              onChange={e => setPct(e.target.value)}
+              className="w-24 font-mono text-center"
+              data-testid="fuel-adjust-input"
+            />
+            <span className="text-sm text-gray-500">%</span>
+          </div>
+        </div>
+
+        {/* Preview */}
+        <div className="bg-amber-50 rounded-lg p-3 mb-4">
+          <div className="flex justify-between text-sm">
+            <span className="font-medium text-amber-700">Angepasste Menge gesamt</span>
+            <span className="font-bold text-amber-900">{adjustedTotal.toFixed(0)} L</span>
+          </div>
+          <p className="text-xs text-amber-600 mt-1">
+            {pct > 0 ? `+${pct}%` : pct < 0 ? `${pct}%` : "Keine Anpassung"} auf alle Belege
+          </p>
+        </div>
+
+        <div className="flex gap-3">
+          <Button onClick={handleSave} disabled={saving} className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="fuel-adjust-save">
+            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+            Speichern
           </Button>
           <Button variant="outline" onClick={onClose} className="flex-1">Abbrechen</Button>
         </div>
