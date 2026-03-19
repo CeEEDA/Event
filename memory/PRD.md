@@ -75,6 +75,7 @@ Full-stack Kirmes (Fairground) Billing System with:
 - Order/project linking via dropdown
 - GPS coordinates (admin-only visibility)
 - Navigation from Hub page
+- **Integrated into OrderDetailPage** - Tankbelege section shows order-specific receipts with full CRUD, confirm/reject, PDF export directly in the order view
 
 ## Pending Issues
 - **P1: Hardcoded MQTT Broker URL** - `mqtt_service.py` uses hardcoded `broker.hivemq.com` instead of DB/env config
