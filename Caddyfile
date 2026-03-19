@@ -1,0 +1,22 @@
+# Eventenergie Portal - Caddy Konfiguration
+# Caddy ersetzt npx serve und leitet API-Anfragen an das Backend weiter
+# Port 3000 bleibt gleich - keine Fortinet-Aenderung noetig
+
+:3000 {
+    # API-Anfragen an das Backend (Port 8001) weiterleiten
+    handle /api/* {
+        reverse_proxy localhost:8001
+    }
+
+    # WebSocket-Verbindungen weiterleiten
+    handle /ws {
+        reverse_proxy localhost:8001
+    }
+
+    # Frontend statische Dateien ausliefern
+    handle {
+        root * {$FRONTEND_BUILD:C:\eventenergie\frontend\build}
+        try_files {path} /index.html
+        file_server
+    }
+}

@@ -1547,6 +1547,15 @@ async def download_backend_env_example():
         filename=".env.example"
     )
 
+@api_router.get("/download/caddyfile")
+async def download_caddyfile():
+    """Download the Caddyfile for reverse proxy configuration."""
+    return FileResponse(
+        "/app/Caddyfile",
+        media_type="text/plain",
+        filename="Caddyfile"
+    )
+
 
 # ============== Update Package Export ==============
 
@@ -1584,7 +1593,7 @@ async def download_update_package(credentials: HTTPAuthorizationCredentials = De
     INCLUDE_TOPLEVEL = {
         'backend', 'frontend', 'desktop', 'deployment',
         'update.bat', 'start-all.bat', 'start_services.bat',
-        'stop_services.bat', 'UPDATE_ANLEITUNG.md',
+        'stop_services.bat', 'UPDATE_ANLEITUNG.md', 'Caddyfile',
     }
 
     zip_buffer = io.BytesIO()

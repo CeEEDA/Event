@@ -520,15 +520,34 @@ function UpdatePackageSection() {
             </div>
             <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
           </a>
+          <a
+            href={`${process.env.REACT_APP_BACKEND_URL}/api/download/caddyfile`}
+            download="Caddyfile"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-orange-200 bg-orange-50 hover:border-orange-400 transition-all hover:shadow-sm"
+            data-testid="download-caddyfile"
+          >
+            <FileText className="w-4 h-4 text-orange-600 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-gray-900">Caddyfile</div>
+              <div className="text-[10px] text-gray-400">Reverse-Proxy Konfiguration</div>
+            </div>
+            <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          </a>
         </div>
 
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 space-y-2">
-          <p className="text-[10px] font-semibold text-gray-700">Anleitung:</p>
+          <p className="text-[10px] font-semibold text-gray-700">Erstinstallation (einmalig):</p>
           <ol className="text-[10px] text-gray-500 leading-relaxed space-y-1 list-decimal list-inside">
-            <li>ZIP herunterladen und an beliebige Stelle entpacken</li>
+            <li>Caddy herunterladen: <a href="https://caddyserver.com/download" target="_blank" rel="noreferrer" className="text-fuchsia-600 underline">caddyserver.com/download</a> (Windows amd64)</li>
+            <li><code className="bg-gray-200 px-1 rounded">caddy.exe</code> nach <code className="bg-gray-200 px-1 rounded">C:\eventenergie\</code> kopieren</li>
+            <li>Caddyfile herunterladen und nach <code className="bg-gray-200 px-1 rounded">C:\eventenergie\</code> legen</li>
+            <li><code className="bg-gray-200 px-1 rounded">frontend/.env</code> und <code className="bg-gray-200 px-1 rounded">backend/.env</code> konfigurieren</li>
+          </ol>
+          <p className="text-[10px] font-semibold text-gray-700 pt-1">Update-Prozess:</p>
+          <ol className="text-[10px] text-gray-500 leading-relaxed space-y-1 list-decimal list-inside">
+            <li>Update-ZIP herunterladen und entpacken</li>
             <li><code className="bg-gray-200 px-1 rounded">update.bat</code> als Administrator ausfuehren</li>
-            <li>Den Pfad zum entpackten Ordner eingeben</li>
-            <li>Das Skript aktualisiert nur Code - .env und Datenbank bleiben unberuehrt</li>
+            <li>Skript aktualisiert nur Code - .env, Datenbank und Caddy bleiben unberuehrt</li>
           </ol>
         </div>
 
