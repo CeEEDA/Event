@@ -22,42 +22,27 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Desktop App (Electron)
 
 ### Phase 1b - Tankbeleg Portal UI (abgeschlossen)
-- Tankbeleg-Verwaltung direkt in OrderDetailPage.js integriert
-- CRUD fuer Tankbelege (erstellen, bearbeiten, loeschen)
-- PDF-Generierung (Einzelbeleg + Sammel-PDF pro Auftrag)
-- Automatische Belegnummerierung (X12000, X12001, ...)
-- GPS-Karten-Modal fuer Belegstandorte
-- Admin-Funktionen: Liter-Zusammenfassung, %-Mengenanpassung
+- Tankbeleg-Verwaltung in OrderDetailPage.js
+- CRUD, PDF, Auto-Nummerierung, GPS-Karte, Admin-Funktionen
 
 ### Phase 1c - EpiRent API Optimierung (abgeschlossen)
-- Background-Sync mit konfigurierbarem Intervall
-- Lokaler Cache (orders_cache Collection)
-- Manueller Sync-Button
-- Manuelle Adress-Ueberschreibung
+- Background-Sync, Cache, Manueller Sync, Adress-Ueberschreibung
 
-### Phase 2 - Tankbeleg Pi Script (abgeschlossen - 2026-03-19)
-- tankbeleg_pi.py: ESC/POS Parser, Serial, GPS, SQLite, Auto-Sync
-- tankbeleg_simulator.py: 48 Unit-Tests + Drucker-Simulator
-- Config, Systemd, Setup-Script, Download im Admin-Bereich
+### Phase 2 - Tankbeleg Pi Script (abgeschlossen)
+- tankbeleg_pi.py + tankbeleg_simulator.py (48 Tests)
+- ESC/POS Parser, Serial, GPS, SQLite, Auto-Sync
 
-### Self-Hosted MQTT Broker (abgeschlossen - 2026-03-19)
-- setup_mosquitto.sh: Interaktives Installations-Script
-  - Mosquitto + Certbot (Let's Encrypt) Installation
-  - TLS-Zertifikate automatisch anfordern und erneuern
-  - Benutzer-Authentifizierung (Gateway + Portal User)
-  - Firewall-Konfiguration (UFW)
-  - Verbindungstest nach Installation
-- mosquitto_eventenergie.conf: 3 Listener
-  - Port 8883: MQTTS (TLS) - oeffentlich fuer DSE Webnet Gateways
-  - Port 9883: WebSockets (TLS) - fuer Web-Dashboard
-  - Port 1883: Lokal ohne TLS - fuer Portal-Backend
-- Download-Bereich in Admin-Einstellungen (ZIP-Bundle)
-- Let's Encrypt Auto-Renewal mit Mosquitto-Restart-Hook
+### Self-Hosted MQTT Broker (abgeschlossen)
+- setup_mosquitto.sh + mosquitto_eventenergie.conf
+- Let's Encrypt TLS, 3 Listener (8883, 9883, 1883)
 
-## Key DB Schema
-- **fuel_receipts:** `{id, order_pk, beleg_nr, zaehler_nr, fuel_type, quantity_liters, ...}`
-- **orders_cache:** `{...epirent_order_data, address, address_source}`
-- **mqtt_config:** `{enabled, broker_url, broker_port, username, password, use_tls, ...}`
+### Serviceplan Anpassung (abgeschlossen - 2026-03-19)
+- Messkoffer und Kirmeskiste: Reduzierter Serviceplan
+  - Nur Elektrische Pruefung + Diagnose + Bemerkungen/Fotos/Notizen
+  - Sektionen 1 (Mechanisch), 3 (Messwerte), 4 (Lasttest), 5 (ATS) ausgeblendet
+- Stromerzeuger und Lichtmast: Weiterhin alle 6 Sektionen
+- Dynamische Nummerierung (1, 2 statt 2, 6)
+- Betrifft Formular und Anzeige gespeicherter Eintraege
 
 ## Prioritized Backlog
 

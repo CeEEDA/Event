@@ -15,6 +15,10 @@ import {
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste" };
 
+// Device types with reduced service plan (only electrical + diagnosis)
+const REDUCED_PLAN_TYPES = ["messkoffer", "kirmeskiste"];
+const isReducedPlan = (deviceType) => REDUCED_PLAN_TYPES.includes(deviceType);
+
 // ============== Default Checklists ==============
 const MECHANICAL_ITEMS = [
   "Motor auf Undichtigkeiten geprüft", "Motorölstand geprüft", "Ölwechsel",
@@ -109,6 +113,7 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
   const imageInputRef = useRef(null);
   const [pendingImages, setPendingImages] = useState([]);
   const [saving, setSaving] = useState(false);
+  const reduced = isReducedPlan(planDetail?.device_type);
 
   const initChecklist = (items) => items.reduce((acc, item) => { acc[item] = "nicht_durchgefuehrt"; return acc; }, {});
 
@@ -219,70 +224,79 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
         </div>
       </div>
 
-      {/* 1. Mechanische Prüfung */}
-      <SectionHeader number="1" title="Mechanische Prüfung" />
-      <div className="space-y-0">
-        {MECHANICAL_ITEMS.map(item => (
-          <TriStateButton key={item} label={item} status={form.mechanical[item]} onChange={val => updateMech(item, val)} />
-        ))}
-      </div>
+      {/* 1. Mechanische Prüfung - nur bei Stromerzeuger/Lichtmast */}
+      {!reduced && (
+        <>
+          <SectionHeader number="1" title="Mechanische Prüfung" />
+          <div className="space-y-0">
+            {MECHANICAL_ITEMS.map(item => (
+              <TriStateButton key={item} label={item} status={form.mechanical[item]} onChange={val => updateMech(item, val)} />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* 2. Elektrische Prüfung */}
-      <SectionHeader number="2" title="Elektrische Prüfung" />
+      <SectionHeader number={reduced ? "1" : "2"} title="Elektrische Prüfung" />
       <div className="space-y-0">
         {ELECTRICAL_ITEMS.map(item => (
           <TriStateButton key={item} label={item} status={form.electrical[item]} onChange={val => updateElec(item, val)} />
         ))}
       </div>
 
-      {/* 3. Generator Messwerte */}
-      <SectionHeader number="3" title="Generator Messwerte" />
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {MEASUREMENT_FIELDS.map(f => (
-          <div key={f.key}>
-            <Label className="text-gray-600 text-xs">{f.label}</Label>
-            <Input value={form.measurements[f.key]} onChange={e => updateMeasurement(f.key, e.target.value)} placeholder="–" className="mt-0.5 text-sm" data-testid={`meas-${f.key}`} />
-          </div>
-        ))}
-      </div>
-
-      {/* 4. Lasttest Generator */}
-      <SectionHeader number="4" title="Lasttest Generator" />
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium w-20">Last</th>
-              <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Lasttest</th>
-              <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Bemerkungen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {form.load_test.map((lt, idx) => (
-              <tr key={idx} className="border-t border-gray-100">
-                <td className="px-3 py-2 font-medium text-gray-700">{lt.load}</td>
-                <td className="px-3 py-1"><Input value={lt.values} onChange={e => updateLoadTest(idx, "values", e.target.value)} placeholder="–" className="text-sm h-8" data-testid={`lt-val-${idx}`} /></td>
-                <td className="px-3 py-1"><Input value={lt.remarks} onChange={e => updateLoadTest(idx, "remarks", e.target.value)} placeholder="–" className="text-sm h-8" data-testid={`lt-rem-${idx}`} /></td>
-              </tr>
+      {/* 3-5: Nur bei Stromerzeuger/Lichtmast */}
+      {!reduced && (
+        <>
+          {/* 3. Generator Messwerte */}
+          <SectionHeader number="3" title="Generator Messwerte" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {MEASUREMENT_FIELDS.map(f => (
+              <div key={f.key}>
+                <Label className="text-gray-600 text-xs">{f.label}</Label>
+                <Input value={form.measurements[f.key]} onChange={e => updateMeasurement(f.key, e.target.value)} placeholder="–" className="mt-0.5 text-sm" data-testid={`meas-${f.key}`} />
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
 
-      {/* 5. ATS / Netzumschaltung Test */}
-      <SectionHeader number="5" title="ATS / Netzumschaltung Test" />
-      <div className="space-y-0">
-        {ATS_ITEMS.map(item => (
-          <TriStateButton key={item.key} label={item.label} status={form.ats_test[item.key]} onChange={val => updateAts(item.key, val)} />
-        ))}
-        <div className="mt-2 pt-2">
-          <Label className="text-gray-600 text-xs">ATS Umschaltzeit (Sekunden)</Label>
-          <Input value={form.ats_umschaltzeit} onChange={e => setForm(p => ({ ...p, ats_umschaltzeit: e.target.value }))} placeholder="–" className="mt-0.5 w-40 text-sm" data-testid="ats-umschaltzeit" />
-        </div>
-      </div>
+          {/* 4. Lasttest Generator */}
+          <SectionHeader number="4" title="Lasttest Generator" />
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium w-20">Last</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Lasttest</th>
+                  <th className="px-3 py-2 text-left text-xs text-gray-500 font-medium">Bemerkungen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {form.load_test.map((lt, idx) => (
+                  <tr key={idx} className="border-t border-gray-100">
+                    <td className="px-3 py-2 font-medium text-gray-700">{lt.load}</td>
+                    <td className="px-3 py-1"><Input value={lt.values} onChange={e => updateLoadTest(idx, "values", e.target.value)} placeholder="–" className="text-sm h-8" data-testid={`lt-val-${idx}`} /></td>
+                    <td className="px-3 py-1"><Input value={lt.remarks} onChange={e => updateLoadTest(idx, "remarks", e.target.value)} placeholder="–" className="text-sm h-8" data-testid={`lt-rem-${idx}`} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 5. ATS / Netzumschaltung Test */}
+          <SectionHeader number="5" title="ATS / Netzumschaltung Test" />
+          <div className="space-y-0">
+            {ATS_ITEMS.map(item => (
+              <TriStateButton key={item.key} label={item.label} status={form.ats_test[item.key]} onChange={val => updateAts(item.key, val)} />
+            ))}
+            <div className="mt-2 pt-2">
+              <Label className="text-gray-600 text-xs">ATS Umschaltzeit (Sekunden)</Label>
+              <Input value={form.ats_umschaltzeit} onChange={e => setForm(p => ({ ...p, ats_umschaltzeit: e.target.value }))} placeholder="–" className="mt-0.5 w-40 text-sm" data-testid="ats-umschaltzeit" />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* 6. Diagnose */}
-      <SectionHeader number="6" title="Diagnose" />
+      <SectionHeader number={reduced ? "2" : "6"} title="Diagnose" />
       <div className="space-y-0 mb-3">
         {[
           { key: "fehlerspeicher_ausgelesen", label: "Fehlerspeicher ausgelesen" },
@@ -353,8 +367,9 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
 }
 
 // ============== Entry Display ==============
-function EntryCard({ entry, planId, isAdmin, onDelete }) {
+function EntryCard({ entry, planId, isAdmin, onDelete, deviceType }) {
   const [expanded, setExpanded] = useState(false);
+  const reduced = isReducedPlan(deviceType);
   const cl = entry.checklist_data || {};
   const mech = cl.mechanical || {};
   const elec = cl.electrical || {};
@@ -405,8 +420,8 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
       {/* Collapsible content showing ALL sections */}
       {expanded && (
         <div className="border-t border-gray-200 p-4 bg-gray-50 text-xs space-y-4">
-          {/* 1. Mechanische Prüfung */}
-          {Object.keys(mech).length > 0 && (
+          {/* 1. Mechanische Prüfung - nur bei Vollplan */}
+          {!reduced && Object.keys(mech).length > 0 && (
             <div>
               <p className="font-semibold text-gray-700 mb-2">1. Mechanische Prüfung</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
@@ -435,8 +450,8 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
             </div>
           )}
 
-          {/* 3. Generator Messwerte */}
-          {Object.values(meas).some(v => v) && (
+          {/* 3. Generator Messwerte - nur bei Vollplan */}
+          {!reduced && Object.values(meas).some(v => v) && (
             <div>
               <p className="font-semibold text-gray-700 mb-2">3. Generator Messwerte</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -453,8 +468,8 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
             </div>
           )}
 
-          {/* 4. Lasttest Generator */}
-          {lt.length > 0 && lt.some(r => r.values) && (
+          {/* 4. Lasttest Generator - nur bei Vollplan */}
+          {!reduced && lt.length > 0 && lt.some(r => r.values) && (
             <div>
               <p className="font-semibold text-gray-700 mb-2">4. Lasttest Generator</p>
               <div className="border border-gray-200 rounded overflow-hidden bg-white">
@@ -474,8 +489,8 @@ function EntryCard({ entry, planId, isAdmin, onDelete }) {
             </div>
           )}
 
-          {/* 5. ATS / Netzumschaltung */}
-          {Object.keys(ats).filter(k => k !== "umschaltzeit").length > 0 && (
+          {/* 5. ATS / Netzumschaltung - nur bei Vollplan */}
+          {!reduced && Object.keys(ats).filter(k => k !== "umschaltzeit").length > 0 && (
             <div>
               <p className="font-semibold text-gray-700 mb-2">5. ATS / Netzumschaltung</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
@@ -727,7 +742,7 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {entries.map(entry => <EntryCard key={entry.id} entry={entry} planId={plan.id} isAdmin={isAdmin} onDelete={handleDeleteEntry} />)}
+          {entries.map(entry => <EntryCard key={entry.id} entry={entry} planId={plan.id} isAdmin={isAdmin} onDelete={handleDeleteEntry} deviceType={planDetail?.device_type} />)}
         </div>
       )}
     </div>
