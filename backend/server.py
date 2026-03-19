@@ -1529,6 +1529,85 @@ async def download_controller_topics(controller_type: str):
         raise HTTPException(status_code=404, detail="Topic-Datei nicht gefunden")
     return FileResponse(file_path, media_type="text/csv", filename=mapping[1])
 
+
+# ============== Update Package Export ==============
+
+@api_router.get("/download/update-package")
+async def download_update_package(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Erstellt ein sauberes Update-ZIP ohne .env Dateien.
+    Nur Admins koennen das Update-Paket herunterladen."""
+    payload = decode_jwt_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+    user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Administratoren")
+
+    import time
+    from datetime import date
+
+    PROJECT_ROOT = Path("/app")
+    today = date.today().strftime("%Y-%m-%d")
+    zip_name = f"eventenergie_update_{today}"
+
+    # Dateien/Ordner die IMMER ausgeschlossen werden
+    EXCLUDE_DIRS = {
+        'node_modules', 'build', 'dist', '.git', '.emergent', '__pycache__',
+        'storage', 'test_reports', 'memory', 'tests', '.next',
+        'venv', 'env', '.venv', 'backups', 'yarn-cache',
+        '.pytest_cache', '.cache',
+    }
+    EXCLUDE_FILES = {'.env', '.env.backup', '.env.local', '.env.production'}
+    EXCLUDE_EXTENSIONS = {'.pyc', '.pyo', '.log', '.lock'}
+    # Grosse Binaerdateien ausschliessen (z.B. Mac-App ZIP)
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+    # Nur diese Top-Level-Ordner/Dateien einbeziehen
+    INCLUDE_TOPLEVEL = {
+        'backend', 'frontend', 'desktop', 'deployment',
+        'update.bat', 'start-all.bat', 'start_services.bat',
+        'stop_services.bat', 'UPDATE_ANLEITUNG.md',
+    }
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item_name in sorted(INCLUDE_TOPLEVEL):
+            item_path = PROJECT_ROOT / item_name
+            if not item_path.exists():
+                continue
+
+            if item_path.is_file():
+                # Top-Level Datei
+                zf.write(str(item_path), f"{zip_name}/{item_name}")
+            elif item_path.is_dir():
+                # Ordner rekursiv durchgehen
+                for root, dirs, files in os.walk(str(item_path)):
+                    # Ausgeschlossene Ordner ueberspringen
+                    dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                    for fname in sorted(files):
+                        # .env und unerwuenschte Dateien ueberspringen
+                        if fname in EXCLUDE_FILES:
+                            continue
+                        if any(fname.endswith(ext) for ext in EXCLUDE_EXTENSIONS):
+                            continue
+                        file_path = os.path.join(root, fname)
+                        # Grosse Dateien ueberspringen
+                        try:
+                            if os.path.getsize(file_path) > MAX_FILE_SIZE:
+                                continue
+                        except OSError:
+                            continue
+                        rel_path = os.path.relpath(file_path, str(PROJECT_ROOT))
+                        zf.write(file_path, f"{zip_name}/{rel_path}")
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}.zip"'}
+    )
+
+
 # Include the router in the main app
 app.include_router(api_router)
 

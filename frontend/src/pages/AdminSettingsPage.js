@@ -439,6 +439,81 @@ function SmtpConfig() {
   );
 }
 
+/* ───── Update-Paket Export ───── */
+function UpdatePackageSection() {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const res = await api.get("/download/update-package", { responseType: "blob" });
+      const disposition = res.headers["content-disposition"] || "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? match[1] : "eventenergie_update.zip";
+      const { saveAs } = await import("file-saver");
+      saveAs(new Blob([res.data], { type: "application/zip" }), filename);
+      toast.success("Update-Paket heruntergeladen");
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Download fehlgeschlagen"));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="update-package-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-fuchsia-700 to-fuchsia-500">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Package className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Server Update-Paket</h3>
+            <p className="text-[10px] text-fuchsia-100">Sicheres Update fuer den Live-Server</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Erstellt ein ZIP-Paket mit dem aktuellen Quellcode fuer den Windows-Server.
+          <strong className="text-gray-700"> .env Dateien werden NICHT enthalten</strong> - Ihre Zugangsdaten und Datenbank-Verbindungen bleiben geschuetzt.
+        </p>
+
+        <Button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+          data-testid="download-update-package-btn"
+        >
+          {downloading ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Paket wird erstellt...</>
+          ) : (
+            <><Download className="w-4 h-4 mr-2" /> Update-Paket herunterladen (ZIP)</>
+          )}
+        </Button>
+
+        <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 space-y-2">
+          <p className="text-[10px] font-semibold text-gray-700">Anleitung:</p>
+          <ol className="text-[10px] text-gray-500 leading-relaxed space-y-1 list-decimal list-inside">
+            <li>ZIP herunterladen und an beliebige Stelle entpacken</li>
+            <li><code className="bg-gray-200 px-1 rounded">update.bat</code> als Administrator ausfuehren</li>
+            <li>Den Pfad zum entpackten Ordner eingeben</li>
+            <li>Das Skript aktualisiert nur Code - .env und Datenbank bleiben unberuehrt</li>
+          </ol>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">.env geschuetzt</span>
+          <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Datenbank sicher</span>
+          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-medium">Inkl. npm run build</span>
+          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-medium">Inkl. Migration</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Tankbeleg Pi Downloads ───── */
 function TankbelegPiSection() {
   const API = process.env.REACT_APP_BACKEND_URL;
@@ -739,6 +814,9 @@ export default function AdminSettingsPage() {
 
           {/* SMTP / E-Mail */}
           <SmtpConfig />
+
+          {/* Server Update-Paket */}
+          <UpdatePackageSection />
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
