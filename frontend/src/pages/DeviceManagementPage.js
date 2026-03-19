@@ -166,7 +166,7 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
     return CONTROLLER_TOPIC_INFO[ctrl] || null;
   };
   const topicInfo = resolveTopicInfo(controller);
-  const brokerUrl = "broker.hivemq.com";
+  const brokerUrl = "portal.eventenergie.com";
   const brokerPort = "1883";
   const groupName = "eventenergie";
 
@@ -210,61 +210,6 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
           Der Group Name muss im DSE890 unter MQTT &gt; Group Name eingetragen werden. Ohne Group Name werden keine Daten empfangen.
         </p>
       </div>
-
-      {/* MQTT Username & Password */}
-      <div className="grid grid-cols-2 gap-4 mb-3">
-        <div>
-          <Label className="text-gray-700 text-sm">MQTT Benutzer</Label>
-          <Input
-            value={formData.mqtt_username || ""}
-            onChange={e => update("mqtt_username", e.target.value)}
-            placeholder="Gateway-Benutzer"
-            className="mt-1"
-            data-testid="mqtt-username-input"
-          />
-        </div>
-        <div>
-          <Label className="text-gray-700 text-sm">MQTT Passwort</Label>
-          <Input
-            type="password"
-            value={formData.mqtt_password || ""}
-            onChange={e => update("mqtt_password", e.target.value)}
-            placeholder="Gateway-Passwort"
-            className="mt-1"
-            data-testid="mqtt-password-input"
-          />
-        </div>
-      </div>
-      <p className="text-[10px] text-gray-400 mb-3">Benutzer/Passwort werden nach dem Umzug auf den eigenen Broker aktiv.</p>
-
-      {/* Standort (manuell) */}
-      <div className="grid grid-cols-2 gap-4 mb-3">
-        <div>
-          <Label className="text-gray-700 text-sm">Breitengrad (Lat)</Label>
-          <Input
-            type="number"
-            step="any"
-            value={formData.latitude || ""}
-            onChange={e => update("latitude", e.target.value ? parseFloat(e.target.value) : "")}
-            placeholder="z.B. 50.9375"
-            className="mt-1 font-mono"
-            data-testid="latitude-input"
-          />
-        </div>
-        <div>
-          <Label className="text-gray-700 text-sm">Längengrad (Lng)</Label>
-          <Input
-            type="number"
-            step="any"
-            value={formData.longitude || ""}
-            onChange={e => update("longitude", e.target.value ? parseFloat(e.target.value) : "")}
-            placeholder="z.B. 6.9603"
-            className="mt-1 font-mono"
-            data-testid="longitude-input"
-          />
-        </div>
-      </div>
-      <p className="text-[10px] text-gray-400 mb-3">Manueller Standort als Fallback. Wird automatisch überschrieben wenn GPS-Daten vom Gateway empfangen werden.</p>
 
       {/* Topic File Downloads */}
       <div className="flex flex-wrap gap-2">
