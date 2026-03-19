@@ -9,7 +9,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
   ArrowLeft, Wrench, Plus, Search, Clock, User, ChevronLeft, ChevronDown,
-  Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera, FileText,
+  Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera, FileText, FileUp, Download, Paperclip,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -317,10 +317,19 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
         <textarea value={form.remarks} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))} rows={3} placeholder="Besonderheiten, Auffälligkeiten, Schäden..." className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500" data-testid="entry-remarks" />
       </div>
 
-      {/* Photos with Drag & Drop */}
+      {/* Anhänge (Fotos + PDFs) */}
       <div className="mb-4">
-        <Label className="text-gray-700 text-sm font-medium mb-2 block">Fotos</Label>
-        <input ref={imageInputRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={e => setPendingImages(prev => [...prev, ...Array.from(e.target.files || [])])} />
+        <Label className="text-gray-700 text-sm font-medium mb-2 block">Anhänge (Fotos & Dokumente)</Label>
+        <input ref={imageInputRef} type="file" accept="image/*,.pdf,application/pdf" multiple className="hidden" onChange={e => {
+          const files = Array.from(e.target.files || []);
+          const valid = files.filter(f => {
+            if (f.size > 25 * 1024 * 1024) { toast.error(`${f.name}: Zu groß (max 25 MB)`); return false; }
+            if (!f.type.startsWith("image/") && f.type !== "application/pdf") { toast.error(`${f.name}: Nur Bilder und PDFs erlaubt`); return false; }
+            return true;
+          });
+          if (valid.length > 0) setPendingImages(prev => [...prev, ...valid]);
+          e.target.value = "";
+        }} />
         <div
           className="border-2 border-dashed border-gray-300 rounded-lg p-4 transition-colors hover:border-fuchsia-400"
           data-testid="photo-drop-zone"
@@ -329,23 +338,33 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
           onDrop={e => {
             e.preventDefault();
             e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50");
-            const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+            const files = Array.from(e.dataTransfer.files).filter(f => {
+              if (f.size > 25 * 1024 * 1024) { toast.error(`${f.name}: Zu groß (max 25 MB)`); return false; }
+              return f.type.startsWith("image/") || f.type === "application/pdf";
+            });
             if (files.length > 0) setPendingImages(prev => [...prev, ...files]);
           }}
         >
           <div className="flex flex-wrap gap-2">
-            {pendingImages.map((img, idx) => (
-              <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200">
-                <img src={URL.createObjectURL(img)} alt="" className="w-full h-full object-cover" />
+            {pendingImages.map((file, idx) => (
+              <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 group">
+                {file.type === "application/pdf" ? (
+                  <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center">
+                    <FileText className="w-6 h-6 text-red-500" />
+                    <span className="text-[8px] text-red-600 font-medium mt-0.5 px-1 truncate w-full text-center">{file.name.length > 12 ? file.name.slice(0, 10) + "…" : file.name}</span>
+                  </div>
+                ) : (
+                  <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                )}
                 <button onClick={() => setPendingImages(p => p.filter((_, i) => i !== idx))} className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center"><X className="w-3 h-3" /></button>
               </div>
             ))}
             <button onClick={() => imageInputRef.current?.click()} className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-fuchsia-400 hover:text-fuchsia-500 transition-colors" data-testid="add-photo-btn">
-              <Camera className="w-5 h-5" /><span className="text-[10px] mt-0.5">Foto</span>
+              <Paperclip className="w-5 h-5" /><span className="text-[10px] mt-0.5">Anhang</span>
             </button>
           </div>
           {pendingImages.length === 0 && (
-            <p className="text-xs text-gray-400 text-center mt-2">Fotos hierher ziehen oder auf "Foto" klicken</p>
+            <p className="text-xs text-gray-400 text-center mt-2">Fotos oder PDFs hierher ziehen oder auf "Anhang" klicken</p>
           )}
         </div>
       </div>
@@ -560,16 +579,35 @@ function EntryCard({ entry, planId, isAdmin, onDelete, deviceType }) {
             </div>
           )}
 
-          {/* Fotos */}
-          {images.length > 0 && (
+          {/* Anhänge (Fotos & Dokumente) */}
+          {((entry.attachments && entry.attachments.length > 0) || images.length > 0) && (
             <div>
-              <p className="font-semibold text-gray-700 mb-2">Fotos</p>
+              <p className="font-semibold text-gray-700 mb-2">Anhänge</p>
               <div className="flex flex-wrap gap-2">
-                {images.map(imgId => (
-                  <a key={imgId} href={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-gray-200 hover:border-fuchsia-400">
-                    <img src={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} alt="" className="w-full h-full object-cover" />
-                  </a>
-                ))}
+                {entry.attachments && entry.attachments.length > 0 ? (
+                  entry.attachments.map(att => {
+                    const isPdf = att.content_type === "application/pdf";
+                    return isPdf ? (
+                      <a key={att.id} href={`${BACKEND_URL}/api/serviceplan/images/${att.id}`} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-red-200 bg-red-50 hover:border-red-400 transition-colors" data-testid={`att-pdf-${att.id}`}>
+                        <FileText className="w-4 h-4 text-red-500 shrink-0" />
+                        <span className="text-[11px] text-red-700 font-medium truncate max-w-[120px]">{att.filename}</span>
+                        <Download className="w-3 h-3 text-red-400 shrink-0" />
+                      </a>
+                    ) : (
+                      <a key={att.id} href={`${BACKEND_URL}/api/serviceplan/images/${att.id}`} target="_blank" rel="noopener noreferrer"
+                        className="block w-16 h-16 rounded-lg overflow-hidden border border-gray-200 hover:border-fuchsia-400">
+                        <img src={`${BACKEND_URL}/api/serviceplan/images/${att.id}`} alt="" className="w-full h-full object-cover" />
+                      </a>
+                    );
+                  })
+                ) : (
+                  images.map(imgId => (
+                    <a key={imgId} href={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-gray-200 hover:border-fuchsia-400">
+                      <img src={`${BACKEND_URL}/api/serviceplan/images/${imgId}`} alt="" className="w-full h-full object-cover" />
+                    </a>
+                  ))
+                )}
               </div>
             </div>
           )}

@@ -301,8 +301,14 @@ async def upload_entry_image(plan_id: str, entry_id: str, file: UploadFile = Fil
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
     content = await file.read()
-    if len(content) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Datei zu groß (max 20MB)")
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Datei zu groß (max 25MB)")
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "application/pdf"]
+    ct = file.content_type or "application/octet-stream"
+    if not any(ct.startswith(t.split("/")[0]) for t in ["image/"]) and ct not in allowed_types:
+        raise HTTPException(status_code=400, detail="Nur Bilder und PDFs erlaubt")
 
     gridfs_id = await fs.upload_from_stream(file.filename, content)
     image_doc = {
@@ -316,10 +322,20 @@ async def upload_entry_image(plan_id: str, entry_id: str, file: UploadFile = Fil
     }
     await db.maintenance_images.insert_one(image_doc)
 
-    # Update entry images list
+    # Update entry images list (backwards compat) and attachments list (with metadata)
     images = entry.get("images", [])
     images.append(image_doc["id"])
-    await db.maintenance_entries.update_one({"id": entry_id}, {"$set": {"images": images}})
+    attachments = entry.get("attachments", [])
+    attachments.append({
+        "id": image_doc["id"],
+        "filename": image_doc["filename"],
+        "content_type": image_doc["content_type"],
+        "size": image_doc["size"],
+    })
+    await db.maintenance_entries.update_one(
+        {"id": entry_id},
+        {"$set": {"images": images, "attachments": attachments}}
+    )
 
     result = {k: v for k, v in image_doc.items() if k != "_id"}
     result["gridfs_id"] = str(result["gridfs_id"])
