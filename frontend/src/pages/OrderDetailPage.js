@@ -771,9 +771,6 @@ export default function OrderDetailPage() {
                   {fuelSummary.diesel > 0 && <span className="text-amber-600">Diesel: {fuelSummary.diesel.toFixed(0)} L</span>}
                   {fuelSummary.heizoel_leicht > 0 && <span className="text-blue-600">HEL: {fuelSummary.heizoel_leicht.toFixed(0)} L</span>}
                   {fuelSummary.hvo > 0 && <span className="text-emerald-600">HVO: {fuelSummary.hvo.toFixed(0)} L</span>}
-                  {fuelReceipts[0]?.adjustment_percent !== 0 && fuelReceipts[0]?.adjustment_percent != null && (
-                    <span className="text-fuchsia-600 font-medium">({fuelReceipts[0].adjustment_percent > 0 ? "+" : ""}{fuelReceipts[0].adjustment_percent}%)</span>
-                  )}
                 </div>
               )}
             </div>
