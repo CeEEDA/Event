@@ -1467,6 +1467,7 @@ async def download_tankbeleg_pi_bundle():
         ("tankbeleg_pi.conf", "/app/backend/static/tankbeleg_pi.conf"),
         ("tankbeleg_pi.service", "/app/backend/static/tankbeleg_pi.service"),
         ("setup_tankbeleg_pi.sh", "/app/backend/static/setup_tankbeleg_pi.sh"),
+        ("tankbeleg_simulator.py", "/app/backend/static/tankbeleg_simulator.py"),
     ]
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:

@@ -106,7 +106,7 @@ RE_DATUM = re.compile(r"Ab[sg]abe-Datum\s*[:=]\s*(\d{2}\.\d{2}\.\d{4})", re.IGNO
 RE_START = re.compile(r"Ab[sg]abe-Start\s*[:=]\s*(\d{2}:\d{2}:\d{2})", re.IGNORECASE)
 RE_ENDE = re.compile(r"Ab[sg]abe-Ende\s*[:=]\s*(\d{2}:\d{2}:\d{2})", re.IGNORECASE)
 RE_ZAEHLER_VOR = re.compile(r"\*?\s*Zaehler\s+vor\s+Start\s*[:=]?\s*(\d+)\s*L?\s*\*?", re.IGNORECASE)
-RE_MENGE = re.compile(r"Menge\s+bei\s+15\s*[°]?\s*C\s+(\d+)\s*L", re.IGNORECASE)
+RE_MENGE = re.compile(r"Menge\s+bei\s+15\s*.?C\s+(\d+)\s*L", re.IGNORECASE)
 RE_FUEL_TYPE = re.compile(r"\*\s*(HEL\s+schwefelarm|Diesel|HVO)\s*$", re.IGNORECASE | re.MULTILINE)
 
 # ESC/POS Steuerzeichen entfernen
@@ -444,7 +444,10 @@ class SerialReceiptReader:
             dsrdtr=True,
         )
         # DTR und DSR Signale setzen (Drucker erwartet diese)
-        self.ser.dtr = True
+        try:
+            self.ser.dtr = True
+        except (OSError, IOError):
+            log.debug("DTR nicht unterstuetzt (z.B. virtuelle Ports)")
         log.info(f"Serielle Verbindung geoeffnet: {self.port} @ {self.baud}")
 
     def close(self):

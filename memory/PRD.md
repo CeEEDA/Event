@@ -36,17 +36,22 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Manueller Sync-Button
 - Manuelle Adress-Ueberschreibung (Workaround fuer EpiRent API)
 
-### Phase 2 - Tankbeleg Pi Script (abgeschlossen - 2026-03-19)
-- **tankbeleg_pi.py:** Python-Script fuer Raspberry Pi
-  - ESC/POS Druckdaten-Parser fuer Epson TM-U295
-  - Serielle Schnittstelle (USB-zu-RS232)
+### Phase 2 - Tankbeleg Pi (abgeschlossen - 2026-03-19)
+- **tankbeleg_pi.py:** Raspberry Pi Script
+  - ESC/POS Druckdaten-Parser fuer Epson TM-U295 / Sening MultiFlow
+  - Serielle Schnittstelle (USB-zu-RS232) mit reconnect
   - GPS-Erfassung via gpsd
   - SQLite Offline-Pufferung
-  - Automatische Synchronisation mit Portal-API
-- **tankbeleg_pi.conf:** Konfigurationsdatei
-- **tankbeleg_pi.service:** Systemd-Service fuer Autostart
-- **setup_tankbeleg_pi.sh:** Installations-Skript
-- Download-Bereich in Admin-Einstellungen (ZIP-Bundle + Einzeldateien)
+  - Auto-Sync mit Portal (/api/fuel-receipts/sync)
+  - Konfiguration via /etc/tankbeleg_pi.conf und Env-Variablen
+- **tankbeleg_simulator.py:** Test-Suite + Drucker-Simulator
+  - ESC/POS Receipt Generator (nachbildet Sening MultiFlow Output)
+  - 48 Unit-Tests (Parser, Storage, Sync, Virtual Serial, Live API)
+  - Virtuelle serielle Ports via socat
+  - Live-API-Sync-Test gegen Portal
+- **tankbeleg_pi.conf / .service / setup.sh:** Config, Systemd, Installer
+- Download-Bereich in Admin-Einstellungen (ZIP-Bundle mit Simulator)
+- Messgeraet: Sening MultiFlow (SFF09003GE), RS232 zum Epson TM-U295
 
 ### Refactoring (2026-03-19)
 - FuelReceiptsPage.js geloescht (Funktionalitaet in OrderDetailPage)
