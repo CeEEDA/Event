@@ -757,16 +757,20 @@ export default function OrderDetailPage() {
                             r.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
                             "bg-red-100 text-red-700"
                           }`}>
-                            {r.status === "pending" ? "Offen" : r.status === "confirmed" ? "Bestätigt" : "Abgelehnt"}
+                            {r.status === "pending" ? "Offen" : r.status === "confirmed" ? "Bestaetigt" : "Abgelehnt"}
                           </span>
+                          {r.beleg_nr && <span className="text-xs text-gray-400 font-mono">Beleg #{r.beleg_nr}</span>}
                           <span className="text-xs text-gray-400">{r.date} {r.time}</span>
                         </div>
                         <p className="text-base font-bold text-gray-900">{r.quantity_liters?.toFixed(1)} Liter</p>
                         <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
                           {r.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {r.location}</span>}
+                          {r.fahrer && <span>Fahrer: {r.fahrer}</span>}
+                          {r.abgabe_start && <span>{r.abgabe_start} - {r.abgabe_ende || "?"}</span>}
+                          {r.zaehler_nr && <span className="font-mono">Z-Nr: {r.zaehler_nr}</span>}
                           {isAdmin && r.gps_lat && <span className="text-gray-400">{r.gps_lat?.toFixed(4)}, {r.gps_lng?.toFixed(4)}</span>}
-                          <span>von {r.created_by}</span>
-                          {r.confirmed_by && <span className="text-emerald-600">bestätigt von {r.confirmed_by}</span>}
+                          {!r.fahrer && <span>von {r.created_by}</span>}
+                          {r.confirmed_by && <span className="text-emerald-600">bestaetigt von {r.confirmed_by}</span>}
                         </div>
                         {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
                       </div>
@@ -817,7 +821,7 @@ export default function OrderDetailPage() {
 
 const FUEL_TYPES_OPTIONS = [
   { value: "diesel", label: "Diesel" },
-  { value: "heizoel_leicht", label: "Heizöl Leicht" },
+  { value: "heizoel_leicht", label: "HEL schwefelarm" },
   { value: "hvo", label: "HVO" },
 ];
 
@@ -828,6 +832,12 @@ function FuelReceiptModal({ receipt, orderPk, orderName, onClose, onSave }) {
     date: receipt?.date || new Date().toISOString().split("T")[0],
     time: receipt?.time || new Date().toTimeString().slice(0, 5),
     location: receipt?.location || "",
+    zaehler_nr: receipt?.zaehler_nr || "",
+    beleg_nr: receipt?.beleg_nr || "",
+    abgabe_start: receipt?.abgabe_start || "",
+    abgabe_ende: receipt?.abgabe_ende || "",
+    zaehler_vor_start: receipt?.zaehler_vor_start ?? "",
+    fahrer: receipt?.fahrer || "",
     notes: receipt?.notes || "",
   });
   const [saving, setSaving] = useState(false);
@@ -836,13 +846,17 @@ function FuelReceiptModal({ receipt, orderPk, orderName, onClose, onSave }) {
     if (!form.quantity_liters) { toast.error("Bitte Menge eingeben"); return; }
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        quantity_liters: parseFloat(form.quantity_liters),
+        zaehler_vor_start: form.zaehler_vor_start !== "" ? parseFloat(form.zaehler_vor_start) : null,
+      };
       if (receipt) {
-        await api.put(`/fuel-receipts/${receipt.id}`, form);
+        await api.put(`/fuel-receipts/${receipt.id}`, payload);
         toast.success("Beleg aktualisiert");
       } else {
         await api.post("/fuel-receipts", {
-          ...form,
-          quantity_liters: parseFloat(form.quantity_liters),
+          ...payload,
           order_pk: orderPk,
           order_name: orderName,
         });
@@ -869,12 +883,12 @@ function FuelReceiptModal({ receipt, orderPk, orderName, onClose, onSave }) {
             </select>
           </div>
           <div>
-            <Label className="text-sm text-gray-600">Menge (Liter)</Label>
-            <Input type="number" step="0.1" value={form.quantity_liters} onChange={e => setForm(f => ({ ...f, quantity_liters: e.target.value }))} placeholder="z.B. 150.5" className="mt-1" data-testid="fuel-modal-qty" />
+            <Label className="text-sm text-gray-600">Menge bei 15 C (Liter)</Label>
+            <Input type="number" step="0.1" value={form.quantity_liters} onChange={e => setForm(f => ({ ...f, quantity_liters: e.target.value }))} placeholder="z.B. 183" className="mt-1" data-testid="fuel-modal-qty" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm text-gray-600">Datum</Label>
+              <Label className="text-sm text-gray-600">Abgabe-Datum</Label>
               <Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="mt-1" data-testid="fuel-modal-date" />
             </div>
             <div>
@@ -882,9 +896,43 @@ function FuelReceiptModal({ receipt, orderPk, orderName, onClose, onSave }) {
               <Input type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} className="mt-1" data-testid="fuel-modal-time" />
             </div>
           </div>
+
+          {/* Druckerdaten */}
+          <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 font-medium uppercase tracking-wide">Druckerdaten</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-sm text-gray-600">Zaehler-Nr.</Label>
+              <Input value={form.zaehler_nr} onChange={e => setForm(f => ({ ...f, zaehler_nr: e.target.value }))} placeholder="z.B. 11461" className="mt-1 font-mono" data-testid="fuel-modal-zaehler" />
+            </div>
+            <div>
+              <Label className="text-sm text-gray-600">Beleg-Nr.</Label>
+              <Input value={form.beleg_nr} onChange={e => setForm(f => ({ ...f, beleg_nr: e.target.value }))} placeholder="z.B. 16912" className="mt-1 font-mono" data-testid="fuel-modal-beleg" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-sm text-gray-600">Abgabe-Start</Label>
+              <Input type="time" step="1" value={form.abgabe_start} onChange={e => setForm(f => ({ ...f, abgabe_start: e.target.value }))} className="mt-1 font-mono" data-testid="fuel-modal-start" />
+            </div>
+            <div>
+              <Label className="text-sm text-gray-600">Abgabe-Ende</Label>
+              <Input type="time" step="1" value={form.abgabe_ende} onChange={e => setForm(f => ({ ...f, abgabe_ende: e.target.value }))} className="mt-1 font-mono" data-testid="fuel-modal-ende" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Zaehler vor Start (Liter)</Label>
+            <Input type="number" step="0.1" value={form.zaehler_vor_start} onChange={e => setForm(f => ({ ...f, zaehler_vor_start: e.target.value }))} placeholder="z.B. 0" className="mt-1 font-mono" data-testid="fuel-modal-zvs" />
+          </div>
+
+          {/* Manuelle Felder */}
+          <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 font-medium uppercase tracking-wide">Manuelle Eingabe</p>
           <div>
             <Label className="text-sm text-gray-600">Standort</Label>
             <Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="z.B. Baustelle" className="mt-1" data-testid="fuel-modal-location" />
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Fahrer</Label>
+            <Input value={form.fahrer} onChange={e => setForm(f => ({ ...f, fahrer: e.target.value }))} placeholder="z.B. Timo" className="mt-1" data-testid="fuel-modal-fahrer" />
           </div>
           <div>
             <Label className="text-sm text-gray-600">Bemerkung</Label>

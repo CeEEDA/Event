@@ -20,7 +20,7 @@ def init_fuel_receipt_routes(db, decode_jwt_token):
 
 FUEL_TYPES = {
     "diesel": "Diesel",
-    "heizoel_leicht": "Heizöl Leicht",
+    "heizoel_leicht": "HEL schwefelarm",
     "hvo": "HVO",
 }
 
@@ -50,6 +50,14 @@ class FuelReceiptCreate(BaseModel):
     date: str
     time: str
     location: Optional[str] = ""
+    # Printer fields
+    zaehler_nr: Optional[str] = None
+    beleg_nr: Optional[str] = None
+    abgabe_start: Optional[str] = None
+    abgabe_ende: Optional[str] = None
+    zaehler_vor_start: Optional[float] = None
+    fahrer: Optional[str] = ""
+    # GPS + metadata
     gps_lat: Optional[float] = None
     gps_lng: Optional[float] = None
     notes: Optional[str] = ""
@@ -65,6 +73,12 @@ class FuelReceiptUpdate(BaseModel):
     date: Optional[str] = None
     time: Optional[str] = None
     location: Optional[str] = None
+    zaehler_nr: Optional[str] = None
+    beleg_nr: Optional[str] = None
+    abgabe_start: Optional[str] = None
+    abgabe_ende: Optional[str] = None
+    zaehler_vor_start: Optional[float] = None
+    fahrer: Optional[str] = None
     gps_lat: Optional[float] = None
     gps_lng: Optional[float] = None
     notes: Optional[str] = None
@@ -79,7 +93,7 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
     created_by = user.get("name", user.get("email", ""))
 
     if data.fuel_type not in FUEL_TYPES:
-        raise HTTPException(status_code=400, detail=f"Ungültige Kraftstoffart. Erlaubt: {', '.join(FUEL_TYPES.keys())}")
+        raise HTTPException(status_code=400, detail=f"Ungueltige Kraftstoffart. Erlaubt: {', '.join(FUEL_TYPES.keys())}")
 
     if data.pi_local_id:
         existing = await _db.fuel_receipts.find_one({"pi_local_id": data.pi_local_id}, {"_id": 0})
@@ -97,6 +111,12 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
         "date": data.date,
         "time": data.time,
         "location": data.location or "",
+        "zaehler_nr": data.zaehler_nr,
+        "beleg_nr": data.beleg_nr,
+        "abgabe_start": data.abgabe_start,
+        "abgabe_ende": data.abgabe_ende,
+        "zaehler_vor_start": data.zaehler_vor_start,
+        "fahrer": data.fahrer or "",
         "gps_lat": data.gps_lat,
         "gps_lng": data.gps_lng,
         "raw_receipt_data": data.raw_receipt_data,
@@ -137,6 +157,12 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
             "date": r.date,
             "time": r.time,
             "location": r.location or "",
+            "zaehler_nr": r.zaehler_nr,
+            "beleg_nr": r.beleg_nr,
+            "abgabe_start": r.abgabe_start,
+            "abgabe_ende": r.abgabe_ende,
+            "zaehler_vor_start": r.zaehler_vor_start,
+            "fahrer": r.fahrer or "",
             "gps_lat": r.gps_lat,
             "gps_lng": r.gps_lng,
             "raw_receipt_data": r.raw_receipt_data,
@@ -228,7 +254,7 @@ async def update_fuel_receipt(receipt_id: str, data: FuelReceiptUpdate, user: di
 
     if "fuel_type" in update:
         if update["fuel_type"] not in FUEL_TYPES:
-            raise HTTPException(status_code=400, detail="Ungültige Kraftstoffart")
+            raise HTTPException(status_code=400, detail="Ungueltige Kraftstoffart")
         update["fuel_type_label"] = FUEL_TYPES[update["fuel_type"]]
 
     if "status" in update and update["status"] == "confirmed":
@@ -257,7 +283,7 @@ async def confirm_fuel_receipt(receipt_id: str, user: dict = Depends(_require_ad
             "confirmed_by": user.get("name", user.get("email", "")),
         }},
     )
-    return {"message": "Tankbeleg bestätigt"}
+    return {"message": "Tankbeleg bestaetigt"}
 
 
 @router.post("/{receipt_id}/reject")
@@ -280,7 +306,7 @@ async def delete_fuel_receipt(receipt_id: str, user: dict = Depends(_require_adm
     result = await _db.fuel_receipts.delete_one({"id": receipt_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
-    return {"message": "Tankbeleg gelöscht"}
+    return {"message": "Tankbeleg geloescht"}
 
 
 @router.get("/{receipt_id}/pdf")
@@ -289,7 +315,7 @@ async def export_fuel_receipt_pdf(
     token: Optional[str] = None,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
 ):
-    """Export a single fuel receipt as PDF. Supports auth via header or query param."""
+    """Export a single fuel receipt as PDF matching the physical receipt layout."""
     if token:
         _decode_jwt_token(token)
     elif credentials:
@@ -299,6 +325,7 @@ async def export_fuel_receipt_pdf(
 
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
+    from reportlab.lib.colors import HexColor
     from reportlab.pdfgen import canvas
     from io import BytesIO
     from starlette.responses import Response
@@ -310,45 +337,137 @@ async def export_fuel_receipt_pdf(
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
+    margin = 25 * mm
 
-    # Header
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(30 * mm, h - 30 * mm, "Tankbeleg")
-    c.setFont("Helvetica", 10)
-    c.drawString(30 * mm, h - 38 * mm, f"Beleg-Nr: {doc['id'][:8]}")
+    # --- Header ---
+    # Company block
+    fuchsia = HexColor("#a21caf")
+    c.setFillColor(fuchsia)
+    c.roundRect(margin, h - 42 * mm, 22 * mm, 22 * mm, 3 * mm, fill=1, stroke=0)
+    # Grid dots
+    c.setFillColor(HexColor("#ffffff"))
+    for row in range(3):
+        for col in range(3):
+            cx = margin + 5 * mm + col * 6 * mm
+            cy = h - 28 * mm - row * 6 * mm
+            c.circle(cx, cy, 2 * mm, fill=1, stroke=0)
 
-    # Details
-    y = h - 55 * mm
+    c.setFillColor(HexColor("#1f2937"))
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(margin + 26 * mm, h - 28 * mm, "EVENTENERGIE")
+    c.drawString(margin + 26 * mm, h - 36 * mm, "DEUTSCHLAND")
+
+    # Address
+    c.setFont("Helvetica", 9)
+    c.setFillColor(HexColor("#6b7280"))
+    c.drawString(margin, h - 52 * mm, "Thyssenstrasse 10 | 56626 Andernach")
+
+    # Divider
+    c.setStrokeColor(fuchsia)
+    c.setLineWidth(1.5)
+    c.line(margin, h - 55 * mm, w - margin, h - 55 * mm)
+
+    # --- Kunde / Auftrag ---
+    y = h - 68 * mm
+    c.setFillColor(HexColor("#1f2937"))
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(margin, y, "Kunde:")
     c.setFont("Helvetica", 11)
-    status_map = {"pending": "Offen", "confirmed": "Bestaetigt", "rejected": "Abgelehnt"}
-    fields = [
-        ("Datum", f"{doc.get('date', '')} {doc.get('time', '')}"),
-        ("Kraftstoffart", doc.get("fuel_type_label", doc.get("fuel_type", ""))),
-        ("Menge", f"{doc.get('quantity_liters', 0):.1f} Liter"),
-        ("Standort", doc.get("location", "")),
-        ("Auftrag", doc.get("order_name", doc.get("order_pk", ""))),
-        ("Status", status_map.get(doc.get("status"), "")),
-        ("Erfasst von", doc.get("created_by", "")),
-        ("Bemerkung", doc.get("notes", "")),
+    kunde_text = doc.get("order_name", "")
+    if not kunde_text and doc.get("order_pk"):
+        kunde_text = f"Auftrag {doc['order_pk']}"
+    c.drawString(margin + 25 * mm, y, kunde_text or "—")
+
+    # --- Druckerdaten (Printer data block) ---
+    y = h - 90 * mm
+    c.setFillColor(HexColor("#f3f4f6"))
+    c.roundRect(margin, y - 60 * mm, w - 2 * margin, 62 * mm, 3 * mm, fill=1, stroke=0)
+
+    # Printer data rows
+    c.setFillColor(HexColor("#374151"))
+    row_y = y - 5 * mm
+    label_x = margin + 8 * mm
+    val_x = w - margin - 8 * mm
+
+    printer_fields = [
+        ("Zaehler-Nr.", doc.get("zaehler_nr", "—")),
+        ("Beleg-Nr.", doc.get("beleg_nr", "—")),
+        ("Abgabe-Datum", doc.get("date", "—")),
+        ("Abgabe-Start", doc.get("abgabe_start", doc.get("time", "—"))),
+        ("Abgabe-Ende", doc.get("abgabe_ende", "—")),
+        ("Zaehler vor Start", f"{doc.get('zaehler_vor_start', 0)} L" if doc.get("zaehler_vor_start") is not None else "—"),
     ]
 
-    if doc.get("confirmed_by"):
-        fields.append(("Bestaetigt von", doc.get("confirmed_by", "")))
-    if doc.get("confirmed_at"):
-        fields.append(("Bestaetigt am", doc.get("confirmed_at", "")[:10]))
+    c.setFont("Courier", 10)
+    for label, value in printer_fields:
+        c.drawString(label_x, row_y, f"{label}")
+        c.drawRightString(val_x, row_y, str(value))
+        row_y -= 7 * mm
 
-    for label, value in fields:
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(30 * mm, y, f"{label}:")
+    # Fuel type + quantity (highlighted)
+    row_y -= 3 * mm
+    c.setFont("Courier-Bold", 10)
+    c.setFillColor(fuchsia)
+    fuel_label = doc.get("fuel_type_label", FUEL_TYPES.get(doc.get("fuel_type", ""), ""))
+    c.drawString(label_x, row_y, f"*{fuel_label}*")
+    row_y -= 8 * mm
+    c.setFont("Courier-Bold", 14)
+    c.drawString(label_x, row_y, "Menge bei 15 C")
+    c.drawRightString(val_x, row_y, f"{doc.get('quantity_liters', 0):.0f} L")
+
+    # --- Manual fields ---
+    y = h - 165 * mm
+    c.setFillColor(HexColor("#1f2937"))
+    c.setFont("Helvetica-Bold", 10)
+
+    manual_fields = [
+        ("Standort:", doc.get("location", "")),
+        ("Fahrer:", doc.get("fahrer", doc.get("created_by", ""))),
+    ]
+
+    for label, value in manual_fields:
+        c.drawString(margin, y, label)
         c.setFont("Helvetica", 10)
-        c.drawString(75 * mm, y, str(value))
-        y -= 8 * mm
+        c.drawString(margin + 28 * mm, y, str(value) if value else "—")
+        # Underline
+        c.setStrokeColor(HexColor("#d1d5db"))
+        c.setLineWidth(0.5)
+        c.line(margin + 28 * mm, y - 2, w - margin, y - 2)
+        c.setFont("Helvetica-Bold", 10)
+        y -= 12 * mm
+
+    # --- Status ---
+    y -= 5 * mm
+    status_map = {"pending": "OFFEN", "confirmed": "BESTAETIGT", "rejected": "ABGELEHNT"}
+    status_colors = {"pending": "#f59e0b", "confirmed": "#10b981", "rejected": "#ef4444"}
+    status = doc.get("status", "pending")
+    c.setFillColor(HexColor(status_colors.get(status, "#6b7280")))
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(margin, y, status_map.get(status, status.upper()))
+
+    if doc.get("confirmed_by"):
+        c.setFillColor(HexColor("#6b7280"))
+        c.setFont("Helvetica", 9)
+        c.drawString(margin, y - 12, f"Bestaetigt von: {doc['confirmed_by']}  ({doc.get('confirmed_at', '')[:10]})")
+
+    # --- Footer ---
+    c.setFillColor(HexColor("#9ca3af"))
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(w / 2, 20 * mm, "Eventenergie Deutschland GmbH & Co. KG")
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(w / 2, 15 * mm, f"Beleg-ID: {doc['id'][:8]}")
+
+    if doc.get("notes"):
+        c.setFillColor(HexColor("#6b7280"))
+        c.setFont("Helvetica", 8)
+        c.drawString(margin, y - 25, f"Bemerkung: {doc['notes']}")
 
     c.save()
     buf.seek(0)
 
+    beleg_nr = doc.get("beleg_nr", doc["id"][:8])
     return Response(
         content=buf.getvalue(),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=Tankbeleg_{doc['id'][:8]}.pdf"},
+        headers={"Content-Disposition": f"attachment; filename=Tankbeleg_{beleg_nr}.pdf"},
     )
