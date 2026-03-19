@@ -1,15 +1,22 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
+import math
+import httpx
 
 router = APIRouter(prefix="/api/fuel-receipts", tags=["fuel-receipts"])
 security = HTTPBearer()
 
 _db = None
 _decode_jwt_token = None
+
+ZAEHLER_NR = "11461"
+MANUAL_BELEG_PREFIX = "X"
+MANUAL_BELEG_START = 12000
+LOGO_URL = "https://customer-assets.emergentagent.com/job_client-file-portal/artifacts/35th6vn9_cropped-logo.webp"
 
 
 def init_fuel_receipt_routes(db, decode_jwt_token):
@@ -23,6 +30,37 @@ FUEL_TYPES = {
     "heizoel_leicht": "HEL schwefelarm",
     "hvo": "HVO",
 }
+
+
+async def _next_manual_beleg_nr():
+    """Get next sequential manual receipt number (X12000, X12001, ...)."""
+    pipeline = [
+        {"$match": {"beleg_nr": {"$regex": f"^{MANUAL_BELEG_PREFIX}"}}},
+        {"$project": {"num": {"$substr": ["$beleg_nr", len(MANUAL_BELEG_PREFIX), -1]}}},
+        {"$project": {"num_int": {"$toInt": "$num"}}},
+        {"$sort": {"num_int": -1}},
+        {"$limit": 1},
+    ]
+    results = await _db.fuel_receipts.aggregate(pipeline).to_list(1)
+    if results:
+        return f"{MANUAL_BELEG_PREFIX}{results[0]['num_int'] + 1}"
+    return f"{MANUAL_BELEG_PREFIX}{MANUAL_BELEG_START}"
+
+
+def _calc_abgabe_times(quantity_liters, time_str):
+    """Calculate Abgabe-Start and Abgabe-Ende for manual receipts.
+    Rule: 3 min per 100L + 4 min base per refueling."""
+    minutes = math.ceil(quantity_liters / 100) * 3 + 4
+    try:
+        parts = time_str.split(":")
+        h, m = int(parts[0]), int(parts[1])
+        total_start = h * 60 + m
+        total_end = total_start + minutes
+        end_h = (total_end // 60) % 24
+        end_m = total_end % 60
+        return f"{h:02d}:{m:02d}:00", f"{end_h:02d}:{end_m:02d}:00"
+    except Exception:
+        return time_str, time_str
 
 
 # ── Auth helpers ──
@@ -50,14 +88,11 @@ class FuelReceiptCreate(BaseModel):
     date: str
     time: str
     location: Optional[str] = ""
-    # Printer fields
-    zaehler_nr: Optional[str] = None
     beleg_nr: Optional[str] = None
     abgabe_start: Optional[str] = None
     abgabe_ende: Optional[str] = None
     zaehler_vor_start: Optional[float] = None
     fahrer: Optional[str] = ""
-    # GPS + metadata
     gps_lat: Optional[float] = None
     gps_lng: Optional[float] = None
     notes: Optional[str] = ""
@@ -73,7 +108,6 @@ class FuelReceiptUpdate(BaseModel):
     date: Optional[str] = None
     time: Optional[str] = None
     location: Optional[str] = None
-    zaehler_nr: Optional[str] = None
     beleg_nr: Optional[str] = None
     abgabe_start: Optional[str] = None
     abgabe_ende: Optional[str] = None
@@ -100,6 +134,11 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
         if existing:
             return existing
 
+    # Auto-generate beleg_nr for manual receipts
+    beleg_nr = data.beleg_nr
+    if not beleg_nr:
+        beleg_nr = await _next_manual_beleg_nr()
+
     receipt_id = str(uuid.uuid4())
     doc = {
         "id": receipt_id,
@@ -111,8 +150,8 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
         "date": data.date,
         "time": data.time,
         "location": data.location or "",
-        "zaehler_nr": data.zaehler_nr,
-        "beleg_nr": data.beleg_nr,
+        "zaehler_nr": ZAEHLER_NR,
+        "beleg_nr": beleg_nr,
         "abgabe_start": data.abgabe_start,
         "abgabe_ende": data.abgabe_ende,
         "zaehler_vor_start": data.zaehler_vor_start,
@@ -122,6 +161,7 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
         "raw_receipt_data": data.raw_receipt_data,
         "notes": data.notes or "",
         "status": "pending",
+        "source": "pi" if data.pi_local_id else "manual",
         "created_by": created_by,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "confirmed_by": None,
@@ -157,8 +197,8 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
             "date": r.date,
             "time": r.time,
             "location": r.location or "",
-            "zaehler_nr": r.zaehler_nr,
-            "beleg_nr": r.beleg_nr,
+            "zaehler_nr": ZAEHLER_NR,
+            "beleg_nr": r.beleg_nr or "",
             "abgabe_start": r.abgabe_start,
             "abgabe_ende": r.abgabe_ende,
             "zaehler_vor_start": r.zaehler_vor_start,
@@ -168,6 +208,7 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
             "raw_receipt_data": r.raw_receipt_data,
             "notes": r.notes or "",
             "status": "pending",
+            "source": "pi",
             "created_by": "Tankwagen-Pi",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "confirmed_by": None,
@@ -189,7 +230,6 @@ async def list_fuel_receipts(
     order_pk: Optional[str] = None,
     user: dict = Depends(_auth_user),
 ):
-    """List all fuel receipts with optional filters."""
     query = {}
     if status:
         query["status"] = status
@@ -197,23 +237,19 @@ async def list_fuel_receipts(
         query["fuel_type"] = fuel_type
     if order_pk:
         query["order_pk"] = order_pk
-
     receipts = await _db.fuel_receipts.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     return receipts
 
 
 @router.get("/stats")
 async def fuel_receipt_stats(user: dict = Depends(_auth_user)):
-    """Get summary statistics."""
     total = await _db.fuel_receipts.count_documents({})
     pending = await _db.fuel_receipts.count_documents({"status": "pending"})
     confirmed = await _db.fuel_receipts.count_documents({"status": "confirmed"})
-
     pipeline = [
         {"$group": {"_id": "$fuel_type", "total_liters": {"$sum": "$quantity_liters"}, "count": {"$sum": 1}}},
     ]
     by_type = await _db.fuel_receipts.aggregate(pipeline).to_list(10)
-
     return {
         "total": total,
         "pending": pending,
@@ -224,7 +260,6 @@ async def fuel_receipt_stats(user: dict = Depends(_auth_user)):
 
 @router.get("/by-order/{order_pk}")
 async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user)):
-    """Get all fuel receipts for a specific order."""
     receipts = await _db.fuel_receipts.find(
         {"order_pk": str(order_pk)}, {"_id": 0}
     ).sort("date", -1).to_list(100)
@@ -233,7 +268,6 @@ async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user))
 
 @router.get("/{receipt_id}")
 async def get_fuel_receipt(receipt_id: str, user: dict = Depends(_auth_user)):
-    """Get a single fuel receipt."""
     doc = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
@@ -242,7 +276,6 @@ async def get_fuel_receipt(receipt_id: str, user: dict = Depends(_auth_user)):
 
 @router.put("/{receipt_id}")
 async def update_fuel_receipt(receipt_id: str, data: FuelReceiptUpdate, user: dict = Depends(_require_admin_or_staff)):
-    """Admin/Staff: Update/correct a fuel receipt."""
     doc = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
@@ -263,18 +296,15 @@ async def update_fuel_receipt(receipt_id: str, data: FuelReceiptUpdate, user: di
 
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     await _db.fuel_receipts.update_one({"id": receipt_id}, {"$set": update})
-
     updated = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0})
     return updated
 
 
 @router.post("/{receipt_id}/confirm")
 async def confirm_fuel_receipt(receipt_id: str, user: dict = Depends(_require_admin_or_staff)):
-    """Admin/Staff: Confirm a fuel receipt."""
     doc = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
-
     await _db.fuel_receipts.update_one(
         {"id": receipt_id},
         {"$set": {
@@ -288,11 +318,9 @@ async def confirm_fuel_receipt(receipt_id: str, user: dict = Depends(_require_ad
 
 @router.post("/{receipt_id}/reject")
 async def reject_fuel_receipt(receipt_id: str, user: dict = Depends(_require_admin_or_staff)):
-    """Admin/Staff: Reject a fuel receipt."""
     doc = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
-
     await _db.fuel_receipts.update_one(
         {"id": receipt_id},
         {"$set": {"status": "rejected", "updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -302,7 +330,6 @@ async def reject_fuel_receipt(receipt_id: str, user: dict = Depends(_require_adm
 
 @router.delete("/{receipt_id}")
 async def delete_fuel_receipt(receipt_id: str, user: dict = Depends(_require_admin_or_staff)):
-    """Admin/Staff: Delete a fuel receipt."""
     result = await _db.fuel_receipts.delete_one({"id": receipt_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
@@ -327,6 +354,7 @@ async def export_fuel_receipt_pdf(
     from reportlab.lib.units import mm
     from reportlab.lib.colors import HexColor
     from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
     from io import BytesIO
     from starlette.responses import Response
 
@@ -334,28 +362,35 @@ async def export_fuel_receipt_pdf(
     if not doc:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
 
+    # For manual receipts: calculate abgabe times if not set
+    is_manual = doc.get("source") != "pi"
+    abgabe_start = doc.get("abgabe_start")
+    abgabe_ende = doc.get("abgabe_ende")
+    if is_manual and (not abgabe_start or not abgabe_ende):
+        abgabe_start, abgabe_ende = _calc_abgabe_times(
+            doc.get("quantity_liters", 0),
+            doc.get("time", "00:00"),
+        )
+
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
     margin = 25 * mm
-
-    # --- Header ---
-    # Company block
     fuchsia = HexColor("#a21caf")
-    c.setFillColor(fuchsia)
-    c.roundRect(margin, h - 42 * mm, 22 * mm, 22 * mm, 3 * mm, fill=1, stroke=0)
-    # Grid dots
-    c.setFillColor(HexColor("#ffffff"))
-    for row in range(3):
-        for col in range(3):
-            cx = margin + 5 * mm + col * 6 * mm
-            cy = h - 28 * mm - row * 6 * mm
-            c.circle(cx, cy, 2 * mm, fill=1, stroke=0)
 
-    c.setFillColor(HexColor("#1f2937"))
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(margin + 26 * mm, h - 28 * mm, "EVENTENERGIE")
-    c.drawString(margin + 26 * mm, h - 36 * mm, "DEUTSCHLAND")
+    # --- Logo from URL ---
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(LOGO_URL, timeout=10)
+            if resp.status_code == 200:
+                logo_buf = BytesIO(resp.content)
+                logo = ImageReader(logo_buf)
+                c.drawImage(logo, margin, h - 45 * mm, width=55 * mm, height=20 * mm, preserveAspectRatio=True, mask="auto")
+    except Exception:
+        # Fallback: text
+        c.setFont("Helvetica-Bold", 16)
+        c.setFillColor(HexColor("#1f2937"))
+        c.drawString(margin, h - 30 * mm, "EVENTENERGIE DEUTSCHLAND")
 
     # Address
     c.setFont("Helvetica", 9)
@@ -383,19 +418,21 @@ async def export_fuel_receipt_pdf(
     c.setFillColor(HexColor("#f3f4f6"))
     c.roundRect(margin, y - 60 * mm, w - 2 * margin, 62 * mm, 3 * mm, fill=1, stroke=0)
 
-    # Printer data rows
     c.setFillColor(HexColor("#374151"))
     row_y = y - 5 * mm
     label_x = margin + 8 * mm
     val_x = w - margin - 8 * mm
 
+    zaehler_nr = doc.get("zaehler_nr", ZAEHLER_NR)
+    zvs = doc.get("zaehler_vor_start")
+
     printer_fields = [
-        ("Zaehler-Nr.", doc.get("zaehler_nr", "—")),
+        ("Zaehler-Nr.", zaehler_nr),
         ("Beleg-Nr.", doc.get("beleg_nr", "—")),
         ("Abgabe-Datum", doc.get("date", "—")),
-        ("Abgabe-Start", doc.get("abgabe_start", doc.get("time", "—"))),
-        ("Abgabe-Ende", doc.get("abgabe_ende", "—")),
-        ("Zaehler vor Start", f"{doc.get('zaehler_vor_start', 0)} L" if doc.get("zaehler_vor_start") is not None else "—"),
+        ("Abgabe-Start", abgabe_start or "—"),
+        ("Abgabe-Ende", abgabe_ende or "—"),
+        ("Zaehler vor Start", f"{zvs} L" if zvs is not None else "0 L"),
     ]
 
     c.setFont("Courier", 10)
@@ -429,7 +466,6 @@ async def export_fuel_receipt_pdf(
         c.drawString(margin, y, label)
         c.setFont("Helvetica", 10)
         c.drawString(margin + 28 * mm, y, str(value) if value else "—")
-        # Underline
         c.setStrokeColor(HexColor("#d1d5db"))
         c.setLineWidth(0.5)
         c.line(margin + 28 * mm, y - 2, w - margin, y - 2)
@@ -450,17 +486,17 @@ async def export_fuel_receipt_pdf(
         c.setFont("Helvetica", 9)
         c.drawString(margin, y - 12, f"Bestaetigt von: {doc['confirmed_by']}  ({doc.get('confirmed_at', '')[:10]})")
 
+    if doc.get("notes"):
+        c.setFillColor(HexColor("#6b7280"))
+        c.setFont("Helvetica", 8)
+        c.drawString(margin, y - 25, f"Bemerkung: {doc['notes']}")
+
     # --- Footer ---
     c.setFillColor(HexColor("#9ca3af"))
     c.setFont("Helvetica", 8)
     c.drawCentredString(w / 2, 20 * mm, "Eventenergie Deutschland GmbH & Co. KG")
     c.setFont("Helvetica", 7)
     c.drawCentredString(w / 2, 15 * mm, f"Beleg-ID: {doc['id'][:8]}")
-
-    if doc.get("notes"):
-        c.setFillColor(HexColor("#6b7280"))
-        c.setFont("Helvetica", 8)
-        c.drawString(margin, y - 25, f"Bemerkung: {doc['notes']}")
 
     c.save()
     buf.seek(0)

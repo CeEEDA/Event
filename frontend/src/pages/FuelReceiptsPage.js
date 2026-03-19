@@ -232,11 +232,8 @@ function ReceiptModal({ receipt, orders, onClose, onSave }) {
     date: receipt?.date || new Date().toISOString().split("T")[0],
     time: receipt?.time || new Date().toTimeString().slice(0, 5),
     location: receipt?.location || "",
-    zaehler_nr: receipt?.zaehler_nr || "",
-    beleg_nr: receipt?.beleg_nr || "",
     abgabe_start: receipt?.abgabe_start || "",
     abgabe_ende: receipt?.abgabe_ende || "",
-    zaehler_vor_start: receipt?.zaehler_vor_start ?? "",
     fahrer: receipt?.fahrer || "",
     notes: receipt?.notes || "",
   });
@@ -254,7 +251,6 @@ function ReceiptModal({ receipt, orders, onClose, onSave }) {
       const payload = {
         ...form,
         quantity_liters: parseFloat(form.quantity_liters),
-        zaehler_vor_start: form.zaehler_vor_start !== "" ? parseFloat(form.zaehler_vor_start) : null,
       };
       if (receipt) {
         await api.put(`/fuel-receipts/${receipt.id}`, payload);
@@ -310,16 +306,6 @@ function ReceiptModal({ receipt, orders, onClose, onSave }) {
           <p className="text-xs text-gray-400 pt-2 border-t border-gray-100 font-medium uppercase tracking-wide">Druckerdaten</p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm text-gray-600">Zaehler-Nr.</Label>
-              <Input value={form.zaehler_nr} onChange={e => setForm(f => ({ ...f, zaehler_nr: e.target.value }))} placeholder="z.B. 11461" className="mt-1 font-mono" data-testid="zaehler-nr-input" />
-            </div>
-            <div>
-              <Label className="text-sm text-gray-600">Beleg-Nr.</Label>
-              <Input value={form.beleg_nr} onChange={e => setForm(f => ({ ...f, beleg_nr: e.target.value }))} placeholder="z.B. 16912" className="mt-1 font-mono" data-testid="beleg-nr-input" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
               <Label className="text-sm text-gray-600">Abgabe-Start</Label>
               <Input type="time" step="1" value={form.abgabe_start} onChange={e => setForm(f => ({ ...f, abgabe_start: e.target.value }))} className="mt-1 font-mono" data-testid="abgabe-start-input" />
             </div>
@@ -327,10 +313,6 @@ function ReceiptModal({ receipt, orders, onClose, onSave }) {
               <Label className="text-sm text-gray-600">Abgabe-Ende</Label>
               <Input type="time" step="1" value={form.abgabe_ende} onChange={e => setForm(f => ({ ...f, abgabe_ende: e.target.value }))} className="mt-1 font-mono" data-testid="abgabe-ende-input" />
             </div>
-          </div>
-          <div>
-            <Label className="text-sm text-gray-600">Zaehler vor Start (Liter)</Label>
-            <Input type="number" step="0.1" value={form.zaehler_vor_start} onChange={e => setForm(f => ({ ...f, zaehler_vor_start: e.target.value }))} placeholder="z.B. 0" className="mt-1 font-mono" data-testid="zaehler-vor-start-input" />
           </div>
 
           {/* Manuelle Felder */}
