@@ -238,6 +238,16 @@ async def list_fuel_receipts(
     if order_pk:
         query["order_pk"] = order_pk
     receipts = await _db.fuel_receipts.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Backfill missing beleg_nr
+    for r in receipts:
+        if not r.get("beleg_nr"):
+            new_nr = await _next_manual_beleg_nr()
+            await _db.fuel_receipts.update_one(
+                {"id": r["id"]},
+                {"$set": {"beleg_nr": new_nr, "zaehler_nr": ZAEHLER_NR, "source": r.get("source", "manual")}},
+            )
+            r["beleg_nr"] = new_nr
+            r["zaehler_nr"] = ZAEHLER_NR
     return receipts
 
 
@@ -264,6 +274,17 @@ async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user))
     receipts = await _db.fuel_receipts.find(
         {"order_pk": str(order_pk)}, {"_id": 0}
     ).sort("date", -1).to_list(100)
+
+    # Backfill missing beleg_nr
+    for r in receipts:
+        if not r.get("beleg_nr"):
+            new_nr = await _next_manual_beleg_nr()
+            await _db.fuel_receipts.update_one(
+                {"id": r["id"]},
+                {"$set": {"beleg_nr": new_nr, "zaehler_nr": ZAEHLER_NR, "source": r.get("source", "manual")}},
+            )
+            r["beleg_nr"] = new_nr
+            r["zaehler_nr"] = ZAEHLER_NR
 
     # Load adjustment for this order
     adj = await _db.fuel_adjustments.find_one({"order_pk": str(order_pk)}, {"_id": 0})
@@ -457,6 +478,16 @@ async def export_fuel_receipt_pdf(
     doc = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
+
+    # Backfill missing beleg_nr
+    if not doc.get("beleg_nr"):
+        new_nr = await _next_manual_beleg_nr()
+        await _db.fuel_receipts.update_one(
+            {"id": receipt_id},
+            {"$set": {"beleg_nr": new_nr, "zaehler_nr": ZAEHLER_NR, "source": doc.get("source", "manual")}},
+        )
+        doc["beleg_nr"] = new_nr
+        doc["zaehler_nr"] = ZAEHLER_NR
 
     # Load adjustment
     qty = doc["quantity_liters"]
