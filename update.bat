@@ -159,14 +159,15 @@ if %errorlevel% equ 0 (
 echo   Frontend-Abhaengigkeiten installiert.
 
 :: Frontend Build erstellen
-echo   Frontend Build...
+echo   Frontend Build erstellen...
+cd /d "%FRONTEND_DIR%"
 if defined USE_PM2 (
-    :: Bei PM2 brauchen wir einen Build
     yarn build 2>nul || npm run build
-    echo   Frontend Build erstellt.
 ) else (
-    echo   Frontend laeuft im Dev-Modus, kein Build noetig.
+    :: Fuer npx serve muss immer gebaut werden
+    yarn build 2>nul || npm run build
 )
+echo   Frontend Build erstellt.
 echo.
 
 :: ====== 5. Datenbank-Migration ======
