@@ -31,6 +31,8 @@ import {
   Settings2,
   FileText,
   Package,
+  Shield,
+  Server,
 } from "lucide-react";
 
 /* ───── EpiRent-specific field config ───── */
@@ -513,6 +515,90 @@ function TankbelegPiSection() {
   );
 }
 
+/* ───── Mosquitto MQTT Broker Setup ───── */
+function MosquittoSetupSection() {
+  const API = process.env.REACT_APP_BACKEND_URL;
+
+  const mqttFiles = [
+    { name: "Komplettpaket (ZIP)", desc: "Setup-Script + Konfiguration", icon: Package, url: `${API}/api/download/mosquitto-bundle`, filename: "mosquitto_setup_bundle.zip" },
+    { name: "setup_mosquitto.sh", desc: "Interaktives Installations-Script", icon: Terminal, url: `${API}/api/download/mosquitto-setup`, filename: "setup_mosquitto.sh" },
+    { name: "mosquitto_eventenergie.conf", desc: "Broker-Konfiguration (TLS + Auth)", icon: Settings2, url: `${API}/api/download/mosquitto-config`, filename: "mosquitto_eventenergie.conf" },
+  ];
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="mosquitto-setup-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-emerald-600 to-teal-500">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Server className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Mosquitto MQTT Broker - Self-Hosted</h3>
+            <p className="text-[10px] text-emerald-100">TLS-verschluesselter Broker fuer DSE Webnet Gateways</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 bg-white/15 rounded-full px-2.5 py-1">
+          <Shield className="w-3.5 h-3.5 text-white" />
+          <span className="text-[10px] text-white font-medium">Let's Encrypt TLS</span>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-3">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Installiert einen eigenen Mosquitto MQTT Broker mit automatischer TLS-Verschluesselung
+          (Let's Encrypt). Unterstuetzt MQTTS (Port 8883), WebSockets (Port 9883) und lokale
+          Verbindungen (Port 1883). Ideal fuer DSE Webnet Gateways und das Portal-Backend.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {mqttFiles.map((file) => {
+            const Icon = file.icon;
+            return (
+              <a
+                key={file.filename}
+                href={file.url}
+                download={file.filename}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all hover:shadow-sm ${
+                  file.filename.endsWith('.zip')
+                    ? 'border-emerald-200 bg-emerald-50 hover:border-emerald-400'
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                }`}
+                data-testid={`download-${file.filename.replace(/\./g, '-')}`}
+              >
+                <Icon className={`w-4 h-4 shrink-0 ${file.filename.endsWith('.zip') ? 'text-emerald-600' : 'text-gray-500'}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium text-gray-900 truncate">{file.name}</div>
+                  <div className="text-[10px] text-gray-400 truncate">{file.desc}</div>
+                </div>
+                <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              </a>
+            );
+          })}
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 mt-3 space-y-2">
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            <strong>Installation:</strong> Dateien auf den Server kopieren und{" "}
+            <code className="bg-gray-200 px-1 rounded">sudo bash setup_mosquitto.sh</code> ausfuehren.
+            Das Script fragt Domain, E-Mail und Zugangsdaten interaktiv ab.
+          </p>
+          <p className="text-[10px] text-gray-500 leading-relaxed">
+            <strong>Voraussetzung:</strong> Domain muss per DNS A-Record auf den Server zeigen,
+            Ports 80 (Zertifikat), 8883 (MQTTS) und 9883 (WSS) muessen offen sein.
+          </p>
+          <div className="flex gap-2 mt-1 flex-wrap">
+            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-medium">MQTTS :8883</span>
+            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-medium">WSS :9883</span>
+            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-medium">Lokal :1883</span>
+            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-medium">Auto-Renewal</span>
+            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-medium">DSE Webnet</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Main Page ───── */
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
@@ -656,6 +742,9 @@ export default function AdminSettingsPage() {
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
+
+          {/* Mosquitto MQTT Broker */}
+          <MosquittoSetupSection />
 
           {/* Schnittstellen */}
           <div>

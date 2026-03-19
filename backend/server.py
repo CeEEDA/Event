@@ -1459,6 +1459,35 @@ async def download_tankbeleg_pi_service():
 async def download_tankbeleg_pi_setup():
     return FileResponse("/app/backend/static/setup_tankbeleg_pi.sh", media_type="application/x-sh", filename="setup_tankbeleg_pi.sh")
 
+# ============== Mosquitto MQTT Broker Downloads ==============
+
+@api_router.get("/download/mosquitto-config")
+async def download_mosquitto_config():
+    return FileResponse("/app/backend/static/mosquitto_eventenergie.conf", media_type="text/plain", filename="mosquitto_eventenergie.conf")
+
+@api_router.get("/download/mosquitto-setup")
+async def download_mosquitto_setup():
+    return FileResponse("/app/backend/static/setup_mosquitto.sh", media_type="application/x-sh", filename="setup_mosquitto.sh")
+
+@api_router.get("/download/mosquitto-bundle")
+async def download_mosquitto_bundle():
+    """Download Mosquitto setup files as a ZIP bundle."""
+    files = [
+        ("setup_mosquitto.sh", "/app/backend/static/setup_mosquitto.sh"),
+        ("mosquitto_eventenergie.conf", "/app/backend/static/mosquitto_eventenergie.conf"),
+    ]
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, path in files:
+            if os.path.exists(path):
+                zf.write(path, name)
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="mosquitto_setup_bundle.zip"'}
+    )
+
 @api_router.get("/download/tankbeleg-pi-bundle")
 async def download_tankbeleg_pi_bundle():
     """Download all Tankbeleg Pi files as a ZIP bundle."""
