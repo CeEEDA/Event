@@ -281,7 +281,8 @@ def _format_delivery_address(addr):
 
 
 async def _fetch_order_delivery_address(client, api_url, headers, order_pk):
-    """Fetch delivery address from a single order's detail endpoint."""
+    """Fetch delivery address from a single order's detail endpoint.
+    Falls back to contact address if delivery address is empty."""
     try:
         resp = await client.get(f"{api_url}/v1/order/{order_pk}", headers=headers)
         data = resp.json()
@@ -290,7 +291,32 @@ async def _fetch_order_delivery_address(client, api_url, headers, order_pk):
             payload = payload[0]
         if isinstance(payload, dict):
             addr = payload.get("address_delivery")
-            return order_pk, _format_delivery_address(addr)
+            formatted = _format_delivery_address(addr)
+            if formatted:
+                return order_pk, formatted
+
+            # Fallback: contact address
+            contact = payload.get("contact") or {}
+            contact_pk = contact.get("primary_key")
+            if contact_pk:
+                try:
+                    c_resp = await client.get(f"{api_url}/v1/contact/{contact_pk}", headers=headers)
+                    c_data = c_resp.json()
+                    c_payload = c_data.get("payload")
+                    if isinstance(c_payload, list) and len(c_payload) > 0:
+                        c_payload = c_payload[0]
+                    if isinstance(c_payload, dict):
+                        c_addr = c_payload.get("address")
+                        if isinstance(c_addr, dict):
+                            parts = []
+                            if c_addr.get("street"):
+                                parts.append(c_addr["street"])
+                            if c_addr.get("postal_code") or c_addr.get("city"):
+                                parts.append(f"{c_addr.get('postal_code', '')} {c_addr.get('city', '')}".strip())
+                            if parts:
+                                return order_pk, ", ".join(parts)
+                except Exception:
+                    pass
     except Exception:
         pass
     return order_pk, ""
