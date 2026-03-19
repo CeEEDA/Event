@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
@@ -44,7 +45,7 @@ export default function FuelReceiptsPage() {
   const [editReceipt, setEditReceipt] = useState(null);
   const [orders, setOrders] = useState([]);
   const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const isAdmin = user.role === "admin";
+  const { isAdmin } = useAuth();
 
   const load = useCallback(async () => {
     try {

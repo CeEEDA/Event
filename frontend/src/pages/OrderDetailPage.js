@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api from "../lib/api";
 import { toast } from "sonner";
@@ -197,8 +198,7 @@ export default function OrderDetailPage() {
   const [showFuelModal, setShowFuelModal] = useState(false);
   const [editFuelReceipt, setEditFuelReceipt] = useState(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const isAdmin = user.role === "admin";
+  const { isAdmin } = useAuth();
 
   const fetchOrder = useCallback(async () => {
     setLoading(true);
