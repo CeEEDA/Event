@@ -106,6 +106,8 @@ export default function OrdersPage() {
   const [error, setError] = useState(null);
   const [sortField, setSortField] = useState("event_start");
   const [sortDir, setSortDir] = useState("asc");
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -119,13 +121,44 @@ export default function OrdersPage() {
       const { data } = await api.get(`/orders/epirent?${params}`);
       setOrders(data.orders || []);
     } catch (err) {
-      const msg = err.response?.data?.detail || "Fehler beim Laden der Aufträge";
+      const msg = err.response?.data?.detail || "Fehler beim Laden der Auftraege";
       setError(msg);
       toast.error(msg);
     } finally {
       setLoading(false);
     }
   }, [dateFrom, dateTo, search]);
+
+  const fetchSyncStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get("/orders/sync/status");
+      setLastSynced(data.last_synced);
+    } catch {}
+  }, []);
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await api.post("/orders/sync/trigger");
+      if (data.status === "ok") {
+        toast.success(`${data.count} Auftraege synchronisiert`);
+      } else if (data.status === "already_running") {
+        toast.info("Synchronisierung laeuft bereits");
+      } else {
+        toast.error(data.message || "Sync fehlgeschlagen");
+      }
+      await fetchOrders();
+      await fetchSyncStatus();
+    } catch (err) {
+      toast.error("Sync fehlgeschlagen");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSyncStatus();
+  }, [fetchSyncStatus]);
 
   useEffect(() => {
     const timer = setTimeout(fetchOrders, 300);
@@ -184,15 +217,20 @@ export default function OrdersPage() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            {lastSynced && (
+              <span className="text-xs text-gray-400 hidden sm:inline">
+                Sync: {new Date(lastSynced).toLocaleString("de-DE", {hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit"})}
+              </span>
+            )}
             <Button
               variant="outline"
               size="sm"
-              onClick={fetchOrders}
-              disabled={loading}
-              data-testid="refresh-orders-btn"
+              onClick={triggerSync}
+              disabled={syncing}
+              data-testid="sync-orders-btn"
             >
-              <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-              Aktualisieren
+              <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Synchronisiere..." : "Aktualisieren"}
             </Button>
             <Logo size="small" />
           </div>

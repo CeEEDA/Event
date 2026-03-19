@@ -12,6 +12,8 @@ security = HTTPBearer()
 
 _db = None
 _decode_jwt_token = None
+_sync_task = None
+_sync_running = False
 
 
 def init_orders_routes(db, decode_jwt_token):
@@ -20,12 +22,207 @@ def init_orders_routes(db, decode_jwt_token):
     _decode_jwt_token = decode_jwt_token
 
 
+import logging
+logger = logging.getLogger("orders_sync")
+
+
+async def _get_sync_settings():
+    """Get sync interval from DB, default 30 min."""
+    doc = await _db.sync_settings.find_one({"key": "epirent"}, {"_id": 0})
+    return doc or {"key": "epirent", "interval_minutes": 30}
+
+
+async def _run_epirent_sync():
+    """Fetch ALL orders from EpiRent and store in orders_cache."""
+    global _sync_running
+    if _sync_running:
+        return {"status": "already_running"}
+    _sync_running = True
+
+    try:
+        config = await _db.integrations.find_one({"type": "ERP", "active": True}, {"_id": 0})
+        if not config:
+            logger.warning("Sync: Keine aktive ERP-Schnittstelle")
+            return {"status": "no_config"}
+
+        api_url = config.get("api_url", "").rstrip("/")
+        api_key = config.get("api_key", "")
+        ssl_skip = config.get("ssl_skip", False)
+
+        headers = {
+            "X-EPI-NO-SESSION": "True",
+            "X-EPI-ACC-TOK": api_key,
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=30, verify=not ssl_skip) as client:
+            resp = await client.post(
+                f"{api_url}/v1/order/filter",
+                headers=headers,
+                json={"pgs": 500, "page": 0},
+            )
+            data = resp.json()
+            if data.get("success") is False:
+                return {"status": "epirent_error", "message": data.get("message")}
+
+            orders_raw = data.get("payload", [])
+
+            # Parse orders
+            parsed = []
+            for o in orders_raw:
+                event_start = None
+                event_end = None
+                dispo_start = None
+                dispo_end = None
+                for sched in o.get("order_schedule", []):
+                    stype = sched.get("type")
+                    sname = sched.get("name", "")
+                    if sname == "Event" or stype == 7:
+                        event_start = sched.get("date_start")
+                        event_end = sched.get("date_end")
+                    elif sname == "Dispo" or stype == 1:
+                        dispo_start = sched.get("date_start")
+                        dispo_end = sched.get("date_end")
+
+                contact = o.get("contact") or {}
+                parsed.append({
+                    "primary_key": o.get("primary_key"),
+                    "order_no": o.get("order_no_fmt", str(o.get("order_no", ""))),
+                    "event": o.get("event", ""),
+                    "status": o.get("status", ""),
+                    "event_start": event_start,
+                    "event_end": event_end,
+                    "dispo_start": dispo_start,
+                    "dispo_end": dispo_end,
+                    "date_shipping": o.get("date_shipping"),
+                    "contact_name": contact.get("name", ""),
+                    "contact_pk": contact.get("primary_key"),
+                    "address": "",
+                    "customer_no": o.get("customer_no"),
+                    "is_confirmed": o.get("is_confirmed", False),
+                    "is_canceled": o.get("is_canceled", False),
+                    "is_archived": o.get("is_archived", False),
+                    "is_current_version": o.get("is_current_version", True),
+                    "editor_name": o.get("editor_name", ""),
+                    "editor_short": o.get("editor_short", ""),
+                    "sum_net": o.get("sum_net", 0),
+                    "sum_gro": o.get("sum_gro", 0),
+                })
+
+            # Fetch delivery addresses (parallel, max 15 concurrent)
+            epi_headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+            sem = asyncio.Semaphore(15)
+
+            async def _fetch_addr(pk):
+                async with sem:
+                    return await _fetch_order_delivery_address(client, api_url, epi_headers, pk)
+
+            pks = [o["primary_key"] for o in parsed if o.get("primary_key")]
+            if pks:
+                addr_results = await asyncio.gather(*[_fetch_addr(pk) for pk in pks])
+                addr_map = {pk: addr for pk, addr in addr_results}
+                for o in parsed:
+                    o["address"] = addr_map.get(o["primary_key"], "")
+
+        # Store in DB - upsert each order
+        now = datetime.now(timezone.utc).isoformat()
+        for o in parsed:
+            o["_synced_at"] = now
+            await _db.orders_cache.update_one(
+                {"primary_key": o["primary_key"]},
+                {"$set": o},
+                upsert=True,
+            )
+
+        # Update last sync timestamp
+        await _db.sync_settings.update_one(
+            {"key": "epirent"},
+            {"$set": {"last_synced": now, "last_count": len(parsed)}},
+            upsert=True,
+        )
+
+        logger.info(f"Sync: {len(parsed)} Auftraege synchronisiert")
+        return {"status": "ok", "count": len(parsed), "synced_at": now}
+
+    except Exception as e:
+        logger.error(f"Sync Fehler: {e}")
+        return {"status": "error", "message": str(e)}
+    finally:
+        _sync_running = False
+
+
+async def _sync_loop():
+    """Background loop that syncs EpiRent orders on interval."""
+    # Wait 10 sec after startup before first sync
+    await asyncio.sleep(10)
+    while True:
+        try:
+            settings = await _get_sync_settings()
+            interval = settings.get("interval_minutes", 30)
+            await _run_epirent_sync()
+            await asyncio.sleep(interval * 60)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Sync loop error: {e}")
+            await asyncio.sleep(60)
+
+
+def start_sync_task():
+    """Start the background sync loop."""
+    global _sync_task
+    if _sync_task is None or _sync_task.done():
+        _sync_task = asyncio.get_event_loop().create_task(_sync_loop())
+        logger.info("EpiRent Sync-Task gestartet")
+
+
 async def _auth_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     payload = _decode_jwt_token(credentials.credentials)
     user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Nicht autorisiert")
     return user
+
+
+# ── Sync Endpoints ──
+
+@router.get("/sync/status")
+async def get_sync_status(user: dict = Depends(_auth_user)):
+    """Get sync status and settings."""
+    settings = await _db.sync_settings.find_one({"key": "epirent"}, {"_id": 0})
+    if not settings:
+        settings = {"key": "epirent", "interval_minutes": 30}
+    cache_count = await _db.orders_cache.count_documents({})
+    return {
+        "interval_minutes": settings.get("interval_minutes", 30),
+        "last_synced": settings.get("last_synced"),
+        "last_count": settings.get("last_count", 0),
+        "cache_count": cache_count,
+        "is_running": _sync_running,
+    }
+
+
+@router.post("/sync/trigger")
+async def trigger_sync(user: dict = Depends(_auth_user)):
+    """Manually trigger an EpiRent sync."""
+    if _sync_running:
+        return {"status": "already_running"}
+    result = await _run_epirent_sync()
+    return result
+
+
+@router.post("/sync/settings")
+async def update_sync_settings(data: dict, user: dict = Depends(_auth_user)):
+    """Update sync interval."""
+    interval = data.get("interval_minutes", 30)
+    if interval < 1:
+        raise HTTPException(status_code=400, detail="Intervall muss mindestens 1 Minute sein")
+    await _db.sync_settings.update_one(
+        {"key": "epirent"},
+        {"$set": {"interval_minutes": int(interval)}},
+        upsert=True,
+    )
+    return {"interval_minutes": int(interval)}
 
 
 class OrderSettingsUpdate(BaseModel):
@@ -108,134 +305,52 @@ async def get_epirent_orders(
     date_to: Optional[str] = None,
     user: dict = Depends(_auth_user),
 ):
-    """Fetch orders from EpiRent API with optional date range and search."""
-    config = await _get_epirent_config()
-    api_url = config.get("api_url", "").rstrip("/")
-    api_key = config.get("api_key", "")
+    """Fetch orders from local cache. Falls back to live EpiRent if cache is empty."""
+    cache_count = await _db.orders_cache.count_documents({})
 
-    headers = {
-        "X-EPI-NO-SESSION": "True",
-        "X-EPI-ACC-TOK": api_key,
-        "Content-Type": "application/json",
+    if cache_count == 0:
+        # Cache leer - direkt synchronisieren
+        sync_result = await _run_epirent_sync()
+        if sync_result.get("status") != "ok":
+            raise HTTPException(status_code=503, detail="EpiRent Sync fehlgeschlagen")
+
+    # Read from cache
+    result = await _db.orders_cache.find({}, {"_id": 0, "_synced_at": 0}).to_list(500)
+
+    # Apply date filtering
+    if date_from or date_to:
+        filtered = []
+        for o in result:
+            es = o.get("event_start") or o.get("dispo_start") or ""
+            ee = o.get("event_end") or o.get("dispo_end") or ""
+            if es == "0000-00-00":
+                es = ""
+            if ee == "0000-00-00":
+                ee = ""
+            if date_from and ee and ee < date_from:
+                continue
+            if date_to and es and es > date_to:
+                continue
+            filtered.append(o)
+        result = filtered
+
+    # Apply text search
+    if search:
+        s = search.lower()
+        result = [o for o in result if
+            s in o.get("event", "").lower() or
+            s in o.get("order_no", "").lower() or
+            s in o.get("contact_name", "").lower() or
+            s in str(o.get("customer_no", "")).lower() or
+            s in o.get("address", "").lower()
+        ]
+
+    return {
+        "orders": result,
+        "total": len(result),
+        "page": page,
+        "page_size": page_size,
     }
-
-    try:
-        ssl_skip = config.get("ssl_skip", False)
-        async with httpx.AsyncClient(timeout=30, verify=not ssl_skip) as client:
-            resp = await client.post(
-                f"{api_url}/v1/order/filter",
-                headers=headers,
-                json={"pgs": page_size, "page": page},
-            )
-            data = resp.json()
-
-            if data.get("success") is False:
-                raise HTTPException(status_code=502, detail=data.get("message", "EpiRent Fehler"))
-
-            orders_raw = data.get("payload", [])
-
-            # Step 1: Parse orders (without addresses yet)
-            result = []
-            for o in orders_raw:
-                event_start = None
-                event_end = None
-                dispo_start = None
-                dispo_end = None
-                for sched in o.get("order_schedule", []):
-                    stype = sched.get("type")
-                    sname = sched.get("name", "")
-                    if sname == "Event" or stype == 7:
-                        event_start = sched.get("date_start")
-                        event_end = sched.get("date_end")
-                    elif sname == "Dispo" or stype == 1:
-                        dispo_start = sched.get("date_start")
-                        dispo_end = sched.get("date_end")
-
-                contact = o.get("contact") or {}
-
-                order = {
-                    "primary_key": o.get("primary_key"),
-                    "order_no": o.get("order_no_fmt", str(o.get("order_no", ""))),
-                    "event": o.get("event", ""),
-                    "status": o.get("status", ""),
-                    "event_start": event_start,
-                    "event_end": event_end,
-                    "dispo_start": dispo_start,
-                    "dispo_end": dispo_end,
-                    "date_shipping": o.get("date_shipping"),
-                    "contact_name": contact.get("name", ""),
-                    "contact_pk": contact.get("primary_key"),
-                    "address": "",
-                    "customer_no": o.get("customer_no"),
-                    "is_confirmed": o.get("is_confirmed", False),
-                    "is_canceled": o.get("is_canceled", False),
-                    "is_archived": o.get("is_archived", False),
-                    "is_current_version": o.get("is_current_version", True),
-                    "editor_name": o.get("editor_name", ""),
-                    "editor_short": o.get("editor_short", ""),
-                    "sum_net": o.get("sum_net", 0),
-                    "sum_gro": o.get("sum_gro", 0),
-                }
-                result.append(order)
-
-            # Step 2: Apply date filtering BEFORE fetching addresses
-            if date_from or date_to:
-                filtered = []
-                for o in result:
-                    es = o.get("event_start") or o.get("dispo_start") or ""
-                    ee = o.get("event_end") or o.get("dispo_end") or ""
-                    if es == "0000-00-00":
-                        es = ""
-                    if ee == "0000-00-00":
-                        ee = ""
-                    if date_from and ee and ee < date_from:
-                        continue
-                    if date_to and es and es > date_to:
-                        continue
-                    filtered.append(o)
-                result = filtered
-
-            # Step 3: Apply text search (except address) BEFORE fetching addresses
-            if search:
-                s = search.lower()
-                result = [o for o in result if
-                    s in o.get("event", "").lower() or
-                    s in o.get("order_no", "").lower() or
-                    s in o.get("contact_name", "").lower() or
-                    s in str(o.get("customer_no", "")).lower()
-                ]
-
-            # Step 4: Fetch delivery addresses only for filtered results
-            order_pks = [o["primary_key"] for o in result if o.get("primary_key")]
-            if order_pks:
-                epi_headers = {
-                    "X-EPI-NO-SESSION": "True",
-                    "X-EPI-ACC-TOK": api_key,
-                }
-                sem = asyncio.Semaphore(15)
-
-                async def _fetch_with_sem(pk):
-                    async with sem:
-                        return await _fetch_order_delivery_address(client, api_url, epi_headers, pk)
-
-                addr_results = await asyncio.gather(*[_fetch_with_sem(pk) for pk in order_pks])
-                delivery_map = {pk: addr for pk, addr in addr_results}
-                for o in result:
-                    o["address"] = delivery_map.get(o["primary_key"], "")
-
-            return {
-                "orders": result,
-                "total": len(result),
-                "page": page,
-                "page_size": page_size,
-            }
-
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="EpiRent Server nicht erreichbar")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def _geocode_address(address_str, addr_raw=None):

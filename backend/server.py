@@ -1536,3 +1536,9 @@ async def startup_event():
         await load_smtp_config_from_db()
     except Exception:
         pass
+    # Start EpiRent order sync background task
+    try:
+        from routes.orders import start_sync_task
+        start_sync_task()
+    except Exception:
+        pass

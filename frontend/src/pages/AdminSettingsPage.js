@@ -63,6 +63,16 @@ const DEFAULT_SETTINGS = {
 function IntegrationCard({ integration, onEdit, onDelete, onToggle, onTest }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(null);
+  const [syncInterval, setSyncInterval] = useState(30);
+  const [savingInterval, setSavingInterval] = useState(false);
+
+  useEffect(() => {
+    api.get("/orders/sync/status").then(res => {
+      setSyncStatus(res.data);
+      setSyncInterval(res.data.interval_minutes || 30);
+    }).catch(() => {});
+  }, []);
 
   const handleTest = async () => {
     setTesting(true);
@@ -75,6 +85,15 @@ function IntegrationCard({ integration, onEdit, onDelete, onToggle, onTest }) {
     } finally {
       setTesting(false);
     }
+  };
+
+  const saveSyncInterval = async () => {
+    setSavingInterval(true);
+    try {
+      await api.post("/orders/sync/settings", { interval_minutes: parseInt(syncInterval) });
+      toast.success(`Sync-Intervall auf ${syncInterval} Min gesetzt`);
+    } catch { toast.error("Fehler"); }
+    finally { setSavingInterval(false); }
   };
 
   return (
@@ -96,6 +115,38 @@ function IntegrationCard({ integration, onEdit, onDelete, onToggle, onTest }) {
       </div>
 
       <div className="text-xs text-gray-400 mb-3 font-mono truncate">{integration.api_url || "—"}</div>
+
+      {/* Sync Settings */}
+      <div className="bg-gray-50 rounded-lg p-3 mb-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-medium text-gray-600">Automatischer Sync</span>
+          {syncStatus?.last_synced && (
+            <span className="text-[10px] text-gray-400">
+              Letzter Sync: {new Date(syncStatus.last_synced).toLocaleString("de-DE", {hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit"})}
+              {syncStatus.last_count != null && ` (${syncStatus.last_count} Auftraege)`}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Intervall:</span>
+          <input
+            type="number" min="1" max="1440"
+            value={syncInterval}
+            onChange={e => setSyncInterval(e.target.value)}
+            className="w-16 px-2 py-1 text-xs border border-gray-200 rounded text-center font-mono"
+            data-testid="sync-interval-input"
+          />
+          <span className="text-xs text-gray-500">Minuten</span>
+          <button
+            onClick={saveSyncInterval}
+            disabled={savingInterval}
+            className="px-2 py-1 text-xs bg-fuchsia-100 text-fuchsia-700 rounded hover:bg-fuchsia-200 transition-colors"
+            data-testid="save-sync-interval-btn"
+          >
+            {savingInterval ? "..." : "Speichern"}
+          </button>
+        </div>
+      </div>
 
       {/* Test Result */}
       {testResult && (
