@@ -1,0 +1,88 @@
+{
+  "summary": "Iteration 40 - Fuel Receipts (Tankbelege) Feature Testing with focus on by-order endpoint and OrderDetailPage integration code review. Backend: 36/36 tests passed (100%). Frontend standalone page working. OrderDetailPage integration code reviewed and verified correct.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "notes": [
+      {"flow": "OrderDetailPage", "issue": "Cannot be tested in preview environment - EpiRent external API is not available, causing 'Auftrag nicht gefunden' error. This is EXPECTED per agent context.", "affected_selectors": ["[data-testid='order-detail-page']"]}
+    ]
+  },
+  "features_tested": {
+    "backend": {
+      "GET /api/fuel-receipts/by-order/{order_pk}": "PASS - Returns receipts filtered by order_pk, returns empty array for non-existent orders",
+      "POST /api/fuel-receipts with order_pk": "PASS - Creates receipt linked to order, visible via by-order endpoint",
+      "GET /api/fuel-receipts?order_pk=X": "PASS - Main list endpoint filter by order_pk also works",
+      "POST /api/fuel-receipts": "PASS - All fuel types (diesel, hvo, heizoel_leicht)",
+      "GET /api/fuel-receipts": "PASS - Lists with status/fuel_type filters",
+      "GET /api/fuel-receipts/stats": "PASS - Returns total, pending, confirmed, by_fuel_type",
+      "GET /api/fuel-receipts/{id}": "PASS - Returns single receipt",
+      "PUT /api/fuel-receipts/{id}": "PASS - Updates receipt, fuel_type_label auto-updates",
+      "POST /api/fuel-receipts/{id}/confirm": "PASS - Sets confirmed status, confirmed_by, confirmed_at",
+      "POST /api/fuel-receipts/{id}/reject": "PASS - Sets rejected status",
+      "DELETE /api/fuel-receipts/{id}": "PASS - Removes receipt, returns 404 on subsequent GET",
+      "GET /api/fuel-receipts/{id}/pdf": "PASS - PDF export via Bearer header or ?token query param",
+      "POST /api/fuel-receipts/sync": "PASS - Bulk sync without auth, deduplicates by pi_local_id"
+    },
+    "frontend_standalone": {
+      "Navigation from Hub": "PASS - Tankbelege button visible and navigates to /fuel-receipts",
+      "Stats cards": "PASS - Shows Gesamt (7), Offen (6), Bestätigt (1), Liter gesamt (1155)",
+      "Status filter": "PASS - Dropdown filters work",
+      "Fuel type filter": "PASS - Dropdown filters work",
+      "Create receipt modal": "PASS - Opens with all fields",
+      "Receipt list": "PASS - Shows receipts with action buttons",
+      "Action buttons visible": "PASS - Confirm, Reject, Edit, PDF, Delete all present"
+    },
+    "orderdetail_integration_code_review": {
+      "data-testid='fuel-receipts-section'": "PRESENT - Line 712",
+      "data-testid='add-fuel-receipt-btn'": "PRESENT - Line 729",
+      "data-testid='fuel-receipt-modal'": "PRESENT - Line 859",
+      "fetchFuelReceipts uses /fuel-receipts/by-order/{pk}": "CORRECT - Line 238",
+      "Modal passes order_pk and order_name": "CORRECT - Lines 843-848",
+      "Total liters displayed": "CORRECT - Lines 721-723",
+      "Confirm/Reject/Delete buttons with testids": "PRESENT - Lines 776-791"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fuel_receipts.py",
+    "/app/test_reports/pytest/pytest_fuel_receipts_iteration40.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend fuel_receipts.py is well-structured with all required endpoints",
+    "OrderDetailPage.js correctly integrates Tankbelege section with all required features",
+    "FuelReceiptModal in OrderDetailPage correctly passes orderPk and orderName when creating",
+    "fetchFuelReceipts correctly calls /fuel-receipts/by-order/{pk} to get order-specific receipts",
+    "All data-testid attributes present for testing",
+    "OrderDetailPage cannot be UI-tested in preview due to EpiRent API unavailability - this is expected and documented"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fuel_receipts.py"
+  ],
+  "success_rate": {
+    "backend": "100% (36/36 tests passed)",
+    "frontend_standalone": "100% (all UI elements working)",
+    "orderdetail_integration": "Code review PASSED - cannot UI test due to EpiRent API unavailable"
+  },
+  "test_credentials": {
+    "admin": "admin@test.com / password"
+  },
+  "seed_data_created": "Test receipts created and cleaned up during testing. Existing receipts in DB for order_pk='260128' verified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fuel Receipts (Tankbelege) feature fully tested. Key findings: 1) Backend by-order endpoint works correctly, 2) Standalone FuelReceiptsPage at /fuel-receipts works, 3) OrderDetailPage integration code is correct but cannot be UI tested in preview (EpiRent API unavailable). Test file: /app/backend/tests/test_fuel_receipts.py includes TestFuelReceiptsByOrder class for by-order endpoint tests.",
+  "mocked_apis": {
+    "has_mocked_apis": false,
+    "mocked_apis_list": [],
+    "external_api_unavailable": {
+      "name": "EpiRent API",
+      "endpoint": "/api/orders/epirent/{pk}",
+      "impact": "Cannot test OrderDetailPage UI in preview - shows 'Auftrag nicht gefunden' error",
+      "note": "Works on user's local server per main agent context"
+    }
+  }
+}

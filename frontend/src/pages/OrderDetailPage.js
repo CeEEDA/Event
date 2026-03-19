@@ -5,6 +5,7 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import {
   ArrowLeft,
   ClipboardList,
@@ -24,6 +25,12 @@ import {
   Lightbulb,
   Box,
   GitFork,
+  Fuel,
+  Check,
+  X,
+  Pencil,
+  Download,
+  Droplets,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -182,6 +189,14 @@ export default function OrderDetailPage() {
   const [locating, setLocating] = useState(false);
   const [addingAsset, setAddingAsset] = useState(false);
 
+  // Tankbelege
+  const [fuelReceipts, setFuelReceipts] = useState([]);
+  const [fuelLoading, setFuelLoading] = useState(false);
+  const [showFuelModal, setShowFuelModal] = useState(false);
+  const [editFuelReceipt, setEditFuelReceipt] = useState(null);
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const isAdmin = user.role === "admin";
+
   const fetchOrder = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -217,10 +232,23 @@ export default function OrderDetailPage() {
     }
   }, [pk]);
 
+  const fetchFuelReceipts = useCallback(async () => {
+    setFuelLoading(true);
+    try {
+      const { data } = await api.get(`/fuel-receipts/by-order/${pk}`);
+      setFuelReceipts(data || []);
+    } catch {
+      // silent
+    } finally {
+      setFuelLoading(false);
+    }
+  }, [pk]);
+
   useEffect(() => {
     fetchOrder();
     fetchAssets();
-  }, [fetchOrder, fetchAssets]);
+    fetchFuelReceipts();
+  }, [fetchOrder, fetchAssets, fetchFuelReceipts]);
 
   useEffect(() => {
     if (order?.center_lat) fetchGenerators();
@@ -299,6 +327,36 @@ export default function OrderDetailPage() {
     } catch {
       toast.error("Fehler beim Löschen");
     }
+  };
+
+  const confirmFuelReceipt = async (id) => {
+    try {
+      await api.post(`/fuel-receipts/${id}/confirm`);
+      toast.success("Beleg bestätigt");
+      fetchFuelReceipts();
+    } catch { toast.error("Fehler"); }
+  };
+
+  const rejectFuelReceipt = async (id) => {
+    try {
+      await api.post(`/fuel-receipts/${id}/reject`);
+      toast.success("Beleg abgelehnt");
+      fetchFuelReceipts();
+    } catch { toast.error("Fehler"); }
+  };
+
+  const deleteFuelReceipt = async (id) => {
+    if (!window.confirm("Tankbeleg wirklich löschen?")) return;
+    try {
+      await api.delete(`/fuel-receipts/${id}`);
+      toast.success("Beleg gelöscht");
+      fetchFuelReceipts();
+    } catch { toast.error("Fehler"); }
+  };
+
+  const openFuelPdf = (id) => {
+    const token = localStorage.getItem("token");
+    window.open(`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/${id}/pdf?token=${token}`, "_blank");
   };
 
   if (loading) {
@@ -649,8 +707,198 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Tankbelege Section */}
+          <div className="bg-white rounded-lg border border-gray-200" data-testid="fuel-receipts-section">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Fuel className="w-4 h-4 text-amber-500" />
+                Tankbelege
+                {fuelLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+              </h2>
+              <div className="flex items-center gap-2">
+                {fuelReceipts.length > 0 && (
+                  <span className="text-xs text-gray-400">
+                    {fuelReceipts.reduce((s, r) => s + (r.quantity_liters || 0), 0).toFixed(0)} Liter gesamt
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={() => { setEditFuelReceipt(null); setShowFuelModal(true); }}
+                  data-testid="add-fuel-receipt-btn"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Neuer Beleg
+                </Button>
+              </div>
+            </div>
+
+            {fuelReceipts.length === 0 && !fuelLoading ? (
+              <div className="p-8 text-center text-gray-400">
+                <Fuel className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Keine Tankbelege für diesen Auftrag</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {fuelReceipts.map((r) => (
+                  <div key={r.id} className="p-4 hover:bg-amber-50/30 transition-colors" data-testid={`fuel-receipt-${r.id}`}>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            r.fuel_type === "diesel" ? "bg-amber-100 text-amber-700" :
+                            r.fuel_type === "heizoel_leicht" ? "bg-blue-100 text-blue-700" :
+                            "bg-emerald-100 text-emerald-700"
+                          }`}>
+                            {r.fuel_type_label || r.fuel_type}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            r.status === "pending" ? "bg-amber-100 text-amber-700" :
+                            r.status === "confirmed" ? "bg-emerald-100 text-emerald-700" :
+                            "bg-red-100 text-red-700"
+                          }`}>
+                            {r.status === "pending" ? "Offen" : r.status === "confirmed" ? "Bestätigt" : "Abgelehnt"}
+                          </span>
+                          <span className="text-xs text-gray-400">{r.date} {r.time}</span>
+                        </div>
+                        <p className="text-base font-bold text-gray-900">{r.quantity_liters?.toFixed(1)} Liter</p>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                          {r.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {r.location}</span>}
+                          {isAdmin && r.gps_lat && <span className="text-gray-400">{r.gps_lat?.toFixed(4)}, {r.gps_lng?.toFixed(4)}</span>}
+                          <span>von {r.created_by}</span>
+                          {r.confirmed_by && <span className="text-emerald-600">bestätigt von {r.confirmed_by}</span>}
+                        </div>
+                        {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {r.status === "pending" && (
+                          <>
+                            <button onClick={() => confirmFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600" title="Bestätigen" data-testid={`fuel-confirm-${r.id}`}>
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => rejectFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600" title="Ablehnen" data-testid={`fuel-reject-${r.id}`}>
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => { setEditFuelReceipt(r); setShowFuelModal(true); }} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="Bearbeiten" data-testid={`fuel-edit-${r.id}`}>
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => openFuelPdf(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="PDF" data-testid={`fuel-pdf-${r.id}`}>
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Löschen" data-testid={`fuel-delete-${r.id}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Fuel Receipt Modal */}
+          {showFuelModal && (
+            <FuelReceiptModal
+              receipt={editFuelReceipt}
+              orderPk={pk}
+              orderName={`${order?.order_no} - ${order?.event || order?.contact_name || ""}`}
+              onClose={() => { setShowFuelModal(false); setEditFuelReceipt(null); }}
+              onSave={() => { setShowFuelModal(false); setEditFuelReceipt(null); fetchFuelReceipts(); }}
+            />
+          )}
         </div>
       </main>
+    </div>
+  );
+}
+
+
+const FUEL_TYPES_OPTIONS = [
+  { value: "diesel", label: "Diesel" },
+  { value: "heizoel_leicht", label: "Heizöl Leicht" },
+  { value: "hvo", label: "HVO" },
+];
+
+function FuelReceiptModal({ receipt, orderPk, orderName, onClose, onSave }) {
+  const [form, setForm] = useState({
+    fuel_type: receipt?.fuel_type || "diesel",
+    quantity_liters: receipt?.quantity_liters || "",
+    date: receipt?.date || new Date().toISOString().split("T")[0],
+    time: receipt?.time || new Date().toTimeString().slice(0, 5),
+    location: receipt?.location || "",
+    notes: receipt?.notes || "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!form.quantity_liters) { toast.error("Bitte Menge eingeben"); return; }
+    setSaving(true);
+    try {
+      if (receipt) {
+        await api.put(`/fuel-receipts/${receipt.id}`, form);
+        toast.success("Beleg aktualisiert");
+      } else {
+        await api.post("/fuel-receipts", {
+          ...form,
+          quantity_liters: parseFloat(form.quantity_liters),
+          order_pk: orderPk,
+          order_name: orderName,
+        });
+        toast.success("Beleg erstellt");
+      }
+      onSave();
+    } catch (err) {
+      toast.error(typeof err?.response?.data?.detail === "string" ? err.response.data.detail : "Fehler");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} data-testid="fuel-receipt-modal">
+        <h2 className="text-lg font-bold text-gray-900 mb-1">{receipt ? "Beleg bearbeiten" : "Neuer Tankbeleg"}</h2>
+        <p className="text-sm text-gray-500 mb-4">Auftrag: {orderName}</p>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-sm text-gray-600">Kraftstoffart</Label>
+            <select value={form.fuel_type} onChange={e => setForm(f => ({ ...f, fuel_type: e.target.value }))} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" data-testid="fuel-modal-type">
+              {FUEL_TYPES_OPTIONS.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Menge (Liter)</Label>
+            <Input type="number" step="0.1" value={form.quantity_liters} onChange={e => setForm(f => ({ ...f, quantity_liters: e.target.value }))} placeholder="z.B. 150.5" className="mt-1" data-testid="fuel-modal-qty" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-sm text-gray-600">Datum</Label>
+              <Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="mt-1" data-testid="fuel-modal-date" />
+            </div>
+            <div>
+              <Label className="text-sm text-gray-600">Uhrzeit</Label>
+              <Input type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} className="mt-1" data-testid="fuel-modal-time" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Standort</Label>
+            <Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="z.B. Baustelle" className="mt-1" data-testid="fuel-modal-location" />
+          </div>
+          <div>
+            <Label className="text-sm text-gray-600">Bemerkung</Label>
+            <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" className="mt-1" data-testid="fuel-modal-notes" />
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <Button onClick={handleSave} disabled={saving} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white" data-testid="fuel-modal-save">
+            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+            {receipt ? "Speichern" : "Erstellen"}
+          </Button>
+          <Button variant="outline" onClick={onClose} className="flex-1">Abbrechen</Button>
+        </div>
+      </div>
     </div>
   );
 }
