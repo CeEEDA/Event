@@ -1,0 +1,9 @@
+MONGO_URL=mongodb://localhost:27017
+DB_NAME=eventenergie
+SMTP_HOST=smtp.mail.de
+SMTP_PORT=465
+SMTP_USER=eventenergie@mail.de
+SMTP_PASSWORD=IHR_SMTP_PASSWORT
+SMTP_SENDER_NAME=Eventenergie Portal
+COMPANY_IBAN=IHRE_IBAN
+COMPANY_BIC=IHR_BIC

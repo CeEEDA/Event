@@ -190,21 +190,59 @@ echo     .env NICHT ueberschrieben (geschuetzt)
 :: ====== .env wiederherstellen (Sicherheitsnetz) ======
 echo.
 echo  [5b] .env Dateien pruefen...
-if exist "%LIVE_DIR%\backend\.env.backup" (
-    :: Pruefen ob .env noch korrekt ist
-    findstr /C:"MONGO_URL" "%LIVE_DIR%\backend\.env" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo     WARNUNG: backend\.env war beschaedigt - stelle Backup wieder her
+
+:: Backend .env pruefen
+if not exist "%LIVE_DIR%\backend\.env" (
+    echo     FEHLER: backend\.env fehlt!
+    if exist "%LIVE_DIR%\backend\.env.backup" (
+        echo     Stelle Backup wieder her...
         copy /Y "%LIVE_DIR%\backend\.env.backup" "%LIVE_DIR%\backend\.env" >nul
+        echo     backend\.env aus Backup wiederhergestellt
+    ) else (
+        echo     WARNUNG: Kein Backup vorhanden!
+        echo     Bitte backend\.env manuell erstellen (siehe backend\.env.example)
+    )
+) else (
+    if exist "%LIVE_DIR%\backend\.env.backup" (
+        findstr /C:"MONGO_URL" "%LIVE_DIR%\backend\.env" >nul 2>&1
+        if %errorlevel% neq 0 (
+            echo     WARNUNG: backend\.env war beschaedigt - stelle Backup wieder her
+            copy /Y "%LIVE_DIR%\backend\.env.backup" "%LIVE_DIR%\backend\.env" >nul
+        ) else (
+            echo     backend\.env ist OK
+        )
     ) else (
         echo     backend\.env ist OK
     )
 )
-if exist "%LIVE_DIR%\frontend\.env.backup" (
-    findstr /C:"REACT_APP" "%LIVE_DIR%\frontend\.env" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo     WARNUNG: frontend\.env war beschaedigt - stelle Backup wieder her
+
+:: Frontend .env pruefen
+if not exist "%LIVE_DIR%\frontend\.env" (
+    echo     FEHLER: frontend\.env fehlt!
+    if exist "%LIVE_DIR%\frontend\.env.backup" (
+        echo     Stelle Backup wieder her...
         copy /Y "%LIVE_DIR%\frontend\.env.backup" "%LIVE_DIR%\frontend\.env" >nul
+        echo     frontend\.env aus Backup wiederhergestellt
+    ) else if exist "%UPDATE_DIR%\frontend\.env.example" (
+        echo     Erstelle frontend\.env aus Vorlage...
+        copy /Y "%UPDATE_DIR%\frontend\.env.example" "%LIVE_DIR%\frontend\.env" >nul
+        echo     frontend\.env aus .env.example erstellt
+        echo     BITTE PRUEFEN: %LIVE_DIR%\frontend\.env
+    ) else (
+        echo     WARNUNG: Kein Backup und keine Vorlage vorhanden!
+        echo     Erstelle Standard frontend\.env...
+        echo REACT_APP_BACKEND_URL=https://portal.eventenergie.com> "%LIVE_DIR%\frontend\.env"
+        echo     frontend\.env mit Standard-URL erstellt
+    )
+) else (
+    if exist "%LIVE_DIR%\frontend\.env.backup" (
+        findstr /C:"REACT_APP" "%LIVE_DIR%\frontend\.env" >nul 2>&1
+        if %errorlevel% neq 0 (
+            echo     WARNUNG: frontend\.env war beschaedigt - stelle Backup wieder her
+            copy /Y "%LIVE_DIR%\frontend\.env.backup" "%LIVE_DIR%\frontend\.env" >nul
+        ) else (
+            echo     frontend\.env ist OK
+        )
     ) else (
         echo     frontend\.env ist OK
     )

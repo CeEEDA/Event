@@ -1529,6 +1529,24 @@ async def download_controller_topics(controller_type: str):
         raise HTTPException(status_code=404, detail="Topic-Datei nicht gefunden")
     return FileResponse(file_path, media_type="text/csv", filename=mapping[1])
 
+@api_router.get("/download/frontend-env")
+async def download_frontend_env():
+    """Download the production frontend .env file."""
+    return FileResponse(
+        "/app/backend/static/frontend_env_production",
+        media_type="text/plain",
+        filename=".env"
+    )
+
+@api_router.get("/download/backend-env-example")
+async def download_backend_env_example():
+    """Download the backend .env example file."""
+    return FileResponse(
+        "/app/backend/static/backend_env_example",
+        media_type="text/plain",
+        filename=".env.example"
+    )
+
 
 # ============== Update Package Export ==============
 
@@ -1599,6 +1617,24 @@ async def download_update_package(credentials: HTTPAuthorizationCredentials = De
                             continue
                         rel_path = os.path.relpath(file_path, str(PROJECT_ROOT))
                         zf.write(file_path, f"{zip_name}/{rel_path}")
+
+        # .env.example Dateien als Referenz hinzufuegen
+        env_examples = {
+            f"{zip_name}/frontend/.env.example": "REACT_APP_BACKEND_URL=https://portal.eventenergie.com\n",
+            f"{zip_name}/backend/.env.example": (
+                "MONGO_URL=mongodb://localhost:27017\n"
+                "DB_NAME=eventenergie\n"
+                "SMTP_HOST=smtp.mail.de\n"
+                "SMTP_PORT=465\n"
+                "SMTP_USER=eventenergie@mail.de\n"
+                "SMTP_PASSWORD=IHR_SMTP_PASSWORT\n"
+                "SMTP_SENDER_NAME=Eventenergie Portal\n"
+                "COMPANY_IBAN=IHRE_IBAN\n"
+                "COMPANY_BIC=IHR_BIC\n"
+            ),
+        }
+        for path, content in env_examples.items():
+            zf.writestr(path, content)
 
     zip_buffer.seek(0)
     return StreamingResponse(

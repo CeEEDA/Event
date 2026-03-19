@@ -493,6 +493,35 @@ function UpdatePackageSection() {
           )}
         </Button>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <a
+            href={`${process.env.REACT_APP_BACKEND_URL}/api/download/frontend-env`}
+            download=".env"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-fuchsia-200 bg-fuchsia-50 hover:border-fuchsia-400 transition-all hover:shadow-sm"
+            data-testid="download-frontend-env"
+          >
+            <FileText className="w-4 h-4 text-fuchsia-600 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-gray-900">frontend/.env</div>
+              <div className="text-[10px] text-gray-400">Produktions-Konfiguration</div>
+            </div>
+            <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          </a>
+          <a
+            href={`${process.env.REACT_APP_BACKEND_URL}/api/download/backend-env-example`}
+            download=".env.example"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 hover:border-gray-300 transition-all hover:shadow-sm"
+            data-testid="download-backend-env-example"
+          >
+            <FileText className="w-4 h-4 text-gray-500 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-gray-900">backend/.env.example</div>
+              <div className="text-[10px] text-gray-400">Vorlage (Werte anpassen!)</div>
+            </div>
+            <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          </a>
+        </div>
+
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 space-y-2">
           <p className="text-[10px] font-semibold text-gray-700">Anleitung:</p>
           <ol className="text-[10px] text-gray-500 leading-relaxed space-y-1 list-decimal list-inside">
