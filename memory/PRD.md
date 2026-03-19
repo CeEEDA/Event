@@ -5,7 +5,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## Core Architecture
 - **Frontend:** React (CRA) + Tailwind CSS + Shadcn/UI
-- **Backend:** FastAPI (Python) + MongoDB
+- **Backend:** FastAPI (Python) + MongoDB + GridFS
 - **Desktop:** Electron Wrapper
 - **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
 
@@ -36,13 +36,14 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - setup_mosquitto.sh + mosquitto_eventenergie.conf
 - Let's Encrypt TLS, 3 Listener (8883, 9883, 1883)
 
-### Serviceplan Anpassung (abgeschlossen - 2026-03-19)
-- Messkoffer und Kirmeskiste: Reduzierter Serviceplan
-  - Nur Elektrische Pruefung + Diagnose + Bemerkungen/Fotos/Notizen
-  - Sektionen 1 (Mechanisch), 3 (Messwerte), 4 (Lasttest), 5 (ATS) ausgeblendet
-- Stromerzeuger und Lichtmast: Weiterhin alle 6 Sektionen
-- Dynamische Nummerierung (1, 2 statt 2, 6)
-- Betrifft Formular und Anzeige gespeicherter Eintraege
+### Serviceplan Anpassungen (abgeschlossen - 2026-03-19)
+- Messkoffer/Kirmeskiste: Reduzierter Plan (nur Elektrisch + Diagnose)
+- PDF + Bilder Upload in Wartungseintraegen (max 25 MB)
+  - Sektion umbenannt: "Anhänge (Fotos & Dokumente)"
+  - Backend: attachments Array mit Metadaten (id, filename, content_type, size)
+  - Frontend: PDFs als Download-Link mit Icon, Bilder als Thumbnails
+  - Drag & Drop fuer PDFs und Bilder
+  - Größenvalidierung (25 MB) mit Fehlermeldung
 
 ## Prioritized Backlog
 
