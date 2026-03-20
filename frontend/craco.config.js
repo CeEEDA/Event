@@ -51,6 +51,21 @@ let webpackConfig = {
     },
     configure: (webpackConfig) => {
 
+      // CRITICAL FIX: Force inject REACT_APP_BACKEND_URL into webpack DefinePlugin
+      // This bypasses any .env file issues (BOM, encoding, missing file)
+      const FALLBACK_URL = "https://portal.eventenergie.com";
+      const definePlugin = webpackConfig.plugins.find(
+        (p) => p.constructor.name === "DefinePlugin"
+      );
+      if (definePlugin && definePlugin.definitions) {
+        const env = definePlugin.definitions["process.env"];
+        if (env && typeof env === "object") {
+          if (!env.REACT_APP_BACKEND_URL || env.REACT_APP_BACKEND_URL === '""' || env.REACT_APP_BACKEND_URL === "undefined") {
+            env.REACT_APP_BACKEND_URL = JSON.stringify(FALLBACK_URL);
+          }
+        }
+      }
+
       // Add ignored patterns to reduce watched directories
         webpackConfig.watchOptions = {
           ...webpackConfig.watchOptions,
