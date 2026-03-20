@@ -454,7 +454,7 @@ async def generate_setup_script(device_id: str, request: Request, admin: dict = 
     Returns a download token for easy wget access from the Pi."""
     device = await db.devices.find_one({"id": device_id, "device_type": "messkoffer"}, {"_id": 0})
     if not device:
-        raise HTTPException(status_code=404, detail="Messkoffer nicht gefunden")
+        raise HTTPException(status_code=404, detail=f"Messkoffer mit ID {device_id} nicht gefunden")
 
     # Generate a new device key
     plain_key = secrets.token_hex(24)
