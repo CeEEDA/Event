@@ -107,35 +107,31 @@ if not exist "build" (
 
 :: ====== Backend starten ======
 echo.
-echo  [6/7] Backend starten (Port 8001)...
+echo  [6/7] Backend starten (Port 8002, intern)...
 cd /d "%BACKEND_DIR%"
 if exist "venv\Scripts\activate.bat" (
-    start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8001"
+    start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 ) else (
-    start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8001"
+    start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 )
 timeout /t 3 /nobreak >nul
 echo   Backend gestartet
 
 :: ====== Caddy starten ======
 echo.
-echo  [7/7] Caddy starten (Reverse Proxy auf Port 3000)...
+echo  [7/7] Caddy starten (Port 8001, extern erreichbar)...
 if exist "%PORTAL_DIR%\caddy.exe" (
     start "Eventenergie Caddy" cmd /c "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
-    echo   Caddy gestartet (caddy.exe)
+    echo   Caddy gestartet
 ) else (
     where caddy >nul 2>&1
-    if %errorlevel% equ 0 (
+    if !errorlevel! equ 0 (
         start "Eventenergie Caddy" cmd /c "cd /d %PORTAL_DIR% && caddy run --config Caddyfile"
-        echo   Caddy gestartet (System-PATH)
+        echo   Caddy gestartet
     ) else (
         echo   FEHLER: Caddy nicht gefunden!
         echo   Bitte caddy.exe herunterladen: https://caddyserver.com/download
         echo   Und nach %PORTAL_DIR%\caddy.exe kopieren
-        echo.
-        echo   Alternativ: Frontend manuell starten mit npx serve
-        start "Eventenergie Frontend" cmd /c "cd /d %FRONTEND_DIR% && npx serve -s build -l 3000"
-        echo   Fallback: Frontend mit npx serve gestartet (KEIN API-Proxy!)
     )
 )
 
@@ -145,12 +141,12 @@ echo  ==================================================
 echo   Portal erfolgreich gestartet!
 echo  ==================================================
 echo.
-echo   Backend:    http://localhost:8001  (intern)
-echo   Caddy:      http://localhost:3000  (Frontend + API)
-echo   Portal:     https://portal.eventenergie.com
+echo   Backend:    http://localhost:8002  (intern)
+echo   Caddy:      http://localhost:8001  (Frontend + API)
+echo   Portal:     http://portal.eventenergie.com:8001
 echo.
 echo   Caddy leitet automatisch weiter:
-echo     /api/*  -^> Backend (Port 8001)
+echo     /api/*  -^> Backend (Port 8002)
 echo     /*      -^> Frontend (Build-Ordner)
 echo.
 echo   DB-Backup:  %BACKUP_DIR%\

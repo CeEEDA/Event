@@ -16,7 +16,7 @@ from pathlib import Path
 router = APIRouter(prefix="/api/backup", tags=["backup"])
 logger = logging.getLogger(__name__)
 
-BACKUP_BASE_DIR = Path("/app/backups")
+BACKUP_BASE_DIR = Path(__file__).parent.parent.parent / "backups"
 BACKUP_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 _scheduler_task: Optional[asyncio.Task] = None

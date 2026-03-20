@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -414,8 +414,35 @@ LOGGER_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "s
 # Temporary storage for pre-generated setup scripts (download token -> script content)
 _setup_downloads = {}
 
+
+def _get_api_base(request: Request = None) -> str:
+    """Determine the API base URL from the incoming request, env, or frontend .env."""
+    # 1. Explicit env var
+    api_base = os.environ.get("API_BASE_URL", "")
+    if api_base:
+        return api_base
+
+    # 2. From the incoming request (most reliable for Pi downloads)
+    if request:
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
+        if host:
+            return f"{scheme}://{host}/api"
+
+    # 3. Fallback: read from frontend .env
+    fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
+    try:
+        with open(fe_env) as f:
+            for line in f:
+                if line.startswith("REACT_APP_BACKEND_URL="):
+                    return line.split("=", 1)[1].strip() + "/api"
+    except Exception:
+        pass
+    return "http://portal.eventenergie.com:8001/api"
+
+
 @router.post("/devices/{device_id}/setup-script")
-async def generate_setup_script(device_id: str, admin: dict = Depends(require_admin)):
+async def generate_setup_script(device_id: str, request: Request, admin: dict = Depends(require_admin)):
     """Generate an all-in-one bash installer: Shelly logger + GPS + local DB + portal sync.
     Returns a download token for easy wget access from the Pi."""
     device = await db.devices.find_one({"id": device_id, "device_type": "messkoffer"}, {"_id": 0})
@@ -451,17 +478,7 @@ async def generate_setup_script(device_id: str, admin: dict = Depends(require_ad
     meter_id = meter["id"]
 
     # Determine API URL
-    api_base = os.environ.get("API_BASE_URL", "")
-    if not api_base:
-        fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
-        try:
-            with open(fe_env) as f:
-                for line in f:
-                    if line.startswith("REACT_APP_BACKEND_URL="):
-                        api_base = line.split("=", 1)[1].strip() + "/api"
-                        break
-        except Exception:
-            api_base = "http://portal.eventenergie.com:8001/api"
+    api_base = _get_api_base(request)
 
     # Read the logger python script
     with open(LOGGER_SCRIPT_PATH, "r") as f:
@@ -703,23 +720,13 @@ class KirmeskisteSetupRequest(BaseModel):
     meter_ips: list[str] = ["192.168.88.240", "192.168.88.241", "192.168.88.242", "192.168.88.243"]
 
 @router.post("/devices/{device_id}/kirmeskiste-setup")
-async def generate_kirmeskiste_setup(device_id: str, body: KirmeskisteSetupRequest = None, admin: dict = Depends(require_admin)):
+async def generate_kirmeskiste_setup(device_id: str, request: Request, body: KirmeskisteSetupRequest = None, admin: dict = Depends(require_admin)):
     """Generate an all-in-one bash installer for Kirmeskiste with 4x EMU Pro II meters."""
     if body is None:
         body = KirmeskisteSetupRequest()
 
     # Determine API URL
-    api_base = os.environ.get("API_BASE_URL", "")
-    if not api_base:
-        fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
-        try:
-            with open(fe_env) as f:
-                for line in f:
-                    if line.startswith("REACT_APP_BACKEND_URL="):
-                        api_base = line.split("=", 1)[1].strip() + "/api"
-                        break
-        except Exception:
-            api_base = "http://portal.eventenergie.com:8001/api"
+    api_base = _get_api_base(request)
 
     device = await db.devices.find_one({"id": device_id, "device_type": "kirmeskiste"}, {"_id": 0})
     if not device:
