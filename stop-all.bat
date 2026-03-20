@@ -10,22 +10,23 @@ echo.
 
 :: Backend stoppen
 echo  Backend stoppen...
-taskkill /FI "WINDOWTITLE eq Eventenergie Backend*" /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8002" ^| findstr LISTENING 2^>nul') do (
+    if %%a GTR 100 taskkill /PID %%a /F >nul 2>&1
 )
 echo   Backend gestoppt.
 
 :: Caddy stoppen
 echo  Caddy stoppen...
-taskkill /FI "WINDOWTITLE eq Eventenergie Caddy*" /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000 ^| findstr LISTENING 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
+taskkill /IM caddy.exe /F >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LISTENING 2^>nul') do (
+    if %%a GTR 100 taskkill /PID %%a /F >nul 2>&1
 )
 echo   Caddy gestoppt.
 
 :: Alte Frontend-Fenster (Fallback)
-taskkill /FI "WINDOWTITLE eq Eventenergie Frontend*" /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Eventenergie Frontend" /F >nul 2>&1
 
 :: PM2 (falls installiert)
 where pm2 >nul 2>&1

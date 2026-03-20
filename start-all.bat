@@ -20,10 +20,27 @@ echo.
 
 :: ====== 1. Laufende Dienste stoppen ======
 echo  [1/7] Laufende Dienste stoppen...
-taskkill /FI "WINDOWTITLE eq Eventenergie*" /F >nul 2>&1
+
+:: Nur gezielt unsere Prozesse beenden (NICHT explorer.exe oder Systemprozesse!)
+:: Backend-Fenster beenden (exakter Titel)
+taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
+:: Caddy-Fenster beenden (exakter Titel)
+taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
+:: Caddy-Prozess beenden
 taskkill /IM caddy.exe /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING 2^>nul') do taskkill /PID %%a /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8002 ^| findstr LISTENING 2^>nul') do taskkill /PID %%a /F >nul 2>&1
+
+:: Port 8001 freigeben - aber NUR wenn es UNSER Prozess ist (nicht System-PIDs)
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LISTENING 2^>nul') do (
+    if %%a GTR 100 (
+        taskkill /PID %%a /F >nul 2>&1
+    )
+)
+:: Port 8002 freigeben
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8002" ^| findstr LISTENING 2^>nul') do (
+    if %%a GTR 100 (
+        taskkill /PID %%a /F >nul 2>&1
+    )
+)
 timeout /t 2 /nobreak >nul
 echo   Alte Prozesse beendet.
 
