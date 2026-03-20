@@ -1684,6 +1684,10 @@ app.include_router(energy_router)
 from routes.admin_settings import router as admin_settings_router
 app.include_router(admin_settings_router)
 
+# Backup System routes
+from routes.backup import router as backup_router
+app.include_router(backup_router)
+
 from routes.orders import router as orders_router, init_orders_routes
 init_orders_routes(db, decode_jwt_token)
 app.include_router(orders_router)
@@ -1733,5 +1737,11 @@ async def startup_event():
     try:
         from routes.orders import start_sync_task
         start_sync_task()
+    except Exception:
+        pass
+    # Start backup scheduler
+    try:
+        from routes.backup import start_backup_scheduler
+        await start_backup_scheduler()
     except Exception:
         pass

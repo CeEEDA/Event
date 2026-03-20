@@ -33,6 +33,12 @@ import {
   Package,
   Shield,
   Server,
+  Database,
+  FolderArchive,
+  Clock,
+  Play,
+  Trash,
+  HardDrive,
 } from "lucide-react";
 
 /* ───── EpiRent-specific field config ───── */
@@ -722,6 +728,317 @@ function MosquittoSetupSection() {
   );
 }
 
+/* ───── Backup-System Einstellungen ───── */
+function BackupSettingsSection() {
+  const [settings, setSettings] = useState({
+    db_backup_enabled: true,
+    db_backup_interval_hours: 12,
+    files_backup_enabled: true,
+    files_backup_interval_hours: 72,
+    retention_days: 7,
+  });
+  const [backups, setBackups] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [triggeringDb, setTriggeringDb] = useState(false);
+  const [triggeringFiles, setTriggeringFiles] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [settingsRes, backupsRes] = await Promise.all([
+        api.get("/backup/settings"),
+        api.get("/backup/list"),
+      ]);
+      setSettings(settingsRes.data);
+      setBackups(backupsRes.data);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.post("/backup/settings", settings);
+      toast.success("Backup-Einstellungen gespeichert");
+    } catch { toast.error("Fehler beim Speichern"); }
+    finally { setSaving(false); }
+  };
+
+  const handleTriggerDb = async () => {
+    setTriggeringDb(true);
+    try {
+      await api.post("/backup/trigger/db");
+      toast.success("Datenbank-Backup erstellt");
+      loadData();
+    } catch (err) { toast.error(getErrorMsg(err, "DB-Backup fehlgeschlagen")); }
+    finally { setTriggeringDb(false); }
+  };
+
+  const handleTriggerFiles = async () => {
+    setTriggeringFiles(true);
+    try {
+      await api.post("/backup/trigger/files");
+      toast.success("Dateien-Backup erstellt");
+      loadData();
+    } catch (err) { toast.error(getErrorMsg(err, "Dateien-Backup fehlgeschlagen")); }
+    finally { setTriggeringFiles(false); }
+  };
+
+  const handleDelete = async (id) => {
+    setDeletingId(id);
+    try {
+      await api.delete(`/backup/${id}`);
+      toast.success("Backup gelöscht");
+      setBackups(prev => prev.filter(b => b.id !== id));
+    } catch { toast.error("Fehler beim Löschen"); }
+    finally { setDeletingId(null); }
+  };
+
+  const formatSize = (bytes) => {
+    if (!bytes) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return "-";
+    return new Date(iso).toLocaleString("de-DE", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="backup-settings-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-blue-700 to-indigo-600">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <HardDrive className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Backup-System</h3>
+            <p className="text-[10px] text-blue-100">Automatische Sicherung von Datenbank und Quellcode</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* ── Einstellungen ── */}
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-blue-600" />
+            Zeitplan-Einstellungen
+          </h4>
+
+          {/* DB Backup Row */}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-gray-800">Datenbank-Backup</span>
+              </div>
+              <Switch
+                checked={settings.db_backup_enabled}
+                onCheckedChange={v => setSettings(p => ({ ...p, db_backup_enabled: v }))}
+                data-testid="db-backup-toggle"
+              />
+            </div>
+            {settings.db_backup_enabled && (
+              <div className="flex items-center gap-2 ml-6">
+                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-xs text-gray-500">Intervall:</span>
+                <input
+                  type="number" min="1" max="720"
+                  value={settings.db_backup_interval_hours}
+                  onChange={e => setSettings(p => ({ ...p, db_backup_interval_hours: parseInt(e.target.value) || 12 }))}
+                  className="w-16 px-2 py-1 text-xs border border-gray-200 rounded text-center font-mono"
+                  data-testid="db-backup-interval-input"
+                />
+                <span className="text-xs text-gray-500">Stunden</span>
+              </div>
+            )}
+          </div>
+
+          {/* Files Backup Row */}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderArchive className="w-4 h-4 text-indigo-600" />
+                <span className="text-sm font-medium text-gray-800">Quellcode-Backup</span>
+              </div>
+              <Switch
+                checked={settings.files_backup_enabled}
+                onCheckedChange={v => setSettings(p => ({ ...p, files_backup_enabled: v }))}
+                data-testid="files-backup-toggle"
+              />
+            </div>
+            {settings.files_backup_enabled && (
+              <div className="flex items-center gap-2 ml-6">
+                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-xs text-gray-500">Intervall:</span>
+                <input
+                  type="number" min="1" max="720"
+                  value={settings.files_backup_interval_hours}
+                  onChange={e => setSettings(p => ({ ...p, files_backup_interval_hours: parseInt(e.target.value) || 72 }))}
+                  className="w-16 px-2 py-1 text-xs border border-gray-200 rounded text-center font-mono"
+                  data-testid="files-backup-interval-input"
+                />
+                <span className="text-xs text-gray-500">Stunden</span>
+              </div>
+            )}
+          </div>
+
+          {/* Retention */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex items-center gap-2">
+              <Trash className="w-4 h-4 text-red-500" />
+              <span className="text-sm font-medium text-gray-800">Aufbewahrung:</span>
+              <input
+                type="number" min="1" max="365"
+                value={settings.retention_days}
+                onChange={e => setSettings(p => ({ ...p, retention_days: parseInt(e.target.value) || 7 }))}
+                className="w-16 px-2 py-1 text-xs border border-gray-200 rounded text-center font-mono"
+                data-testid="retention-days-input"
+              />
+              <span className="text-xs text-gray-500">Tage (danach automatisch löschen)</span>
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <Button size="sm" onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white" data-testid="save-backup-settings-btn">
+            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+            Einstellungen speichern
+          </Button>
+        </div>
+
+        {/* ── Manuelles Backup ── */}
+        <div className="border-t border-gray-100 pt-5 space-y-3">
+          <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Play className="w-4 h-4 text-blue-600" />
+            Manuelles Backup
+          </h4>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              size="sm" variant="outline"
+              onClick={handleTriggerDb}
+              disabled={triggeringDb}
+              className="border-blue-200 text-blue-700 hover:bg-blue-50"
+              data-testid="trigger-db-backup-btn"
+            >
+              {triggeringDb ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Database className="w-4 h-4 mr-1.5" />}
+              Datenbank jetzt sichern
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              onClick={handleTriggerFiles}
+              disabled={triggeringFiles}
+              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              data-testid="trigger-files-backup-btn"
+            >
+              {triggeringFiles ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FolderArchive className="w-4 h-4 mr-1.5" />}
+              Quellcode jetzt sichern
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Backup-Liste ── */}
+        <div className="border-t border-gray-100 pt-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <FolderArchive className="w-4 h-4 text-blue-600" />
+              Vorhandene Backups
+            </h4>
+            <Button variant="ghost" size="sm" onClick={loadData} className="text-gray-400 hover:text-blue-600 h-7" data-testid="refresh-backups-btn">
+              <RefreshCw className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+
+          {backups.length === 0 ? (
+            <p className="text-xs text-gray-400 py-4 text-center">Noch keine Backups vorhanden</p>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-xs" data-testid="backups-table">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-3 py-2 text-gray-600 font-medium">Typ</th>
+                    <th className="text-left px-3 py-2 text-gray-600 font-medium">Datum</th>
+                    <th className="text-left px-3 py-2 text-gray-600 font-medium">Größe</th>
+                    <th className="text-left px-3 py-2 text-gray-600 font-medium">Auslöser</th>
+                    <th className="text-right px-3 py-2 text-gray-600 font-medium">Aktionen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backups.map((b, i) => (
+                    <tr key={b.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"} data-testid={`backup-row-${b.id}`}>
+                      <td className="px-3 py-2.5">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          b.type === "database"
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-indigo-50 text-indigo-700"
+                        }`}>
+                          {b.type === "database" ? <Database className="w-3 h-3" /> : <FolderArchive className="w-3 h-3" />}
+                          {b.type === "database" ? "Datenbank" : "Quellcode"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-gray-700">{formatDate(b.created_at)}</td>
+                      <td className="px-3 py-2.5 text-gray-500 font-mono">{formatSize(b.file_size)}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-[10px] font-medium ${b.trigger === "auto" ? "text-green-600" : "text-gray-500"}`}>
+                          {b.trigger === "auto" ? "Automatisch" : "Manuell"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {b.file_exists && (
+                            <a
+                              href={`${process.env.REACT_APP_BACKEND_URL}/api/backup/${b.id}/download`}
+                              download
+                              className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                              data-testid={`download-backup-${b.id}`}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => handleDelete(b.id)}
+                            disabled={deletingId === b.id}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                            data-testid={`delete-backup-${b.id}`}
+                          >
+                            {deletingId === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Info */}
+        <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+          <p className="text-[10px] text-blue-700 leading-relaxed">
+            <strong>Hinweis:</strong> Datenbank-Backups nutzen <code className="bg-blue-100 px-1 rounded">mongodump</code> mit gzip-Komprimierung.
+            Quellcode-Backups enthalten den gesamten Anwendungscode ohne .env-Dateien und node_modules.
+            Der Scheduler prüft alle 15 Minuten, ob ein Backup fällig ist.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Main Page ───── */
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
@@ -865,6 +1182,9 @@ export default function AdminSettingsPage() {
 
           {/* Server Update-Paket */}
           <UpdatePackageSection />
+
+          {/* Backup-System */}
+          <BackupSettingsSection />
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
