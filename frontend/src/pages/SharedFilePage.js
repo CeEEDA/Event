@@ -5,7 +5,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Logo } from "../components/Logo";
 import { toast } from "sonner";
-import { downloadSharedFile, uploadToShare } from "../lib/api";
+import { downloadSharedFile, uploadToShare, BACKEND_URL } from "../lib/api";
 import axios from "axios";
 import { 
   Download, 
@@ -18,8 +18,6 @@ import {
   Calendar,
   HardDrive
 } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 export default function SharedFilePage() {
   const { token } = useParams();

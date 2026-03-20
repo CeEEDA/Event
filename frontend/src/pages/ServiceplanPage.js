@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api, { getErrorMsg } from "../lib/api";
+import { BACKEND_URL } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -12,7 +13,6 @@ import {
   Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera, FileText, FileUp, Download, Paperclip,
 } from "lucide-react";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste" };
 
 // Device types with reduced service plan (only electrical + diagnosis)

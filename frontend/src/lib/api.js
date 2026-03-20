@@ -42,6 +42,7 @@ api.interceptors.response.use(
   }
 );
 
+export { BACKEND_URL };
 export default api;
 
 /** Extract human-readable error message from axios error (handles Pydantic validation arrays). */

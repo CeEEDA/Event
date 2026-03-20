@@ -7,8 +7,7 @@ import { Logo } from "../components/Logo";
 import { toast } from "sonner";
 import axios from "axios";
 import { Lock, ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+import { BACKEND_URL } from "../lib/api";
 
 export default function ResetPasswordPage() {
   const { token } = useParams();

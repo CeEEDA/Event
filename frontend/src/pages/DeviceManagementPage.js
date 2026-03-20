@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
-import api, { getErrorMsg } from "../lib/api";
+import api, { getErrorMsg, BACKEND_URL } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -29,8 +29,6 @@ import {
   Server,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 // Pi Setup Section for Messkoffer - generates all-in-one installer
 function PiSetupSection({ deviceId, deviceName, deviceType }) {
@@ -123,7 +121,7 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
                 onClick={async (e) => {
                   e.preventDefault();
                   try {
-                    const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/devices/${deviceId}/qr-label/${i}`, {
+                    const resp = await fetch(`${BACKEND_URL}/api/kirmes/devices/${deviceId}/qr-label/${i}`, {
                       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
                     });
                     if (!resp.ok) throw new Error();

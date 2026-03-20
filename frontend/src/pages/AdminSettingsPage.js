@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
-import api, { getErrorMsg } from "../lib/api";
+import api, { getErrorMsg, BACKEND_URL } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -501,7 +501,7 @@ function UpdatePackageSection() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <a
-            href={`${process.env.REACT_APP_BACKEND_URL}/api/download/frontend-env`}
+            href={`${BACKEND_URL}/api/download/frontend-env`}
             download=".env"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-fuchsia-200 bg-fuchsia-50 hover:border-fuchsia-400 transition-all hover:shadow-sm"
             data-testid="download-frontend-env"
@@ -514,7 +514,7 @@ function UpdatePackageSection() {
             <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
           </a>
           <a
-            href={`${process.env.REACT_APP_BACKEND_URL}/api/download/backend-env-example`}
+            href={`${BACKEND_URL}/api/download/backend-env-example`}
             download=".env.example"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 hover:border-gray-300 transition-all hover:shadow-sm"
             data-testid="download-backend-env-example"
@@ -527,7 +527,7 @@ function UpdatePackageSection() {
             <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
           </a>
           <a
-            href={`${process.env.REACT_APP_BACKEND_URL}/api/download/caddyfile`}
+            href={`${BACKEND_URL}/api/download/caddyfile`}
             download="Caddyfile"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-orange-200 bg-orange-50 hover:border-orange-400 transition-all hover:shadow-sm"
             data-testid="download-caddyfile"
@@ -570,7 +570,7 @@ function UpdatePackageSection() {
 
 /* ───── Tankbeleg Pi Downloads ───── */
 function TankbelegPiSection() {
-  const API = process.env.REACT_APP_BACKEND_URL;
+  const API = BACKEND_URL;
 
   const piFiles = [
     { name: "Komplettpaket (ZIP)", desc: "Alle Dateien als Bundle", icon: Package, url: `${API}/api/download/tankbeleg-pi-bundle`, filename: "tankbeleg_pi_bundle.zip" },
@@ -646,7 +646,7 @@ function TankbelegPiSection() {
 
 /* ───── Mosquitto MQTT Broker Setup ───── */
 function MosquittoSetupSection() {
-  const API = process.env.REACT_APP_BACKEND_URL;
+  const API = BACKEND_URL;
 
   const mqttFiles = [
     { name: "Komplettpaket (ZIP)", desc: "Setup-Script + Konfiguration", icon: Package, url: `${API}/api/download/mosquitto-bundle`, filename: "mosquitto_setup_bundle.zip" },
@@ -1000,7 +1000,7 @@ function BackupSettingsSection() {
                         <div className="flex items-center justify-end gap-1">
                           {b.file_exists && (
                             <a
-                              href={`${process.env.REACT_APP_BACKEND_URL}/api/backup/${b.id}/download`}
+                              href={`${BACKEND_URL}/api/backup/${b.id}/download`}
                               download
                               className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
                               data-testid={`download-backup-${b.id}`}

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api from "../lib/api";
+import { BACKEND_URL } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -389,12 +390,12 @@ export default function OrderDetailPage() {
 
   const openFuelPdf = (id) => {
     const token = localStorage.getItem("token");
-    window.open(`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/${id}/pdf?token=${token}`, "_blank");
+    window.open(`${BACKEND_URL}/api/fuel-receipts/${id}/pdf?token=${token}`, "_blank");
   };
 
   const downloadAllPdfs = () => {
     const token = localStorage.getItem("token");
-    window.open(`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`, "_blank");
+    window.open(`${BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`, "_blank");
   };
 
   const saveAddress = async () => {

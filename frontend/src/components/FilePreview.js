@@ -7,11 +7,8 @@ import {
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { X, Download, ChevronLeft, ChevronRight, FileText } from "lucide-react";
-import api from "../lib/api";
-import { downloadFile } from "../lib/api";
+import api, { BACKEND_URL, downloadFile } from "../lib/api";
 import { toast } from "sonner";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 export const FilePreview = ({ open, onClose, file, files }) => {
   const [previewUrl, setPreviewUrl] = useState(null);
