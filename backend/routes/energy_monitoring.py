@@ -416,17 +416,17 @@ _setup_downloads = {}
 
 
 def _get_api_base(request: Request = None) -> str:
-    """Determine the API base URL from the incoming request, env, or frontend .env."""
-    # 1. Explicit env var
+    """Determine the API base URL - always returns a FULL URL with host for Pi configs."""
+    # 1. Explicit env var (highest priority)
     api_base = os.environ.get("API_BASE_URL", "")
     if api_base:
         return api_base
 
-    # 2. From the incoming request (most reliable for Pi downloads)
+    # 2. From the incoming request - but skip localhost (Pi needs external URL)
     if request:
         scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
         host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
-        if host:
+        if host and "localhost" not in host and "127.0.0.1" not in host:
             return f"{scheme}://{host}/api"
 
     # 3. Fallback: read from frontend .env
@@ -435,7 +435,9 @@ def _get_api_base(request: Request = None) -> str:
         with open(fe_env) as f:
             for line in f:
                 if line.startswith("REACT_APP_BACKEND_URL="):
-                    return line.split("=", 1)[1].strip() + "/api"
+                    val = line.split("=", 1)[1].strip()
+                    if val and val != "''":
+                        return val + "/api"
     except Exception:
         pass
     return "http://portal.eventenergie.com:8001/api"
@@ -769,7 +771,7 @@ async def generate_kirmeskiste_setup(device_id: str, request: Request, body: Kir
     )
 
     # Get API URL
-    api_url = os.environ.get("FRONTEND_URL", "").rstrip("/") + "/api"
+    api_url = _get_api_base(request)
 
     # Read the kirmeskiste_sync.py template
     script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "kirmeskiste_sync.py")
