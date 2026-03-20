@@ -233,8 +233,9 @@ async def _run_files_backup() -> dict:
 
     INCLUDE_TOPLEVEL = {
         "backend", "frontend", "desktop", "deployment",
-        "update.bat", "start-all.bat", "start_services.bat",
-        "stop_services.bat", "UPDATE_ANLEITUNG.md", "Caddyfile",
+        "update.bat", "start-all.bat", "stop-all.bat",
+        "start_services.bat", "stop_services.bat",
+        "UPDATE_ANLEITUNG.md", "Caddyfile",
     }
 
     try:

@@ -27,45 +27,36 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Mosquitto + Let's Encrypt TLS, 3 Listener
 
 ### Serviceplan Anpassungen (abgeschlossen)
-- Messkoffer/Kirmeskiste: Reduzierter Plan
-- PDF + Bilder Upload (max 25 MB)
+- Messkoffer/Kirmeskiste: Reduzierter Plan, PDF + Bilder Upload (max 25 MB)
 
 ### Artikel positionieren - Status & Detail (abgeschlossen - 2026-03-19)
-- Zeilen-Farbe: Magenta-Hintergrund wenn Artikel gestellt
-- "Abgebaut"-Button: Toggle in jeder Zeile
-- Detail-Modal mit OpenStreetMap-Karte
-- Backend: PATCH Toggle-Endpoint
+- Zeilen-Farbe, Abgebaut-Button, Detail-Modal mit OSM-Karte, PATCH Toggle-Endpoint
 
 ### Server Deployment Tools (abgeschlossen - 2026-03-20)
-- Safe Update-Paket Export (ZIP ohne .env)
-- Caddy Reverse Proxy Integration
-- .env Templates und Konfigurationsdateien
-- Hardcoded Fallback URL in api.js
+- Safe Update-Paket Export, Caddy Reverse Proxy, .env Templates, Hardcoded Fallback URL
 
 ### Backup-System (abgeschlossen - 2026-03-20)
-- **Datenbank-Backup:** Automatisch via mongodump mit gzip-Komprimierung
-- **Quellcode-Backup:** Automatisch als ZIP (ohne .env, node_modules)
-- **Konfigurierbares Intervall:** DB (Standard: 12h), Dateien (Standard: 72h)
-- **Aufbewahrungsrichtlinie:** Alte Backups automatisch löschen (Standard: 7 Tage)
-- **Manuelles Backup:** Über Admin UI sofort auslösbar
-- **Admin UI:** Neue Sektion in AdminSettingsPage mit Toggles, Intervall-Inputs, Backup-Liste
-- **Hintergrund-Scheduler:** Prüft alle 15 Min ob Backup fällig
-- **Backend:** /app/backend/routes/backup.py
-- **API-Endpoints:** GET/POST /api/backup/settings, GET /api/backup/list, POST /api/backup/trigger/db, POST /api/backup/trigger/files, DELETE /api/backup/{id}, GET /api/backup/{id}/download
+- DB-Backup via mongodump (gzip), Quellcode-Backup (ZIP)
+- Konfigurierbares Intervall, Aufbewahrungsrichtlinie, Manuelles Backup
+- Admin UI mit Toggles, Intervall-Inputs, Backup-Liste
+- Hintergrund-Scheduler (15 Min Prüfintervall)
+
+### Start/Update/Stop Scripts ueberarbeitet (abgeschlossen - 2026-03-20)
+- **start-all.bat:** Stoppt alte Prozesse, MongoDB prüfen, DB-Backup beim Start, venv Support, Frontend Build prüfen, Backend + Caddy starten
+- **stop-all.bat:** Stoppt Backend, Caddy und alle Portal-Prozesse (inkl. Port-Cleanup)
+- **update.bat:** Auto-Erkennung des Update-Ordners, DB+Code-Backup, .env Schutz, Dependencies installieren, Build, automatischer Neustart
+- **stop_services.bat / start_services.bat:** Aliase auf neue Scripts
+- **deployment/start-all.bat + stop-all.bat:** Synchronisiert mit Hauptordner
+- **UPDATE_ANLEITUNG.md:** Komplett ueberarbeitet mit allen neuen Features
 
 ## Key API Endpoints
-- `/api/orders/epirent/{pk}/assets` - GET/POST Assets
-- `/api/orders/epirent/{pk}/assets/{id}/status` - PATCH Toggle Status
-- `/api/fuel-receipts/sync` - Pi-Sync
-- `/api/download/tankbeleg-pi-bundle` - Pi-Script ZIP
-- `/api/download/mosquitto-bundle` - Mosquitto ZIP
-- `/api/download/update-package` - Update-Paket ZIP
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
 - `/api/backup/list` - GET Backup-Liste
-- `/api/backup/trigger/db` - POST DB-Backup auslösen
-- `/api/backup/trigger/files` - POST Dateien-Backup auslösen
-- `/api/backup/{id}` - DELETE Backup löschen
+- `/api/backup/trigger/db` - POST DB-Backup ausloesen
+- `/api/backup/trigger/files` - POST Dateien-Backup ausloesen
+- `/api/backup/{id}` - DELETE Backup loeschen
 - `/api/backup/{id}/download` - GET Backup herunterladen
+- `/api/download/update-package` - GET Update-Paket ZIP
 
 ## Prioritized Backlog
 
@@ -77,7 +68,6 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ### P2 - Backlog
 - Admin File Size Limits fuer Uploads
-- craco.config.js Cleanup (obsolete Kommentare entfernen)
 
 ## Credentials
 - **Admin (lokal):** admin@test.com / password

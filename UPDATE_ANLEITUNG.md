@@ -1,113 +1,119 @@
-# Eventenergie Portal - Update-Anleitung
+# Eventenergie Portal - Update & Betrieb
 
-## Schnell-Update (3 Schritte)
+## Schnell-Update (empfohlen)
 
-### 1. Code auf den Server bringen
+1. **Update-Paket herunterladen** (Admin → Einstellungen → "Server Update-Paket")
+2. **ZIP entpacken** an beliebige Stelle (z.B. `C:\Downloads\`)
+3. **`update.bat` doppelklicken** (Als Administrator ausfuehren)
+4. Das Script erkennt automatisch den Quellordner und fuehrt alles durch:
+   - Sichert .env Dateien
+   - Erstellt DB-Backup (mongodump)
+   - Stoppt laufende Dienste
+   - Aktualisiert Backend + Frontend
+   - Installiert neue Abhaengigkeiten
+   - Erstellt neuen Frontend-Build
+   - Startet alle Dienste automatisch
 
-**Option A: Git (empfohlen)**
-```
-cd C:\eventenergie
-git pull origin main
-```
+## Geschuetzte Dateien (werden NIE ueberschrieben)
 
-**Option B: ZIP**
-- ZIP entpacken nach `C:\eventenergie`
-- Bestehende `.env` Dateien NICHT ueberschreiben!
+- `backend\.env` - Datenbank, SMTP, alle Zugangsdaten
+- `frontend\.env` - Portal-URL
+- MongoDB Daten - komplett unberuehrt
+- `node_modules` - werden nur ergaenzt
 
-### 2. Update ausfuehren
-```
-Rechtsklick auf update.bat -> Als Administrator ausfuehren
-```
-
-Das Script macht automatisch:
-- Backup der aktuellen Installation
-- Abhaengigkeiten installieren
-- Datenbank-Migration
-- Dienste neu starten
-
-### 3. Pruefen
-- Backend: http://localhost:8001/api/health
-- Frontend: http://localhost:3000
-
----
-
-## Was hat sich geaendert? (ab 19.03.2026 18:00)
-
-### Neue Features
-- **Tankbeleg Pi Script** - Raspberry Pi Drucker-Emulator
-- **Mosquitto MQTT Broker** - Self-Hosted Setup mit TLS
-- **Serviceplan** - PDF-Upload + reduzierter Plan fuer Messkoffer/Kirmeskiste
-- **Artikel positionieren** - Status (gestellt/abgebaut) + Detail-Modal mit Karte
-
-### Datenbank-Aenderungen (automatisch per migrate_db.py)
-- `order_assets`: Neues Feld `status` (placed/dismantled)
-- `maintenance_entries`: Neues Feld `attachments` (PDF-Metadaten)
-- Neue Indizes fuer bessere Performance
-
-### Neue Dateien
-```
-backend/
-  migrate_db.py              <- Datenbank-Migration
-  static/
-    tankbeleg_pi.py          <- Pi Script
-    tankbeleg_pi.conf        <- Pi Konfiguration
-    tankbeleg_pi.service     <- Pi Systemd Service
-    tankbeleg_simulator.py   <- Pi Test-Suite
-    setup_tankbeleg_pi.sh    <- Pi Installation
-    mosquitto_eventenergie.conf  <- MQTT Broker Config
-    setup_mosquitto.sh       <- MQTT Broker Installation
-    update.bat               <- Dieses Update-Script
-    start_services.bat       <- Dienste starten
-    stop_services.bat        <- Dienste stoppen
-```
-
----
-
-## Dienste verwalten
+## Dienste starten / stoppen
 
 ### Starten
 ```
-start_services.bat
+C:\eventenergie\start-all.bat
 ```
+Macht automatisch:
+1. Stoppt alte Prozesse
+2. Startet MongoDB (falls nicht aktiv)
+3. Erstellt Sicherheits-Backup der Datenbank
+4. Prueft Python venv
+5. Prueft Frontend Build
+6. Startet Backend (uvicorn, Port 8001)
+7. Startet Caddy (Reverse Proxy, Port 3000)
 
 ### Stoppen
 ```
-stop_services.bat
+C:\eventenergie\stop-all.bat
+```
+Stoppt Backend, Caddy und alle Portal-Prozesse.
+
+## Caddy Reverse Proxy
+
+Caddy ersetzt `npx serve` und bietet:
+- Statische Frontend-Dateien ausliefern
+- API-Anfragen (`/api/*`) an Backend weiterleiten
+- Kein CORS-Problem zwischen Frontend und Backend
+
+### Installation (einmalig)
+1. Caddy herunterladen: https://caddyserver.com/download (Windows amd64)
+2. `caddy.exe` nach `C:\eventenergie\` kopieren
+3. `Caddyfile` liegt bereits im Hauptordner
+
+## Backup-System
+
+Das Portal erstellt automatisch Backups:
+- **Datenbank-Backup:** via `mongodump` (Standard: alle 12 Stunden)
+- **Quellcode-Backup:** als ZIP (Standard: alle 3 Tage)
+- **Aufbewahrung:** Alte Backups werden nach 7 Tagen automatisch geloescht
+- **Konfiguration:** Admin → Einstellungen → Backup-System
+
+### Manuelles Backup
+- Ueber die Admin-UI: "Datenbank jetzt sichern" / "Quellcode jetzt sichern"
+- Beim jedem Start (`start-all.bat`) wird automatisch ein DB-Backup erstellt
+
+### Backup-Speicherort
+```
+C:\eventenergie\backups\
+  db\          - Datenbank-Backups (.gz)
+  files\       - Quellcode-Backups (.zip)
+  code\        - Pre-Update Code-Backups (.zip)
 ```
 
-### Fuer Produktion (PM2 empfohlen)
+### Datenbank wiederherstellen
 ```
-npm install -g pm2
-pm2 start ecosystem.config.js
-pm2 save
-pm2 startup
+mongorestore --uri="mongodb://localhost:27017" --db=eventenergie --archive=PFAD_ZUM_BACKUP.gz --gzip --drop
 ```
 
----
-
-## Wichtig: .env Dateien
-
-Die `.env` Dateien enthalten Ihre Zugangsdaten und duerfen
-NICHT ueberschrieben werden. Falls sie verloren gehen:
-
-**backend/.env** muss enthalten:
+## Verzeichnisstruktur
 ```
-MONGO_URL=mongodb://...
-DB_NAME=eventenergie_db
-JWT_SECRET=...
-STRIPE_SECRET_KEY=...
-(weitere Keys)
+C:\eventenergie\
+  backend\         - FastAPI Server
+    .env           - Datenbank + SMTP Konfiguration
+    server.py      - Hauptserver
+    routes\        - API-Routes
+    services\      - Dienste (PDF etc.)
+    static\        - Downloads, Pi-Scripts
+  frontend\        - React Frontend
+    .env           - Portal-URL
+    src\           - Quellcode
+    build\         - Kompiliertes Frontend
+  backups\         - Automatische Backups
+  caddy.exe        - Reverse Proxy
+  Caddyfile        - Caddy-Konfiguration
+  start-all.bat    - Dienste starten
+  stop-all.bat     - Dienste stoppen
+  update.bat       - Automatisches Update
 ```
 
-**frontend/.env** muss enthalten:
-```
-REACT_APP_BACKEND_URL=https://ihre-domain.de
-```
+## Fehlerbehebung
 
----
+### Portal nicht erreichbar
+1. `start-all.bat` als Administrator ausfuehren
+2. Pruefen ob MongoDB laeuft: `sc query MongoDB`
+3. Pruefen ob Backend laeuft: `curl http://localhost:8001/api/health`
+4. Pruefen ob Caddy laeuft: `curl http://localhost:3000`
 
-## Bei Problemen
+### Login funktioniert nicht
+1. Pruefen ob `frontend\.env` korrekt ist: `REACT_APP_BACKEND_URL=https://portal.eventenergie.com`
+2. Frontend neu bauen: `cd C:\eventenergie\frontend && npm run build`
+3. Dienste neu starten: `stop-all.bat` dann `start-all.bat`
 
-1. Logs pruefen (Backend-Fenster oder PM2 logs)
-2. `update.bat` nochmal ausfuehren
-3. Backup wiederherstellen: `C:\eventenergie\backups\`
+### Datenbank-Problem
+1. Backup wiederherstellen (siehe oben)
+2. MongoDB-Service pruefen: `sc query MongoDB`
+3. MongoDB-Logdatei pruefen: `C:\Program Files\MongoDB\Server\X.X\log\`
