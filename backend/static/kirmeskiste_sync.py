@@ -141,11 +141,11 @@ log = logging.getLogger("kirmeskiste")
 # ====== Modbus Lesen ======
 
 def _read_input(client, register, count, slave_id):
-    """Wrapper: versucht slave= dann unit= (pymodbus Kompatibilitaet)."""
+    """Wrapper: versucht unit= zuerst (funktioniert auf pymodbus 2.x UND 3.x)."""
     try:
-        return client.read_input_registers(register, count, slave=slave_id)
-    except TypeError:
         return client.read_input_registers(register, count, unit=slave_id)
+    except TypeError:
+        return client.read_input_registers(register, count, slave=slave_id)
 
 
 def read_float32(client, register, slave_id=1):
