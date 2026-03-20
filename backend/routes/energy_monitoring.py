@@ -488,7 +488,9 @@ async def generate_setup_script(device_id: str, request: Request, admin: dict = 
     api_base = _get_api_base(request)
 
     # Read the logger python script
-    with open(LOGGER_SCRIPT_PATH, "r") as f:
+    if not os.path.exists(LOGGER_SCRIPT_PATH):
+        raise HTTPException(status_code=500, detail=f"Logger-Skript nicht gefunden: {LOGGER_SCRIPT_PATH}")
+    with open(LOGGER_SCRIPT_PATH, "r", encoding="utf-8") as f:
         logger_py_content = f.read()
 
     device_name = device.get("serial_number", device_id)

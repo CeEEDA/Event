@@ -47,8 +47,9 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
       const url = res.data.download_url;
       setWgetCommand(`wget "${url}" -O setup.sh && sudo bash setup.sh`);
       toast.success("Setup-Skript generiert!");
-    } catch {
-      toast.error("Fehler beim Generieren des Setup-Skripts");
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.message || "Unbekannter Fehler";
+      toast.error(`Fehler beim Generieren des Setup-Skripts: ${detail}`);
     } finally {
       setLoading(false);
     }
