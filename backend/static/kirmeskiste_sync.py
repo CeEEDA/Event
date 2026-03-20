@@ -140,10 +140,18 @@ log = logging.getLogger("kirmeskiste")
 
 # ====== Modbus Lesen ======
 
+def _read_input(client, register, count, slave_id):
+    """Wrapper: versucht slave= dann unit= (pymodbus Kompatibilitaet)."""
+    try:
+        return client.read_input_registers(register, count, slave=slave_id)
+    except TypeError:
+        return client.read_input_registers(register, count, unit=slave_id)
+
+
 def read_float32(client, register, slave_id=1):
     """Liest einen Float32-Wert (Big-Endian) von einem Input Register."""
     try:
-        result = client.read_input_registers(register - 1, 2, slave=slave_id)
+        result = _read_input(client, register - 1, 2, slave_id)
         if result.isError():
             return None
         raw = struct.pack('>HH', result.registers[0], result.registers[1])
@@ -155,7 +163,7 @@ def read_float32(client, register, slave_id=1):
 def read_uint64(client, register, slave_id=1):
     """Liest einen UInt64-Wert (Big-Endian) von einem Input Register."""
     try:
-        result = client.read_input_registers(register - 1, 4, slave=slave_id)
+        result = _read_input(client, register - 1, 4, slave_id)
         if result.isError():
             return None
         raw = struct.pack('>HHHH', *result.registers[:4])
@@ -167,7 +175,7 @@ def read_uint64(client, register, slave_id=1):
 def read_uint32(client, register, slave_id=1):
     """Liest einen UInt32-Wert von einem Input Register."""
     try:
-        result = client.read_input_registers(register - 1, 2, slave=slave_id)
+        result = _read_input(client, register - 1, 2, slave_id)
         if result.isError():
             return None
         raw = struct.pack('>HH', result.registers[0], result.registers[1])
@@ -179,7 +187,7 @@ def read_uint32(client, register, slave_id=1):
 def read_uint16(client, register, slave_id=1):
     """Liest einen UInt16-Wert von einem Input Register."""
     try:
-        result = client.read_input_registers(register - 1, 1, slave=slave_id)
+        result = _read_input(client, register - 1, 1, slave_id)
         if result.isError():
             return None
         return result.registers[0]
