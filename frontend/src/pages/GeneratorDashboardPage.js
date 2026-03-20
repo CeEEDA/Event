@@ -270,16 +270,6 @@ export default function GeneratorDashboardPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const handleSimulate = async () => {
-    try {
-      const res = await api.post("/generators/simulate");
-      toast.success(res.data.message);
-      fetchData();
-    } catch (err) {
-      toast.error("Fehler bei Simulation");
-    }
-  };
-
   const handleStatClick = (filterValue) => {
     setStatusFilter(prev => prev === filterValue ? "all" : filterValue);
   };
@@ -335,11 +325,6 @@ export default function GeneratorDashboardPage() {
             <Button variant="ghost" size="sm" onClick={fetchData} className="text-gray-500 hover:text-fuchsia-600" data-testid="refresh-btn">
               <RefreshCw className="w-4 h-4" />
             </Button>
-            {isAdmin && generators.length === 0 && (
-              <Button size="sm" onClick={handleSimulate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="simulate-btn">
-                <Plus className="w-4 h-4 mr-1" /> Demo-Daten
-              </Button>
-            )}
             <Logo size="small" />
           </div>
         </div>
@@ -428,11 +413,6 @@ export default function GeneratorDashboardPage() {
                 <p className="text-gray-500 mb-4">
                   {generators.length === 0 ? "Keine Generatoren vorhanden" : "Keine Treffer für den Filter"}
                 </p>
-                {isAdmin && generators.length === 0 && (
-                  <Button size="sm" onClick={handleSimulate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="simulate-empty-btn">
-                    <Plus className="w-4 h-4 mr-1" /> Demo-Daten generieren
-                  </Button>
-                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="generator-grid">
