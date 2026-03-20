@@ -161,7 +161,7 @@ async def download_backup(backup_id: str):
 # ── Backup Execution ──
 
 async def _run_db_backup() -> dict:
-    """Execute a MongoDB database backup using mongodump."""
+    """Execute a MongoDB database backup. Tries mongodump first, falls back to Python-native export."""
     db = get_db()
     mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
     db_name = os.environ.get("DB_NAME", "test_database")
@@ -169,30 +169,64 @@ async def _run_db_backup() -> dict:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     backup_dir = BACKUP_BASE_DIR / "db"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    output_path = backup_dir / f"db_backup_{timestamp}"
-    archive_path = f"{output_path}.gz"
 
+    # Try mongodump first
+    mongodump_path = shutil.which("mongodump")
+    if mongodump_path:
+        archive_path = str(backup_dir / f"db_backup_{timestamp}.gz")
+        try:
+            cmd = [
+                mongodump_path,
+                f"--uri={mongo_url}",
+                f"--db={db_name}",
+                f"--archive={archive_path}",
+                "--gzip",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode == 0:
+                file_size = os.path.getsize(archive_path) if os.path.exists(archive_path) else 0
+                backup_doc = {
+                    "id": str(uuid.uuid4()),
+                    "type": "database",
+                    "file_path": archive_path,
+                    "file_name": f"db_backup_{timestamp}.gz",
+                    "file_size": file_size,
+                    "status": "success",
+                    "trigger": "manual",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                await db.backups.insert_one(backup_doc)
+                backup_doc.pop("_id", None)
+                logger.info(f"DB-Backup (mongodump) erstellt: {archive_path} ({file_size} bytes)")
+                return {"success": True, "backup": backup_doc}
+            else:
+                logger.warning(f"mongodump fehlgeschlagen, Fallback auf Python-Export: {result.stderr[:200]}")
+        except Exception as e:
+            logger.warning(f"mongodump nicht nutzbar ({e}), Fallback auf Python-Export")
+
+    # Fallback: Python-native JSON export
+    import json as json_mod
+    archive_path = str(backup_dir / f"db_backup_{timestamp}.zip")
     try:
-        cmd = [
-            "mongodump",
-            f"--uri={mongo_url}",
-            f"--db={db_name}",
-            f"--archive={archive_path}",
-            "--gzip",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-        if result.returncode != 0:
-            logger.error(f"mongodump error: {result.stderr}")
-            return {"success": False, "error": f"mongodump Fehler: {result.stderr[:200]}"}
+        collections = await db.list_collection_names()
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for coll_name in collections:
+                docs = await db[coll_name].find({}).to_list(None)
+                for doc in docs:
+                    if "_id" in doc:
+                        doc["_id"] = str(doc["_id"])
+                    for key, val in doc.items():
+                        if isinstance(val, datetime):
+                            doc[key] = val.isoformat()
+                json_str = json_mod.dumps(docs, ensure_ascii=False, indent=2, default=str)
+                zf.writestr(f"{coll_name}.json", json_str)
 
         file_size = os.path.getsize(archive_path) if os.path.exists(archive_path) else 0
-
         backup_doc = {
             "id": str(uuid.uuid4()),
             "type": "database",
             "file_path": archive_path,
-            "file_name": f"db_backup_{timestamp}.gz",
+            "file_name": f"db_backup_{timestamp}.zip",
             "file_size": file_size,
             "status": "success",
             "trigger": "manual",
@@ -200,12 +234,9 @@ async def _run_db_backup() -> dict:
         }
         await db.backups.insert_one(backup_doc)
         backup_doc.pop("_id", None)
-
-        logger.info(f"DB-Backup erstellt: {archive_path} ({file_size} bytes)")
+        logger.info(f"DB-Backup (Python-Export) erstellt: {archive_path} ({file_size} bytes)")
         return {"success": True, "backup": backup_doc}
 
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": "Backup-Zeitüberschreitung (5 Min.)"}
     except Exception as e:
         logger.error(f"DB-Backup Fehler: {e}")
         return {"success": False, "error": str(e)}
