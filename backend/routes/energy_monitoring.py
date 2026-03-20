@@ -422,14 +422,19 @@ def _get_api_base(request: Request = None) -> str:
     if api_base:
         return api_base
 
-    # 2. From the incoming request - but skip localhost (Pi needs external URL)
+    # 2. FRONTEND_URL from backend .env (reliable for live server)
+    frontend_url = os.environ.get("FRONTEND_URL", "")
+    if frontend_url and "localhost" not in frontend_url and "127.0.0.1" not in frontend_url and "preview.emergentagent.com" not in frontend_url:
+        return frontend_url.rstrip("/") + "/api"
+
+    # 3. From the incoming request - but skip localhost (Pi needs external URL)
     if request:
         scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
         host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
         if host and "localhost" not in host and "127.0.0.1" not in host:
             return f"{scheme}://{host}/api"
 
-    # 3. Fallback: read from frontend .env
+    # 4. Fallback: read from frontend .env
     fe_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
     try:
         with open(fe_env) as f:
