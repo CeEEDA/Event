@@ -1,7 +1,17 @@
 import axios from "axios";
 import { saveAs } from "file-saver";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "https://portal.eventenergie.com";
+const BACKEND_URL = (() => {
+  // If served behind Caddy/reverse proxy, use relative URL
+  if (typeof window !== 'undefined' && window.location) {
+    const origin = window.location.origin;
+    // On the live server, use same origin (Caddy proxies /api/*)
+    if (origin.includes('portal.eventenergie') || origin.includes('localhost')) {
+      return '';
+    }
+  }
+  return process.env.REACT_APP_BACKEND_URL || '';
+})();
 
 const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
