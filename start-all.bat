@@ -5,9 +5,6 @@ setlocal enabledelayedexpansion
 :: =====================================================
 :: Eventenergie Portal - Start
 :: =====================================================
-:: Startet MongoDB, Backend, Caddy (Reverse Proxy)
-:: Fuehrt beim Start zuerst ein Datenbank-Backup durch
-:: =====================================================
 
 set "PORTAL_DIR=C:\eventenergie"
 set "BACKEND_DIR=%PORTAL_DIR%\backend"
@@ -21,24 +18,20 @@ echo   %date% %time%
 echo  ==================================================
 echo.
 
-:: ====== Laufende Dienste stoppen ======
+:: ====== 1. Laufende Dienste stoppen ======
 echo  [1/7] Laufende Dienste stoppen...
-taskkill /FI "WINDOWTITLE eq Eventenergie Backend*" /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq Eventenergie Caddy*" /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq Eventenergie Frontend*" /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
-)
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000 ^| findstr LISTENING 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
-)
+taskkill /FI "WINDOWTITLE eq Eventenergie*" /F >nul 2>&1
+taskkill /IM caddy.exe /F >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING 2^>nul') do taskkill /PID %%a /F >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8002 ^| findstr LISTENING 2^>nul') do taskkill /PID %%a /F >nul 2>&1
+timeout /t 2 /nobreak >nul
 echo   Alte Prozesse beendet.
 
-:: ====== MongoDB pruefen ======
+:: ====== 2. MongoDB pruefen ======
 echo.
 echo  [2/7] MongoDB pruefen...
 sc query MongoDB | findstr "RUNNING" >nul 2>&1
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     echo   MongoDB starten...
     net start MongoDB
     timeout /t 3 /nobreak >nul
@@ -46,38 +39,31 @@ if %errorlevel% neq 0 (
     echo   MongoDB laeuft bereits
 )
 
-:: ====== Datenbank-Backup vor Start ======
+:: ====== 3. Datenbank-Backup ======
 echo.
 echo  [3/7] Sicherheits-Backup der Datenbank...
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
-
 set "TIMESTAMP=%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
-set "TIMESTAMP=%TIMESTAMP: =0%"
-
+set "TIMESTAMP=!TIMESTAMP: =0!"
 where mongodump >nul 2>&1
-if %errorlevel% equ 0 (
-    mongodump --uri="mongodb://localhost:27017" --db=eventenergie --archive="%BACKUP_DIR%\startup_backup_%TIMESTAMP%.gz" --gzip >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo   DB-Backup erstellt: startup_backup_%TIMESTAMP%.gz
+if !errorlevel! equ 0 (
+    mongodump --uri="mongodb://localhost:27017" --db=eventenergie --archive="%BACKUP_DIR%\startup_backup_!TIMESTAMP!.gz" --gzip >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo   DB-Backup erstellt: startup_backup_!TIMESTAMP!.gz
     ) else (
-        echo   WARNUNG: DB-Backup fehlgeschlagen (wird beim naechsten Start erneut versucht)
+        echo   WARNUNG: DB-Backup fehlgeschlagen
     )
 ) else (
-    echo   WARNUNG: mongodump nicht gefunden - Backup uebersprungen
-    echo   Installation: https://www.mongodb.com/try/download/database-tools
+    echo   mongodump nicht gefunden - Backup uebersprungen
 )
-
-:: Alte Startup-Backups aufraeumen (nur die letzten 5 behalten)
-echo   Alte Startup-Backups aufraeumen...
+:: Alte Startup-Backups aufraeumen (max 5)
 set count=0
 for /f "delims=" %%f in ('dir /b /o-d "%BACKUP_DIR%\startup_backup_*" 2^>nul') do (
     set /a count+=1
-    if !count! gtr 5 (
-        del "%BACKUP_DIR%\%%f" >nul 2>&1
-    )
+    if !count! gtr 5 del "%BACKUP_DIR%\%%f" >nul 2>&1
 )
 
-:: ====== Python venv aktivieren ======
+:: ====== 4. Python pruefen ======
 echo.
 echo  [4/7] Python-Umgebung pruefen...
 cd /d "%BACKEND_DIR%"
@@ -85,54 +71,61 @@ if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
     echo   Python venv aktiviert
 ) else (
-    echo   Kein venv gefunden - nutze System-Python
+    echo   System-Python wird genutzt
 )
 
-:: ====== Frontend Build pruefen ======
+:: ====== 5. Frontend Build pruefen ======
 echo.
 echo  [5/7] Frontend Build pruefen...
 cd /d "%FRONTEND_DIR%"
 if not exist "build" (
     echo   Kein Build vorhanden - erstelle Build...
     call npm run build
-    if %errorlevel% neq 0 (
-        echo   FEHLER: Build fehlgeschlagen!
-        echo   Bitte manuell ausfuehren: cd %FRONTEND_DIR% ^&^& npm run build
-    ) else (
-        echo   Build erfolgreich erstellt
-    )
 ) else (
     echo   Build vorhanden
 )
 
-:: ====== Backend starten ======
+:: ====== 6. Backend starten (Port 8002) ======
 echo.
-echo  [6/7] Backend starten (Port 8002, intern)...
+echo  [6/7] Backend starten auf Port 8002...
 cd /d "%BACKEND_DIR%"
 if exist "venv\Scripts\activate.bat" (
     start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 ) else (
     start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 )
-timeout /t 3 /nobreak >nul
+timeout /t 4 /nobreak >nul
 echo   Backend gestartet
 
-:: ====== Caddy starten ======
+:: ====== 7. Caddy starten (Port 8001) ======
 echo.
-echo  [7/7] Caddy starten (Port 8001, extern erreichbar)...
+echo  [7/7] Caddy starten auf Port 8001...
+cd /d "%PORTAL_DIR%"
+
+:: Caddyfile erstellen falls nicht vorhanden
+if not exist "%PORTAL_DIR%\Caddyfile" (
+    echo   Caddyfile wird erstellt...
+    >"%PORTAL_DIR%\Caddyfile" (
+        echo :8001 {
+        echo     handle /api/* {
+        echo         reverse_proxy localhost:8002
+        echo     }
+        echo     handle {
+        echo         root * C:\eventenergie\frontend\build
+        echo         try_files {path} /index.html
+        echo         file_server
+        echo     }
+        echo }
+    )
+)
+
 if exist "%PORTAL_DIR%\caddy.exe" (
     start "Eventenergie Caddy" cmd /c "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
+    timeout /t 2 /nobreak >nul
     echo   Caddy gestartet
 ) else (
-    where caddy >nul 2>&1
-    if !errorlevel! equ 0 (
-        start "Eventenergie Caddy" cmd /c "cd /d %PORTAL_DIR% && caddy run --config Caddyfile"
-        echo   Caddy gestartet
-    ) else (
-        echo   FEHLER: Caddy nicht gefunden!
-        echo   Bitte caddy.exe herunterladen: https://caddyserver.com/download
-        echo   Und nach %PORTAL_DIR%\caddy.exe kopieren
-    )
+    echo   FEHLER: caddy.exe nicht gefunden in %PORTAL_DIR%
+    echo   Bitte caddy.exe herunterladen: https://caddyserver.com/download
 )
 
 :: ====== Fertig ======
@@ -141,16 +134,10 @@ echo  ==================================================
 echo   Portal erfolgreich gestartet!
 echo  ==================================================
 echo.
-echo   Backend:    http://localhost:8002  (intern)
-echo   Caddy:      http://localhost:8001  (Frontend + API)
-echo   Portal:     http://portal.eventenergie.com:8001
+echo   Backend:  http://localhost:8002  (intern)
+echo   Caddy:    http://localhost:8001  (extern)
+echo   Portal:   http://portal.eventenergie.com:8001
 echo.
-echo   Caddy leitet automatisch weiter:
-echo     /api/*  -^> Backend (Port 8002)
-echo     /*      -^> Frontend (Build-Ordner)
-echo.
-echo   DB-Backup:  %BACKUP_DIR%\
-echo.
-echo   Stoppen:    stop-all.bat ausfuehren
+echo   Stoppen:  stop-all.bat
 echo.
 pause
