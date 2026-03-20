@@ -9,8 +9,11 @@ try {
   // dotenv not critical
 }
 
-// Production fallback URL - used if .env is not found or empty
-const PRODUCTION_BACKEND_URL = "https://portal.eventenergie.com";
+// CRITICAL: Force set backend URL if not set by .env
+// This ensures the URL is ALWAYS available during production builds
+if (!process.env.REACT_APP_BACKEND_URL) {
+  process.env.REACT_APP_BACKEND_URL = "https://portal.eventenergie.com";
+}
 
 // Check if we're in development/preview mode (not production build)
 // Craco sets NODE_ENV=development for start, NODE_ENV=production for build
@@ -47,17 +50,6 @@ let webpackConfig = {
       '@': path.resolve(__dirname, 'src'),
     },
     configure: (webpackConfig) => {
-
-      // Ensure REACT_APP_BACKEND_URL is always set in production builds
-      if (!isDevServer) {
-        const backendUrl = process.env.REACT_APP_BACKEND_URL || PRODUCTION_BACKEND_URL;
-        const definePlugin = webpackConfig.plugins.find(
-          (p) => p.constructor.name === "DefinePlugin"
-        );
-        if (definePlugin) {
-          definePlugin.definitions["process.env.REACT_APP_BACKEND_URL"] = JSON.stringify(backendUrl);
-        }
-      }
 
       // Add ignored patterns to reduce watched directories
         webpackConfig.watchOptions = {
