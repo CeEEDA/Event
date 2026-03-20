@@ -39,7 +39,7 @@ from pymodbus.client import ModbusTcpClient
 
 
 # ====== Konstanten: EMU Professional II Modbus Register ======
-# Momentanwerte (Float32, Big-Endian, Input Register, Function Code 04)
+# Momentanwerte (Float32, Big-Endian, Holding Register, Function Code 03)
 REG_P_SUM   = 9000   # Active Power L123 [kW]
 REG_P_L1    = 9002   # Active Power L1 [kW]
 REG_P_L2    = 9004   # Active Power L2 [kW]
@@ -140,18 +140,19 @@ log = logging.getLogger("kirmeskiste")
 
 # ====== Modbus Lesen ======
 
-def _read_input(client, register, count, slave_id):
-    """Wrapper: versucht unit= zuerst (funktioniert auf pymodbus 2.x UND 3.x)."""
+def _read_holding(client, register, count, slave_id):
+    """Wrapper: liest Holding Registers (FC 03) - EMU Professional II nutzt FC 03.
+    Versucht unit= zuerst (funktioniert auf pymodbus 2.x UND 3.x)."""
     try:
-        return client.read_input_registers(register, count, unit=slave_id)
+        return client.read_holding_registers(register, count, unit=slave_id)
     except TypeError:
-        return client.read_input_registers(register, count, slave=slave_id)
+        return client.read_holding_registers(register, count, slave=slave_id)
 
 
 def read_float32(client, register, slave_id=1):
-    """Liest einen Float32-Wert (Big-Endian) von einem Input Register."""
+    """Liest einen Float32-Wert (Big-Endian) von einem Holding Register (FC 03)."""
     try:
-        result = _read_input(client, register - 1, 2, slave_id)
+        result = _read_holding(client, register - 1, 2, slave_id)
         if result.isError():
             return None
         raw = struct.pack('>HH', result.registers[0], result.registers[1])
@@ -161,9 +162,9 @@ def read_float32(client, register, slave_id=1):
 
 
 def read_uint64(client, register, slave_id=1):
-    """Liest einen UInt64-Wert (Big-Endian) von einem Input Register."""
+    """Liest einen UInt64-Wert (Big-Endian) von einem Holding Register (FC 03)."""
     try:
-        result = _read_input(client, register - 1, 4, slave_id)
+        result = _read_holding(client, register - 1, 4, slave_id)
         if result.isError():
             return None
         raw = struct.pack('>HHHH', *result.registers[:4])
@@ -173,9 +174,9 @@ def read_uint64(client, register, slave_id=1):
 
 
 def read_uint32(client, register, slave_id=1):
-    """Liest einen UInt32-Wert von einem Input Register."""
+    """Liest einen UInt32-Wert von einem Holding Register (FC 03)."""
     try:
-        result = _read_input(client, register - 1, 2, slave_id)
+        result = _read_holding(client, register - 1, 2, slave_id)
         if result.isError():
             return None
         raw = struct.pack('>HH', result.registers[0], result.registers[1])
@@ -185,9 +186,9 @@ def read_uint32(client, register, slave_id=1):
 
 
 def read_uint16(client, register, slave_id=1):
-    """Liest einen UInt16-Wert von einem Input Register."""
+    """Liest einen UInt16-Wert von einem Holding Register (FC 03)."""
     try:
-        result = _read_input(client, register - 1, 1, slave_id)
+        result = _read_holding(client, register - 1, 1, slave_id)
         if result.isError():
             return None
         return result.registers[0]
