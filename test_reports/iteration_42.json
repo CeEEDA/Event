@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://backup-admin-1.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://backup-admin-1.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://backup-admin-1.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://kirmeskiste-fix.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://kirmeskiste-fix.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://kirmeskiste-fix.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }
