@@ -1,7 +1,7 @@
 import axios from "axios";
 import { saveAs } from "file-saver";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "https://portal.eventenergie.com";
 
 const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
