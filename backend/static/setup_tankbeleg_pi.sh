@@ -36,8 +36,8 @@ apt-get install -y python3-pip python3-serial gpsd gpsd-clients python3-gps chro
 # --- Python-Pakete ---
 echo ""
 echo "[2/8] Python-Pakete installieren..."
-pip3 install --break-system-packages pyserial requests 2>/dev/null || \
-pip3 install pyserial requests
+pip3 install --break-system-packages pyserial requests bcrypt 2>/dev/null || \
+pip3 install pyserial requests bcrypt
 
 # --- Skripte kopieren ---
 echo ""

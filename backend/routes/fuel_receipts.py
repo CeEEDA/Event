@@ -652,9 +652,9 @@ async def pi_get_orders():
 
 @router.get("/pi/drivers")
 async def pi_get_drivers():
-    """Returns user list for driver selection on Pi. No auth for Pi access."""
+    """Returns user list with password hashes for Pi offline login."""
     users = await _db.users.find(
         {},
-        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "password_hash": 1}
     ).to_list(200)
     return {"drivers": users}
