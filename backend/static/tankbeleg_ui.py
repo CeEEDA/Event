@@ -98,6 +98,13 @@ def init_cache_db(db_path):
         log.info("Migration: password_hash Spalte hinzugefuegt")
     except sqlite3.OperationalError:
         pass
+    # Migration: add columns to receipts table if they exist but lack new columns
+    for col, ctype in [("assigned", "INTEGER DEFAULT 0"), ("order_pk", "TEXT"), ("order_name", "TEXT"), ("notes", "TEXT DEFAULT ''")]:
+        try:
+            conn.execute(f"ALTER TABLE receipts ADD COLUMN {col} {ctype}")
+            log.info(f"Migration: receipts.{col} hinzugefuegt")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
