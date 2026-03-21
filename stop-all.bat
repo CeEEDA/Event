@@ -28,6 +28,12 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LIS
 )
 echo   Caddy gestoppt.
 
+:: Mosquitto MQTT stoppen
+echo  Mosquitto stoppen...
+taskkill /FI "WINDOWTITLE eq Eventenergie MQTT" /F >nul 2>&1
+taskkill /IM mosquitto.exe /F >nul 2>&1
+echo   Mosquitto gestoppt.
+
 :: Alte Frontend-Fenster (Fallback)
 taskkill /FI "WINDOWTITLE eq Eventenergie Frontend" /F >nul 2>&1
 

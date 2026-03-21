@@ -48,9 +48,33 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8002" ^| findstr LIS
 timeout /t 3 /nobreak >nul
 echo   Alte Prozesse beendet.
 
-:: ====== 2. MongoDB pruefen ======
+:: ====== 2. Mosquitto MQTT Broker starten ======
 echo.
-echo  [2/7] MongoDB pruefen...
+echo  [2/8] Mosquitto MQTT Broker pruefen...
+set "MOSQUITTO_DIR=C:\Program Files\Mosquitto"
+netstat -ano | findstr "0.0.0.0:1883" | findstr LISTENING >nul 2>&1
+if !errorlevel! equ 0 (
+    echo   Mosquitto laeuft bereits auf Port 1883
+) else (
+    if exist "%MOSQUITTO_DIR%\mosquitto.exe" (
+        taskkill /IM mosquitto.exe /F >nul 2>&1
+        timeout /t 1 /nobreak >nul
+        start "Eventenergie MQTT" /min "%MOSQUITTO_DIR%\mosquitto.exe" -c "%MOSQUITTO_DIR%\mosquitto.conf"
+        timeout /t 2 /nobreak >nul
+        netstat -ano | findstr "0.0.0.0:1883" | findstr LISTENING >nul 2>&1
+        if !errorlevel! equ 0 (
+            echo   Mosquitto gestartet auf Port 1883
+        ) else (
+            echo   WARNUNG: Mosquitto konnte nicht gestartet werden!
+        )
+    ) else (
+        echo   Mosquitto nicht installiert - MQTT uebersprungen
+    )
+)
+
+:: ====== 3. MongoDB pruefen ======
+echo.
+echo  [3/8] MongoDB pruefen...
 sc query MongoDB | findstr "RUNNING" >nul 2>&1
 if !errorlevel! neq 0 (
     echo   MongoDB starten...
@@ -62,7 +86,7 @@ if !errorlevel! neq 0 (
 
 :: ====== 3. Datenbank-Backup ======
 echo.
-echo  [3/7] Sicherheits-Backup der Datenbank...
+echo  [4/8] Sicherheits-Backup der Datenbank...
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 set "TIMESTAMP=%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
 set "TIMESTAMP=!TIMESTAMP: =0!"
@@ -86,7 +110,7 @@ for /f "delims=" %%f in ('dir /b /o-d "%BACKUP_DIR%\startup_backup_*" 2^>nul') d
 
 :: ====== 4. Python pruefen ======
 echo.
-echo  [4/7] Python-Umgebung pruefen...
+echo  [5/8] Python-Umgebung pruefen...
 cd /d "%BACKEND_DIR%"
 if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
@@ -97,7 +121,7 @@ if exist "venv\Scripts\activate.bat" (
 
 :: ====== 5. Frontend Build pruefen ======
 echo.
-echo  [5/7] Frontend Build pruefen...
+echo  [6/8] Frontend Build pruefen...
 cd /d "%FRONTEND_DIR%"
 if not exist "build" (
     echo   Kein Build vorhanden - erstelle Build...
@@ -108,7 +132,7 @@ if not exist "build" (
 
 :: ====== 6. Backend starten (Port 8002) ======
 echo.
-echo  [6/7] Backend starten auf Port 8002...
+echo  [7/8] Backend starten auf Port 8002...
 cd /d "%BACKEND_DIR%"
 if exist "venv\Scripts\activate.bat" (
     start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
@@ -136,7 +160,7 @@ if !BACKEND_OK! equ 0 (
 
 :: ====== 7. Caddy starten (Port 8001) ======
 echo.
-echo  [7/7] Caddy starten auf Port 8001...
+echo  [8/8] Caddy starten auf Port 8001...
 cd /d "%PORTAL_DIR%"
 
 :: Caddyfile erstellen falls nicht vorhanden
@@ -195,6 +219,7 @@ echo  ==================================================
 echo.
 echo   Backend:  http://localhost:8002  (intern)
 echo   Caddy:    http://localhost:8001  (extern)
+echo   MQTT:     Port 1883 (extern), Port 1884 (lokal)
 echo   Portal:   http://portal.eventenergie.com:8001
 echo.
 if !BACKEND_OK! equ 0 echo   [!] Backend NICHT gestartet - siehe "Eventenergie Backend" Fenster
