@@ -3,38 +3,26 @@ chcp 65001 >nul
 :: =====================================================
 :: Eventenergie Portal - Alle Dienste stoppen
 :: =====================================================
+:: HINWEIS: Bitte bevorzugt stop-all.bat verwenden!
+:: Dieses Script ist ein Alias fuer stop-all.bat
+:: =====================================================
+
+set "PORTAL_DIR=C:\eventenergie"
 
 echo.
-echo  Eventenergie Portal wird gestoppt...
+echo  Weiterleitung an stop-all.bat...
 echo.
 
-:: Backend stoppen
-echo  Backend stoppen...
-taskkill /FI "WINDOWTITLE eq Eventenergie Backend*" /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
+if exist "%PORTAL_DIR%\stop-all.bat" (
+    call "%PORTAL_DIR%\stop-all.bat" %1
+) else (
+    echo  stop-all.bat nicht gefunden!
+    
+    :: Fallback
+    taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
+    taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
+    taskkill /IM caddy.exe /F >nul 2>&1
+    
+    echo  Dienste gestoppt.
+    if /i not "%~1"=="nopause" pause
 )
-echo   Backend gestoppt.
-
-:: Caddy stoppen
-echo  Caddy stoppen...
-taskkill /FI "WINDOWTITLE eq Eventenergie Caddy*" /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000 ^| findstr LISTENING 2^>nul') do (
-    taskkill /PID %%a /F >nul 2>&1
-)
-echo   Caddy gestoppt.
-
-:: Alte Frontend-Fenster (Fallback)
-taskkill /FI "WINDOWTITLE eq Eventenergie Frontend*" /F >nul 2>&1
-
-:: PM2 (falls installiert)
-where pm2 >nul 2>&1
-if %errorlevel% equ 0 (
-    pm2 stop all >nul 2>&1
-    echo  PM2 Prozesse gestoppt.
-)
-
-echo.
-echo  Alle Dienste gestoppt.
-echo.
-pause

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"05f19ac0fc3941978946b38adbf62ef1","collectionName":"kirmes_invitations","type":"collection"}

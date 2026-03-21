@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"2ec4acd683c24b0494c91298a7ddf41d","collectionName":"emu_sync_state","type":"collection"}

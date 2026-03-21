@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"order_pk":{"$numberInt":"1"}},"name":"order_pk_1"},{"v":{"$numberInt":"2"},"key":{"beleg_nr":{"$numberInt":"1"}},"name":"beleg_nr_1"}],"uuid":"5b7ff2e1d0954cc985681cbe68d9061b","collectionName":"fuel_receipts","type":"collection"}

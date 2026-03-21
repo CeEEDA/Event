@@ -3,6 +3,9 @@ chcp 65001 >nul
 :: =====================================================
 :: Eventenergie Portal - Alle Dienste stoppen
 :: =====================================================
+:: Parameter: nopause - Ueberspring pause am Ende
+::   Beispiel: stop-all.bat nopause
+:: =====================================================
 
 echo.
 echo  Eventenergie Portal wird gestoppt...
@@ -35,7 +38,10 @@ if %errorlevel% equ 0 (
     echo  PM2 Prozesse gestoppt.
 )
 
+:: Warten bis Ports wirklich frei sind
+timeout /t 3 /nobreak >nul
+
 echo.
 echo  Alle Dienste gestoppt.
 echo.
-pause
+if /i not "%~1"=="nopause" pause

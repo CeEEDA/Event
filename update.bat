@@ -10,12 +10,13 @@ setlocal enabledelayedexpansion
 ::   Doppelklick (Als Administrator empfohlen)
 ::
 :: ABLAUF:
-::   1. Dienste stoppen (stop-all.bat)
+::   1. Dienste stoppen (stop-all.bat nopause)
 ::   2. .env Dateien sichern
 ::   3. Git Pull vom GitHub Repository
 ::   4. Python-Pakete aktualisieren
 ::   5. Frontend Build erstellen
-::   6. Dienste starten (start-all.bat)
+::   6. Dienste starten (start-all.bat nopause)
+::   7. Port-Verifizierung
 ::
 :: SICHERHEIT:
 ::   - .env Dateien werden NIEMALS ueberschrieben
@@ -25,6 +26,10 @@ setlocal enabledelayedexpansion
 
 set "LIVE_DIR=C:\eventenergie"
 set "BRANCH=Main_0.9APP"
+set "LOG_DIR=%LIVE_DIR%\logs"
+
+:: Logs-Ordner erstellen
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 echo.
 echo  ==================================================
@@ -43,20 +48,20 @@ if not exist "%LIVE_DIR%" (
 cd /d "%LIVE_DIR%"
 
 :: ====== 1. Dienste stoppen ======
-echo  [1/6] Dienste stoppen...
+echo  [1/7] Dienste stoppen...
 if exist "%LIVE_DIR%\stop-all.bat" (
-    call "%LIVE_DIR%\stop-all.bat"
+    call "%LIVE_DIR%\stop-all.bat" nopause
 ) else (
     taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
     taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
     taskkill /IM caddy.exe /F >nul 2>&1
-    timeout /t 2 /nobreak >nul
+    timeout /t 3 /nobreak >nul
 )
 echo   Dienste gestoppt.
 
 :: ====== 2. .env sichern ======
 echo.
-echo  [2/6] .env Dateien sichern...
+echo  [2/7] .env Dateien sichern...
 if exist "%LIVE_DIR%\backend\.env" (
     copy /Y "%LIVE_DIR%\backend\.env" "%LIVE_DIR%\backend\.env.backup" >nul
     echo   backend\.env gesichert
@@ -68,7 +73,7 @@ if exist "%LIVE_DIR%\frontend\.env" (
 
 :: ====== 3. Git Pull ======
 echo.
-echo  [3/6] Code von GitHub aktualisieren...
+echo  [3/7] Code von GitHub aktualisieren...
 echo   Branch: %BRANCH%
 
 where git >nul 2>&1
@@ -128,7 +133,7 @@ if not exist "%LIVE_DIR%\frontend\.env" (
 
 :: ====== 4. Python-Pakete ======
 echo.
-echo  [4/6] Python-Pakete aktualisieren...
+echo  [4/7] Python-Pakete aktualisieren...
 cd /d "%LIVE_DIR%\backend"
 if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
@@ -141,7 +146,7 @@ if exist "venv\Scripts\activate.bat" (
 
 :: ====== 5. Frontend Build ======
 echo.
-echo  [5/6] Frontend Build erstellen...
+echo  [5/7] Frontend Build erstellen...
 cd /d "%LIVE_DIR%\frontend"
 call npm install --legacy-peer-deps 2>nul
 echo   Node-Pakete installiert
@@ -155,13 +160,29 @@ if !errorlevel! equ 0 (
 
 :: ====== 6. Dienste starten ======
 echo.
-echo  [6/6] Dienste starten...
+echo  [6/7] Dienste starten...
 cd /d "%LIVE_DIR%"
 if exist "%LIVE_DIR%\start-all.bat" (
-    call "%LIVE_DIR%\start-all.bat"
+    call "%LIVE_DIR%\start-all.bat" nopause
 ) else (
     echo   FEHLER: start-all.bat nicht gefunden!
+    pause
+    exit /b 1
 )
+
+:: ====== 7. Finale Port-Verifizierung ======
+echo.
+echo  [7/7] Finale Verifizierung...
+timeout /t 3 /nobreak >nul
+
+set "FINAL_BACKEND=0"
+set "FINAL_CADDY=0"
+
+netstat -ano | findstr "0.0.0.0:8002" | findstr LISTENING >nul 2>&1
+if !errorlevel! equ 0 set "FINAL_BACKEND=1"
+
+netstat -ano | findstr "0.0.0.0:8001" | findstr LISTENING >nul 2>&1
+if !errorlevel! equ 0 set "FINAL_CADDY=1"
 
 :: ====== Zusammenfassung ======
 echo.
@@ -173,9 +194,26 @@ echo.
 echo   Branch:  %BRANCH%
 echo   Portal:  http://portal.eventenergie.com:8001
 echo.
+if !FINAL_BACKEND! equ 1 (
+    echo   [OK] Backend laeuft auf Port 8002
+) else (
+    echo   [!!] Backend NICHT gestartet auf Port 8002
+    echo        Pruefe das offene "Eventenergie Backend" Fenster
+)
+if !FINAL_CADDY! equ 1 (
+    echo   [OK] Caddy laeuft auf Port 8001
+) else (
+    echo   [!!] Caddy NICHT gestartet auf Port 8001
+    echo        Pruefe das offene "Eventenergie Caddy" Fenster
+)
+echo.
 echo   Geschuetzte Dateien (NICHT ueberschrieben):
 echo     backend\.env   (Datenbank, JWT, SMTP)
 echo     frontend\.env  (Portal-URL)
 echo     MongoDB Daten  (unveraendert)
 echo.
+if !FINAL_BACKEND! equ 0 if !FINAL_CADDY! equ 0 (
+    echo   TIPP: Dienste manuell starten mit: start-all.bat
+    echo.
+)
 pause

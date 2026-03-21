@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://kirmeskiste-fix.preview.emergentagent.com"
+                "origin_url": "https://kirmes-fix.preview.emergentagent.com"
             },
             timeout=30
         )

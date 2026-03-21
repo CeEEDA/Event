@@ -5,11 +5,18 @@ setlocal enabledelayedexpansion
 :: =====================================================
 :: Eventenergie Portal - Start
 :: =====================================================
+:: Parameter: nopause - Ueberspringe pause am Ende
+::   Beispiel: start-all.bat nopause
+:: =====================================================
 
 set "PORTAL_DIR=C:\eventenergie"
 set "BACKEND_DIR=%PORTAL_DIR%\backend"
 set "FRONTEND_DIR=%PORTAL_DIR%\frontend"
 set "BACKUP_DIR=%PORTAL_DIR%\backups\db"
+set "LOG_DIR=%PORTAL_DIR%\logs"
+
+:: Logs-Ordner erstellen
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 echo.
 echo  ==================================================
@@ -22,11 +29,8 @@ echo.
 echo  [1/7] Laufende Dienste stoppen...
 
 :: Nur gezielt unsere Prozesse beenden (NICHT explorer.exe oder Systemprozesse!)
-:: Backend-Fenster beenden (exakter Titel)
 taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
-:: Caddy-Fenster beenden (exakter Titel)
 taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
-:: Caddy-Prozess beenden
 taskkill /IM caddy.exe /F >nul 2>&1
 
 :: Port 8001 freigeben - aber NUR wenn es UNSER Prozess ist (nicht System-PIDs)
@@ -41,7 +45,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8002" ^| findstr LIS
         taskkill /PID %%a /F >nul 2>&1
     )
 )
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 echo   Alte Prozesse beendet.
 
 :: ====== 2. MongoDB pruefen ======
@@ -107,12 +111,28 @@ echo.
 echo  [6/7] Backend starten auf Port 8002...
 cd /d "%BACKEND_DIR%"
 if exist "venv\Scripts\activate.bat" (
-    start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+    start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 ) else (
-    start "Eventenergie Backend" cmd /c "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+    start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 )
-timeout /t 4 /nobreak >nul
-echo   Backend gestartet
+
+:: Warten und pruefen ob Backend tatsaechlich laeuft
+echo   Warte auf Backend-Start...
+set "BACKEND_OK=0"
+for /l %%i in (1,1,10) do (
+    if !BACKEND_OK! equ 0 (
+        timeout /t 2 /nobreak >nul
+        netstat -ano | findstr "0.0.0.0:8002" | findstr LISTENING >nul 2>&1
+        if !errorlevel! equ 0 (
+            set "BACKEND_OK=1"
+            echo   Backend laeuft auf Port 8002
+        )
+    )
+)
+if !BACKEND_OK! equ 0 (
+    echo   WARNUNG: Backend antwortet nicht auf Port 8002!
+    echo   Pruefe das offene "Eventenergie Backend" Fenster fuer Fehlermeldungen.
+)
 
 :: ====== 7. Caddy starten (Port 8001) ======
 echo.
@@ -137,24 +157,50 @@ if not exist "%PORTAL_DIR%\Caddyfile" (
 )
 
 if exist "%PORTAL_DIR%\caddy.exe" (
-    start "Eventenergie Caddy" cmd /c "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
-    timeout /t 2 /nobreak >nul
-    echo   Caddy gestartet
+    start "Eventenergie Caddy" cmd /k "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
 ) else (
     echo   FEHLER: caddy.exe nicht gefunden in %PORTAL_DIR%
     echo   Bitte caddy.exe herunterladen: https://caddyserver.com/download
+    goto :fertig
 )
 
-:: ====== Fertig ======
+:: Warten und pruefen ob Caddy tatsaechlich laeuft
+echo   Warte auf Caddy-Start...
+set "CADDY_OK=0"
+for /l %%i in (1,1,8) do (
+    if !CADDY_OK! equ 0 (
+        timeout /t 2 /nobreak >nul
+        netstat -ano | findstr "0.0.0.0:8001" | findstr LISTENING >nul 2>&1
+        if !errorlevel! equ 0 (
+            set "CADDY_OK=1"
+            echo   Caddy laeuft auf Port 8001
+        )
+    )
+)
+if !CADDY_OK! equ 0 (
+    echo   WARNUNG: Caddy antwortet nicht auf Port 8001!
+    echo   Pruefe das offene "Eventenergie Caddy" Fenster fuer Fehlermeldungen.
+)
+
+:: ====== Zusammenfassung ======
+:fertig
 echo.
 echo  ==================================================
-echo   Portal erfolgreich gestartet!
+if !BACKEND_OK! equ 1 if !CADDY_OK! equ 1 (
+    echo   Portal erfolgreich gestartet!
+) else (
+    echo   WARNUNG: Nicht alle Dienste gestartet!
+)
 echo  ==================================================
 echo.
 echo   Backend:  http://localhost:8002  (intern)
 echo   Caddy:    http://localhost:8001  (extern)
 echo   Portal:   http://portal.eventenergie.com:8001
 echo.
-echo   Stoppen:  stop-all.bat
+if !BACKEND_OK! equ 0 echo   [!] Backend NICHT gestartet - siehe "Eventenergie Backend" Fenster
+if !CADDY_OK! equ 0 echo   [!] Caddy NICHT gestartet - siehe "Eventenergie Caddy" Fenster
 echo.
-pause
+echo   Stoppen:  stop-all.bat
+echo   Logs:     %LOG_DIR%\
+echo.
+if /i not "%~1"=="nopause" pause

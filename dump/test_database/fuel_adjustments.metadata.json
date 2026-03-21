@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"28f5827de78f4c66965e8cf4c6088efc","collectionName":"fuel_adjustments","type":"collection"}

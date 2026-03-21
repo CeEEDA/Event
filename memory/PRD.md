@@ -41,11 +41,11 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Admin UI mit Toggles, Intervall-Inputs, Backup-Liste
 - Hintergrund-Scheduler (15 Min Prüfintervall)
 
-### Start/Update/Stop Scripts ueberarbeitet (abgeschlossen - 2026-03-20)
-- **start-all.bat:** Stoppt alte Prozesse, MongoDB prüfen, DB-Backup beim Start, venv Support, Frontend Build prüfen, Backend + Caddy starten
-- **stop-all.bat:** Stoppt Backend, Caddy und alle Portal-Prozesse (inkl. Port-Cleanup)
-- **update.bat:** Auto-Erkennung des Update-Ordners, DB+Code-Backup, .env Schutz, Dependencies installieren, Build, automatischer Neustart
-- **stop_services.bat / start_services.bat:** Aliase auf neue Scripts
+### Start/Update/Stop Scripts ueberarbeitet (abgeschlossen - 2026-03-20, fix 2026-02)
+- **start-all.bat:** Stoppt alte Prozesse, MongoDB prüfen, DB-Backup beim Start, venv Support, Frontend Build prüfen, Backend + Caddy starten, **Port-Verifizierung**, `nopause` Parameter, `cmd /k` fuer Fehler-Sichtbarkeit
+- **stop-all.bat:** Stoppt Backend, Caddy und alle Portal-Prozesse (inkl. Port-Cleanup), `nopause` Parameter, Timeout nach Stop
+- **update.bat:** Auto-Erkennung des Update-Ordners, DB+Code-Backup, .env Schutz, Dependencies installieren, Build, **automatischer Neustart via `nopause`**, finale Port-Verifizierung [7/7]
+- **stop_services.bat / start_services.bat:** Aliase auf neue Scripts (Parameter-Durchreichung)
 - **deployment/start-all.bat + stop-all.bat:** Synchronisiert mit Hauptordner
 - **UPDATE_ANLEITUNG.md:** Komplett ueberarbeitet mit allen neuen Features
 
@@ -60,14 +60,18 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## Prioritized Backlog
 
+### P0 - Offen
+- update.bat Auto-Restart: GEFIXT (nopause, Port-Verifizierung, cmd /k) - Benutzer muss live testen
+
 ### P1 - Kommend
-- Live-Server Login-Fix (api.js Fallback deployen + npm run build)
+- HTTPS-Migration (Caddy SSL-Konfiguration)
 - PayPal Integration
 - Direkter QR-Label-Druck an Drucker
 - Windows Installer (.exe) fuer Electron Desktop App
 
 ### P2 - Backlog
 - Admin File Size Limits fuer Uploads
+- Geolocation/Clipboard Fix (wird durch HTTPS automatisch geloest)
 
 ## Credentials
 - **Admin (lokal):** admin@test.com / password

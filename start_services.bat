@@ -14,7 +14,7 @@ echo  Weiterleitung an start-all.bat...
 echo.
 
 if exist "%PORTAL_DIR%\start-all.bat" (
-    call "%PORTAL_DIR%\start-all.bat"
+    call "%PORTAL_DIR%\start-all.bat" %1
 ) else (
     echo  start-all.bat nicht gefunden!
     echo  Starte manuell...
@@ -27,16 +27,14 @@ if exist "%PORTAL_DIR%\start-all.bat" (
     )
     
     :: Backend
-    start "Eventenergie Backend" cmd /c "cd /d %PORTAL_DIR%\backend && python -m uvicorn server:app --host 0.0.0.0 --port 8001"
-    timeout /t 3 /nobreak >nul
+    start "Eventenergie Backend" cmd /k "cd /d %PORTAL_DIR%\backend && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+    timeout /t 4 /nobreak >nul
     
     :: Caddy
     if exist "%PORTAL_DIR%\caddy.exe" (
-        start "Eventenergie Caddy" cmd /c "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
-    ) else (
-        start "Eventenergie Frontend" cmd /c "cd /d %PORTAL_DIR%\frontend && npx serve -s build -l 3000"
+        start "Eventenergie Caddy" cmd /k "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
     )
     
     echo  Dienste gestartet.
-    pause
+    if /i not "%~1"=="nopause" pause
 )
