@@ -1564,8 +1564,10 @@ async def download_tankbeleg_pi_bundle():
     """Download all Tankbeleg Pi files as a ZIP bundle with Unix line endings."""
     files = [
         ("tankbeleg_pi.py", os.path.join(STATIC_DIR, "tankbeleg_pi.py")),
+        ("tankbeleg_ui.py", os.path.join(STATIC_DIR, "tankbeleg_ui.py")),
         ("tankbeleg_pi.conf", os.path.join(STATIC_DIR, "tankbeleg_pi.conf")),
         ("tankbeleg_pi.service", os.path.join(STATIC_DIR, "tankbeleg_pi.service")),
+        ("tankbeleg_ui.service", os.path.join(STATIC_DIR, "tankbeleg_ui.service")),
         ("setup_tankbeleg_pi.sh", os.path.join(STATIC_DIR, "setup_tankbeleg_pi.sh")),
         ("tankbeleg_simulator.py", os.path.join(STATIC_DIR, "tankbeleg_simulator.py")),
     ]

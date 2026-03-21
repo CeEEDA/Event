@@ -1,0 +1,15 @@
+[Unit]
+Description=Tankbeleg UI - Kiosk Webserver
+After=network.target tankbeleg_pi.service
+Wants=tankbeleg_pi.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/tankbeleg_ui.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

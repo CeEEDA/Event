@@ -66,6 +66,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ### P0 - Fertig (2026-02-21)
 - System Status Dashboard im Admin-Bereich: MongoDB, Benutzer, Geräte online, Generatoren online, EMU-Datensätze/Std, Auto-Refresh 30s
 - Online-Signal in Geräteverwaltung: Grün (Online <10min), Gelb (Inaktiv <1h), Rot (Offline >1h), Grau (Nie verbunden), mit Zeitangabe
+- Tankbeleg Pi Kiosk-UI: Touch-Frontend auf dem Pi (Flask Webserver Port 8080), Offline Order-Cache (±10 Tage), Fahrer-Auswahl, Auftrags-Zuordnung, GPS, Chromium Kiosk Auto-Start
 
 ### P1 - Kommend
 - HTTPS-Migration (Caddy SSL-Konfiguration)

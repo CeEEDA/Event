@@ -267,12 +267,33 @@ def init_db(db_path):
             gps_lat REAL,
             gps_lon REAL,
             fahrer TEXT,
+            order_pk TEXT,
+            order_name TEXT,
+            notes TEXT DEFAULT '',
             raw_text TEXT,
             synced INTEGER DEFAULT 0,
+            assigned INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_synced ON receipts(synced)")
+    # Migrate: add new columns if missing
+    try:
+        conn.execute("ALTER TABLE receipts ADD COLUMN order_pk TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE receipts ADD COLUMN order_name TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE receipts ADD COLUMN notes TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE receipts ADD COLUMN assigned INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
     log.info(f"Datenbank initialisiert: {db_path}")
@@ -382,7 +403,9 @@ def sync_to_portal(conf):
             "gps_lng": row.get("gps_lon"),
             "pi_local_id": row.get("local_id"),
             "raw_receipt_data": row.get("raw_text") or "",
-            "notes": f"Pi-Sync {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+            "order_pk": row.get("order_pk") or None,
+            "order_name": row.get("order_name") or "",
+            "notes": row.get("notes") or f"Pi-Sync {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
         }
         api_receipts.append(api_receipt)
         local_ids.append(row["local_id"])

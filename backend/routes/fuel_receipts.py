@@ -624,3 +624,37 @@ def _draw_receipt_page(c, doc, display_qty, logo_img=None):
     c.drawCentredString(w / 2, 20 * mm, "Eventenergie Deutschland GmbH & Co. KG")
     c.setFont("Helvetica", 7)
     c.drawCentredString(w / 2, 15 * mm, f"Beleg-ID: {doc['id'][:8]}")
+
+
+
+# ── Pi Kiosk API Endpoints ──
+
+@router.get("/pi/orders")
+async def pi_get_orders():
+    """Returns orders within -10 to +10 days for Pi offline cache. No auth for Pi access."""
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    date_from = (now - timedelta(days=10)).isoformat()
+    date_to = (now + timedelta(days=10)).isoformat()
+
+    query = {
+        "is_canceled": {"$ne": True},
+        "is_archived": {"$ne": True},
+        "$or": [
+            {"dispo_start": {"$lte": date_to}, "dispo_end": {"$gte": date_from}},
+            {"event_start": {"$lte": date_to}, "event_end": {"$gte": date_from}},
+            {"dispo_start": None, "event_start": None},
+        ]
+    }
+    orders = await _db.orders_cache.find(query, {"_id": 0}).sort("dispo_start", -1).to_list(500)
+    return {"orders": orders, "synced_at": now.isoformat()}
+
+
+@router.get("/pi/drivers")
+async def pi_get_drivers():
+    """Returns user list for driver selection on Pi. No auth for Pi access."""
+    users = await _db.users.find(
+        {},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}
+    ).to_list(200)
+    return {"drivers": users}
