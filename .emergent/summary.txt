@@ -1,62 +1,38 @@
 <analysis>**original_problem_statement**:
-The user encountered multiple critical issues on their live Windows server for a Kirmes (Fairground) billing and management system. The Kirmeskiste IoT device (Raspberry Pi) was connecting but sending zero values. The setup script downloads failed due to hardcoded Linux paths on the Windows server. The SMTP email invites were failing to send, UI needed cleanup (demo buttons), and the deployment  scripts () were not reliably restarting the Caddy and Python backend processes.
+The user is building a comprehensive Kirmes (Fairground) billing and management system. Currently, the focus is on the Tankbeleg Pi (Fuel Receipt IoT Device - a Raspberry Pi connected to a printer/RS232). The user needs a touch-optimized Kiosk UI on the Pi that allows drivers to view incoming fuel receipts, select a driver (Mitarbeiter), select an order (Auftrag), and add optional notes/location data. This must work offline and sync with the main FastAPI backend when a connection is available.
 
 PRODUCT REQUIREMENTS:
-1. Fix Kirmeskiste data reporting (Modbus communication).
-2. Fix ZIP and setup-script downloads (Linux paths vs Windows).
-3. Fix SMTP email integration for user invites.
-4. Clean up UI (remove demo data buttons).
-5. Optimize Windows batch scripts (, ) for reliable automated deployment.
+1. Fix automated deployment scripts () on Windows Server.
+2. Build an Admin System Status Dashboard and Device Online indicators.
+3. Fix Windows CRLF () line-ending issues that break Raspberry Pi setup scripts.
+4. Build a local Flask Kiosk Web-UI () for the Raspberry Pi.
+5. Provide offline support for the Pi (syncing orders/drivers locally).
 
-**User's preferred language**: German (Deutsch) - INSTRUCT NEXT AGENT TO RESPOND IN GERMAN.
+**User's preferred language**: German (Deutsch) - YOU MUST RESPOND TO THE USER IN GERMAN ONLY.
 
 **what currently exists?** 
-A full-stack React/FastAPI/MongoDB application deployed on a live Windows Server. The frontend is served via a Caddy reverse proxy on port 8001, which forwards API requests to the Python backend on port 8002. The system integrates IoT devices (Raspberry Pi) via Modbus TCP for energy monitoring and includes automated  scripts for service management and GitHub-based updates.
+A React/FastAPI/MongoDB full-stack application hosted on a Windows Server (Caddy reverse proxy). IoT devices (Raspberry Pis) connect to this server. The Windows  deployment scripts have been fixed to properly handle restarts. A new offline-capable Flask Kiosk application () runs locally on the Tankbeleg Pi (Port 8080) in a Chromium Wayland (labwc) full-screen kiosk mode, utilizing a local SQLite DB for intermediate receipt storage.
 
 **Last working item**:
-    - Last item agent was working: Überprüfung und Optimierung der . The user ran the automated update script, but afterward, both Caddy and the Backend failed to start (no processes listening on port 8001 or 8002). The user had to start them manually. The agent was just viewing  to see why the start command is failing within the update sequence.
-    - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? manual testing by checking the batch script logic/syntax. User verification is required for the final live test.
+    - Last item agent was working: Redesigning the  Kiosk UI. The user requested to completely remove the login screen because the on-screen keyboard implementation was blocking physical keyboard input and causing usability issues. The agent just rewrote  to bypass login, route directly to the main dashboard, and use a Dropdown menu for Mitarbeiter (Driver) selection alongside optional Bemerkung (Notes) and Standort (Location) touch-friendly fields.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: N (Cannot test Pi hardware/touch UI locally)
+    - Which testing method agent to use? manual testing by user on the physical Raspberry Pi hardware.
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  Issue 1:  fails to restart services automatically (P0)
-     - Attempted fixes: Agent viewed the script after the user reported that after an update, Active Internet connections (w/o servers)
-Proto Recv-Q Send-Q Local Address           Foreign Address         State      
-tcp        0      0 localhost:45434         localhost:27017         ESTABLISHED
-tcp        0      0 localhost:45436         localhost:27017         ESTABLISHED
-tcp        0      0 localhost:8010          localhost:43742         ESTABLISHED
-tcp        0      0 localhost:38674         localhost:35739         ESTABLISHED
-tcp        0      0 localhost:43742         localhost:8010          ESTABLISHED
-tcp        0      0 localhost:27017         localhost:45424         ESTABLISHED
-tcp        0      0 localhost:35739         localhost:38674         ESTABLISHED
-tcp        0      0 agent-env-abd2434:52399 ec2-3-127-155-199.:1883 ESTABLISHED
-tcp        0      0 agent-env-abd24344:8010 10.64.128.161:59514     ESTABLISHED
-tcp        0      0 agent-env-abd24344:8010 10.64.132.33:44464      ESTABLISHED
-tcp        0      0 localhost:45424         localhost:27017         ESTABLISHED
-tcp        0      0 agent-env-abd2434:50108 0.203.102.34.bc.g:https ESTABLISHED
-tcp        0      0 localhost:27017         localhost:45434         ESTABLISHED
-tcp        0      0 localhost:27017         localhost:45436         ESTABLISHED
-tcp        0      0 localhost:27017         localhost:45436         ESTABLISHED
-Active UNIX domain sockets (w/o servers)
-Proto RefCnt Flags       Type       State         I-Node   Path
-unix  3      [ ]         STREAM     CONNECTED     21383189 
-unix  3      [ ]         STREAM     CONNECTED     21383188 
-unix  3      [ ]         STREAM     CONNECTED     21374794 
-unix  3      [ ]         STREAM     CONNECTED     21377649 
-unix  3      [ ]         STREAM     CONNECTED     21374793 
-unix  3      [ ]         STREAM     CONNECTED     21377648  showed no active ports for 8001/8002.
-     - Next debug checklist: Check . Verify if  or the equivalent commands are properly executing at the end of the update script. Check for proper directory changing () before starting services. 
-     - Why fix this issue and what will be achieved with the fix? Enables seamless, 1-click deployments for the user directly from their server without manual restarts.
-     - Status: IN PROGRESS
-     - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? Backend/Batch scripts
+  Issue 1: Verify  Dropdown/No-Login UI Refactor (P0)
+     - Attempted fixes: Agent overwrote  to remove the auth flow and introduce the Dropdown.
+     - Next debug checklist: Check if the user successfully downloaded and restarted the  service on their Pi, and verify if the dropdown populates correctly from the SQLite .
+     - Why fix this issue and what will be achieved with the fix? Completes the Tankbeleg Pi touch interface, allowing drivers to assign receipts without frustrating keyboard/login blockers.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Frontend (Pi Kiosk)
      - Blocked on other issue: None.
 
   Issue 2: Geolocation API / Clipboard Copy fails due to HTTP (P2)
-     - Attempted fixes: The agent added a fallback for  for the Anmeldelink kopieren feature, but native browser features still complain.
-     - Next debug checklist: Requires full HTTPS (SSL) configuration on the user's Caddy server. 
+     - Attempted fixes: Added fallback for , but native browser features require HTTPS.
+     - Next debug checklist: Requires full HTTPS (SSL) configuration on the user's live Caddy server.
      - Why fix this issue and what will be achieved with the fix? Resolves browser security blocks on modern APIs.
      - Status: BLOCKED (Waiting on user to set up SSL/Domain properly).
      - Is recurring issue? Y
@@ -64,106 +40,107 @@ unix  3      [ ]         STREAM     CONNECTED     21377648  showed no active por
      - Blocked on other issue: HTTPS Migration.
 
 **In progress Task List**:
-  None.
+  Task 1: Tankbeleg Pi Offline Sync & UI
+     - Where to resume: Await user feedback on the newly created Dropdown UI in . If it works, assist user in testing the full flow (Receiving RS232 receipt -> assigning driver/order -> syncing to backend).
+     - What will be achieved with this? Fully functional offline-capable IoT fuel receipt scanner.
+     - Status: IN PROGRESS
+     - Should Test frontend/backend/both after fix? Both (Integration sync)
+     - Blocked on something: User hardware testing.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - (P1) HTTPS Migration: Assist user in configuring Caddy for automatic SSL (HTTPS) to resolve Geo-location and Clipboard API restrictions.
-    - (P1) PayPal Integration
-    - (P1) Direkter QR-Label-Druck
-    - (P1) Windows Installer erstellen
+    - (P1) HTTPS Migration: Assist user in configuring Caddy for automatic SSL.
+    - (P1) PayPal Integration.
+    - (P1) Direkter QR-Label-Druck.
     Future Tasks:
-    - (P2) Admin File Size Limits for uploads
+    - (P2) Admin File Size Limits for uploads.
+    - (P2) Windows Installer for Electron.
 
 **Completed work in this session**
-- Modbus/Kirmeskiste Fix: Switched from FC04 (Input) to FC03 (Holding Registers), updated to  for pymodbus 3.12 compatibility, and corrected kWh scaling (no longer dividing by 10) (DONE)
-- Windows Path Fixes for Downloads: Removed 23 hardcoded Linux paths () in  and replaced them with dynamic  resolution for Windows compatibility (DONE)
-- SMTP/Email Configuration: Fixed credentials and configured  for event invites (DONE)
-- Demo Data Removal: Cleaned up the frontend UI by removing demo buttons and simulation handlers (DONE)
-- Backup System Fallback: Replaced strict  dependency with a python  fallback for database backups when  occurs (DONE)
-- Git Deployment Fix: Guided user to switch from  to  branch to receive the latest code (DONE)
+-  and  auto-restart fixed by removing  commands and adding port verification (DONE).
+- System Status Dashboard added to Admin Settings (MongoDB, Users, Devices, Generators stats) (DONE).
+- Device Online indicator (green/red dot based on  timestamp) added to Device Management (DONE).
+- Fixed Windows  line-ending issues breaking Raspberry Pi  and  downloads by adding conversion logic to  endpoints and  (DONE).
+- Fixed hardcoded  user to dynamic/ in  (DONE).
+- Created offline Pi Flask server  with SQLite caching and Wayland () Chromium Kiosk autostart (DONE).
 
 **Earlier issues found/mentioned but not fixed**
-   Issue 1: HTTPS/SSL Setup
-   - Debug checklist: Update  to use the real domain and enable automatic HTTPS.
+   - Issue 1: HTTPS/SSL Setup (Mentioned in previous fork, still pending user DNS setup).
+   - Debug checklist: Update  to use real domain and enable automatic HTTPS.
    - Why to solve this issue and what will be achieved with this? Unblocks Geolocation and modern browser APIs.
    - Should Test frontend/backend/both after fix: Frontend
    - Is recurring issue? Y
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: Windows Server Deployment Failures (Paths, Ports, Batch Scripts).
-  - Recurrence count: 4
-  - Status: IN PROGRESS
-  Note: Hardcoded Linux paths and batch script process management continue to be the main friction points on the user's live Windows environment. 
+  - Recurrence count: 5 (Resolved in this session)
+  - Status: RESOLVED
+  Note: Line ending conversions ( -> ) on downloads from the Windows Server were successfully implemented.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- Backend: FastAPI, Python, MongoDB (pymongo fallback for backups).
+- Backend: FastAPI, Python, MongoDB.
 - Frontend: React.
-- IoT: Raspberry Pi,  (version 3.12.1, requires  and FC03 Holding Registers for EMU Professional II).
-- Infrastructure: Windows Server, Caddy (Reverse Proxy), Windows Batch Scripting.
+- IoT (Pi): Flask (), Local SQLite (), , Chromium Kiosk mode under Wayland ().
+- Deployment: Windows Batch Scripts + Git.
 
 **key DB schema**
-  - unchanged
+  - MongoDB : uid=0(root) gid=0(root) groups=0(root), , , 
+  - MongoDB : Syncs from EPI Rent system.
+  - SQLite (Pi) : uid=0(root) gid=0(root) groups=0(root), , , , , ,  (Migration logic baked into ).
 
 **changes in tech stack**
-  - None.
+  - Added Flask (via /Standard library to avoid heavy dependencies) specifically for the local Raspberry Pi Kiosk UI.
+  - Added  to the Pi environment for local password hashing (though login was just removed, library remains).
 
 **All files of reference** 
--  (Needs fixing for auto-restart)
--  (Fixed Modbus config)
--  (Fixed download endpoints)
--  (Fixed setup script generation logic)
--  (Fixed SMTP config)
+-  (Kiosk UI - JUST UPDATED to remove login).
+-  (RS232 Serial reader).
+-  (Backend sync endpoints).
+-  (Download endpoints for Pi).
 
 **Areas that need refactoring**: 
-- The  scripts handling need robust error checking and proper wait/timeout conditions to ensure  triggers successfully from .
+- The DB schema migration logic inside  () is currently a raw try/except block. It works, but isn't scalable if many more offline features are added to the Pi.
 
 **key api endpoints**
-- 
-- 
-- 
-- 
+-  (Fetches -10 to +10 days orders for Pi caching).
+-  (Fetches users/drivers for Pi dropdown).
+-  (Downloads the Flask UI script to the Pi).
 
 **Critical Info for New Agent** 
-- YOU MUST RESPOND IN GERMAN. 
-- The user is working directly on a live Windows Server. **Do not use Linux absolute paths ()** in the code, as they will break downloads and execution on the user's machine.
--  on the Pi is version 3.12.1. Parameters like  or  will cause exceptions; use  instead.
-- The user's external system operates on Port 80, proxied via Caddy to Port 8001 locally, and then to FastAPI on Port 8002.
-- Avoid using  aggressively in  scripts as it previously crashed the user's Windows Explorer UI.
+- YOU MUST RESPOND IN GERMAN.
+- **Deployment Flow for Pi updates:** The user's workflow is strictly: 1. You save code. 2. User runs  on Windows Server. 3. User runs  commands on the Raspberry Pi to fetch the new scripts from their Windows server. ALWAYS remind the user of this 3-step sequence when you update Pi files (, etc.), otherwise they will test old cached versions.
+- The Pi uses Wayland (), so standard X11 or  rules behave differently. Autostart is handled via  invoking a custom .
 
 **documents and test reports created in this job** 
-None.
+  - /app/test_reports/iteration_45.json
+  - /app/memory/PRD.md
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. **User:** ja das hatte ich vor. Also mache ich zuerst das Update. (Proceeding with update)
-2. **User:** ist durch. ich komme aber extern wieder nicht drauf. ist das gleiche problem wie heute morgen gegen 11 Uhr. DIe env datein sind aber unverändert (After update, portal is inaccessible externally)
-3. **Agent:** (Asks if processes are duplicated on port 8001 again)
-4. **User:** Provides . Output shows NO listening processes on 8001 or 8002.
-5. **Agent:** Notes neither Caddy nor Backend is running.
-6. **User:** geht. check mal die update datein. Das sowas über das Update Skript läuft (User started it manually and it works, but requests agent to fix the  so it starts services automatically). **[PENDING ACTION]**
+1. **User:** die tastertur ist da. Wie kann ich das layout anpassen? (Keyboard finally appeared on Pi).
+2. **Agent:** (Asks for clarification on layout needs via ask_human).
+3. **User:** ich komme mit der bildschirm tastertur nicht rein. Über eine externe Tastertur kann ich keine Eingabe mehr machen. Ich würde das ganze Anmeldefenster entfernen. Direkt ins hauptfenster. Da kann man dann per Drop Down menü den Mitarbeiter auswählen. Dennoch brauche ich hier das Bemerkungsfeld + Standort... Das Drop down menü ist nur mit Mitarbeiter gefüllt. (Requests removing login entirely due to keyboard conflicts, replacing it with a simple Driver Dropdown on the main dashboard).
+4. **Agent:** Removes login, implements Driver dropdown and optional Notes/Location fields, writes new . **[PENDING USER VERIFICATION]**
 
 **Project Health Check:**
-- Broken:  auto-restart functionality.
+- Broken: None currently, but Pi UI is awaiting user hardware test.
 - Mocked: None.
 
 **3rd Party Integrations** 
 - Stripe (Payments) — requires User API Key
-- SendGrid/SMTP (Emails via Ionos) — requires User API Key
-- OpenStreetMap — Free tier
+- SendGrid/SMTP (Emails) — requires User API Key
 - Caddy Server — Proxy setup
 
 **Testing status**
-  - Testing agent used after significant changes: NO
+  - Testing agent used after significant changes: YES (For Admin Dashboard).
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None
-  - Known regressions:  failing to start services post-update.
+  - Test files created: None new.
+  - Known regressions: None.
 
 **Credentials to test flow:**
 - Admin (Server):  / 
-- SMTP:  / 
 
 **What agent forgot to execute**
-- The agent properly diagnosed and solved a massive amount of platform and Python issues on a tricky Windows environment but missed fixing the tail end of  to reliably trigger  before concluding the conversation. Testing Agent wasn't utilized.</analysis>
+- The agent properly rewrote the UI to remove the login, but did not explicitly instruct the user to run the 3-step update sequence (Save -> update.bat -> curl on Pi) in the final message. The next agent must remind the user to pull the latest  to their Pi to see the new Dropdown layout.</analysis>
