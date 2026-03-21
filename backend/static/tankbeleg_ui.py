@@ -266,12 +266,31 @@ def get_receipt_stats(db_path):
 
 # ====== Background Sync Thread ======
 
+_backend_online = False
+_last_sync_ok = ""
+
 def background_sync(conf):
+    global _backend_online, _last_sync_ok
     while True:
         try:
-            sync_orders_from_backend(conf)
+            n = sync_orders_from_backend(conf)
             sync_drivers_from_backend(conf)
+            if n > 0:
+                _backend_online = True
+                _last_sync_ok = datetime.now(timezone.utc).isoformat()
+            else:
+                # Try health check
+                if conf.get("api_url") and requests:
+                    base = _api_base(conf)
+                    try:
+                        r = requests.get(f"{base}/health", timeout=5)
+                        _backend_online = r.status_code == 200
+                        if _backend_online:
+                            _last_sync_ok = datetime.now(timezone.utc).isoformat()
+                    except Exception:
+                        _backend_online = False
         except Exception as e:
+            _backend_online = False
             log.error(f"Background sync error: {e}")
         time.sleep(int(conf.get("sync_interval", 300)))
 
@@ -782,16 +801,12 @@ class KioskHandler(SimpleHTTPRequestHandler):
             self._json({"drivers": drvs})
 
         elif path == "/api/status":
-            online = False
-            if self.conf.get("api_url") and requests:
-                base = _api_base(self.conf)
-                try:
-                    r = requests.get(f"{base}/health", timeout=5)
-                    online = r.status_code == 200
-                except Exception:
-                    pass
             stats = get_receipt_stats(self.conf["db_path"])
-            self._json({"backend_reachable": online, "stats": stats})
+            self._json({
+                "backend_reachable": _backend_online,
+                "last_sync": _last_sync_ok,
+                "stats": stats,
+            })
 
         else:
             self.send_error(404)
@@ -883,8 +898,12 @@ def main():
     init_cache_db(conf["db_path"])
 
     log.info("Lade Auftraege und Fahrer vom Backend...")
-    sync_orders_from_backend(conf)
+    global _backend_online, _last_sync_ok
+    n = sync_orders_from_backend(conf)
     sync_drivers_from_backend(conf)
+    if n > 0:
+        _backend_online = True
+        _last_sync_ok = datetime.now(timezone.utc).isoformat()
 
     sync_thread = threading.Thread(target=background_sync, args=(conf,), daemon=True)
     sync_thread.start()
