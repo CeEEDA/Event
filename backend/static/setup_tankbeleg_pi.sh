@@ -93,7 +93,7 @@ cat > "$AUTOSTART_DIR/tankbeleg-kiosk.desktop" << 'KIOSK_EOF'
 [Desktop Entry]
 Type=Application
 Name=Tankbeleg Kiosk
-Exec=bash -c "sleep 5 && chromium-browser --kiosk --start-fullscreen --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --incognito --check-for-update-interval=31536000 http://localhost:8080"
+Exec=bash -c "sleep 5 && chromium-browser --kiosk --start-fullscreen --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate --lang=de --incognito --check-for-update-interval=31536000 http://localhost:8080"
 X-GNOME-Autostart-enabled=true
 KIOSK_EOF
 
