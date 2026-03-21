@@ -138,11 +138,20 @@ def authenticate_user(db_path, email, password):
     return None
 
 
+def _api_base(conf):
+    """Returns clean API base URL without trailing /api duplication."""
+    url = conf.get("api_url", "").rstrip("/")
+    if url.endswith("/api"):
+        return url
+    return url + "/api"
+
+
 def sync_orders_from_backend(conf):
     if not conf["api_url"] or not requests:
         return 0
+    base = _api_base(conf)
     try:
-        resp = requests.get(f"{conf['api_url']}/api/fuel-receipts/pi/orders", timeout=15)
+        resp = requests.get(f"{base}/fuel-receipts/pi/orders", timeout=15)
         if resp.status_code == 200:
             data = resp.json()
             orders = data.get("orders", [])
@@ -175,8 +184,9 @@ def sync_orders_from_backend(conf):
 def sync_drivers_from_backend(conf):
     if not conf["api_url"] or not requests:
         return 0
+    base = _api_base(conf)
     try:
-        resp = requests.get(f"{conf['api_url']}/api/fuel-receipts/pi/drivers", timeout=15)
+        resp = requests.get(f"{base}/fuel-receipts/pi/drivers", timeout=15)
         if resp.status_code == 200:
             data = resp.json()
             drivers = data.get("drivers", [])
@@ -774,8 +784,9 @@ class KioskHandler(SimpleHTTPRequestHandler):
         elif path == "/api/status":
             online = False
             if self.conf.get("api_url") and requests:
+                base = _api_base(self.conf)
                 try:
-                    r = requests.get(f"{self.conf['api_url']}/api/health", timeout=5)
+                    r = requests.get(f"{base}/health", timeout=5)
                     online = r.status_code == 200
                 except Exception:
                     pass
