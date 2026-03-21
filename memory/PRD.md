@@ -63,6 +63,10 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ### P0 - Offen
 - update.bat Auto-Restart: GEFIXT (nopause, Port-Verifizierung, cmd /k) - Benutzer muss live testen
 
+### P0 - Fertig (2026-02-21)
+- System Status Dashboard im Admin-Bereich: MongoDB, Benutzer, Geräte online, Generatoren online, EMU-Datensätze/Std, Auto-Refresh 30s
+- Online-Signal in Geräteverwaltung: Grün (Online <10min), Gelb (Inaktiv <1h), Rot (Offline >1h), Grau (Nie verbunden), mit Zeitangabe
+
 ### P1 - Kommend
 - HTTPS-Migration (Caddy SSL-Konfiguration)
 - PayPal Integration
