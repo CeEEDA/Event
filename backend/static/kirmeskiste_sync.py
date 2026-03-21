@@ -235,11 +235,11 @@ def read_meter(ip, port, slave_id, meter_name):
         data["PF_L3"]    = read_float32(client, REG_PF_L3, slave_id) or 0
         data["F_Hz"]     = read_float32(client, REG_FREQ, slave_id) or 0
 
-        # Energiezaehler (UInt64, Wert in kWh * 10 -> dividiere durch 10)
+        # Energiezaehler (UInt64, Wert in kWh direkt)
         e_imp_raw = read_uint64(client, REG_E_IMP, slave_id)
         e_exp_raw = read_uint64(client, REG_E_EXP, slave_id)
-        data["E_imp_kWh"] = round(e_imp_raw / 10.0, 1) if e_imp_raw is not None else 0
-        data["E_exp_kWh"] = round(e_exp_raw / 10.0, 1) if e_exp_raw is not None else 0
+        data["E_imp_kWh"] = round(e_imp_raw * 1.0, 1) if e_imp_raw is not None else 0
+        data["E_exp_kWh"] = round(e_exp_raw * 1.0, 1) if e_exp_raw is not None else 0
 
         # Stromausfaelle
         data["power_fail_count"] = read_uint16(client, REG_PWRFAIL, slave_id) or 0
