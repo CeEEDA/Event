@@ -1508,6 +1508,19 @@ async def download_tankbeleg_pi_script():
     content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
     return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_pi.py"'})
 
+@api_router.get("/download/tankbeleg-ui-script")
+async def download_tankbeleg_ui_script():
+    path = os.path.join(STATIC_DIR, "tankbeleg_ui.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_ui.py"'})
+
+@api_router.get("/download/tankbeleg-ui-service")
+async def download_tankbeleg_ui_service():
+    path = os.path.join(STATIC_DIR, "tankbeleg_ui.service")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/plain", headers={"Content-Disposition": 'attachment; filename="tankbeleg_ui.service"'})
+
+
 @api_router.get("/download/tankbeleg-pi-config")
 async def download_tankbeleg_pi_config():
     return FileResponse(os.path.join(STATIC_DIR, "tankbeleg_pi.conf"), media_type="text/plain", filename="tankbeleg_pi.conf")
