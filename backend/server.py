@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
 import logging
 from pathlib import Path
+STATIC_DIR = str(Path(__file__).resolve().parent / "static")
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict
 import uuid
@@ -1412,31 +1413,31 @@ async def download_gateway_topic_file():
 
 @api_router.get("/download-sync-script")
 async def download_sync_script():
-    return FileResponse("/app/backend/static/emu_sync.py", media_type="text/x-python", filename="emu_sync.py")
+    return FileResponse(os.path.join(STATIC_DIR, "emu_sync.py"), media_type="text/x-python", filename="emu_sync.py")
 
 @api_router.get("/download-sync-service")
 async def download_sync_service():
-    return FileResponse("/app/backend/static/emu_sync.service", media_type="text/plain", filename="emu_sync.service")
+    return FileResponse(os.path.join(STATIC_DIR, "emu_sync.service"), media_type="text/plain", filename="emu_sync.service")
 
 @api_router.get("/download-sync-config")
 async def download_sync_config():
-    return FileResponse("/app/backend/static/emu_sync.conf", media_type="text/plain", filename="emu_sync.conf")
+    return FileResponse(os.path.join(STATIC_DIR, "emu_sync.conf"), media_type="text/plain", filename="emu_sync.conf")
 
 @api_router.get("/download-dse890-gateway-topics")
 async def download_dse890_gateway():
-    return FileResponse("/app/backend/static/dse890_gateway_topics.csv", media_type="text/csv", filename="dse890_gateway_topics.csv")
+    return FileResponse(os.path.join(STATIC_DIR, "dse890_gateway_topics.csv"), media_type="text/csv", filename="dse890_gateway_topics.csv")
 
 @api_router.get("/download-dse8610-module-topics")
 async def download_dse8610_module():
-    return FileResponse("/app/backend/static/dse8610_module_topics.csv", media_type="text/csv", filename="dse8610_module_topics.csv")
+    return FileResponse(os.path.join(STATIC_DIR, "dse8610_module_topics.csv"), media_type="text/csv", filename="dse8610_module_topics.csv")
 
 @api_router.get("/download-dsel401-module-topics")
 async def download_dsel401_module():
-    return FileResponse("/app/backend/static/dsel401_module_topics.csv", media_type="text/csv", filename="dsel401_module_topics.csv")
+    return FileResponse(os.path.join(STATIC_DIR, "dsel401_module_topics.csv"), media_type="text/csv", filename="dsel401_module_topics.csv")
 
 @api_router.get("/download/desktop-app-mac")
 async def download_desktop_app_mac():
-    file_path = "/app/backend/static/eventenergie-portal-mac.zip"
+    file_path = os.path.join(STATIC_DIR, "eventenergie-portal-mac.zip")
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     return FileResponse(file_path, media_type="application/zip", filename="Eventenergie Portal-1.0.0-mac.zip")
@@ -1445,36 +1446,36 @@ async def download_desktop_app_mac():
 
 @api_router.get("/download/tankbeleg-pi-script")
 async def download_tankbeleg_pi_script():
-    return FileResponse("/app/backend/static/tankbeleg_pi.py", media_type="text/x-python", filename="tankbeleg_pi.py")
+    return FileResponse(os.path.join(STATIC_DIR, "tankbeleg_pi.py"), media_type="text/x-python", filename="tankbeleg_pi.py")
 
 @api_router.get("/download/tankbeleg-pi-config")
 async def download_tankbeleg_pi_config():
-    return FileResponse("/app/backend/static/tankbeleg_pi.conf", media_type="text/plain", filename="tankbeleg_pi.conf")
+    return FileResponse(os.path.join(STATIC_DIR, "tankbeleg_pi.conf"), media_type="text/plain", filename="tankbeleg_pi.conf")
 
 @api_router.get("/download/tankbeleg-pi-service")
 async def download_tankbeleg_pi_service():
-    return FileResponse("/app/backend/static/tankbeleg_pi.service", media_type="text/plain", filename="tankbeleg_pi.service")
+    return FileResponse(os.path.join(STATIC_DIR, "tankbeleg_pi.service"), media_type="text/plain", filename="tankbeleg_pi.service")
 
 @api_router.get("/download/tankbeleg-pi-setup")
 async def download_tankbeleg_pi_setup():
-    return FileResponse("/app/backend/static/setup_tankbeleg_pi.sh", media_type="application/x-sh", filename="setup_tankbeleg_pi.sh")
+    return FileResponse(os.path.join(STATIC_DIR, "setup_tankbeleg_pi.sh"), media_type="application/x-sh", filename="setup_tankbeleg_pi.sh")
 
 # ============== Mosquitto MQTT Broker Downloads ==============
 
 @api_router.get("/download/mosquitto-config")
 async def download_mosquitto_config():
-    return FileResponse("/app/backend/static/mosquitto_eventenergie.conf", media_type="text/plain", filename="mosquitto_eventenergie.conf")
+    return FileResponse(os.path.join(STATIC_DIR, "mosquitto_eventenergie.conf"), media_type="text/plain", filename="mosquitto_eventenergie.conf")
 
 @api_router.get("/download/mosquitto-setup")
 async def download_mosquitto_setup():
-    return FileResponse("/app/backend/static/setup_mosquitto.sh", media_type="application/x-sh", filename="setup_mosquitto.sh")
+    return FileResponse(os.path.join(STATIC_DIR, "setup_mosquitto.sh"), media_type="application/x-sh", filename="setup_mosquitto.sh")
 
 @api_router.get("/download/mosquitto-bundle")
 async def download_mosquitto_bundle():
     """Download Mosquitto setup files as a ZIP bundle."""
     files = [
-        ("setup_mosquitto.sh", "/app/backend/static/setup_mosquitto.sh"),
-        ("mosquitto_eventenergie.conf", "/app/backend/static/mosquitto_eventenergie.conf"),
+        ("setup_mosquitto.sh", os.path.join(STATIC_DIR, "setup_mosquitto.sh")),
+        ("mosquitto_eventenergie.conf", os.path.join(STATIC_DIR, "mosquitto_eventenergie.conf")),
     ]
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1492,11 +1493,11 @@ async def download_mosquitto_bundle():
 async def download_tankbeleg_pi_bundle():
     """Download all Tankbeleg Pi files as a ZIP bundle."""
     files = [
-        ("tankbeleg_pi.py", "/app/backend/static/tankbeleg_pi.py"),
-        ("tankbeleg_pi.conf", "/app/backend/static/tankbeleg_pi.conf"),
-        ("tankbeleg_pi.service", "/app/backend/static/tankbeleg_pi.service"),
-        ("setup_tankbeleg_pi.sh", "/app/backend/static/setup_tankbeleg_pi.sh"),
-        ("tankbeleg_simulator.py", "/app/backend/static/tankbeleg_simulator.py"),
+        ("tankbeleg_pi.py", os.path.join(STATIC_DIR, "tankbeleg_pi.py")),
+        ("tankbeleg_pi.conf", os.path.join(STATIC_DIR, "tankbeleg_pi.conf")),
+        ("tankbeleg_pi.service", os.path.join(STATIC_DIR, "tankbeleg_pi.service")),
+        ("setup_tankbeleg_pi.sh", os.path.join(STATIC_DIR, "setup_tankbeleg_pi.sh")),
+        ("tankbeleg_simulator.py", os.path.join(STATIC_DIR, "tankbeleg_simulator.py")),
     ]
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1524,7 +1525,7 @@ async def download_controller_topics(controller_type: str):
     mapping = CONTROLLER_TOPIC_MAP.get(controller_type)
     if not mapping:
         raise HTTPException(status_code=404, detail=f"Keine Topic-Datei für Steuerung '{controller_type}' verfügbar")
-    file_path = f"/app/backend/static/{mapping[0]}"
+    file_path = os.path.join(STATIC_DIR, mapping[0])
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Topic-Datei nicht gefunden")
     return FileResponse(file_path, media_type="text/csv", filename=mapping[1])
@@ -1533,7 +1534,7 @@ async def download_controller_topics(controller_type: str):
 async def download_frontend_env():
     """Download the production frontend .env file."""
     return FileResponse(
-        "/app/backend/static/frontend_env_production",
+        os.path.join(STATIC_DIR, "frontend_env_production"),
         media_type="text/plain",
         filename=".env"
     )
@@ -1542,7 +1543,7 @@ async def download_frontend_env():
 async def download_backend_env_example():
     """Download the backend .env example file."""
     return FileResponse(
-        "/app/backend/static/backend_env_example",
+        os.path.join(STATIC_DIR, "backend_env_example"),
         media_type="text/plain",
         filename=".env.example"
     )
@@ -1573,7 +1574,7 @@ async def download_update_package(credentials: HTTPAuthorizationCredentials = De
     import time
     from datetime import date
 
-    PROJECT_ROOT = Path("/app")
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
     today = date.today().strftime("%Y-%m-%d")
     zip_name = f"eventenergie_update_{today}"
 
@@ -1630,7 +1631,7 @@ async def download_update_package(credentials: HTTPAuthorizationCredentials = De
 
         # .env.example Dateien als Referenz hinzufuegen
         env_examples = {
-            f"{zip_name}/frontend/.env.example": "REACT_APP_BACKEND_URL=https://portal.eventenergie.com\n",
+            f"{zip_name}/frontend/.env.example": "REACT_APP_BACKEND_URL=http://portal.eventenergie.com\n",
             f"{zip_name}/backend/.env.example": (
                 "MONGO_URL=mongodb://localhost:27017\n"
                 "DB_NAME=eventenergie\n"
