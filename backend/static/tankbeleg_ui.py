@@ -92,6 +92,12 @@ def init_cache_db(db_path):
             cached_at TEXT
         )
     """)
+    # Migration: add password_hash if missing (old table schema)
+    try:
+        conn.execute("ALTER TABLE drivers_cache ADD COLUMN password_hash TEXT")
+        log.info("Migration: password_hash Spalte hinzugefuegt")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -110,14 +116,25 @@ def verify_password_offline(password, stored_hash):
 def authenticate_user(db_path, email, password):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    # Case-insensitive email lookup
     row = conn.execute(
-        "SELECT * FROM drivers_cache WHERE email=?", (email,)
+        "SELECT * FROM drivers_cache WHERE LOWER(email)=LOWER(?)", (email,)
     ).fetchone()
-    conn.close()
     if not row:
+        # Debug: list available emails
+        all_emails = [r[0] for r in conn.execute("SELECT email FROM drivers_cache").fetchall()]
+        conn.close()
+        log.warning(f"Login fehlgeschlagen: '{email}' nicht gefunden. Verfuegbar: {all_emails}")
+        return None
+    conn.close()
+    has_hash = row["password_hash"] and len(row["password_hash"]) > 10
+    if not has_hash:
+        log.warning(f"Login: Kein Password-Hash fuer {email}")
         return None
     if verify_password_offline(password, row["password_hash"]):
+        log.info(f"Login erfolgreich: {email}")
         return dict(row)
+    log.warning(f"Login fehlgeschlagen: Falsches Passwort fuer {email}")
     return None
 
 
