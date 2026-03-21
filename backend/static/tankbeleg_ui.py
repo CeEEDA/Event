@@ -337,40 +337,124 @@ def get_login_html():
 <title>Anmeldung - Eventenergie</title>
 <style>
 {COMMON_STYLES}
-.login-wrap {{ display:flex; align-items:center; justify-content:center; height:100vh; background:linear-gradient(135deg, #faf5ff 0%, #f8f9fb 50%, #fdf2f8 100%); }}
-.login-card {{ background:var(--card); border:1px solid var(--border); border-radius:20px; padding:48px 40px; width:90%; max-width:420px; box-shadow:0 8px 30px rgba(0,0,0,0.06); text-align:center; }}
-.login-card img {{ height:48px; margin-bottom:24px; }}
-.login-card h1 {{ font-size:22px; font-weight:800; margin-bottom:6px; }}
-.login-card .sub {{ font-size:14px; color:var(--muted); margin-bottom:32px; }}
-.form-group {{ margin-bottom:20px; text-align:left; }}
-.form-group label {{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }}
-input {{ width:100%; padding:16px; background:var(--bg); border:2px solid var(--border); border-radius:12px; color:var(--text); font-size:17px; outline:none; transition:border-color 0.2s; }}
+.login-page {{ display:flex; height:100vh; background:linear-gradient(135deg, #faf5ff 0%, #f8f9fb 50%, #fdf2f8 100%); }}
+.login-side {{ flex:1; display:flex; align-items:center; justify-content:center; }}
+.login-card {{ background:var(--card); border:1px solid var(--border); border-radius:20px; padding:36px 32px; width:90%; max-width:400px; box-shadow:0 8px 30px rgba(0,0,0,0.06); text-align:center; }}
+.login-card img {{ height:42px; margin-bottom:16px; }}
+.login-card h1 {{ font-size:20px; font-weight:800; margin-bottom:4px; }}
+.login-card .sub {{ font-size:13px; color:var(--muted); margin-bottom:24px; }}
+.form-group {{ margin-bottom:14px; text-align:left; }}
+.form-group label {{ display:block; font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }}
+input {{ width:100%; padding:12px; background:var(--bg); border:2px solid var(--border); border-radius:10px; color:var(--text); font-size:16px; outline:none; transition:border-color 0.2s; }}
 input:focus {{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }}
-.error-msg {{ color:var(--red); font-size:13px; margin-top:12px; display:none; font-weight:600; }}
-.offline-hint {{ font-size:11px; color:var(--muted); margin-top:16px; }}
+input.active-input {{ border-color:var(--accent); background:var(--accent-light); }}
+.error-msg {{ color:var(--red); font-size:13px; margin-top:8px; display:none; font-weight:600; }}
+.offline-hint {{ font-size:11px; color:var(--muted); margin-top:12px; }}
+.kbd-side {{ flex:1.2; display:flex; align-items:center; justify-content:center; padding:20px; }}
+.keyboard {{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:12px; box-shadow:0 4px 20px rgba(0,0,0,0.08); width:100%; max-width:600px; }}
+.kbd-row {{ display:flex; gap:5px; margin-bottom:5px; justify-content:center; }}
+.kbd-key {{ min-width:44px; height:48px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:16px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.1s; user-select:none; }}
+.kbd-key:active {{ background:var(--accent); color:white; transform:scale(0.95); }}
+.kbd-key.wide {{ min-width:70px; font-size:13px; }}
+.kbd-key.wider {{ min-width:90px; font-size:13px; }}
+.kbd-key.space {{ flex:1; max-width:250px; }}
+.kbd-key.accent {{ background:var(--accent); color:white; border-color:var(--accent); }}
+.kbd-hint {{ text-align:center; font-size:11px; color:var(--muted); margin-top:8px; }}
 </style></head>
 <body>
-<div class="login-wrap">
-  <div class="login-card">
-    <img src="{LOGO_URL}" alt="Eventenergie" onerror="this.style.display='none'">
-    <h1>Tankbeleg</h1>
-    <p class="sub">Bitte melden Sie sich an</p>
-    <form onsubmit="doLogin(event)">
-      <div class="form-group">
-        <label>E-Mail</label>
-        <input type="email" id="emailInput" placeholder="name@firma.de" autocomplete="email" required autofocus>
-      </div>
-      <div class="form-group">
-        <label>Passwort</label>
-        <input type="password" id="passInput" placeholder="Passwort" autocomplete="current-password" required>
-      </div>
-      <p class="error-msg" id="errorMsg"></p>
-      <button type="submit" class="btn btn-primary" id="loginBtn">Anmelden</button>
-    </form>
-    <p class="offline-hint" id="offlineHint"></p>
+<div class="login-page">
+  <div class="login-side">
+    <div class="login-card">
+      <img src="{LOGO_URL}" alt="Eventenergie" onerror="this.style.display='none'">
+      <h1>Tankbeleg</h1>
+      <p class="sub">Bitte melden Sie sich an</p>
+      <form onsubmit="doLogin(event)">
+        <div class="form-group">
+          <label>E-Mail</label>
+          <input type="text" id="emailInput" placeholder="name@firma.de" readonly onfocus="setActive('emailInput')">
+        </div>
+        <div class="form-group">
+          <label>Passwort</label>
+          <input type="password" id="passInput" placeholder="Passwort" readonly onfocus="setActive('passInput')">
+        </div>
+        <p class="error-msg" id="errorMsg"></p>
+        <button type="submit" class="btn btn-primary" id="loginBtn">Anmelden</button>
+      </form>
+      <p class="offline-hint" id="offlineHint"></p>
+    </div>
+  </div>
+  <div class="kbd-side">
+    <div class="keyboard" id="keyboard">
+      <div class="kbd-row" id="row1"></div>
+      <div class="kbd-row" id="row2"></div>
+      <div class="kbd-row" id="row3"></div>
+      <div class="kbd-row" id="row4"></div>
+      <div class="kbd-row" id="row5"></div>
+      <div class="kbd-hint">Feld links antippen, dann hier tippen</div>
+    </div>
   </div>
 </div>
 <script>
+let activeField = 'emailInput';
+let shiftOn = false;
+
+const ROWS_LOWER = [
+  ['1','2','3','4','5','6','7','8','9','0'],
+  ['q','w','e','r','t','z','u','i','o','p'],
+  ['a','s','d','f','g','h','j','k','l'],
+  ['y','x','c','v','b','n','m'],
+];
+const ROWS_UPPER = [
+  ['!','@','#','$','%','&','/','+','=','?'],
+  ['Q','W','E','R','T','Z','U','I','O','P'],
+  ['A','S','D','F','G','H','J','K','L'],
+  ['Y','X','C','V','B','N','M'],
+];
+
+function buildKeyboard() {{
+  const rows = shiftOn ? ROWS_UPPER : ROWS_LOWER;
+  for(let i=0;i<rows.length;i++) {{
+    const el = document.getElementById('row'+(i+1));
+    el.innerHTML = rows[i].map(k=>'<div class="kbd-key" onmousedown="typeKey(event,\\''+k+'\\')">'+k+'</div>').join('');
+  }}
+  document.getElementById('row3').innerHTML += '<div class="kbd-key wide" onmousedown="typeKey(event,\\'BACK\\')">&#9003;</div>';
+  const r5 = document.getElementById('row5');
+  r5.innerHTML =
+    '<div class="kbd-key wider '+(shiftOn?'accent':'')+'" onmousedown="toggleShift()">&#8679; Shift</div>'+
+    '<div class="kbd-key" onmousedown="typeKey(event,\\'@\\')">@</div>'+
+    '<div class="kbd-key" onmousedown="typeKey(event,\\'-\\')">-</div>'+
+    '<div class="kbd-key" onmousedown="typeKey(event,\\'_\\')">_</div>'+
+    '<div class="kbd-key space" onmousedown="typeKey(event,\\' \\')">Leertaste</div>'+
+    '<div class="kbd-key" onmousedown="typeKey(event,\\'.\\')">.</div>'+
+    '<div class="kbd-key wider accent" onmousedown="switchField()">&#8633; Feld</div>';
+}}
+
+function setActive(id) {{
+  document.querySelectorAll('input').forEach(i=>i.classList.remove('active-input'));
+  activeField = id;
+  document.getElementById(id).classList.add('active-input');
+}}
+
+function typeKey(e, key) {{
+  e.preventDefault();
+  const input = document.getElementById(activeField);
+  if(key==='BACK') {{
+    input.value = input.value.slice(0,-1);
+  }} else {{
+    input.value += key;
+  }}
+}}
+
+function toggleShift() {{
+  shiftOn = !shiftOn;
+  buildKeyboard();
+}}
+
+function switchField() {{
+  if(activeField==='emailInput') setActive('passInput');
+  else setActive('emailInput');
+}}
+
 async function doLogin(e) {{
   e.preventDefault();
   const email = document.getElementById('emailInput').value;
@@ -400,10 +484,13 @@ async function doLogin(e) {{
   btn.disabled = false;
   btn.textContent = 'Anmelden';
 }}
-// Check online status
+
 fetch('/api/status').then(r=>r.json()).then(d=>{{
   document.getElementById('offlineHint').textContent = d.backend_reachable ? '' : 'Offline-Modus: Lokale Anmeldung';
 }}).catch(()=>{{}});
+
+setActive('emailInput');
+buildKeyboard();
 </script>
 </body></html>"""
 
