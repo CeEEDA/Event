@@ -55,9 +55,9 @@ REG_PF_L1   = 9300   # Power Factor L1
 REG_PF_L2   = 9302   # Power Factor L2
 REG_PF_L3   = 9304   # Power Factor L3
 REG_FREQ    = 9310   # Frequency [Hz]
-# Energiezaehler (UInt64, kWh * 10)
-REG_E_IMP   = 7000   # Active Energy Import L123 Total [kWh*10]
-REG_E_EXP   = 7020   # Active Energy Export L123 Total [kWh*10]
+# Energiezaehler (UInt64, kWh direkt)
+REG_E_IMP   = 7000   # Active Energy Import L123 Total [kWh]
+REG_E_EXP   = 7020   # Active Energy Export L123 Total [kWh]
 # Geraeteinfo
 REG_SERIAL  = 5000   # Seriennummer (UInt32)
 # Stromausfall-Zaehler
