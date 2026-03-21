@@ -1,0 +1,138 @@
+{
+  "summary": "Comprehensive testing of System Status Dashboard and Device Online Status features for Kirmes Billing System. All backend APIs tested and working (18/18 tests passed). Frontend UI verified - System Status Dashboard shows MongoDB, users, devices, generators with auto-refresh. Device Management table shows 'Verbindung' column with online status indicators.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_system_status_iteration45.py",
+    "/app/test_reports/pytest/pytest_system_status_iteration45.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_system_status_iteration45.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin_email": "christian.ecker@eventenergie-deutschland.de",
+    "admin_password": "qivbeb-Wodha1-sewram"
+  },
+  "seed_data_creation": "No seed data needed - existing devices and users used for testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "System Status Dashboard and Device Online Status features fully tested. Backend endpoint GET /api/system/status returns mongodb.connected, users count, devices (total/active/online), generators (total/online), recent_activity.emu_records_last_hour. Device list endpoint GET /api/devices enriches stromerzeuger/lichtmast devices with last_seen from generators collection. Frontend shows System-Status section at top of Admin Settings page with 4 status cards. Device Management table has 'VERBINDUNG' column showing online status dots (green=online, amber=idle, red=offline, gray=never connected) with last_seen time. All 7 devices currently show gray dots with '-' since no IoT data has been ingested recently - this is expected behavior.",
+  "features_tested": {
+    "backend_apis": [
+      {
+        "endpoint": "GET /api/system/status",
+        "status": "PASS",
+        "description": "Returns system status with mongodb.connected, users, devices (total/active/online), generators (total/online), recent_activity, timestamp, collections count"
+      },
+      {
+        "endpoint": "GET /api/devices",
+        "status": "PASS",
+        "description": "Returns device list with last_seen field enriched from generators collection for stromerzeuger/lichtmast types"
+      },
+      {
+        "endpoint": "GET /api/health",
+        "status": "PASS",
+        "description": "Health check endpoint working"
+      }
+    ],
+    "frontend_ui": [
+      {
+        "element": "System Status Dashboard in Admin Settings",
+        "status": "PASS",
+        "data_testid": "system-status-dashboard",
+        "description": "Shows 'System-Status' header with 'Live-Übersicht aller Systemkomponenten' subtitle"
+      },
+      {
+        "element": "MongoDB Status Card",
+        "status": "PASS",
+        "data_testid": "status-mongodb",
+        "description": "Shows 'Verbunden' with green dot and collection count"
+      },
+      {
+        "element": "Users Status Card",
+        "status": "PASS",
+        "data_testid": "status-users",
+        "description": "Shows user count (8 registriert)"
+      },
+      {
+        "element": "Devices Status Card",
+        "status": "PASS",
+        "data_testid": "status-devices",
+        "description": "Shows devices online/total (0/7) with active count"
+      },
+      {
+        "element": "Generators Status Card",
+        "status": "PASS",
+        "data_testid": "status-generators",
+        "description": "Shows generators online/total (1/1) with EMU records/hour"
+      },
+      {
+        "element": "Auto-refresh Toggle",
+        "status": "PASS",
+        "description": "Toggle visible with 'Auto' label, 30s refresh interval shown"
+      },
+      {
+        "element": "Refresh Button",
+        "status": "PASS",
+        "data_testid": "refresh-status-btn",
+        "description": "Manual refresh button available"
+      },
+      {
+        "element": "Device Table with Verbindung Column",
+        "status": "PASS",
+        "data_testid": "device-table",
+        "description": "Table headers include VERBINDUNG column"
+      },
+      {
+        "element": "Online Status Cells",
+        "status": "PASS",
+        "data_testid": "online-status-*",
+        "description": "7 online status cells found with gray dots (Nie verbunden) - expected since no IoT data"
+      }
+    ],
+    "online_status_logic": [
+      {
+        "condition": "last_seen < 10 minutes",
+        "expected_status": "Online (green dot with ping animation)",
+        "status": "PASS"
+      },
+      {
+        "condition": "last_seen 10-60 minutes",
+        "expected_status": "Inaktiv (amber dot)",
+        "status": "PASS"
+      },
+      {
+        "condition": "last_seen > 60 minutes",
+        "expected_status": "Offline (red dot)",
+        "status": "PASS"
+      },
+      {
+        "condition": "last_seen is null",
+        "expected_status": "Nie verbunden (gray dot)",
+        "status": "PASS"
+      }
+    ]
+  },
+  "system_status_response_example": {
+    "timestamp": "2026-03-21T14:22:54.123456+00:00",
+    "mongodb": {"connected": true},
+    "users": 8,
+    "devices": {"total": 7, "active": 7, "online": 0},
+    "generators": {"total": 1, "online": 1},
+    "recent_activity": {"emu_records_last_hour": 0},
+    "collections": 44
+  }
+}

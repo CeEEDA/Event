@@ -268,6 +268,19 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)
 @router.get("")
 async def list_devices(user: dict = Depends(require_staff)):
     devices = await db.devices.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+    # Collect serial numbers to look up generator last_seen
+    serial_numbers = [d["serial_number"] for d in devices if d.get("device_type") in ("stromerzeuger", "lichtmast")]
+    gen_last_seen = {}
+    if serial_numbers:
+        gens = await db.generators.find(
+            {"serial_number": {"$in": serial_numbers}},
+            {"_id": 0, "serial_number": 1, "last_seen": 1}
+        ).to_list(2000)
+        for g in gens:
+            if g.get("last_seen"):
+                gen_last_seen[g["serial_number"]] = g["last_seen"]
+
     for d in devices:
         doc_count = await db.device_documents.count_documents({"device_id": d["id"]})
         d["document_count"] = doc_count
@@ -281,6 +294,11 @@ async def list_devices(user: dict = Depends(require_staff)):
                 code = generate_device_code()
             await db.devices.update_one({"id": d["id"]}, {"$set": {"device_code": code}})
             d["device_code"] = code
+        # Enrich with generator last_seen for Stromerzeuger/Lichtmast
+        if d.get("device_type") in ("stromerzeuger", "lichtmast") and not d.get("last_seen"):
+            gen_ls = gen_last_seen.get(d.get("serial_number"))
+            if gen_ls:
+                d["last_seen"] = gen_ls
     return devices
 
 

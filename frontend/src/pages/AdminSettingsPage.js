@@ -39,7 +39,134 @@ import {
   Play,
   Trash,
   HardDrive,
+  Activity,
+  MonitorSmartphone,
 } from "lucide-react";
+
+/* ───── System Status Dashboard ───── */
+function SystemStatusDashboard() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await api.get("/system/status");
+      setStatus(res.data);
+    } catch {
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStatus();
+    if (!autoRefresh) return;
+    const interval = setInterval(loadStatus, 30000);
+    return () => clearInterval(interval);
+  }, [loadStatus, autoRefresh]);
+
+  if (loading) return (
+    <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="flex items-center gap-2 text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> System-Status laden...</div>
+    </div>
+  );
+
+  if (!status) return (
+    <div className="bg-white border border-red-200 rounded-lg p-6">
+      <div className="flex items-center gap-2 text-red-500"><XCircle className="w-4 h-4" /> System-Status nicht verfügbar</div>
+    </div>
+  );
+
+  const StatusDot = ({ ok }) => (
+    <span className="relative flex h-2.5 w-2.5">
+      {ok && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${ok ? "bg-emerald-500" : "bg-red-400"}`}></span>
+    </span>
+  );
+
+  return (
+    <div data-testid="system-status-dashboard">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-fuchsia-500" /> System-Status
+          </h2>
+          <p className="text-xs text-gray-400">Live-Übersicht aller Systemkomponenten</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-400 cursor-pointer">
+            <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} className="scale-75" />
+            Auto
+          </label>
+          <Button variant="ghost" size="sm" onClick={loadStatus} className="h-7 w-7 p-0 text-gray-400 hover:text-fuchsia-600" data-testid="refresh-status-btn">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* MongoDB */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2" data-testid="status-mongodb">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
+              <Database className="w-4 h-4 text-emerald-500" /> MongoDB
+            </div>
+            <StatusDot ok={status.mongodb?.connected} />
+          </div>
+          <p className={`text-sm font-semibold ${status.mongodb?.connected ? "text-emerald-600" : "text-red-500"}`}>
+            {status.mongodb?.connected ? "Verbunden" : "Getrennt"}
+          </p>
+          <p className="text-[10px] text-gray-400">{status.collections} Collections</p>
+        </div>
+
+        {/* Users */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2" data-testid="status-users">
+          <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
+            <Shield className="w-4 h-4 text-blue-500" /> Benutzer
+          </div>
+          <p className="text-sm font-semibold text-gray-900">{status.users}</p>
+          <p className="text-[10px] text-gray-400">registriert</p>
+        </div>
+
+        {/* Devices Online */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2" data-testid="status-devices">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
+              <Cpu className="w-4 h-4 text-fuchsia-500" /> Geräte
+            </div>
+            {status.devices?.online > 0 && <StatusDot ok={true} />}
+          </div>
+          <p className="text-sm font-semibold text-gray-900">
+            <span className="text-emerald-600">{status.devices?.online || 0}</span>
+            <span className="text-gray-400 font-normal text-xs"> / {status.devices?.total || 0}</span>
+          </p>
+          <p className="text-[10px] text-gray-400">{status.devices?.online || 0} online, {status.devices?.active || 0} aktiv</p>
+        </div>
+
+        {/* Generators */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-2" data-testid="status-generators">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
+              <Server className="w-4 h-4 text-amber-500" /> Generatoren
+            </div>
+            {status.generators?.online > 0 && <StatusDot ok={true} />}
+          </div>
+          <p className="text-sm font-semibold text-gray-900">
+            <span className="text-emerald-600">{status.generators?.online || 0}</span>
+            <span className="text-gray-400 font-normal text-xs"> / {status.generators?.total || 0}</span>
+          </p>
+          <p className="text-[10px] text-gray-400">{status.recent_activity?.emu_records_last_hour || 0} EMU-Datensätze/Std</p>
+        </div>
+      </div>
+
+      <p className="text-[10px] text-gray-300 mt-2 text-right">
+        Stand: {new Date(status.timestamp).toLocaleString("de-DE")} {autoRefresh && "· Auto-Refresh 30s"}
+      </p>
+    </div>
+  );
+}
 
 /* ───── EpiRent-specific field config ───── */
 const KENNZEICHNUNGEN = [
@@ -1174,6 +1301,9 @@ export default function AdminSettingsPage() {
 
       <main className="flex-1 p-4 md:p-6">
         <div className="max-w-7xl mx-auto space-y-8">
+          {/* System Status Dashboard */}
+          <SystemStatusDashboard />
+
           {/* Emergent.sh Bridge */}
           <EmergentBridge />
 

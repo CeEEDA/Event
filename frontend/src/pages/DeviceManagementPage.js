@@ -27,6 +27,8 @@ import {
   QrCode,
   Download,
   Server,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -247,6 +249,28 @@ const DEVICE_TYPES = [
   { value: "messkoffer", label: "Messkoffer", icon: Settings },
   { value: "kirmeskiste", label: "Kirmeskiste", icon: Settings },
 ];
+
+// Online status helper: online < 10min, idle < 1h, offline > 1h
+function getOnlineStatus(lastSeen) {
+  if (!lastSeen) return { status: "unknown", label: "Nie verbunden", color: "bg-gray-300", textColor: "text-gray-400" };
+  const diff = Date.now() - new Date(lastSeen).getTime();
+  const minutes = diff / 60000;
+  if (minutes < 10) return { status: "online", label: "Online", color: "bg-emerald-500", textColor: "text-emerald-600" };
+  if (minutes < 60) return { status: "idle", label: "Inaktiv", color: "bg-amber-400", textColor: "text-amber-600" };
+  return { status: "offline", label: "Offline", color: "bg-red-400", textColor: "text-red-500" };
+}
+
+function formatLastSeen(lastSeen) {
+  if (!lastSeen) return "–";
+  const diff = Date.now() - new Date(lastSeen).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "gerade eben";
+  if (minutes < 60) return `vor ${minutes} Min.`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `vor ${hours} Std.`;
+  const days = Math.floor(hours / 24);
+  return `vor ${days} Tag${days > 1 ? "en" : ""}`;
+}
 
 const TYPE_LABELS = Object.fromEntries(DEVICE_TYPES.map(t => [t.value, t.label]));
 
@@ -1181,7 +1205,7 @@ export default function DeviceManagementPage() {
                     <th className="px-4 py-3 text-left hidden md:table-cell">Modell</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell">Benutzerfeld</th>
                     <th className="px-4 py-3 text-left hidden lg:table-cell">Leistung</th>
-                    <th className="px-4 py-3 text-left hidden lg:table-cell">Wartung</th>
+                    <th className="px-4 py-3 text-center">Verbindung</th>
                     <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-right">Aktionen</th>
                   </tr>
@@ -1189,9 +1213,8 @@ export default function DeviceManagementPage() {
                 <tbody>
                   {filtered.map(device => {
                     const TypeIcon = DEVICE_TYPES.find(t => t.value === device.device_type)?.icon || Settings;
-                    const nextMaint = device.next_maintenance ? new Date(device.next_maintenance) : null;
-                    const isOverdue = nextMaint && nextMaint < new Date();
                     const isOutOfService = device.status === "ausser_betrieb";
+                    const onlineInfo = getOnlineStatus(device.last_seen);
                     return (
                       <tr key={device.id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isOutOfService ? "opacity-60" : ""}`} data-testid={`device-row-${device.serial_number}`}>
                         <td className="px-4 py-3">
@@ -1211,13 +1234,16 @@ export default function DeviceManagementPage() {
                         <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{device.model || "–"}</td>
                         <td className="px-4 py-3 text-gray-500 hidden md:table-cell truncate max-w-[200px]">{device.user_field || "–"}</td>
                         <td className="px-4 py-3 text-gray-600 hidden lg:table-cell">{device.power_output || "–"}</td>
-                        <td className="px-4 py-3 hidden lg:table-cell">
-                          {device.next_maintenance ? (
-                            <span className={`text-xs ${isOverdue ? "text-red-500 font-medium" : "text-gray-500"}`}>
-                              {new Date(device.next_maintenance).toLocaleDateString("de-DE")}
-                              {isOverdue && " (überfällig)"}
+                        <td className="px-4 py-3 text-center" data-testid={`online-status-${device.serial_number}`}>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="relative flex h-3 w-3" title={`${onlineInfo.label} - ${formatLastSeen(device.last_seen)}`}>
+                              {onlineInfo.status === "online" && (
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              )}
+                              <span className={`relative inline-flex rounded-full h-3 w-3 ${onlineInfo.color}`}></span>
                             </span>
-                          ) : "–"}
+                            <span className={`text-[10px] ${onlineInfo.textColor}`}>{formatLastSeen(device.last_seen)}</span>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           {isOutOfService ? (

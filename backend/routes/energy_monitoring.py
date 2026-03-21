@@ -998,6 +998,13 @@ async def ingest_data(data: IngestBatch):
             upsert=True
         )
 
+    # Update device last_seen for online status tracking
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.devices.update_one(
+        {"id": data.device_id},
+        {"$set": {"last_seen": now_iso}}
+    )
+
     logger.info(f"Ingest: {len(docs)} records for device={data.device_id} meter={data.meter_id}")
     return {"inserted": len(docs), "message": f"{len(docs)} Datensätze empfangen"}
 

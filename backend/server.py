@@ -1403,6 +1403,60 @@ async def get_stats(admin: dict = Depends(require_admin)):
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+
+@api_router.get("/system/status")
+async def system_status(admin: dict = Depends(require_admin)):
+    """System status dashboard for admin: DB, devices, recent activity."""
+    now = datetime.now(timezone.utc)
+    ten_min_ago = (now - timedelta(minutes=10)).isoformat()
+    one_hour_ago = (now - timedelta(hours=1)).isoformat()
+
+    # MongoDB status
+    try:
+        await db.command("ping")
+        mongo_ok = True
+    except Exception:
+        mongo_ok = False
+
+    # Device counts
+    total_devices = await db.devices.count_documents({})
+    active_devices = await db.devices.count_documents({"status": {"$ne": "ausser_betrieb"}})
+
+    # Online devices (last_seen within 10 min)
+    online_devices = await db.devices.count_documents({"last_seen": {"$gte": ten_min_ago}})
+
+    # Generator counts with last_seen
+    total_generators = await db.generators.count_documents({})
+    online_generators = await db.generators.count_documents({"last_seen": {"$gte": ten_min_ago}})
+
+    # Recent ingest activity (EMU data within last hour)
+    recent_emu = await db.emu_data.count_documents({"ts_utc": {"$gte": one_hour_ago}})
+
+    # User count
+    user_count = await db.users.count_documents({})
+
+    # DB collections size
+    collections = await db.list_collection_names()
+
+    return {
+        "timestamp": now.isoformat(),
+        "mongodb": {"connected": mongo_ok},
+        "users": user_count,
+        "devices": {
+            "total": total_devices,
+            "active": active_devices,
+            "online": online_devices,
+        },
+        "generators": {
+            "total": total_generators,
+            "online": online_generators,
+        },
+        "recent_activity": {
+            "emu_records_last_hour": recent_emu,
+        },
+        "collections": len(collections),
+    }
+
 @api_router.get("/download-topic-file")
 async def download_topic_file():
     return FileResponse("/app/dse8610_module_topics.csv", media_type="text/csv", filename="dse8610_module_topics.csv")
