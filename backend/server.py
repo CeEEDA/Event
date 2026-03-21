@@ -1467,11 +1467,15 @@ async def download_gateway_topic_file():
 
 @api_router.get("/download-sync-script")
 async def download_sync_script():
-    return FileResponse(os.path.join(STATIC_DIR, "emu_sync.py"), media_type="text/x-python", filename="emu_sync.py")
+    path = os.path.join(STATIC_DIR, "emu_sync.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="emu_sync.py"'})
 
 @api_router.get("/download-sync-service")
 async def download_sync_service():
-    return FileResponse(os.path.join(STATIC_DIR, "emu_sync.service"), media_type="text/plain", filename="emu_sync.service")
+    path = os.path.join(STATIC_DIR, "emu_sync.service")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/plain", headers={"Content-Disposition": 'attachment; filename="emu_sync.service"'})
 
 @api_router.get("/download-sync-config")
 async def download_sync_config():
@@ -1500,7 +1504,9 @@ async def download_desktop_app_mac():
 
 @api_router.get("/download/tankbeleg-pi-script")
 async def download_tankbeleg_pi_script():
-    return FileResponse(os.path.join(STATIC_DIR, "tankbeleg_pi.py"), media_type="text/x-python", filename="tankbeleg_pi.py")
+    path = os.path.join(STATIC_DIR, "tankbeleg_pi.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_pi.py"'})
 
 @api_router.get("/download/tankbeleg-pi-config")
 async def download_tankbeleg_pi_config():
@@ -1508,11 +1514,19 @@ async def download_tankbeleg_pi_config():
 
 @api_router.get("/download/tankbeleg-pi-service")
 async def download_tankbeleg_pi_service():
-    return FileResponse(os.path.join(STATIC_DIR, "tankbeleg_pi.service"), media_type="text/plain", filename="tankbeleg_pi.service")
+    path = os.path.join(STATIC_DIR, "tankbeleg_pi.service")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/plain", headers={"Content-Disposition": 'attachment; filename="tankbeleg_pi.service"'})
 
 @api_router.get("/download/tankbeleg-pi-setup")
 async def download_tankbeleg_pi_setup():
-    return FileResponse(os.path.join(STATIC_DIR, "setup_tankbeleg_pi.sh"), media_type="application/x-sh", filename="setup_tankbeleg_pi.sh")
+    path = os.path.join(STATIC_DIR, "setup_tankbeleg_pi.sh")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="application/x-sh",
+        headers={"Content-Disposition": 'attachment; filename="setup_tankbeleg_pi.sh"'}
+    )
 
 # ============== Mosquitto MQTT Broker Downloads ==============
 
@@ -1522,7 +1536,9 @@ async def download_mosquitto_config():
 
 @api_router.get("/download/mosquitto-setup")
 async def download_mosquitto_setup():
-    return FileResponse(os.path.join(STATIC_DIR, "setup_mosquitto.sh"), media_type="application/x-sh", filename="setup_mosquitto.sh")
+    path = os.path.join(STATIC_DIR, "setup_mosquitto.sh")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="application/x-sh", headers={"Content-Disposition": 'attachment; filename="setup_mosquitto.sh"'})
 
 @api_router.get("/download/mosquitto-bundle")
 async def download_mosquitto_bundle():
@@ -1545,7 +1561,7 @@ async def download_mosquitto_bundle():
 
 @api_router.get("/download/tankbeleg-pi-bundle")
 async def download_tankbeleg_pi_bundle():
-    """Download all Tankbeleg Pi files as a ZIP bundle."""
+    """Download all Tankbeleg Pi files as a ZIP bundle with Unix line endings."""
     files = [
         ("tankbeleg_pi.py", os.path.join(STATIC_DIR, "tankbeleg_pi.py")),
         ("tankbeleg_pi.conf", os.path.join(STATIC_DIR, "tankbeleg_pi.conf")),
@@ -1557,7 +1573,8 @@ async def download_tankbeleg_pi_bundle():
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, path in files:
             if os.path.exists(path):
-                zf.write(path, name)
+                content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+                zf.writestr(name, content)
     zip_buffer.seek(0)
     return StreamingResponse(
         zip_buffer,
