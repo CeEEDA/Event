@@ -57,12 +57,15 @@ fi
 echo ""
 echo "[5/6] Datenbank-Verzeichnis erstellen..."
 mkdir -p /var/lib/tankbeleg
-chown pi:pi /var/lib/tankbeleg
+REAL_USER="${SUDO_USER:-$(whoami)}"
+chown "$REAL_USER:$REAL_USER" /var/lib/tankbeleg
 
 # --- Systemd-Service ---
 echo ""
 echo "[6/6] Systemd-Service einrichten..."
-cp "$SCRIPT_DIR/tankbeleg_pi.service" /etc/systemd/system/tankbeleg_pi.service
+REAL_USER="${SUDO_USER:-$(whoami)}"
+REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
+sed "s/User=pi/User=$REAL_USER/g; s/Group=pi/Group=$REAL_GROUP/g" "$SCRIPT_DIR/tankbeleg_pi.service" > /etc/systemd/system/tankbeleg_pi.service
 systemctl daemon-reload
 systemctl enable tankbeleg_pi
 
@@ -77,8 +80,9 @@ echo "  Dann: sudo systemctl restart gpsd"
 # --- Serielle Berechtigung ---
 echo ""
 echo "Serielle Berechtigung:"
-usermod -a -G dialout pi 2>/dev/null || true
-echo "  Benutzer 'pi' zur Gruppe 'dialout' hinzugefuegt"
+REAL_USER="${SUDO_USER:-$(whoami)}"
+usermod -a -G dialout "$REAL_USER" 2>/dev/null || true
+echo "  Benutzer '$REAL_USER' zur Gruppe 'dialout' hinzugefuegt"
 
 # --- Zusammenfassung ---
 echo ""
