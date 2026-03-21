@@ -141,12 +141,16 @@ log = logging.getLogger("kirmeskiste")
 # ====== Modbus Lesen ======
 
 def _read_holding(client, register, count, slave_id):
-    """Wrapper: liest Holding Registers (FC 03) - EMU Professional II nutzt FC 03.
-    Versucht unit= zuerst (funktioniert auf pymodbus 2.x UND 3.x)."""
-    try:
-        return client.read_holding_registers(register, count, unit=slave_id)
-    except TypeError:
-        return client.read_holding_registers(register, count, slave=slave_id)
+    """Wrapper: liest Holding Registers (FC 03) - kompatibel mit allen pymodbus-Versionen."""
+    import pymodbus
+    version = tuple(int(x) for x in pymodbus.__version__.split('.')[:2])
+    if version >= (3, 8):
+        return client.read_holding_registers(register, count=count, device_id=slave_id)
+    else:
+        try:
+            return client.read_holding_registers(register, count, slave=slave_id)
+        except TypeError:
+            return client.read_holding_registers(register, count, unit=slave_id)
 
 
 def read_float32(client, register, slave_id=1):
