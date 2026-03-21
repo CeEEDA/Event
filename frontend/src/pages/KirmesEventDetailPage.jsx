@@ -136,10 +136,38 @@ export default function KirmesEventDetailPage() {
 
   const copyLink = () => {
     const link = `${window.location.origin}/kirmes/anmeldung?event=${id}`;
-    navigator.clipboard.writeText(link);
-    setCopiedLink(true);
-    toast.success("Anmeldelink kopiert!");
-    setTimeout(() => setCopiedLink(false), 2000);
+    
+    // Fallback fuer HTTP (navigator.clipboard erfordert HTTPS)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(link).then(() => {
+        setCopiedLink(true);
+        toast.success("Anmeldelink kopiert!");
+        setTimeout(() => setCopiedLink(false), 2000);
+      }).catch(() => {
+        fallbackCopy(link);
+      });
+    } else {
+      fallbackCopy(link);
+    }
+  };
+
+  const fallbackCopy = (text) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      setCopiedLink(true);
+      toast.success("Anmeldelink kopiert!");
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      // Falls auch das nicht klappt: Link in Prompt anzeigen
+      window.prompt("Anmeldelink kopieren:", text);
+    }
+    document.body.removeChild(textarea);
   };
 
   const exportPDF = () => {

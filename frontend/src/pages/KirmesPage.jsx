@@ -377,10 +377,35 @@ export default function KirmesPage() {
 
   const copyRegistrationLink = (eventId) => {
     const link = `${window.location.origin}/kirmes/anmeldung?event=${eventId}`;
-    navigator.clipboard.writeText(link);
-    setCopiedLink(eventId);
-    toast.success("Link kopiert!");
-    setTimeout(() => setCopiedLink(null), 2000);
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(link).then(() => {
+        setCopiedLink(eventId);
+        toast.success("Link kopiert!");
+        setTimeout(() => setCopiedLink(null), 2000);
+      }).catch(() => {
+        fallbackCopyLink(link, eventId);
+      });
+    } else {
+      fallbackCopyLink(link, eventId);
+    }
+  };
+
+  const fallbackCopyLink = (text, eventId) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      setCopiedLink(eventId);
+      toast.success("Link kopiert!");
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch {
+      window.prompt("Anmeldelink kopieren:", text);
+    }
+    document.body.removeChild(textarea);
   };
 
   const filtered = events.filter(e => {
