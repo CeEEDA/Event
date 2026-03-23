@@ -32,6 +32,7 @@ echo  [1/7] Laufende Dienste stoppen...
 taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
 taskkill /IM caddy.exe /F >nul 2>&1
+taskkill /IM nginx.exe /F >nul 2>&1
 
 :: Port 8001 freigeben - aber NUR wenn es UNSER Prozess ist (nicht System-PIDs)
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LISTENING 2^>nul') do (
@@ -41,6 +42,12 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LIS
 )
 :: Port 8002 freigeben
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8002" ^| findstr LISTENING 2^>nul') do (
+    if %%a GTR 100 (
+        taskkill /PID %%a /F >nul 2>&1
+    )
+)
+:: Port 443 freigeben (nginx)
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:443" ^| findstr LISTENING 2^>nul') do (
     if %%a GTR 100 (
         taskkill /PID %%a /F >nul 2>&1
     )
@@ -182,7 +189,7 @@ if not exist "%PORTAL_DIR%\Caddyfile" (
 
 :: Caddy starten (HTTP Port 8001)
 if exist "%PORTAL_DIR%\caddy.exe" (
-    start "Eventenergie Caddy" /min "%PORTAL_DIR%\caddy.exe" run --config "%PORTAL_DIR%\Caddyfile"
+    start "Eventenergie Caddy" /min cmd /c "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
 ) else (
     echo   FEHLER: caddy.exe nicht gefunden in %PORTAL_DIR%
     goto :fertig
@@ -205,14 +212,13 @@ if !CADDY_OK! equ 0 (
 )
 
 :: nginx starten (HTTPS Port 443)
-set "NGINX_DIR=C:\nginx"
 set "NGINX_OK=0"
-if exist "%NGINX_DIR%\nginx.exe" (
-    copy /Y "%PORTAL_DIR%\nginx.conf" "%NGINX_DIR%\conf\nginx.conf" >nul 2>&1
+if exist "C:\nginx\nginx.exe" (
+    copy /Y "%PORTAL_DIR%\nginx.conf" "C:\nginx\conf\nginx.conf" >nul 2>&1
     taskkill /IM nginx.exe /F >nul 2>&1
     timeout /t 1 /nobreak >nul
-    cd /d "%NGINX_DIR%"
-    start "" /min nginx.exe
+    cd /d "C:\nginx"
+    start "" nginx.exe
     cd /d "%PORTAL_DIR%"
     timeout /t 2 /nobreak >nul
     netstat -ano | findstr "0.0.0.0:443" | findstr LISTENING >nul 2>&1
@@ -221,11 +227,10 @@ if exist "%NGINX_DIR%\nginx.exe" (
         echo   nginx laeuft auf Port 443 (HTTPS)
     ) else (
         echo   WARNUNG: nginx antwortet nicht auf Port 443!
-        echo   Pruefe: %NGINX_DIR%\logs\error.log
+        echo   Pruefe: C:\nginx\logs\error.log
     )
-    cd /d "%PORTAL_DIR%"
 ) else (
-    echo   nginx nicht gefunden unter %NGINX_DIR% - nur HTTP verfuegbar
+    echo   nginx nicht gefunden unter C:\nginx - nur HTTP verfuegbar
 )
 
 :: ====== Zusammenfassung ======
