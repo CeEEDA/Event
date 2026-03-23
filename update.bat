@@ -224,7 +224,10 @@ goto :eof
 
 :: ============================================
 ::  Subroutine fuer Port-Pruefung
+::  Sucht nach 0.0.0.0:PORT (locale-unabhaengig)
+::  Deutsch: "ABHOEREN" statt "LISTENING"
 :: ============================================
 :upd_check_port
-netstat -ano | findstr ":%~1 " | findstr "LISTENING" >nul 2>&1
-exit /b %errorlevel%
+set "_UCP=1"
+for /f "tokens=*" %%a in ('netstat -ano ^| findstr "0.0.0.0:%~1 " 2^>nul') do set "_UCP=0"
+exit /b !_UCP!

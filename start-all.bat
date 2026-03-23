@@ -271,16 +271,18 @@ goto :eof
 :: ============================================
 
 :check_port
-:: Prueft ob ein Port im LISTENING-Status ist
+:: Prueft ob ein Port gebunden ist (locale-unabhaengig)
+:: Sucht nach 0.0.0.0:PORT statt nach "LISTENING" (deutsch: ABHOEREN)
 :: Parameter: %1 = Portnummer
 :: Return: errorlevel 0 = Port aktiv, 1 = nicht aktiv
-netstat -ano | findstr ":%~1 " | findstr "LISTENING" >nul 2>&1
-exit /b %errorlevel%
+set "_CP=1"
+for /f "tokens=*" %%a in ('netstat -ano ^| findstr "0.0.0.0:%~1 " 2^>nul') do set "_CP=0"
+exit /b !_CP!
 
 :kill_port
 :: Beendet Prozesse auf einem bestimmten Port
 :: Parameter: %1 = Portnummer
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:%~1" ^| findstr LISTENING 2^>nul') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:%~1" 2^>nul') do (
     if %%a GTR 100 taskkill /PID %%a /F >nul 2>&1
 )
 exit /b 0
