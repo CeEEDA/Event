@@ -1,6 +1,4 @@
-eventenergie.app {
-    tls C:\eventenergie\ssl\www.eventenergie.app_fullchain.pem C:\eventenergie\ssl\www.eventenergie.app_private_key.key
-
+:8001 {
     handle /api/* {
         reverse_proxy localhost:8002
     }
@@ -9,8 +7,4 @@ eventenergie.app {
         try_files {path} /index.html
         file_server
     }
-}
-
-www.eventenergie.app {
-    redir https://eventenergie.app{uri} permanent
 }

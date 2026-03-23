@@ -158,26 +158,16 @@ if !BACKEND_OK! equ 0 (
     echo   Pruefe das offene "Eventenergie Backend" Fenster fuer Fehlermeldungen.
 )
 
-:: ====== 7. Caddy starten (Port 8001) ======
+:: ====== 7. Caddy + nginx starten ======
 echo.
-echo  [8/8] Caddy starten (HTTPS)...
+echo  [8/8] Caddy (HTTP) + nginx (HTTPS) starten...
 cd /d "%PORTAL_DIR%"
 
-:: SSL-Ordner pruefen
-if not exist "%PORTAL_DIR%\ssl" (
-    echo   WARNUNG: SSL-Ordner nicht gefunden!
-    echo   Bitte SSL-Zertifikat und Key nach %PORTAL_DIR%\ssl\ kopieren:
-    echo     www.eventenergie.app_ssl_certificate.cer
-    echo     www.eventenergie.app_private_key.key
-)
-cd /d "%PORTAL_DIR%"
-
-:: Caddyfile erstellen falls nicht vorhanden
+:: Caddyfile erstellen falls nicht vorhanden (HTTP only, Port 8001)
 if not exist "%PORTAL_DIR%\Caddyfile" (
     echo   Caddyfile wird erstellt...
     >"%PORTAL_DIR%\Caddyfile" (
-        echo eventenergie.app {
-        echo     tls C:\eventenergie\ssl\www.eventenergie.app_fullchain.pem C:\eventenergie\ssl\www.eventenergie.app_private_key.key
+        echo :8001 {
         echo     handle /api/* {
         echo         reverse_proxy localhost:8002
         echo     }
@@ -190,50 +180,72 @@ if not exist "%PORTAL_DIR%\Caddyfile" (
     )
 )
 
+:: Caddy starten (HTTP Port 8001)
 if exist "%PORTAL_DIR%\caddy.exe" (
-    start "Eventenergie Caddy" cmd /k "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
+    start "Eventenergie Caddy" /min cmd /k "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
 ) else (
     echo   FEHLER: caddy.exe nicht gefunden in %PORTAL_DIR%
-    echo   Bitte caddy.exe herunterladen: https://caddyserver.com/download
     goto :fertig
 )
 
-:: Warten und pruefen ob Caddy tatsaechlich laeuft
 echo   Warte auf Caddy-Start...
 set "CADDY_OK=0"
-for /l %%i in (1,1,8) do (
+for /l %%i in (1,1,6) do (
     if !CADDY_OK! equ 0 (
         timeout /t 2 /nobreak >nul
-        netstat -ano | findstr "0.0.0.0:443" | findstr LISTENING >nul 2>&1
+        netstat -ano | findstr "0.0.0.0:8001" | findstr LISTENING >nul 2>&1
         if !errorlevel! equ 0 (
             set "CADDY_OK=1"
-            echo   Caddy laeuft auf Port 443 (HTTPS)
+            echo   Caddy laeuft auf Port 8001 (HTTP)
         )
     )
 )
 if !CADDY_OK! equ 0 (
-    echo   WARNUNG: Caddy antwortet nicht auf Port 443!
-    echo   Pruefe das offene "Eventenergie Caddy" Fenster fuer Fehlermeldungen.
+    echo   WARNUNG: Caddy antwortet nicht auf Port 8001!
+)
+
+:: nginx starten (HTTPS Port 443)
+set "NGINX_DIR=C:\nginx"
+set "NGINX_OK=0"
+if exist "%NGINX_DIR%\nginx.exe" (
+    copy /Y "%PORTAL_DIR%\nginx.conf" "%NGINX_DIR%\conf\nginx.conf" >nul 2>&1
+    cd /d "%NGINX_DIR%"
+    taskkill /IM nginx.exe /F >nul 2>&1
+    timeout /t 1 /nobreak >nul
+    start "" nginx.exe
+    timeout /t 2 /nobreak >nul
+    netstat -ano | findstr "0.0.0.0:443" | findstr LISTENING >nul 2>&1
+    if !errorlevel! equ 0 (
+        set "NGINX_OK=1"
+        echo   nginx laeuft auf Port 443 (HTTPS)
+    ) else (
+        echo   WARNUNG: nginx antwortet nicht auf Port 443!
+        echo   Pruefe: %NGINX_DIR%\logs\error.log
+    )
+    cd /d "%PORTAL_DIR%"
+) else (
+    echo   nginx nicht gefunden unter %NGINX_DIR% - nur HTTP verfuegbar
 )
 
 :: ====== Zusammenfassung ======
 :fertig
 echo.
 echo  ==================================================
-if !BACKEND_OK! equ 1 if !CADDY_OK! equ 1 (
-    echo   Portal erfolgreich gestartet!
+if !CADDY_OK! equ 1 (
+    echo   Portal gestartet!
 ) else (
     echo   WARNUNG: Nicht alle Dienste gestartet!
 )
 echo  ==================================================
 echo.
 echo   Backend:  http://localhost:8002  (intern)
-echo   Caddy:    https://eventenergie.app (HTTPS, Port 443)
+echo   Caddy:    http://localhost:8001  (HTTP)
+echo   nginx:    https://eventenergie.app (HTTPS, Port 443)
 echo   MQTT:     Port 1883 (extern), Port 1884 (lokal)
 echo   Portal:   https://eventenergie.app
 echo.
-if !BACKEND_OK! equ 0 echo   [!] Backend NICHT gestartet - siehe "Eventenergie Backend" Fenster
 if !CADDY_OK! equ 0 echo   [!] Caddy NICHT gestartet - siehe "Eventenergie Caddy" Fenster
+if !NGINX_OK! equ 0 echo   [!] nginx NICHT gestartet - HTTPS nicht verfuegbar
 echo.
 echo   Stoppen:  stop-all.bat
 echo   Logs:     %LOG_DIR%\
