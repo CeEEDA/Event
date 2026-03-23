@@ -105,11 +105,11 @@ C:\eventenergie\
 ### Portal nicht erreichbar
 1. `start-all.bat` als Administrator ausfuehren
 2. Pruefen ob MongoDB laeuft: `sc query MongoDB`
-3. Pruefen ob Backend laeuft: `curl http://localhost:8001/api/health`
+3. Pruefen ob Backend laeuft: `curl https://eventenergie.app/api/health`
 4. Pruefen ob Caddy laeuft: `curl http://localhost:3000`
 
 ### Login funktioniert nicht
-1. Pruefen ob `frontend\.env` korrekt ist: `REACT_APP_BACKEND_URL=https://portal.eventenergie.com`
+1. Pruefen ob `frontend\.env` korrekt ist: `REACT_APP_BACKEND_URL=https://eventenergie.app`
 2. Frontend neu bauen: `cd C:\eventenergie\frontend && npm run build`
 3. Dienste neu starten: `stop-all.bat` dann `start-all.bat`
 

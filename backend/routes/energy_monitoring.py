@@ -445,7 +445,7 @@ def _get_api_base(request: Request = None) -> str:
                         return val + "/api"
     except Exception:
         pass
-    return "http://portal.eventenergie.com:8001/api"
+    return "https://eventenergie.app/api"
 
 
 @router.post("/devices/{device_id}/setup-script")

@@ -23,7 +23,7 @@ echo   Backend gestoppt.
 echo  Caddy stoppen...
 taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
 taskkill /IM caddy.exe /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LISTENING 2^>nul') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:443" ^| findstr LISTENING 2^>nul') do (
     if %%a GTR 100 taskkill /PID %%a /F >nul 2>&1
 )
 echo   Caddy gestoppt.

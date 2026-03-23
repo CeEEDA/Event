@@ -1,4 +1,6 @@
-:8001 {
+eventenergie.app {
+    tls C:\eventenergie\ssl\eventenergie.app.cer C:\eventenergie\ssl\eventenergie.app.key
+
     handle /api/* {
         reverse_proxy localhost:8002
     }
@@ -7,4 +9,8 @@
         try_files {path} /index.html
         file_server
     }
+}
+
+www.eventenergie.app {
+    redir https://eventenergie.app{uri} permanent
 }

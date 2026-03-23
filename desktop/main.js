@@ -4,7 +4,7 @@ const fs = require("fs");
 
 // Load config
 const configPath = path.join(__dirname, "config.json");
-let config = { portalUrl: "http://portal.eventenergie.com:8001", title: "Eventenergie Portal" };
+let config = { portalUrl: "https://eventenergie.app", title: "Eventenergie Portal" };
 try {
   config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
 } catch (e) {

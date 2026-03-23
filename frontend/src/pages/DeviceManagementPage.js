@@ -167,7 +167,7 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
     return CONTROLLER_TOPIC_INFO[ctrl] || null;
   };
   const topicInfo = resolveTopicInfo(controller);
-  const brokerUrl = "portal.eventenergie.com";
+  const brokerUrl = "eventenergie.app";
   const brokerPort = "1883";
   const groupName = "eventenergie";
 

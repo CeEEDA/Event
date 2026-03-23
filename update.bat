@@ -192,7 +192,7 @@ echo   %date% %time%
 echo  ==================================================
 echo.
 echo   Branch:  %BRANCH%
-echo   Portal:  http://portal.eventenergie.com:8001
+echo   Portal:  https://eventenergie.app
 echo.
 if !FINAL_BACKEND! equ 1 (
     echo   [OK] Backend laeuft auf Port 8002

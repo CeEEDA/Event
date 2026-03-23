@@ -1717,7 +1717,7 @@ async def download_update_package(credentials: HTTPAuthorizationCredentials = De
 
         # .env.example Dateien als Referenz hinzufuegen
         env_examples = {
-            f"{zip_name}/frontend/.env.example": "REACT_APP_BACKEND_URL=http://portal.eventenergie.com\n",
+            f"{zip_name}/frontend/.env.example": "REACT_APP_BACKEND_URL=https://eventenergie.app\n",
             f"{zip_name}/backend/.env.example": (
                 "MONGO_URL=mongodb://localhost:27017\n"
                 "DB_NAME=eventenergie\n"

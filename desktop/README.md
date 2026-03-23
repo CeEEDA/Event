@@ -20,7 +20,7 @@ Die Server-URL wird in `config.json` eingestellt:
 
 ```json
 {
-  "portalUrl": "http://portal.eventenergie.com:8001",
+  "portalUrl": "https://eventenergie.app",
   "title": "Eventenergie Portal"
 }
 ```

@@ -12,7 +12,7 @@ try {
 // CRITICAL: Force set backend URL if not set by .env
 // This ensures the URL is ALWAYS available during production builds
 if (!process.env.REACT_APP_BACKEND_URL) {
-  process.env.REACT_APP_BACKEND_URL = "https://portal.eventenergie.com";
+  process.env.REACT_APP_BACKEND_URL = "https://eventenergie.app";
 }
 
 // Check if we're in development/preview mode (not production build)
@@ -53,7 +53,7 @@ let webpackConfig = {
 
       // CRITICAL FIX: Force inject REACT_APP_BACKEND_URL into webpack DefinePlugin
       // This bypasses any .env file issues (BOM, encoding, missing file)
-      const FALLBACK_URL = "https://portal.eventenergie.com";
+      const FALLBACK_URL = "https://eventenergie.app";
       const definePlugin = webpackConfig.plugins.find(
         (p) => p.constructor.name === "DefinePlugin"
       );

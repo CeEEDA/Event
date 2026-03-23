@@ -33,7 +33,7 @@ taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq Eventenergie Caddy*" /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq Eventenergie Frontend" /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq Eventenergie Frontend*" /F >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8001" ^| findstr LISTENING 2^>nul') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:443" ^| findstr LISTENING 2^>nul') do (
     if %%a GTR 100 taskkill /PID %%a /F >nul 2>&1
 )
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:8002" ^| findstr LISTENING 2^>nul') do (
@@ -138,14 +138,15 @@ if !BACKEND_OK! equ 0 (
 
 :: ====== Caddy starten ======
 echo.
-echo  [7/7] Caddy starten (Port 8001)...
+echo  [7/7] Caddy starten (HTTPS)...
 cd /d "%PORTAL_DIR%"
 
 :: Caddyfile erstellen falls nicht vorhanden
 if not exist "%PORTAL_DIR%\Caddyfile" (
     echo   Caddyfile wird erstellt...
     >"%PORTAL_DIR%\Caddyfile" (
-        echo :8001 {
+        echo eventenergie.app {
+        echo     tls C:\eventenergie\ssl\eventenergie.app.cer C:\eventenergie\ssl\eventenergie.app.key
         echo     handle /api/* {
         echo         reverse_proxy localhost:8002
         echo     }
@@ -177,15 +178,15 @@ set "CADDY_OK=0"
 for /l %%i in (1,1,8) do (
     if !CADDY_OK! equ 0 (
         timeout /t 2 /nobreak >nul
-        netstat -ano | findstr "0.0.0.0:8001" | findstr LISTENING >nul 2>&1
+        netstat -ano | findstr "0.0.0.0:443" | findstr LISTENING >nul 2>&1
         if !errorlevel! equ 0 (
             set "CADDY_OK=1"
-            echo   Caddy laeuft auf Port 8001
+            echo   Caddy laeuft auf Port 443 (HTTPS)
         )
     )
 )
 if !CADDY_OK! equ 0 (
-    echo   WARNUNG: Caddy antwortet nicht auf Port 8001!
+    echo   WARNUNG: Caddy antwortet nicht auf Port 443!
     echo   Pruefe das offene "Eventenergie Caddy" Fenster fuer Fehlermeldungen.
 )
 
@@ -201,8 +202,8 @@ if !BACKEND_OK! equ 1 if !CADDY_OK! equ 1 (
 echo  ==================================================
 echo.
 echo   Backend:    http://localhost:8002
-echo   Caddy:      http://localhost:8001
-echo   Portal:     http://portal.eventenergie.com:8001
+echo   Caddy:      https://eventenergie.app
+echo   Portal:     https://eventenergie.app
 echo.
 if !BACKEND_OK! equ 0 echo   [!] Backend NICHT gestartet - siehe "Eventenergie Backend" Fenster
 if !CADDY_OK! equ 0 echo   [!] Caddy NICHT gestartet - siehe "Eventenergie Caddy" Fenster
