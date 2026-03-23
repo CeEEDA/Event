@@ -8,6 +8,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - **Backend:** FastAPI (Python) + MongoDB + GridFS
 - **Desktop:** Electron Wrapper
 - **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
+- **Server:** Nginx (HTTPS/443) -> Caddy (HTTP/8001) -> FastAPI (8002)
 
 ## What's Been Implemented
 
@@ -39,15 +40,24 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - DB-Backup via mongodump (gzip), Quellcode-Backup (ZIP)
 - Konfigurierbares Intervall, Aufbewahrungsrichtlinie, Manuelles Backup
 - Admin UI mit Toggles, Intervall-Inputs, Backup-Liste
-- Hintergrund-Scheduler (15 Min Prüfintervall)
+- Hintergrund-Scheduler (15 Min Pruefintervall)
 
-### Start/Update/Stop Scripts ueberarbeitet (abgeschlossen - 2026-03-20, fix 2026-02)
-- **start-all.bat:** Stoppt alte Prozesse, MongoDB prüfen, DB-Backup beim Start, venv Support, Frontend Build prüfen, Backend + Caddy starten, **Port-Verifizierung**, `nopause` Parameter, `cmd /k` fuer Fehler-Sichtbarkeit
-- **stop-all.bat:** Stoppt Backend, Caddy und alle Portal-Prozesse (inkl. Port-Cleanup), `nopause` Parameter, Timeout nach Stop
-- **update.bat:** Auto-Erkennung des Update-Ordners, DB+Code-Backup, .env Schutz, Dependencies installieren, Build, **automatischer Neustart via `nopause`**, finale Port-Verifizierung [7/7]
-- **stop_services.bat / start_services.bat:** Aliase auf neue Scripts (Parameter-Durchreichung)
-- **deployment/start-all.bat + stop-all.bat:** Synchronisiert mit Hauptordner
-- **UPDATE_ANLEITUNG.md:** Komplett ueberarbeitet mit allen neuen Features
+### Start/Update/Stop Scripts (ueberarbeitet - 2026-02)
+- start-all.bat mit robuster Port-Pruefung via CALL :check_port Subroutine
+- goto-Loops statt for/l (Backend: 20s, Caddy: 12s, Nginx: 8s)
+- Klare Zusammenfassung [OK]/[XX]/[--] mit Dienste-Zaehler
+- CRLF-Zeilenumbrueche, Deployment-Kopie synchronisiert
+- stop-all.bat, update.bat, start_services.bat, stop_services.bat
+
+### Nginx HTTPS Setup (abgeschlossen - 2026-02)
+- Nginx fuer TLS-Terminierung auf Port 443
+- SSL-Zertifikat (fullchain.pem) generiert
+- Caddy nur noch HTTP (Port 8001)
+- Mosquitto MQTT als Windows-Service konfiguriert
+
+### Device Management Expandable Rows (abgeschlossen)
+- Expandable rows in DeviceManagementPage.js
+- /api/devices/stats/quick/{device_id} Endpoint
 
 ## Key API Endpoints
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
@@ -57,26 +67,22 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - `/api/backup/{id}` - DELETE Backup loeschen
 - `/api/backup/{id}/download` - GET Backup herunterladen
 - `/api/download/update-package` - GET Update-Paket ZIP
+- `/api/devices/stats/quick/{device_id}` - GET Telemetrie-Daten
 
 ## Prioritized Backlog
 
-### P0 - Offen
-- update.bat Auto-Restart: GEFIXT (nopause, Port-Verifizierung, cmd /k) - Benutzer muss live testen
-
-### P0 - Fertig (2026-02-21)
-- System Status Dashboard im Admin-Bereich: MongoDB, Benutzer, Geräte online, Generatoren online, EMU-Datensätze/Std, Auto-Refresh 30s
-- Online-Signal in Geräteverwaltung: Grün (Online <10min), Gelb (Inaktiv <1h), Rot (Offline >1h), Grau (Nie verbunden), mit Zeitangabe
-- Tankbeleg Pi Kiosk-UI: Touch-Frontend auf dem Pi (Flask Webserver Port 8080), Offline Order-Cache (±10 Tage), Fahrer-Auswahl, Auftrags-Zuordnung, GPS, Chromium Kiosk Auto-Start
+### P0 - Benutzer-Aktion erforderlich
+- Port 443 Portfreigabe im Router fuer externen HTTPS-Zugriff
+- start-all.bat auf Windows Server testen
 
 ### P1 - Kommend
-- HTTPS-Migration (Caddy SSL-Konfiguration)
 - PayPal Integration
 - Direkter QR-Label-Druck an Drucker
-- Windows Installer (.exe) fuer Electron Desktop App
 
 ### P2 - Backlog
+- Chromium Translate Popup auf Raspberry Pi (Policy-Datei erstellen)
 - Admin File Size Limits fuer Uploads
-- Geolocation/Clipboard Fix (wird durch HTTPS automatisch geloest)
+- Windows Installer (.exe) fuer Electron Desktop App
 
 ## Credentials
 - **Admin (lokal):** admin@test.com / password
