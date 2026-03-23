@@ -6,3 +6,5 @@
 *.pem binary
 *.key binary
 *.cer binary
+# Force Windows line endings for batch files
+*.bat text eol=crlf
