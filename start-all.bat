@@ -182,7 +182,7 @@ if not exist "%PORTAL_DIR%\Caddyfile" (
 
 :: Caddy starten (HTTP Port 8001)
 if exist "%PORTAL_DIR%\caddy.exe" (
-    start "Eventenergie Caddy" /min cmd /k "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
+    start "Eventenergie Caddy" /min "%PORTAL_DIR%\caddy.exe" run --config "%PORTAL_DIR%\Caddyfile"
 ) else (
     echo   FEHLER: caddy.exe nicht gefunden in %PORTAL_DIR%
     goto :fertig
@@ -209,10 +209,11 @@ set "NGINX_DIR=C:\nginx"
 set "NGINX_OK=0"
 if exist "%NGINX_DIR%\nginx.exe" (
     copy /Y "%PORTAL_DIR%\nginx.conf" "%NGINX_DIR%\conf\nginx.conf" >nul 2>&1
-    cd /d "%NGINX_DIR%"
     taskkill /IM nginx.exe /F >nul 2>&1
     timeout /t 1 /nobreak >nul
-    start "" nginx.exe
+    cd /d "%NGINX_DIR%"
+    start "" /min nginx.exe
+    cd /d "%PORTAL_DIR%"
     timeout /t 2 /nobreak >nul
     netstat -ano | findstr "0.0.0.0:443" | findstr LISTENING >nul 2>&1
     if !errorlevel! equ 0 (
