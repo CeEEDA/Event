@@ -55,6 +55,7 @@ if exist "%LIVE_DIR%\stop-all.bat" (
     taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
     taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
     taskkill /IM caddy.exe /F >nul 2>&1
+    taskkill /IM nginx.exe /F >nul 2>&1
     timeout /t 3 /nobreak >nul
 )
 echo   Dienste gestoppt.
@@ -152,9 +153,9 @@ call npm install --legacy-peer-deps 2>nul
 echo   Node-Pakete installiert
 call npm run build
 if !errorlevel! equ 0 (
-    echo   Build erfolgreich!
+    echo   Build erfolgreich
 ) else (
-    echo   FEHLER: Build fehlgeschlagen!
+    echo   FEHLER: Build fehlgeschlagen
     echo   Bitte manuell pruefen: cd %LIVE_DIR%\frontend ^&^& npm run build
 )
 
@@ -173,47 +174,57 @@ if exist "%LIVE_DIR%\start-all.bat" (
 :: ====== 7. Finale Port-Verifizierung ======
 echo.
 echo  [7/7] Finale Verifizierung...
-timeout /t 3 /nobreak >nul
+echo   Warte 5 Sekunden...
+timeout /t 5 /nobreak >nul
 
 set "FINAL_BACKEND=0"
 set "FINAL_CADDY=0"
+set "FINAL_NGINX=0"
 
-netstat -ano | findstr "0.0.0.0:8002" | findstr LISTENING >nul 2>&1
+call :upd_check_port 8002
 if !errorlevel! equ 0 set "FINAL_BACKEND=1"
 
-netstat -ano | findstr "0.0.0.0:8001" | findstr LISTENING >nul 2>&1
+call :upd_check_port 8001
 if !errorlevel! equ 0 set "FINAL_CADDY=1"
+
+call :upd_check_port 443
+if !errorlevel! equ 0 set "FINAL_NGINX=1"
 
 :: ====== Zusammenfassung ======
 echo.
 echo  ==================================================
-echo   Update abgeschlossen!
+echo   Update abgeschlossen
 echo   %date% %time%
 echo  ==================================================
 echo.
 echo   Branch:  %BRANCH%
 echo   Portal:  https://eventenergie.app
 echo.
-if !FINAL_BACKEND! equ 1 (
-    echo   [OK] Backend laeuft auf Port 8002
-) else (
-    echo   [!!] Backend NICHT gestartet auf Port 8002
-    echo        Pruefe das offene "Eventenergie Backend" Fenster
-)
-if !FINAL_CADDY! equ 1 (
-    echo   [OK] Caddy laeuft auf Port 8001
-) else (
-    echo   [!!] Caddy NICHT gestartet auf Port 8001
-    echo        Pruefe das offene "Eventenergie Caddy" Fenster
-)
+if !FINAL_BACKEND! equ 1 (echo   [OK] Backend auf Port 8002) else (echo   [XX] Backend NICHT gestartet auf Port 8002)
+if !FINAL_CADDY! equ 1   (echo   [OK] Caddy auf Port 8001) else (echo   [XX] Caddy NICHT gestartet auf Port 8001)
+if !FINAL_NGINX! equ 1   (echo   [OK] nginx auf Port 443) else (echo   [XX] nginx NICHT gestartet auf Port 443)
 echo.
 echo   Geschuetzte Dateien (NICHT ueberschrieben):
 echo     backend\.env   (Datenbank, JWT, SMTP)
 echo     frontend\.env  (Portal-URL)
 echo     MongoDB Daten  (unveraendert)
 echo.
+if !FINAL_BACKEND! equ 0 (
+    echo   TIPP: Pruefe "Eventenergie Backend" Fenster fuer Fehler
+)
+if !FINAL_CADDY! equ 0 (
+    echo   TIPP: Pruefe "Eventenergie Caddy" Fenster fuer Fehler
+)
 if !FINAL_BACKEND! equ 0 if !FINAL_CADDY! equ 0 (
     echo   TIPP: Dienste manuell starten mit: start-all.bat
-    echo.
 )
+echo.
 pause
+goto :eof
+
+:: ============================================
+::  Subroutine fuer Port-Pruefung
+:: ============================================
+:upd_check_port
+netstat -ano | findstr ":%~1 " | findstr "LISTENING" >nul 2>&1
+exit /b %errorlevel%
