@@ -3,3 +3,6 @@
 *.service text eol=lf
 *.conf text eol=lf
 *.py text eol=lf
+*.pem binary
+*.key binary
+*.cer binary
