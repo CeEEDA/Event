@@ -667,6 +667,97 @@ async def get_part_types(user: dict = Depends(require_staff)):
     return {"types": PART_TYPES}
 
 
+# ============== Quick Info (expandable row) ==============
+
+@router.get("/{device_id}/quick-info")
+async def get_device_quick_info(device_id: str, user: dict = Depends(require_staff)):
+    """Get quick info for expandable row: last_seen + latest meter readings."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    result = {
+        "device_id": device_id,
+        "last_seen": device.get("last_seen"),
+        "device_type": device.get("device_type"),
+        "readings": [],
+    }
+
+    dtype = device.get("device_type", "")
+
+    if dtype in ("stromerzeuger", "lichtmast"):
+        # Get latest generator telemetry (from MQTT)
+        gen = await db.generators.find_one({"serial_number": device.get("serial_number")}, {"_id": 0})
+        if gen:
+            result["last_seen"] = result["last_seen"] or gen.get("last_seen")
+            latest = await db.generator_telemetry.find_one(
+                {"generator_id": gen.get("id")}, {"_id": 0},
+                sort=[("timestamp", -1)]
+            )
+            if latest:
+                readings = []
+                if latest.get("voltage_l1") is not None:
+                    readings.append({"label": "Spannung L1", "value": f"{latest['voltage_l1']:.1f} V"})
+                if latest.get("voltage_l2") is not None:
+                    readings.append({"label": "Spannung L2", "value": f"{latest['voltage_l2']:.1f} V"})
+                if latest.get("voltage_l3") is not None:
+                    readings.append({"label": "Spannung L3", "value": f"{latest['voltage_l3']:.1f} V"})
+                if latest.get("current_l1") is not None:
+                    readings.append({"label": "Strom L1", "value": f"{latest['current_l1']:.1f} A"})
+                if latest.get("current_l2") is not None:
+                    readings.append({"label": "Strom L2", "value": f"{latest['current_l2']:.1f} A"})
+                if latest.get("current_l3") is not None:
+                    readings.append({"label": "Strom L3", "value": f"{latest['current_l3']:.1f} A"})
+                if latest.get("power_kw") is not None:
+                    readings.append({"label": "Leistung", "value": f"{latest['power_kw']:.1f} kW"})
+                if latest.get("frequency") is not None:
+                    readings.append({"label": "Frequenz", "value": f"{latest['frequency']:.1f} Hz"})
+                if latest.get("rpm") is not None:
+                    readings.append({"label": "Drehzahl", "value": f"{int(latest['rpm'])} RPM"})
+                if latest.get("fuel_level") is not None:
+                    readings.append({"label": "Kraftstoff", "value": f"{latest['fuel_level']}%"})
+                if latest.get("coolant_temp") is not None:
+                    readings.append({"label": "Kühlmittel", "value": f"{latest['coolant_temp']} °C"})
+                if latest.get("battery_voltage") is not None:
+                    readings.append({"label": "Batterie", "value": f"{latest['battery_voltage']:.1f} V"})
+                if latest.get("hours_run") is not None:
+                    readings.append({"label": "Betriebsstunden", "value": f"{latest['hours_run']:.1f} h"})
+                result["readings"] = readings
+                result["telemetry_timestamp"] = latest.get("timestamp")
+
+    elif dtype in ("messkoffer", "kirmeskiste"):
+        # Get latest EMU meter readings
+        meters = await db.emu_meters.find({"device_id": device_id}, {"_id": 0}).to_list(20)
+        readings = []
+        for meter in meters:
+            latest = await db.emu_data.find_one(
+                {"device_id": device_id, "meter_id": meter["id"]},
+                {"_id": 0},
+                sort=[("ts_utc", -1)]
+            )
+            entry = {
+                "label": meter.get("meter_name") or meter.get("meter_ip", "Zähler"),
+                "value": "Keine Daten",
+            }
+            if latest:
+                # Build a summary of the latest reading
+                parts = []
+                if latest.get("active_energy_import") is not None:
+                    parts.append(f"{latest['active_energy_import']:.2f} kWh")
+                elif latest.get("active_power_total") is not None:
+                    parts.append(f"{latest['active_power_total']:.1f} W")
+                if latest.get("voltage_l1") is not None:
+                    parts.append(f"L1: {latest['voltage_l1']:.0f}V")
+                if latest.get("current_l1") is not None:
+                    parts.append(f"{latest['current_l1']:.1f}A")
+                entry["value"] = " | ".join(parts) if parts else "Daten vorhanden"
+                entry["timestamp"] = latest.get("ts_utc")
+            readings.append(entry)
+        result["readings"] = readings
+
+    return result
+
+
 # ============== Stats ==============
 
 @router.get("/stats/overview")

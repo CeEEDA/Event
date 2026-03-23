@@ -29,6 +29,10 @@ import {
   Server,
   Wifi,
   WifiOff,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Activity,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -965,6 +969,87 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
   );
 }
 
+// Expandable device detail row
+function DeviceExpandedRow({ device, colSpan }) {
+  const [info, setInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get(`/devices/${device.id}/quick-info`);
+        if (!cancelled) setInfo(res.data);
+      } catch {
+        if (!cancelled) setInfo(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [device.id]);
+
+  const formatDate = (iso) => {
+    if (!iso) return "–";
+    const d = new Date(iso);
+    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <tr data-testid={`device-expanded-${device.serial_number}`}>
+      <td colSpan={colSpan} className="px-0 py-0">
+        <div className="bg-gray-50 border-t border-b border-gray-200 px-6 py-4 animate-in slide-in-from-top-2 duration-200">
+          {loading ? (
+            <div className="text-xs text-gray-400 py-2">Laden...</div>
+          ) : !info ? (
+            <div className="text-xs text-gray-400 py-2">Keine Daten verfügbar</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Last seen */}
+              <div className="flex items-start gap-3" data-testid="quick-info-last-seen">
+                <div className="w-8 h-8 rounded-lg bg-fuchsia-100 flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-4 h-4 text-fuchsia-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Letzter Kontakt</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                    {info.last_seen ? formatDate(info.last_seen) : "Noch nie verbunden"}
+                  </p>
+                  {info.telemetry_timestamp && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">Letzte Telemetrie: {formatDate(info.telemetry_timestamp)}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Meter Readings */}
+              <div className="flex items-start gap-3" data-testid="quick-info-readings">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <Activity className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Zählerstände</p>
+                  {info.readings.length === 0 ? (
+                    <p className="text-xs text-gray-400">Keine Messdaten vorhanden</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {info.readings.map((r, i) => (
+                        <div key={i} className="flex justify-between items-center bg-white rounded px-2.5 py-1.5 border border-gray-100">
+                          <span className="text-xs text-gray-500 truncate mr-2">{r.label}</span>
+                          <span className="text-xs font-mono font-semibold text-gray-900 whitespace-nowrap">{r.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export default function DeviceManagementPage() {
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
@@ -977,6 +1062,7 @@ export default function DeviceManagementPage() {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -1215,10 +1301,15 @@ export default function DeviceManagementPage() {
                     const TypeIcon = DEVICE_TYPES.find(t => t.value === device.device_type)?.icon || Settings;
                     const isOutOfService = device.status === "ausser_betrieb";
                     const onlineInfo = getOnlineStatus(device.last_seen);
+                    const isExpanded = expandedId === device.id;
                     return (
-                      <tr key={device.id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isOutOfService ? "opacity-60" : ""}`} data-testid={`device-row-${device.serial_number}`}>
+                      <>
+                      <tr key={device.id} onClick={() => setExpandedId(isExpanded ? null : device.id)} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${isOutOfService ? "opacity-60" : ""} ${isExpanded ? "bg-gray-50" : ""}`} data-testid={`device-row-${device.serial_number}`}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
+                            <span className="text-gray-400 transition-transform duration-200" style={{ transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>
+                              <ChevronDown className="w-4 h-4" />
+                            </span>
                             {device.image_gridfs_id ? (
                               <img src={`${BACKEND_URL}/api/devices/${device.id}/image`} alt="" className="w-8 h-8 rounded object-cover border border-gray-200" />
                             ) : (
@@ -1256,7 +1347,7 @@ export default function DeviceManagementPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             <button onClick={() => openEdit(device)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Bearbeiten" data-testid={`edit-${device.serial_number}`}>
                               <Pencil className="w-4 h-4" />
@@ -1279,6 +1370,8 @@ export default function DeviceManagementPage() {
                           </div>
                         </td>
                       </tr>
+                      {isExpanded && <DeviceExpandedRow key={`exp-${device.id}`} device={device} colSpan={8} />}
+                      </>
                     );
                   })}
                 </tbody>
