@@ -167,8 +167,8 @@ cd /d "%PORTAL_DIR%"
 if not exist "%PORTAL_DIR%\ssl" (
     echo   WARNUNG: SSL-Ordner nicht gefunden!
     echo   Bitte SSL-Zertifikat und Key nach %PORTAL_DIR%\ssl\ kopieren:
-    echo     eventenergie.app.cer
-    echo     eventenergie.app.key
+    echo     www.eventenergie.app_ssl_certificate.cer
+    echo     www.eventenergie.app_private_key.key
 )
 cd /d "%PORTAL_DIR%"
 
@@ -177,7 +177,7 @@ if not exist "%PORTAL_DIR%\Caddyfile" (
     echo   Caddyfile wird erstellt...
     >"%PORTAL_DIR%\Caddyfile" (
         echo eventenergie.app {
-        echo     tls C:\eventenergie\ssl\eventenergie.app.cer C:\eventenergie\ssl\eventenergie.app.key
+        echo     tls C:\eventenergie\ssl\www.eventenergie.app_ssl_certificate.cer C:\eventenergie\ssl\www.eventenergie.app_private_key.key
         echo     handle /api/* {
         echo         reverse_proxy localhost:8002
         echo     }

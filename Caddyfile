@@ -1,5 +1,5 @@
 eventenergie.app {
-    tls C:\eventenergie\ssl\eventenergie.app.cer C:\eventenergie\ssl\eventenergie.app.key
+    tls C:\eventenergie\ssl\www.eventenergie.app_ssl_certificate.cer C:\eventenergie\ssl\www.eventenergie.app_private_key.key
 
     handle /api/* {
         reverse_proxy localhost:8002
