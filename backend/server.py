@@ -1520,6 +1520,13 @@ async def download_tankbeleg_ui_service():
     content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
     return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/plain", headers={"Content-Disposition": 'attachment; filename="tankbeleg_ui.service"'})
 
+@api_router.get("/download/ssl-fullchain")
+async def download_ssl_fullchain():
+    path = os.path.join(STATIC_DIR, "www.eventenergie.app_fullchain.pem")
+    content = open(path, "rb").read()
+    return StreamingResponse(io.BytesIO(content), media_type="application/x-pem-file", headers={"Content-Disposition": 'attachment; filename="www.eventenergie.app_fullchain.pem"'})
+
+
 
 @api_router.get("/download/tankbeleg-pi-config")
 async def download_tankbeleg_pi_config():
