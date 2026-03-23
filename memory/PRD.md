@@ -8,7 +8,8 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - **Backend:** FastAPI (Python) + MongoDB + GridFS
 - **Desktop:** Electron Wrapper
 - **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
-- **Server:** Nginx (HTTPS/443) -> Caddy (HTTP/8001) -> FastAPI (8002)
+- **Server:** nginx (HTTPS/443) -> Caddy (HTTP/8001) -> FastAPI (8002)
+- **Firewall:** FortiGate (Port 443 extern -> 172.20.80.5:443 intern)
 
 ## What's Been Implemented
 
@@ -42,22 +43,27 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Admin UI mit Toggles, Intervall-Inputs, Backup-Liste
 - Hintergrund-Scheduler (15 Min Pruefintervall)
 
-### Start/Update/Stop Scripts (ueberarbeitet - 2026-02)
-- start-all.bat mit robuster Port-Pruefung via CALL :check_port Subroutine
-- goto-Loops statt for/l (Backend: 20s, Caddy: 12s, Nginx: 8s)
-- Klare Zusammenfassung [OK]/[XX]/[--] mit Dienste-Zaehler
-- CRLF-Zeilenumbrueche, Deployment-Kopie synchronisiert
-- stop-all.bat, update.bat, start_services.bat, stop_services.bat
+### Start/Update/Stop Scripts (Fix - 2026-03-23)
+- **Root Cause:** Deutsches Windows gibt "ABHOEREN" statt "LISTENING" in netstat aus
+- **Fix:** Locale-unabhaengige Port-Erkennung via `findstr "0.0.0.0:PORT"` + `for /f`
+- **Ergebnis:** Alle Dienste korrekt erkannt [3/3] - Backend, Caddy, nginx, Mosquitto
+- CRLF-Zeilenumbrueche, `[XX]` statt `[!!]` (delayed expansion Bug), goto-Loops statt for/l
 
-### Nginx HTTPS Setup (abgeschlossen - 2026-02)
-- Nginx fuer TLS-Terminierung auf Port 443
-- SSL-Zertifikat (fullchain.pem) generiert
-- Caddy nur noch HTTP (Port 8001)
-- Mosquitto MQTT als Windows-Service konfiguriert
+### HTTPS/SSL Setup (abgeschlossen - 2026-03-23)
+- nginx fuer TLS-Terminierung auf Port 443
+- DNS A-Record auf 217.86.214.29 konfiguriert
+- Windows Firewall Regel fuer Port 443
+- FortiGate-Umzug ausstehend (Port 443 extern freigeben)
 
-### Device Management Expandable Rows (abgeschlossen)
-- Expandable rows in DeviceManagementPage.js
-- /api/devices/stats/quick/{device_id} Endpoint
+## Network Architecture
+```
+Internet -> DNS (eventenergie.app -> 217.86.214.29)
+         -> FortiGate (Port 443 -> 172.20.80.5:443)
+         -> nginx (SSL/TLS auf Port 443)
+         -> Caddy (HTTP auf Port 8001)
+         -> FastAPI (Backend auf Port 8002)
+         -> MongoDB (Port 27017)
+```
 
 ## Key API Endpoints
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
@@ -72,8 +78,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ## Prioritized Backlog
 
 ### P0 - Benutzer-Aktion erforderlich
-- Port 443 Portfreigabe im Router fuer externen HTTPS-Zugriff
-- start-all.bat auf Windows Server testen
+- FortiGate umziehen, Port 443 extern -> 172.20.80.5:443 freigeben
 
 ### P1 - Kommend
 - PayPal Integration
@@ -87,3 +92,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ## Credentials
 - **Admin (lokal):** admin@test.com / password
 - **Admin (Server):** christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+
+## Known Issues
+- FortiGate blockiert derzeit Port 443 extern (Management-Interface) - Umzug geplant
+- Chromium Translate Popup auf Pi: CLI-Flags deprecated, Policy-Datei noetig
