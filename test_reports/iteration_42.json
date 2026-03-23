@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://receipt-manager-103.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://receipt-manager-103.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://receipt-manager-103.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://device-telemetry-1.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://device-telemetry-1.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://device-telemetry-1.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }
