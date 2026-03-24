@@ -390,21 +390,33 @@ def _mosquitto_hash(password: str, iterations: int = 101) -> str:
 
 
 async def _regenerate_passwd_file():
-    """Regenerate the Mosquitto passwd file from all stored gateway credentials."""
+    """Regenerate the Mosquitto passwd file from all stored gateway credentials (generators + devices)."""
     passwd_path = MOSQUITTO_PASSWD_FILE
     if not passwd_path:
         logger.info("MOSQUITTO_PASSWD_FILE nicht konfiguriert – passwd-Datei wird nicht geschrieben")
         return False
 
+    lines = []
+
+    # Generators with MQTT credentials
     generators = await db.generators.find(
         {"mqtt_username": {"$exists": True, "$ne": ""}},
         {"_id": 0, "mqtt_username": 1, "mqtt_password_hash": 1}
     ).to_list(1000)
-
-    lines = []
     for gen in generators:
         username = gen.get("mqtt_username", "")
         pw_hash = gen.get("mqtt_password_hash", "")
+        if username and pw_hash:
+            lines.append(f"{username}:{pw_hash}")
+
+    # Devices (Stromerzeuger/Lichtmast) with MQTT credentials
+    devices = await db.devices.find(
+        {"mqtt_username": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "mqtt_username": 1, "mqtt_password_hash": 1}
+    ).to_list(1000)
+    for dev in devices:
+        username = dev.get("mqtt_username", "")
+        pw_hash = dev.get("mqtt_password_hash", "")
         if username and pw_hash:
             lines.append(f"{username}:{pw_hash}")
 
@@ -482,5 +494,66 @@ async def revoke_mqtt_credentials(generator_id: str, admin: dict = Depends(requi
         {"$unset": {"mqtt_username": "", "mqtt_password_hash": "", "mqtt_created_at": ""}}
     )
 
+    await _regenerate_passwd_file()
+    return {"message": "MQTT-Zugangsdaten widerrufen"}
+
+
+# ============== Device MQTT Credentials (Stromerzeuger/Lichtmast) ==============
+
+@router.post("/device-credentials/{device_id}/generate")
+async def generate_device_mqtt_credentials(device_id: str, admin: dict = Depends(require_admin)):
+    """Generate unique MQTT credentials for a device (Stromerzeuger/Lichtmast). Password shown only once."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    serial = device.get("serial_number", device_id[:12])
+    username = "gw_" + serial.lower().replace(" ", "_").replace("-", "_")
+    password = secrets.token_urlsafe(16)
+    pw_hash = _mosquitto_hash(password)
+
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {
+            "mqtt_username": username,
+            "mqtt_password_hash": pw_hash,
+            "mqtt_created_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+
+    await _regenerate_passwd_file()
+
+    return {
+        "username": username,
+        "password": password,
+        "device_name": device.get("serial_number", ""),
+        "message": "Zugangsdaten generiert. Passwort wird nur einmal angezeigt!",
+    }
+
+
+@router.get("/device-credentials/{device_id}")
+async def get_device_mqtt_credentials(device_id: str, admin: dict = Depends(require_admin)):
+    """Get MQTT credential info for a device (without password)."""
+    device = await db.devices.find_one(
+        {"id": device_id},
+        {"_id": 0, "mqtt_username": 1, "mqtt_created_at": 1}
+    )
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    return {
+        "has_credentials": bool(device.get("mqtt_username")),
+        "mqtt_username": device.get("mqtt_username", ""),
+        "created_at": device.get("mqtt_created_at", ""),
+    }
+
+
+@router.delete("/device-credentials/{device_id}")
+async def revoke_device_mqtt_credentials(device_id: str, admin: dict = Depends(require_admin)):
+    """Revoke MQTT credentials for a device."""
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$unset": {"mqtt_username": "", "mqtt_password_hash": "", "mqtt_created_at": ""}}
+    )
     await _regenerate_passwd_file()
     return {"message": "MQTT-Zugangsdaten widerrufen"}

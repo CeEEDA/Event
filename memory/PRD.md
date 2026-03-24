@@ -85,14 +85,14 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Sicherheit bleibt gewahrt: Falsche Keys und unbekannte Geraete werden weiterhin abgelehnt
 
 ### MQTT Gateway-Zugangsdaten pro Geraet (abgeschlossen - 2026-03-24)
-- Jedes DSE-Gateway bekommt eigene MQTT-Credentials (Username + Password)
-- Credentials werden im Portal generiert und einmalig im Klartext angezeigt
+- Jedes DSE-Gateway (Stromerzeuger/Lichtmast) bekommt eigene MQTT-Credentials
+- Credentials werden im Portal im "Geraet bearbeiten" Dialog generiert (DSE890 Sektion)
 - Mosquitto passwd-Datei wird automatisch aktualisiert (PBKDF2-SHA512 $7$ Format)
 - Backend .env Variable: MOSQUITTO_PASSWD_FILE (Pfad zur Mosquitto passwd-Datei)
 - Auf Server setzen: MOSQUITTO_PASSWD_FILE=C:\Program Files\Mosquitto\passwd
 - Backend MQTT Config auf 127.0.0.1:1884 (lokaler Listener, keine Auth noetig)
-- Endpoints: GET/POST/DELETE /api/mqtt/credentials
-- Frontend: Neuer Bereich "Gateway-Zugangsdaten" auf MQTT-Config-Seite
+- Endpoints: GET/POST/DELETE /api/mqtt/device-credentials/{device_id}
+- Auch verfuegbar auf der MQTT-Config-Seite fuer Generatoren
 - Zaehlerstaende-Anzeige korrigiert (E_imp_kWh/P_sum_kW statt falsche Feldnamen)
 
 ## Key API Endpoints

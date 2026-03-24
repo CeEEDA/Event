@@ -33,6 +33,11 @@ import {
   ChevronUp,
   Clock,
   Activity,
+  Key,
+  Copy,
+  Eye,
+  EyeOff,
+  Shield,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -160,7 +165,7 @@ const CONTROLLER_TOPIC_INFO = {
   "DSE L401": { filename: "dsel401_module_topics.csv", label: "DSE L401 Module Topics" },
 };
 
-function DseGatewaySetupSection({ controller, serialNumber, formData, update }) {
+function DseGatewaySetupSection({ controller, serialNumber, formData, update, deviceId }) {
   // Flexible matching: find topic info regardless of naming variations
   const resolveTopicInfo = (ctrl) => {
     if (!ctrl) return null;
@@ -174,6 +179,49 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
   const brokerUrl = "eventenergie.app";
   const brokerPort = "1883";
   const groupName = "eventenergie";
+
+  const [credInfo, setCredInfo] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [newCreds, setNewCreds] = useState(null);
+  const [showPw, setShowPw] = useState(false);
+
+  useEffect(() => {
+    if (!deviceId) return;
+    (async () => {
+      try {
+        const res = await api.get(`/mqtt/device-credentials/${deviceId}`);
+        setCredInfo(res.data);
+      } catch { setCredInfo(null); }
+    })();
+  }, [deviceId]);
+
+  const handleGenerate = async () => {
+    if (credInfo?.has_credentials && !window.confirm("Vorhandene Zugangsdaten werden ersetzt. Fortfahren?")) return;
+    setGenerating(true);
+    try {
+      const res = await api.post(`/mqtt/device-credentials/${deviceId}/generate`);
+      setNewCreds(res.data);
+      setShowPw(true);
+      setCredInfo({ has_credentials: true, mqtt_username: res.data.username, created_at: new Date().toISOString() });
+      toast.success("MQTT-Zugangsdaten generiert");
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler beim Generieren"));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!window.confirm("MQTT-Zugangsdaten wirklich widerrufen? Das Gateway verliert den Zugang.")) return;
+    try {
+      await api.delete(`/mqtt/device-credentials/${deviceId}`);
+      setCredInfo({ has_credentials: false, mqtt_username: "", created_at: "" });
+      setNewCreds(null);
+      toast.success("Zugangsdaten widerrufen");
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler"));
+    }
+  };
 
   const handleDownloadModuleTopics = () => {
     if (!controller || !topicInfo) return;
@@ -215,6 +263,63 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update }) 
           Der Group Name muss im DSE890 unter MQTT &gt; Group Name eingetragen werden. Ohne Group Name werden keine Daten empfangen.
         </p>
       </div>
+
+      {/* MQTT Credentials */}
+      {deviceId && (
+        <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-3" data-testid="dse-mqtt-credentials">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-violet-700 font-medium flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5" /> MQTT-Zugangsdaten
+            </p>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant={credInfo?.has_credentials ? "outline" : "default"} onClick={handleGenerate} disabled={generating} className="h-7 text-xs" data-testid="generate-device-cred-btn">
+                {generating ? <span className="animate-spin mr-1">...</span> : <Key className="w-3 h-3 mr-1" />}
+                {credInfo?.has_credentials ? "Neu generieren" : "Generieren"}
+              </Button>
+              {credInfo?.has_credentials && (
+                <Button size="sm" variant="ghost" onClick={handleRevoke} className="h-7 text-xs text-red-500 hover:text-red-700" data-testid="revoke-device-cred-btn">
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {newCreds ? (
+            <div className="space-y-1.5 text-xs font-mono">
+              <div className="flex justify-between items-center bg-white px-2 py-1.5 rounded border border-violet-100">
+                <span className="text-gray-400">Username</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-900 select-all" data-testid="device-mqtt-username">{newCreds.username}</span>
+                  <button onClick={() => { navigator.clipboard.writeText(newCreds.username); toast.success("Kopiert"); }} className="text-gray-400 hover:text-gray-600"><Copy className="w-3 h-3" /></button>
+                </div>
+              </div>
+              <div className="flex justify-between items-center bg-white px-2 py-1.5 rounded border border-violet-100">
+                <span className="text-gray-400">Password</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-900 select-all" data-testid="device-mqtt-password">{showPw ? newCreds.password : "••••••••••••"}</span>
+                  <button onClick={() => setShowPw(!showPw)} className="text-gray-400 hover:text-gray-600">{showPw ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}</button>
+                  <button onClick={() => { navigator.clipboard.writeText(newCreds.password); toast.success("Kopiert"); }} className="text-gray-400 hover:text-gray-600"><Copy className="w-3 h-3" /></button>
+                </div>
+              </div>
+              <p className="text-[10px] text-amber-600 font-medium mt-1">Passwort wird nur jetzt angezeigt! Bitte sofort kopieren.</p>
+            </div>
+          ) : credInfo?.has_credentials ? (
+            <div className="space-y-1.5 text-xs font-mono">
+              <div className="flex justify-between items-center bg-white px-2 py-1.5 rounded border border-violet-100">
+                <span className="text-gray-400">Username</span>
+                <span className="text-gray-900 select-all">{credInfo.mqtt_username}</span>
+              </div>
+              <div className="flex justify-between items-center bg-white px-2 py-1.5 rounded border border-violet-100">
+                <span className="text-gray-400">Password</span>
+                <span className="text-gray-400 italic">••••••••  (gespeichert)</span>
+              </div>
+              <p className="text-[10px] text-gray-400">Erstellt: {new Date(credInfo.created_at).toLocaleString("de-DE")}</p>
+            </div>
+          ) : (
+            <p className="text-[10px] text-gray-400">Noch keine Zugangsdaten. Klicken Sie "Generieren" um Username und Passwort zu erstellen.</p>
+          )}
+        </div>
+      )}
 
       {/* Topic File Downloads */}
       <div className="flex flex-wrap gap-2">
@@ -887,6 +992,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   serialNumber={formData.serial_number}
                   formData={formData}
                   update={update}
+                  deviceId={editing.id}
                 />
               )}
             </>
