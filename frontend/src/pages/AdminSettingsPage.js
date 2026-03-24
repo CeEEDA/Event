@@ -1304,14 +1304,8 @@ export default function AdminSettingsPage() {
           {/* System Status Dashboard */}
           <SystemStatusDashboard />
 
-          {/* Emergent.sh Bridge */}
-          <EmergentBridge />
-
           {/* SMTP / E-Mail */}
           <SmtpConfig />
-
-          {/* Server Update-Paket */}
-          <UpdatePackageSection />
 
           {/* Backup-System */}
           <BackupSettingsSection />
