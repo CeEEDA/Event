@@ -9,7 +9,26 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - **Desktop:** Electron Wrapper
 - **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
 - **Server:** nginx (HTTPS/443) -> Caddy (HTTP/8001) -> FastAPI (8002)
-- **Firewall:** FortiGate (Port 443 extern -> 172.20.80.5:443 intern)
+- **Firewall:** FortiGate VIP (static-nat, extern 443 -> 172.20.80.5:443)
+
+## Network Architecture
+```
+Internet -> DNS (eventenergie.app -> 217.86.214.29)
+         -> FortiGate VIP (static-nat, Port 443 -> 172.20.80.5:443)
+         -> nginx (SSL/TLS auf Port 443)
+         -> Caddy (HTTP auf Port 8001)
+         -> FastAPI (Backend auf Port 8002)
+         -> MongoDB (Port 27017)
+```
+
+## FortiGate Konfiguration
+- wan1 IP: 192.168.0.128 (DHCP, hinter Router)
+- Server VLAN: VLAN80_VPN-Strm (172.20.80.x)
+- Admin VLAN: VLAN100_Admin (172.20.100.x)
+- WLAN VLAN: VLAN110_WLAN (172.20.110.x)
+- Server VLAN: VLAN200_Server (172.20.200.x)
+- WICHTIG: wan1 allowaccess darf NICHT https enthalten (sonst fängt FortiGate Port 443 ab)
+- VIP Rule 142: EEG_Portal HTTPS2, static-nat, extern 443 -> 172.20.80.5:443
 
 ## What's Been Implemented
 
@@ -44,26 +63,19 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Hintergrund-Scheduler (15 Min Pruefintervall)
 
 ### Start/Update/Stop Scripts (Fix - 2026-03-23)
-- **Root Cause:** Deutsches Windows gibt "ABHOEREN" statt "LISTENING" in netstat aus
-- **Fix:** Locale-unabhaengige Port-Erkennung via `findstr "0.0.0.0:PORT"` + `for /f`
-- **Ergebnis:** Alle Dienste korrekt erkannt [3/3] - Backend, Caddy, nginx, Mosquitto
-- CRLF-Zeilenumbrueche, `[XX]` statt `[!!]` (delayed expansion Bug), goto-Loops statt for/l
+- Root Cause: Deutsches Windows gibt "ABHOEREN" statt "LISTENING" in netstat
+- Fix: Locale-unabhaengige Port-Erkennung via findstr "0.0.0.0:PORT" + for /f
+- Ergebnis: Alle Dienste korrekt erkannt [3/3] - Backend, Caddy, nginx, Mosquitto
+- CRLF-Zeilenumbrueche, [XX] statt [!!] (delayed expansion Bug), goto-Loops statt for/l
 
-### HTTPS/SSL Setup (abgeschlossen - 2026-03-23)
+### HTTPS/SSL Externer Zugang (abgeschlossen - 2026-03-24)
 - nginx fuer TLS-Terminierung auf Port 443
 - DNS A-Record auf 217.86.214.29 konfiguriert
 - Windows Firewall Regel fuer Port 443
-- FortiGate-Umzug ausstehend (Port 443 extern freigeben)
-
-## Network Architecture
-```
-Internet -> DNS (eventenergie.app -> 217.86.214.29)
-         -> FortiGate (Port 443 -> 172.20.80.5:443)
-         -> nginx (SSL/TLS auf Port 443)
-         -> Caddy (HTTP auf Port 8001)
-         -> FastAPI (Backend auf Port 8002)
-         -> MongoDB (Port 27017)
-```
+- FortiGate VIP (static-nat) konfiguriert: extern 443 -> 172.20.80.5:443
+- FortiGate wan1 allowaccess: https ENTFERNT (damit VIP Port 443 durchlaesst)
+- FortiGate Recovery nach Aussperrung via Console + Factory Reset + Backup Restore
+- Portal extern erreichbar unter https://eventenergie.app
 
 ## Key API Endpoints
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
@@ -77,9 +89,6 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 
 ## Prioritized Backlog
 
-### P0 - Benutzer-Aktion erforderlich
-- FortiGate umziehen, Port 443 extern -> 172.20.80.5:443 freigeben
-
 ### P1 - Kommend
 - PayPal Integration
 - Direkter QR-Label-Druck an Drucker
@@ -88,11 +97,14 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Chromium Translate Popup auf Raspberry Pi (Policy-Datei erstellen)
 - Admin File Size Limits fuer Uploads
 - Windows Installer (.exe) fuer Electron Desktop App
+- Health-Check / Monitoring fuer Portal-Erreichbarkeit
 
 ## Credentials
-- **Admin (lokal):** admin@test.com / password
-- **Admin (Server):** christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+- Admin (lokal): admin@test.com / password
+- Admin (Server): christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+- SMTP: portal@eventenergie.app / :PlN4sFf:}6AY (smtp.ionos.de, Port 465)
 
-## Known Issues
-- FortiGate blockiert derzeit Port 443 extern (Management-Interface) - Umzug geplant
-- Chromium Translate Popup auf Pi: CLI-Flags deprecated, Policy-Datei noetig
+## Known Issues (resolved)
+- FortiGate wan1 allowaccess hatte https aktiv -> FortiGate Admin fing Port 443 ab statt VIP
+- Deutsches Windows: netstat gibt ABHOEREN statt LISTENING aus
+- Batch Script: delayed expansion !! wird als leere Variable interpretiert
