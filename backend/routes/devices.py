@@ -107,6 +107,7 @@ class DeviceUpdate(BaseModel):
     # MQTT Gateway fields for DSE890
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
+    dse_module_uid: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
