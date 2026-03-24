@@ -1313,9 +1313,6 @@ export default function AdminSettingsPage() {
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
 
-          {/* Mosquitto MQTT Broker */}
-          <MosquittoSetupSection />
-
           {/* Schnittstellen */}
           <div>
             <div className="mb-4">
