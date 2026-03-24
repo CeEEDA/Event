@@ -36,20 +36,24 @@ async def _resolve_generator(generator_id: str):
         device_id = generator_id[4:]
         device = await db.devices.find_one({"id": device_id}, {"_id": 0})
         if device:
+            dev_status = device.get("mqtt_status", "standby")
+            if dev_status not in ("online", "offline", "running"):
+                dev_status = "standby"
             return {
                 "id": generator_id,
                 "name": device.get("user_field") or device.get("model") or device["serial_number"],
                 "serial_number": device["serial_number"],
                 "model": device.get("controller") or device.get("model") or "–",
                 "location_name": device.get("user_field", ""),
-                "latitude": None,
-                "longitude": None,
-                "status": "standby",
+                "latitude": device.get("latitude"),
+                "longitude": device.get("longitude"),
+                "status": dev_status,
                 "is_active": True,
                 "device_id": device["id"],
                 "from_device": True,
                 "notes": device.get("notes", ""),
-                "last_seen": None,
+                "last_seen": device.get("last_seen"),
+                "dse_module_uid": device.get("dse_module_uid", ""),
             }
     return None
 
@@ -227,6 +231,10 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
     ).to_list(2000)
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
+            # Determine status from device's mqtt_status or last_seen
+            dev_status = dev.get("mqtt_status", "standby")
+            if dev_status not in ("online", "offline", "running"):
+                dev_status = "standby"
             # Create a virtual generator entry from the device
             vg = {
                 "id": f"dev-{dev['id']}",
@@ -234,12 +242,14 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
                 "serial_number": dev["serial_number"],
                 "model": dev.get("controller") or dev.get("model") or "–",
                 "location_name": dev.get("user_field", ""),
-                "latitude": None,
-                "longitude": None,
-                "status": "standby",
+                "latitude": dev.get("latitude"),
+                "longitude": dev.get("longitude"),
+                "status": dev_status,
                 "is_active": True,
                 "device_id": dev["id"],
                 "from_device": True,
+                "last_seen": dev.get("last_seen"),
+                "dse_module_uid": dev.get("dse_module_uid", ""),
             }
             generators.append(vg)
             existing_serials.add(dev["serial_number"])

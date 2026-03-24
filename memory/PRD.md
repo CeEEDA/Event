@@ -27,7 +27,7 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Admin VLAN: VLAN100_Admin (172.20.100.x)
 - WLAN VLAN: VLAN110_WLAN (172.20.110.x)
 - Server VLAN: VLAN200_Server (172.20.200.x)
-- WICHTIG: wan1 allowaccess darf NICHT https enthalten (sonst fängt FortiGate Port 443 ab)
+- WICHTIG: wan1 allowaccess darf NICHT https enthalten (sonst faengt FortiGate Port 443 ab)
 - VIP Rule 142: EEG_Portal HTTPS2, static-nat, extern 443 -> 172.20.80.5:443
 
 ## What's Been Implemented
@@ -95,6 +95,18 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Auch verfuegbar auf der MQTT-Config-Seite fuer Generatoren
 - Zaehlerstaende-Anzeige korrigiert (E_imp_kWh/P_sum_kW statt falsche Feldnamen)
 
+### DSE Remote Control Fix (abgeschlossen - 2026-03-25)
+- P0 Bug: "Generator nicht gefunden" beim Start/Stop von DSE-Geraeten behoben
+- Root Cause 1: KeyError `dse_cmd["description"]` statt `dse_cmd["label"]`
+- Root Cause 2: `gen.get("name")` NoneType-Fehler im Legacy-Pfad wenn Device statt Generator
+- Fix: Control-Endpoint erkennt `dev-{device_id}` korrekt und baut MQTT-Topic via dse_module_uid
+
+### Device Offline-Erkennung (abgeschlossen - 2026-03-25)
+- P1 Bug: Online-Status aktualisierte sich nicht wenn Geraete offline gingen
+- Loesung: Timeout-basierter Hintergrund-Task (alle 60s, Timeout: 5min)
+- Markiert Geraete und Generatoren automatisch als "offline" wenn kein last_seen innerhalb 5min
+- Virtuelle Generatoren uebernehmen jetzt mqtt_status, last_seen, GPS-Koordinaten vom Device
+
 ## Key API Endpoints
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
 - `/api/backup/list` - GET Backup-Liste
@@ -107,6 +119,7 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - `/api/mqtt/credentials` - GET alle Gateway-Credentials auflisten
 - `/api/mqtt/credentials/{id}/generate` - POST Credentials generieren
 - `/api/mqtt/credentials/{id}` - DELETE Credentials widerrufen
+- `/api/mqtt/control/{generator_id}` - POST Steuerbefehl senden (Start/Stop/Auto)
 
 ## Prioritized Backlog
 
@@ -129,3 +142,6 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - FortiGate wan1 allowaccess hatte https aktiv -> FortiGate Admin fing Port 443 ab statt VIP
 - Deutsches Windows: netstat gibt ABHOEREN statt LISTENING aus
 - Batch Script: delayed expansion !! wird als leere Variable interpretiert
+- Control-Endpoint: KeyError dse_cmd["description"] -> korrigiert zu dse_cmd["label"]
+- Control-Endpoint: NoneType gen.get("name") wenn Device ohne Generator -> entity fallback
+- Virtuelle Generatoren hatten immer Status "standby" statt echtem mqtt_status

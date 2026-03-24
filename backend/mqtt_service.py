@@ -4,7 +4,7 @@ import logging
 import asyncio
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 
 logger = logging.getLogger(__name__)
@@ -480,6 +480,53 @@ def _parse_gencomm_registers(parsed, topic):
     return result if result else None
 
 
+# Timeout in seconds before a device/generator is marked offline (5 minutes)
+OFFLINE_TIMEOUT_SECONDS = 300
+
+
+async def _offline_checker_loop():
+    """Background task: periodically mark devices/generators as offline if no data received."""
+    await asyncio.sleep(30)  # Initial delay to let the system start up
+    logger.info("MQTT: Offline-Checker gestartet (Intervall: 60s, Timeout: 5min)")
+    while True:
+        try:
+            await _check_stale_devices()
+        except Exception as e:
+            logger.error(f"MQTT: Offline-Checker Fehler: {e}")
+        await asyncio.sleep(60)
+
+
+async def _check_stale_devices():
+    """Check for devices/generators that haven't sent data within the timeout."""
+    if _db is None:
+        return
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=OFFLINE_TIMEOUT_SECONDS)).isoformat()
+
+    # Mark devices as offline if last_seen is older than cutoff
+    device_result = await _db.devices.update_many(
+        {
+            "mqtt_status": {"$in": ["online", "running"]},
+            "last_seen": {"$lt": cutoff}
+        },
+        {"$set": {"mqtt_status": "offline"}}
+    )
+
+    # Mark generators as offline if last_seen is older than cutoff
+    gen_result = await _db.generators.update_many(
+        {
+            "status": {"$in": ["online", "running", "standby"]},
+            "last_seen": {"$ne": None, "$lt": cutoff}
+        },
+        {"$set": {"status": "offline"}}
+    )
+
+    total = (device_result.modified_count or 0) + (gen_result.modified_count or 0)
+    if total > 0:
+        logger.info(f"MQTT: Offline-Checker: {device_result.modified_count} Geräte, {gen_result.modified_count} Generatoren als offline markiert")
+
+
+
 async def start_mqtt_client(db_instance, loop):
     """Start the MQTT client as a background service."""
     global _mqtt_client, _mqtt_thread, _db, _loop
@@ -504,6 +551,9 @@ async def start_mqtt_client(db_instance, loop):
         await _db.mqtt_config.insert_one(config)
         config.pop("_id", None)
         logger.info("MQTT: Default-Config erstellt (127.0.0.1:1884)")
+
+    # Start the offline-checker background task
+    asyncio.ensure_future(_offline_checker_loop())
 
     if not config.get("enabled"):
         logger.info("MQTT: Not enabled in config - skipping")

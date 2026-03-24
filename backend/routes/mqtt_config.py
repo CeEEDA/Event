@@ -10,6 +10,7 @@ import secrets
 import os
 import hashlib
 import base64
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +319,6 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if device and module_uid:
         control_topic = f"eventenergie/{module_uid}/control"
         dse_cmd = DSE_COMMANDS[cmd.command]
-        import json
         payload = json.dumps({module_uid: {"P003": {"R000": dse_cmd["value"]}}})
 
         try:
@@ -333,7 +333,7 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
                 "user": user.get("email", ""),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            return {"success": success, "message": dse_cmd["description"], "topic": control_topic}
+            return {"success": success, "message": dse_cmd["label"], "topic": control_topic}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Fehler: {str(e)}")
 
@@ -362,7 +362,6 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
 
     dse_cmd = DSE_COMMANDS[cmd.command]
     # DSE890 expects JSON with Page/Register/Value format
-    import json
     payload = json.dumps({uid: {"P003": {"R000": dse_cmd["value"]}}})
 
     try:
@@ -371,10 +370,12 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         raise HTTPException(status_code=503, detail=str(e))
 
     # Log the control action
+    entity = gen or device or {}
+    entity_name = entity.get("name", entity.get("serial_number", ""))
     log_entry = {
         "id": str(uuid.uuid4()),
         "generator_id": generator_id,
-        "generator_name": gen.get("name", ""),
+        "generator_name": entity_name,
         "command": cmd.command,
         "command_label": dse_cmd["label"],
         "topic": control_topic,
@@ -390,7 +391,7 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         "command": cmd.command,
         "label": dse_cmd["label"],
         "topic": control_topic,
-        "generator": gen.get("name", ""),
+        "generator": entity_name,
     }
 
 
