@@ -332,3 +332,7 @@ backend/static/eventenergie-portal-mac.zip
 # Environment files
 *.env
 *.env.*
+-e 
+# Environment files
+*.env
+*.env.*
