@@ -157,10 +157,13 @@ async def _process_message(msg):
         {"dse_module_uid": {"$exists": True, "$ne": ""}},
         {"_id": 0, "id": 1, "dse_module_uid": 1}
     ).to_list(100)
+    if not devices:
+        logger.info(f"MQTT: Kein Geraet mit dse_module_uid gefunden. Topic: {topic}")
     for dev in devices:
         uid = dev.get("dse_module_uid", "")
         if uid and uid in topic_parts:
             device_id = dev["id"]
+            logger.info(f"MQTT: Matched device {device_id} via module_uid {uid}")
             if topic.endswith("/gps"):
                 await _process_gps_device(device_id, payload_str, parsed, timestamp)
                 return
@@ -171,7 +174,7 @@ async def _process_message(msg):
             return
 
     # No mapping found - log for discovery
-    logger.debug(f"MQTT: Unmatched message on topic '{topic}'")
+    logger.info(f"MQTT: Unmatched message on topic '{topic}' (topic_parts={topic_parts})")
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
