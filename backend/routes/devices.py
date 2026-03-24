@@ -740,16 +740,12 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
                 "value": "Keine Daten",
             }
             if latest:
-                # Build a summary of the latest reading
+                # Build a summary using actual field names from emu_data
                 parts = []
-                if latest.get("active_energy_import") is not None:
-                    parts.append(f"{latest['active_energy_import']:.2f} kWh")
-                elif latest.get("active_power_total") is not None:
-                    parts.append(f"{latest['active_power_total']:.1f} W")
-                if latest.get("voltage_l1") is not None:
-                    parts.append(f"L1: {latest['voltage_l1']:.0f}V")
-                if latest.get("current_l1") is not None:
-                    parts.append(f"{latest['current_l1']:.1f}A")
+                if latest.get("E_imp_kWh") is not None:
+                    parts.append(f"{latest['E_imp_kWh']:.2f} kWh")
+                if latest.get("P_sum_kW") is not None:
+                    parts.append(f"{latest['P_sum_kW']:.2f} kW")
                 entry["value"] = " | ".join(parts) if parts else "Daten vorhanden"
                 entry["timestamp"] = latest.get("ts_utc")
             readings.append(entry)
