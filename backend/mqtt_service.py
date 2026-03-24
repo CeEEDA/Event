@@ -151,6 +151,25 @@ async def _process_message(msg):
             await _ingest_telemetry(gen["id"], topic, payload_str, parsed, timestamp)
             return
 
+    # Check devices collection for dse_module_uid match (auto-mapping)
+    topic_parts = topic.split("/")
+    devices = await _db.devices.find(
+        {"dse_module_uid": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "id": 1, "dse_module_uid": 1}
+    ).to_list(100)
+    for dev in devices:
+        uid = dev.get("dse_module_uid", "")
+        if uid and uid in topic_parts:
+            device_id = dev["id"]
+            if topic.endswith("/gps"):
+                await _process_gps_device(device_id, payload_str, parsed, timestamp)
+                return
+            if topic.endswith("/status"):
+                await _process_status_device(device_id, payload_str, timestamp)
+                return
+            await _ingest_telemetry_device(device_id, topic, payload_str, parsed, timestamp)
+            return
+
     # No mapping found - log for discovery
     logger.debug(f"MQTT: Unmatched message on topic '{topic}'")
 
@@ -204,6 +223,68 @@ async def _process_status(generator_id, raw_payload, timestamp):
         {"$set": {"last_seen": timestamp, "status": status}}
     )
     logger.debug(f"MQTT: Status '{raw_payload.strip()}' for generator {generator_id}")
+
+
+async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
+    """Process GPS data for a device (same logic as generators)."""
+    lat, lng = None, None
+    if isinstance(parsed, dict):
+        for uid_key, uid_data in parsed.items():
+            if isinstance(uid_data, dict):
+                lat = uid_data.get("LAT") or uid_data.get("lat")
+                lng = uid_data.get("LON") or uid_data.get("lon") or uid_data.get("lng")
+                if lat is not None:
+                    break
+        if lat is None:
+            lat = parsed.get("LAT") or parsed.get("lat")
+            lng = parsed.get("LON") or parsed.get("lon") or parsed.get("lng")
+    if lat is not None and lng is not None:
+        try:
+            lat, lng = float(lat), float(lng)
+            if -90 <= lat <= 90 and -180 <= lng <= 180 and (lat != 0 or lng != 0):
+                await _db.devices.update_one(
+                    {"id": device_id},
+                    {"$set": {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}}
+                )
+                logger.info(f"MQTT: GPS updated for device {device_id}: {lat}, {lng}")
+        except (ValueError, TypeError):
+            pass
+
+
+async def _process_status_device(device_id, raw_payload, timestamp):
+    """Process status messages for a device."""
+    await _db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"last_seen": timestamp, "mqtt_status": "online" if "disconnected" not in raw_payload.lower() else "offline"}}
+    )
+    logger.debug(f"MQTT: Status for device {device_id}")
+
+
+async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timestamp):
+    """Ingest MQTT telemetry for a device (Stromerzeuger/Lichtmast)."""
+    telemetry = {
+        "id": str(uuid.uuid4()),
+        "device_id": device_id,
+        "timestamp": timestamp,
+        "source": "mqtt",
+        "raw_topic": topic,
+    }
+
+    if isinstance(parsed, dict):
+        gencomm_data = _parse_gencomm_registers(parsed, topic)
+        if gencomm_data:
+            telemetry.update(gencomm_data)
+        else:
+            telemetry["raw_data"] = parsed
+
+    await _db.device_telemetry.insert_one(telemetry)
+
+    # Update device last_seen
+    await _db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"last_seen": timestamp, "last_telemetry": timestamp, "mqtt_status": "online"}}
+    )
+    logger.info(f"MQTT: Telemetry stored for device {device_id} from topic {topic}")
 
 
 
