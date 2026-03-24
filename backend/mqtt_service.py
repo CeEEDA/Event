@@ -395,8 +395,26 @@ async def start_mqtt_client(db_instance, loop):
     _loop = loop
 
     config = await _db.mqtt_config.find_one({}, {"_id": 0})
-    if not config or not config.get("enabled"):
-        logger.info("MQTT: Not enabled or not configured")
+
+    # Auto-initialize MQTT config if missing or incomplete
+    if not config:
+        config = {
+            "enabled": True,
+            "broker_url": "127.0.0.1",
+            "broker_port": 1884,
+            "username": "",
+            "password": "",
+            "use_tls": False,
+            "subscribe_topics": ["eventenergie/#", "dse/#", "DSEGateway4G/#", "#"],
+            "connection_status": "disconnected",
+            "connection_message": "",
+        }
+        await _db.mqtt_config.insert_one(config)
+        config.pop("_id", None)
+        logger.info("MQTT: Default-Config erstellt (127.0.0.1:1884)")
+
+    if not config.get("enabled"):
+        logger.info("MQTT: Not enabled in config - skipping")
         return
 
     broker_url = config.get("broker_url", "")
