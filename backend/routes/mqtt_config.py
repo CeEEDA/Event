@@ -304,12 +304,40 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if cmd.command not in DSE_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unbekannter Befehl: {cmd.command}. Erlaubt: {list(DSE_COMMANDS.keys())}")
 
-    # Find the generator
+    # Find the generator or device
     gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
-    if not gen:
+    device = None
+    if not gen and generator_id.startswith("dev-"):
+        device_id = generator_id[4:]
+        device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not gen and not device:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
-    # Find the gateway mapping for this generator
+    # For devices with dse_module_uid, build control topic directly
+    module_uid = device.get("dse_module_uid", "") if device else ""
+    if device and module_uid:
+        control_topic = f"eventenergie/{module_uid}/control"
+        dse_cmd = DSE_COMMANDS[cmd.command]
+        import json
+        payload = json.dumps({module_uid: {"P003": {"R000": dse_cmd["value"]}}})
+
+        try:
+            success = publish_command(control_topic, payload)
+            await db.generator_control_log.insert_one({
+                "id": str(uuid.uuid4()),
+                "generator_id": generator_id,
+                "command": cmd.command,
+                "topic": control_topic,
+                "payload": payload,
+                "success": success,
+                "user": user.get("email", ""),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            return {"success": success, "message": dse_cmd["description"], "topic": control_topic}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Fehler: {str(e)}")
+
+    # Legacy: Find the gateway mapping for this generator
     mapping = await db.mqtt_gateway_mappings.find_one({"generator_id": generator_id}, {"_id": 0})
     if not mapping:
         raise HTTPException(status_code=404, detail="Kein MQTT-Gateway für diesen Generator konfiguriert")

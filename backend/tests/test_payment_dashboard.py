@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://energy-sync-portal.preview.emergentagent.com"
+                "origin_url": "https://eventenergie-gateway.preview.emergentagent.com"
             },
             timeout=30
         )
