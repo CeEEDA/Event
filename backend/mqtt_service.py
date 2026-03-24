@@ -253,17 +253,25 @@ async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
 
 async def _process_status_device(device_id, raw_payload, timestamp):
     """Process status messages for a device."""
+    status = "online" if "disconnected" not in raw_payload.lower() else "offline"
     await _db.devices.update_one(
         {"id": device_id},
-        {"$set": {"last_seen": timestamp, "mqtt_status": "online" if "disconnected" not in raw_payload.lower() else "offline"}}
+        {"$set": {"last_seen": timestamp, "mqtt_status": status}}
+    )
+    # Also update the virtual generator entry
+    await _db.generators.update_one(
+        {"id": f"dev-{device_id}"},
+        {"$set": {"last_seen": timestamp, "status": status}},
     )
     logger.debug(f"MQTT: Status for device {device_id}")
 
 
 async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timestamp):
     """Ingest MQTT telemetry for a device (Stromerzeuger/Lichtmast)."""
+    generator_id = f"dev-{device_id}"
     telemetry = {
         "id": str(uuid.uuid4()),
+        "generator_id": generator_id,
         "device_id": device_id,
         "timestamp": timestamp,
         "source": "mqtt",
@@ -277,7 +285,7 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         else:
             telemetry["raw_data"] = parsed
 
-    await _db.device_telemetry.insert_one(telemetry)
+    await _db.generator_telemetry.insert_one(telemetry)
 
     # Update device last_seen
     await _db.devices.update_one(
