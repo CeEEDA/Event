@@ -942,7 +942,19 @@ async def ingest_data(data: IngestBatch):
 
     meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": data.device_id}, {"_id": 0})
     if not meter:
-        raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
+        # Auto-register meter when device is authenticated but meter is unknown
+        device_name = device.get("serial_number", data.device_id)
+        meter_doc = {
+            "id": data.meter_id,
+            "device_id": data.device_id,
+            "meter_name": f"Auto-registriert ({device_name})",
+            "meter_ip": "",
+            "description": "Automatisch beim ersten Datenempfang erstellt",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.emu_meters.insert_one(meter_doc)
+        logger.info(f"Auto-registered meter {data.meter_id} for device {data.device_id} ({device_name})")
+        meter = {k: v for k, v in meter_doc.items() if k != "_id"}
 
     if not data.records:
         return {"inserted": 0, "message": "Keine Datensätze"}

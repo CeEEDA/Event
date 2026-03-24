@@ -77,6 +77,13 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - FortiGate Recovery nach Aussperrung via Console + Factory Reset + Backup Restore
 - Portal extern erreichbar unter https://eventenergie.app
 
+### Kirmeskiste Pi Auto-Registrierung (abgeschlossen - 2026-03-24)
+- Ingest-Endpoint `/api/energy-monitoring/ingest` registriert unbekannte Meter automatisch
+- Bedingung: Geraet muss existieren UND device_key muss gueltig sein
+- Meter wird mit Name "Auto-registriert (Geraetname)" angelegt
+- Keine Duplikate bei wiederholtem Ingest
+- Sicherheit bleibt gewahrt: Falsche Keys und unbekannte Geraete werden weiterhin abgelehnt
+
 ## Key API Endpoints
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
 - `/api/backup/list` - GET Backup-Liste
