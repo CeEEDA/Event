@@ -32,6 +32,10 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Key,
+  Shield,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const STATUS_CONFIG = {
@@ -64,20 +68,26 @@ export default function MqttConfigPage() {
   const [showRaw, setShowRaw] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [newMapping, setNewMapping] = useState({ gateway_name: "", topic_prefix: "", generator_id: "", notes: "" });
+  const [credentials, setCredentials] = useState([]);
+  const [credentialModal, setCredentialModal] = useState(null);
+  const [generatingCred, setGeneratingCred] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [configRes, statusRes, mappingsRes, gensRes] = await Promise.all([
+      const [configRes, statusRes, mappingsRes, gensRes, credsRes] = await Promise.all([
         api.get("/mqtt/config"),
         api.get("/mqtt/status"),
         api.get("/mqtt/mappings"),
         api.get("/generators").catch(() => ({ data: [] })),
+        api.get("/mqtt/credentials").catch(() => ({ data: [] })),
       ]);
       setConfig(configRes.data);
       setStatus(statusRes.data);
       setMappings(mappingsRes.data);
       setGenerators(gensRes.data);
+      setCredentials(credsRes.data);
     } catch {
       toast.error("Fehler beim Laden der MQTT-Konfiguration");
     } finally {
@@ -162,6 +172,33 @@ export default function MqttConfigPage() {
       setMappings(mappings.filter(m => m.id !== id));
       toast.success("Zuordnung geloescht");
     } catch {}
+  };
+
+  const generateCredentials = async (generatorId) => {
+    setGeneratingCred(generatorId);
+    try {
+      const res = await api.post(`/mqtt/credentials/${generatorId}/generate`);
+      setCredentialModal(res.data);
+      setShowPassword(true);
+      const credsRes = await api.get("/mqtt/credentials");
+      setCredentials(credsRes.data);
+      toast.success("MQTT-Zugangsdaten generiert");
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler beim Generieren"));
+    } finally {
+      setGeneratingCred(null);
+    }
+  };
+
+  const revokeCredentials = async (generatorId) => {
+    if (!window.confirm("MQTT-Zugangsdaten wirklich widerrufen? Das Gateway verliert den Zugang.")) return;
+    try {
+      await api.delete(`/mqtt/credentials/${generatorId}`);
+      setCredentials(credentials.map(c => c.generator_id === generatorId ? { ...c, has_credentials: false, mqtt_username: "", created_at: "" } : c));
+      toast.success("Zugangsdaten widerrufen");
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler"));
+    }
   };
 
   const statusCfg = STATUS_CONFIG[status.connection_status] || STATUS_CONFIG.disconnected;
@@ -378,6 +415,135 @@ export default function MqttConfigPage() {
           </div>
         </section>
 
+        {/* Gateway MQTT Credentials */}
+        <section className="bg-white rounded-xl border border-gray-200 p-6" data-testid="mqtt-credentials-section">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-violet-600" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900">Gateway-Zugangsdaten</h2>
+              <p className="text-xs text-gray-500">Eigener MQTT-User pro DSE-Gateway (Mosquitto wird automatisch aktualisiert)</p>
+            </div>
+          </div>
+
+          {credentials.length === 0 ? (
+            <p className="text-sm text-gray-400 italic">Keine Generatoren vorhanden. Erstellen Sie zuerst einen Generator.</p>
+          ) : (
+            <div className="space-y-2">
+              {credentials.map(c => (
+                <div key={c.generator_id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3 border border-gray-100" data-testid={`credential-row-${c.generator_id}`}>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <Key className={`w-4 h-4 shrink-0 ${c.has_credentials ? "text-emerald-500" : "text-gray-300"}`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{c.name || c.serial_number}</p>
+                      <p className="text-xs text-gray-500">
+                        {c.has_credentials ? (
+                          <>User: <code className="bg-gray-200 px-1 rounded">{c.mqtt_username}</code> · seit {new Date(c.created_at).toLocaleDateString("de-DE")}</>
+                        ) : (
+                          "Keine Zugangsdaten"
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                    <Button
+                      size="sm"
+                      variant={c.has_credentials ? "outline" : "default"}
+                      onClick={() => generateCredentials(c.generator_id)}
+                      disabled={generatingCred === c.generator_id}
+                      data-testid={`generate-cred-${c.generator_id}`}
+                    >
+                      {generatingCred === c.generator_id ? (
+                        <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                      ) : (
+                        <Key className="w-3 h-3 mr-1" />
+                      )}
+                      {c.has_credentials ? "Neu generieren" : "Generieren"}
+                    </Button>
+                    {c.has_credentials && (
+                      <Button size="sm" variant="ghost" onClick={() => revokeCredentials(c.generator_id)} data-testid={`revoke-cred-${c.generator_id}`}>
+                        <Trash2 className="w-3 h-3 text-red-400" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Credential Modal */}
+        {credentialModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setCredentialModal(null)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6" onClick={e => e.stopPropagation()} data-testid="credential-modal">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                  <Shield className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">MQTT-Zugangsdaten generiert</h3>
+                  <p className="text-xs text-gray-500">{credentialModal.generator_name} ({credentialModal.serial_number})</p>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-amber-800 font-medium">Das Passwort wird nur jetzt angezeigt! Bitte kopieren Sie es sofort.</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider">Benutzername</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="flex-1 bg-gray-100 rounded px-3 py-2 text-sm font-mono" data-testid="cred-username">{credentialModal.username}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(credentialModal.username); toast.success("Kopiert"); }} className="p-2 hover:bg-gray-100 rounded" data-testid="copy-username">
+                      <Copy className="w-4 h-4 text-gray-500" />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider">Passwort</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="flex-1 bg-gray-100 rounded px-3 py-2 text-sm font-mono" data-testid="cred-password">
+                      {showPassword ? credentialModal.password : "••••••••••••••••"}
+                    </code>
+                    <button onClick={() => setShowPassword(!showPassword)} className="p-2 hover:bg-gray-100 rounded">
+                      {showPassword ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-gray-500" />}
+                    </button>
+                    <button onClick={() => { navigator.clipboard.writeText(credentialModal.password); toast.success("Kopiert"); }} className="p-2 hover:bg-gray-100 rounded" data-testid="copy-password">
+                      <Copy className="w-4 h-4 text-gray-500" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 text-gray-100 rounded-lg p-4 text-sm font-mono space-y-1 mt-4">
+                <p className="text-gray-400 text-xs mb-2">DSE Gateway MQTT-Einstellungen:</p>
+                <p><span className="text-gray-500">Broker URL:</span> <span className="text-emerald-400">eventenergie.app</span></p>
+                <p><span className="text-gray-500">Port:</span> <span className="text-emerald-400">1883</span></p>
+                <p><span className="text-gray-500">Username:</span> <span className="text-emerald-400">{credentialModal.username}</span></p>
+                <p><span className="text-gray-500">Password:</span> <span className="text-emerald-400">{showPassword ? credentialModal.password : "••••••••"}</span></p>
+                <p><span className="text-gray-500">Use Login Credentials:</span> <span className="text-emerald-400">Aktiviert</span></p>
+              </div>
+
+              {credentialModal.passwd_file_updated && (
+                <p className="text-xs text-emerald-600 mt-3 flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Mosquitto passwd-Datei aktualisiert
+                </p>
+              )}
+              {credentialModal.passwd_file_updated === false && (
+                <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> MOSQUITTO_PASSWD_FILE nicht konfiguriert – bitte manuell aktualisieren
+                </p>
+              )}
+
+              <div className="mt-5 flex justify-end">
+                <Button onClick={() => setCredentialModal(null)} data-testid="close-credential-modal">Verstanden</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Setup Instructions */}
         <section className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="mqtt-setup-section">
           <button
@@ -398,13 +564,9 @@ export default function MqttConfigPage() {
           {showSetup && (
             <div className="px-6 pb-6 space-y-4 border-t border-gray-100 pt-4">
               <div className="bg-amber-50 rounded-lg p-4 text-sm text-amber-900 space-y-3">
-                <p className="font-semibold">Voraussetzung: Cloud MQTT Broker</p>
-                <p>Sie brauchen einen MQTT-Broker im Internet, z.B.:</p>
-                <ul className="list-disc ml-5 space-y-1">
-                  <li><strong>HiveMQ Cloud</strong> (kostenlos: 100 Verbindungen) - <a href="https://www.hivemq.com/mqtt-cloud-broker/" target="_blank" rel="noopener noreferrer" className="underline text-amber-700">hivemq.com</a></li>
-                  <li><strong>EMQX Cloud</strong> (kostenlos: 25 Verbindungen) - <a href="https://www.emqx.com/en/cloud" target="_blank" rel="noopener noreferrer" className="underline text-amber-700">emqx.com</a></li>
-                </ul>
-                <p>Nach der Registrierung erhalten Sie: <strong>Broker-URL</strong>, <strong>Port</strong>, <strong>Benutzername</strong> und <strong>Passwort</strong>.</p>
+                <p className="font-semibold">Eigener Mosquitto Broker auf eventenergie.app</p>
+                <p>Jedes Gateway bekommt eigene Zugangsdaten. Generieren Sie diese oben im Bereich "Gateway-Zugangsdaten" und tragen Sie sie im DSE-Gateway ein.</p>
+                <p>Die Mosquitto passwd-Datei wird automatisch aktualisiert, wenn <code className="bg-amber-100 px-1 rounded">MOSQUITTO_PASSWD_FILE</code> in der Backend .env gesetzt ist.</p>
               </div>
 
               <div className="space-y-3">

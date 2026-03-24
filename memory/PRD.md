@@ -84,6 +84,17 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Keine Duplikate bei wiederholtem Ingest
 - Sicherheit bleibt gewahrt: Falsche Keys und unbekannte Geraete werden weiterhin abgelehnt
 
+### MQTT Gateway-Zugangsdaten pro Geraet (abgeschlossen - 2026-03-24)
+- Jedes DSE-Gateway bekommt eigene MQTT-Credentials (Username + Password)
+- Credentials werden im Portal generiert und einmalig im Klartext angezeigt
+- Mosquitto passwd-Datei wird automatisch aktualisiert (PBKDF2-SHA512 $7$ Format)
+- Backend .env Variable: MOSQUITTO_PASSWD_FILE (Pfad zur Mosquitto passwd-Datei)
+- Auf Server setzen: MOSQUITTO_PASSWD_FILE=C:\Program Files\Mosquitto\passwd
+- Backend MQTT Config auf 127.0.0.1:1884 (lokaler Listener, keine Auth noetig)
+- Endpoints: GET/POST/DELETE /api/mqtt/credentials
+- Frontend: Neuer Bereich "Gateway-Zugangsdaten" auf MQTT-Config-Seite
+- Zaehlerstaende-Anzeige korrigiert (E_imp_kWh/P_sum_kW statt falsche Feldnamen)
+
 ## Key API Endpoints
 - `/api/backup/settings` - GET/POST Backup-Einstellungen
 - `/api/backup/list` - GET Backup-Liste
@@ -93,6 +104,9 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - `/api/backup/{id}/download` - GET Backup herunterladen
 - `/api/download/update-package` - GET Update-Paket ZIP
 - `/api/devices/stats/quick/{device_id}` - GET Telemetrie-Daten
+- `/api/mqtt/credentials` - GET alle Gateway-Credentials auflisten
+- `/api/mqtt/credentials/{id}/generate` - POST Credentials generieren
+- `/api/mqtt/credentials/{id}` - DELETE Credentials widerrufen
 
 ## Prioritized Backlog
 

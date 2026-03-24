@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 import uuid
 import logging
 import asyncio
+import secrets
+import os
+import hashlib
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -369,3 +373,114 @@ async def get_control_log(generator_id: str, user: dict = Depends(require_operat
         {"generator_id": generator_id}, {"_id": 0}
     ).sort("timestamp", -1).to_list(50)
     return logs
+
+
+# ============== Gateway MQTT Credentials ==============
+
+MOSQUITTO_PASSWD_FILE = os.environ.get("MOSQUITTO_PASSWD_FILE", "")
+
+
+def _mosquitto_hash(password: str, iterations: int = 101) -> str:
+    """Generate Mosquitto-compatible PBKDF2-SHA512 password hash ($7$ format)."""
+    salt = os.urandom(12)
+    dk = hashlib.pbkdf2_hmac('sha512', password.encode('utf-8'), salt, iterations, dklen=64)
+    salt_b64 = base64.b64encode(salt).decode('ascii')
+    dk_b64 = base64.b64encode(dk).decode('ascii')
+    return f"$7${iterations}${salt_b64}${dk_b64}"
+
+
+async def _regenerate_passwd_file():
+    """Regenerate the Mosquitto passwd file from all stored gateway credentials."""
+    passwd_path = MOSQUITTO_PASSWD_FILE
+    if not passwd_path:
+        logger.info("MOSQUITTO_PASSWD_FILE nicht konfiguriert – passwd-Datei wird nicht geschrieben")
+        return False
+
+    generators = await db.generators.find(
+        {"mqtt_username": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "mqtt_username": 1, "mqtt_password_hash": 1}
+    ).to_list(1000)
+
+    lines = []
+    for gen in generators:
+        username = gen.get("mqtt_username", "")
+        pw_hash = gen.get("mqtt_password_hash", "")
+        if username and pw_hash:
+            lines.append(f"{username}:{pw_hash}")
+
+    try:
+        with open(passwd_path, 'w', newline='\n') as f:
+            f.write('\n'.join(lines) + '\n' if lines else '')
+        logger.info(f"Mosquitto passwd aktualisiert: {len(lines)} User in {passwd_path}")
+        return True
+    except Exception as e:
+        logger.error(f"passwd-Datei schreiben fehlgeschlagen: {e}")
+        return False
+
+
+@router.get("/credentials")
+async def list_mqtt_credentials(admin: dict = Depends(require_admin)):
+    """List all generators with their MQTT credential status."""
+    generators = await db.generators.find(
+        {},
+        {"_id": 0, "id": 1, "name": 1, "serial_number": 1,
+         "mqtt_username": 1, "mqtt_created_at": 1}
+    ).to_list(1000)
+
+    return [{
+        "generator_id": g["id"],
+        "name": g.get("name", ""),
+        "serial_number": g.get("serial_number", ""),
+        "has_credentials": bool(g.get("mqtt_username")),
+        "mqtt_username": g.get("mqtt_username", ""),
+        "created_at": g.get("mqtt_created_at", ""),
+    } for g in generators]
+
+
+@router.post("/credentials/{generator_id}/generate")
+async def generate_mqtt_credentials(generator_id: str, admin: dict = Depends(require_admin)):
+    """Generate unique MQTT username + password for a gateway. Password is shown only once."""
+    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generator nicht gefunden")
+
+    serial = gen.get("serial_number", generator_id[:12])
+    username = "gw_" + serial.lower().replace(" ", "_").replace("-", "_")
+    password = secrets.token_urlsafe(16)
+    pw_hash = _mosquitto_hash(password)
+
+    await db.generators.update_one(
+        {"id": generator_id},
+        {"$set": {
+            "mqtt_username": username,
+            "mqtt_password_hash": pw_hash,
+            "mqtt_created_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+
+    passwd_ok = await _regenerate_passwd_file()
+
+    return {
+        "username": username,
+        "password": password,
+        "generator_name": gen.get("name", ""),
+        "serial_number": gen.get("serial_number", ""),
+        "passwd_file_updated": passwd_ok,
+        "message": "Zugangsdaten generiert. Passwort wird nur einmal angezeigt!",
+    }
+
+
+@router.delete("/credentials/{generator_id}")
+async def revoke_mqtt_credentials(generator_id: str, admin: dict = Depends(require_admin)):
+    """Revoke MQTT credentials for a gateway."""
+    gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generator nicht gefunden")
+
+    await db.generators.update_one(
+        {"id": generator_id},
+        {"$unset": {"mqtt_username": "", "mqtt_password_hash": "", "mqtt_created_at": ""}}
+    )
+
+    await _regenerate_passwd_file()
+    return {"message": "MQTT-Zugangsdaten widerrufen"}
