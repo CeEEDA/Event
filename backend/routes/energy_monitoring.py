@@ -497,7 +497,7 @@ async def generate_setup_script(device_id: str, request: Request, admin: dict = 
 
     script = f'''#!/bin/bash
 # ================================================================
-#  Messkoffer Setup - Eventenergie Portal
+#  Messkoffer Setup - Eventenergie Portal (Clean Install)
 #  Geraet: {device_name}
 #  Erstellt: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
 # ================================================================
@@ -505,6 +505,7 @@ async def generate_setup_script(device_id: str, request: Request, admin: dict = 
 #  Nutzung:  sudo bash setup_messkoffer.sh
 #
 #  Was passiert:
+#    0. Alte Installation komplett aufraumen
 #    1. Abhaengigkeiten installieren (python3, requests, gpsd)
 #    2. Logger-Skript installieren (/opt/messkoffer_logger.py)
 #    3. Konfiguration schreiben (/etc/messkoffer.conf)
@@ -522,9 +523,10 @@ CYAN="\\033[0;36m"
 NC="\\033[0m"
 
 echo ""
-echo -e "${{CYAN}}==========================================${{NC}}"
-echo -e "${{CYAN}}  Messkoffer Setup - Eventenergie Portal${{NC}}"
-echo -e "${{CYAN}}==========================================${{NC}}"
+echo -e "${{CYAN}}================================================${{NC}}"
+echo -e "${{CYAN}}  Messkoffer Setup (Clean Install)${{NC}}"
+echo -e "${{CYAN}}  Geraet: {device_name}${{NC}}"
+echo -e "${{CYAN}}================================================${{NC}}"
 echo ""
 
 if [ "$EUID" -ne 0 ]; then
@@ -533,7 +535,68 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# ---- 1. Abhaengigkeiten ----
+# ===== SCHRITT 0: ALLES ALTE AUFRAUMEN =====
+echo -e "${{YELLOW}}[0/5] Alte Installation aufraumen...${{NC}}"
+
+# Alle bekannten Services stoppen und deaktivieren
+for SVC in messkoffer emu_sync emu-sync kirmeskiste_sync shelly_logger messkoffer_logger; do
+    if systemctl is-active --quiet "$SVC" 2>/dev/null; then
+        echo "  Stoppe Service: $SVC"
+        systemctl stop "$SVC" 2>/dev/null || true
+    fi
+    if systemctl is-enabled --quiet "$SVC" 2>/dev/null; then
+        systemctl disable "$SVC" 2>/dev/null || true
+    fi
+    if [ -f "/etc/systemd/system/$SVC.service" ]; then
+        echo "  Entferne Service-Datei: $SVC.service"
+        rm -f "/etc/systemd/system/$SVC.service"
+    fi
+done
+
+# Alle laufenden Sync-Prozesse beenden
+echo "  Beende laufende Sync-Prozesse..."
+pkill -f "messkoffer_logger" 2>/dev/null || true
+pkill -f "emu_sync" 2>/dev/null || true
+pkill -f "emu-sync" 2>/dev/null || true
+pkill -f "shelly_logger" 2>/dev/null || true
+sleep 2
+
+# Alte Konfigurationsdateien entfernen
+echo "  Entferne alte Konfigurationen..."
+rm -f /etc/messkoffer.conf
+rm -f /etc/emu_sync.conf
+rm -f /etc/emu-sync.conf
+
+# Alte SQLite-Datenbanken entfernen (Sync-Reset!)
+echo "  Entferne alte Datenbanken (Sync-Reset)..."
+rm -f /var/lib/messkoffer/messkoffer.sqlite
+rm -f /var/lib/messkoffer/messkoffer.sqlite-wal
+rm -f /var/lib/messkoffer/messkoffer.sqlite-shm
+
+# Alte Logger-Skripte entfernen
+rm -f /opt/messkoffer_logger.py
+rm -f /opt/emu_sync.py
+rm -f /opt/shelly_logger.py
+
+# Bekannte alte Installationsverzeichnisse aufraumen
+for OLD_DIR in /home/pi/emu-sync /home/pi/messkoffer /home/pi/emu_sync /home/pi/shelly-logger; do
+    if [ -d "$OLD_DIR" ]; then
+        echo "  Entferne altes Verzeichnis: $OLD_DIR"
+        rm -rf "$OLD_DIR"
+    fi
+done
+
+# Alte Configs in Home-Verzeichnissen entfernen
+rm -f /home/pi/config.json /home/pi/.messkoffer.conf /home/pi/.emu_sync.conf 2>/dev/null || true
+
+# Alte crontab-Eintraege entfernen
+crontab -l 2>/dev/null | grep -v "messkoffer\|emu_sync\|emu-sync\|shelly" | crontab - 2>/dev/null || true
+
+systemctl daemon-reload
+echo "  Aufraumen abgeschlossen."
+
+# ===== SCHRITT 1: ABHAENGIGKEITEN =====
+echo ""
 echo -e "${{YELLOW}}[1/5] Installiere Abhaengigkeiten...${{NC}}"
 apt-get update -qq
 
@@ -549,7 +612,6 @@ if ! command -v gpsd &> /dev/null; then
     apt-get install -y -qq gpsd gpsd-clients python3-gps
     echo "  gpsd installiert"
 else
-    # Sicherstellen dass python3-gps da ist
     apt-get install -y -qq python3-gps 2>/dev/null || true
     echo "  gpsd OK"
 fi
@@ -565,7 +627,7 @@ systemctl enable gpsd
 systemctl restart gpsd || true
 echo "  gpsd konfiguriert (USB Auto-Erkennung aktiv)"
 
-# ---- 2. Logger-Skript installieren ----
+# ===== SCHRITT 2: LOGGER-SKRIPT =====
 echo -e "${{YELLOW}}[2/5] Installiere Messkoffer-Logger...${{NC}}"
 mkdir -p /var/lib/messkoffer
 cat > /opt/messkoffer_logger.py << 'LOGGER_EOF'
@@ -574,8 +636,8 @@ LOGGER_EOF
 chmod +x /opt/messkoffer_logger.py
 echo "  /opt/messkoffer_logger.py erstellt"
 
-# ---- 3. Konfiguration ----
-echo -e "${{YELLOW}}[3/5] Schreibe Konfiguration...${{NC}}"
+# ===== SCHRITT 3: NEUE KONFIGURATION =====
+echo -e "${{YELLOW}}[3/5] Schreibe neue Konfiguration...${{NC}}"
 cat > /etc/messkoffer.conf << 'CONFIG_EOF'
 [messkoffer]
 shelly_ip = 192.168.88.240
@@ -594,7 +656,7 @@ CONFIG_EOF
 chmod 644 /etc/messkoffer.conf
 echo "  /etc/messkoffer.conf erstellt"
 
-# ---- 4. Systemd-Dienst ----
+# ===== SCHRITT 4: SYSTEMD-DIENST =====
 echo -e "${{YELLOW}}[4/5] Richte Systemd-Dienst ein...${{NC}}"
 
 PI_USER="${{SUDO_USER:-pi}}"
@@ -627,21 +689,17 @@ systemctl daemon-reload
 systemctl enable messkoffer
 echo "  messkoffer.service eingerichtet"
 
-# ---- 5. Starten ----
+# ===== SCHRITT 5: STARTEN + VERIFIZIERUNG =====
 echo -e "${{YELLOW}}[5/5] Starte Dienste...${{NC}}"
-
-# Alten emu_sync stoppen falls vorhanden
-systemctl stop emu_sync 2>/dev/null || true
-systemctl disable emu_sync 2>/dev/null || true
 
 systemctl restart messkoffer
 sleep 3
 
 if systemctl is-active --quiet messkoffer; then
     echo ""
-    echo -e "${{GREEN}}==========================================${{NC}}"
-    echo -e "${{GREEN}}  Setup erfolgreich!${{NC}}"
-    echo -e "${{GREEN}}==========================================${{NC}}"
+    echo -e "${{GREEN}}================================================${{NC}}"
+    echo -e "${{GREEN}}  Setup erfolgreich! (Clean Install)${{NC}}"
+    echo -e "${{GREEN}}================================================${{NC}}"
     echo ""
     echo "  Geraet:      {device_name}"
     echo "  Shelly IP:   192.168.88.240"
@@ -662,6 +720,9 @@ if systemctl is-active --quiet messkoffer; then
     echo "    Status:     sudo systemctl status messkoffer"
     echo "    Neustart:   sudo systemctl restart messkoffer"
     echo "    DB-Groesse: du -sh /var/lib/messkoffer/"
+    echo ""
+    echo -e "${{GREEN}}  HINWEIS: Alte Installation wurde vollstaendig entfernt.${{NC}}"
+    echo -e "${{GREEN}}  Alle alten Configs, Datenbanken und Services geloescht.${{NC}}"
     echo ""
 else
     echo ""
