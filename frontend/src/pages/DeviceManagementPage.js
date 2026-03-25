@@ -40,6 +40,7 @@ import {
   Shield,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import EventLog from "../components/EventLog";
 
 // Pi Setup Section for Messkoffer - generates all-in-one installer
 function PiSetupSection({ deviceId, deviceName, deviceType }) {
@@ -1258,6 +1259,7 @@ function DeviceExpandedRow({ device, colSpan }) {
           ) : !info ? (
             <div className="text-xs text-gray-400 py-2">Keine Daten verfügbar</div>
           ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Last seen */}
               <div className="flex items-start gap-3" data-testid="quick-info-last-seen">
@@ -1297,6 +1299,11 @@ function DeviceExpandedRow({ device, colSpan }) {
                 </div>
               </div>
             </div>
+            {/* Ereignisprotokoll */}
+            <div className="mt-4" data-testid="device-event-log">
+              <EventLog deviceId={device.id} compact />
+            </div>
+            </>
           )}
         </div>
       </td>

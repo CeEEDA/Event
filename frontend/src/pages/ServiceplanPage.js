@@ -14,6 +14,7 @@ import {
   ScanLine, Filter,
 } from "lucide-react";
 import QrScanner from "../components/QrScanner";
+import EventLog from "../components/EventLog";
 
 const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste", verteiler: "Verteiler" };
 
@@ -759,6 +760,13 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Ereignisprotokoll */}
+      {planDetail.device_id && (
+        <div className="mb-6" data-testid="serviceplan-event-log">
+          <EventLog deviceId={planDetail.device_id} compact />
         </div>
       )}
 

@@ -39,6 +39,7 @@ import {
 
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import L from "leaflet";
+import EventLog from "../components/EventLog";
 
 const statusConfig = {
   running: { label: "Läuft", bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500" },
@@ -48,89 +49,6 @@ const statusConfig = {
   alarm: { label: "Alarm", bg: "bg-red-50", border: "border-red-200", text: "text-red-700", dot: "bg-red-500" },
   offline: { label: "Offline", bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-500", dot: "bg-gray-400" },
 };
-
-const EVENT_ICONS = {
-  engine_start: { icon: "play", color: "text-emerald-500", bg: "bg-emerald-50" },
-  engine_stop: { icon: "stop", color: "text-red-500", bg: "bg-red-50" },
-  overtemp: { icon: "thermo", color: "text-orange-500", bg: "bg-orange-50" },
-  low_oil_pressure: { icon: "drop", color: "text-amber-500", bg: "bg-amber-50" },
-  low_battery: { icon: "batt", color: "text-yellow-600", bg: "bg-yellow-50" },
-  under_frequency: { icon: "wave", color: "text-purple-500", bg: "bg-purple-50" },
-  emergency_stop: { icon: "alert", color: "text-red-600", bg: "bg-red-100" },
-  modbus_disconnect: { icon: "unplug", color: "text-gray-500", bg: "bg-gray-50" },
-  gen_switch_on: { icon: "zap", color: "text-blue-500", bg: "bg-blue-50" },
-  gen_switch_off: { icon: "zapoff", color: "text-orange-500", bg: "bg-orange-50" },
-  command_sent: { icon: "cmd", color: "text-indigo-500", bg: "bg-indigo-50" },
-};
-
-function EventLog({ generatorId }) {
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [showMore, setShowMore] = useState(false);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const limit = showMore ? 100 : 20;
-        const res = await api.get(`/generators/events/${generatorId}?limit=${limit}`);
-        setEvents(res.data.events || []);
-        setTotal(res.data.total || 0);
-      } catch { /* no events yet */ }
-      setLoading(false);
-    };
-    load();
-    const iv = setInterval(load, 30000);
-    return () => clearInterval(iv);
-  }, [generatorId, showMore]);
-
-  if (loading) return null;
-  if (events.length === 0) return null;
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="event-log">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-fuchsia-500" /> Ereignisprotokoll ({total})
-        </h2>
-      </div>
-      <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
-        {events.map((ev) => {
-          const cfg = EVENT_ICONS[ev.event_type] || { icon: "info", color: "text-gray-500", bg: "bg-gray-50" };
-          return (
-            <div key={ev.id} className="px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50/50" data-testid="event-row">
-              <div className={`w-7 h-7 rounded-full ${cfg.bg} flex items-center justify-center shrink-0 mt-0.5`}>
-                <AlertTriangle className={`w-3.5 h-3.5 ${cfg.color}`} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-gray-900">{ev.event_label || ev.event_type}</span>
-                  {ev.active === false && <span className="text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">behoben</span>}
-                </div>
-                <p className="text-[11px] text-gray-500 mt-0.5 truncate">{ev.description}</p>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-[10px] text-gray-400">{new Date(ev.timestamp).toLocaleString("de-DE")}</span>
-                  {ev.latitude && ev.longitude && (
-                    <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-                      <MapPin className="w-2.5 h-2.5" /> {Number(ev.latitude).toFixed(4)}, {Number(ev.longitude).toFixed(4)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {total > 20 && !showMore && (
-        <div className="px-4 py-2 border-t border-gray-100">
-          <button onClick={() => setShowMore(true)} className="text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium" data-testid="show-more-events">
-            Alle {total} Ereignisse anzeigen
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function DeploymentHistory({ generatorId }) {
   const [deployments, setDeployments] = useState([]);
