@@ -1454,29 +1454,29 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
     base_url = os.environ.get("FRONTEND_URL", "")
     qr_url = f"{base_url}/kirmes/meter-zuordnung/{meter['id']}"
 
-    # Label dimensions: 32mm x 57mm at 300 DPI
+    # Label dimensions: 57mm wide x 32mm tall (landscape, as Dymo feeds)
     DPI = 300
-    LABEL_W_MM = 32
-    LABEL_H_MM = 57
-    label_w = int(LABEL_W_MM * DPI / 25.4)   # ~378 px
-    label_h = int(LABEL_H_MM * DPI / 25.4)   # ~673 px
+    LABEL_W_MM = 57
+    LABEL_H_MM = 32
+    label_w = int(LABEL_W_MM * DPI / 25.4)   # ~673 px
+    label_h = int(LABEL_H_MM * DPI / 25.4)   # ~378 px
 
     # Generate QR code
-    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=12, border=1)
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=1)
     qr.add_data(qr_url)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-    # Resize QR to fill most of label width
-    qr_target = int(label_w * 0.88)
+    # QR sized to fit label height with margin
+    qr_target = label_h - 40  # ~338px, leaves 20px margin top+bottom
     qr_img = qr_img.resize((qr_target, qr_target), Image.NEAREST)
 
-    # Create label image
+    # Create label image (landscape)
     label = Image.new("RGB", (label_w, label_h), "white")
     draw = ImageDraw.Draw(label)
 
-    # Load font (small for text below QR)
-    font_small = None
+    # Load font
+    font = None
     for font_path in [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -1484,42 +1484,54 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
         "C:\\Windows\\Fonts\\calibri.ttf",
     ]:
         try:
-            font_small = ImageFont.truetype(font_path, 24)
+            font = ImageFont.truetype(font_path, 22)
             break
         except (OSError, IOError):
             continue
-    if not font_small:
-        font_small = ImageFont.load_default()
+    if not font:
+        font = ImageFont.load_default()
 
-    # Layout: QR on top, text below
-    y_cursor = 10
+    # Layout: QR left, text right
+    # QR code - left side, vertically centered
+    qr_x = 15
+    qr_y = (label_h - qr_target) // 2
+    label.paste(qr_img, (qr_x, qr_y))
 
-    # QR Code - centered, top
-    qr_x = (label_w - qr_target) // 2
-    label.paste(qr_img, (qr_x, y_cursor))
-    y_cursor += qr_target + 12
+    # Text right of QR code, vertically centered
+    text_x = qr_x + qr_target + 15
+    text_line1 = f"Zaehler {meter_index}"
+    text_line2 = device_name
 
-    # Text: "Zaehler X, Kirmeskiste_009"
-    text_line = f"Zaehler {meter_index}, {device_name}"
-    bbox = draw.textbbox((0, 0), text_line, font=font_small)
-    tw = bbox[2] - bbox[0]
-    # Shrink font if text too wide
-    if tw > label_w - 10:
-        for sz in [20, 18, 16, 14]:
+    bbox1 = draw.textbbox((0, 0), text_line1, font=font)
+    bbox2 = draw.textbbox((0, 0), text_line2, font=font)
+    th1 = bbox1[3] - bbox1[1]
+    th2 = bbox2[3] - bbox2[1]
+    total_text_h = th1 + 8 + th2
+    text_y = (label_h - total_text_h) // 2
+
+    # Shrink font if text too wide for remaining space
+    avail_w = label_w - text_x - 10
+    max_tw = max(bbox1[2] - bbox1[0], bbox2[2] - bbox2[0])
+    if max_tw > avail_w:
+        for sz in [18, 16, 14, 12]:
             try:
-                font_small = ImageFont.truetype(font_small.path, sz)
+                font = ImageFont.truetype(font.path, sz)
             except Exception:
                 break
-            bbox = draw.textbbox((0, 0), text_line, font=font_small)
-            tw = bbox[2] - bbox[0]
-            if tw <= label_w - 10:
+            bbox1 = draw.textbbox((0, 0), text_line1, font=font)
+            bbox2 = draw.textbbox((0, 0), text_line2, font=font)
+            max_tw = max(bbox1[2] - bbox1[0], bbox2[2] - bbox2[0])
+            if max_tw <= avail_w:
                 break
-    draw.text(((label_w - tw) / 2, y_cursor), text_line, fill="black", font=font_small)
+        th1 = bbox1[3] - bbox1[1]
+        th2 = bbox2[3] - bbox2[1]
+        total_text_h = th1 + 6 + th2
+        text_y = (label_h - total_text_h) // 2
 
-    # Rotate 90 degrees for Dymo LabelWriter (landscape feed)
-    label = label.rotate(90, expand=True)
+    draw.text((text_x, text_y), text_line1, fill="black", font=font)
+    draw.text((text_x, text_y + th1 + 6), text_line2, fill="black", font=font)
 
-    # Convert to PNG bytes
+    # Convert to PNG bytes (no rotation - landscape matches Dymo feed)
     img_buf = _io.BytesIO()
     label.save(img_buf, format="PNG", dpi=(DPI, DPI))
     img_bytes = img_buf.getvalue()
