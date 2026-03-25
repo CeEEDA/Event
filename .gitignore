@@ -465,3 +465,7 @@ backend/static/eventenergie-portal-mac.zip
 *.env
 *.env.*
 frontend/node_modules/.cache/default-development/12.pack
+-e 
+# Environment files
+*.env
+*.env.*
