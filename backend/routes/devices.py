@@ -181,7 +181,7 @@ def generate_device_code():
 
 
 @router.post("/{device_id}/add-alias")
-async def add_device_alias(device_id: str, alias_id: str, admin: dict = Depends(require_admin)):
+async def add_device_alias(device_id: str, alias_id: str, admin: dict = Depends(require_staff)):
     """Add an old device_id as alias so Pi scripts with old IDs still work."""
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
@@ -195,7 +195,7 @@ async def add_device_alias(device_id: str, alias_id: str, admin: dict = Depends(
 
 
 @router.post("")
-async def create_device(data: DeviceCreate, admin: dict = Depends(require_admin)):
+async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)):
     if data.device_type not in DEVICE_TYPES:
         raise HTTPException(status_code=400, detail=f"Gerätetyp muss einer von {DEVICE_TYPES} sein")
 
@@ -349,13 +349,6 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
     if "device_type" in update_data and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Nur Admin kann den Gerätetyp ändern")
 
-    # Mitarbeiter can only change status (außer Betrieb)
-    if user["role"] == "mitarbeiter":
-        allowed_fields = {"status", "notes", "user_field"}
-        forbidden = set(update_data.keys()) - allowed_fields
-        if forbidden:
-            raise HTTPException(status_code=403, detail="Mitarbeiter können nur Status, Notizen und Benutzerfeld ändern")
-
     # Validate status
     if "status" in update_data and update_data["status"] not in ("aktiv", "ausser_betrieb"):
         raise HTTPException(status_code=400, detail="Status muss 'aktiv' oder 'ausser_betrieb' sein")
@@ -418,7 +411,7 @@ async def delete_device(device_id: str, admin: dict = Depends(require_admin)):
 # ============== Copy (Admin only) ==============
 
 @router.post("/{device_id}/copy")
-async def copy_device(device_id: str, admin: dict = Depends(require_admin)):
+async def copy_device(device_id: str, admin: dict = Depends(require_staff)):
     source = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not source:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")

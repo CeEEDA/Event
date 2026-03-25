@@ -631,7 +631,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
 
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto" data-testid="device-form">
           {/* Copy from existing device - only in create mode */}
-          {!editing && isAdmin && allDevices && allDevices.length > 0 && (
+          {!editing && allDevices && allDevices.length > 0 && (
             <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4" data-testid="copy-from-section">
               <Label className="text-fuchsia-700 text-sm font-medium mb-2 block">Von bestehendem Gerät kopieren</Label>
               <div className="relative">
@@ -886,7 +886,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           ) : (
             <div>
               <Label className="text-gray-700 text-sm mb-1.5 block">Gerätetyp</Label>
-              {isAdmin ? (
+              {(!editing || isAdmin) ? (
                 <div className="grid grid-cols-4 gap-2">
                   {DEVICE_TYPES.map(t => (
                     <button
@@ -917,7 +917,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-gray-700 text-sm">{formData.device_type === "messkoffer" ? "Gerätenummer" : "Seriennummer"} *</Label>
-              <Input value={formData.serial_number} onChange={e => update("serial_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="serial-input" />
+              <Input value={formData.serial_number} onChange={e => update("serial_number", e.target.value)} className="mt-1" data-testid="serial-input" />
             </div>
             <div>
               <Label className="text-gray-700 text-sm">Benutzerfeld</Label>
@@ -933,15 +933,15 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Modell</Label>
-                    <Input value={formData.model} onChange={e => update("model", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="model-input" />
+                    <Input value={formData.model} onChange={e => update("model", e.target.value)} className="mt-1" data-testid="model-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Baujahr</Label>
-                    <Input type="number" value={formData.year_of_manufacture} onChange={e => update("year_of_manufacture", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="year-input" />
+                    <Input type="number" value={formData.year_of_manufacture} onChange={e => update("year_of_manufacture", e.target.value)} className="mt-1" data-testid="year-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Leistung</Label>
-                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 400 kVA" className="mt-1" disabled={!isAdmin && !!editing} data-testid="power-input" />
+                    <Input value={formData.power_output} onChange={e => update("power_output", e.target.value)} placeholder="z.B. 400 kVA" className="mt-1" data-testid="power-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Steuerung</Label>
@@ -963,7 +963,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                               }
                             }}
                             className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
-                            disabled={!isAdmin && !!editing}
                             data-testid="controller-select"
                           >
                             <option value="">Steuerung wählen...</option>
@@ -976,7 +975,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                               onChange={e => update("controller", e.target.value)}
                               placeholder="Steuerung eingeben..."
                               className="mt-1"
-                              disabled={!isAdmin && !!editing}
                               data-testid="controller-custom-input"
                               autoFocus
                             />
@@ -993,15 +991,15 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Hersteller</Label>
-                    <Input value={formData.engine_manufacturer} onChange={e => update("engine_manufacturer", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="engine-mfr-input" />
+                    <Input value={formData.engine_manufacturer} onChange={e => update("engine_manufacturer", e.target.value)} className="mt-1" data-testid="engine-mfr-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Typ</Label>
-                    <Input value={formData.engine_type} onChange={e => update("engine_type", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="engine-type-input" />
+                    <Input value={formData.engine_type} onChange={e => update("engine_type", e.target.value)} className="mt-1" data-testid="engine-type-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Motornummer</Label>
-                    <Input value={formData.engine_number} onChange={e => update("engine_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="engine-num-input" />
+                    <Input value={formData.engine_number} onChange={e => update("engine_number", e.target.value)} className="mt-1" data-testid="engine-num-input" />
                   </div>
                 </div>
               </div>
@@ -1011,15 +1009,15 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <Label className="text-gray-700 text-sm">Hersteller</Label>
-                    <Input value={formData.generator_manufacturer} onChange={e => update("generator_manufacturer", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="gen-mfr-input" />
+                    <Input value={formData.generator_manufacturer} onChange={e => update("generator_manufacturer", e.target.value)} className="mt-1" data-testid="gen-mfr-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Typ</Label>
-                    <Input value={formData.generator_type} onChange={e => update("generator_type", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="gen-type-input" />
+                    <Input value={formData.generator_type} onChange={e => update("generator_type", e.target.value)} className="mt-1" data-testid="gen-type-input" />
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Generatornummer</Label>
-                    <Input value={formData.generator_number} onChange={e => update("generator_number", e.target.value)} className="mt-1" disabled={!isAdmin && !!editing} data-testid="gen-num-input" />
+                    <Input value={formData.generator_number} onChange={e => update("generator_number", e.target.value)} className="mt-1" data-testid="gen-num-input" />
                   </div>
                 </div>
               </div>
@@ -1033,7 +1031,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               </div>
 
               {/* DSE890 Gateway Setup - only for existing devices with admin */}
-              {editing && isAdmin && (
+              {editing && (
                 <DseGatewaySetupSection
                   controller={formData.controller}
                   serialNumber={formData.serial_number}
@@ -1049,7 +1047,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           {(formData.device_type === "messkoffer" || formData.device_type === "kirmeskiste") && (
             <>
               {/* Pi Setup - all-in-one installer (only for existing devices) */}
-              {editing && isAdmin && (
+              {editing && (
                 <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} deviceType={formData.device_type} />
               )}
             </>
@@ -1372,11 +1370,9 @@ export default function DeviceManagementPage() {
             <h1 className="text-base font-semibold text-gray-900">Geräteverwaltung</h1>
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin && (
               <Button size="sm" onClick={openCreate} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-device-btn">
                 <Plus className="w-4 h-4 mr-1" /> Neues Gerät
               </Button>
-            )}
             <Logo size="small" />
           </div>
         </div>
