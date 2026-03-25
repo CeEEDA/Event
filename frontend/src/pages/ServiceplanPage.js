@@ -836,16 +836,17 @@ export default function ServiceplanPage() {
   const handleQrScan = (scannedText) => {
     setShowQrScanner(false);
     const code = scannedText.trim();
-    // Find device by device_code
-    const found = devices.find(d => (d.device_code || "").toUpperCase() === code.toUpperCase());
+    // Find device by device_code (use devicesWithPlans to access plan info)
+    const found = devicesWithPlans.find(d => (d.device_code || "").toUpperCase() === code.toUpperCase());
     if (found) {
       if (found.plan) {
-        const plan = plans.find(p => p.device_id === found.id);
-        if (plan) { setSelectedPlan(plan); toast.success(`Gerät gefunden: ${found.serial_number}`); return; }
+        // Plan exists → open it directly
+        setSelectedPlan(found.plan);
+        toast.success(`${found.serial_number} - Serviceplan geöffnet`);
+      } else {
+        // No plan → create one and open it
+        handleCreatePlanForDevice(found.id);
       }
-      // Auto-create plan
-      handleCreatePlanForDevice(found.id);
-      toast.success(`Gerät gefunden: ${found.serial_number}`);
     } else {
       toast.error(`Kein Gerät mit Code "${code}" gefunden`);
       setSearch(code);
