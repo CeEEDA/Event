@@ -157,10 +157,21 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - PayPal Integration
 
 ### P2 - Backlog
+- Diagnose-Feature fuer Zaehler (letzte 10 Rohwerte anzeigen)
 - Chromium Translate Popup auf Raspberry Pi (Policy-Datei erstellen)
 - Admin File Size Limits fuer Uploads
 - Windows Installer (.exe) fuer Electron Desktop App
 - Health-Check / Monitoring fuer Portal-Erreichbarkeit
+
+### DSE 5510 via RS232 + Pi (abgeschlossen - 2026-03-25)
+- Pi Sync-Skript (`dse5510_sync.py`): Liest DSE 5510 via RS232 Modbus RTU (GenComm Pages 4/6/7/16)
+- Setup-Skript Generator (`POST /api/energy-monitoring/devices/{device_id}/dse5510-setup`)
+- Telemetrie-Ingest per HTTPS (`POST /api/generators/ingest` mit device_key Auth)
+- Steuerungsbefehle: Stop, Auto, Manuell, Start, Gen EIN, Gen AUS (via Pi Command Queue)
+- GPS-Unterstuetzung via gpsd
+- DSE5510PiSetupSection im Frontend mit Serieller Port, Baud Rate, Slave ID Konfiguration
+- Telemetrie-Normalisierung: Pi-Felder auf Frontend-kompatible Namen gemappt
+- Gen EIN/AUS Buttons auf Generator-Detailseite
 
 ### Refactoring (erledigt - 2026-02-05)
 - old_device_ids Code komplett entfernt (Backend: DeviceCreate Model, add-alias Endpoint, Ingest Fallback; Frontend: FormData)
