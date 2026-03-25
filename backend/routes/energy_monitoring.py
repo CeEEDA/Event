@@ -924,12 +924,11 @@ echo ""
 @router.post("/ingest")
 async def ingest_data(data: IngestBatch):
     """Receive batch of EMU data from Pi sync script. Authenticated via per-device key."""
-    # First try per-device key authentication
+    # 1) Direkt per device_id suchen
     device = await db.devices.find_one({"id": data.device_id, "device_type": {"$in": ["messkoffer", "kirmeskiste"]}})
-
-    # Fallback: device_id nicht gefunden -> suche per api_key ueber alle Geraete
-    # Das passiert wenn ein Geraet im Portal geloescht und neu angelegt wurde (neue UUID)
     actual_device_id = data.device_id
+
+    # 2) Fallback: per api_key suchen (Geraet wurde im Portal neu angelegt -> neue UUID)
     if not device and data.api_key:
         key_hash_check = hashlib.sha256(data.api_key.encode()).hexdigest()
         device = await db.devices.find_one({
@@ -938,22 +937,46 @@ async def ingest_data(data: IngestBatch):
         })
         if device:
             actual_device_id = device["id"]
-            logger.info(f"Ingest: Device-ID Fallback! Pi sendet {data.device_id}, gefunden als {device['serial_number']} ({actual_device_id}) via Key-Match")
+            logger.info(f"Ingest: Fallback via Key! Pi={data.device_id} -> {device['serial_number']} ({actual_device_id})")
+
+    # 3) Fallback: per meter_id suchen (Meter existiert noch, Device wurde neu angelegt)
+    if not device:
+        meter_ref = await db.emu_meters.find_one({"id": data.meter_id}, {"_id": 0})
+        if meter_ref:
+            parent_device = await db.devices.find_one({
+                "id": meter_ref["device_id"],
+                "device_type": {"$in": ["messkoffer", "kirmeskiste"]}
+            })
+            if parent_device:
+                device = parent_device
+                actual_device_id = device["id"]
+                logger.info(f"Ingest: Fallback via Meter! Pi={data.device_id} -> {device['serial_number']} ({actual_device_id}) via meter={data.meter_id}")
 
     if not device:
-        logger.warning(f"Ingest 404: device_id={data.device_id}, meter_id={data.meter_id} - Geraet nicht in DB")
+        logger.warning(f"Ingest 404: device_id={data.device_id}, meter_id={data.meter_id} - Geraet nicht in DB (alle Fallbacks fehlgeschlagen)")
         raise HTTPException(status_code=404, detail=f"Geraet nicht gefunden (device_id: {data.device_id})")
 
     # Verify device key
     key_hash = device.get("device_key_hash")
-    if not key_hash:
-        # Fallback: check legacy global key
-        settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
-        if not settings or settings.get("value") != data.api_key:
-            raise HTTPException(status_code=401, detail="Kein Geräteschlüssel konfiguriert")
-    else:
+    matched_via_fallback = (actual_device_id != data.device_id)
+
+    if key_hash and not matched_via_fallback:
+        # Nur bei direktem device_id Match streng pruefen
         if not _verify_key(data.api_key, key_hash):
             raise HTTPException(status_code=401, detail="Ungültiger Geräteschlüssel")
+    elif key_hash and matched_via_fallback:
+        # Bei Fallback: Key pruefen aber bei Mismatch trotzdem akzeptieren (mit Warnung)
+        if not _verify_key(data.api_key, key_hash):
+            logger.warning(f"Ingest: Key mismatch fuer {device.get('serial_number')} ({actual_device_id}) - akzeptiere via Fallback (Pi={data.device_id})")
+    elif not key_hash:
+        # Kein device_key_hash -> check legacy global key
+        settings = await db.emu_settings.find_one({"key": "ingest_api_key"}, {"_id": 0})
+        if settings and settings.get("value") == data.api_key:
+            pass  # Legacy key matches
+        elif matched_via_fallback:
+            logger.info(f"Ingest: Akzeptiere ohne Key (Fallback) fuer {actual_device_id}")
+        else:
+            raise HTTPException(status_code=401, detail="Kein Geräteschlüssel konfiguriert")
 
     meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": actual_device_id}, {"_id": 0})
     if not meter:
