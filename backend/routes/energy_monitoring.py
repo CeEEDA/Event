@@ -1050,6 +1050,204 @@ echo ""
     }
 
 
+# ============== DSE 5510 Setup ==============
+
+class DSE5510SetupRequest(BaseModel):
+    serial_port: str = "/dev/ttyUSB0"
+    baud_rate: int = 9600
+    slave_id: int = 10
+
+@router.post("/devices/{device_id}/dse5510-setup")
+async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
+    """Generate an all-in-one bash installer for DSE 5510 via RS232 + Pi."""
+    if body is None:
+        body = DSE5510SetupRequest()
+
+    api_base = _get_api_base(request)
+
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    # Generate a new device key
+    plain_key = secrets.token_hex(24)
+    key_hash = _hash_key(plain_key)
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"device_key_hash": key_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    api_url = _get_api_base(request)
+
+    # Read the dse5510_sync.py template
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "dse5510_sync.py")
+    with open(script_path, "r") as f:
+        sync_script = f.read()
+
+    bash_script = f"""#!/bin/bash
+# ==============================================================
+#  DSE 5510 Auto-Setup - {device.get('serial_number', device_id[:12])}
+#  Generiert am {datetime.now().strftime('%d.%m.%Y %H:%M')}
+#  RS232 Modbus RTU + GPS
+# ==============================================================
+set -e
+
+echo "========================================================"
+echo "  DSE 5510 Auto-Setup"
+echo "  Geraet: {device.get('serial_number', device_id[:12])}"
+echo "========================================================"
+
+# ===== SCHRITT 0: ALTE INSTALLATION AUFRAUMEN =====
+echo ""
+echo "[0/6] Alte Installation aufraumen..."
+
+for SVC in dse5510_sync dse5510; do
+    if systemctl is-active --quiet "$SVC" 2>/dev/null; then
+        sudo systemctl stop "$SVC" 2>/dev/null || true
+    fi
+    if systemctl is-enabled --quiet "$SVC" 2>/dev/null; then
+        sudo systemctl disable "$SVC" 2>/dev/null || true
+    fi
+    sudo rm -f "/etc/systemd/system/$SVC.service"
+done
+
+sudo pkill -f "dse5510_sync" 2>/dev/null || true
+sleep 2
+sudo rm -f /etc/dse5510.conf
+sudo rm -f /var/lib/dse5510/dse5510.sqlite
+sudo rm -f /var/lib/dse5510/dse5510.sqlite-wal
+sudo rm -f /var/lib/dse5510/dse5510.sqlite-shm
+sudo systemctl daemon-reload
+echo "  Aufraumen abgeschlossen."
+
+# ===== SCHRITT 1: SYSTEM AKTUALISIEREN =====
+echo ""
+echo "[1/6] System aktualisieren..."
+sudo apt-get update -qq
+sudo apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients
+
+# ===== SCHRITT 2: PYTHON-UMGEBUNG =====
+echo "[2/6] Python-Umgebung einrichten..."
+INSTALL_DIR="/opt/dse5510"
+sudo rm -rf "$INSTALL_DIR"
+sudo mkdir -p "$INSTALL_DIR"
+sudo python3 -m venv "$INSTALL_DIR/venv"
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet "pymodbus>=3.7" pyserial requests gpsd-py3
+
+# ===== SCHRITT 3: SYNC-SKRIPT =====
+echo "[3/6] Sync-Skript installieren..."
+sudo tee "$INSTALL_DIR/dse5510_sync.py" > /dev/null << 'SYNC_SCRIPT'
+{sync_script}
+SYNC_SCRIPT
+sudo chmod +x "$INSTALL_DIR/dse5510_sync.py"
+
+# ===== SCHRITT 4: KONFIGURATION =====
+echo "[4/6] Konfiguration schreiben..."
+sudo mkdir -p /var/lib/dse5510
+
+sudo tee /etc/dse5510.conf > /dev/null << 'CONF'
+[dse5510]
+api_url = {api_url}
+device_key = {plain_key}
+device_id = {device_id}
+generator_id =
+db_path = /var/lib/dse5510/dse5510.sqlite
+serial_port = {body.serial_port}
+baud_rate = {body.baud_rate}
+slave_id = {body.slave_id}
+read_interval = 10
+sync_interval = 30
+retry_delay = 30
+batch_size = 200
+CONF
+
+sudo chmod 600 /etc/dse5510.conf
+
+# ===== SCHRITT 5: SYSTEMD SERVICE =====
+echo "[5/6] Systemd-Service einrichten..."
+sudo tee /etc/systemd/system/dse5510_sync.service > /dev/null << 'SERVICE'
+[Unit]
+Description=DSE 5510 Sync - Eventenergie Portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/dse5510/venv/bin/python3 /opt/dse5510/dse5510_sync.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/dse5510
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable dse5510_sync
+sudo systemctl restart dse5510_sync
+
+# ===== SCHRITT 6: VERIFIZIERUNG =====
+echo "[6/6] Verifiziere Installation..."
+sleep 3
+if systemctl is-active --quiet dse5510_sync; then
+    echo "  Service laeuft!"
+else
+    echo "  WARNUNG: Service ist nicht aktiv!"
+    echo "  Pruefe mit: sudo journalctl -u dse5510_sync -n 20"
+fi
+
+echo ""
+echo "========================================================"
+echo "  Setup abgeschlossen!"
+echo "========================================================"
+echo ""
+echo "  Geraet-ID:     {device_id}"
+echo "  Geraet-Key:    {plain_key[:8]}..."
+echo "  Portal:        {api_url}"
+echo "  Serial Port:   {body.serial_port}"
+echo "  Baud Rate:     {body.baud_rate}"
+echo "  Slave ID:      {body.slave_id}"
+echo "  Konfiguration: /etc/dse5510.conf"
+echo "  Datenbank:     /var/lib/dse5510/dse5510.sqlite"
+echo ""
+echo "  Service pruefen:"
+echo "    sudo systemctl status dse5510_sync"
+echo "    sudo journalctl -u dse5510_sync -f"
+echo ""
+echo "  Serielle Ports auflisten:"
+echo "    ls -la /dev/ttyUSB* /dev/ttyAMA* 2>/dev/null"
+echo ""
+echo "  Falls der Port nicht stimmt, anpassen in:"
+echo "    sudo nano /etc/dse5510.conf"
+echo "    sudo systemctl restart dse5510_sync"
+echo ""
+"""
+
+    download_token = secrets.token_urlsafe(32)
+    _setup_downloads[download_token] = {
+        "script": bash_script,
+        "device_id": device_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    }
+
+    download_url = f"{api_base}/energy-monitoring/setup-download/{download_token}"
+
+    return {
+        "download_url": download_url,
+        "download_token": download_token,
+        "device_id": device_id,
+        "device_key": plain_key,
+        "serial_port": body.serial_port,
+        "baud_rate": body.baud_rate,
+        "slave_id": body.slave_id,
+        "message": f"Setup-Skript generiert fuer {device.get('serial_number', '')}",
+    }
+
+
+
 # ============== Ingest API (Pi Push) ==============
 
 @router.post("/ingest")

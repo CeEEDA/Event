@@ -288,12 +288,14 @@ async def clear_raw_messages(admin: dict = Depends(require_admin)):
 # Register 4104 = Control Key, Register 4105 = Complement (65535 - Key)
 # Both must be written simultaneously (Modbus Function Code 16)
 DSE_COMMANDS = {
-    "stop":     {"key": 35700, "complement": 29835, "label": "Stop-Modus"},
-    "auto_on":  {"key": 35701, "complement": 29834, "label": "Automatikmodus"},
-    "manual":   {"key": 35702, "complement": 29833, "label": "Manueller Modus"},
-    "start":    {"key": 35705, "complement": 29830, "label": "Motor starten (Manuell/Test)"},
-    "mute":     {"key": 35706, "complement": 29829, "label": "Alarm stumm"},
-    "reset":    {"key": 35707, "complement": 29828, "label": "Alarme zurücksetzen"},
+    "stop":           {"key": 35700, "complement": 29835, "label": "Stop-Modus"},
+    "auto_on":        {"key": 35701, "complement": 29834, "label": "Automatikmodus"},
+    "manual":         {"key": 35702, "complement": 29833, "label": "Manueller Modus"},
+    "start":          {"key": 35705, "complement": 29830, "label": "Motor starten (Manuell/Test)"},
+    "mute":           {"key": 35706, "complement": 29829, "label": "Alarm stumm"},
+    "reset":          {"key": 35707, "complement": 29828, "label": "Alarme zuruecksetzen"},
+    "gen_switch_on":  {"key": 35708, "complement": 29827, "label": "Generator zuschalten"},
+    "gen_switch_off": {"key": 35709, "complement": 29826, "label": "Generator abschalten"},
 }
 
 
@@ -317,6 +319,43 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not gen and not device:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
+
+    # Check if this is a Pi-based generator (DSE 5510) -> queue command instead of MQTT
+    pi_device = device if device else None
+    if not pi_device and generator_id.startswith("dev-"):
+        pi_device = await db.devices.find_one({"id": generator_id[4:]}, {"_id": 0})
+    if pi_device and pi_device.get("controller") == "DSE 5510":
+        dse_cmd = DSE_COMMANDS[cmd.command]
+        cmd_doc = {
+            "id": str(uuid.uuid4()),
+            "device_id": pi_device["id"],
+            "generator_id": generator_id,
+            "command": cmd.command,
+            "label": dse_cmd["label"],
+            "status": "pending",
+            "user_id": user.get("id", ""),
+            "user_name": user.get("name", user.get("email", "")),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.generator_pending_commands.insert_one(cmd_doc)
+        await db.generator_control_log.insert_one({
+            "id": str(uuid.uuid4()),
+            "generator_id": generator_id,
+            "generator_name": pi_device.get("serial_number", ""),
+            "command": cmd.command,
+            "command_label": dse_cmd["label"],
+            "topic": "pi-http",
+            "payload": f"Queued for Pi: {cmd.command}",
+            "user_id": user.get("id", ""),
+            "user_name": user.get("name", user.get("email", "")),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        return {
+            "success": True,
+            "message": f"{dse_cmd['label']} - wird beim naechsten Pi-Sync ausgefuehrt",
+            "command_id": cmd_doc["id"],
+            "delivery": "pi-queue",
+        }
 
     # For devices with dse_module_uid, build control topic directly
     module_uid = device.get("dse_module_uid", "") if device else ""

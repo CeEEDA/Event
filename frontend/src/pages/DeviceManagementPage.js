@@ -174,7 +174,114 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
   );
 }
 
-const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
+function DSE5510PiSetupSection({ deviceId, deviceName }) {
+  const [loading, setLoading] = useState(false);
+  const [wgetCommand, setWgetCommand] = useState(null);
+  const [serialPort, setSerialPort] = useState("/dev/ttyUSB0");
+  const [baudRate, setBaudRate] = useState(9600);
+  const [slaveId, setSlaveId] = useState(10);
+
+  const handleGenerateSetup = async () => {
+    if (!window.confirm("Ein neuer Geraeteschluessel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schluessel existiert, wird er ersetzt.\n\nFortfahren?")) return;
+    setLoading(true);
+    try {
+      const res = await api.post(`/energy-monitoring/devices/${deviceId}/dse5510-setup`, {
+        serial_port: serialPort,
+        baud_rate: baudRate,
+        slave_id: slaveId,
+      });
+      setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
+      toast.success("DSE 5510 Setup-Skript generiert!");
+    } catch (err) {
+      toast.error(`Fehler: ${err?.response?.data?.detail || err?.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-4" data-testid="dse5510-pi-setup">
+      <div className="flex items-center gap-2 mb-1">
+        <Server className="w-4 h-4 text-fuchsia-600" />
+        <h3 className="text-sm font-medium text-gray-900">DSE 5510 Pi Setup</h3>
+      </div>
+      <p className="text-[10px] text-gray-400 mb-3">
+        Raspberry Pi liest den DSE 5510 via RS232 Modbus RTU. Inkl. GPS, lokaler Pufferung und Portal-Sync.
+      </p>
+
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div>
+          <Label className="text-gray-600 text-[11px]">Serieller Port</Label>
+          <select value={serialPort} onChange={e => setSerialPort(e.target.value)}
+            className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
+            data-testid="dse5510-serial-port">
+            <option value="/dev/ttyUSB0">/dev/ttyUSB0</option>
+            <option value="/dev/ttyUSB1">/dev/ttyUSB1</option>
+            <option value="/dev/ttyAMA0">/dev/ttyAMA0</option>
+            <option value="/dev/ttyS0">/dev/ttyS0</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-gray-600 text-[11px]">Baud Rate</Label>
+          <select value={baudRate} onChange={e => setBaudRate(parseInt(e.target.value))}
+            className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
+            data-testid="dse5510-baud-rate">
+            <option value={9600}>9600</option>
+            <option value={19200}>19200</option>
+            <option value={38400}>38400</option>
+            <option value={115200}>115200</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-gray-600 text-[11px]">Slave ID</Label>
+          <Input type="number" value={slaveId} onChange={e => setSlaveId(parseInt(e.target.value) || 10)}
+            min={1} max={247}
+            className="mt-0.5 text-xs h-[30px]"
+            data-testid="dse5510-slave-id" />
+        </div>
+      </div>
+
+      {wgetCommand && (
+        <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="dse5510-setup-instructions">
+          <p className="text-xs text-emerald-800 font-medium mb-2">Diesen Befehl auf dem Pi ausfuehren:</p>
+          <div className="flex items-start gap-2">
+            <code className="flex-1 bg-white border border-emerald-300 px-3 py-2 rounded text-[11px] font-mono select-all break-all leading-relaxed">{wgetCommand}</code>
+            <button onClick={() => { navigator.clipboard.writeText(wgetCommand); toast.success("Kopiert!"); }}
+              className="shrink-0 px-2 py-2 bg-white border border-emerald-300 rounded hover:bg-emerald-100"
+              data-testid="dse5510-copy-wget-btn" title="Kopieren">
+              <Download className="w-4 h-4 text-emerald-600" />
+            </button>
+          </div>
+          <p className="text-[10px] text-emerald-600 mt-2">Link ist 1 Stunde gueltig.</p>
+        </div>
+      )}
+
+      <Button variant="outline" size="sm" onClick={handleGenerateSetup} disabled={loading}
+        className="text-gray-600 hover:text-fuchsia-600" data-testid="dse5510-generate-setup-btn">
+        <Download className="w-3.5 h-3.5 mr-1.5" />
+        {loading ? "Wird generiert..." : "Setup generieren"}
+      </Button>
+      <p className="text-[10px] text-gray-400 mt-2">
+        Enthält: RS232 Modbus RTU + GPS + Steuerung (Start/Stop/Auto) + Lokale DB + Systemd-Dienst
+      </p>
+
+      <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-3">
+        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Modbus Register (GenComm)</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] text-gray-600">
+          <span>Page 4: Grundwerte (V, A, W, Hz, RPM)</span>
+          <span>Page 6: Leistungsfaktor, kW, kVA</span>
+          <span>Page 7: Betriebsstunden, kWh, Starts</span>
+          <span>Page 16: Steuerung (Start/Stop/Auto)</span>
+        </div>
+        <div className="mt-2 text-[11px] text-gray-600">
+          <span className="font-medium">Steuerbefehle:</span> Stop, Auto, Manuell, Start, Generator Ein/Aus
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
 const CONTROLLER_TOPIC_INFO = {
   "DSE 8610 MKII": { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" },
   "DSE 8610": { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" },
@@ -939,7 +1046,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   <div>
                     <Label className="text-gray-700 text-sm">Steuerung</Label>
                     {(() => {
-                      const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
+                      const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
                       const isKnown = CONTROLLER_OPTIONS.includes(formData.controller);
                       const selectValue = isKnown ? formData.controller : (controllerCustomMode ? "__custom" : "");
                       return (
@@ -1023,8 +1130,8 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 </div>
               </div>
 
-              {/* DSE890 Gateway Setup - only for existing devices with admin */}
-              {editing && (
+              {/* DSE890 Gateway Setup - only for existing devices with admin, NOT for DSE 5510 (uses Pi) */}
+              {editing && formData.controller !== "DSE 5510" && (
                 <DseGatewaySetupSection
                   controller={formData.controller}
                   serialNumber={formData.serial_number}
@@ -1032,6 +1139,11 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   update={update}
                   deviceId={editing.id}
                 />
+              )}
+
+              {/* DSE 5510 Pi Setup - RS232 Modbus RTU */}
+              {editing && formData.controller === "DSE 5510" && (
+                <DSE5510PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} />
               )}
             </>
           )}

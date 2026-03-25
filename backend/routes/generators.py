@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import uuid
 import secrets
+import hashlib
+import hmac
 import logging
 
 logger = logging.getLogger(__name__)
@@ -276,6 +278,20 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             {"_id": 0},
             sort=[("timestamp", -1)]
         )
+        # Normalize Pi-ingest fields to standard frontend field names
+        if latest:
+            if "power_total_w" in latest and "power_kw" not in latest:
+                latest["power_kw"] = round(latest["power_total_w"] / 1000, 2) if latest["power_total_w"] else 0
+            if "coolant_temp_c" in latest and "coolant_temp" not in latest:
+                latest["coolant_temp"] = latest["coolant_temp_c"]
+            if "oil_pressure_kpa" in latest and "oil_pressure" not in latest:
+                latest["oil_pressure"] = round(latest["oil_pressure_kpa"] / 100, 2) if latest["oil_pressure_kpa"] else 0  # kPa -> bar
+            if "fuel_level_pct" in latest and "fuel_level" not in latest:
+                latest["fuel_level"] = latest["fuel_level_pct"]
+            if "engine_run_hours" in latest and "hours_run" not in latest:
+                latest["hours_run"] = latest["engine_run_hours"]
+            if "power_factor_avg" in latest and "power_factor" not in latest:
+                latest["power_factor"] = latest["power_factor_avg"]
         g["latest_telemetry"] = latest
 
         # P4: Check for upcoming maintenance via device cross-reference
@@ -342,6 +358,20 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
         {"_id": 0},
         sort=[("timestamp", -1)]
     )
+    # Normalize Pi-ingest fields to standard frontend field names
+    if latest:
+        if "power_total_w" in latest and "power_kw" not in latest:
+            latest["power_kw"] = round(latest["power_total_w"] / 1000, 2) if latest["power_total_w"] else 0
+        if "coolant_temp_c" in latest and "coolant_temp" not in latest:
+            latest["coolant_temp"] = latest["coolant_temp_c"]
+        if "oil_pressure_kpa" in latest and "oil_pressure" not in latest:
+            latest["oil_pressure"] = round(latest["oil_pressure_kpa"] / 100, 2) if latest["oil_pressure_kpa"] else 0
+        if "fuel_level_pct" in latest and "fuel_level" not in latest:
+            latest["fuel_level"] = latest["fuel_level_pct"]
+        if "engine_run_hours" in latest and "hours_run" not in latest:
+            latest["hours_run"] = latest["engine_run_hours"]
+        if "power_factor_avg" in latest and "power_factor" not in latest:
+            latest["power_factor"] = latest["power_factor_avg"]
     gen["latest_telemetry"] = latest
 
     # Attach recent alarms
@@ -487,6 +517,21 @@ async def get_telemetry(
         {"generator_id": generator_id, "timestamp": {"$gte": since}},
         {"_id": 0}
     ).sort("timestamp", -1).to_list(limit)
+
+    # Normalize Pi-ingest fields for chart compatibility
+    for t in telemetry:
+        if "power_total_w" in t and "power_kw" not in t:
+            t["power_kw"] = round(t["power_total_w"] / 1000, 2) if t["power_total_w"] else 0
+        if "coolant_temp_c" in t and "coolant_temp" not in t:
+            t["coolant_temp"] = t["coolant_temp_c"]
+        if "oil_pressure_kpa" in t and "oil_pressure" not in t:
+            t["oil_pressure"] = round(t["oil_pressure_kpa"] / 100, 2) if t["oil_pressure_kpa"] else 0
+        if "fuel_level_pct" in t and "fuel_level" not in t:
+            t["fuel_level"] = t["fuel_level_pct"]
+        if "engine_run_hours" in t and "hours_run" not in t:
+            t["hours_run"] = t["engine_run_hours"]
+        if "power_factor_avg" in t and "power_factor" not in t:
+            t["power_factor"] = t["power_factor_avg"]
 
     return telemetry
 
@@ -736,4 +781,199 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         "offline": gen_offline,
         "active_alarms": active_alarms,
         "active_warnings": active_warnings,
+    }
+
+
+# ============== Pi-based Generator Ingest (DSE 5510 etc.) ==============
+
+class PiIngestPayload(BaseModel):
+    api_key: str
+    device_id: str
+    generator_id: Optional[str] = ""
+    records: List[Dict[str, Any]] = []
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    command_results: Optional[List[Dict[str, Any]]] = []
+
+
+def _hash_key(plain_key: str) -> str:
+    return hashlib.sha256(plain_key.encode()).hexdigest()
+
+
+def _verify_key(plain_key: str, hashed: str) -> bool:
+    return hmac.compare_digest(hashlib.sha256(plain_key.encode()).hexdigest(), hashed)
+
+
+@router.post("/ingest")
+async def ingest_generator_telemetry(payload: PiIngestPayload):
+    """Receive telemetry from Pi-based DSE controllers (DSE 5510 etc.).
+    Authenticates via device_key, stores in generator_telemetry, returns pending commands."""
+
+    # Authenticate via device_key
+    device = await db.devices.find_one({"id": payload.device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    stored_hash = device.get("device_key_hash", "")
+    if not stored_hash or not _verify_key(payload.api_key, stored_hash):
+        raise HTTPException(status_code=403, detail="Ungueltiger Geraeteschluessel")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Resolve generator_id: use "dev-{device_id}" pattern for virtual generators
+    generator_id = payload.generator_id or f"dev-{payload.device_id}"
+
+    # Update device status
+    update_fields = {
+        "last_seen": now_iso,
+        "mqtt_status": "online",
+        "updated_at": now_iso,
+    }
+    if payload.latitude is not None and payload.longitude is not None:
+        update_fields["latitude"] = payload.latitude
+        update_fields["longitude"] = payload.longitude
+    await db.devices.update_one({"id": payload.device_id}, {"$set": update_fields})
+
+    # Store telemetry records
+    inserted = 0
+    for record in payload.records:
+        telemetry_doc = {
+            "id": str(uuid.uuid4()),
+            "generator_id": generator_id,
+            "timestamp": record.get("ts_utc", now_iso),
+            "source": record.get("source", "dse5510_pi"),
+            # Basic instrumentation
+            "oil_pressure_kpa": record.get("oil_pressure_kpa"),
+            "coolant_temp_c": record.get("coolant_temp_c"),
+            "oil_temp_c": record.get("oil_temp_c"),
+            "fuel_level_pct": record.get("fuel_level_pct"),
+            "charge_alt_voltage": record.get("charge_alt_voltage"),
+            "battery_voltage": record.get("battery_voltage"),
+            "rpm": record.get("rpm"),
+            "frequency": record.get("frequency"),
+            "engine_running": record.get("engine_running", False),
+            # Voltages
+            "voltage_l1": record.get("voltage_l1"),
+            "voltage_l2": record.get("voltage_l2"),
+            "voltage_l3": record.get("voltage_l3"),
+            "voltage_l1_l2": record.get("voltage_l1_l2"),
+            "voltage_l2_l3": record.get("voltage_l2_l3"),
+            "voltage_l3_l1": record.get("voltage_l3_l1"),
+            # Currents
+            "current_l1": record.get("current_l1"),
+            "current_l2": record.get("current_l2"),
+            "current_l3": record.get("current_l3"),
+            # Power
+            "power_l1_w": record.get("power_l1_w"),
+            "power_l2_w": record.get("power_l2_w"),
+            "power_l3_w": record.get("power_l3_w"),
+            "power_total_w": record.get("power_total_w"),
+            "power_total_va": record.get("power_total_va"),
+            "power_total_var": record.get("power_total_var"),
+            # Power factor
+            "power_factor_l1": record.get("power_factor_l1"),
+            "power_factor_l2": record.get("power_factor_l2"),
+            "power_factor_l3": record.get("power_factor_l3"),
+            "power_factor_avg": record.get("power_factor_avg"),
+            # Accumulated
+            "engine_run_time_s": record.get("engine_run_time_s"),
+            "engine_run_hours": record.get("engine_run_hours"),
+            "energy_kwh": record.get("energy_kwh"),
+            "num_starts": record.get("num_starts"),
+        }
+        # Remove None values to keep documents clean
+        telemetry_doc = {k: v for k, v in telemetry_doc.items() if v is not None}
+        await db.generator_telemetry.insert_one(telemetry_doc)
+        inserted += 1
+
+    # Process command results
+    for cr in (payload.command_results or []):
+        cmd_id = cr.get("command_id", "")
+        if cmd_id:
+            await db.generator_pending_commands.update_one(
+                {"id": cmd_id},
+                {"$set": {
+                    "status": "completed" if cr.get("success") else "failed",
+                    "result_message": cr.get("message", ""),
+                    "completed_at": now_iso,
+                }}
+            )
+
+    # Fetch pending commands for this device
+    pending = await db.generator_pending_commands.find(
+        {"device_id": payload.device_id, "status": "pending"},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(10)
+
+    # Mark as sent
+    for cmd in pending:
+        await db.generator_pending_commands.update_one(
+            {"id": cmd["id"]},
+            {"$set": {"status": "sent", "sent_at": now_iso}}
+        )
+
+    return {
+        "inserted": inserted,
+        "generator_id": generator_id,
+        "pending_commands": pending,
+    }
+
+
+@router.post("/pi-command/{device_id}")
+async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depends(get_authenticated_user)):
+    """Queue a control command for a Pi-based generator (DSE 5510).
+    The Pi picks it up on its next ingest call."""
+    # Verify admin/operator
+    if user.get("role") not in ("admin", "operator"):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+
+    command = cmd.get("command", "")
+    valid_commands = ["stop", "auto_on", "manual", "start", "mute", "reset", "gen_switch_on", "gen_switch_off"]
+    if command not in valid_commands:
+        raise HTTPException(status_code=400, detail=f"Unbekannter Befehl: {command}. Erlaubt: {valid_commands}")
+
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    DSE_CMD_LABELS = {
+        "stop": "Stop-Modus", "auto_on": "Automatikmodus", "manual": "Manueller Modus",
+        "start": "Motor starten", "mute": "Alarm stumm", "reset": "Alarme zuruecksetzen",
+        "gen_switch_on": "Generator zuschalten", "gen_switch_off": "Generator abschalten",
+    }
+
+    cmd_doc = {
+        "id": str(uuid.uuid4()),
+        "device_id": device_id,
+        "generator_id": f"dev-{device_id}",
+        "command": command,
+        "label": DSE_CMD_LABELS.get(command, command),
+        "status": "pending",
+        "user_id": user["id"],
+        "user_name": user.get("name", user.get("email", "")),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.generator_pending_commands.insert_one(cmd_doc)
+
+    # Also log in control log for history
+    await db.generator_control_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "generator_id": f"dev-{device_id}",
+        "generator_name": device.get("serial_number", ""),
+        "command": command,
+        "command_label": DSE_CMD_LABELS.get(command, command),
+        "topic": "pi-http",
+        "payload": f"Pending command for Pi: {command}",
+        "user_id": user["id"],
+        "user_name": user.get("name", user.get("email", "")),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {
+        "success": True,
+        "command_id": cmd_doc["id"],
+        "command": command,
+        "label": DSE_CMD_LABELS.get(command, command),
+        "status": "pending",
+        "message": f"Befehl '{DSE_CMD_LABELS.get(command, command)}' wird beim naechsten Sync an den Pi gesendet.",
     }

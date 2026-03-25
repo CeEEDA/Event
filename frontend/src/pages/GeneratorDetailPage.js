@@ -24,6 +24,7 @@ import {
   ToggleLeft,
   ToggleRight,
   ClipboardList,
+  ZapOff,
 } from "lucide-react";
 import {
   XAxis,
@@ -403,6 +404,37 @@ export default function GeneratorDetailPage() {
                 </div>
                 <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "start" ? "..." : "Start"}</span>
               </button>
+              {/* Generator Switch On/Off - DSE 5510 */}
+              <div className="border-l border-gray-200 pl-5 flex items-center gap-4">
+                <button
+                  onClick={() => sendCommand("gen_switch_on", "Generator zuschalten")}
+                  disabled={cmdLoading !== null}
+                  className="group relative disabled:opacity-50 focus:outline-none"
+                  data-testid="cmd-gen-on-btn"
+                >
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-150
+                    bg-gradient-to-b from-blue-100 via-blue-200 to-blue-300 shadow-[0_2px_6px_rgba(0,0,0,0.12),inset_0_2px_4px_rgba(255,255,255,0.5)]
+                    group-hover:from-blue-200 group-hover:via-blue-300 group-hover:to-blue-500
+                    ring-2 ring-gray-200 ring-offset-1 active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]">
+                    <Zap className="w-5 h-5 text-blue-700 group-hover:text-white" />
+                  </div>
+                  <span className="block text-[10px] text-gray-500 text-center mt-1 font-medium">{cmdLoading === "gen_switch_on" ? "..." : "Gen EIN"}</span>
+                </button>
+                <button
+                  onClick={() => sendCommand("gen_switch_off", "Generator abschalten")}
+                  disabled={cmdLoading !== null}
+                  className="group relative disabled:opacity-50 focus:outline-none"
+                  data-testid="cmd-gen-off-btn"
+                >
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-150
+                    bg-gradient-to-b from-orange-100 via-orange-200 to-orange-300 shadow-[0_2px_6px_rgba(0,0,0,0.12),inset_0_2px_4px_rgba(255,255,255,0.5)]
+                    group-hover:from-orange-200 group-hover:via-orange-300 group-hover:to-orange-500
+                    ring-2 ring-gray-200 ring-offset-1 active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]">
+                    <ZapOff className="w-5 h-5 text-orange-700 group-hover:text-white" />
+                  </div>
+                  <span className="block text-[10px] text-gray-500 text-center mt-1 font-medium">{cmdLoading === "gen_switch_off" ? "..." : "Gen AUS"}</span>
+                </button>
+              </div>
             </div>
           );
         })()}
