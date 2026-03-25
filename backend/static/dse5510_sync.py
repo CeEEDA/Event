@@ -115,10 +115,11 @@ DEFAULT_CONF = {
     "serial_port": "/dev/ttyUSB0",
     "baud_rate": 9600,
     "slave_id": 10,
-    "read_interval": 10,
+    "read_interval": 1,
     "sync_interval": 30,
     "retry_delay": 30,
-    "batch_size": 200,
+    "batch_size": 500,
+    "max_disk_gb": 60,
 }
 
 
@@ -132,7 +133,7 @@ def load_config():
             s = cp["dse5510"]
             for key in conf:
                 if key in s:
-                    if key in ("baud_rate", "slave_id", "read_interval", "sync_interval", "retry_delay", "batch_size"):
+                    if key in ("baud_rate", "slave_id", "read_interval", "sync_interval", "retry_delay", "batch_size", "max_disk_gb"):
                         conf[key] = int(s[key])
                     else:
                         conf[key] = s[key]
@@ -389,6 +390,9 @@ def execute_command(client, slave_id, command_name):
 def init_db(db_path):
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
+    # WAL-Modus fuer bessere Performance bei haeufigen Schreibzugriffen
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS telemetry (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -399,6 +403,21 @@ def init_db(db_path):
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_synced ON telemetry(synced)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ts ON telemetry(ts_utc)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS alarms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts_utc TEXT NOT NULL,
+            alarm_type TEXT NOT NULL,
+            alarm_code INTEGER,
+            description TEXT,
+            active INTEGER DEFAULT 1,
+            cleared_at TEXT,
+            synced INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_synced ON alarms(synced)")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS command_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -423,6 +442,84 @@ def store_telemetry(db_path, data):
     )
     conn.commit()
     conn.close()
+
+
+def store_alarm(db_path, alarm_type, alarm_code, description):
+    """Speichert eine Stoerung mit Zeitstempel."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO alarms (ts_utc, alarm_type, alarm_code, description) VALUES (?, ?, ?, ?)",
+        (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"), alarm_type, alarm_code, description)
+    )
+    conn.commit()
+    conn.close()
+    log.warning(f"STOERUNG: [{alarm_type}] Code={alarm_code} - {description}")
+
+
+def clear_alarm(db_path, alarm_type):
+    """Markiert eine Stoerung als behoben."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "UPDATE alarms SET active=0, cleared_at=? WHERE alarm_type=? AND active=1",
+        (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"), alarm_type)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_unsynced_alarms(db_path, limit=100):
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT id, ts_utc, alarm_type, alarm_code, description, active, cleared_at FROM alarms WHERE synced=0 ORDER BY id ASC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def mark_alarms_synced(db_path, ids):
+    if not ids:
+        return
+    conn = sqlite3.connect(db_path)
+    placeholders = ",".join("?" * len(ids))
+    conn.execute(f"UPDATE alarms SET synced=1 WHERE id IN ({placeholders})", ids)
+    conn.commit()
+    conn.close()
+
+
+def check_disk_space(db_path, max_gb):
+    """Prueft die DB-Groesse und loescht aelteste Daten wenn > max_gb."""
+    try:
+        db_file = Path(db_path)
+        if not db_file.exists():
+            return
+        size_gb = db_file.stat().st_size / (1024**3)
+        if size_gb < max_gb:
+            return
+
+        log.warning(f"Datenbank {size_gb:.1f} GB > Limit {max_gb} GB. Raeume auf...")
+        conn = sqlite3.connect(db_path)
+        # Loesche aelteste synchronisierte Daten (30 Tage alt)
+        conn.execute("DELETE FROM telemetry WHERE synced=1 AND created_at < datetime('now', '-30 days')")
+        conn.execute("DELETE FROM alarms WHERE synced=1 AND created_at < datetime('now', '-90 days')")
+        deleted = conn.total_changes
+        conn.execute("VACUUM")
+        conn.commit()
+        conn.close()
+        new_size = db_file.stat().st_size / (1024**3)
+        log.info(f"Aufraumen: {deleted} Eintraege geloescht. Neu: {new_size:.1f} GB")
+
+        # Falls immer noch zu gross, loesche auch unsynchronisierte alte Daten
+        if new_size >= max_gb:
+            conn = sqlite3.connect(db_path)
+            conn.execute("DELETE FROM telemetry WHERE created_at < datetime('now', '-7 days')")
+            conn.execute("VACUUM")
+            conn.commit()
+            conn.close()
+            log.warning("Notfall-Aufraumen: Daten aelter als 7 Tage geloescht.")
+    except Exception as e:
+        log.error(f"Fehler beim Disk-Check: {e}")
 
 
 def get_unsynced(db_path, limit=200):
@@ -476,18 +573,15 @@ def mark_commands_synced(db_path, ids):
     conn.close()
 
 
-def cleanup_old(db_path, keep_days=7):
+def cleanup_old(db_path, max_gb=60):
+    """Loescht synchronisierte Daten und prueft Disk-Limit."""
     conn = sqlite3.connect(db_path)
-    conn.execute(
-        "DELETE FROM telemetry WHERE synced=1 AND created_at < datetime('now', ?)",
-        (f"-{keep_days} days",)
-    )
-    conn.execute(
-        "DELETE FROM command_results WHERE synced=1 AND created_at < datetime('now', ?)",
-        (f"-{keep_days} days",)
-    )
+    conn.execute("DELETE FROM telemetry WHERE synced=1 AND created_at < datetime('now', '-7 days')")
+    conn.execute("DELETE FROM command_results WHERE synced=1 AND created_at < datetime('now', '-7 days')")
+    conn.execute("DELETE FROM alarms WHERE synced=1 AND created_at < datetime('now', '-30 days')")
     conn.commit()
     conn.close()
+    check_disk_space(db_path, max_gb)
 
 
 # ====== Portal Sync ======
@@ -508,6 +602,9 @@ def sync_to_portal(conf, gps_data, modbus_client):
     # Nicht synchronisierte Befehlsergebnisse sammeln
     cmd_results = get_unsynced_command_results(conf["db_path"])
 
+    # Nicht synchronisierte Stoerungen sammeln
+    alarm_records = get_unsynced_alarms(conf["db_path"])
+
     payload = {
         "api_key": conf["device_key"],
         "device_id": conf["device_id"],
@@ -516,6 +613,11 @@ def sync_to_portal(conf, gps_data, modbus_client):
         "command_results": [
             {"command_id": r["command_id"], "command": r["command"], "success": bool(r["success"]), "message": r["message"]}
             for r in cmd_results
+        ],
+        "alarms": [
+            {"ts_utc": a["ts_utc"], "alarm_type": a["alarm_type"], "alarm_code": a["alarm_code"],
+             "description": a["description"], "active": bool(a["active"]), "cleared_at": a["cleared_at"]}
+            for a in alarm_records
         ],
     }
 
@@ -533,6 +635,8 @@ def sync_to_portal(conf, gps_data, modbus_client):
             mark_synced(conf["db_path"], row_ids)
             if cmd_results:
                 mark_commands_synced(conf["db_path"], [r["id"] for r in cmd_results])
+            if alarm_records:
+                mark_alarms_synced(conf["db_path"], [a["id"] for a in alarm_records])
 
             result = resp.json()
             inserted = result.get("inserted", 0)
@@ -600,8 +704,9 @@ def main():
     log.info(f"  Baud Rate:     {conf['baud_rate']}")
     log.info(f"  Slave ID:      {conf['slave_id']}")
     log.info(f"  Datenbank:     {conf['db_path']}")
-    log.info(f"  Leseintervall: {conf['read_interval']}s")
+    log.info(f"  Leseintervall: {conf['read_interval']}s (1x/Sek.)")
     log.info(f"  Sync-Intervall:{conf['sync_interval']}s")
+    log.info(f"  Max Disk:      {conf['max_disk_gb']} GB")
     log.info("=" * 60)
 
     # Validierung
@@ -633,9 +738,13 @@ def main():
 
     last_sync_time = 0
     last_gps = None
+    last_gps_time = 0
+    last_disk_check = 0
     consecutive_errors = 0
+    portal_connected = False
+    prev_alarm_state = {}
 
-    log.info("Starte Messung...")
+    log.info("Starte 1-Sekunden-Messung...")
 
     while True:
         try:
@@ -643,30 +752,63 @@ def main():
             if not client.connected:
                 if not client.connect():
                     log.warning(f"Modbus-Verbindung zu {conf['serial_port']} fehlgeschlagen")
+                    store_alarm(conf["db_path"], "modbus_disconnect", 0,
+                                f"Modbus-Verbindung zu {conf['serial_port']} fehlgeschlagen")
                     consecutive_errors += 1
-                    time.sleep(conf["retry_delay"])
+                    time.sleep(int(conf["retry_delay"]))
                     continue
                 log.info(f"Modbus verbunden: {conf['serial_port']}")
+                clear_alarm(conf["db_path"], "modbus_disconnect")
 
-            # DSE 5510 auslesen
+            # DSE 5510 auslesen (jede Sekunde)
             data = read_dse5510(client, int(conf["slave_id"]))
             if data.get("online"):
                 store_telemetry(conf["db_path"], data)
                 consecutive_errors = 0
+
+                # Stoerungserkennung
+                if data.get("coolant_temp_c", 0) > 100 and not prev_alarm_state.get("overtemp"):
+                    store_alarm(conf["db_path"], "overtemp", 1, f"Kuehlmittel-Uebertemperatur: {data['coolant_temp_c']}C")
+                    prev_alarm_state["overtemp"] = True
+                elif data.get("coolant_temp_c", 0) <= 95 and prev_alarm_state.get("overtemp"):
+                    clear_alarm(conf["db_path"], "overtemp")
+                    prev_alarm_state["overtemp"] = False
+
+                if data.get("oil_pressure_kpa", 999) < 100 and data.get("rpm", 0) > 500 and not prev_alarm_state.get("low_oil"):
+                    store_alarm(conf["db_path"], "low_oil_pressure", 2, f"Niedriger Oeldruck: {data['oil_pressure_kpa']}kPa bei {data['rpm']}rpm")
+                    prev_alarm_state["low_oil"] = True
+                elif data.get("oil_pressure_kpa", 0) >= 150 and prev_alarm_state.get("low_oil"):
+                    clear_alarm(conf["db_path"], "low_oil_pressure")
+                    prev_alarm_state["low_oil"] = False
+
+                if data.get("battery_voltage", 99) < 10.5 and not prev_alarm_state.get("low_batt"):
+                    store_alarm(conf["db_path"], "low_battery", 3, f"Niedrige Batteriespannung: {data['battery_voltage']}V")
+                    prev_alarm_state["low_batt"] = True
+                elif data.get("battery_voltage", 0) >= 11.5 and prev_alarm_state.get("low_batt"):
+                    clear_alarm(conf["db_path"], "low_battery")
+                    prev_alarm_state["low_batt"] = False
+
             else:
                 consecutive_errors += 1
 
-            # GPS lesen (einmal pro Minute reicht)
-            gps = read_gps()
-            if gps:
-                last_gps = gps
+            # GPS lesen (alle 60 Sekunden)
+            now = time.time()
+            if now - last_gps_time >= 60:
+                gps = read_gps()
+                if gps:
+                    last_gps = gps
+                last_gps_time = now
 
             # Periodisch zum Portal syncen
-            now = time.time()
             if now - last_sync_time >= int(conf["sync_interval"]):
                 synced = sync_to_portal(conf, last_gps, client)
+                portal_connected = synced >= 0  # Track portal connectivity  # noqa: F841
                 last_sync_time = now
-                cleanup_old(conf["db_path"])
+
+                # Disk-Pruefung (nur alle 5 Minuten)
+                if now - last_disk_check >= 300:
+                    cleanup_old(conf["db_path"], int(conf["max_disk_gb"]))
+                    last_disk_check = now
 
         except KeyboardInterrupt:
             log.info("Beendet durch Benutzer")

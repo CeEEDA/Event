@@ -1155,10 +1155,11 @@ db_path = /var/lib/dse5510/dse5510.sqlite
 serial_port = {body.serial_port}
 baud_rate = {body.baud_rate}
 slave_id = {body.slave_id}
-read_interval = 10
+read_interval = 1
 sync_interval = 30
 retry_delay = 30
-batch_size = 200
+batch_size = 500
+max_disk_gb = 60
 CONF
 
 sudo chmod 600 /etc/dse5510.conf

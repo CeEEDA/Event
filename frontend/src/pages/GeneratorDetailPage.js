@@ -373,13 +373,13 @@ export default function GeneratorDetailPage() {
 
           const StatusLed = ({ on, label }) => (
             <div className="flex items-center gap-1.5">
-              <div className={`w-7 h-3.5 rounded-sm border ${on ? "bg-emerald-400 border-emerald-500 shadow-[0_0_5px_rgba(52,211,153,0.5)]" : "bg-gray-700 border-gray-600"} transition-colors duration-300`} />
-              <span className="text-[10px] text-gray-400 font-medium">{label}</span>
+              <div className={`w-7 h-3.5 rounded-sm border ${on ? "bg-emerald-400 border-emerald-500 shadow-[0_0_5px_rgba(52,211,153,0.5)]" : "bg-gray-200 border-gray-300"} transition-colors duration-300`} />
+              <span className="text-[10px] text-gray-500 font-medium">{label}</span>
             </div>
           );
 
           return (
-            <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden" data-testid="generator-controls">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="generator-controls">
               {/* Status LEDs - only 5510 */}
               {is5510 && (
                 <>
@@ -390,9 +390,9 @@ export default function GeneratorDetailPage() {
                       <StatusLed on={hasPower} label="Generator bereit" />
                       <StatusLed on={hasPower && isRunning} label="Trenner geschlossen" />
                     </div>
-                    <span className="text-[10px] text-gray-600 font-mono">DSE Steuerung</span>
+                    <span className="text-[10px] text-gray-400 font-mono">DSE Steuerung</span>
                   </div>
-                  <div className="mx-4 border-t border-gray-700" />
+                  <div className="mx-4 border-t border-gray-200" />
                 </>
               )}
 
@@ -450,7 +450,7 @@ export default function GeneratorDetailPage() {
               {/* Transfer Switches - only 5510 */}
               {is5510 && (
                 <>
-                  <div className="mx-4 border-t border-gray-700" />
+                  <div className="mx-4 border-t border-gray-200" />
                   <div className="px-5 py-3 flex items-end justify-center gap-4">
                     <DseBtn cmd="gen_switch_on" label="Gen EIN" size="w-10 h-10"
                       active={hasPower && isRunning}
