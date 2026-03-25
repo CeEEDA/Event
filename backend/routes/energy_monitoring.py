@@ -926,6 +926,20 @@ async def ingest_data(data: IngestBatch):
     """Receive batch of EMU data from Pi sync script. Authenticated via per-device key."""
     # First try per-device key authentication
     device = await db.devices.find_one({"id": data.device_id, "device_type": {"$in": ["messkoffer", "kirmeskiste"]}})
+
+    # Fallback: device_id nicht gefunden -> suche per api_key ueber alle Geraete
+    # Das passiert wenn ein Geraet im Portal geloescht und neu angelegt wurde (neue UUID)
+    actual_device_id = data.device_id
+    if not device and data.api_key:
+        key_hash_check = hashlib.sha256(data.api_key.encode()).hexdigest()
+        device = await db.devices.find_one({
+            "device_type": {"$in": ["messkoffer", "kirmeskiste"]},
+            "device_key_hash": key_hash_check
+        })
+        if device:
+            actual_device_id = device["id"]
+            logger.info(f"Ingest: Device-ID Fallback! Pi sendet {data.device_id}, gefunden als {device['serial_number']} ({actual_device_id}) via Key-Match")
+
     if not device:
         logger.warning(f"Ingest 404: device_id={data.device_id}, meter_id={data.meter_id} - Geraet nicht in DB")
         raise HTTPException(status_code=404, detail=f"Geraet nicht gefunden (device_id: {data.device_id})")
@@ -941,20 +955,28 @@ async def ingest_data(data: IngestBatch):
         if not _verify_key(data.api_key, key_hash):
             raise HTTPException(status_code=401, detail="Ungültiger Geräteschlüssel")
 
-    meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": data.device_id}, {"_id": 0})
+    meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": actual_device_id}, {"_id": 0})
+    if not meter:
+        # Also check if meter exists under the old device_id (Pi sends old ID)
+        if actual_device_id != data.device_id:
+            meter = await db.emu_meters.find_one({"id": data.meter_id, "device_id": data.device_id}, {"_id": 0})
+            if meter:
+                # Update meter to point to the correct device
+                await db.emu_meters.update_one({"id": data.meter_id}, {"$set": {"device_id": actual_device_id}})
+                logger.info(f"Meter {data.meter_id} umgehaengt von {data.device_id} -> {actual_device_id}")
     if not meter:
         # Auto-register meter when device is authenticated but meter is unknown
-        device_name = device.get("serial_number", data.device_id)
+        device_name = device.get("serial_number", actual_device_id)
         meter_doc = {
             "id": data.meter_id,
-            "device_id": data.device_id,
+            "device_id": actual_device_id,
             "meter_name": f"Auto-registriert ({device_name})",
             "meter_ip": "",
             "description": "Automatisch beim ersten Datenempfang erstellt",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.emu_meters.insert_one(meter_doc)
-        logger.info(f"Auto-registered meter {data.meter_id} for device {data.device_id} ({device_name})")
+        logger.info(f"Auto-registered meter {data.meter_id} for device {actual_device_id} ({device_name})")
         meter = {k: v for k, v in meter_doc.items() if k != "_id"}
 
     if not data.records:
@@ -965,7 +987,7 @@ async def ingest_data(data: IngestBatch):
     for r in data.records:
         doc = {
             "id": str(uuid.uuid4()),
-            "device_id": data.device_id,
+            "device_id": actual_device_id,
             "meter_id": data.meter_id,
             "ts_utc": r.get("ts_utc"),
             "meter_ts": r.get("meter_ts"),
@@ -1006,7 +1028,7 @@ async def ingest_data(data: IngestBatch):
     # Update sync state
     if data.last_sync_id:
         await db.emu_sync_state.update_one(
-            {"device_id": data.device_id, "meter_id": data.meter_id},
+            {"device_id": actual_device_id, "meter_id": data.meter_id},
             {"$set": {"last_sync_id": data.last_sync_id, "last_sync_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True
         )
@@ -1014,11 +1036,11 @@ async def ingest_data(data: IngestBatch):
     # Update device last_seen for online status tracking
     now_iso = datetime.now(timezone.utc).isoformat()
     await db.devices.update_one(
-        {"id": data.device_id},
+        {"id": actual_device_id},
         {"$set": {"last_seen": now_iso}}
     )
 
-    logger.info(f"Ingest: {len(docs)} records for device={data.device_id} meter={data.meter_id}")
+    logger.info(f"Ingest: {len(docs)} records for device={actual_device_id} meter={data.meter_id}")
     return {"inserted": len(docs), "message": f"{len(docs)} Datensätze empfangen"}
 
 
@@ -1027,6 +1049,18 @@ async def get_sync_state(device_id: str, meter_id: str, api_key: str):
     """Get the last synced ID for a device/meter pair."""
     # Verify per-device key
     device = await db.devices.find_one({"id": device_id})
+    actual_device_id = device_id
+
+    # Fallback: suche per api_key wenn device_id nicht gefunden
+    if not device and api_key:
+        key_hash_check = hashlib.sha256(api_key.encode()).hexdigest()
+        device = await db.devices.find_one({
+            "device_type": {"$in": ["messkoffer", "kirmeskiste"]},
+            "device_key_hash": key_hash_check
+        })
+        if device:
+            actual_device_id = device["id"]
+
     if not device:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
 
@@ -1041,7 +1075,7 @@ async def get_sync_state(device_id: str, meter_id: str, api_key: str):
             raise HTTPException(status_code=401, detail="Ungültiger Schlüssel")
 
     state = await db.emu_sync_state.find_one(
-        {"device_id": device_id, "meter_id": meter_id},
+        {"device_id": actual_device_id, "meter_id": meter_id},
         {"_id": 0}
     )
     return {"last_sync_id": state.get("last_sync_id", 0) if state else 0}
