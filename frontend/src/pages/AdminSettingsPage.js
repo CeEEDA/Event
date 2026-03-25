@@ -416,7 +416,7 @@ function EmergentBridge() {
           <Input
             value={config.api_url}
             onChange={e => setConfig(prev => ({ ...prev, api_url: e.target.value }))}
-            placeholder="https://pi-telemetry.preview.emergentagent.com"
+            placeholder="https://eventenergie.app"
             className="mt-1 font-mono text-sm"
             data-testid="emergent-url-input"
           />
