@@ -1,154 +1,117 @@
-<analysis>**original_problem_statement**:
-The user is building a comprehensive Kirmes (Fairground) billing and management system. The core application is a React frontend with a FastAPI backend and MongoDB database.
+<analysis>**original_problem_statement**: 
+The user is building a comprehensive Kirmes (Fairground) billing and management system. The current focus is on deeply troubleshooting a physical hardware issue: connecting a DSE890 MKII 4G Gateway to the platform's MQTT broker (Mosquitto) over a GSM cellular network. Additionally, the user requested UI adjustments for Generator display cards and the completion of a pending code refactoring task.
 
-Recent user requests implemented in this session include:
-1.  Optimizing the Kirmes event page for smartphone usability. (DONE)
-2.  Allowing a customer to have multiple signups (stalls) for the same event. (DONE)
-3.  Fixing a bug where the initial meter reading () was not being saved upon linking a meter. (DONE & VERIFIED BY USER)
-4.  Adding device categorization and a QR code scanner to the Serviceplan (Maintenance Plan) page. (DONE & VERIFIED BY USER)
-5.  Fixing a navigation bug with the Serviceplan QR scanner. (DONE & VERIFIED BY USER)
-6.  Granting employees full edit capabilities within the device management modal, reserving only device deletion from the main list for admins. (DONE)
-7.  Adding a specific permission toggle (Abrechnung freischalten) in the user management section to control which employees can access billing functions. (DONE)
-8.  Fixing the remote start/stop functionality for DSE generators, which was not working. (IN PROGRESS)
+PRODUCT REQUIREMENTS:
+- Enable remote control of DSE generators via MQTT using precise Modbus registers.
+- Ensure the physical DSE890 gateway can connect to the server over Vodafone GSM.
+- Display Generator names (which store the user-friendly serial like ML_251) as the bold primary title in the UI, hiding the actual machine serial number.
+- Remove obsolete  code across the stack.
 
-PRODUCT REQUIREMENTS (from previous summary):
-- All previous requirements marked as DONE or IN PROGRESS have been addressed or are captured in the new tasks. The focus has shifted to the new feature requests and bug fixes from the current session.
+**User's preferred language**: German (Deutsch) - **YOU MUST RESPOND IN GERMAN ONLY.**
 
-**User's preferred language**: German (Deutsch) - YOU MUST RESPOND IN GERMAN ONLY.
-
-**what currently exists?**
-A full-stack application (React/FastAPI/MongoDB) for managing fairground events, customers, and energy-metering devices. In this session, the agent successfully implemented several key features and fixes:
-- **Mobile UI Overhaul**: The Kirmes event detail page is now fully responsive, using a card-based layout for mobile and a fullscreen QR scanner.
-- **Billing Permissions**: A new  permission has been added to the user model. A toggle switch in the admin panel allows granting this specific right to employees, who by default cannot access billing functions.
-- **Employee Permissions**: Permissions have been significantly relaxed. Employees can now create, copy, and edit all fields of a device, including managing documents and MQTT credentials within the device modal. The only action reserved for an  is deleting a device from the main list view.
-- **Core Logic Fixes**: The agent resolved a critical bug preventing the initial meter reading () from being saved by correcting a database query ( instead of ). An automatic backfill mechanism was also added to fix this for existing entries. The agent also enabled multiple event signups for the same customer.
-- **Serviceplan UX**: The service plan page now features category filters and a QR code scanner to quickly find and open a device's maintenance plan.
+**what currently exists?** 
+A full-stack fairground management application. In this session, the agent successfully fixed the DSE Modbus control payload structure (). The agent also refactored the codebase to remove obsolete  logic, updated the MQTT matching logic to be case-insensitive, and adjusted the Generator UI cards to display the correct titles. The majority of the session was spent doing advanced infrastructure debugging (Nginx stream multiplexing, Mosquitto TLS, FortiGate firewall rules, and DNS resolution) alongside the user to get a physical DSE890 gateway to connect via GSM, which is still failing with socket/TLS errors on the hardware side.
 
 **Last working item**:
-- Last item agent was working: Fixing the remote control (Start/Stop) for DSE generators. The user reported that the function was not working and provided a technical PDF for the DSE Modbus protocol. The agent analyzed the document and discovered that the backend was sending control commands to the wrong Modbus registers. The code was sending simple values to Page 3/Offset 0, whereas the documentation requires writing a  and a  to Page 16, Offsets 8 and 9 simultaneously. The agent has just updated the backend code in  to send the correct payload structure: .
-- Status: IN PROGRESS
-- Agent Testing Done: N
-- Which testing method agent to use? backend testing agent. Test by calling the control endpoint via  and verifying that the correct JSON payload is published to the MQTT topic. Final verification will require user feedback on the physical hardware.
-- User Testing Done: N
+    - Last item agent was working: Investigating how a previously working device (Kirmeskiste) was configured to connect to the MQTT broker. The user asked this to figure out why the current DSE890 is failing to establish a TCP/TLS socket over GSM despite the server ports (1883, 8883, 443) being open and verified.
+    - Status: IN PROGRESS
+    - Agent Testing Done: Y (Ran DB query)
+    - Which testing method agent to use? manual testing by python -c / db queries to fetch the Kirmeskiste gateway configuration.
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  Issue 1: DSE generator remote control is not working (P0)
-  
-  Issues Detail:
-  - Issue 1: 
-     - Attempted fixes: The agent has modified . The  dictionary was updated to target the correct Modbus registers (Page 16, Offsets 8 & 9) and use the two-part key/complement values required for start/stop operations, as per the user's PDF.
-     - Next debug checklist: 
-       1. Use  to call the  endpoint with a start or stop command.
-       2. Check backend logs () to confirm the correctly formatted JSON payload is being prepared for MQTT publication.
-       3. Ask the user to confirm if the physical generator responds to the command.
-     - Why fix this issue and what will be achieved with the fix? This is a critical operational feature, allowing staff to remotely manage power generators.
-     - Status:  IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Backend
+  Issue 1: DSE890 Gateway fails to connect to MQTT over GSM (P0)
+     - Attempted fixes: Tested plain MQTT on port 1883 (Carrier blocks it). Set up Nginx Stream Multiplexing on port 443 (FortiGate Application Control blocked it). Set up Mosquitto TLS on port 8883 (Port is open externally, but DSE890 throws TLS negotiation ). Tested with hardcoded IP instead of DNS (fails). 
+     - Next debug checklist: Check the database for the Kirmeskiste device configuration (as queried in the last step) to see if it used a specific port, TLS setting, or protocol that bypasses the GSM carrier restrictions. Advise the user on replicating those exact hardware settings on the DSE890.
+     - Why fix this issue and what will be achieved with the fix? Core functionality required to monitor and control physical generators remotely in the field.
+     - Status: IN PROGRESS
+     - Is recurring issue? Y (Hardware specific)
+     - Should Test frontend/backend/both after fix? Backend / Hardware logs
      - Blocked on other issue: None
 
-**In progress Task List**:
-- None
+**In progress Task List**: None
 
 **Upcoming and Future Tasks**
- Upcoming Tasks:
+    Upcoming Tasks:
     - (P1) PayPal Integration: Implement PayPal for payment processing during the Kirmes signup flow.
-
- Future Tasks:
-    - (P2) Diagnostic Feature for Meters: Implement a feature (e.g., a button in device management) to display the last 10 raw measurement values for a single meter, to help diagnose hardware-level issues like the phantom 105 kW reading.
+    
+    Future Tasks:
+    - (P2) Diagnostic Feature for Meters: Implement a feature to display the last 10 raw measurement values for a single meter.
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk.
     - (P2) Implement Admin File Size Limits for uploads.
     - (P2) Create a Windows Installer for the Electron app.
-    - (P2) Refactor and remove the obsolete  code from the backend and frontend.
 
 **Completed work in this session**
-- **Finished Mobile Optimization**: The Kirmes event detail page is now fully responsive with a card view and fullscreen QR scanner.
-- **Enabled Multiple Signups**: Backend logic and frontend UI were updated to allow a single customer to register multiple stands for an event. (Verified by User)
-- **Fixed and Backfilled kWh Einbaustand**: Corrected the database query to fetch the initial meter reading and added a backfill mechanism for existing records. (Verified by User)
-- **Enhanced Serviceplan Page**: Implemented category filters and a QR code scanner for quick device lookup. (Verified by User)
-- **Overhauled Employee Permissions**: Granted employees full edit access within the device modal, including MQTT credential management and document deletion. Deleting a device from the main list remains admin-only.
-- **Implemented Billing Permission**: Added a new  permission, controlled by a toggle in the admin user management, to restrict access to billing functions.
-- **Analyzed DSE Control Bug**: Diagnosed the root cause of the generator control failure by comparing existing code with the official Modbus documentation.
+- DSE Remote Control Modbus-Register Fix ( updated to ) (DONE)
+- MQTT Matching Logic Improvement (Case-insensitive, whitespace trimming, better logging in ) (DONE)
+- Removed obsolete  code from backend and frontend (DONE)
+- Generator UI display updated: Set  (e.g., ML_251) as the bold title and hid the internal  on Dashboard, Detail Page, and Map popups (DONE)
+- Renamed DSE Modul-ID to USB ID in frontend forms to prevent user configuration errors (DONE)
+- Assisted user in configuring Nginx Stream Proxy and Mosquitto TLS on their production Windows Server (Infrastructure) (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-   - **Refactoring Task**: The code related to  (an obsolete solution for a previously fixed bug) has still not been removed from  and .
+None. The code cleanup was successfully completed.
 
 **Known issue recurrence from previous fork**
-  - None.
+  - Issue recurrence in previous fork: DSE Remote Control & MQTT connectivity
+  - Recurrence count: 2
+  - Status: IN PROGRESS
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend**: FastAPI, Python, MongoDB.
-- **Frontend**: React, TailwindCSS.
-- **Permissions Model**: A hybrid model using roles (, ) and a fine-grained  object () in the  collection. This is propagated to the frontend via a  context.
-- **Device Control (MQTT)**: The system now correctly formats a JSON payload with multiple register values () to control DSE generators via Modbus over MQTT.
+- React, FastAPI, MongoDB
+- **MQTT / Mosquitto**: Uses .
+- **Infrastructure Context**: The user's production server runs Windows with Nginx (reverse proxy) and Mosquitto. In this session, the user's  was updated to include a  block for port 443 multiplexing, and  was updated with  and a TLS listener on port 8883.
 
 **key DB schema**
-- **users**: Added a new embedded document .
-- **devices**: The  enum now includes .
+- No schema changes. Removed reliance on legacy  field.
 
 **changes in tech stack**
 - None.
 
-**All files of reference**
--  (Current work: DSE commands)
--  (Permissions logic)
--  (kWh bug fix)
--  (User permissions schema)
--  (Permissions UI)
--  (Permissions UI)
--  (Permissions logic)
--  (Reference for DSE fix)
+**All files of reference** 
+-  (Topic matching logic)
+-  (DSE Payload generation)
+-  (UI modifications)
 
-**Areas that need refactoring**:
-- The now-obsolete logic and DB field for  should be removed to simplify the codebase. This was noted in the previous handoff and is still pending.
+**Areas that need refactoring**: 
+Codebase is clean regarding previous technical debt ( is fully removed).
 
 **key api endpoints**
-- : **(FIXED / IN-PROGRESS)** Logic rewritten to send correct multi-register Modbus commands. Awaiting testing.
-- : **(ENHANCED)** Now accepts the  object to set .
-- All endpoints in  and : Dependencies changed from  to  to grant Mitarbeiter access.
-- : **(ENHANCED)** Now automatically backfills missing  values.
-- : **(FIXED)** Duplicate check removed to allow multiple signups.
+- : Fixed DSE control payload generation.
 
-**Critical Info for New Agent**
+**Critical Info for New Agent** 
 - **YOU MUST RESPOND IN GERMAN.**
-- The immediate task is to test the DSE generator remote control fix in .
-- The user has already verified that several major features/fixes from this session are working correctly on their production server (kWh reading, multi-signup, QR scanner navigation). This is a great sign of progress.
-- The permissions model has been significantly changed. The guiding principle is: **Mitarbeiter can do everything inside the device edit modal. Only deleting a device from the main list is admin-only.** Billing is a separate, opt-in permission for employees.
+- The server infrastructure (ports 1883, 8883 with TLS, 443) has been verified as OPEN and working from the outside. The backend connects successfully on localhost:1884.
+- The failure (,  TLS failure, or ) is entirely isolated to how the **physical DSE890 gateway and its Vodafone GSM SIM** are handling TCP connections.
+- Your immediate next step is to analyze the database query result at the very end of the history to tell the user how the Kirmeskiste (a previously working gateway) was configured, so they can replicate those settings on the failing DSE890.
 
 **documents and test reports created in this job**
--  (Updated)
-- 
+- /app/memory/PRD.md (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. **User**: Confirms other features work, requests a new feature: a permission toggle to enable Billing for specific employees.
-2. **Agent**: Implements the  permission feature with a UI toggle.
-3. **User**: Provides a PDF for DSE Modbus control, reports the generator start isn't working, and asks the agent to check the topic files and linkage.
-4. **Agent**: Analyzes the PDF and discovers the code is sending commands to entirely wrong Modbus registers.
-5. **Agent**: Corrects the command structure in  to use the proper registers and key/complement values for start/stop operations.
+- *User*: Tested LAN connection directly to the server IP. Still fails.
+- *Agent*: Analyzed DSE logs. Found . Realized DSE890 fails if DNS isn't resolving, even if using an IP. Suggested using 8.8.8.8.
+- *User*: Applied changes. DSE890 still throws TLS  over GSM.
+- *Agent*: Realized the hardware might have TLS verification issues.
+- *User*: Shows more logs. WebNet also fails over GSM after the first connection. 
+- *Agent*: Summarized that the GSM carrier (Vodafone) blocks plain MQTT (1883), but TLS (8883) fails due to hardware SSL negotiation errors (). 
+- *User*: Asks How did we connect the Kirmeskiste? 443? (This is the critical pending thought).
 
 **Project Health Check:**
-- **Broken**:
-  - DSE generator remote control (a fix has been implemented but is untested).
-- **Mocked**:
-  - None.
+- Broken: Physical DSE890 Gateway connection.
 
 **3rd Party Integrations**
-- Caddy Server (HTTP Proxy)
-- Nginx (HTTPS Proxy)
-- Mosquitto (MQTT Broker)
-- Dymo LabelWriter 550 Turbo (via )
+- Mosquitto MQTT Broker (Custom config on user's Windows Server)
+- Nginx (Custom stream multiplexing)
 
 **Testing status**
-  - Testing agent used after significant changes: YES (for mobile optimization)
+  - Testing agent used after significant changes: NO (UI changes were isolated and verified via screenshot).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
-  - Known regressions: []
-
-**Credentials to test flow:**
-- User credentials with both  and  roles are needed to test the permission changes.
+  - Known regressions: None in code.
 
 **What agent forgot to execute**
-- The refactoring task to remove  code, which was carried over from the previous fork, is still outstanding.</analysis>
+- The agent successfully executed all pending coding tasks from the previous handover. The only remaining focus is hardware configuration support.</analysis>

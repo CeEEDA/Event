@@ -9,7 +9,7 @@ import os
 import uuid
 import io
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://events-platform-4.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://dse890-mqtt-test.preview.emergentagent.com')
 
 
 class TestNewFeatures:
