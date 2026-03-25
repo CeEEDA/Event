@@ -1532,6 +1532,21 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
             import win32ui
             from PIL import ImageWin
 
+            # Set paper size via DEVMODE for Dymo 32x57mm labels
+            hprinter = win32print.OpenPrinter(printer_name)
+            try:
+                props = win32print.GetPrinter(hprinter, 2)
+                devmode = props["pDevMode"]
+                # Set custom paper size (32x57mm)
+                devmode.PaperSize = 256  # DMPAPER_USER / custom
+                devmode.PaperWidth = 320   # 32.0mm in 0.1mm units
+                devmode.PaperLength = 570  # 57.0mm in 0.1mm units
+                devmode.Orientation = 2    # Landscape
+                devmode.Fields |= 0x2 | 0x8 | 0x10 | 0x100  # DM_ORIENTATION | DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH
+                win32print.SetPrinter(hprinter, 2, props, 0)
+            finally:
+                win32print.ClosePrinter(hprinter)
+
             hdc = win32ui.CreateDC()
             hdc.CreatePrinterDC(printer_name)
             hdc.StartDoc(f"QR Label - Zaehler {meter_index}")
