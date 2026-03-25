@@ -1429,6 +1429,194 @@ async def generate_single_qr_label(device_id: str, meter_index: int, user: dict 
         headers={"Content-Disposition": f'inline; filename="qr_zaehler_{meter_index}.pdf"'},
     )
 
+
+@router.post("/devices/{device_id}/print-label/{meter_index}")
+async def print_meter_label(device_id: str, meter_index: int, user: dict = Depends(_require_staff)):
+    """Generate a 32x57mm label and print directly to Dymo LabelWriter."""
+    import qrcode
+    import io as _io
+    import os
+    from PIL import Image, ImageDraw, ImageFont
+
+    # Find device and meters
+    device = await _db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    meters = await _db.emu_meters.find({"device_id": device_id}, {"_id": 0}).sort("meter_name", 1).to_list(20)
+    if meter_index < 1 or meter_index > len(meters):
+        raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
+
+    meter = meters[meter_index - 1]
+    device_name = device.get("serial_number", device_id[:12])
+
+    # QR URL
+    base_url = os.environ.get("FRONTEND_URL", "")
+    qr_url = f"{base_url}/kirmes/meter-zuordnung/{meter['id']}"
+
+    # Label dimensions: 32mm x 57mm at 300 DPI
+    DPI = 300
+    LABEL_W_MM = 32
+    LABEL_H_MM = 57
+    label_w = int(LABEL_W_MM * DPI / 25.4)   # ~378 px
+    label_h = int(LABEL_H_MM * DPI / 25.4)   # ~673 px
+
+    # Generate QR code
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=12, border=1)
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+
+    # Resize QR to fit label width with margin
+    qr_target = int(label_w * 0.85)
+    qr_img = qr_img.resize((qr_target, qr_target), Image.NEAREST)
+
+    # Create label image
+    label = Image.new("RGB", (label_w, label_h), "white")
+    draw = ImageDraw.Draw(label)
+
+    # Try to load a bold font, fallback to default
+    font_large = None
+    font_small = None
+    for font_path in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "C:\\Windows\\Fonts\\calibrib.ttf",
+    ]:
+        try:
+            font_large = ImageFont.truetype(font_path, 36)
+            font_small = ImageFont.truetype(font_path.replace("Bold", "Regular").replace("bd.", ".").replace("rib.", "ri."), 28)
+            break
+        except (OSError, IOError):
+            continue
+    if not font_large:
+        font_large = ImageFont.load_default()
+        font_small = font_large
+
+    # Layout: top text, QR in middle, bottom text
+    y_cursor = 15
+
+    # "Zähler X" - top
+    text_top = f"Zaehler {meter_index}"
+    bbox = draw.textbbox((0, 0), text_top, font=font_large)
+    tw = bbox[2] - bbox[0]
+    draw.text(((label_w - tw) / 2, y_cursor), text_top, fill="black", font=font_large)
+    y_cursor += (bbox[3] - bbox[1]) + 15
+
+    # QR Code - centered
+    qr_x = (label_w - qr_target) // 2
+    label.paste(qr_img, (qr_x, y_cursor))
+    y_cursor += qr_target + 15
+
+    # Device name - bottom
+    bbox = draw.textbbox((0, 0), device_name, font=font_small)
+    tw = bbox[2] - bbox[0]
+    # If text too wide, truncate
+    if tw > label_w - 10:
+        while tw > label_w - 10 and len(device_name) > 5:
+            device_name = device_name[:-1]
+            bbox = draw.textbbox((0, 0), device_name + "..", font=font_small)
+            tw = bbox[2] - bbox[0]
+        device_name += ".."
+    draw.text(((label_w - tw) / 2, y_cursor), device_name, fill="black", font=font_small)
+
+    # Convert to PNG bytes
+    img_buf = _io.BytesIO()
+    label.save(img_buf, format="PNG", dpi=(DPI, DPI))
+    img_bytes = img_buf.getvalue()
+
+    # Try to print directly on Windows
+    printer_name = os.environ.get("DYMO_PRINTER_NAME", "")
+    print_success = False
+    print_error = ""
+
+    if printer_name:
+        try:
+            import win32print
+            import win32ui
+            from PIL import ImageWin
+
+            hprinter = win32print.OpenPrinter(printer_name)
+            try:
+                devmode = win32print.GetPrinter(hprinter, 2)["pDevMode"]
+                # Set paper size for 32x57mm Dymo label
+                devmode.PaperSize = 0  # Custom
+                devmode.PaperWidth = LABEL_W_MM * 10   # in 0.1mm
+                devmode.PaperLength = LABEL_H_MM * 10  # in 0.1mm
+                devmode.Orientation = 1  # Portrait
+
+                hdc = win32ui.CreateDC()
+                hdc.CreatePrinterDC(printer_name)
+                hdc.StartDoc(f"QR Label - Zaehler {meter_index}")
+                hdc.StartPage()
+
+                # Print the image
+                label_for_print = label.convert("RGB")
+                dib = ImageWin.Dib(label_for_print)
+                # Scale to printer resolution
+                printer_w = hdc.GetDeviceCaps(110)  # PHYSICALWIDTH
+                printer_h = hdc.GetDeviceCaps(111)  # PHYSICALHEIGHT
+                dib.draw(hdc.GetHandleOutput(), (0, 0, printer_w, printer_h))
+
+                hdc.EndPage()
+                hdc.EndDoc()
+                hdc.DeleteDC()
+                print_success = True
+            finally:
+                win32print.ClosePrinter(hprinter)
+        except ImportError:
+            print_error = "win32print nicht verfuegbar (nur auf Windows)"
+        except Exception as e:
+            print_error = str(e)
+
+    # Return result
+    if print_success:
+        return {"success": True, "message": f"Label fuer Zaehler {meter_index} ({device_name}) gedruckt"}
+    elif printer_name and print_error:
+        # Printer configured but failed - return image as fallback + error
+        img_buf.seek(0)
+        return Response(
+            content=img_bytes,
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f'inline; filename="label_zaehler_{meter_index}.png"',
+                "X-Print-Error": print_error,
+            },
+        )
+    else:
+        # No printer configured - return image
+        img_buf.seek(0)
+        return Response(
+            content=img_bytes,
+            media_type="image/png",
+            headers={"Content-Disposition": f'inline; filename="label_zaehler_{meter_index}.png"'},
+        )
+
+
+@router.get("/printers")
+async def list_printers(user: dict = Depends(_require_staff)):
+    """List available printers on the server (Windows only)."""
+    import os
+    configured = os.environ.get("DYMO_PRINTER_NAME", "")
+    try:
+        import win32print
+        printers = [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+        default = win32print.GetDefaultPrinter()
+        return {
+            "printers": printers,
+            "default": default,
+            "configured": configured,
+        }
+    except ImportError:
+        return {
+            "printers": [],
+            "default": "",
+            "configured": configured,
+            "error": "win32print nicht verfuegbar (nur auf Windows-Server)",
+        }
+
+
 # ============== QR Code System ==============
 
 @router.get("/meters/{meter_id}/qr-code")

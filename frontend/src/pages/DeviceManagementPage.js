@@ -38,6 +38,7 @@ import {
   Eye,
   EyeOff,
   Shield,
+  Printer,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -129,25 +130,42 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
                 variant="outline"
                 size="sm"
                 className="text-xs text-gray-600 hover:text-fuchsia-600"
-                data-testid={`qr-label-${i}`}
+                data-testid={`print-label-${i}`}
                 onClick={async (e) => {
                   e.preventDefault();
                   try {
-                    const resp = await fetch(`${BACKEND_URL}/api/kirmes/devices/${deviceId}/qr-label/${i}`, {
+                    const resp = await fetch(`${BACKEND_URL}/api/kirmes/devices/${deviceId}/print-label/${i}`, {
+                      method: "POST",
                       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
                     });
-                    if (!resp.ok) throw new Error();
-                    const blob = await resp.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `qr_zaehler_${i}.pdf`;
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                  } catch { toast.error("QR konnte nicht generiert werden"); }
+                    if (!resp.ok) {
+                      const err = await resp.json().catch(() => ({}));
+                      throw new Error(err.detail || "Druckfehler");
+                    }
+                    const contentType = resp.headers.get("content-type");
+                    if (contentType && contentType.includes("application/json")) {
+                      const data = await resp.json();
+                      toast.success(data.message || `Zaehler ${i} gedruckt`);
+                    } else {
+                      // Image returned (no printer or print failed) - download as fallback
+                      const printError = resp.headers.get("x-print-error");
+                      const blob = await resp.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `label_zaehler_${i}.png`;
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      if (printError) {
+                        toast.error(`Drucker-Fehler: ${printError}. Label als Bild heruntergeladen.`);
+                      } else {
+                        toast.info("Kein Drucker konfiguriert. Label als Bild heruntergeladen.");
+                      }
+                    }
+                  } catch (err) { toast.error(err.message || "Label konnte nicht gedruckt werden"); }
                 }}
               >
-                <QrCode className="w-3 h-3 mr-1" /> Zaehler {i}
+                <Printer className="w-3 h-3 mr-1" /> Zaehler {i}
               </Button>
             ))}
           </div>
