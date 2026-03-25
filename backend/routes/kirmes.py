@@ -1521,6 +1521,9 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
         device_name += ".."
     draw.text(((label_w - tw) / 2, y_cursor), device_name, fill="black", font=font_small)
 
+    # Rotate 90 degrees for Dymo LabelWriter (landscape feed)
+    label = label.rotate(90, expand=True)
+
     # Convert to PNG bytes
     img_buf = _io.BytesIO()
     label.save(img_buf, format="PNG", dpi=(DPI, DPI))
