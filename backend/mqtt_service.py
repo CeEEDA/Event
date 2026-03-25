@@ -117,7 +117,7 @@ async def _process_message(msg):
     # Try to match this message to a generator via topic mappings
     mappings = await _db.mqtt_gateway_mappings.find({}, {"_id": 0}).to_list(100)
     for mapping in mappings:
-        topic_prefix = mapping.get("topic_prefix", "")
+        topic_prefix = mapping.get("topic_prefix", "").strip()
         client_name = mapping.get("client_name", "")
         generator_id = mapping.get("generator_id")
 
@@ -126,6 +126,7 @@ async def _process_message(msg):
 
         # Match by topic prefix
         if topic_prefix and topic.startswith(topic_prefix):
+            logger.info(f"MQTT: Matched via gateway mapping (prefix='{topic_prefix}', gen={generator_id})")
             # Handle GPS topic separately (DSE890 gateway GPS)
             if topic.endswith("/gps"):
                 await _process_gps(generator_id, payload_str, parsed, timestamp)
@@ -140,8 +141,9 @@ async def _process_message(msg):
     # Also check if any generator has a dse_mqtt_topic_prefix that matches
     generators = await _db.generators.find({"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}}, {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1}).to_list(100)
     for gen in generators:
-        prefix = gen.get("dse_mqtt_topic_prefix", "")
+        prefix = gen.get("dse_mqtt_topic_prefix", "").strip()
         if prefix and topic.startswith(prefix):
+            logger.info(f"MQTT: Matched via generator prefix (prefix='{prefix}', gen={gen['id']})")
             if topic.endswith("/gps"):
                 await _process_gps(gen["id"], payload_str, parsed, timestamp)
                 return
@@ -153,15 +155,18 @@ async def _process_message(msg):
 
     # Check devices collection for dse_module_uid match (auto-mapping)
     topic_parts = topic.split("/")
+    topic_parts_upper = [p.strip().upper() for p in topic_parts]
     devices = await _db.devices.find(
         {"dse_module_uid": {"$exists": True, "$ne": ""}},
         {"_id": 0, "id": 1, "dse_module_uid": 1}
     ).to_list(100)
     if not devices:
         logger.info(f"MQTT: Kein Geraet mit dse_module_uid gefunden. Topic: {topic}")
+    else:
+        logger.debug(f"MQTT: {len(devices)} Geraete mit dse_module_uid, pruefe topic_parts={topic_parts}")
     for dev in devices:
-        uid = dev.get("dse_module_uid", "")
-        if uid and uid in topic_parts:
+        uid = dev.get("dse_module_uid", "").strip()
+        if uid and uid.upper() in topic_parts_upper:
             device_id = dev["id"]
             logger.info(f"MQTT: Matched device {device_id} via module_uid {uid}")
             if topic.endswith("/gps"):
@@ -173,8 +178,9 @@ async def _process_message(msg):
             await _ingest_telemetry_device(device_id, topic, payload_str, parsed, timestamp)
             return
 
-    # No mapping found - log for discovery
-    logger.info(f"MQTT: Unmatched message on topic '{topic}' (topic_parts={topic_parts})")
+    # No mapping found - log for discovery with UID details
+    stored_uids = [d.get("dse_module_uid", "") for d in devices] if devices else []
+    logger.info(f"MQTT: Unmatched topic '{topic}' | topic_parts={topic_parts} | stored_uids={stored_uids}")
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
