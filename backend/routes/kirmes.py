@@ -1285,10 +1285,10 @@ async def link_meter_to_signup(signup_id: str, data: LinkMeterRequest, user: dic
 
     # Auto-capture current kWh reading as Einbaustand
     kwh_einbau = None
-    latest = await _db.emu_telemetry.find_one(
+    latest = await _db.emu_data.find_one(
         {"device_id": data.emu_device_id, "meter_id": data.emu_meter_id},
         {"_id": 0, "E_imp_kWh": 1},
-        sort=[("timestamp", -1)]
+        sort=[("ts_utc", -1)]
     )
     if latest and latest.get("E_imp_kWh") is not None:
         kwh_einbau = round(float(latest["E_imp_kWh"]), 2)
@@ -1843,10 +1843,10 @@ async def assign_meter_to_signup_via_qr(meter_id: str, data: dict, user: dict = 
 
     # Auto-capture current kWh reading as Einbaustand
     kwh_einbau = None
-    latest = await _db.emu_telemetry.find_one(
+    latest = await _db.emu_data.find_one(
         {"device_id": meter["device_id"], "meter_id": meter_id},
         {"_id": 0, "E_imp_kWh": 1},
-        sort=[("timestamp", -1)]
+        sort=[("ts_utc", -1)]
     )
     if latest and latest.get("E_imp_kWh") is not None:
         kwh_einbau = round(float(latest["E_imp_kWh"]), 2)
