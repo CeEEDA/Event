@@ -1467,8 +1467,8 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-    # QR sized to fit label width with generous margin
-    qr_target = label_w - 50  # ~328px = ~28mm
+    # QR sized smaller - ~18mm (fits well within 32mm width with margins)
+    qr_target = int(label_w * 0.55)  # ~208px = ~18mm
     qr_img = qr_img.resize((qr_target, qr_target), Image.NEAREST)
 
     # Create label image (portrait)
@@ -1484,44 +1484,37 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
         "C:\\Windows\\Fonts\\calibri.ttf",
     ]:
         try:
-            font = ImageFont.truetype(font_path, 24)
+            font = ImageFont.truetype(font_path, 20)
             break
         except (OSError, IOError):
             continue
     if not font:
         font = ImageFont.load_default()
 
-    # Layout: QR centered at top, text below
-    # QR Code - centered horizontally
-    qr_x = (label_w - qr_target) // 2
-    qr_y = 20
-    label.paste(qr_img, (qr_x, qr_y))
-
-    # Text below QR
-    text_y = qr_y + qr_target + 20
+    # Layout: everything centered vertically and horizontally
     text_line1 = f"Zaehler {meter_index}"
     text_line2 = device_name
 
-    # Auto-shrink font if text too wide
-    for sz in [24, 20, 18, 16, 14]:
-        try:
-            font = ImageFont.truetype(font.path, sz)
-        except Exception:
-            break
-        bbox1 = draw.textbbox((0, 0), text_line1, font=font)
-        bbox2 = draw.textbbox((0, 0), text_line2, font=font)
-        max_tw = max(bbox1[2] - bbox1[0], bbox2[2] - bbox2[0])
-        if max_tw <= label_w - 20:
-            break
-
+    # Measure text
     bbox1 = draw.textbbox((0, 0), text_line1, font=font)
     bbox2 = draw.textbbox((0, 0), text_line2, font=font)
+    th1 = bbox1[3] - bbox1[1]
+    th2 = bbox2[3] - bbox2[1]
+
+    # Total content height: QR + gap + text1 + gap + text2
+    total_h = qr_target + 15 + th1 + 6 + th2
+    start_y = (label_h - total_h) // 2
+
+    # QR Code - centered
+    qr_x = (label_w - qr_target) // 2
+    label.paste(qr_img, (qr_x, start_y))
+
+    # Text below QR
+    text_y = start_y + qr_target + 15
     tw1 = bbox1[2] - bbox1[0]
     tw2 = bbox2[2] - bbox2[0]
-    th1 = bbox1[3] - bbox1[1]
-
     draw.text(((label_w - tw1) / 2, text_y), text_line1, fill="black", font=font)
-    draw.text(((label_w - tw2) / 2, text_y + th1 + 8), text_line2, fill="black", font=font)
+    draw.text(((label_w - tw2) / 2, text_y + th1 + 6), text_line2, fill="black", font=font)
 
     # Convert to PNG bytes (portrait - Dymo driver rotates to landscape internally)
     img_buf = _io.BytesIO()
