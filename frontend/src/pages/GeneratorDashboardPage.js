@@ -118,8 +118,8 @@ function GeneratorCard({ generator, onClick, canControl }) {
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-900 truncate">{generator.name}</h3>
-          <p className="text-xs text-gray-400 font-mono">{generator.serial_number} · {generator.model}</p>
+          <h3 className="text-sm font-bold text-gray-900 truncate">{generator.serial_number || generator.name}</h3>
+          <p className="text-xs text-gray-400">{generator.model}</p>
         </div>
         <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
           {hasMaintWarning && (
@@ -383,8 +383,8 @@ export default function GeneratorDashboardPage() {
                   >
                     <Popup>
                       <div className="min-w-[180px]">
-                        <p className="font-semibold text-sm">{gen.name}</p>
-                        <p className="text-xs text-gray-500">{gen.serial_number}</p>
+                        <p className="font-semibold text-sm">{gen.serial_number || gen.name}</p>
+                        <p className="text-xs text-gray-500">{gen.model}</p>
                         <p className="text-xs mt-1">
                           <span className={`inline-block w-2 h-2 rounded-full ${s.color} mr-1`}></span>
                           {s.label}

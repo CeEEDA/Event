@@ -309,8 +309,8 @@ export default function GeneratorDetailPage() {
             </Button>
             <div className="h-5 w-px bg-gray-200" />
             <div>
-              <h1 className="text-sm font-semibold text-gray-900 tracking-tight">{generator.name}</h1>
-              <p className="text-xs text-gray-400 font-mono">{generator.serial_number}</p>
+              <h1 className="text-sm font-bold text-gray-900 tracking-tight">{generator.serial_number || generator.name}</h1>
+              <p className="text-xs text-gray-400">{generator.model}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
