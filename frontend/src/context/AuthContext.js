@@ -72,6 +72,7 @@ export const AuthProvider = ({ children }) => {
     updateUser,
     isAdmin: user?.role === "admin",
     isStaff: user?.role === "admin" || user?.role === "mitarbeiter",
+    canBilling: user?.role === "admin" || !!user?.permissions?.can_billing,
   };
 
   return (

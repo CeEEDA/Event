@@ -36,7 +36,7 @@ const PAYMENT_COLORS = {
 export default function KirmesEventDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canBilling } = useAuth();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -398,9 +398,9 @@ export default function KirmesEventDetailPage() {
                 <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600 px-2 sm:px-3" data-testid="export-pdf-btn" title="Montageliste PDF">
                   <FileDown className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> PDF</span>
                 </Button>
-                <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
+                {canBilling && <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
                   <Receipt className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
-                </Button>
+                </Button>}
               </>
             )}
             {event.status === "entwurf" && (
@@ -602,15 +602,15 @@ export default function KirmesEventDetailPage() {
                                   }} className="h-7 text-xs text-emerald-600" data-testid={`download-inv-${signup.id}`}>
                                     <Download className="w-3 h-3 mr-1" /> PDF
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => {
+                                  {canBilling && <Button size="sm" variant="outline" onClick={() => {
                                     const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
                                     if (inv) handleSendInvoice(inv.id);
                                   }} className="h-7 text-xs text-blue-600" data-testid={`send-inv-${signup.id}`}>
                                     <Send className="w-3 h-3 mr-1" /> Senden
-                                  </Button>
+                                  </Button>}
                                 </>
                               ) : (
-                                <Button size="sm" variant="outline" onClick={() => handleGenerateSingleInvoice(signup.id)} className="h-7 text-xs text-amber-600" data-testid={`create-inv-${signup.id}`}>
+                                canBilling && <Button size="sm" variant="outline" onClick={() => handleGenerateSingleInvoice(signup.id)} className="h-7 text-xs text-amber-600" data-testid={`create-inv-${signup.id}`}>
                                   <FileText className="w-3 h-3 mr-1" /> Rechnung
                                 </Button>
                               )}
@@ -875,15 +875,15 @@ export default function KirmesEventDetailPage() {
                                   }} className="p-1.5 text-emerald-500 hover:text-emerald-700 transition-colors" title={`PDF ${signup.invoice_number}`} data-testid={`download-inv-${signup.id}`}>
                                     <Download className="w-4 h-4" />
                                   </button>
-                                  <button onClick={() => {
+                                  {canBilling && <button onClick={() => {
                                     const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
                                     if (inv) handleSendInvoice(inv.id);
                                   }} className="p-1.5 text-blue-400 hover:text-blue-600 transition-colors" title="Rechnung per E-Mail senden" data-testid={`send-inv-${signup.id}`}>
                                     <Send className="w-4 h-4" />
-                                  </button>
+                                  </button>}
                                 </>
                               ) : (
-                                <button onClick={() => handleGenerateSingleInvoice(signup.id)} className="p-1.5 text-amber-400 hover:text-amber-600 transition-colors" title="Rechnung erstellen" data-testid={`create-inv-${signup.id}`}>
+                                canBilling && <button onClick={() => handleGenerateSingleInvoice(signup.id)} className="p-1.5 text-amber-400 hover:text-amber-600 transition-colors" title="Rechnung erstellen" data-testid={`create-inv-${signup.id}`}>
                                   <FileText className="w-4 h-4" />
                                 </button>
                               )}

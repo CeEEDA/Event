@@ -264,6 +264,7 @@ export default function AdminPage() {
       access_type: user.access_type || "permanent",
       access_start: user.access_start || "",
       access_end: user.access_end || "",
+      permissions: user.permissions || {},
       apps: {
         filesharing: user.apps?.filesharing || {
           enabled: false,
@@ -298,7 +299,8 @@ export default function AdminPage() {
           access_type: formData.access_type,
           access_start: formData.access_start || null,
           access_end: formData.access_end || null,
-          apps: formData.apps
+          apps: formData.apps,
+          permissions: formData.permissions || {}
         });
         toast.success("Benutzer aktualisiert");
       } else {
@@ -1044,6 +1046,25 @@ export default function AdminPage() {
                     data-testid="user-active-toggle"
                   />
                 </div>
+
+                {formData.role === "mitarbeiter" && (
+                  <div className="border-t border-gray-200 pt-4 mt-2">
+                    <h3 className="font-semibold text-gray-900 mb-3">Sonderberechtigungen</h3>
+                    <div className="bg-amber-50 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-gray-900 font-medium">Abrechnung</Label>
+                          <p className="text-xs text-gray-500 mt-0.5">Kann Abrechnungen erstellen und versenden</p>
+                        </div>
+                        <Switch
+                          checked={!!formData.permissions?.can_billing}
+                          onCheckedChange={(checked) => setFormData({ ...formData, permissions: { ...formData.permissions, can_billing: checked } })}
+                          data-testid="can-billing-toggle"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* App Permissions Section */}
                 <div className="border-t border-gray-200 pt-4 mt-4">

@@ -79,6 +79,7 @@ class UserUpdate(BaseModel):
     access_type: Optional[str] = None
     access_start: Optional[str] = None
     access_end: Optional[str] = None
+    permissions: Optional[Dict] = None
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
@@ -115,6 +116,7 @@ class UserResponse(BaseModel):
     access_type: Optional[str] = "permanent"
     access_start: Optional[str] = None
     access_end: Optional[str] = None
+    permissions: Dict = {}
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -390,7 +392,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         apps=user.get("apps", get_default_apps()),
         access_type=user.get("access_type", "permanent"),
         access_start=user.get("access_start"),
-        access_end=user.get("access_end")
+        access_end=user.get("access_end"),
+        permissions=user.get("permissions", {})
     )
 
 # ============== Password Reset ==============
@@ -479,7 +482,8 @@ async def list_users(admin: dict = Depends(require_admin)):
         apps=u.get("apps", get_default_apps()),
         access_type=u.get("access_type", "permanent"),
         access_start=u.get("access_start"),
-        access_end=u.get("access_end")
+        access_end=u.get("access_end"),
+        permissions=u.get("permissions", {})
     ) for u in users]
 
 @api_router.post("/users", response_model=UserResponse)
@@ -535,6 +539,8 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         update_data["access_start"] = data.access_start if data.access_start else None
     if data.access_end is not None:
         update_data["access_end"] = data.access_end if data.access_end else None
+    if data.permissions is not None:
+        update_data["permissions"] = data.permissions
     
     if update_data:
         await db.users.update_one({"id": user_id}, {"$set": update_data})
@@ -551,7 +557,8 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         apps=updated_user.get("apps", get_default_apps()),
         access_type=updated_user.get("access_type", "permanent"),
         access_start=updated_user.get("access_start"),
-        access_end=updated_user.get("access_end")
+        access_end=updated_user.get("access_end"),
+        permissions=updated_user.get("permissions", {})
     )
 
 @api_router.delete("/users/{user_id}")

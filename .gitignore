@@ -469,3 +469,5 @@ frontend/node_modules/.cache/default-development/12.pack
 # Environment files
 *.env
 *.env.*
+frontend/node_modules/.cache/default-development/15.pack
+frontend/node_modules/.cache/default-development/16.pack
