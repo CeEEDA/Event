@@ -8,7 +8,8 @@ import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
-  Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard,
+  Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard, ChevronDown,
+  Menu,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Input } from "../components/ui/input";
@@ -391,30 +392,30 @@ export default function KirmesEventDetailPage() {
               {STATUS_LABELS[event.status]}
             </span>
           </div>
-          <div className="flex items-center gap-2 overflow-x-auto flex-shrink-0 scrollbar-hide">
+          <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto flex-shrink-0 scrollbar-hide">
             {(event.signups || []).length > 0 && (
               <>
-                <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600" data-testid="export-pdf-btn">
-                  <FileDown className="w-3.5 h-3.5 mr-1" /> Montageliste PDF
+                <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600 px-2 sm:px-3" data-testid="export-pdf-btn" title="Montageliste PDF">
+                  <FileDown className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> PDF</span>
                 </Button>
-                <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="billing-btn">
-                  <Receipt className="w-3.5 h-3.5 mr-1" /> {billingInProgress ? "Wird erstellt..." : "Abrechnung"}
+                <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
+                  <Receipt className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
                 </Button>
               </>
             )}
             {event.status === "entwurf" && (
-              <Button size="sm" variant="outline" onClick={handleRelease} className="text-blue-600 border-blue-200" data-testid="release-btn">
-                <Send className="w-3.5 h-3.5 mr-1" /> Freigeben
+              <Button size="sm" variant="outline" onClick={handleRelease} className="text-blue-600 border-blue-200 px-2 sm:px-3" data-testid="release-btn" title="Freigeben">
+                <Send className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Freigeben</span>
               </Button>
             )}
             {["freigegeben", "aktiv"].includes(event.status) && (
               <>
-                <Button size="sm" variant="outline" onClick={openInviteModal} className="text-amber-600 border-amber-200" data-testid="invite-btn">
-                  <Mail className="w-3.5 h-3.5 mr-1" /> Schausteller einladen
+                <Button size="sm" variant="outline" onClick={openInviteModal} className="text-amber-600 border-amber-200 px-2 sm:px-3" data-testid="invite-btn" title="Einladen">
+                  <Mail className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Einladen</span>
                 </Button>
-                <Button size="sm" variant="outline" onClick={copyLink} className="text-fuchsia-600 border-fuchsia-200" data-testid="copy-link-btn">
-                  {copiedLink ? <Check className="w-3.5 h-3.5 mr-1 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
-                  {copiedLink ? "Kopiert!" : "Anmeldelink"}
+                <Button size="sm" variant="outline" onClick={copyLink} className="text-fuchsia-600 border-fuchsia-200 px-2 sm:px-3" data-testid="copy-link-btn" title="Anmeldelink">
+                  {copiedLink ? <Check className="w-3.5 h-3.5 sm:mr-1 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 sm:mr-1" />}
+                  <span className="hidden sm:inline">{copiedLink ? " Kopiert!" : " Link"}</span>
                 </Button>
               </>
             )}
@@ -425,7 +426,7 @@ export default function KirmesEventDetailPage() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Event Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
               <CalendarDays className="w-4 h-4" /> <span className="text-xs font-medium">Veranstaltung</span>
@@ -482,20 +483,6 @@ export default function KirmesEventDetailPage() {
           </div>
         </div>
 
-        {/* Prices */}
-        <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-fuchsia-500" /> Preise pro Anschluss
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {(event.prices || []).map(p => (
-              <div key={p.connection_type} className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-xs text-gray-500 mb-1">{p.connection_type}</p>
-                <p className="text-lg font-semibold text-gray-900">{p.price.toFixed(2)} <span className="text-xs text-gray-400">EUR</span></p>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {/* Payment Summary */}
         {paymentStats && (paymentStats.deposits?.total > 0 || paymentStats.invoices?.total > 0) && (
@@ -538,7 +525,272 @@ export default function KirmesEventDetailPage() {
               Noch keine Anmeldungen vorhanden
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-5 px-5">
+            <>
+            {/* Mobile Card View */}
+            <div className="lg:hidden divide-y divide-gray-100" data-testid="signups-mobile">
+              {(event.signups || []).map(signup => {
+                const sch = signup.schausteller;
+                const isExpanded = expandedSignup === signup.id;
+                return (
+                  <div key={signup.id} data-testid={`signup-card-${signup.id}`}>
+                    <div
+                      className={`p-4 cursor-pointer active:bg-gray-50 transition-colors ${isExpanded ? "bg-fuchsia-50/50" : ""}`}
+                      onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-gray-900 truncate">{sch?.firma || sch?.name || "–"}</span>
+                            <span className="inline-flex items-center gap-0.5 text-[10px] bg-fuchsia-50 text-fuchsia-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                              <Zap className="w-2.5 h-2.5" /> {signup.connection_type}
+                            </span>
+                            <span className={`text-[10px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
+                              {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            {sch?.firma ? `${sch.name} · ` : ""}{signup.fahrgeschaeft || "–"} · Platz <strong>{signup.platznummer}</strong>
+                          </p>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 mt-0.5 ${isExpanded ? "rotate-180" : ""}`} />
+                      </div>
+                      {/* kWh summary */}
+                      <div className="flex items-center gap-1.5 mt-2 text-[11px] text-gray-500">
+                        <span className="text-gray-400">kWh:</span>
+                        <span className="font-mono">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</span>
+                        <span className="text-gray-300">&rarr;</span>
+                        <span className="font-mono">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</span>
+                        {signup.kwh_used != null && <span className="font-mono font-medium text-fuchsia-700">= {signup.kwh_used.toFixed(2)}</span>}
+                        <span className="ml-auto font-mono text-gray-700 font-medium">{(signup.price || 0).toFixed(2)} EUR</span>
+                      </div>
+                    </div>
+
+                    {/* Expanded Detail */}
+                    {isExpanded && (
+                      <div className="bg-gray-50 border-t border-gray-200 px-4 py-4 space-y-4" data-testid={`detail-card-${signup.id}`}>
+                        {/* Action buttons */}
+                        <div className="flex flex-wrap gap-2 pb-3 border-b border-gray-200" onClick={e => e.stopPropagation()}>
+                          {editingKwh === signup.id ? (
+                            <div className="w-full space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-gray-400">kWh Einbau</label>
+                                  <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 text-sm" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-gray-400">kWh Ausbau</label>
+                                  <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 text-sm" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => saveKwh(signup.id)} className="h-7 text-xs text-emerald-600" data-testid={`save-kwh-${signup.id}`}>
+                                  <Check className="w-3 h-3 mr-1" /> Speichern
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => setEditingKwh(null)} className="h-7 text-xs">Abbrechen</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => openKwhEdit(signup)} className="h-7 text-xs" data-testid={`edit-kwh-${signup.id}`}>
+                                <Pencil className="w-3 h-3 mr-1" /> kWh
+                              </Button>
+                              {signup.invoice_number ? (
+                                <>
+                                  <Button size="sm" variant="outline" onClick={() => {
+                                    const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
+                                    if (inv) handleDownloadInvoice(inv.id);
+                                  }} className="h-7 text-xs text-emerald-600" data-testid={`download-inv-${signup.id}`}>
+                                    <Download className="w-3 h-3 mr-1" /> PDF
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => {
+                                    const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
+                                    if (inv) handleSendInvoice(inv.id);
+                                  }} className="h-7 text-xs text-blue-600" data-testid={`send-inv-${signup.id}`}>
+                                    <Send className="w-3 h-3 mr-1" /> Senden
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button size="sm" variant="outline" onClick={() => handleGenerateSingleInvoice(signup.id)} className="h-7 text-xs text-amber-600" data-testid={`create-inv-${signup.id}`}>
+                                  <FileText className="w-3 h-3 mr-1" /> Rechnung
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" onClick={() => handleDeleteSignup(signup.id)} className="h-7 text-xs text-red-500 ml-auto" data-testid={`delete-signup-${signup.id}`}>
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Contact info */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Kontaktdaten</h4>
+                          <div className="space-y-1.5 text-sm">
+                            {sch?.firma && <p><span className="text-gray-400 text-xs">Firma:</span> <span className="font-medium text-gray-900">{sch.firma}</span></p>}
+                            <p><span className="text-gray-400 text-xs">Name:</span> <span className="text-gray-700">{sch?.name || "–"}</span></p>
+                            {sch?.strasse && <p><span className="text-gray-400 text-xs">Adresse:</span> <span className="text-gray-700 break-words">{sch.strasse}, {sch.plz} {sch.ort}</span></p>}
+                            {sch?.telefon && <p><span className="text-gray-400 text-xs">Tel:</span> <a href={`tel:${sch.telefon}`} className="text-fuchsia-600 underline">{sch.telefon}</a></p>}
+                            {sch?.email && <p><span className="text-gray-400 text-xs">E-Mail:</span> <span className="text-gray-700 break-all text-xs">{sch.email}</span></p>}
+                          </div>
+                        </div>
+
+                        {/* Meter data */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Zählerdaten</h4>
+                          <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="bg-white rounded-lg p-2 border border-gray-200 text-center">
+                              <p className="text-[10px] text-gray-400">Einbau</p>
+                              <p className="text-sm font-semibold font-mono text-gray-900">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</p>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-gray-200 text-center">
+                              <p className="text-[10px] text-gray-400">Ausbau</p>
+                              <p className="text-sm font-semibold font-mono text-gray-900">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</p>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-fuchsia-200 text-center">
+                              <p className="text-[10px] text-gray-400">Verbrauch</p>
+                              <p className="text-sm font-bold font-mono text-fuchsia-700">{signup.kwh_used != null ? signup.kwh_used.toFixed(2) : "–"}</p>
+                            </div>
+                          </div>
+
+                          {/* Invoice badge */}
+                          {signup.invoice_number && (() => {
+                            const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
+                            return inv ? (
+                              <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200 mb-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-xs font-semibold text-emerald-700">{inv.invoice_number}</p>
+                                    <p className="text-[10px] text-emerald-500">{inv.invoice_date}</p>
+                                  </div>
+                                  <p className="text-base font-bold text-emerald-800">{inv.brutto?.toFixed(2)} EUR</p>
+                                </div>
+                              </div>
+                            ) : null;
+                          })()}
+
+                          {/* EMU Meter section */}
+                          {(() => {
+                            const hasLinked = signup.emu_device_id && signup.emu_meter_id;
+                            const md = meterDataMap[signup.id];
+                            const isLinking = linkingMeter === signup.id;
+
+                            if (!hasLinked && !isLinking) {
+                              return (
+                                <div className="bg-white rounded-lg p-4 border border-dashed border-gray-300 text-center" data-testid={`emu-unlinked-${signup.id}`}>
+                                  <Zap className="w-5 h-5 text-gray-300 mx-auto mb-1" />
+                                  <p className="text-xs text-gray-400 mb-2">Kein EMU-Zähler verknüpft</p>
+                                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                    className="text-xs text-fuchsia-600 border-fuchsia-200" data-testid={`link-meter-btn-${signup.id}`}>
+                                    <Link2 className="w-3 h-3 mr-1" /> Zähler verknüpfen
+                                  </Button>
+                                </div>
+                              );
+                            }
+
+                            if (isLinking) {
+                              return (
+                                <div className="bg-white rounded-lg p-4 border border-fuchsia-200" onClick={e => e.stopPropagation()} data-testid={`emu-linking-${signup.id}`}>
+                                  <h5 className="text-xs font-semibold text-gray-500 uppercase mb-3">EMU-Zähler zuweisen</h5>
+                                  <Button size="sm" onClick={() => setScanningMeter(signup.id)} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-sm py-3 mb-3" data-testid={`scan-qr-btn-${signup.id}`}>
+                                    <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                                    QR-Code scannen
+                                  </Button>
+                                  <div className="border-t border-gray-100 pt-3">
+                                    <p className="text-[10px] text-gray-400 mb-2">Oder manuell auswählen:</p>
+                                    <select value={selectedMeterCombo} onChange={e => setSelectedMeterCombo(e.target.value)}
+                                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-fuchsia-500"
+                                      data-testid={`meter-select-${signup.id}`}>
+                                      <option value="">-- Zähler wählen --</option>
+                                      {emuMeters.map(m => (
+                                        <option key={m.id} value={`${m.device_id}|${m.id}`}>
+                                          {m.meter_name} ({m.device_name || m.device_id.slice(0,8)})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <div className="flex gap-2">
+                                      <Button size="sm" onClick={() => handleLinkMeter(signup.id)} disabled={!selectedMeterCombo}
+                                        className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs flex-1" data-testid={`confirm-link-${signup.id}`}>
+                                        <Link2 className="w-3 h-3 mr-1" /> Verknüpfen
+                                      </Button>
+                                      <Button size="sm" variant="outline" onClick={() => { setLinkingMeter(null); setSelectedMeterCombo(""); setScanningMeter(null); }}
+                                        className="text-xs">Abbrechen</Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // Has linked meter
+                            return (
+                              <div className="space-y-3" data-testid={`emu-data-${signup.id}`}>
+                                <div className="flex items-center justify-between">
+                                  <h5 className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-1">
+                                    <Activity className="w-3 h-3 text-fuchsia-500" /> EMU-Zähler
+                                  </h5>
+                                  <div className="flex items-center gap-3">
+                                    <button onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                      className="text-[10px] text-fuchsia-500 hover:text-fuchsia-700 flex items-center gap-0.5" data-testid={`relink-meter-${signup.id}`}>
+                                      <Link2 className="w-3 h-3" /> Neu
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
+                                      className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
+                                      <Unlink className="w-3 h-3" /> Trennen
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-medium text-gray-700">{signup.emu_meter_name || "EMU-Zähler"}</span>
+                                    {md?.is_online ? (
+                                      <span className="flex items-center gap-1 text-[10px] text-emerald-600"><Wifi className="w-3 h-3" /> Online</span>
+                                    ) : (
+                                      <span className="flex items-center gap-1 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
+                                    )}
+                                  </div>
+                                  {md?.latest ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div className="text-center p-1.5 bg-gray-50 rounded">
+                                        <p className="text-[10px] text-gray-400">Leistung</p>
+                                        <p className="text-sm font-bold font-mono text-fuchsia-700">{(md.latest.P_sum_kW || 0).toFixed(2)} kW</p>
+                                      </div>
+                                      <div className="text-center p-1.5 bg-gray-50 rounded">
+                                        <p className="text-[10px] text-gray-400">Spannung</p>
+                                        <p className="text-sm font-bold font-mono text-gray-900">{(md.latest.U_L1 || 0).toFixed(0)} V</p>
+                                      </div>
+                                      <div className="text-center p-1.5 bg-gray-50 rounded">
+                                        <p className="text-[10px] text-gray-400">Strom</p>
+                                        <p className="text-sm font-bold font-mono text-gray-900">{(md.latest.I_sum || 0).toFixed(1)} A</p>
+                                      </div>
+                                      <div className="text-center p-1.5 bg-gray-50 rounded">
+                                        <p className="text-[10px] text-gray-400">Frequenz</p>
+                                        <p className="text-sm font-bold font-mono text-gray-900">{(md.latest.F_Hz || 0).toFixed(1)} Hz</p>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-gray-400 text-center py-2">Keine Messdaten</p>
+                                  )}
+                                </div>
+                                {md?.latest?.ts_utc && (
+                                  <p className="text-[10px] text-gray-400 text-right">
+                                    Letzte Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}
+                                  </p>
+                                )}
+                                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
+                                  className="w-full text-xs text-fuchsia-600 border-fuchsia-200" data-testid={`zaehler-detail-btn-${signup.id}`}>
+                                  <Gauge className="w-3 h-3 mr-1" /> Zählerdaten & Export
+                                </Button>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden lg:block overflow-x-auto -mx-5 px-5">
               <table className="w-full text-sm min-w-[900px]" data-testid="signups-table">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
@@ -900,6 +1152,7 @@ export default function KirmesEventDetailPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
 
@@ -910,6 +1163,47 @@ export default function KirmesEventDetailPage() {
           </div>
         )}
       </main>
+
+      {/* QR Scanner Fullscreen Overlay (Mobile only) */}
+      {scanningMeter && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col lg:hidden" data-testid="qr-scanner-overlay">
+          <div className="flex items-center justify-between p-4 bg-black/80">
+            <h3 className="text-white text-sm font-medium">QR-Code scannen</h3>
+            <button
+              onClick={() => setScanningMeter(null)}
+              className="text-white/80 hover:text-white bg-white/10 rounded-full w-8 h-8 flex items-center justify-center"
+              data-testid="qr-overlay-close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-md">
+              <QrScanner
+                onScan={(text) => handleQrScan(text, scanningMeter)}
+                onClose={() => setScanningMeter(null)}
+              />
+              <p className="text-white/50 text-xs text-center mt-4">QR-Code auf dem Stromverteiler scannen</p>
+            </div>
+          </div>
+          <div className="p-4 bg-black/80 flex justify-center gap-4">
+            <button
+              onClick={() => setScanningMeter(null)}
+              className="text-white/70 text-sm underline"
+              data-testid="qr-overlay-manual"
+            >
+              Manuell auswählen
+            </button>
+            <button
+              onClick={() => { setScanningMeter(null); setLinkingMeter(null); }}
+              className="text-white/70 text-sm underline"
+              data-testid="qr-overlay-cancel"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Invite Modal */}
       {showInviteModal && (
