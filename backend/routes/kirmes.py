@@ -744,14 +744,6 @@ async def signup_for_event(data: EventSignup):
     if not sch:
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
 
-    # Check if already signed up
-    existing = await _db.kirmes_signups.find_one({
-        "event_id": data.event_id,
-        "schausteller_id": data.schausteller_id
-    })
-    if existing:
-        raise HTTPException(status_code=400, detail="Bereits für diese Veranstaltung angemeldet")
-
     # Validate connection type
     if data.connection_type not in CONNECTION_TYPES:
         raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {data.connection_type}")

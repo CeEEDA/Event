@@ -694,9 +694,14 @@ export default function SchaustellerAnmeldungPage() {
                 <p><span className="text-gray-500">Fahrgeschäft:</span> <strong>{signupForm.fahrgeschaeft}</strong></p>
                 <p><span className="text-gray-500">Anschluss:</span> <strong>{signupForm.connection_type}</strong></p>
               </div>
-              <Button onClick={() => { loadBookings(schausteller.id); setStep("dashboard"); setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="to-dashboard-btn">
-                <LayoutDashboard className="w-4 h-4 mr-1" /> Zu meinem Bereich
-              </Button>
+              <div className="flex flex-col gap-3">
+                <Button onClick={() => { setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); setStep("signup"); }} variant="outline" className="border-fuchsia-200 text-fuchsia-600 hover:bg-fuchsia-50" data-testid="another-signup-btn">
+                  <Plus className="w-4 h-4 mr-1" /> Weiteren Stand anmelden
+                </Button>
+                <Button onClick={() => { loadBookings(schausteller.id); setStep("dashboard"); setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="to-dashboard-btn">
+                  <LayoutDashboard className="w-4 h-4 mr-1" /> Zu meinem Bereich
+                </Button>
+              </div>
             </div>
           )}
         </div>

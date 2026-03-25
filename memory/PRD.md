@@ -121,6 +121,12 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - `/api/mqtt/credentials/{id}` - DELETE Credentials widerrufen
 - `/api/mqtt/control/{generator_id}` - POST Steuerbefehl senden (Start/Stop/Auto)
 
+### Mehrfachanmeldungen (abgeschlossen - 2026-03-25)
+- Schausteller koennen jetzt mehrere Staende fuer dasselbe Event anmelden
+- Backend: Duplikat-Pruefung entfernt (kirmes.py public/signup Endpoint)
+- Frontend: "Weiteren Stand anmelden" Button auf Erfolgsseite hinzugefuegt
+- Einladungs-/Anmeldelink erlaubt erneute Anmeldung
+
 ### Smartphone-Optimierung Kirmes Event-Detail (abgeschlossen - 2026-03-25)
 - P0: Komplett responsive Event-Detailseite fuer Smartphone-Nutzung
 - Mobile Card View: Anmeldungen als aufklappbare Karten statt Tabelle (< lg Breakpoint)
