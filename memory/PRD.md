@@ -121,17 +121,28 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - `/api/mqtt/credentials/{id}` - DELETE Credentials widerrufen
 - `/api/mqtt/control/{generator_id}` - POST Steuerbefehl senden (Start/Stop/Auto)
 
+### Smartphone-Optimierung Kirmes Event-Detail (abgeschlossen - 2026-03-25)
+- P0: Komplett responsive Event-Detailseite fuer Smartphone-Nutzung
+- Mobile Card View: Anmeldungen als aufklappbare Karten statt Tabelle (< lg Breakpoint)
+- Desktop Table View: Bestehende Tabelle bleibt fuer grosse Bildschirme (>= lg Breakpoint)
+- QR-Scanner Fullscreen Overlay: Kamera-Ansicht als Vollbild-Overlay auf Mobile
+- Header-Buttons: Nur Icons auf Mobile, Icons + Text auf Desktop
+- "Preise pro Anschluss" Sektion entfernt (auf Wunsch des Benutzers)
+- kWh Inline-Bearbeitung auf Mobile Cards mit Einbau/Ausbau Feldern
+- Event-Info-Karten: 2x2 Grid auf Mobile, 4-spaltig auf Desktop
+- Telefon-Links klickbar auf Mobile (tel: Link)
+
 ## Prioritized Backlog
 
 ### P1 - Kommend
 - PayPal Integration
-- Direkter QR-Label-Druck an Drucker
 
 ### P2 - Backlog
 - Chromium Translate Popup auf Raspberry Pi (Policy-Datei erstellen)
 - Admin File Size Limits fuer Uploads
 - Windows Installer (.exe) fuer Electron Desktop App
 - Health-Check / Monitoring fuer Portal-Erreichbarkeit
+- Refactoring: old_device_ids Code entfernen (obsolet)
 
 ## Credentials
 - Admin (lokal): admin@test.com / password
