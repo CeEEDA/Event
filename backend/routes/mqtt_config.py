@@ -284,12 +284,16 @@ async def clear_raw_messages(admin: dict = Depends(require_admin)):
 
 # ============== Generator Control ==============
 
-# DSE Gencomm Page 3, Offset 0 - Control Key values
+# DSE Gencomm System Control Keys (Page 16, Offset 8+9)
+# Register 4104 = Control Key, Register 4105 = Complement (65535 - Key)
+# Both must be written simultaneously (Modbus Function Code 16)
 DSE_COMMANDS = {
-    "start": {"value": 6, "label": "Manueller Start"},
-    "stop": {"value": 1, "label": "Stop"},
-    "auto_on": {"value": 2, "label": "Automatikmodus EIN"},
-    "auto_off": {"value": 3, "label": "Manueller Modus (Auto AUS)"},
+    "stop":     {"key": 35700, "complement": 29835, "label": "Stop-Modus"},
+    "auto_on":  {"key": 35701, "complement": 29834, "label": "Automatikmodus"},
+    "manual":   {"key": 35702, "complement": 29833, "label": "Manueller Modus"},
+    "start":    {"key": 35705, "complement": 29830, "label": "Motor starten (Manuell/Test)"},
+    "mute":     {"key": 35706, "complement": 29829, "label": "Alarm stumm"},
+    "reset":    {"key": 35707, "complement": 29828, "label": "Alarme zurücksetzen"},
 }
 
 
@@ -319,7 +323,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if device and module_uid:
         control_topic = f"eventenergie/{module_uid}/control"
         dse_cmd = DSE_COMMANDS[cmd.command]
-        payload = json.dumps({module_uid: {"P003": {"R000": dse_cmd["value"]}}})
+        # DSE Gencomm: Write System Control Key + Complement to Page 16, Offset 8+9
+        payload = json.dumps({module_uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
 
         try:
             success = publish_command(control_topic, payload)
@@ -361,8 +366,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         raise HTTPException(status_code=400, detail="Kein aktives Gerät gefunden. Gateway muss zuerst Daten senden.")
 
     dse_cmd = DSE_COMMANDS[cmd.command]
-    # DSE890 expects JSON with Page/Register/Value format
-    payload = json.dumps({uid: {"P003": {"R000": dse_cmd["value"]}}})
+    # DSE Gencomm: Write System Control Key + Complement to Page 16, Offset 8+9
+    payload = json.dumps({uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
 
     try:
         publish_command(control_topic, payload)

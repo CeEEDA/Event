@@ -101,6 +101,13 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Root Cause 2: `gen.get("name")` NoneType-Fehler im Legacy-Pfad wenn Device statt Generator
 - Fix: Control-Endpoint erkennt `dev-{device_id}` korrekt und baut MQTT-Topic via dse_module_uid
 
+### DSE Remote Control Modbus-Register Fix (abgeschlossen - 2026-02-05)
+- P0 Bug: Payload nutzte falsche Modbus-Register (P003/R000 statt P016/R008+R009)
+- Root Cause: DSE_COMMANDS wurde auf key/complement aktualisiert, aber Payload-Konstruktion referenzierte noch `dse_cmd["value"]` (KeyError) und falsche Register
+- Fix: Beide Code-Pfade (Device + Gateway) korrigiert auf `{uid: {"P016": {"R008": key, "R009": complement}}}`
+- DSE Gencomm Protocol: System Control Key auf Register 4104 + Complement auf Register 4105
+- Befehle: start(35705), stop(35700), auto_on(35701), manual(35702), mute(35706), reset(35707)
+
 ### Device Offline-Erkennung (abgeschlossen - 2026-03-25)
 - P1 Bug: Online-Status aktualisierte sich nicht wenn Geraete offline gingen
 - Loesung: Timeout-basierter Hintergrund-Task (alle 60s, Timeout: 5min)

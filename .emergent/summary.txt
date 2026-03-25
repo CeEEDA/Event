@@ -1,63 +1,50 @@
 <analysis>**original_problem_statement**:
-The user is building a comprehensive Kirmes (Fairground) billing and management system. The initial request was to migrate the system to the  domain with SSL, fix MQTT, and add a UI for device telemetry. The scope has expanded to include remote device control, robust data ingestion for Kirmeskiste Pi devices, and direct-to-printer label generation for QR codes.
+The user is building a comprehensive Kirmes (Fairground) billing and management system. The core application is a React frontend with a FastAPI backend and MongoDB database.
 
-PRODUCT REQUIREMENTS:
-1.  Migrate entire system to  with valid SSL. (DONE)
-2.  Fix MQTT Mosquitto broker setup on Windows. (DONE)
-3.  Build an expandable row in the Frontend Device Management table to show quick stats. (DONE)
-4.  Ensure Windows Batch deployment scripts () work flawlessly. (IN PROGRESS - Caddy issues were resolved)
-5.  Resolve data synchronization issues for the Kirmeskiste Pi devices. (DONE - Major fix implemented in this session)
-6.  Implement and debug data synchronization for DSE Gateways. (DONE)
-7.  Implement per-device MQTT credentials for enhanced security. (DONE)
-8.  Automate the mapping of MQTT topics to devices. (DONE)
-9.  Enable remote control (Start/Stop) for DSE Gateways from the UI. (DONE)
-10. Remove the Chromium Translation popup on the Raspberry Pi Kiosk. (PENDING)
-11. Implement direct QR label printing for meters and devices on a Dymo LabelWriter 550 Turbo. (DONE)
-12. Fix automatic capture of kWh Einbaustand when linking a meter. (DONE)
-13. Optimize Kirmes event page for smartphone usability. (IN PROGRESS)
+Recent user requests implemented in this session include:
+1.  Optimizing the Kirmes event page for smartphone usability. (DONE)
+2.  Allowing a customer to have multiple signups (stalls) for the same event. (DONE)
+3.  Fixing a bug where the initial meter reading () was not being saved upon linking a meter. (DONE & VERIFIED BY USER)
+4.  Adding device categorization and a QR code scanner to the Serviceplan (Maintenance Plan) page. (DONE & VERIFIED BY USER)
+5.  Fixing a navigation bug with the Serviceplan QR scanner. (DONE & VERIFIED BY USER)
+6.  Granting employees full edit capabilities within the device management modal, reserving only device deletion from the main list for admins. (DONE)
+7.  Adding a specific permission toggle (Abrechnung freischalten) in the user management section to control which employees can access billing functions. (DONE)
+8.  Fixing the remote start/stop functionality for DSE generators, which was not working. (IN PROGRESS)
+
+PRODUCT REQUIREMENTS (from previous summary):
+- All previous requirements marked as DONE or IN PROGRESS have been addressed or are captured in the new tasks. The focus has shifted to the new feature requests and bug fixes from the current session.
 
 **User's preferred language**: German (Deutsch) - YOU MUST RESPOND IN GERMAN ONLY.
 
 **what currently exists?**
-A full-stack application (React/FastAPI/MongoDB) on a Windows Server. The core system manages fairground events, customers, and energy-metering devices.
-This session's key achievements include:
-1.  **Robust Data Ingestion:** The  endpoint, a source of recurring 404 Not Found errors, has been made significantly more robust. It now uses fallbacks to find devices by  or  if the  sent by the Pi is outdated (e.g., after the device was deleted and recreated in the portal). The setup scripts for the Kirmeskiste and Messkoffer have also been improved to perform a full cleanup before installation, preventing old configurations from causing issues. The user has confirmed the Kirmeskiste is now working.
-2.  **Remote Control & Status:** The Generator nicht gefunden bug for DSE remote control was fixed. A background task was implemented to correctly mark devices as offline if they stop sending data.
-3.  **Direct Label Printing:** A new feature allows direct printing of QR code labels for both individual meters and entire devices to a Dymo LabelWriter 550 Turbo connected to the Windows server. The backend uses  to generate the label image and  to send it to the printer without a dialog. The layout was iterated on with the user to achieve the correct size and orientation.
-4.  **Bug Fixes:** A bug preventing the kWh Einbaustand (initial meter reading) from being automatically captured upon linking a meter was fixed. Several deployment issues on the user's server (Caddy port conflicts, frontend build errors) were also diagnosed and resolved.
+A full-stack application (React/FastAPI/MongoDB) for managing fairground events, customers, and energy-metering devices. In this session, the agent successfully implemented several key features and fixes:
+- **Mobile UI Overhaul**: The Kirmes event detail page is now fully responsive, using a card-based layout for mobile and a fullscreen QR scanner.
+- **Billing Permissions**: A new  permission has been added to the user model. A toggle switch in the admin panel allows granting this specific right to employees, who by default cannot access billing functions.
+- **Employee Permissions**: Permissions have been significantly relaxed. Employees can now create, copy, and edit all fields of a device, including managing documents and MQTT credentials within the device modal. The only action reserved for an  is deleting a device from the main list view.
+- **Core Logic Fixes**: The agent resolved a critical bug preventing the initial meter reading () from being saved by correcting a database query ( instead of ). An automatic backfill mechanism was also added to fix this for existing entries. The agent also enabled multiple event signups for the same customer.
+- **Serviceplan UX**: The service plan page now features category filters and a QR code scanner to quickly find and open a device's maintenance plan.
 
 **Last working item**:
-- Last item agent was working: Optimizing the Kirmes event detail page for smartphone usability. The user provided a photo showing that when assigning a meter, the QR code scanner is not visible on the screen, and requested the removal of the Preis pro Anschluss field from the signup form.
-- Status: NOT STARTED
+- Last item agent was working: Fixing the remote control (Start/Stop) for DSE generators. The user reported that the function was not working and provided a technical PDF for the DSE Modbus protocol. The agent analyzed the document and discovered that the backend was sending control commands to the wrong Modbus registers. The code was sending simple values to Page 3/Offset 0, whereas the documentation requires writing a  and a  to Page 16, Offsets 8 and 9 simultaneously. The agent has just updated the backend code in  to send the correct payload structure: .
+- Status: IN PROGRESS
 - Agent Testing Done: N
-- Which testing method agent to use? Frontend testing agent to check the UI/UX on various mobile viewport sizes, or the screenshot tool with mobile emulation.
+- Which testing method agent to use? backend testing agent. Test by calling the control endpoint via  and verifying that the correct JSON payload is published to the MQTT topic. Final verification will require user feedback on the physical hardware.
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  Issue 1: Kirmes event detail page is not mobile-friendly (P0)
-  Issue 2: User verification for new features (P1)
+  Issue 1: DSE generator remote control is not working (P0)
   
   Issues Detail:
   - Issue 1: 
-     - Attempted fixes: None. The agent has just received the request.
+     - Attempted fixes: The agent has modified . The  dictionary was updated to target the correct Modbus registers (Page 16, Offsets 8 & 9) and use the two-part key/complement values required for start/stop operations, as per the user's PDF.
      - Next debug checklist: 
-       1. Locate the relevant frontend page (likely a Kirmes Event Detail page).
-       2. Use CSS (responsive design, media queries) to adjust the layout for small screens, ensuring the camera/QR scanner view is visible.
-       3. Remove the Preis pro Anschluss field from the new signup/customer form within that page.
-     - Why fix this issue and what will be achieved with the fix? This will improve the user experience for staff using the application on-site with their smartphones, which is a critical workflow.
-     - Status:  NOT STARTED
+       1. Use  to call the  endpoint with a start or stop command.
+       2. Check backend logs () to confirm the correctly formatted JSON payload is being prepared for MQTT publication.
+       3. Ask the user to confirm if the physical generator responds to the command.
+     - Why fix this issue and what will be achieved with the fix? This is a critical operational feature, allowing staff to remotely manage power generators.
+     - Status:  IN PROGRESS
      - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Frontend
-     - Blocked on other issue: None
-  - Issue 2: 
-     - Attempted fixes: N/A. The features are implemented but await final confirmation.
-     - Next debug checklist: Ask the user to test the following and confirm they work as expected:
-       1. Printing a **device** QR code label from the device edit modal.
-       2. Linking a **new** meter to a customer and confirming the Einbaustand is correctly pre-filled with the meter's current kWh reading.
-     - Why fix this issue and what will be achieved with the fix? To confirm the recently developed features are fully functional in the user's production environment.
-     - Status:  USER VERIFICATION PENDING
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? N/A
+     - Should Test frontend/backend/both after fix? Backend
      - Blocked on other issue: None
 
 **In progress Task List**:
@@ -65,24 +52,26 @@ This session's key achievements include:
 
 **Upcoming and Future Tasks**
  Upcoming Tasks:
-    - (P1) PayPal Integration.
-    
+    - (P1) PayPal Integration: Implement PayPal for payment processing during the Kirmes signup flow.
+
  Future Tasks:
-    - (P2) Chromium Translate Popup on Raspberry Pi Kiosk.
-    - (P2) Admin File Size Limits for uploads.
-    - (P2) Windows Installer for Electron.
+    - (P2) Diagnostic Feature for Meters: Implement a feature (e.g., a button in device management) to display the last 10 raw measurement values for a single meter, to help diagnose hardware-level issues like the phantom 105 kW reading.
+    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk.
+    - (P2) Implement Admin File Size Limits for uploads.
+    - (P2) Create a Windows Installer for the Electron app.
+    - (P2) Refactor and remove the obsolete  code from the backend and frontend.
 
 **Completed work in this session**
-- **Fixed Kirmeskiste 404 Error (Robust Ingestion):** Implemented fallback logic on the  endpoint to find devices by  or , resolving persistent 404 errors when Pi devices sent outdated UUIDs.
-- **Improved Pi Setup Scripts:** Rewrote the setup scripts for Kirmeskiste and Messkoffer to perform a full cleanup (stop services, remove old configs/DBs) before installation, ensuring a clean state.
-- **Fixed DSE Remote Control Bug:** Resolved the Generator nicht gefunden error in , enabling remote start/stop commands for DSE devices.
-- **Implemented Device Offline-Status:** Added a background task in  to periodically check the  timestamp of devices and generators, marking them as offline if they time out.
-- **Implemented Dymo Label Printing:** Created backend endpoints ( and ) to generate 32x57mm labels using  and print them directly via . Added corresponding Print buttons to the frontend.
-- **Fixed kWh Einbaustand Bug:** Modified  and  in  to automatically fetch the latest kWh reading from a meter when it's assigned to a customer.
-- **Resolved Deployment Blockers:** Diagnosed and fixed a Caddy server startup failure on the user's Windows machine by forcing HTTP mode () and a frontend build failure by removing a duplicate  import.
+- **Finished Mobile Optimization**: The Kirmes event detail page is now fully responsive with a card view and fullscreen QR scanner.
+- **Enabled Multiple Signups**: Backend logic and frontend UI were updated to allow a single customer to register multiple stands for an event. (Verified by User)
+- **Fixed and Backfilled kWh Einbaustand**: Corrected the database query to fetch the initial meter reading and added a backfill mechanism for existing records. (Verified by User)
+- **Enhanced Serviceplan Page**: Implemented category filters and a QR code scanner for quick device lookup. (Verified by User)
+- **Overhauled Employee Permissions**: Granted employees full edit access within the device modal, including MQTT credential management and document deletion. Deleting a device from the main list remains admin-only.
+- **Implemented Billing Permission**: Added a new  permission, controlled by a toggle in the admin user management, to restrict access to billing functions.
+- **Analyzed DSE Control Bug**: Diagnosed the root cause of the generator control failure by comparing existing code with the official Modbus documentation.
 
 **Earlier issues found/mentioned but not fixed**
-   - None from this session. All raised issues were addressed.
+   - **Refactoring Task**: The code related to  (an obsolete solution for a previously fixed bug) has still not been removed from  and .
 
 **Known issue recurrence from previous fork**
   - None.
@@ -91,99 +80,58 @@ This session's key achievements include:
 
 
 **Key Technical Concepts**
-- Backend: FastAPI, Python, MongoDB
-- Frontend: React
-- Deployment: Windows Batch Scripts, Caddy, Nginx
-- Printing: **** for PDF/Image generation, **** for direct Windows printing.
-- Data Ingestion: Robust fallback mechanisms (ID -> API Key -> Meter ID) to handle data drift.
+- **Backend**: FastAPI, Python, MongoDB.
+- **Frontend**: React, TailwindCSS.
+- **Permissions Model**: A hybrid model using roles (, ) and a fine-grained  object () in the  collection. This is propagated to the frontend via a  context.
+- **Device Control (MQTT)**: The system now correctly formats a JSON payload with multiple register values () to control DSE generators via Modbus over MQTT.
 
 **key DB schema**
-- No major schema changes. The  array was briefly added to the  collection but was made obsolete by improving the setup scripts. This could be cleaned up.
+- **users**: Added a new embedded document .
+- **devices**: The  enum now includes .
 
 **changes in tech stack**
 - None.
 
 **All files of reference**
--  (Ingestion logic, setup scripts)
--  (Label printing, kWh linking logic)
--  (Remote control fix)
--  (Offline checker)
--  (UI for printing)
--  (or similar, for the next mobile UI task)
--  (Caddy configuration)
+-  (Current work: DSE commands)
+-  (Permissions logic)
+-  (kWh bug fix)
+-  (User permissions schema)
+-  (Permissions UI)
+-  (Permissions UI)
+-  (Permissions logic)
+-  (Reference for DSE fix)
 
 **Areas that need refactoring**:
-- The code added to support  in  and  is now obsolete because the improved setup scripts solve the root problem. This logic and the corresponding UI elements should be removed to simplify the codebase.
+- The now-obsolete logic and DB field for  should be removed to simplify the codebase. This was noted in the previous handoff and is still pending.
 
 **key api endpoints**
-- : **(FIXED)** Now robust against outdated device IDs.
-- : **(NEW)** Prints a QR label for a specific meter.
-- : **(NEW)** Prints a QR label for the main device.
-- : **(FIXED)** Now auto-fills .
-- : **(FIXED)** Now works for devices with  prefix.
+- : **(FIXED / IN-PROGRESS)** Logic rewritten to send correct multi-register Modbus commands. Awaiting testing.
+- : **(ENHANCED)** Now accepts the  object to set .
+- All endpoints in  and : Dependencies changed from  to  to grant Mitarbeiter access.
+- : **(ENHANCED)** Now automatically backfills missing  values.
+- : **(FIXED)** Duplicate check removed to allow multiple signups.
 
 **Critical Info for New Agent**
 - **YOU MUST RESPOND IN GERMAN.**
-- The immediate task (P0) is to fix the Kirmes event detail page for smartphone use. The user is blocked from using the QR scanner on-site.
-- The user's environment is a live Windows Server. Debugging often requires asking the user to run commands (Active Internet connections (w/o servers)
-Proto Recv-Q Send-Q Local Address           Foreign Address         State      
-tcp        0      0 localhost:27017         localhost:36124         ESTABLISHED
-tcp        0      0 localhost:51306         localhost:38725         ESTABLISHED
-tcp        0      0 agent-env-82995b4:40210 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:40254 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 localhost:8010          localhost:34702         ESTABLISHED
-tcp        0      0 agent-env-82995b4:40168 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:40278 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 localhost:38725         localhost:51306         ESTABLISHED
-tcp        0      0 localhost:36130         localhost:27017         ESTABLISHED
-tcp        0      0 agent-env-82995b4:40180 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b47:8010 10.64.130.71:53764      ESTABLISHED
-tcp        0      0 agent-env-82995b4:40224 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:40226 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 localhost:36132         localhost:27017         ESTABLISHED
-tcp        0      0 agent-env-82995b4:40172 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 localhost:34702         localhost:8010          ESTABLISHED
-tcp        0      0 localhost:27017         localhost:36132         ESTABLISHED
-tcp        0      0 localhost:27017         localhost:36130         ESTABLISHED
-tcp        0      0 agent-env-82995b4:40256 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:52902 0.203.102.34.bc.g:https ESTABLISHED
-tcp        0      0 agent-env-82995b4:40242 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b47:8010 10.64.128.137:42828     ESTABLISHED
-tcp        0      0 agent-env-82995b4:40212 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 localhost:36124         localhost:27017         ESTABLISHED
-tcp        0      0 agent-env-82995b4:40194 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:40252 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:40164 pd956d61d.dip0.t-:18081 TIME_WAIT  
-tcp        0      0 agent-env-82995b4:40272 pd956d61d.dip0.t-:18081 TIME_WAIT  
-Active UNIX domain sockets (w/o servers)
-Proto RefCnt Flags       Type       State         I-Node   Path
-unix  3      [ ]         STREAM     CONNECTED     87580    
-unix  3      [ ]         STREAM     CONNECTED     87579    
-unix  3      [ ]         STREAM     CONNECTED     87613    
-unix  3      [ ]         STREAM     CONNECTED     84954    
-unix  3      [ ]         STREAM     CONNECTED     87612    
-unix  3      [ ]         STREAM     CONNECTED     84953    , , ) and interpreting the (German language) output.
-- The Kirmeskiste data ingestion issues are resolved via a robust server-side fallback and improved client-side setup scripts. Do not revert to previous solutions like aliasing IDs. The correct solution is to have the user run the new setup script on the Pi.
-- The Dymo printer integration is working. The final correct label format is **Hochformat (portrait)**, with the code generating a  pixel image which the Dymo driver then rotates correctly. The paper size  (ID 20) is now set programmatically.
+- The immediate task is to test the DSE generator remote control fix in .
+- The user has already verified that several major features/fixes from this session are working correctly on their production server (kWh reading, multi-signup, QR scanner navigation). This is a great sign of progress.
+- The permissions model has been significantly changed. The guiding principle is: **Mitarbeiter can do everything inside the device edit modal. Only deleting a device from the main list is admin-only.** Billing is a separate, opt-in permission for employees.
 
 **documents and test reports created in this job**
 -  (Updated)
+- 
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. **User**: Reports Dymo printout is good but needs to be larger.
-2. **Agent**: Increases the size of the QR code and text on the label.
-3. **User**: Confirms the meter label print is Super and asks to implement the device label printing next.
-4. **Agent**: Implements the device label printing feature.
-5. **User**: Reports a new issue: A linked meter is online but not showing the Einbaustand (initial kWh reading).
-6. **Agent**: Identifies that the linking endpoints don't fetch the current kWh value and implements a fix.
-7. **User**: Reports that the smartphone UI for assigning meters is unusable: the camera is off-screen. Asks to remove an unnecessary field. (This is the current P0 task).
-8. **Agent**: Acknowledges the mobile UI issue and prepares to work on it.
-9. **User**: Provides more context on the Caddy issue, including logs showing port 2019 is in use.
-10. **User**: Asks to optimize the Messkoffer setup script in the same way as the Kirmeskiste one.
+1. **User**: Confirms other features work, requests a new feature: a permission toggle to enable Billing for specific employees.
+2. **Agent**: Implements the  permission feature with a UI toggle.
+3. **User**: Provides a PDF for DSE Modbus control, reports the generator start isn't working, and asks the agent to check the topic files and linkage.
+4. **Agent**: Analyzes the PDF and discovers the code is sending commands to entirely wrong Modbus registers.
+5. **Agent**: Corrects the command structure in  to use the proper registers and key/complement values for start/stop operations.
 
 **Project Health Check:**
 - **Broken**:
-  - Kirmes event detail page layout on smartphones.
+  - DSE generator remote control (a fix has been implemented but is untested).
 - **Mocked**:
   - None.
 
@@ -194,13 +142,13 @@ unix  3      [ ]         STREAM     CONNECTED     84953    , , ) and interpretin
 - Dymo LabelWriter 550 Turbo (via )
 
 **Testing status**
-  - Testing agent used after significant changes: NO
+  - Testing agent used after significant changes: YES (for mobile optimization)
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
   - Known regressions: []
 
 **Credentials to test flow:**
-- Portal credentials used by the agent for testing are not explicitly stated but assume an  role.
+- User credentials with both  and  roles are needed to test the permission changes.
 
 **What agent forgot to execute**
-- After implementing a more robust solution for the Pi data-ingestion problem (improving the setup script), the agent did not go back and remove the now-obsolete initial fix (the  field and its associated UI/API logic). This should be refactored out.</analysis>
+- The refactoring task to remove  code, which was carried over from the previous fork, is still outstanding.</analysis>
