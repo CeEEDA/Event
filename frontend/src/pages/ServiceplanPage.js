@@ -11,7 +11,7 @@ import { Label } from "../components/ui/label";
 import {
   ArrowLeft, Wrench, Plus, Search, Clock, User, ChevronLeft, ChevronDown,
   Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera, FileText, FileUp, Download, Paperclip,
-  ScanLine, Filter,
+  ScanLine, Filter, Printer,
 } from "lucide-react";
 import QrScanner from "../components/QrScanner";
 import EventLog from "../components/EventLog";
@@ -389,7 +389,7 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
 }
 
 // ============== Entry Display ==============
-function EntryCard({ entry, planId, isAdmin, onDelete, deviceType }) {
+function EntryCard({ entry, planId, planDetail, isAdmin, onDelete, deviceType }) {
   const [expanded, setExpanded] = useState(false);
   const reduced = isReducedPlan(deviceType);
   const cl = entry.checklist_data || {};
@@ -403,6 +403,115 @@ function EntryCard({ entry, planId, isAdmin, onDelete, deviceType }) {
 
   const statusLabel = { durchgefuehrt: "Durchgeführt", nicht_durchgefuehrt: "Nicht durchgeführt", nicht_vorhanden: "Nicht vorhanden" };
   const statusCls = { durchgefuehrt: "bg-emerald-100 text-emerald-700", nicht_durchgefuehrt: "bg-gray-100 text-gray-500", nicht_vorhanden: "bg-amber-100 text-amber-700" };
+
+  const handlePrint = (e) => {
+    e.stopPropagation();
+    if (!expanded) setExpanded(true);
+
+    const deviceName = planDetail?.device_name || planDetail?.serial_number || "";
+    const dateStr = new Date(entry.performed_at).toLocaleDateString("de-DE");
+    const badgeCls = (v, err) => {
+      if (v === "durchgefuehrt" || v === true) return err ? "badge-err" : "badge-ok";
+      if (v === "nicht_vorhanden") return "badge-warn";
+      return "badge-na";
+    };
+    const badgeTxt = (v) => v === true ? "Ja" : (statusLabel[v] || String(v || "–"));
+
+    const sectionHtml = (title, content) => content ? `<div class="section"><h3>${title}</h3>${content}</div>` : "";
+
+    // 1. Mechanische Prüfung
+    const mechHtml = !reduced && Object.keys(mech).length > 0 ? sectionHtml("1. Mechanische Pruefung",
+      `<div class="grid">${Object.entries(mech).map(([k, v]) => `<div class="row"><span class="label">${k}</span><span class="badge ${badgeCls(v)}">${badgeTxt(v)}</span></div>`).join("")}</div>`) : "";
+
+    // 2. Elektrische Prüfung
+    const elecHtml = Object.keys(elec).length > 0 ? sectionHtml("2. Elektrische Pruefung",
+      `<div class="grid">${Object.entries(elec).map(([k, v]) => `<div class="row"><span class="label">${k}</span><span class="badge ${badgeCls(v)}">${badgeTxt(v)}</span></div>`).join("")}</div>`) : "";
+
+    // 3. Generator Messwerte
+    const measEntries = Object.entries(meas).filter(([, v]) => v);
+    const measHtml = !reduced && measEntries.length > 0 ? sectionHtml("3. Generator Messwerte",
+      `<div class="measurements">${measEntries.map(([k, v]) => {
+        const lbl = MEASUREMENT_FIELDS.find(f => f.key === k)?.label || k;
+        return `<div class="meas-box"><div class="lbl">${lbl}</div><div class="val">${v}</div></div>`;
+      }).join("")}</div>`) : "";
+
+    // 4. Lasttest
+    const ltHtml = !reduced && lt.length > 0 && lt.some(r => r.values) ? sectionHtml("4. Lasttest Generator",
+      `<table class="load-table"><thead><tr><th>Last</th><th>Lasttest</th><th>Bemerkungen</th></tr></thead><tbody>` +
+      lt.map(r => `<tr><td>${r.load}</td><td>${r.values || "–"}</td><td>${r.remarks || "–"}</td></tr>`).join("") +
+      `</tbody></table>`) : "";
+
+    // 5. ATS
+    const atsEntries = Object.entries(ats).filter(([k]) => k !== "umschaltzeit");
+    const atsHtml = !reduced && atsEntries.length > 0 ? sectionHtml("5. ATS / Netzumschaltung",
+      `<div class="grid">${atsEntries.map(([k, v]) => {
+        const a = ATS_ITEMS.find(i => i.key === k);
+        return `<div class="row"><span class="label">${a?.label || k}</span><span class="badge ${badgeCls(v)}">${badgeTxt(v)}</span></div>`;
+      }).join("")}</div>${ats.umschaltzeit ? `<div style="margin-top:4px;">Umschaltzeit: <strong>${ats.umschaltzeit}s</strong></div>` : ""}`) : "";
+
+    // 6. Diagnose
+    const diagItems = [
+      { key: "fehlerspeicher_ausgelesen", label: "Fehlerspeicher ausgelesen" },
+      { key: "keine_fehler", label: "Keine Fehler vorhanden" },
+      { key: "fehler_vorhanden", label: "Fehler vorhanden" },
+    ].filter(i => diag[i.key]);
+    const diagHtml = diagItems.length > 0 ? sectionHtml("6. Diagnose",
+      `<div class="grid">${diagItems.map(i => {
+        const v = diag[i.key];
+        return `<div class="row"><span class="label">${i.label}</span><span class="badge ${badgeCls(v, i.key === "fehler_vorhanden")}">${badgeTxt(v)}</span></div>`;
+      }).join("")}</div>${diag.fehlercodes ? `<div style="margin-top:4px;padding:4px 8px;border:1px solid #fca5a5;border-radius:4px;color:#991b1b;">${diag.fehlercodes}</div>` : ""}`) : "";
+
+    // Bemerkungen
+    const remarksHtml = entry.remarks ? `<div class="section"><h3>Bemerkungen</h3><div class="remarks">${entry.remarks}</div></div>` : "";
+    const notesHtml = entry.notes ? `<div class="section"><h3>Notizen</h3><p>${entry.notes}</p></div>` : "";
+
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Popup-Blocker aktiv - bitte erlauben"); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Servicebericht ${deviceName} ${dateStr}</title>
+<style>
+  @page { margin: 15mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+  body { font-size: 11px; color: #1a1a1a; line-height: 1.5; }
+  .header { border-bottom: 2px solid #a21caf; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .header h1 { font-size: 18px; color: #a21caf; }
+  .header .meta { font-size: 10px; color: #666; text-align: right; }
+  .section { margin-bottom: 12px; }
+  .section h3 { font-size: 12px; font-weight: 600; color: #333; border-bottom: 1px solid #e5e5e5; padding-bottom: 3px; margin-bottom: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+  .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .row .label { color: #555; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 500; }
+  .badge-ok { background: #d1fae5; color: #065f46; }
+  .badge-warn { background: #fef3c7; color: #92400e; }
+  .badge-na { background: #f3f4f6; color: #6b7280; }
+  .badge-err { background: #fee2e2; color: #991b1b; }
+  .remarks { background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 6px 8px; }
+  .measurements { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .meas-box { border: 1px solid #e5e5e5; border-radius: 4px; padding: 4px 6px; }
+  .meas-box .lbl { font-size: 9px; color: #999; }
+  .meas-box .val { font-weight: 600; }
+  .load-table { width: 100%; border-collapse: collapse; }
+  .load-table th, .load-table td { border: 1px solid #e5e5e5; padding: 3px 6px; text-align: left; }
+  .load-table th { background: #f9fafb; font-size: 10px; color: #666; }
+  .footer { margin-top: 20px; border-top: 1px solid #e5e5e5; padding-top: 8px; font-size: 9px; color: #999; display: flex; justify-content: space-between; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<div class="header">
+  <div><h1>Servicebericht</h1><div style="font-size:12px;color:#555;margin-top:2px;">${deviceName}</div></div>
+  <div class="meta">
+    Datum: ${dateStr}<br>
+    Techniker: ${entry.performed_by || "–"}<br>
+    ${entry.hours_at_service != null ? "Betriebsstunden: " + entry.hours_at_service + " h<br>" : ""}
+    ${entry.next_maintenance_months ? "Naechste Wartung: " + entry.next_maintenance_months + " Mon." + (entry.next_maintenance_hours ? " / " + entry.next_maintenance_hours + " h" : "") + "<br>" : ""}
+  </div>
+</div>
+${mechHtml}${elecHtml}${measHtml}${ltHtml}${atsHtml}${diagHtml}${remarksHtml}${notesHtml}
+<div class="footer"><span>Eventenergie Deutschland</span><span>Erstellt am ${new Date().toLocaleDateString("de-DE")} ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span></div>
+</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid={`entry-${entry.id}`}>
@@ -430,10 +539,11 @@ function EntryCard({ entry, planId, isAdmin, onDelete, deviceType }) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
+            <span onClick={handlePrint} className="text-gray-400 hover:text-fuchsia-600 p-1" title="Bericht drucken / PDF" data-testid={`print-entry-${entry.id}`}><Printer className="w-4 h-4" /></span>
             {isAdmin && (
-              <span onClick={e => { e.stopPropagation(); onDelete(entry.id); }} className="text-gray-400 hover:text-red-500 p-1"><Trash2 className="w-4 h-4" /></span>
+              <span onClick={e => { e.stopPropagation(); onDelete(entry.id); }} className="text-gray-400 hover:text-red-500 p-1" data-testid={`delete-entry-${entry.id}`}><Trash2 className="w-4 h-4" /></span>
             )}
           </div>
         </div>
@@ -790,7 +900,7 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {entries.map(entry => <EntryCard key={entry.id} entry={entry} planId={plan.id} isAdmin={isAdmin} onDelete={handleDeleteEntry} deviceType={planDetail?.device_type} />)}
+          {entries.map(entry => <EntryCard key={entry.id} entry={entry} planId={plan.id} planDetail={planDetail} isAdmin={isAdmin} onDelete={handleDeleteEntry} deviceType={planDetail?.device_type} />)}
         </div>
       )}
     </div>
