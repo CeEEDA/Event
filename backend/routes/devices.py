@@ -345,10 +345,6 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
         if v is not None:
             update_data[k] = v
 
-    # Only admin can change device_type
-    if "device_type" in update_data and user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Nur Admin kann den Gerätetyp ändern")
-
     # Validate status
     if "status" in update_data and update_data["status"] not in ("aktiv", "ausser_betrieb"):
         raise HTTPException(status_code=400, detail="Status muss 'aktiv' oder 'ausser_betrieb' sein")
@@ -498,7 +494,7 @@ async def list_documents(device_id: str, user: dict = Depends(require_staff)):
 
 
 @router.delete("/{device_id}/documents/{doc_id}")
-async def delete_document(device_id: str, doc_id: str, admin: dict = Depends(require_admin)):
+async def delete_document(device_id: str, doc_id: str, user: dict = Depends(require_staff)):
     doc = await db.device_documents.find_one({"id": doc_id, "device_id": device_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")

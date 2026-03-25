@@ -886,8 +886,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           ) : (
             <div>
               <Label className="text-gray-700 text-sm mb-1.5 block">Gerätetyp</Label>
-              {(!editing || isAdmin) ? (
-                <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                   {DEVICE_TYPES.map(t => (
                     <button
                       key={t.value}
@@ -904,12 +903,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                     </button>
                   ))}
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  {currentType && <currentType.icon className="w-5 h-5 text-fuchsia-500" />}
-                  <span className="text-sm font-medium text-gray-700">{currentType?.label || formData.device_type}</span>
-                </div>
-              )}
             </div>
           )}
 
@@ -1093,11 +1086,9 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                           <p className="text-[10px] text-gray-400">{(doc.size / 1024).toFixed(1)} KB · {new Date(doc.uploaded_at).toLocaleDateString("de-DE")}</p>
                         </div>
                       </div>
-                      {isAdmin && (
                         <button onClick={() => handleDeleteDoc(doc.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0 ml-2" data-testid={`delete-doc-${doc.id}`}>
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
                     </div>
                   ))}
                 </div>
