@@ -604,7 +604,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       } else {
         setDeviceImageUrl(null);
       }
-      const KNOWN = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401"];
+      const KNOWN = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
       setControllerCustomMode(!!editing.controller && !KNOWN.includes(editing.controller));
     } else {
       setDocuments([]);
@@ -1066,7 +1066,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                             data-testid="controller-select"
                           >
                             <option value="">Steuerung wählen...</option>
-                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt === "DSE 5510" ? "DSE 5510 (Pi)" : opt}</option>)}
                             <option value="__custom">Sonstige (Freitext)...</option>
                           </select>
                           {controllerCustomMode && (
