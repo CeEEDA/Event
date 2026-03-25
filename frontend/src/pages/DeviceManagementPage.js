@@ -1255,7 +1255,6 @@ export default function DeviceManagementPage() {
       mqtt_username: device.mqtt_username || "",
       mqtt_password: device.mqtt_password || "",
       dse_module_uid: device.dse_module_uid || "",
-      old_device_ids: device.old_device_ids || [],
     });
     setModalOpen(true);
   };

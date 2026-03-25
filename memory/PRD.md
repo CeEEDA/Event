@@ -161,7 +161,11 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Admin File Size Limits fuer Uploads
 - Windows Installer (.exe) fuer Electron Desktop App
 - Health-Check / Monitoring fuer Portal-Erreichbarkeit
-- Refactoring: old_device_ids Code entfernen (obsolet)
+
+### Refactoring (erledigt - 2026-02-05)
+- old_device_ids Code komplett entfernt (Backend: DeviceCreate Model, add-alias Endpoint, Ingest Fallback; Frontend: FormData)
+- Ungenutzte Variablen in mqtt_service.py bereinigt (client_name, result, topic_lower)
+- MQTT-Matching: Case-insensitive Vergleich und Whitespace-Trimming hinzugefuegt
 
 ## Credentials
 - Admin (lokal): admin@test.com / password

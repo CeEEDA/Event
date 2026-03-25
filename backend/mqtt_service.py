@@ -118,7 +118,6 @@ async def _process_message(msg):
     mappings = await _db.mqtt_gateway_mappings.find({}, {"_id": 0}).to_list(100)
     for mapping in mappings:
         topic_prefix = mapping.get("topic_prefix", "").strip()
-        client_name = mapping.get("client_name", "")
         generator_id = mapping.get("generator_id")
 
         if not generator_id:
@@ -395,7 +394,6 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
 
     await _db.generators.update_one({"id": generator_id}, {"$set": status_update})
 
-    result = {k: v for k, v in telemetry.items() if k != "_id"}
     logger.info(f"MQTT: Telemetry stored for generator {generator_id}")
 
 
@@ -433,9 +431,6 @@ def _parse_gencomm_registers(parsed, topic):
                    32767, 2147483647, 65535, 4294967295):
             return False
         return True
-
-    # Detect topic type for context
-    topic_lower = topic.lower()
 
     # Page 4 register mapping (standard DSE Gencomm instrumentation)
     # Engine parameters
