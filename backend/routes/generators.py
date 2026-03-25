@@ -756,18 +756,23 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
     async for g in db.generators.find(query, {"serial_number": 1, "_id": 0}):
         existing_serials.add(g.get("serial_number"))
 
-    virtual_count = 0
+    virtual_online = 0
+    virtual_offline = 0
     active_devices = await db.devices.find(
         {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
-        {"_id": 0, "serial_number": 1}
+        {"_id": 0, "serial_number": 1, "mqtt_status": 1, "last_seen": 1}
     ).to_list(2000)
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
-            virtual_count += 1
             existing_serials.add(dev["serial_number"])
+            if dev.get("mqtt_status") == "online":
+                virtual_online += 1
+            else:
+                virtual_offline += 1
 
-    total = gen_total + virtual_count
-    standby = gen_standby + virtual_count  # Virtual generators default to standby
+    total = gen_total + virtual_online + virtual_offline
+    standby = gen_standby + virtual_online
+    offline = gen_offline + virtual_offline
 
     active_alarms = await db.generator_alarms.count_documents({"resolved_at": None, "severity": "alarm"})
     active_warnings = await db.generator_alarms.count_documents({"resolved_at": None, "severity": "warning"})
@@ -778,7 +783,7 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         "standby": standby,
         "online": gen_online,
         "alarm": gen_alarm,
-        "offline": gen_offline,
+        "offline": offline,
         "active_alarms": active_alarms,
         "active_warnings": active_warnings,
     }
@@ -794,6 +799,7 @@ class PiIngestPayload(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     command_results: Optional[List[Dict[str, Any]]] = []
+    alarms: Optional[List[Dict[str, Any]]] = []
 
 
 def _hash_key(plain_key: str) -> str:
@@ -899,6 +905,59 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
                 }}
             )
 
+    # Process alarms from Pi into generator_events log
+    for alarm in (payload.alarms or []):
+        event_doc = {
+            "id": str(uuid.uuid4()),
+            "generator_id": generator_id,
+            "device_id": payload.device_id,
+            "timestamp": alarm.get("ts_utc", now_iso),
+            "event_type": alarm.get("alarm_type", "unknown"),
+            "event_code": alarm.get("alarm_code"),
+            "description": alarm.get("description", ""),
+            "active": alarm.get("active", True),
+            "cleared_at": alarm.get("cleared_at"),
+            "source": "dse5510_pi",
+            "latitude": payload.latitude,
+            "longitude": payload.longitude,
+        }
+        await db.generator_events.insert_one(event_doc)
+
+    # Auto-detect state changes from telemetry and log events
+    if payload.records:
+        latest_rec = payload.records[-1]
+        prev_event = await db.generator_events.find_one(
+            {"generator_id": generator_id, "event_type": {"$in": ["engine_start", "engine_stop"]}},
+            {"_id": 0}, sort=[("timestamp", -1)]
+        )
+        prev_running = prev_event.get("event_type") == "engine_start" if prev_event else False
+        curr_running = latest_rec.get("engine_running", False) or (latest_rec.get("rpm", 0) > 100)
+
+        if curr_running and not prev_running:
+            await db.generator_events.insert_one({
+                "id": str(uuid.uuid4()), "generator_id": generator_id, "device_id": payload.device_id,
+                "timestamp": latest_rec.get("ts_utc", now_iso), "event_type": "engine_start",
+                "description": f"Motor gestartet (RPM: {latest_rec.get('rpm', 0)})",
+                "source": "auto_detect", "latitude": payload.latitude, "longitude": payload.longitude,
+            })
+        elif not curr_running and prev_running:
+            await db.generator_events.insert_one({
+                "id": str(uuid.uuid4()), "generator_id": generator_id, "device_id": payload.device_id,
+                "timestamp": latest_rec.get("ts_utc", now_iso), "event_type": "engine_stop",
+                "description": "Motor gestoppt",
+                "source": "auto_detect", "latitude": payload.latitude, "longitude": payload.longitude,
+            })
+
+        # Under-frequency detection
+        freq = latest_rec.get("frequency", 0)
+        if freq > 0 and freq < 48.0:
+            await db.generator_events.insert_one({
+                "id": str(uuid.uuid4()), "generator_id": generator_id, "device_id": payload.device_id,
+                "timestamp": latest_rec.get("ts_utc", now_iso), "event_type": "under_frequency",
+                "description": f"Unterfrequenz: {freq} Hz",
+                "source": "auto_detect", "latitude": payload.latitude, "longitude": payload.longitude,
+            })
+
     # Fetch pending commands for this device
     pending = await db.generator_pending_commands.find(
         {"device_id": payload.device_id, "status": "pending"},
@@ -978,4 +1037,78 @@ async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depe
         "label": DSE_CMD_LABELS.get(command, command),
         "status": "pending",
         "message": f"Befehl '{DSE_CMD_LABELS.get(command, command)}' wird beim naechsten Sync an den Pi gesendet.",
+    }
+
+
+
+# ============== Generator Event Log ==============
+
+EVENT_TYPE_LABELS = {
+    "engine_start": "Motor gestartet",
+    "engine_stop": "Motor gestoppt",
+    "overtemp": "Uebertemperatur",
+    "low_oil_pressure": "Niedriger Oeldruck",
+    "low_battery": "Niedrige Batterie",
+    "under_frequency": "Unterfrequenz",
+    "over_frequency": "Ueberfrequenz",
+    "emergency_stop": "Not-Aus",
+    "modbus_disconnect": "Modbus Verbindung verloren",
+    "gen_switch_on": "Generator zugeschaltet",
+    "gen_switch_off": "Generator abgeschaltet",
+    "command_sent": "Steuerbefehl gesendet",
+}
+
+
+@router.get("/events/{generator_id}")
+async def get_generator_events(
+    generator_id: str,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    event_type: Optional[str] = None,
+    user: dict = Depends(get_authenticated_user)
+):
+    """Get event log for a generator, sorted by timestamp descending."""
+    query = {"generator_id": generator_id}
+    if event_type:
+        query["event_type"] = event_type
+
+    total = await db.generator_events.count_documents(query)
+    events = await db.generator_events.find(
+        query, {"_id": 0}
+    ).sort("timestamp", -1).skip(offset).limit(limit).to_list(limit)
+
+    # Add labels
+    for e in events:
+        e["event_label"] = EVENT_TYPE_LABELS.get(e.get("event_type", ""), e.get("event_type", ""))
+
+    return {
+        "total": total,
+        "events": events,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/events-by-device/{device_id}")
+async def get_device_events(
+    device_id: str,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(get_authenticated_user)
+):
+    """Get event log for a device, sorted by timestamp descending."""
+    query = {"device_id": device_id}
+    total = await db.generator_events.count_documents(query)
+    events = await db.generator_events.find(
+        query, {"_id": 0}
+    ).sort("timestamp", -1).skip(offset).limit(limit).to_list(limit)
+
+    for e in events:
+        e["event_label"] = EVENT_TYPE_LABELS.get(e.get("event_type", ""), e.get("event_type", ""))
+
+    return {
+        "total": total,
+        "events": events,
+        "limit": limit,
+        "offset": offset,
     }

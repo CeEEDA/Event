@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://dse890-mqtt-test.preview.emergentagent.com"
+                "origin_url": "https://pi-telemetry.preview.emergentagent.com"
             },
             timeout=30
         )
