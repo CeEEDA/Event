@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -8,6 +9,7 @@ import secrets
 import hashlib
 import hmac
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +332,17 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
                 g["maintenance_warning_reason"] = " / ".join(warning_reason)
 
     return generators
+
+
+# ============== Diagnose-Tool Download ==============
+
+@router.get("/diagnose-modbus")
+async def download_diagnose_script():
+    """Download the Modbus RTU diagnostic script for Raspberry Pi."""
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "diagnose_modbus.py")
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail="Diagnose-Skript nicht gefunden")
+    return FileResponse(script_path, media_type="text/x-python", filename="diagnose_modbus.py")
 
 
 @router.get("/{generator_id}")

@@ -114,6 +114,7 @@ DEFAULT_CONF = {
     "db_path": "/var/lib/dse5510/dse5510.sqlite",
     "serial_port": "/dev/ttyUSB0",
     "baud_rate": 9600,
+    "parity": "N",
     "slave_id": 10,
     "read_interval": 1,
     "sync_interval": 30,
@@ -702,6 +703,7 @@ def main():
     log.info(f"  Generator-ID:  {conf.get('generator_id', 'wird automatisch zugewiesen')}")
     log.info(f"  Serial Port:   {conf['serial_port']}")
     log.info(f"  Baud Rate:     {conf['baud_rate']}")
+    log.info(f"  Paritaet:      {conf.get('parity', 'N')}")
     log.info(f"  Slave ID:      {conf['slave_id']}")
     log.info(f"  Datenbank:     {conf['db_path']}")
     log.info(f"  Leseintervall: {conf['read_interval']}s (1x/Sek.)")
@@ -727,11 +729,14 @@ def main():
     init_db(conf["db_path"])
 
     # Modbus RTU Client
+    parity = conf.get("parity", "N")
+    if parity not in ("N", "E", "O"):
+        parity = "N"
     client = ModbusSerialClient(
         port=conf["serial_port"],
         baudrate=int(conf["baud_rate"]),
         bytesize=8,
-        parity="N",
+        parity=parity,
         stopbits=1,
         timeout=3,
     )
