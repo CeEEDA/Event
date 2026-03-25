@@ -928,7 +928,7 @@ async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depe
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
     command = cmd.get("command", "")
-    valid_commands = ["stop", "auto_on", "manual", "start", "mute", "reset", "gen_switch_on", "gen_switch_off"]
+    valid_commands = ["stop", "auto_on", "manual", "test_on_load", "auto_manual_restore", "start", "reset", "gen_switch_on", "gen_switch_off", "reset_mains"]
     if command not in valid_commands:
         raise HTTPException(status_code=400, detail=f"Unbekannter Befehl: {command}. Erlaubt: {valid_commands}")
 
@@ -938,8 +938,10 @@ async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depe
 
     DSE_CMD_LABELS = {
         "stop": "Stop-Modus", "auto_on": "Automatikmodus", "manual": "Manueller Modus",
-        "start": "Motor starten", "mute": "Alarm stumm", "reset": "Alarme zuruecksetzen",
+        "test_on_load": "Testlauf unter Last", "auto_manual_restore": "Auto mit manueller Rueckkehr",
+        "start": "Motor starten", "reset": "Alarme zuruecksetzen",
         "gen_switch_on": "Generator zuschalten", "gen_switch_off": "Generator abschalten",
+        "reset_mains": "Netzausfall zuruecksetzen",
     }
 
     cmd_doc = {

@@ -337,103 +337,137 @@ export default function GeneratorDetailPage() {
           <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Letzter Kontakt: {generator.last_seen ? new Date(generator.last_seen).toLocaleString("de-DE") : "–"}</span>
         </div>
 
-        {/* Control Buttons - only for Admin + Mitarbeiter */}
+        {/* DSE Control Panel */}
         {canControl && (() => {
           const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
           const isAuto = generator.status === "online" || generator.status === "standby";
+          const hasPower = (t?.power_total_w || t?.power_kw) > 0;
+
+          const DseBtn = ({ cmd, label, icon, active, activeColor, activeGlow, size = "w-14 h-14", textSize = "text-xl" }) => (
+            <button
+              onClick={() => sendCommand(cmd, label)}
+              disabled={cmdLoading !== null}
+              className="group relative disabled:opacity-50 focus:outline-none"
+              data-testid={`cmd-${cmd}-btn`}
+            >
+              <div className={`${size} rounded-full flex items-center justify-center transition-all duration-200
+                ${active
+                  ? `bg-gradient-to-b ${activeColor} ring-[3px] ring-gray-300 ring-offset-1`
+                  : "bg-gradient-to-b from-gray-100 via-gray-200 to-gray-350 ring-[3px] ring-gray-300 ring-offset-1 group-hover:from-gray-200 group-hover:via-gray-300 group-hover:to-gray-400"
+                }
+                active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
+                style={{boxShadow: active
+                  ? `0 4px 14px ${activeGlow || 'rgba(0,0,0,0.2)'}, inset 0 2px 4px rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.2)`
+                  : '0 3px 8px rgba(0,0,0,0.12), inset 0 2px 6px rgba(255,255,255,0.5), 0 1px 2px rgba(0,0,0,0.08)'}}
+              >
+                {typeof icon === 'string'
+                  ? <span className={`${textSize} font-bold ${active ? "text-white drop-shadow-md" : "text-gray-500 group-hover:text-gray-700"}`}>{icon}</span>
+                  : icon(active)}
+              </div>
+              <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium whitespace-nowrap">
+                {cmdLoading === cmd ? "..." : label}
+              </span>
+            </button>
+          );
+
+          const StatusLed = ({ on, label }) => (
+            <div className="flex items-center gap-2">
+              <div className={`w-8 h-4 rounded-sm border ${on ? "bg-emerald-400 border-emerald-500 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : "bg-gray-700 border-gray-600"} transition-colors duration-300`} />
+              <span className="text-[11px] text-gray-400 font-medium">{label}</span>
+            </div>
+          );
+
           return (
-            <div className="flex items-center gap-5 bg-white border border-gray-200 rounded-lg px-5 py-4" data-testid="generator-controls">
-              <span className="text-xs text-gray-400 font-medium mr-1">Steuerung</span>
-              {/* Stop Button - DSE Style */}
-              <button
-                onClick={() => sendCommand("stop", "Generator stoppen")}
-                disabled={cmdLoading !== null}
-                className="group relative disabled:opacity-50 focus:outline-none"
-                data-testid="cmd-stop-btn"
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150
-                  ${!isRunning
-                    ? "bg-gradient-to-b from-red-400 via-red-600 to-red-800 shadow-[0_4px_12px_rgba(220,38,38,0.5),inset_0_2px_4px_rgba(255,255,255,0.3)]"
-                    : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 shadow-[0_2px_6px_rgba(0,0,0,0.15),inset_0_2px_4px_rgba(255,255,255,0.4)] group-hover:from-red-300 group-hover:via-red-400 group-hover:to-red-600"
-                  }
-                  ring-[3px] ring-gray-300 ring-offset-1
-                  active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
-                  style={{boxShadow: !isRunning ? '0 4px 14px rgba(220,38,38,0.45), inset 0 2px 4px rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.2)' : '0 3px 8px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.1)'}}
-                >
-                  <span className={`text-xl font-bold ${!isRunning ? "text-white drop-shadow-md" : "text-gray-600 group-hover:text-white"}`}>O</span>
+            <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden" data-testid="generator-controls">
+              {/* Top: Status Indicators */}
+              <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+                <div className="flex items-center gap-6">
+                  <StatusLed on={isRunning} label="Motor läuft" />
+                  <StatusLed on={isAuto} label="Auto-Modus" />
+                  <StatusLed on={hasPower} label="Generator bereit" />
+                  <StatusLed on={hasPower && isRunning} label="Trenner geschlossen" />
                 </div>
-                <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "stop" ? "..." : "Stop"}</span>
-              </button>
-              {/* Auto Button - DSE Style */}
-              <button
-                onClick={() => sendCommand(isRunning ? "auto_off" : "auto_on", isRunning ? "Auto AUS" : "Auto EIN")}
-                disabled={cmdLoading !== null}
-                className="group relative disabled:opacity-50 focus:outline-none"
-                data-testid="cmd-auto-btn"
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150
-                  ${isAuto
-                    ? "bg-gradient-to-b from-teal-200 via-teal-300 to-teal-500 shadow-[0_4px_12px_rgba(20,184,166,0.4),inset_0_2px_4px_rgba(255,255,255,0.3)]"
-                    : "bg-gradient-to-b from-gray-100 via-gray-200 to-gray-350 shadow-[0_2px_6px_rgba(0,0,0,0.12),inset_0_2px_4px_rgba(255,255,255,0.5)] group-hover:from-gray-200 group-hover:via-gray-300 group-hover:to-gray-400"
-                  }
-                  ring-[3px] ring-gray-300 ring-offset-1
-                  active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
-                  style={{boxShadow: isAuto ? '0 4px 14px rgba(20,184,166,0.35), inset 0 2px 4px rgba(255,255,255,0.3), 0 1px 2px rgba(0,0,0,0.15)' : '0 3px 8px rgba(0,0,0,0.1), inset 0 2px 6px rgba(255,255,255,0.5), 0 1px 2px rgba(0,0,0,0.08)'}}
-                >
-                  <span className={`text-[10px] font-extrabold tracking-tight ${isAuto ? "text-teal-900" : "text-gray-500 group-hover:text-gray-700"}`}>AUTO</span>
-                </div>
-                <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "auto_on" || cmdLoading === "auto_off" ? "..." : "Auto"}</span>
-              </button>
-              {/* Start Button - DSE Style */}
-              <button
-                onClick={() => sendCommand("start", "Generator starten")}
-                disabled={cmdLoading !== null}
-                className="group relative disabled:opacity-50 focus:outline-none"
-                data-testid="cmd-start-btn"
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150
-                  ${isRunning
-                    ? "bg-gradient-to-b from-emerald-300 via-emerald-500 to-emerald-700 shadow-[0_4px_12px_rgba(16,185,129,0.5),inset_0_2px_4px_rgba(255,255,255,0.3)]"
-                    : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 shadow-[0_2px_6px_rgba(0,0,0,0.15),inset_0_2px_4px_rgba(255,255,255,0.4)] group-hover:from-emerald-300 group-hover:via-emerald-400 group-hover:to-emerald-600"
-                  }
-                  ring-[3px] ring-gray-300 ring-offset-1
-                  active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]`}
-                  style={{boxShadow: isRunning ? '0 4px 14px rgba(16,185,129,0.45), inset 0 2px 4px rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.2)' : '0 3px 8px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.1)'}}
-                >
-                  <span className={`text-xl font-bold ${isRunning ? "text-white drop-shadow-md" : "text-gray-600 group-hover:text-white"}`}>I</span>
-                </div>
-                <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium">{cmdLoading === "start" ? "..." : "Start"}</span>
-              </button>
-              {/* Generator Switch On/Off - DSE 5510 */}
-              <div className="border-l border-gray-200 pl-5 flex items-center gap-4">
-                <button
-                  onClick={() => sendCommand("gen_switch_on", "Generator zuschalten")}
-                  disabled={cmdLoading !== null}
-                  className="group relative disabled:opacity-50 focus:outline-none"
-                  data-testid="cmd-gen-on-btn"
-                >
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-150
-                    bg-gradient-to-b from-blue-100 via-blue-200 to-blue-300 shadow-[0_2px_6px_rgba(0,0,0,0.12),inset_0_2px_4px_rgba(255,255,255,0.5)]
-                    group-hover:from-blue-200 group-hover:via-blue-300 group-hover:to-blue-500
-                    ring-2 ring-gray-200 ring-offset-1 active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]">
-                    <Zap className="w-5 h-5 text-blue-700 group-hover:text-white" />
-                  </div>
-                  <span className="block text-[10px] text-gray-500 text-center mt-1 font-medium">{cmdLoading === "gen_switch_on" ? "..." : "Gen EIN"}</span>
-                </button>
-                <button
-                  onClick={() => sendCommand("gen_switch_off", "Generator abschalten")}
-                  disabled={cmdLoading !== null}
-                  className="group relative disabled:opacity-50 focus:outline-none"
-                  data-testid="cmd-gen-off-btn"
-                >
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-150
-                    bg-gradient-to-b from-orange-100 via-orange-200 to-orange-300 shadow-[0_2px_6px_rgba(0,0,0,0.12),inset_0_2px_4px_rgba(255,255,255,0.5)]
-                    group-hover:from-orange-200 group-hover:via-orange-300 group-hover:to-orange-500
-                    ring-2 ring-gray-200 ring-offset-1 active:shadow-[inset_0_3px_8px_rgba(0,0,0,0.3)]">
-                    <ZapOff className="w-5 h-5 text-orange-700 group-hover:text-white" />
-                  </div>
-                  <span className="block text-[10px] text-gray-500 text-center mt-1 font-medium">{cmdLoading === "gen_switch_off" ? "..." : "Gen AUS"}</span>
-                </button>
+                <span className="text-xs text-gray-600 font-mono">DSE Steuerung</span>
+              </div>
+
+              {/* Divider */}
+              <div className="mx-5 border-t border-gray-700" />
+
+              {/* Main Buttons Row */}
+              <div className="px-6 py-5 flex items-end justify-center gap-5 flex-wrap">
+                {/* Stop - Red */}
+                <DseBtn cmd="stop" label="Stop"
+                  active={!isRunning && !isAuto}
+                  activeColor="from-red-400 via-red-600 to-red-800"
+                  activeGlow="rgba(220,38,38,0.45)"
+                  icon="O" />
+
+                {/* Manual */}
+                <DseBtn cmd="manual" label="Manuell"
+                  active={false}
+                  activeColor="from-amber-300 via-amber-400 to-amber-600"
+                  activeGlow="rgba(245,158,11,0.4)"
+                  icon={(a) => (
+                    <svg viewBox="0 0 24 24" className={`w-6 h-6 ${a ? "text-white" : "text-gray-500 group-hover:text-gray-700"}`} fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 11V6a2 2 0 0 0-2-2h-3a2 2 0 0 0-2 2M7 11V9a2 2 0 0 1 4 0v2M11 11V4a2 2 0 0 1 4 0v7M18 11a2 2 0 0 1 2 2v1a8 8 0 0 1-8 8h-2c-2.3 0-4.3-1-5.8-2.7L2 17.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )} />
+
+                {/* Auto */}
+                <DseBtn cmd="auto_on" label="Auto"
+                  active={isAuto}
+                  activeColor="from-teal-200 via-teal-400 to-teal-600"
+                  activeGlow="rgba(20,184,166,0.4)"
+                  icon={(a) => <span className={`text-[11px] font-extrabold tracking-tight ${a ? "text-white drop-shadow-md" : "text-gray-500 group-hover:text-gray-700"}`}>AUTO</span>} />
+
+                {/* Reset Alarms */}
+                <DseBtn cmd="reset" label="Reset"
+                  active={false}
+                  activeColor="from-gray-300 via-gray-400 to-gray-500"
+                  activeGlow="rgba(0,0,0,0.2)"
+                  icon={(a) => (
+                    <svg viewBox="0 0 24 24" className={`w-5 h-5 ${a ? "text-white" : "text-gray-500 group-hover:text-gray-700"}`} fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" strokeLinecap="round" strokeLinejoin="round"/>
+                      <line x1="3" y1="4" x2="21" y2="20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity="0.7"/>
+                    </svg>
+                  )} />
+
+                {/* Start - Green */}
+                <DseBtn cmd="start" label="Start"
+                  active={isRunning}
+                  activeColor="from-emerald-300 via-emerald-500 to-emerald-700"
+                  activeGlow="rgba(16,185,129,0.45)"
+                  icon="I" />
+              </div>
+
+              {/* Divider */}
+              <div className="mx-5 border-t border-gray-700" />
+
+              {/* Transfer Switches Row */}
+              <div className="px-6 py-4 flex items-end justify-center gap-6 flex-wrap">
+                {/* Transfer to Generator */}
+                <DseBtn cmd="gen_switch_on" label="Gen EIN"
+                  size="w-12 h-12"
+                  active={hasPower && isRunning}
+                  activeColor="from-blue-300 via-blue-500 to-blue-700"
+                  activeGlow="rgba(59,130,246,0.4)"
+                  icon={(a) => <Zap className={`w-5 h-5 ${a ? "text-white" : "text-gray-500 group-hover:text-gray-700"}`} />} />
+
+                {/* Transfer to Mains */}
+                <DseBtn cmd="gen_switch_off" label="Gen AUS"
+                  size="w-12 h-12"
+                  active={false}
+                  activeColor="from-orange-300 via-orange-500 to-orange-700"
+                  activeGlow="rgba(249,115,22,0.4)"
+                  icon={(a) => <ZapOff className={`w-5 h-5 ${a ? "text-white" : "text-gray-500 group-hover:text-gray-700"}`} />} />
+
+                {/* Reset Mains Failure */}
+                <DseBtn cmd="reset_mains" label="Netz Reset"
+                  size="w-12 h-12"
+                  active={false}
+                  activeColor="from-gray-300 via-gray-400 to-gray-500"
+                  activeGlow="rgba(0,0,0,0.2)"
+                  icon={(a) => <RefreshCw className={`w-4 h-4 ${a ? "text-white" : "text-gray-500 group-hover:text-gray-700"}`} />} />
               </div>
             </div>
           );
