@@ -927,7 +927,8 @@ async def ingest_data(data: IngestBatch):
     # First try per-device key authentication
     device = await db.devices.find_one({"id": data.device_id, "device_type": {"$in": ["messkoffer", "kirmeskiste"]}})
     if not device:
-        raise HTTPException(status_code=404, detail="Geraet nicht gefunden (Messkoffer/Kirmeskiste)")
+        logger.warning(f"Ingest 404: device_id={data.device_id}, meter_id={data.meter_id} - Geraet nicht in DB")
+        raise HTTPException(status_code=404, detail=f"Geraet nicht gefunden (device_id: {data.device_id})")
 
     # Verify device key
     key_hash = device.get("device_key_hash")
