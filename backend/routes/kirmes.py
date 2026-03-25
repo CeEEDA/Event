@@ -1348,6 +1348,14 @@ async def get_signup_meter_data(
         sort=[("ts_utc", -1)]
     )
 
+    # Auto-backfill kwh_einbau if missing but live data available
+    if signup.get("kwh_einbau") is None and latest and latest.get("E_imp_kWh") is not None:
+        kwh_val = round(float(latest["E_imp_kWh"]), 2)
+        await _db.kirmes_signups.update_one(
+            {"id": signup_id},
+            {"$set": {"kwh_einbau": kwh_val, "meter_start": kwh_val}}
+        )
+
     # Get historical data
     query = {"device_id": device_id, "meter_id": meter_id}
     if from_time or to_time:
