@@ -460,7 +460,7 @@ async def _regenerate_passwd_file():
 
 
 @router.get("/credentials")
-async def list_mqtt_credentials(admin: dict = Depends(require_admin)):
+async def list_mqtt_credentials(user: dict = Depends(require_operator)):
     """List all generators with their MQTT credential status."""
     generators = await db.generators.find(
         {},
@@ -479,7 +479,7 @@ async def list_mqtt_credentials(admin: dict = Depends(require_admin)):
 
 
 @router.post("/credentials/{generator_id}/generate")
-async def generate_mqtt_credentials(generator_id: str, admin: dict = Depends(require_admin)):
+async def generate_mqtt_credentials(generator_id: str, user: dict = Depends(require_operator)):
     """Generate unique MQTT username + password for a gateway. Password is shown only once."""
     gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
     if not gen:
@@ -512,7 +512,7 @@ async def generate_mqtt_credentials(generator_id: str, admin: dict = Depends(req
 
 
 @router.delete("/credentials/{generator_id}")
-async def revoke_mqtt_credentials(generator_id: str, admin: dict = Depends(require_admin)):
+async def revoke_mqtt_credentials(generator_id: str, user: dict = Depends(require_operator)):
     """Revoke MQTT credentials for a gateway."""
     gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
     if not gen:
@@ -530,7 +530,7 @@ async def revoke_mqtt_credentials(generator_id: str, admin: dict = Depends(requi
 # ============== Device MQTT Credentials (Stromerzeuger/Lichtmast) ==============
 
 @router.post("/device-credentials/{device_id}/generate")
-async def generate_device_mqtt_credentials(device_id: str, admin: dict = Depends(require_admin)):
+async def generate_device_mqtt_credentials(device_id: str, user: dict = Depends(require_operator)):
     """Generate unique MQTT credentials for a device (Stromerzeuger/Lichtmast). Password shown only once."""
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
@@ -561,7 +561,7 @@ async def generate_device_mqtt_credentials(device_id: str, admin: dict = Depends
 
 
 @router.get("/device-credentials/{device_id}")
-async def get_device_mqtt_credentials(device_id: str, admin: dict = Depends(require_admin)):
+async def get_device_mqtt_credentials(device_id: str, user: dict = Depends(require_operator)):
     """Get MQTT credential info for a device (without password)."""
     device = await db.devices.find_one(
         {"id": device_id},
@@ -578,7 +578,7 @@ async def get_device_mqtt_credentials(device_id: str, admin: dict = Depends(requ
 
 
 @router.delete("/device-credentials/{device_id}")
-async def revoke_device_mqtt_credentials(device_id: str, admin: dict = Depends(require_admin)):
+async def revoke_device_mqtt_credentials(device_id: str, user: dict = Depends(require_operator)):
     """Revoke MQTT credentials for a device."""
     await db.devices.update_one(
         {"id": device_id},
