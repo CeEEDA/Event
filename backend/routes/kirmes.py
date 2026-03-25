@@ -1467,59 +1467,54 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-    # Resize QR to fit label width with margin
-    qr_target = int(label_w * 0.85)
+    # Resize QR to fill most of label width
+    qr_target = int(label_w * 0.88)
     qr_img = qr_img.resize((qr_target, qr_target), Image.NEAREST)
 
     # Create label image
     label = Image.new("RGB", (label_w, label_h), "white")
     draw = ImageDraw.Draw(label)
 
-    # Try to load a bold font, fallback to default
-    font_large = None
+    # Load font (small for text below QR)
     font_small = None
     for font_path in [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "C:\\Windows\\Fonts\\arialbd.ttf",
-        "C:\\Windows\\Fonts\\calibrib.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "C:\\Windows\\Fonts\\calibri.ttf",
     ]:
         try:
-            font_large = ImageFont.truetype(font_path, 36)
-            font_small = ImageFont.truetype(font_path.replace("Bold", "Regular").replace("bd.", ".").replace("rib.", "ri."), 28)
+            font_small = ImageFont.truetype(font_path, 24)
             break
         except (OSError, IOError):
             continue
-    if not font_large:
-        font_large = ImageFont.load_default()
-        font_small = font_large
+    if not font_small:
+        font_small = ImageFont.load_default()
 
-    # Layout: top text, QR in middle, bottom text
-    y_cursor = 15
+    # Layout: QR on top, text below
+    y_cursor = 10
 
-    # "Zähler X" - top
-    text_top = f"Zaehler {meter_index}"
-    bbox = draw.textbbox((0, 0), text_top, font=font_large)
-    tw = bbox[2] - bbox[0]
-    draw.text(((label_w - tw) / 2, y_cursor), text_top, fill="black", font=font_large)
-    y_cursor += (bbox[3] - bbox[1]) + 15
-
-    # QR Code - centered
+    # QR Code - centered, top
     qr_x = (label_w - qr_target) // 2
     label.paste(qr_img, (qr_x, y_cursor))
-    y_cursor += qr_target + 15
+    y_cursor += qr_target + 12
 
-    # Device name - bottom
-    bbox = draw.textbbox((0, 0), device_name, font=font_small)
+    # Text: "Zaehler X, Kirmeskiste_009"
+    text_line = f"Zaehler {meter_index}, {device_name}"
+    bbox = draw.textbbox((0, 0), text_line, font=font_small)
     tw = bbox[2] - bbox[0]
-    # If text too wide, truncate
+    # Shrink font if text too wide
     if tw > label_w - 10:
-        while tw > label_w - 10 and len(device_name) > 5:
-            device_name = device_name[:-1]
-            bbox = draw.textbbox((0, 0), device_name + "..", font=font_small)
+        for sz in [20, 18, 16, 14]:
+            try:
+                font_small = ImageFont.truetype(font_small.path, sz)
+            except Exception:
+                break
+            bbox = draw.textbbox((0, 0), text_line, font=font_small)
             tw = bbox[2] - bbox[0]
-        device_name += ".."
-    draw.text(((label_w - tw) / 2, y_cursor), device_name, fill="black", font=font_small)
+            if tw <= label_w - 10:
+                break
+    draw.text(((label_w - tw) / 2, y_cursor), text_line, fill="black", font=font_small)
 
     # Rotate 90 degrees for Dymo LabelWriter (landscape feed)
     label = label.rotate(90, expand=True)
