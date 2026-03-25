@@ -38,7 +38,6 @@ import {
   Eye,
   EyeOff,
   Shield,
-  Printer,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
