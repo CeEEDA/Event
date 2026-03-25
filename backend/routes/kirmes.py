@@ -1547,34 +1547,24 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
             import win32ui
             from PIL import ImageWin
 
-            hprinter = win32print.OpenPrinter(printer_name)
-            try:
-                devmode = win32print.GetPrinter(hprinter, 2)["pDevMode"]
-                # Set paper size for 32x57mm Dymo label
-                devmode.PaperSize = 0  # Custom
-                devmode.PaperWidth = LABEL_W_MM * 10   # in 0.1mm
-                devmode.PaperLength = LABEL_H_MM * 10  # in 0.1mm
-                devmode.Orientation = 1  # Portrait
+            hdc = win32ui.CreateDC()
+            hdc.CreatePrinterDC(printer_name)
+            hdc.StartDoc(f"QR Label - Zaehler {meter_index}")
+            hdc.StartPage()
 
-                hdc = win32ui.CreateDC()
-                hdc.CreatePrinterDC(printer_name)
-                hdc.StartDoc(f"QR Label - Zaehler {meter_index}")
-                hdc.StartPage()
+            # Get printable area (excludes non-printable margins)
+            printable_w = hdc.GetDeviceCaps(8)   # HORZRES
+            printable_h = hdc.GetDeviceCaps(10)  # VERTRES
 
-                # Print the image
-                label_for_print = label.convert("RGB")
-                dib = ImageWin.Dib(label_for_print)
-                # Scale to printer resolution
-                printer_w = hdc.GetDeviceCaps(110)  # PHYSICALWIDTH
-                printer_h = hdc.GetDeviceCaps(111)  # PHYSICALHEIGHT
-                dib.draw(hdc.GetHandleOutput(), (0, 0, printer_w, printer_h))
+            # Print the image scaled to fit printable area
+            label_for_print = label.convert("RGB")
+            dib = ImageWin.Dib(label_for_print)
+            dib.draw(hdc.GetHandleOutput(), (0, 0, printable_w, printable_h))
 
-                hdc.EndPage()
-                hdc.EndDoc()
-                hdc.DeleteDC()
-                print_success = True
-            finally:
-                win32print.ClosePrinter(hprinter)
+            hdc.EndPage()
+            hdc.EndDoc()
+            hdc.DeleteDC()
+            print_success = True
         except ImportError:
             print_error = "win32print nicht verfuegbar (nur auf Windows)"
         except Exception as e:
