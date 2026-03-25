@@ -110,6 +110,7 @@ class DeviceUpdate(BaseModel):
     dse_module_uid: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    old_device_ids: Optional[list] = None
 
     @field_validator("latitude", "longitude", mode="before")
     @classmethod
@@ -177,6 +178,20 @@ def generate_device_code():
     """Generate a unique 8-character alphanumeric device code."""
     chars = string.ascii_uppercase + string.digits
     return "".join(secrets.choice(chars) for _ in range(8))
+
+
+@router.post("/{device_id}/add-alias")
+async def add_device_alias(device_id: str, alias_id: str, admin: dict = Depends(require_admin)):
+    """Add an old device_id as alias so Pi scripts with old IDs still work."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+    old_ids = device.get("old_device_ids", [])
+    if alias_id not in old_ids:
+        old_ids.append(alias_id)
+    await db.devices.update_one({"id": device_id}, {"$set": {"old_device_ids": old_ids}})
+    return {"message": f"Alias {alias_id} hinzugefügt", "old_device_ids": old_ids}
+
 
 
 @router.post("")

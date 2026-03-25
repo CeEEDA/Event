@@ -928,7 +928,17 @@ async def ingest_data(data: IngestBatch):
     device = await db.devices.find_one({"id": data.device_id, "device_type": {"$in": ["messkoffer", "kirmeskiste"]}})
     actual_device_id = data.device_id
 
-    # 2) Fallback: per api_key suchen (Geraet wurde im Portal neu angelegt -> neue UUID)
+    # 2) Fallback: per old_device_ids Alias suchen (Geraet im Portal geloescht und neu angelegt)
+    if not device:
+        device = await db.devices.find_one({
+            "device_type": {"$in": ["messkoffer", "kirmeskiste"]},
+            "old_device_ids": data.device_id
+        })
+        if device:
+            actual_device_id = device["id"]
+            logger.info(f"Ingest: Fallback via Alias! Pi={data.device_id} -> {device['serial_number']} ({actual_device_id})")
+
+    # 3) Fallback: per api_key suchen
     if not device and data.api_key:
         key_hash_check = hashlib.sha256(data.api_key.encode()).hexdigest()
         device = await db.devices.find_one({
@@ -939,7 +949,7 @@ async def ingest_data(data: IngestBatch):
             actual_device_id = device["id"]
             logger.info(f"Ingest: Fallback via Key! Pi={data.device_id} -> {device['serial_number']} ({actual_device_id})")
 
-    # 3) Fallback: per meter_id suchen (Meter existiert noch, Device wurde neu angelegt)
+    # 4) Fallback: per meter_id suchen
     if not device:
         meter_ref = await db.emu_meters.find_one({"id": data.meter_id}, {"_id": 0})
         if meter_ref:
