@@ -1580,6 +1580,132 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
         )
 
 
+@router.post("/devices/{device_id}/print-device-label")
+async def print_device_label(device_id: str, user: dict = Depends(_require_staff)):
+    """Generate and print a device QR code label (32x57mm) on Dymo LabelWriter."""
+    import qrcode
+    import io as _io
+    import os
+    from PIL import Image, ImageDraw, ImageFont
+
+    device = await _db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    device_code = device.get("device_code", "")
+    serial_number = device.get("serial_number", "")
+    if not device_code:
+        raise HTTPException(status_code=400, detail="Kein Geräte-Code vorhanden")
+
+    # Label dimensions: 32mm wide x 57mm tall (portrait - Dymo driver rotates)
+    DPI = 300
+    label_w = int(32 * DPI / 25.4)   # ~378 px
+    label_h = int(57 * DPI / 25.4)   # ~673 px
+
+    # Generate QR code from device_code
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=1)
+    qr.add_data(device_code)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+
+    # QR sized to ~82% of label width
+    qr_target = int(label_w * 0.82)
+    qr_img = qr_img.resize((qr_target, qr_target), Image.NEAREST)
+
+    # Create label
+    label = Image.new("RGB", (label_w, label_h), "white")
+    draw = ImageDraw.Draw(label)
+
+    # Load fonts
+    font_code = None
+    font_serial = None
+    for font_path in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "C:\\Windows\\Fonts\\calibrib.ttf",
+    ]:
+        try:
+            font_code = ImageFont.truetype(font_path, 30)
+            font_serial = ImageFont.truetype(font_path.replace("Bold", "Regular").replace("bd.", ".").replace("rib.", "ri."), 22)
+            break
+        except (OSError, IOError):
+            continue
+    if not font_code:
+        font_code = ImageFont.load_default()
+        font_serial = font_code
+
+    # Measure text
+    bbox_code = draw.textbbox((0, 0), device_code, font=font_code)
+    bbox_serial = draw.textbbox((0, 0), serial_number, font=font_serial)
+    th_code = bbox_code[3] - bbox_code[1]
+    th_serial = bbox_serial[3] - bbox_serial[1]
+    tw_code = bbox_code[2] - bbox_code[0]
+    tw_serial = bbox_serial[2] - bbox_serial[0]
+
+    # Layout: QR top, device_code middle, serial_number bottom
+    total_h = qr_target + 12 + th_code + 8 + th_serial
+    start_y = (label_h - total_h) // 2
+
+    # QR Code
+    qr_x = (label_w - qr_target) // 2
+    label.paste(qr_img, (qr_x, start_y))
+
+    # Device code (bold)
+    text_y = start_y + qr_target + 12
+    draw.text(((label_w - tw_code) / 2, text_y), device_code, fill="black", font=font_code)
+
+    # Serial number
+    text_y += th_code + 8
+    draw.text(((label_w - tw_serial) / 2, text_y), serial_number, fill="black", font=font_serial)
+
+    # Convert to PNG
+    img_buf = _io.BytesIO()
+    label.save(img_buf, format="PNG", dpi=(DPI, DPI))
+    img_bytes = img_buf.getvalue()
+
+    # Try to print directly on Windows
+    printer_name = os.environ.get("DYMO_PRINTER_NAME", "")
+    print_success = False
+    print_error = ""
+
+    if printer_name:
+        try:
+            import win32print
+            import win32ui
+            from PIL import ImageWin
+
+            hdc = win32ui.CreateDC()
+            hdc.CreatePrinterDC(printer_name)
+            hdc.StartDoc(f"Device Label - {device_code}")
+            hdc.StartPage()
+
+            printable_w = hdc.GetDeviceCaps(8)
+            printable_h = hdc.GetDeviceCaps(10)
+
+            dib = ImageWin.Dib(label.convert("RGB"))
+            dib.draw(hdc.GetHandleOutput(), (0, 0, printable_w, printable_h))
+
+            hdc.EndPage()
+            hdc.EndDoc()
+            hdc.DeleteDC()
+            print_success = True
+        except ImportError:
+            print_error = "win32print nicht verfuegbar (nur auf Windows)"
+        except Exception as e:
+            print_error = str(e)
+
+    if print_success:
+        return {"success": True, "message": f"Geraete-Label gedruckt: {device_code} / {serial_number}"}
+    elif printer_name and print_error:
+        return Response(content=img_bytes, media_type="image/png",
+            headers={"Content-Disposition": f'inline; filename="label_{device_code}.png"', "X-Print-Error": print_error})
+    else:
+        return Response(content=img_bytes, media_type="image/png",
+            headers={"Content-Disposition": f'inline; filename="label_{device_code}.png"'})
+
+
+
 @router.get("/printers")
 async def list_printers(user: dict = Depends(_require_staff)):
     """List available printers on the server (Windows only)."""

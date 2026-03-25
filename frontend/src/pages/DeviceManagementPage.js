@@ -703,23 +703,32 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    const printWin = window.open("", "_blank", "width=400,height=500");
-                    printWin.document.write(`
-                      <html><head><title>QR Code - ${editing.serial_number}</title>
-                      <style>body{font-family:sans-serif;text-align:center;padding:40px}
-                      .code{font-size:28px;font-weight:bold;letter-spacing:4px;margin:16px 0;font-family:monospace}
-                      .serial{font-size:14px;color:#666;margin-top:8px}
-                      svg{margin:20px auto}
-                      </style></head><body>
-                      <h2>Geräte-Code</h2>
-                      <div class="code">${editing.device_code}</div>
-                      ${document.getElementById("qr-print-area")?.innerHTML || ""}
-                      <div class="serial">${editing.serial_number}</div>
-                      <div class="serial">${editing.model || ""}</div>
-                      <script>setTimeout(()=>{window.print();window.close()},500)<\/script>
-                      </body></html>`);
-                    printWin.document.close();
+                  onClick={async () => {
+                    try {
+                      const resp = await fetch(`${BACKEND_URL}/api/kirmes/devices/${editing.id}/print-device-label`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+                      });
+                      if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        throw new Error(err.detail || "Druckfehler");
+                      }
+                      const contentType = resp.headers.get("content-type");
+                      if (contentType && contentType.includes("application/json")) {
+                        const data = await resp.json();
+                        toast.success(data.message || "Label gedruckt");
+                      } else {
+                        const printError = resp.headers.get("x-print-error");
+                        const blob = await resp.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `label_${editing.device_code}.png`;
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        toast.info(printError ? `Drucker-Fehler: ${printError}` : "Kein Drucker konfiguriert - Label heruntergeladen");
+                      }
+                    } catch (err) { toast.error(err.message || "Label konnte nicht gedruckt werden"); }
                   }}
                   className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors"
                   data-testid="print-qr-btn"
