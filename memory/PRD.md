@@ -151,6 +151,16 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Event-Info-Karten: 2x2 Grid auf Mobile, 4-spaltig auf Desktop
 - Telefon-Links klickbar auf Mobile (tel: Link)
 
+### Event-Log (Ereignisprotokoll) auf 3 Seiten (abgeschlossen - 2026-03-25)
+- Event-Log Ingest-Fehler behoben (Auth-Key Problem)
+- Wiederverwendbare EventLog-Komponente erstellt (`/app/frontend/src/components/EventLog.js`)
+- Ereignisprotokoll in GeneratorDetailPage, Geraeteverwaltung (DeviceManagementPage) und Serviceplan (ServiceplanPage) integriert
+- Events: Motor Start/Stop, Uebertemperatur, Niedriger Oeldruck, Unterfrequenz, Not-Aus, Generator Zu/Abschalten, Modbus-Disconnect
+- GPS-Positionen und Zeitstempel bei jedem Event
+- Kompakter Modus fuer eingebettete Ansichten (Geraeteverwaltung, Serviceplan)
+- Backend-APIs: GET /api/generators/events/{generator_id}, GET /api/generators/events-by-device/{device_id}
+- 100% getestet (Backend 7/7, Frontend alle 3 Seiten verifiziert)
+
 ## Prioritized Backlog
 
 ### P1 - Kommend
