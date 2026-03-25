@@ -285,17 +285,17 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
       {deviceId && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3" data-testid="dse-module-uid-section">
           <p className="text-xs text-blue-700 font-medium mb-2 flex items-center gap-1.5">
-            <Wifi className="w-3.5 h-3.5" /> DSE Modul-ID (für automatische MQTT-Zuordnung)
+            <Wifi className="w-3.5 h-3.5" /> USB ID des DSE-Moduls (für automatische MQTT-Zuordnung)
           </p>
           <Input
             value={formData.dse_module_uid || ""}
             onChange={e => update("dse_module_uid", e.target.value.trim())}
-            placeholder="z.B. 6D2B5CDE5F (sichtbar im DSE890 unter Modules Connection)"
+            placeholder="z.B. 692CCDE18D (USB ID aus DSE890 → Modules Connection)"
             className="font-mono text-sm"
             data-testid="dse-module-uid-input"
           />
           <p className="text-[10px] text-gray-400 mt-1">
-            Die Modul-ID finden Sie im DSE890 Web-Interface unter "Modules Connection". MQTT-Daten werden automatisch diesem Gerät zugeordnet.
+            Die USB ID finden Sie im DSE890 Web-Interface unter "Modules Connection" in der Spalte "USB ID". Nicht die Gateway USBID aus dem Status-Tab verwenden!
           </p>
         </div>
       )}
