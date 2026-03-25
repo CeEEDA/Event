@@ -393,6 +393,7 @@ const DEVICE_TYPES = [
   { value: "lichtmast", label: "Lichtmast", icon: Lightbulb },
   { value: "messkoffer", label: "Messkoffer", icon: Settings },
   { value: "kirmeskiste", label: "Kirmeskiste", icon: Settings },
+  { value: "verteiler", label: "Verteiler", icon: Settings },
 ];
 
 // Online status helper: online < 10min, idle < 1h, offline > 1h

@@ -11,12 +11,14 @@ import { Label } from "../components/ui/label";
 import {
   ArrowLeft, Wrench, Plus, Search, Clock, User, ChevronLeft, ChevronDown,
   Trash2, Pencil, AlertTriangle, CheckCircle, X, Save, Camera, FileText, FileUp, Download, Paperclip,
+  ScanLine, Filter,
 } from "lucide-react";
+import QrScanner from "../components/QrScanner";
 
-const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste" };
+const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste", verteiler: "Verteiler" };
 
 // Device types with reduced service plan (only electrical + diagnosis)
-const REDUCED_PLAN_TYPES = ["messkoffer", "kirmeskiste"];
+const REDUCED_PLAN_TYPES = ["messkoffer", "kirmeskiste", "verteiler"];
 const isReducedPlan = (deviceType) => REDUCED_PLAN_TYPES.includes(deviceType);
 
 // ============== Default Checklists ==============
@@ -796,6 +798,8 @@ export default function ServiceplanPage() {
   const [search, setSearch] = useState("");
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [statusFilter, setStatusFilter] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [showQrScanner, setShowQrScanner] = useState(false);
   const [creatingPlan, setCreatingPlan] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -817,6 +821,8 @@ export default function ServiceplanPage() {
       const match = (d.serial_number || "").toLowerCase().includes(q) || (d.model || "").toLowerCase().includes(q) || (d.user_field || "").toLowerCase().includes(q) || (d.device_code || "").toLowerCase().includes(q);
       if (!match) return false;
     }
+    // Category filter
+    if (categoryFilter && d.device_type !== categoryFilter) return false;
     // Status filter
     if (statusFilter) {
       const st = d.plan ? getServiceStatus(d.plan) : null;
@@ -826,6 +832,25 @@ export default function ServiceplanPage() {
     }
     return true;
   });
+
+  const handleQrScan = (scannedText) => {
+    setShowQrScanner(false);
+    const code = scannedText.trim();
+    // Find device by device_code
+    const found = devices.find(d => (d.device_code || "").toUpperCase() === code.toUpperCase());
+    if (found) {
+      if (found.plan) {
+        const plan = plans.find(p => p.device_id === found.id);
+        if (plan) { setSelectedPlan(plan); toast.success(`Gerät gefunden: ${found.serial_number}`); return; }
+      }
+      // Auto-create plan
+      handleCreatePlanForDevice(found.id);
+      toast.success(`Gerät gefunden: ${found.serial_number}`);
+    } else {
+      toast.error(`Kein Gerät mit Code "${code}" gefunden`);
+      setSearch(code);
+    }
+  };
 
   const handleCreatePlanForDevice = async (deviceId) => {
     if (creatingPlan) return;
@@ -863,31 +888,92 @@ export default function ServiceplanPage() {
           <ServicePlanDetail plan={selectedPlan} onBack={() => { setSelectedPlan(null); loadData(); }} onUpdate={loadData} />
         ) : (
           <>
-            <div className="mb-6">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="text" placeholder="Gerät suchen (Seriennummer, Modell, Bezeichnung)..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-fuchsia-500" data-testid="service-search" />
+            {/* Search + QR Scanner */}
+            <div className="mb-4">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input type="text" placeholder="Gerät suchen (Seriennummer, Modell, Bezeichnung)..." value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-fuchsia-500" data-testid="service-search" />
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowQrScanner(!showQrScanner)}
+                  className={`px-3 flex-shrink-0 ${showQrScanner ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-600" : "text-gray-600"}`}
+                  data-testid="qr-scan-btn"
+                  title="QR-Code scannen"
+                >
+                  <ScanLine className="w-5 h-5" />
+                </Button>
               </div>
+
+              {/* QR Scanner Inline */}
+              {showQrScanner && (
+                <div className="mt-3 bg-white border border-fuchsia-200 rounded-lg p-4" data-testid="qr-scanner-inline">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700">Geräte-QR scannen</p>
+                    <button onClick={() => setShowQrScanner(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="max-w-sm mx-auto">
+                    <QrScanner
+                      onScan={handleQrScan}
+                      onClose={() => setShowQrScanner(false)}
+                    />
+                    <p className="text-xs text-gray-400 text-center mt-2">QR-Code auf dem Geräte-Etikett scannen</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Category Filter Tabs */}
+            <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide pb-1" data-testid="category-tabs">
+              {[
+                { key: null, label: "Alle", count: devicesWithPlans.length },
+                { key: "stromerzeuger", label: "Stromerzeuger", count: devicesWithPlans.filter(d => d.device_type === "stromerzeuger").length },
+                { key: "lichtmast", label: "Lichtmasten", count: devicesWithPlans.filter(d => d.device_type === "lichtmast").length },
+                { key: "kirmeskiste", label: "Kirmeskisten", count: devicesWithPlans.filter(d => d.device_type === "kirmeskiste").length },
+                { key: "verteiler", label: "Verteiler", count: devicesWithPlans.filter(d => d.device_type === "verteiler").length },
+                { key: "messkoffer", label: "Messkoffer", count: devicesWithPlans.filter(d => d.device_type === "messkoffer").length },
+              ].map(tab => (
+                <button
+                  key={tab.key || "alle"}
+                  onClick={() => setCategoryFilter(categoryFilter === tab.key ? null : tab.key)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    categoryFilter === tab.key
+                      ? "bg-fuchsia-600 text-white shadow-sm"
+                      : "bg-white border border-gray-200 text-gray-600 hover:border-fuchsia-300"
+                  }`}
+                  data-testid={`cat-${tab.key || "alle"}`}
+                >
+                  {tab.label} <span className="ml-1 opacity-70">({tab.count})</span>
+                </button>
+              ))}
             </div>
 
             {plans.length > 0 && (
               <div className="grid grid-cols-4 gap-3 mb-6">
-                <button onClick={() => setStatusFilter(statusFilter === "einsatzbereit" ? null : "einsatzbereit")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "einsatzbereit" ? "border-emerald-400 ring-2 ring-emerald-100" : "border-gray-200 hover:border-emerald-300"}`} data-testid="filter-einsatzbereit">
-                  <p className="text-2xl font-bold text-emerald-600">{plans.filter(p => getServiceStatus(p).label === "OK").length}</p>
-                  <p className="text-xs text-gray-500">Einsatzbereit</p>
-                </button>
-                <button onClick={() => setStatusFilter(statusFilter === "bald_faellig" ? null : "bald_faellig")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "bald_faellig" ? "border-amber-400 ring-2 ring-amber-100" : "border-gray-200 hover:border-amber-300"}`} data-testid="filter-bald-faellig">
-                  <p className="text-2xl font-bold text-amber-600">{plans.filter(p => getServiceStatus(p).label === "Bald fällig").length}</p>
-                  <p className="text-xs text-gray-500">Bald fällig</p>
-                </button>
-                <button onClick={() => setStatusFilter(statusFilter === "ueberfaellig" ? null : "ueberfaellig")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "ueberfaellig" ? "border-red-400 ring-2 ring-red-100" : "border-gray-200 hover:border-red-300"}`} data-testid="filter-ueberfaellig">
-                  <p className="text-2xl font-bold text-red-600">{plans.filter(p => getServiceStatus(p).label === "Überfällig").length}</p>
-                  <p className="text-xs text-gray-500">Überfällig</p>
-                </button>
-                <button onClick={() => setStatusFilter(null)} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === null ? "border-fuchsia-400 ring-2 ring-fuchsia-100" : "border-gray-200 hover:border-fuchsia-300"}`} data-testid="filter-gesamt">
-                  <p className="text-2xl font-bold text-gray-900">{plans.length}</p>
-                  <p className="text-xs text-gray-500">Gesamt</p>
-                </button>
+                {(() => {
+                  const catPlans = categoryFilter ? plans.filter(p => { const d = devices.find(dev => dev.id === p.device_id); return d && d.device_type === categoryFilter; }) : plans;
+                  return (
+                    <>
+                    <button onClick={() => setStatusFilter(statusFilter === "einsatzbereit" ? null : "einsatzbereit")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "einsatzbereit" ? "border-emerald-400 ring-2 ring-emerald-100" : "border-gray-200 hover:border-emerald-300"}`} data-testid="filter-einsatzbereit">
+                      <p className="text-2xl font-bold text-emerald-600">{catPlans.filter(p => getServiceStatus(p).label === "OK").length}</p>
+                      <p className="text-xs text-gray-500">Einsatzbereit</p>
+                    </button>
+                    <button onClick={() => setStatusFilter(statusFilter === "bald_faellig" ? null : "bald_faellig")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "bald_faellig" ? "border-amber-400 ring-2 ring-amber-100" : "border-gray-200 hover:border-amber-300"}`} data-testid="filter-bald-faellig">
+                      <p className="text-2xl font-bold text-amber-600">{catPlans.filter(p => getServiceStatus(p).label === "Bald fällig").length}</p>
+                      <p className="text-xs text-gray-500">Bald fällig</p>
+                    </button>
+                    <button onClick={() => setStatusFilter(statusFilter === "ueberfaellig" ? null : "ueberfaellig")} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === "ueberfaellig" ? "border-red-400 ring-2 ring-red-100" : "border-gray-200 hover:border-red-300"}`} data-testid="filter-ueberfaellig">
+                      <p className="text-2xl font-bold text-red-600">{catPlans.filter(p => getServiceStatus(p).label === "Überfällig").length}</p>
+                      <p className="text-xs text-gray-500">Überfällig</p>
+                    </button>
+                    <button onClick={() => setStatusFilter(null)} className={`bg-white border rounded-lg p-4 text-center transition-all ${statusFilter === null ? "border-fuchsia-400 ring-2 ring-fuchsia-100" : "border-gray-200 hover:border-fuchsia-300"}`} data-testid="filter-gesamt">
+                      <p className="text-2xl font-bold text-gray-900">{catPlans.length}</p>
+                      <p className="text-xs text-gray-500">Gesamt</p>
+                    </button>
+                    </>
+                  );
+                })()}
               </div>
             )}
 

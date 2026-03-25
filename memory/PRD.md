@@ -121,6 +121,12 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - `/api/mqtt/credentials/{id}` - DELETE Credentials widerrufen
 - `/api/mqtt/control/{generator_id}` - POST Steuerbefehl senden (Start/Stop/Auto)
 
+### Serviceplan Kategorisierung + QR-Scanner (abgeschlossen - 2026-03-25)
+- Kategorie-Filter: Stromerzeuger / Lichtmasten / Kirmeskisten / Verteiler / Messkoffer als Tabs
+- QR-Code Scanner neben Suchleiste: Scannt Geraete-QR-Etikett und oeffnet direkt den Serviceplan
+- Neuer Geraetetyp "Verteiler" im Backend und Frontend hinzugefuegt
+- Status-Zaehler (Einsatzbereit, etc.) filtern jetzt auch nach Kategorie
+
 ### Mehrfachanmeldungen (abgeschlossen - 2026-03-25)
 - Schausteller koennen jetzt mehrere Staende fuer dasselbe Event anmelden
 - Backend: Duplikat-Pruefung entfernt (kirmes.py public/signup Endpoint)

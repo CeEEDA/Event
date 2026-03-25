@@ -28,7 +28,7 @@ def init_device_routes(_db, _decode_jwt_token, _fs):
     fs = _fs
 
 
-DEVICE_TYPES = ["stromerzeuger", "lichtmast", "messkoffer", "kirmeskiste"]
+DEVICE_TYPES = ["stromerzeuger", "lichtmast", "messkoffer", "kirmeskiste", "verteiler"]
 
 
 # ============== Models ==============
