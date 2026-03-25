@@ -1021,62 +1021,6 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
           {/* Messkoffer-specific fields: Pi connection + Setup */}
           {(formData.device_type === "messkoffer" || formData.device_type === "kirmeskiste") && (
             <>
-              {/* Old Device ID Aliases for Pi reconnection */}
-              {editing && isAdmin && (
-                <div className="border-t border-gray-100 pt-4">
-                  <Label className="text-gray-700 text-sm">Alte Device-IDs (Pi-Alias)</Label>
-                  <p className="text-[10px] text-gray-400 mb-2">
-                    Falls ein Pi noch eine alte Device-ID sendet, hier die alte ID eintragen. Der Ingest-Endpoint erkennt das Gerät dann automatisch.
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      data-testid="old-device-id-input"
-                      className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
-                      placeholder="z.B. 9a0c96cc-3e61-4a1a-b92a-557173d07992"
-                      value={formData._newAliasId || ""}
-                      onChange={e => setFormData(f => ({ ...f, _newAliasId: e.target.value }))}
-                    />
-                    <button
-                      data-testid="add-alias-btn"
-                      type="button"
-                      className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-                      onClick={async () => {
-                        const aliasId = (formData._newAliasId || "").trim();
-                        if (!aliasId) return;
-                        try {
-                          await api.post(`/devices/${editing.id}/add-alias?alias_id=${encodeURIComponent(aliasId)}`);
-                          const current = formData.old_device_ids || [];
-                          setFormData(f => ({ ...f, old_device_ids: [...current, aliasId], _newAliasId: "" }));
-                          toast.success("Alias hinzugefügt!");
-                        } catch (err) {
-                          toast.error("Fehler: " + (err?.response?.data?.detail || err.message));
-                        }
-                      }}
-                    >
-                      Hinzufügen
-                    </button>
-                  </div>
-                  {(formData.old_device_ids || []).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {(formData.old_device_ids || []).map((aid, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">
-                          {aid.substring(0, 12)}...
-                          <button
-                            type="button"
-                            className="text-red-400 hover:text-red-600"
-                            onClick={async () => {
-                              const updated = (formData.old_device_ids || []).filter((_, idx) => idx !== i);
-                              setFormData(f => ({ ...f, old_device_ids: updated }));
-                              await api.put(`/devices/${editing.id}`, { old_device_ids: updated });
-                              toast.success("Alias entfernt");
-                            }}
-                          >×</button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               {/* Pi Setup - all-in-one installer (only for existing devices) */}
               {editing && isAdmin && (
                 <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} deviceType={formData.device_type} />

@@ -807,31 +807,88 @@ name = Zaehler {i+1}
 set -e
 
 echo "========================================================"
-echo "  Kirmeskiste Auto-Setup"
+echo "  Kirmeskiste Auto-Setup (Clean Install)"
 echo "  Geraet: {device.get('serial_number', device_id[:12])}"
 echo "========================================================"
 
-# ----- System aktualisieren -----
-echo "[1/5] System aktualisieren..."
+# ===== SCHRITT 0: ALLES ALTE AUFRAUMEN =====
+echo ""
+echo "[0/6] Alte Installation aufraumen..."
+
+# Alle bekannten Kirmeskiste-Services stoppen und deaktivieren
+for SVC in kirmeskiste_sync kirmeskiste emu_sync emu-sync; do
+    if systemctl is-active --quiet "$SVC" 2>/dev/null; then
+        echo "  Stoppe Service: $SVC"
+        sudo systemctl stop "$SVC" 2>/dev/null || true
+    fi
+    if systemctl is-enabled --quiet "$SVC" 2>/dev/null; then
+        sudo systemctl disable "$SVC" 2>/dev/null || true
+    fi
+    if [ -f "/etc/systemd/system/$SVC.service" ]; then
+        echo "  Entferne Service-Datei: $SVC.service"
+        sudo rm -f "/etc/systemd/system/$SVC.service"
+    fi
+done
+
+# Alle laufenden kirmeskiste/emu_sync Python-Prozesse beenden
+echo "  Beende laufende Sync-Prozesse..."
+sudo pkill -f "kirmeskiste_sync" 2>/dev/null || true
+sudo pkill -f "emu_sync" 2>/dev/null || true
+sudo pkill -f "emu-sync" 2>/dev/null || true
+sleep 2
+
+# Alte Konfigurationsdateien entfernen
+echo "  Entferne alte Konfigurationen..."
+sudo rm -f /etc/kirmeskiste.conf
+sudo rm -f /etc/emu_sync.conf
+sudo rm -f /etc/emu-sync.conf
+
+# Alte SQLite-Datenbanken entfernen (Reset der Sync-States!)
+echo "  Entferne alte Datenbanken (Sync-Reset)..."
+sudo rm -f /var/lib/kirmeskiste/kirmeskiste.sqlite
+sudo rm -f /var/lib/kirmeskiste/kirmeskiste.sqlite-wal
+sudo rm -f /var/lib/kirmeskiste/kirmeskiste.sqlite-shm
+
+# Bekannte alte Installationsverzeichnisse aufraumen
+for OLD_DIR in /home/pi/emu-sync /home/pi/kirmeskiste /home/pi/emu_sync; do
+    if [ -d "$OLD_DIR" ]; then
+        echo "  Entferne altes Verzeichnis: $OLD_DIR"
+        sudo rm -rf "$OLD_DIR"
+    fi
+done
+
+# Alte Configs in Home-Verzeichnissen entfernen
+sudo rm -f /home/pi/config.json /home/pi/.kirmeskiste.conf 2>/dev/null || true
+
+# Alte crontab-Eintraege entfernen (falls vorhanden)
+crontab -l 2>/dev/null | grep -v "kirmeskiste\|emu_sync\|emu-sync" | crontab - 2>/dev/null || true
+
+sudo systemctl daemon-reload
+echo "  Aufraumen abgeschlossen."
+
+# ===== SCHRITT 1: SYSTEM AKTUALISIEREN =====
+echo ""
+echo "[1/6] System aktualisieren..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients
 
-# ----- Python-Umgebung -----
-echo "[2/5] Python-Umgebung einrichten..."
+# ===== SCHRITT 2: PYTHON-UMGEBUNG =====
+echo "[2/6] Python-Umgebung einrichten..."
 INSTALL_DIR="/opt/kirmeskiste"
+sudo rm -rf "$INSTALL_DIR"
 sudo mkdir -p "$INSTALL_DIR"
 sudo python3 -m venv "$INSTALL_DIR/venv"
 sudo "$INSTALL_DIR/venv/bin/pip" install --quiet "pymodbus>=3.7" requests gpsd-py3
 
-# ----- Sync-Skript installieren -----
-echo "[3/5] Sync-Skript installieren..."
+# ===== SCHRITT 3: SYNC-SKRIPT =====
+echo "[3/6] Sync-Skript installieren..."
 sudo tee "$INSTALL_DIR/kirmeskiste_sync.py" > /dev/null << 'SYNC_SCRIPT'
 {sync_script}
 SYNC_SCRIPT
 sudo chmod +x "$INSTALL_DIR/kirmeskiste_sync.py"
 
-# ----- Konfiguration -----
-echo "[4/5] Konfiguration schreiben..."
+# ===== SCHRITT 4: NEUE KONFIGURATION =====
+echo "[4/6] Neue Konfiguration schreiben..."
 sudo mkdir -p /var/lib/kirmeskiste
 
 sudo tee /etc/kirmeskiste.conf > /dev/null << 'CONF'
@@ -849,8 +906,8 @@ CONF
 
 sudo chmod 600 /etc/kirmeskiste.conf
 
-# ----- Systemd Service -----
-echo "[5/5] Systemd-Service einrichten..."
+# ===== SCHRITT 5: SYSTEMD SERVICE =====
+echo "[5/6] Systemd-Service einrichten..."
 sudo tee /etc/systemd/system/kirmeskiste_sync.service > /dev/null << 'SERVICE'
 [Unit]
 Description=Kirmeskiste Sync - Eventenergie Portal
@@ -872,11 +929,21 @@ SERVICE
 
 sudo systemctl daemon-reload
 sudo systemctl enable kirmeskiste_sync
-sudo systemctl start kirmeskiste_sync
+sudo systemctl restart kirmeskiste_sync
+
+# ===== SCHRITT 6: VERIFIZIERUNG =====
+echo "[6/6] Verifiziere Installation..."
+sleep 3
+if systemctl is-active --quiet kirmeskiste_sync; then
+    echo "  Service laeuft!"
+else
+    echo "  WARNUNG: Service ist nicht aktiv!"
+    echo "  Pruefe mit: sudo journalctl -u kirmeskiste_sync -n 20"
+fi
 
 echo ""
 echo "========================================================"
-echo "  Setup abgeschlossen!"
+echo "  Setup abgeschlossen! (Clean Install)"
 echo "========================================================"
 echo ""
 echo "  Geraet-ID:     {device_id}"
@@ -894,6 +961,9 @@ echo "  Zaehler:"
 echo "  Service pruefen:"
 echo "    sudo systemctl status kirmeskiste_sync"
 echo "    sudo journalctl -u kirmeskiste_sync -f"
+echo ""
+echo "  HINWEIS: Alte Installation wurde vollstaendig entfernt."
+echo "  Alle alten Configs, Datenbanken und Services wurden geloescht."
 echo ""
 """
 
