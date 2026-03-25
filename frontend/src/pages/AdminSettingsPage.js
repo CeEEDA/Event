@@ -41,6 +41,8 @@ import {
   HardDrive,
   Activity,
   MonitorSmartphone,
+  Wrench,
+  Zap,
 } from "lucide-react";
 
 /* ───── System Status Dashboard ───── */
@@ -855,6 +857,85 @@ function MosquittoSetupSection() {
   );
 }
 
+/* ───── Hilfsmittel / Pi-Werkzeuge ───── */
+function HilfsmittelSection() {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="hilfsmittel-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-fuchsia-600 to-purple-500">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Wrench className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Hilfsmittel</h3>
+            <p className="text-[10px] text-fuchsia-100">Diagnose- und Konfigurationswerkzeuge fuer Raspberry Pi</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-5 space-y-3">
+        {/* Modbus Diagnose Tool */}
+        <div className="flex items-start gap-4 p-4 border border-gray-100 rounded-lg hover:border-fuchsia-200 hover:bg-fuchsia-50/30 transition-colors" data-testid="tool-diagnose-modbus">
+          <div className="w-10 h-10 rounded-lg bg-fuchsia-100 flex items-center justify-center flex-shrink-0">
+            <Terminal className="w-5 h-5 text-fuchsia-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900">Modbus RTU Diagnose</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Testet automatisch alle Baudraten, Paritaeten und Slave-IDs um die korrekte DSE 5510 Konfiguration zu finden.
+            </p>
+            <div className="mt-2 bg-gray-900 rounded-lg p-3 font-mono text-[11px] text-gray-300 overflow-x-auto">
+              <p className="text-gray-500"># Auf dem Pi ausfuehren:</p>
+              <p>sudo systemctl stop dse5510_sync</p>
+              <p>sudo wget "{window.location.origin}/api/generators/diagnose-modbus" -O /opt/dse5510/diagnose_modbus.py</p>
+              <p>sudo /opt/dse5510/venv/bin/python3 /opt/dse5510/diagnose_modbus.py</p>
+            </div>
+          </div>
+          <a
+            href="/api/generators/diagnose-modbus"
+            download="diagnose_modbus.py"
+            className="flex items-center gap-1.5 px-3 py-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
+            data-testid="download-diagnose-btn"
+          >
+            <Download className="w-3.5 h-3.5" /> Download
+          </a>
+        </div>
+
+        {/* DSE 5510 Sync Script */}
+        <div className="flex items-start gap-4 p-4 border border-gray-100 rounded-lg hover:border-emerald-200 hover:bg-emerald-50/30 transition-colors" data-testid="tool-sync-script">
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+            <Activity className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900">DSE 5510 Sync-Skript</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Haupt-Synchronisationsskript fuer DSE 5510 Controller via RS232 Modbus RTU. Liest Telemetrie jede Sekunde, speichert lokal (SQLite) und synchronisiert mit dem Portal.
+            </p>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Wird ueber Geraeteverwaltung &rarr; Pi Setup automatisch installiert.
+            </p>
+          </div>
+        </div>
+
+        {/* Kirmeskiste Script Info */}
+        <div className="flex items-start gap-4 p-4 border border-gray-100 rounded-lg hover:border-sky-200 hover:bg-sky-50/30 transition-colors" data-testid="tool-kirmeskiste">
+          <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center flex-shrink-0">
+            <Zap className="w-5 h-5 text-sky-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900">Kirmeskiste / Messkoffer Setup</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Setup-Skript fuer Kirmeskisten und Messkoffer. Wird automatisch ueber die Geraeteverwaltung generiert.
+            </p>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Geraeteverwaltung &rarr; Geraet bearbeiten &rarr; Pi Setup &rarr; Setup generieren
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Backup-System Einstellungen ───── */
 function BackupSettingsSection() {
   const [settings, setSettings] = useState({
@@ -1294,6 +1375,9 @@ export default function AdminSettingsPage() {
             <Button variant="outline" size="sm" onClick={() => navigate("/mqtt-config")} className="text-gray-600 hover:text-fuchsia-600" data-testid="mqtt-config-link">
               <Wifi className="w-4 h-4 mr-1" /> MQTT
             </Button>
+            <Button variant="outline" size="sm" onClick={() => document.getElementById('hilfsmittel-section')?.scrollIntoView({ behavior: 'smooth' })} className="text-gray-600 hover:text-fuchsia-600" data-testid="hilfsmittel-link">
+              <Wrench className="w-4 h-4 mr-1" /> Hilfsmittel
+            </Button>
             <Logo size="small" />
           </div>
         </div>
@@ -1312,6 +1396,14 @@ export default function AdminSettingsPage() {
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
+
+          {/* Hilfsmittel */}
+          <div id="hilfsmittel-section">
+            <HilfsmittelSection />
+          </div>
+
+          {/* Mosquitto MQTT Broker */}
+          <MosquittoSetupSection />
 
           {/* Schnittstellen */}
           <div>
