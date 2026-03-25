@@ -1467,8 +1467,8 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-    # QR sized smaller - ~18mm (fits well within 32mm width with margins)
-    qr_target = int(label_w * 0.55)  # ~208px = ~18mm
+    # QR sized to fill most of label width
+    qr_target = int(label_w * 0.82)  # ~310px = ~26mm
     qr_img = qr_img.resize((qr_target, qr_target), Image.NEAREST)
 
     # Create label image (portrait)
@@ -1484,7 +1484,7 @@ async def print_meter_label(device_id: str, meter_index: int, user: dict = Depen
         "C:\\Windows\\Fonts\\calibri.ttf",
     ]:
         try:
-            font = ImageFont.truetype(font_path, 20)
+            font = ImageFont.truetype(font_path, 28)
             break
         except (OSError, IOError):
             continue
