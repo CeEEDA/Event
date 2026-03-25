@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File as FastAPIFile, Form, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File as FastAPIFile, Form, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse, FileResponse
 from dotenv import load_dotenv
@@ -335,7 +335,7 @@ async def register(data: UserCreate):
     return LoginResponse(token=token, user=user_response)
 
 @api_router.post("/auth/login", response_model=LoginResponse)
-async def login(data: LoginRequest):
+async def login(data: LoginRequest, request: Request):
     user = await db.users.find_one({"email": data.email}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
@@ -364,6 +364,17 @@ async def login(data: LoginRequest):
         await db.users.update_one({"id": user["id"]}, {"$set": {"apps": user["apps"]}})
     
     token = create_jwt_token(user["id"], user["email"], user["role"])
+    
+    # Track login event
+    client_ip = request.headers.get("x-forwarded-for", request.headers.get("x-real-ip", request.client.host if request.client else ""))
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    await db.login_history.insert_one({
+        "user_id": user["id"],
+        "email": user["email"],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "ip": client_ip,
+    })
     
     user_response = UserResponse(
         id=user["id"],
@@ -446,7 +457,10 @@ async def reset_password(data: PasswordResetConfirm):
     # Update password
     await db.users.update_one(
         {"id": reset_doc["user_id"]},
-        {"$set": {"password_hash": hash_password(data.new_password)}}
+        {"$set": {
+            "password_hash": hash_password(data.new_password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+        }}
     )
     
     # Delete used token
@@ -592,11 +606,31 @@ async def admin_set_password(data: AdminSetPassword, admin: dict = Depends(requi
         {"id": data.user_id},
         {"$set": {
             "password_hash": hash_password(data.new_password),
-            "password_plain": data.new_password  # Store plain for admin viewing
+            "password_plain": data.new_password,
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
         }}
     )
     
     return {"message": "Passwort gesetzt", "password": data.new_password}
+
+
+@api_router.get("/admin/user-activity/{user_id}")
+async def get_user_activity(user_id: str, admin: dict = Depends(require_admin)):
+    """Get login history and password change info for a user (admin only)."""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0, "password_plain": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    logins = await db.login_history.find(
+        {"user_id": user_id}, {"_id": 0}
+    ).sort("timestamp", -1).to_list(10)
+
+    return {
+        "user_id": user_id,
+        "password_changed_at": user.get("password_changed_at"),
+        "created_at": user.get("created_at"),
+        "logins": logins,
+    }
 
 class AdminSendResetEmail(BaseModel):
     frontend_url: Optional[str] = ""

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
@@ -48,6 +48,9 @@ import {
   CalendarDays,
   Settings,
   Tent,
+  ChevronDown,
+  Clock,
+  Globe,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -123,6 +126,26 @@ export default function AdminPage() {
   // Confirm dialog state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmData, setConfirmData] = useState({ title: "", description: "", onConfirm: null });
+
+  // User activity dropdown
+  const [expandedUserId, setExpandedUserId] = useState(null);
+  const [userActivity, setUserActivity] = useState({});
+
+  const toggleUserActivity = async (userId) => {
+    if (expandedUserId === userId) {
+      setExpandedUserId(null);
+      return;
+    }
+    setExpandedUserId(userId);
+    if (!userActivity[userId]) {
+      try {
+        const res = await api.get(`/admin/user-activity/${userId}`);
+        setUserActivity(prev => ({ ...prev, [userId]: res.data }));
+      } catch {
+        setUserActivity(prev => ({ ...prev, [userId]: { logins: [], password_changed_at: null } }));
+      }
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -795,7 +818,8 @@ export default function AdminPage() {
                           );
                         }
                         return filtered.map((user) => (
-                          <tr key={user.id} className="hover:bg-gray-50" data-testid={`user-row-${user.id}`}>
+                          <Fragment key={user.id}>
+                          <tr className="hover:bg-gray-50 cursor-pointer" data-testid={`user-row-${user.id}`} onClick={() => toggleUserActivity(user.id)}>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
@@ -807,7 +831,10 @@ export default function AdminPage() {
                                     <User className="w-4 h-4 text-gray-500" />
                                   )}
                                 </div>
-                                <span className="font-medium text-gray-900">{user.name}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-medium text-gray-900">{user.name}</span>
+                                  <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expandedUserId === user.id ? "rotate-180" : ""}`} />
+                                </div>
                               </div>
                             </td>
                             <td className="px-4 py-3 hidden md:table-cell text-gray-500">
@@ -874,7 +901,7 @@ export default function AdminPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
                                 <Button
                                   variant="ghost"
@@ -908,6 +935,61 @@ export default function AdminPage() {
                               </div>
                             </td>
                           </tr>
+                          {expandedUserId === user.id && (
+                            <tr data-testid={`user-activity-${user.id}`}>
+                              <td colSpan={8} className="px-4 py-0">
+                                <div className="py-3 pl-11">
+                                  {(() => {
+                                    const act = userActivity[user.id];
+                                    if (!act) return <span className="text-xs text-gray-400">Laden...</span>;
+                                    return (
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <KeyRound className="w-3.5 h-3.5 text-fuchsia-500" />
+                                            <span className="text-xs font-semibold text-gray-700">Passwort</span>
+                                          </div>
+                                          <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                                            {act.password_changed_at
+                                              ? <>Zuletzt geaendert: <span className="font-medium text-gray-900">{new Date(act.password_changed_at).toLocaleString("de-DE")}</span></>
+                                              : <span className="text-gray-400">Noch nie geaendert (seit Erstellung: {act.created_at ? new Date(act.created_at).toLocaleDateString("de-DE") : "unbekannt"})</span>
+                                            }
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <Clock className="w-3.5 h-3.5 text-fuchsia-500" />
+                                            <span className="text-xs font-semibold text-gray-700">Letzte Logins ({act.logins?.length || 0})</span>
+                                          </div>
+                                          {act.logins && act.logins.length > 0 ? (
+                                            <div className="bg-gray-50 rounded-lg divide-y divide-gray-100 max-h-[200px] overflow-y-auto">
+                                              {act.logins.map((l, i) => (
+                                                <div key={i} className="px-3 py-1.5 flex items-center justify-between">
+                                                  <span className="text-xs text-gray-700 font-medium">
+                                                    {new Date(l.timestamp).toLocaleString("de-DE")}
+                                                  </span>
+                                                  {l.ip && (
+                                                    <span className="text-[10px] text-gray-400 flex items-center gap-1 font-mono">
+                                                      <Globe className="w-2.5 h-2.5" />{l.ip}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <div className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                                              Keine Login-Eintraege vorhanden
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         ));
                       })()}
                     </tbody>
