@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../lib/api";
-import { FileText, MapPin, AlertTriangle, Play, Square, Zap, ZapOff, RotateCcw, ChevronDown } from "lucide-react";
+import { FileText, MapPin, AlertTriangle, Play, Square, Zap, ZapOff, RotateCcw, ChevronDown, X } from "lucide-react";
 
 const EVENT_ICONS = {
   engine_start: { Icon: Play, color: "text-emerald-500", bg: "bg-emerald-50" },
@@ -17,18 +17,63 @@ const EVENT_ICONS = {
   command_sent: { Icon: RotateCcw, color: "text-indigo-500", bg: "bg-indigo-50" },
 };
 
-/**
- * Reusable Event Log component for Generator/Device event history.
- * @param {string} generatorId - fetch events by generator ID (e.g. "dev-xxx")
- * @param {string} deviceId - fetch events by device ID
- * @param {boolean} compact - compact layout for embedded views (default false)
- * One of generatorId or deviceId must be provided.
- */
+function GpsMapModal({ event, onClose }) {
+  if (!event) return null;
+  const lat = Number(event.latitude);
+  const lng = Number(event.longitude);
+  const label = event.event_label || event.event_type;
+  const osmUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-2xl w-[95vw] max-w-lg overflow-hidden animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+        data-testid="gps-map-modal"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">{label}</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              {new Date(event.timestamp).toLocaleString("de-DE")} &middot; {lat.toFixed(5)}, {lng.toFixed(5)}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors" data-testid="gps-map-close">
+            <X className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+        <div className="relative" style={{ height: 320 }}>
+          <iframe
+            title="GPS Position"
+            width="100%"
+            height="100%"
+            style={{ border: 0 }}
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.01},${lat - 0.005},${lng + 0.01},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`}
+          />
+        </div>
+        <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-[11px] text-gray-500">{event.description}</span>
+          <a
+            href={osmUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-fuchsia-600 hover:text-fuchsia-700 font-medium flex items-center gap-1"
+            data-testid="gps-open-osm"
+          >
+            <MapPin className="w-3 h-3" /> In OSM oeffnen
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EventLog({ generatorId, deviceId, compact = false }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [showMore, setShowMore] = useState(false);
+  const [mapEvent, setMapEvent] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -60,71 +105,78 @@ export default function EventLog({ generatorId, deviceId, compact = false }) {
   const defaultLimit = compact ? 10 : 20;
 
   return (
-    <div
-      className={`bg-white border border-gray-200 ${compact ? "rounded-lg" : "rounded-xl"} overflow-hidden`}
-      data-testid="event-log"
-    >
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h2 className={`${compact ? "text-xs" : "text-sm"} font-semibold text-gray-900 flex items-center gap-2`}>
-          <FileText className={`${compact ? "w-3.5 h-3.5" : "w-4 h-4"} text-fuchsia-500`} />
-          Ereignisprotokoll ({total})
-        </h2>
-      </div>
-      <div className={`divide-y divide-gray-50 ${compact ? "max-h-[260px]" : "max-h-[400px]"} overflow-y-auto`}>
-        {events.map((ev) => {
-          const cfg = EVENT_ICONS[ev.event_type] || { Icon: AlertTriangle, color: "text-gray-500", bg: "bg-gray-50" };
-          const { Icon } = cfg;
-          return (
-            <div
-              key={ev.id}
-              className={`px-4 ${compact ? "py-2" : "py-2.5"} flex items-start gap-3 hover:bg-gray-50/50`}
-              data-testid="event-row"
-            >
-              <div className={`${compact ? "w-6 h-6" : "w-7 h-7"} rounded-full ${cfg.bg} flex items-center justify-center shrink-0 mt-0.5`}>
-                <Icon className={`${compact ? "w-3 h-3" : "w-3.5 h-3.5"} ${cfg.color}`} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className={`${compact ? "text-[11px]" : "text-xs"} font-medium text-gray-900`}>
-                    {ev.event_label || ev.event_type}
-                  </span>
-                  {ev.active === false && (
-                    <span className="text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">
-                      behoben
-                    </span>
-                  )}
-                </div>
-                <p className={`${compact ? "text-[10px]" : "text-[11px]"} text-gray-500 mt-0.5 truncate`}>
-                  {ev.description}
-                </p>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-[10px] text-gray-400">
-                    {new Date(ev.timestamp).toLocaleString("de-DE")}
-                  </span>
-                  {ev.latitude && ev.longitude && (
-                    <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-                      <MapPin className="w-2.5 h-2.5" />
-                      {Number(ev.latitude).toFixed(4)}, {Number(ev.longitude).toFixed(4)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {total > defaultLimit && !showMore && (
-        <div className="px-4 py-2 border-t border-gray-100">
-          <button
-            onClick={() => setShowMore(true)}
-            className="text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium flex items-center gap-1"
-            data-testid="show-more-events"
-          >
-            <ChevronDown className="w-3 h-3" />
-            Alle {total} Ereignisse anzeigen
-          </button>
+    <>
+      <div
+        className={`bg-white border border-gray-200 ${compact ? "rounded-lg" : "rounded-xl"} overflow-hidden`}
+        data-testid="event-log"
+      >
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className={`${compact ? "text-xs" : "text-sm"} font-semibold text-gray-900 flex items-center gap-2`}>
+            <FileText className={`${compact ? "w-3.5 h-3.5" : "w-4 h-4"} text-fuchsia-500`} />
+            Ereignisprotokoll ({total})
+          </h2>
         </div>
-      )}
-    </div>
+        <div className={`divide-y divide-gray-50 ${compact ? "max-h-[260px]" : "max-h-[400px]"} overflow-y-auto`}>
+          {events.map((ev) => {
+            const cfg = EVENT_ICONS[ev.event_type] || { Icon: AlertTriangle, color: "text-gray-500", bg: "bg-gray-50" };
+            const { Icon } = cfg;
+            const hasGps = ev.latitude && ev.longitude;
+            return (
+              <div
+                key={ev.id}
+                className={`px-4 ${compact ? "py-2" : "py-2.5"} flex items-start gap-3 hover:bg-gray-50/50`}
+                data-testid="event-row"
+              >
+                <div className={`${compact ? "w-6 h-6" : "w-7 h-7"} rounded-full ${cfg.bg} flex items-center justify-center shrink-0 mt-0.5`}>
+                  <Icon className={`${compact ? "w-3 h-3" : "w-3.5 h-3.5"} ${cfg.color}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`${compact ? "text-[11px]" : "text-xs"} font-medium text-gray-900`}>
+                      {ev.event_label || ev.event_type}
+                    </span>
+                    {ev.active === false && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">
+                        behoben
+                      </span>
+                    )}
+                  </div>
+                  <p className={`${compact ? "text-[10px]" : "text-[11px]"} text-gray-500 mt-0.5 truncate`}>
+                    {ev.description}
+                  </p>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <span className="text-[10px] text-gray-400">
+                      {new Date(ev.timestamp).toLocaleString("de-DE")}
+                    </span>
+                    {hasGps && (
+                      <button
+                        onClick={() => setMapEvent(ev)}
+                        className="text-[10px] text-fuchsia-600 hover:text-fuchsia-700 font-medium flex items-center gap-0.5 hover:underline"
+                        data-testid="event-gps-btn"
+                      >
+                        <MapPin className="w-3 h-3" /> GPS
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {total > defaultLimit && !showMore && (
+          <div className="px-4 py-2 border-t border-gray-100">
+            <button
+              onClick={() => setShowMore(true)}
+              className="text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium flex items-center gap-1"
+              data-testid="show-more-events"
+            >
+              <ChevronDown className="w-3 h-3" />
+              Alle {total} Ereignisse anzeigen
+            </button>
+          </div>
+        )}
+      </div>
+      {mapEvent && <GpsMapModal event={mapEvent} onClose={() => setMapEvent(null)} />}
+    </>
   );
 }
