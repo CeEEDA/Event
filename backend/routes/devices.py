@@ -734,7 +734,7 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
                 result["readings"] = readings
                 result["telemetry_timestamp"] = latest.get("timestamp")
 
-    elif dtype in ("messkoffer", "kirmeskiste"):
+    elif dtype in ("messkoffer", "kirmeskiste", "verteiler"):
         # Get latest EMU meter readings
         meters = await db.emu_meters.find({"device_id": device_id}, {"_id": 0}).to_list(20)
         readings = []
