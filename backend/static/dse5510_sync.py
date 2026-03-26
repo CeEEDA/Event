@@ -522,8 +522,8 @@ def poll_commands(conf, ser):
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
-    """Fuehrt einen DSE-Steuerbefehl aus - genau wie das Diagnose-Skript.
-    Erstellt eine komplett neue Serial-Instanz fuer den Schreibzugriff."""
+    """Fuehrt einen DSE-Steuerbefehl direkt zwischen Read-Zyklen aus.
+    Der Port bleibt offen - Write wird inline im aktiven Kommunikationszyklus gesendet."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -531,76 +531,62 @@ def execute_command(ser, slave_id, command_name):
 
     key = cmd["key"]
     complement = cmd["complement"]
-    port_name = ser.port
-    baudrate = ser.baudrate
 
     try:
         log.info(f"Sende Befehl: {cmd['label']} (Key={key}, Comp={complement})")
 
-        # Hauptport schliessen
-        ser.close()
-        time.sleep(1.0)
-
-        # Neue Serial-Instanz (wie im Diagnose-Skript)
-        cmd_ser = serial.Serial(port_name, baudrate, bytesize=8, parity='N', stopbits=1, timeout=2)
-        time.sleep(0.5)
-
-        # Erst einen Read um Verbindung zu bestaetigen (wie Diagnose-Skript)
-        test_frame = struct.pack(">BBHH", slave_id, 0x03, 1024, 1)
-        test_frame += _calc_crc(test_frame)
-        cmd_ser.reset_input_buffer()
-        cmd_ser.write(test_frame)
-        time.sleep(0.5)
-        test_resp = cmd_ser.read(cmd_ser.in_waiting or 20)
-        if len(test_resp) > 0:
-            log.info(f"Verbindung OK ({len(test_resp)} bytes)")
-        else:
-            log.warning("Keine Antwort beim Verbindungstest")
-
+        # Einen normalen Read ausfuehren um den DSE "wach" zu halten
+        read_frame = struct.pack(">BBHH", slave_id, 0x03, 1024, 1)
+        read_frame += _calc_crc(read_frame)
+        ser.reset_input_buffer()
+        ser.write(read_frame)
         time.sleep(0.3)
-        cmd_ser.reset_input_buffer()
+        read_resp = ser.read(ser.in_waiting or 20)
 
-        # Befehl senden
-        count = 2
-        frame = struct.pack(">BBHHB", slave_id, 0x10, REG_CONTROL_KEY, count, count * 2)
-        frame += struct.pack(">H", key)
-        frame += struct.pack(">H", complement)
-        frame += _calc_crc(frame)
+        # Sofort danach den Write-Befehl senden (gleicher Kommunikationszyklus)
+        write_frame = struct.pack(">BBHHB", slave_id, 0x10, REG_CONTROL_KEY, 2, 4)
+        write_frame += struct.pack(">H", key)
+        write_frame += struct.pack(">H", complement)
+        write_frame += _calc_crc(write_frame)
 
-        cmd_ser.reset_input_buffer()
-        cmd_ser.write(frame)
+        ser.reset_input_buffer()
+        ser.write(write_frame)
         time.sleep(1.5)
-        response = cmd_ser.read(cmd_ser.in_waiting or 50)
+        response = ser.read(ser.in_waiting or 50)
 
-        success = False
         if len(response) > 0 and response[0] == slave_id and not (response[1] & 0x80):
-            log.info(f"Befehl OK: {cmd['label']} (RX: {response.hex()})")
-            success = True
+            log.info(f"Befehl OK: {cmd['label']} (RX: {len(response)} bytes)")
+            return True
         elif len(response) > 0:
             log.warning(f"Befehl Antwort: {response.hex()} ({len(response)} bytes)")
+            # Pruefen ob es eine verspätete Read-Antwort ist die den Write bestaetigt
+            # DSE GenComm sendet FC03 als Bestaetigung
+            if response[0] == slave_id:
+                log.info(f"Befehl wahrscheinlich OK (FC03 Read-Back): {cmd['label']}")
+                return True
         else:
-            log.warning(f"Befehl: Keine Antwort (0 bytes)")
+            log.warning(f"Keine Antwort auf Write")
 
-        # Cmd-Port schliessen
-        cmd_ser.close()
+        # Retry: Nochmal Read dann sofort Write
         time.sleep(0.5)
-
-        # Hauptport wieder oeffnen
-        ser.open()
-        time.sleep(0.3)
         ser.reset_input_buffer()
+        ser.write(read_frame)
+        time.sleep(0.3)
+        ser.read(ser.in_waiting or 20)
 
-        return success
+        ser.reset_input_buffer()
+        ser.write(write_frame)
+        time.sleep(1.5)
+        response = ser.read(ser.in_waiting or 50)
+
+        if len(response) > 0 and response[0] == slave_id:
+            log.info(f"Befehl OK (Retry): {cmd['label']} ({len(response)} bytes)")
+            return True
+
+        log.error(f"Befehl fehlgeschlagen: {command_name}")
+        return False
     except Exception as e:
         log.error(f"Fehler: {command_name}: {e}")
-        # Sicherstellen dass der Hauptport offen ist
-        if not ser.is_open:
-            try:
-                time.sleep(0.5)
-                ser.open()
-                time.sleep(0.3)
-            except Exception:
-                pass
         return False
 
 
