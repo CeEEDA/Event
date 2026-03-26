@@ -354,6 +354,15 @@ async def download_schnelltest_script():
     return FileResponse(script_path, media_type="text/x-python", filename="schnelltest_dse.py")
 
 
+@router.get("/diagnose-write")
+async def download_diagnose_write_script():
+    """Download the DSE 5510 write diagnostic script."""
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "diagnose_write.py")
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail="Write-Diagnose-Skript nicht gefunden")
+    return FileResponse(script_path, media_type="text/x-python", filename="diagnose_write.py")
+
+
 @router.get("/dse5510-sync")
 async def download_dse5510_sync_script():
     """Download the DSE 5510 sync script for Raspberry Pi."""
