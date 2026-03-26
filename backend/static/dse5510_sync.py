@@ -113,7 +113,7 @@ DEFAULT_CONF = {
     "generator_id": "",
     "db_path": "/var/lib/dse5510/dse5510.sqlite",
     "serial_port": "/dev/ttyUSB0",
-    "baud_rate": 9600,
+    "baud_rate": 19200,
     "parity": "N",
     "slave_id": 10,
     "read_interval": 1,

@@ -345,6 +345,15 @@ async def download_diagnose_script():
     return FileResponse(script_path, media_type="text/x-python", filename="diagnose_modbus.py")
 
 
+@router.get("/schnelltest-dse")
+async def download_schnelltest_script():
+    """Download the DSE 5510 quick-read script for Raspberry Pi."""
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "schnelltest_dse.py")
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail="Schnelltest-Skript nicht gefunden")
+    return FileResponse(script_path, media_type="text/x-python", filename="schnelltest_dse.py")
+
+
 @router.get("/{generator_id}")
 async def get_generator(generator_id: str, user: dict = Depends(get_authenticated_user)):
     gen = await _resolve_generator(generator_id)
