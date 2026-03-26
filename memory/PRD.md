@@ -173,6 +173,13 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Windows Installer (.exe) fuer Electron Desktop App
 - Health-Check / Monitoring fuer Portal-Erreichbarkeit
 
+### DSE 5510 Sentinel-Wert Fix (abgeschlossen - 2026-03-26)
+- P0 Bug: GenComm Sentinel-Werte (0x7FFB=32763, 0xFFFB=65531) loesten Fehlalarme aus bei ausgeschaltetem Generator
+- Root Cause: `read_uint16()` filterte nur `GENCOMM_NA_VALUES`, nicht `GENCOMM_NA_SIGNED` -> 32763 wurde als gueltige Temperatur interpretiert
+- Fix 1: `read_uint16()` filtert jetzt auch `GENCOMM_NA_SIGNED` Werte
+- Fix 2: Alarm-Logik mit Plausibilitaetsgrenzen abgesichert (Temp 1-300C, Oeldruck 1-2000kPa, Batterie 1-50V)
+- Neuer Endpoint: GET /api/generators/dse5510-sync fuer direkten Skript-Download
+
 ### DSE 5510 via RS232 + Pi (abgeschlossen - 2026-03-25)
 - Pi Sync-Skript (`dse5510_sync.py`): Liest DSE 5510 via RS232 Modbus RTU (GenComm Pages 4/6/7/16)
 - Setup-Skript Generator (`POST /api/energy-monitoring/devices/{device_id}/dse5510-setup`)

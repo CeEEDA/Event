@@ -354,6 +354,15 @@ async def download_schnelltest_script():
     return FileResponse(script_path, media_type="text/x-python", filename="schnelltest_dse.py")
 
 
+@router.get("/dse5510-sync")
+async def download_dse5510_sync_script():
+    """Download the DSE 5510 sync script for Raspberry Pi."""
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "dse5510_sync.py")
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail="DSE5510-Sync-Skript nicht gefunden")
+    return FileResponse(script_path, media_type="text/x-python", filename="dse5510_sync.py")
+
+
 @router.get("/{generator_id}")
 async def get_generator(generator_id: str, user: dict = Depends(get_authenticated_user)):
     gen = await _resolve_generator(generator_id)

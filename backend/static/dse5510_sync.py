@@ -243,7 +243,7 @@ def read_uint16(ser, register, slave_id):
     if regs is None:
         return None
     val = regs[0]
-    if val in GENCOMM_NA_VALUES:
+    if val in GENCOMM_NA_VALUES or val in GENCOMM_NA_SIGNED:
         return None
     return val
 
@@ -823,24 +823,37 @@ def main():
                 consecutive_errors = 0
 
                 # Stoerungserkennung
-                if data.get("coolant_temp_c", 0) > 100 and not prev_alarm_state.get("overtemp"):
-                    store_alarm(conf["db_path"], "overtemp", 1, f"Kuehlmittel-Uebertemperatur: {data['coolant_temp_c']}C")
+                # Plausibilitaetsgrenzen: Werte ausserhalb physikalisch moeglicher
+                # Bereiche sind Sentinel-Reste und werden ignoriert
+                coolant = data.get("coolant_temp_c", 0)
+                oil_kpa = data.get("oil_pressure_kpa", 0)
+                batt_v = data.get("battery_voltage", 0)
+                engine_rpm = data.get("rpm", 0)
+
+                # Kuehlmitteltemperatur: nur 1-300C ist physikalisch moeglich
+                coolant_valid = 0 < coolant < 300
+                if coolant_valid and coolant > 100 and not prev_alarm_state.get("overtemp"):
+                    store_alarm(conf["db_path"], "overtemp", 1, f"Kuehlmittel-Uebertemperatur: {coolant}C")
                     prev_alarm_state["overtemp"] = True
-                elif data.get("coolant_temp_c", 0) <= 95 and prev_alarm_state.get("overtemp"):
+                elif (not coolant_valid or coolant <= 95) and prev_alarm_state.get("overtemp"):
                     clear_alarm(conf["db_path"], "overtemp")
                     prev_alarm_state["overtemp"] = False
 
-                if data.get("oil_pressure_kpa", 999) < 100 and data.get("rpm", 0) > 500 and not prev_alarm_state.get("low_oil"):
-                    store_alarm(conf["db_path"], "low_oil_pressure", 2, f"Niedriger Oeldruck: {data['oil_pressure_kpa']}kPa bei {data['rpm']}rpm")
+                # Oeldruck: nur pruefen wenn Motor laeuft (RPM > 500) und Wert plausibel (< 2000 kPa)
+                oil_valid = 0 < oil_kpa < 2000
+                if oil_valid and oil_kpa < 100 and engine_rpm > 500 and not prev_alarm_state.get("low_oil"):
+                    store_alarm(conf["db_path"], "low_oil_pressure", 2, f"Niedriger Oeldruck: {oil_kpa}kPa bei {engine_rpm}rpm")
                     prev_alarm_state["low_oil"] = True
-                elif data.get("oil_pressure_kpa", 0) >= 150 and prev_alarm_state.get("low_oil"):
+                elif (not oil_valid or oil_kpa >= 150 or engine_rpm <= 500) and prev_alarm_state.get("low_oil"):
                     clear_alarm(conf["db_path"], "low_oil_pressure")
                     prev_alarm_state["low_oil"] = False
 
-                if data.get("battery_voltage", 99) < 10.5 and not prev_alarm_state.get("low_batt"):
-                    store_alarm(conf["db_path"], "low_battery", 3, f"Niedrige Batteriespannung: {data['battery_voltage']}V")
+                # Batteriespannung: nur 1-50V ist plausibel
+                batt_valid = 0 < batt_v < 50
+                if batt_valid and batt_v < 10.5 and not prev_alarm_state.get("low_batt"):
+                    store_alarm(conf["db_path"], "low_battery", 3, f"Niedrige Batteriespannung: {batt_v}V")
                     prev_alarm_state["low_batt"] = True
-                elif data.get("battery_voltage", 0) >= 11.5 and prev_alarm_state.get("low_batt"):
+                elif (not batt_valid or batt_v >= 11.5) and prev_alarm_state.get("low_batt"):
                     clear_alarm(conf["db_path"], "low_battery")
                     prev_alarm_state["low_batt"] = False
 
