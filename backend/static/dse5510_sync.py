@@ -522,8 +522,9 @@ def poll_commands(conf, ser):
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
-    """Fuehrt einen DSE-Steuerbefehl direkt zwischen Read-Zyklen aus.
-    Der Port bleibt offen - Write wird inline im aktiven Kommunikationszyklus gesendet."""
+    """Schleust einen Write-Befehl in den laufenden Read-Takt ein.
+    Kein Buffer-Reset, keine Pausen - einfach senden und weitermachen.
+    DSE GenComm sendet keine Write-Bestaetigung, daher fire-and-forget."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -533,58 +534,23 @@ def execute_command(ser, slave_id, command_name):
     complement = cmd["complement"]
 
     try:
-        log.info(f"Sende Befehl: {cmd['label']} (Key={key}, Comp={complement})")
+        # Frame bauen
+        frame = struct.pack(">BBHHB", slave_id, 0x10, REG_CONTROL_KEY, 2, 4)
+        frame += struct.pack(">H", key)
+        frame += struct.pack(">H", complement)
+        frame += _calc_crc(frame)
 
-        # Einen normalen Read ausfuehren um den DSE "wach" zu halten
-        read_frame = struct.pack(">BBHH", slave_id, 0x03, 1024, 1)
-        read_frame += _calc_crc(read_frame)
-        ser.reset_input_buffer()
-        ser.write(read_frame)
-        time.sleep(0.3)
-        read_resp = ser.read(ser.in_waiting or 20)
+        # Einfach senden - KEIN reset_input_buffer, KEIN sleep vorher
+        ser.write(frame)
+        log.info(f"Befehl gesendet: {cmd['label']} (TX: {frame.hex()})")
 
-        # Sofort danach den Write-Befehl senden (gleicher Kommunikationszyklus)
-        write_frame = struct.pack(">BBHHB", slave_id, 0x10, REG_CONTROL_KEY, 2, 4)
-        write_frame += struct.pack(">H", key)
-        write_frame += struct.pack(">H", complement)
-        write_frame += _calc_crc(write_frame)
-
-        ser.reset_input_buffer()
-        ser.write(write_frame)
-        time.sleep(1.5)
-        response = ser.read(ser.in_waiting or 50)
-
-        if len(response) > 0 and response[0] == slave_id and not (response[1] & 0x80):
-            log.info(f"Befehl OK: {cmd['label']} (RX: {len(response)} bytes)")
-            return True
-        elif len(response) > 0:
-            log.warning(f"Befehl Antwort: {response.hex()} ({len(response)} bytes)")
-            # Pruefen ob es eine verspätete Read-Antwort ist die den Write bestaetigt
-            # DSE GenComm sendet FC03 als Bestaetigung
-            if response[0] == slave_id:
-                log.info(f"Befehl wahrscheinlich OK (FC03 Read-Back): {cmd['label']}")
-                return True
-        else:
-            log.warning(f"Keine Antwort auf Write")
-
-        # Retry: Nochmal Read dann sofort Write
+        # Kurz warten und schauen ob was zurueckkommt (optional)
         time.sleep(0.5)
-        ser.reset_input_buffer()
-        ser.write(read_frame)
-        time.sleep(0.3)
-        ser.read(ser.in_waiting or 20)
+        resp = ser.read(ser.in_waiting or 1)
+        if len(resp) > 0:
+            log.info(f"  RX: {resp.hex()} ({len(resp)} bytes)")
 
-        ser.reset_input_buffer()
-        ser.write(write_frame)
-        time.sleep(1.5)
-        response = ser.read(ser.in_waiting or 50)
-
-        if len(response) > 0 and response[0] == slave_id:
-            log.info(f"Befehl OK (Retry): {cmd['label']} ({len(response)} bytes)")
-            return True
-
-        log.error(f"Befehl fehlgeschlagen: {command_name}")
-        return False
+        return True  # Fire-and-forget - DSE sendet keine Write-Bestaetigung
     except Exception as e:
         log.error(f"Fehler: {command_name}: {e}")
         return False
