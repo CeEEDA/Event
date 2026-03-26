@@ -237,7 +237,7 @@ def _raw_read(ser, slave, register, count, timeout_s=0.25):
     return regs
 
 
-def _raw_write(ser, slave, register, values, timeout_s=0.5):
+def _raw_write(ser, slave, register, values, timeout_s=1.0):
     """Schreibt Modbus Holding Register via rohem Serial (FC16)."""
     count = len(values)
     byte_count = count * 2
@@ -246,48 +246,64 @@ def _raw_write(ser, slave, register, values, timeout_s=0.5):
         frame += struct.pack(">H", v)
     frame += _calc_crc(frame)
 
+    log.info(f"  TX FC16: {frame.hex()}")
+
     ser.reset_input_buffer()
     ser.write(frame)
-    time.sleep(timeout_s)
 
-    response = ser.read(20)
+    # Laenger warten und alles lesen was kommt
+    time.sleep(timeout_s)
+    response = ser.read(ser.in_waiting or 20)
+
+    if len(response) > 0:
+        log.info(f"  RX: {response.hex()} ({len(response)} bytes)")
+    else:
+        log.warning(f"  RX: LEER (0 bytes) - DSE antwortet nicht auf FC16 @{register}")
+        return False
+
     if len(response) < 6:
-        log.warning(f"Write FC16: Keine/kurze Antwort ({len(response)} bytes) fuer Register {register}")
+        log.warning(f"  Antwort zu kurz: {len(response)} bytes")
         return False
     if response[0] != slave:
-        log.warning(f"Write FC16: Falsche Slave-ID: {response[0]} != {slave}")
+        log.warning(f"  Falsche Slave-ID: {response[0]} != {slave}")
         return False
     if response[1] & 0x80:
-        log.warning(f"Write FC16: Modbus Fehler 0x{response[2]:02X} fuer Register {register}")
+        log.warning(f"  Modbus Exception: 0x{response[2]:02X}")
         return False
     if response[1] != 0x10:
-        log.warning(f"Write FC16: Unerwartete Funktion: 0x{response[1]:02X}")
+        log.warning(f"  Unerwartete Funktion: 0x{response[1]:02X}")
         return False
     return True
 
 
-def _raw_write_single(ser, slave, register, value, timeout_s=0.5):
+def _raw_write_single(ser, slave, register, value, timeout_s=1.0):
     """Schreibt ein einzelnes Modbus Holding Register via FC06."""
     frame = struct.pack(">BBH", slave, 0x06, register)
     frame += struct.pack(">H", value)
     frame += _calc_crc(frame)
 
+    log.info(f"  TX FC06: {frame.hex()}")
+
     ser.reset_input_buffer()
     ser.write(frame)
-    time.sleep(timeout_s)
 
-    response = ser.read(20)
+    time.sleep(timeout_s)
+    response = ser.read(ser.in_waiting or 20)
+
+    if len(response) > 0:
+        log.info(f"  RX: {response.hex()} ({len(response)} bytes)")
+    else:
+        log.warning(f"  RX: LEER (0 bytes) - DSE antwortet nicht auf FC06 @{register}")
+        return False
+
     if len(response) < 6:
-        log.warning(f"Write FC06: Keine/kurze Antwort ({len(response)} bytes) fuer Register {register}")
         return False
     if response[0] != slave:
-        log.warning(f"Write FC06: Falsche Slave-ID: {response[0]} != {slave}")
         return False
     if response[1] & 0x80:
-        log.warning(f"Write FC06: Modbus Fehler 0x{response[2]:02X} fuer Register {register}")
+        log.warning(f"  Modbus Exception: 0x{response[2]:02X}")
         return False
     if response[1] != 0x06:
-        log.warning(f"Write FC06: Unerwartete Funktion: 0x{response[1]:02X}")
         return False
     return True
 
@@ -530,41 +546,39 @@ def execute_command(ser, slave_id, command_name):
 
         log.info(f"Fuehre Befehl aus: {cmd['label']} (Key={key}, Comp={complement})")
 
-        # Methode 1: FC16 an Register 4104 (GenSet Control)
+        # Methode 1: FC16 an Register 4104 (GenSet Control) - Slave aus Config
         success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement])
         if success:
-            log.info(f"Befehl OK (FC16 @4104): {cmd['label']}")
+            log.info(f"Befehl OK (FC16 @4104 Slave {slave_id}): {cmd['label']}")
             return True
 
         # Methode 2: FC06 einzeln an Register 4104
-        time.sleep(0.5)
+        time.sleep(0.3)
         ser.reset_input_buffer()
         s1 = _raw_write_single(ser, slave_id, REG_CONTROL_KEY, key)
         if s1:
             time.sleep(0.1)
             s2 = _raw_write_single(ser, slave_id, REG_CONTROL_KEY + 1, complement)
             if s2:
-                log.info(f"Befehl OK (FC06 @4104): {cmd['label']}")
+                log.info(f"Befehl OK (FC06 @4104 Slave {slave_id}): {cmd['label']}")
                 return True
 
-        # Methode 3: FC16 an Register 4096 (Module Control)
-        time.sleep(0.5)
+        # Methode 3: Slave ID 1 (manche DSE nutzen Slave 1 fuer Steuerung)
+        if slave_id != 1:
+            time.sleep(0.3)
+            ser.reset_input_buffer()
+            success = _raw_write(ser, 1, REG_CONTROL_KEY, [key, complement])
+            if success:
+                log.info(f"Befehl OK (FC16 @4104 Slave 1): {cmd['label']}")
+                return True
+
+        # Methode 4: FC16 an Register 4096 (Module Control)
+        time.sleep(0.3)
         ser.reset_input_buffer()
         success = _raw_write(ser, slave_id, PAGE16, [key, complement])
         if success:
-            log.info(f"Befehl OK (FC16 @4096): {cmd['label']}")
+            log.info(f"Befehl OK (FC16 @4096 Slave {slave_id}): {cmd['label']}")
             return True
-
-        # Methode 4: FC06 einzeln an Register 4096
-        time.sleep(0.5)
-        ser.reset_input_buffer()
-        s1 = _raw_write_single(ser, slave_id, PAGE16, key)
-        if s1:
-            time.sleep(0.1)
-            s2 = _raw_write_single(ser, slave_id, PAGE16 + 1, complement)
-            if s2:
-                log.info(f"Befehl OK (FC06 @4096): {cmd['label']}")
-                return True
 
         log.error(f"Befehl fehlgeschlagen (alle 4 Methoden): {command_name}")
         return False
