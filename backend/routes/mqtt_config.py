@@ -294,6 +294,7 @@ DSE_COMMANDS = {
     "test_on_load":        {"key": 35703, "complement": 29832, "label": "Testlauf unter Last"},
     "auto_manual_restore": {"key": 35704, "complement": 29831, "label": "Auto mit manueller Rueckkehr"},
     "start":               {"key": 35705, "complement": 29830, "label": "Motor starten (Manuell/Test)"},
+    "mute":                {"key": 35706, "complement": 29829, "label": "Alarm stumm"},
     "reset":               {"key": 35707, "complement": 29828, "label": "Alarme zuruecksetzen"},
     "gen_switch_on":       {"key": 35708, "complement": 29827, "label": "Generator zuschalten"},
     "gen_switch_off":      {"key": 35709, "complement": 29826, "label": "Generator abschalten"},

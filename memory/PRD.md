@@ -173,6 +173,14 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Windows Installer (.exe) fuer Electron Desktop App
 - Health-Check / Monitoring fuer Portal-Erreichbarkeit
 
+### DSE Control Panel Redesign (abgeschlossen - 2026-03-26)
+- Original DSE 5510 Button-Bilder als interaktive Steuerungsbuttons integriert
+- 5 Hauptbuttons: Stop, Manuell, Auto, Hupe Aus (NEU), Start
+- 2 Status-Anzeigen: "Generator bereit" + "Hauptschalter geschlossen" mit DSE-Icons
+- Dunkles Panel-Design passend zum echten DSE-Controller
+- Neuer Befehl: "mute" (Key 35706) fuer Alarm-Stummschaltung
+- Download-Endpoint: GET /api/generators/dse5510-sync
+
 ### DSE 5510 Sentinel-Wert Fix (abgeschlossen - 2026-03-26)
 - P0 Bug: GenComm Sentinel-Werte (0x7FFB=32763, 0xFFFB=65531) loesten Fehlalarme aus bei ausgeschaltetem Generator
 - Root Cause: `read_uint16()` filterte nur `GENCOMM_NA_VALUES`, nicht `GENCOMM_NA_SIGNED` -> 32763 wurde als gueltige Temperatur interpretiert

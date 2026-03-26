@@ -344,133 +344,165 @@ export default function GeneratorDetailPage() {
           const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
           const isAuto = generator.status === "online" || generator.status === "standby";
           const hasPower = (t?.power_total_w || t?.power_kw) > 0;
+          const genReady = hasPower || isRunning;
+          const switchClosed = hasPower && isRunning;
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
 
-          const DseBtn = ({ cmd, label, icon, active, activeColor, activeGlow, size = "w-11 h-11", textSize = "text-base" }) => (
+          const DseImgBtn = ({ cmd, label, imgSrc, active, glowColor, size = 64 }) => (
             <button
               onClick={() => sendCommand(cmd, label)}
               disabled={cmdLoading !== null}
-              className="group disabled:opacity-50 focus:outline-none"
+              className="group disabled:opacity-40 focus:outline-none flex flex-col items-center"
               data-testid={`cmd-${cmd}-btn`}
             >
-              <div className={`${size} rounded-full flex items-center justify-center transition-all duration-150
-                ${active
-                  ? `bg-gradient-to-b ${activeColor} ring-2 ring-gray-300 ring-offset-1`
-                  : "bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 ring-2 ring-gray-300 ring-offset-1 group-hover:from-gray-300 group-hover:via-gray-400 group-hover:to-gray-500"
-                }`}
-                style={{boxShadow: active
-                  ? `0 3px 10px ${activeGlow || 'rgba(0,0,0,0.2)'}, inset 0 1px 3px rgba(255,255,255,0.25)`
-                  : '0 2px 6px rgba(0,0,0,0.12), inset 0 1px 3px rgba(255,255,255,0.4)'}}
+              <div
+                className="relative rounded-full transition-all duration-200"
+                style={{
+                  width: size, height: size,
+                  filter: active ? `drop-shadow(0 0 10px ${glowColor || 'rgba(255,255,255,0.4)'})` : 'none',
+                  transform: cmdLoading === cmd ? 'scale(0.92)' : 'scale(1)',
+                }}
               >
-                {typeof icon === 'string'
-                  ? <span className={`${textSize} font-bold ${active ? "text-white" : "text-gray-600 group-hover:text-white"}`}>{icon}</span>
-                  : icon(active)}
+                <img
+                  src={imgSrc}
+                  alt={label}
+                  className="w-full h-full object-contain rounded-full transition-all duration-150 group-hover:brightness-110 group-active:brightness-90"
+                  draggable={false}
+                  style={{
+                    opacity: active ? 1 : 0.85,
+                  }}
+                />
+                {active && (
+                  <div
+                    className="absolute inset-0 rounded-full pointer-events-none"
+                    style={{
+                      boxShadow: `0 0 16px 4px ${glowColor || 'rgba(255,255,255,0.3)'}`,
+                    }}
+                  />
+                )}
               </div>
-              <span className="block text-[9px] text-gray-400 text-center mt-1 font-medium">
+              <span className="block text-[10px] text-gray-400 text-center mt-1.5 font-medium tracking-wide">
                 {cmdLoading === cmd ? "..." : label}
               </span>
             </button>
           );
 
+          const StatusIndicator = ({ on, label, imgSrc }) => (
+            <div className="flex items-center gap-2.5">
+              <div className="relative" style={{ width: 40, height: 40 }}>
+                <img
+                  src={imgSrc}
+                  alt={label}
+                  className="w-full h-full object-contain rounded-full"
+                  style={{
+                    opacity: on ? 1 : 0.3,
+                    filter: on ? 'drop-shadow(0 0 6px rgba(74,222,128,0.6))' : 'grayscale(100%)',
+                    transition: 'all 0.3s ease',
+                  }}
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-gray-600">{label}</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className={`w-8 h-3 rounded-sm border transition-colors duration-300 ${on ? "bg-emerald-400 border-emerald-500" : "bg-gray-200 border-gray-300"}`}
+                    style={on ? { boxShadow: '0 0 6px rgba(52,211,153,0.5)' } : {}} />
+                  <span className={`text-[10px] font-medium ${on ? "text-emerald-600" : "text-gray-400"}`}>
+                    {on ? "EIN" : "AUS"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+
           const StatusLed = ({ on, label }) => (
             <div className="flex items-center gap-1.5">
-              <div className={`w-7 h-3.5 rounded-sm border ${on ? "bg-emerald-400 border-emerald-500 shadow-[0_0_5px_rgba(52,211,153,0.5)]" : "bg-gray-200 border-gray-300"} transition-colors duration-300`} />
+              <div className={`w-8 h-3.5 rounded-sm border transition-colors duration-300 ${on ? "bg-emerald-400 border-emerald-500" : "bg-gray-200 border-gray-300"}`}
+                style={on ? { boxShadow: '0 0 6px rgba(52,211,153,0.5)' } : {}} />
               <span className="text-[10px] text-gray-500 font-medium">{label}</span>
             </div>
           );
 
           return (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="generator-controls">
-              {/* Status LEDs - only 5510 */}
+            <div className="bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-xl" data-testid="generator-controls">
+              {/* Header */}
+              <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">DSE Steuerung</span>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${isRunning ? "bg-emerald-400 animate-pulse" : "bg-gray-600"}`} />
+                  <span className={`text-[10px] font-medium ${isRunning ? "text-emerald-400" : "text-gray-500"}`}>
+                    {isRunning ? "Motor laeuft" : "Motor aus"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status LEDs Row */}
               {is5510 && (
-                <>
-                  <div className="px-5 pt-4 pb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-3 sm:gap-5">
-                      <StatusLed on={isRunning} label="Motor läuft" />
-                      <StatusLed on={isAuto} label="Auto-Modus" />
-                      <StatusLed on={hasPower} label="Generator bereit" />
-                      <StatusLed on={hasPower && isRunning} label="Trenner geschlossen" />
-                    </div>
-                    <span className="text-[10px] text-gray-400 font-mono">DSE Steuerung</span>
-                  </div>
-                  <div className="mx-4 border-t border-gray-200" />
-                </>
+                <div className="px-5 py-2.5 flex flex-wrap items-center gap-4 border-t border-gray-700/50">
+                  <StatusLed on={isRunning} label="Motor laeuft" />
+                  <StatusLed on={isAuto} label="Auto-Modus" />
+                </div>
               )}
 
-              {/* Main Buttons */}
-              <div className="px-5 py-4 flex items-end justify-center gap-3 sm:gap-4 flex-wrap">
-                {/* Stop */}
-                <DseBtn cmd="stop" label="Stop"
+              {/* Status Indicators: Generator bereit + Hauptschalter geschlossen */}
+              {is5510 && (
+                <div className="px-5 py-4 flex flex-wrap items-center justify-center gap-8 border-t border-gray-700/50">
+                  <StatusIndicator on={genReady} label="Generator bereit" imgSrc="/dse-buttons/geno.png" />
+                  <StatusIndicator on={switchClosed} label="Hauptschalter geschlossen" imgSrc="/dse-buttons/netz.png" />
+                </div>
+              )}
+
+              {/* Main Control Buttons */}
+              <div className="px-5 py-5 flex items-end justify-center gap-4 sm:gap-6 flex-wrap border-t border-gray-700/50">
+                <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
                   active={!isRunning && !isAuto}
-                  activeColor="from-red-400 via-red-600 to-red-800"
-                  activeGlow="rgba(220,38,38,0.4)"
-                  icon="O" />
+                  glowColor="rgba(239,68,68,0.5)" size={68} />
 
-                {/* Manual - only 5510 */}
                 {is5510 && (
-                  <DseBtn cmd="manual" label="Manuell"
+                  <DseImgBtn cmd="manual" label="Manuell" imgSrc="/dse-buttons/hand.png"
                     active={false}
-                    activeColor="from-amber-300 via-amber-400 to-amber-600"
-                    activeGlow="rgba(245,158,11,0.4)"
-                    icon={(a) => (
-                      <svg viewBox="0 0 24 24" className={`w-5 h-5 ${a ? "text-white" : "text-gray-500 group-hover:text-white"}`} fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 11V6a2 2 0 0 0-2-2h-3a2 2 0 0 0-2 2M7 11V9a2 2 0 0 1 4 0v2M11 11V4a2 2 0 0 1 4 0v7M18 11a2 2 0 0 1 2 2v1a8 8 0 0 1-8 8h-2c-2.3 0-4.3-1-5.8-2.7L2 17.2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )} />
+                    glowColor="rgba(251,191,36,0.4)" size={68} />
                 )}
 
-                {/* Auto */}
-                <DseBtn cmd="auto_on" label="Auto"
+                <DseImgBtn cmd="auto_on" label="Auto" imgSrc="/dse-buttons/auto.png"
                   active={isAuto}
-                  activeColor="from-teal-200 via-teal-300 to-teal-500"
-                  activeGlow="rgba(20,184,166,0.35)"
-                  icon={(a) => <span className={`text-[8px] font-extrabold ${a ? "text-teal-900" : "text-gray-500 group-hover:text-gray-700"}`}>AUTO</span>} />
+                  glowColor="rgba(52,211,153,0.5)" size={68} />
 
-                {/* Reset - only 5510 */}
                 {is5510 && (
-                  <DseBtn cmd="reset" label="Reset"
+                  <DseImgBtn cmd="mute" label="Hupe Aus" imgSrc="/dse-buttons/hupe-aus.png"
                     active={false}
-                    activeColor="from-gray-300 via-gray-400 to-gray-500"
-                    activeGlow="rgba(0,0,0,0.2)"
-                    icon={(a) => (
-                      <svg viewBox="0 0 24 24" className={`w-4.5 h-4.5 ${a ? "text-white" : "text-gray-500 group-hover:text-white"}`} fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <circle cx="12" cy="12" r="9" strokeWidth="2"/>
-                        <line x1="5" y1="5" x2="19" y2="19" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
-                    )} />
+                    glowColor="rgba(239,68,68,0.3)" size={68} />
                 )}
 
-                {/* Start */}
-                <DseBtn cmd="start" label="Start"
+                <DseImgBtn cmd="start" label="Start" imgSrc="/dse-buttons/start.png"
                   active={isRunning}
-                  activeColor="from-emerald-300 via-emerald-500 to-emerald-700"
-                  activeGlow="rgba(16,185,129,0.4)"
-                  icon="I" />
+                  glowColor="rgba(34,197,94,0.5)" size={68} />
               </div>
 
               {/* Transfer Switches - only 5510 */}
               {is5510 && (
-                <>
-                  <div className="mx-4 border-t border-gray-200" />
-                  <div className="px-5 py-3 flex items-end justify-center gap-4">
-                    <DseBtn cmd="gen_switch_on" label="Gen EIN" size="w-10 h-10"
-                      active={hasPower && isRunning}
-                      activeColor="from-blue-300 via-blue-500 to-blue-700"
-                      activeGlow="rgba(59,130,246,0.4)"
-                      icon={(a) => <Zap className={`w-4 h-4 ${a ? "text-white" : "text-gray-500 group-hover:text-white"}`} />} />
-                    <DseBtn cmd="gen_switch_off" label="Gen AUS" size="w-10 h-10"
-                      active={false}
-                      activeColor="from-orange-300 via-orange-500 to-orange-700"
-                      activeGlow="rgba(249,115,22,0.4)"
-                      icon={(a) => <ZapOff className={`w-4 h-4 ${a ? "text-white" : "text-gray-500 group-hover:text-white"}`} />} />
-                    <DseBtn cmd="reset_mains" label="Netz Reset" size="w-10 h-10"
-                      active={false}
-                      activeColor="from-gray-300 via-gray-400 to-gray-500"
-                      activeGlow="rgba(0,0,0,0.2)"
-                      icon={(a) => <RefreshCw className={`w-3.5 h-3.5 ${a ? "text-white" : "text-gray-500 group-hover:text-white"}`} />} />
-                  </div>
-                </>
+                <div className="px-5 py-4 flex items-end justify-center gap-5 border-t border-gray-700/50">
+                  <DseImgBtn cmd="gen_switch_on" label="Gen EIN" imgSrc="/dse-buttons/geno.png"
+                    active={switchClosed}
+                    glowColor="rgba(59,130,246,0.5)" size={52} />
+                  <DseImgBtn cmd="gen_switch_off" label="Gen AUS" imgSrc="/dse-buttons/netz.png"
+                    active={false}
+                    glowColor="rgba(249,115,22,0.4)" size={52} />
+                  <button
+                    onClick={() => sendCommand("reset", "Alarme zuruecksetzen")}
+                    disabled={cmdLoading !== null}
+                    className="group disabled:opacity-40 focus:outline-none flex flex-col items-center"
+                    data-testid="cmd-reset-btn"
+                  >
+                    <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-b from-gray-500 via-gray-600 to-gray-700 flex items-center justify-center ring-2 ring-gray-500/50 transition-all group-hover:brightness-125 group-active:scale-95"
+                      style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.3), inset 0 1px 2px rgba(255,255,255,0.1)' }}>
+                      <RotateCcw className="w-5 h-5 text-gray-300 group-hover:text-white" />
+                    </div>
+                    <span className="block text-[10px] text-gray-400 text-center mt-1.5 font-medium tracking-wide">
+                      {cmdLoading === "reset" ? "..." : "Reset"}
+                    </span>
+                  </button>
+                </div>
               )}
             </div>
           );
