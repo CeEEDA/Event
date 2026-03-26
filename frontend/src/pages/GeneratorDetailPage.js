@@ -691,21 +691,55 @@ export default function GeneratorDetailPage() {
                 {/* Leistung */}
                 <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-power-chart">
                   <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Leistung (kW) &amp; Energie (kWh)
+                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Leistung (kW)
                   </h3>
                   <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={chartData}>
+                    <AreaChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
-                      <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ fontSize: 12 }} />
-                      <Legend wrapperStyle={{ fontSize: 10 }} />
-                      <Line yAxisId="left" type="monotone" dataKey="P_kW" name="kW" stroke="#A855F7" strokeWidth={1.5} dot={false} />
-                      <Line yAxisId="right" type="monotone" dataKey="kWh" name="kWh" stroke="#F59E0B" strokeWidth={1.5} dot={false} />
-                    </LineChart>
+                      <Area type="monotone" dataKey="P_kW" name="kW" stroke="#A855F7" fill="#A855F7" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
+
+                {/* kWh Zaehlerstand */}
+                {(() => {
+                  const first = analyseData.find(r => r.energy_kwh && r.energy_kwh > 0);
+                  const last = [...analyseData].reverse().find(r => r.energy_kwh && r.energy_kwh > 0);
+                  const startKwh = first?.energy_kwh || 0;
+                  const endKwh = last?.energy_kwh || 0;
+                  const diff = Math.round((endKwh - startKwh) * 10) / 10;
+                  const startTs = first ? new Date(first.timestamp).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "–";
+                  const endTs = last ? new Date(last.timestamp).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "–";
+                  return (
+                    <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-kwh-meter">
+                      <h3 className="text-xs font-semibold text-gray-700 mb-4 flex items-center gap-1.5">
+                        <Gauge className="w-3.5 h-3.5 text-amber-500" /> Energiezaehler (kWh)
+                      </h3>
+                      <div className="grid grid-cols-3 gap-6">
+                        <div className="text-center">
+                          <span className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Start</span>
+                          <span className="block text-2xl font-bold text-gray-800" data-testid="kwh-start">{startKwh.toLocaleString("de-DE", { minimumFractionDigits: 1 })}</span>
+                          <span className="block text-[10px] text-gray-400 mt-0.5">kWh</span>
+                          <span className="block text-[10px] text-gray-300 mt-1">{startTs}</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Ende</span>
+                          <span className="block text-2xl font-bold text-gray-800" data-testid="kwh-end">{endKwh.toLocaleString("de-DE", { minimumFractionDigits: 1 })}</span>
+                          <span className="block text-[10px] text-gray-400 mt-0.5">kWh</span>
+                          <span className="block text-[10px] text-gray-300 mt-1">{endTs}</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="block text-[10px] text-gray-400 uppercase tracking-wider mb-1">Verbrauch</span>
+                          <span className={`block text-2xl font-bold ${diff > 0 ? "text-fuchsia-600" : "text-gray-400"}`} data-testid="kwh-diff">{diff.toLocaleString("de-DE", { minimumFractionDigits: 1 })}</span>
+                          <span className="block text-[10px] text-gray-400 mt-0.5">kWh</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Spannung + Strom */}
                 <div className="grid md:grid-cols-2 gap-4">
