@@ -382,6 +382,15 @@ async def download_register_scanner():
     return FileResponse(script_path, media_type="text/x-python", filename="scan_registers.py")
 
 
+@router.get("/scan-full")
+async def download_full_scanner():
+    """Download the full DSE register scanner script."""
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "scan_full.py")
+    if not os.path.exists(script_path):
+        raise HTTPException(status_code=404, detail="Scanner-Skript nicht gefunden")
+    return FileResponse(script_path, media_type="text/x-python", filename="scan_full.py")
+
+
 
 @router.get("/{generator_id}")
 async def get_generator(generator_id: str, user: dict = Depends(get_authenticated_user)):
