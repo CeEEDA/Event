@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://modbus-dash.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://modbus-dash.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://modbus-dash.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://fairground-mgmt.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://fairground-mgmt.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://fairground-mgmt.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }

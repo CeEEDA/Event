@@ -522,9 +522,9 @@ def poll_commands(conf, ser):
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
-    """Schleust einen Write-Befehl in den laufenden Read-Takt ein.
-    Kein Buffer-Reset, keine Pausen - einfach senden und weitermachen.
-    DSE GenComm sendet keine Write-Bestaetigung, daher fire-and-forget."""
+    """Fuehrt den Write-Befehl in einem SEPARATEN Prozess aus.
+    Genau wie beim Diagnose-Skript: eigener File-Descriptor auf den Serial-Port.
+    Der Hauptprozess liest weiter - der Subprocess schreibt parallel."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -532,25 +532,44 @@ def execute_command(ser, slave_id, command_name):
 
     key = cmd["key"]
     complement = cmd["complement"]
+    port_name = ser.port
+    baudrate = ser.baudrate
 
+    # Python-Einzeiler der den Write in einem eigenen Prozess ausfuehrt
+    py_cmd = f"""
+import serial, struct, time, sys
+def crc(d):
+    c=0xFFFF
+    for b in d:
+        c^=b
+        for _ in range(8):
+            c=(c>>1)^0xA001 if c&1 else c>>1
+    return struct.pack("<H",c)
+ser=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=2)
+time.sleep(0.3)
+f=struct.pack(">BBHHB",{slave_id},0x10,{REG_CONTROL_KEY},2,4)
+f+=struct.pack(">HH",{key},{complement})
+f+=crc(f)
+ser.write(f)
+time.sleep(1.5)
+r=ser.read(ser.in_waiting or 50)
+ser.close()
+print(f"OK:{{len(r)}}:{{r.hex() if r else 'leer'}}")
+"""
     try:
-        # Frame bauen
-        frame = struct.pack(">BBHHB", slave_id, 0x10, REG_CONTROL_KEY, 2, 4)
-        frame += struct.pack(">H", key)
-        frame += struct.pack(">H", complement)
-        frame += _calc_crc(frame)
-
-        # Einfach senden - KEIN reset_input_buffer, KEIN sleep vorher
-        ser.write(frame)
-        log.info(f"Befehl gesendet: {cmd['label']} (TX: {frame.hex()})")
-
-        # Kurz warten und schauen ob was zurueckkommt (optional)
-        time.sleep(0.5)
-        resp = ser.read(ser.in_waiting or 1)
-        if len(resp) > 0:
-            log.info(f"  RX: {resp.hex()} ({len(resp)} bytes)")
-
-        return True  # Fire-and-forget - DSE sendet keine Write-Bestaetigung
+        import subprocess
+        log.info(f"Sende Befehl (Subprocess): {cmd['label']} (Key={key})")
+        result = subprocess.run(
+            [sys.executable, "-c", py_cmd],
+            capture_output=True, text=True, timeout=10
+        )
+        output = result.stdout.strip()
+        log.info(f"Subprocess Ergebnis: {output}")
+        if output.startswith("OK:"):
+            return True
+        if result.stderr:
+            log.warning(f"Subprocess Fehler: {result.stderr.strip()[:200]}")
+        return False
     except Exception as e:
         log.error(f"Fehler: {command_name}: {e}")
         return False

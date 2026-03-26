@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://modbus-dash.preview.emergentagent.com"
+                "origin_url": "https://fairground-mgmt.preview.emergentagent.com"
             },
             timeout=30
         )
