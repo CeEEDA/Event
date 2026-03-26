@@ -565,8 +565,10 @@ async def ingest_telemetry(generator_id: str, data: TelemetryPayload):
 @router.get("/{generator_id}/telemetry")
 async def get_telemetry(
     generator_id: str,
-    hours: int = Query(default=24, ge=1, le=168),
-    limit: int = Query(default=200, ge=1, le=1000),
+    hours: int = Query(default=24, ge=1, le=8760),
+    limit: int = Query(default=5000, ge=1, le=50000),
+    from_time: str = Query(default=None),
+    to_time: str = Query(default=None),
     user: dict = Depends(get_authenticated_user),
 ):
     gen = await _resolve_generator(generator_id)
@@ -576,12 +578,19 @@ async def get_telemetry(
     if user["role"] == "kunde" and gen.get("assigned_customer_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    # Zeitfilter: from_time/to_time hat Vorrang vor hours
+    if from_time:
+        since = from_time
+    else:
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+    query = {"generator_id": generator_id, "timestamp": {"$gte": since}}
+    if to_time:
+        query["timestamp"]["$lte"] = to_time
 
     telemetry = await db.generator_telemetry.find(
-        {"generator_id": generator_id, "timestamp": {"$gte": since}},
-        {"_id": 0}
-    ).sort("timestamp", -1).to_list(limit)
+        query, {"_id": 0}
+    ).sort("timestamp", 1).to_list(limit)
 
     # Normalize Pi-ingest fields for chart compatibility
     for t in telemetry:

@@ -5,6 +5,8 @@ import { Logo } from "../components/Logo";
 import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import {
   ArrowLeft,
   RefreshCw,
@@ -26,15 +28,20 @@ import {
   ClipboardList,
   ZapOff,
   FileText,
+  Download,
+  BarChart3,
 } from "lucide-react";
 import {
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   Area,
   AreaChart,
+  Line,
+  LineChart,
 } from "recharts";
 
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
@@ -181,44 +188,6 @@ function AlarmRow({ alarm, onAcknowledge, onResolve }) {
   );
 }
 
-function TelemetryChart({ data, dataKeys, title, colors, unit }) {
-  if (!data || data.length === 0) return null;
-
-  const chartData = [...data].reverse().map((d) => ({
-    ...d,
-    time: new Date(d.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
-  }));
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4">
-      <h3 className="text-xs text-gray-400 uppercase tracking-wider mb-3 font-medium">{title}</h3>
-      <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-          <XAxis dataKey="time" tick={{ fill: "#9CA3AF", fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fill: "#9CA3AF", fontSize: 10 }} width={40} unit={unit} />
-          <Tooltip
-            contentStyle={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: "8px", fontSize: "12px" }}
-            labelStyle={{ color: "#6B7280" }}
-          />
-          {dataKeys.map((key, i) => (
-            <Area
-              key={key}
-              type="monotone"
-              dataKey={key}
-              stroke={colors[i]}
-              fill={colors[i]}
-              fillOpacity={0.1}
-              strokeWidth={1.5}
-              dot={false}
-            />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 export default function GeneratorDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -230,6 +199,15 @@ export default function GeneratorDetailPage() {
   const [loading, setLoading] = useState(true);
   const [hours, setHours] = useState(24);
   const [cmdLoading, setCmdLoading] = useState(null);
+
+  // Analyse-Bereich
+  const today = new Date().toISOString().split("T")[0];
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+  const [analyseDateFrom, setAnalyseDateFrom] = useState(weekAgo);
+  const [analyseDateTo, setAnalyseDateTo] = useState(today);
+  const [analyseData, setAnalyseData] = useState([]);
+  const [analyseLoading, setAnalyseLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -248,6 +226,50 @@ export default function GeneratorDetailPage() {
       setLoading(false);
     }
   }, [id, hours, navigate]);
+
+  const fetchAnalyse = useCallback(async () => {
+    if (!analyseDateFrom || !analyseDateTo) return;
+    setAnalyseLoading(true);
+    try {
+      const from = new Date(analyseDateFrom).toISOString();
+      const to = new Date(analyseDateTo + "T23:59:59").toISOString();
+      const res = await api.get(`/generators/${id}/telemetry?from_time=${from}&to_time=${to}&limit=50000`);
+      setAnalyseData(res.data);
+    } catch {
+      toast.error("Fehler beim Laden der Analysedaten");
+    } finally {
+      setAnalyseLoading(false);
+    }
+  }, [id, analyseDateFrom, analyseDateTo]);
+
+  const handleExportCSV = () => {
+    if (analyseData.length === 0) return;
+    setExporting(true);
+    try {
+      const fields = ["timestamp", "voltage_l1", "voltage_l2", "voltage_l3", "current_l1", "current_l2", "current_l3",
+        "power_total_w", "power_kw", "frequency", "battery_voltage", "coolant_temp", "oil_pressure",
+        "fuel_level", "hours_run", "rpm", "dse_mode"];
+      const header = fields.join(";");
+      const rows = analyseData.map(r => fields.map(f => {
+        const v = r[f];
+        return v !== null && v !== undefined ? String(v) : "";
+      }).join(";"));
+      const csv = "\uFEFF" + [header, ...rows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const name = generator?.name || "generator";
+      a.href = url;
+      a.download = `${name}_${analyseDateFrom}_${analyseDateTo}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${analyseData.length} Datenpunkte exportiert`);
+    } catch {
+      toast.error("Export fehlgeschlagen");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -590,34 +612,190 @@ export default function GeneratorDetailPage() {
           </div>
         )}
 
-        {/* Time Range Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Zeitraum:</span>
-          {[6, 12, 24, 48].map((h) => (
-            <button
-              key={h}
-              onClick={() => setHours(h)}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                hours === h ? "bg-fuchsia-600 text-white" : "bg-white text-gray-500 border border-gray-200 hover:text-gray-700"
-              }`}
-              data-testid={`hours-${h}`}
-            >
-              {h}h
-            </button>
-          ))}
-        </div>
-
-        {/* Charts */}
-        {telemetry.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="telemetry-charts">
-            <TelemetryChart data={telemetry} dataKeys={["power_kw"]} title="Leistung (kW)" colors={["#A855F7"]} unit=" kW" />
-            <TelemetryChart data={telemetry} dataKeys={["load_percent"]} title="Auslastung (%)" colors={["#10B981"]} unit="%" />
-            <TelemetryChart data={telemetry} dataKeys={["voltage_l1", "voltage_l2", "voltage_l3"]} title="Spannung (V)" colors={["#A855F7", "#D946EF", "#10B981"]} unit=" V" />
-            <TelemetryChart data={telemetry} dataKeys={["coolant_temp"]} title="Kühlmitteltemperatur (°C)" colors={["#EF4444"]} unit="°C" />
-            <TelemetryChart data={telemetry} dataKeys={["frequency"]} title="Frequenz (Hz)" colors={["#3B82F6"]} unit=" Hz" />
-            <TelemetryChart data={telemetry} dataKeys={["fuel_level"]} title="Tankstand (%)" colors={["#8B5CF6"]} unit="%" />
+        {/* ============ Analyse-Bereich ============ */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="analyse-section">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-fuchsia-500" /> Analyse
+            </h2>
           </div>
-        )}
+
+          {/* Zeitraum + Export */}
+          <div className="px-5 py-4 flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <Label className="text-gray-500 text-xs">Von</Label>
+              <Input
+                type="date"
+                value={analyseDateFrom}
+                onChange={(e) => setAnalyseDateFrom(e.target.value)}
+                className="border-gray-300 text-sm w-[150px]"
+                data-testid="analyse-date-from"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-500 text-xs">Bis</Label>
+              <Input
+                type="date"
+                value={analyseDateTo}
+                onChange={(e) => setAnalyseDateTo(e.target.value)}
+                className="border-gray-300 text-sm w-[150px]"
+                data-testid="analyse-date-to"
+              />
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchAnalyse}
+              disabled={analyseLoading}
+              className="text-gray-600 hover:text-fuchsia-600"
+              data-testid="analyse-load-btn"
+            >
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${analyseLoading ? "animate-spin" : ""}`} />
+              {analyseLoading ? "Laden..." : "Laden"}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCSV}
+              disabled={exporting || analyseData.length === 0}
+              className="text-gray-600 hover:text-fuchsia-600"
+              data-testid="analyse-export-btn"
+            >
+              <Download className="w-4 h-4 mr-1.5" />
+              {exporting ? "Exportiert..." : "CSV Export"}
+            </Button>
+
+            <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
+              <Clock className="w-3 h-3" />
+              {analyseData.length} Datenpunkte
+            </span>
+          </div>
+
+          {/* Analyse-Charts */}
+          {analyseData.length > 0 && (() => {
+            const chartData = analyseData.map(r => ({
+              time: new Date(r.timestamp).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }),
+              P_kW: r.power_kw || (r.power_total_w ? Math.round(r.power_total_w / 100) / 10 : 0),
+              U_L1: r.voltage_l1 || 0, U_L2: r.voltage_l2 || 0, U_L3: r.voltage_l3 || 0,
+              I_L1: r.current_l1 || 0, I_L2: r.current_l2 || 0, I_L3: r.current_l3 || 0,
+              Freq: r.frequency || 0,
+              Batt: r.battery_voltage || 0,
+              Fuel: r.fuel_level || r.fuel_level_pct || 0,
+              Cool: r.coolant_temp || r.coolant_temp_c || 0,
+            }));
+            return (
+              <div className="px-5 pb-5 space-y-4">
+                {/* Leistung */}
+                <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-power-chart">
+                  <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Leistung (kW)
+                  </h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={{ fontSize: 12 }} />
+                      <Area type="monotone" dataKey="P_kW" name="Leistung" stroke="#A855F7" fill="#A855F7" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Spannung + Strom */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-voltage-chart">
+                    <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                      <Gauge className="w-3.5 h-3.5 text-blue-500" /> Spannung (V)
+                    </h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                        <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10 }} />
+                        <Tooltip contentStyle={{ fontSize: 12 }} />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        <Line type="monotone" dataKey="U_L1" name="L1" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
+                        <Line type="monotone" dataKey="U_L2" name="L2" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
+                        <Line type="monotone" dataKey="U_L3" name="L3" stroke="#10b981" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-current-chart">
+                    <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-green-500" /> Strom (A)
+                    </h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip contentStyle={{ fontSize: 12 }} />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        <Line type="monotone" dataKey="I_L1" name="L1" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
+                        <Line type="monotone" dataKey="I_L2" name="L2" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
+                        <Line type="monotone" dataKey="I_L3" name="L3" stroke="#10b981" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Frequenz, Batterie, Tank, Temperatur */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-freq-chart">
+                    <h3 className="text-xs font-semibold text-gray-700 mb-3">Frequenz (Hz)</h3>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
+                        <YAxis domain={["auto","auto"]} tick={{ fontSize: 9 }} />
+                        <Tooltip contentStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" dataKey="Freq" name="Hz" stroke="#3B82F6" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-batt-chart">
+                    <h3 className="text-xs font-semibold text-gray-700 mb-3">Batterie (V)</h3>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
+                        <YAxis domain={["auto","auto"]} tick={{ fontSize: 9 }} />
+                        <Tooltip contentStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" dataKey="Batt" name="V" stroke="#EAB308" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-fuel-chart">
+                    <h3 className="text-xs font-semibold text-gray-700 mb-3">Tankstand (%)</h3>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
+                        <YAxis domain={[0,100]} tick={{ fontSize: 9 }} />
+                        <Tooltip contentStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" dataKey="Fuel" name="%" stroke="#8B5CF6" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-cool-chart">
+                    <h3 className="text-xs font-semibold text-gray-700 mb-3">Temperatur (C)</h3>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <LineChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
+                        <YAxis tick={{ fontSize: 9 }} />
+                        <Tooltip contentStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" dataKey="Cool" name="C" stroke="#EF4444" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Generator Info (Admin) */}
         {isAdmin && (
