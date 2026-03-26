@@ -424,34 +424,12 @@ export default function GeneratorDetailPage() {
             </div>
           );
 
-          const StatusLed = ({ on, label }) => (
-            <div className="flex items-center gap-1.5">
-              <div className={`w-8 h-3.5 rounded-sm border transition-colors duration-300 ${on ? "bg-emerald-400 border-emerald-500" : "bg-gray-200 border-gray-300"}`}
-                style={on ? { boxShadow: '0 0 6px rgba(52,211,153,0.5)' } : {}} />
-              <span className="text-[10px] text-gray-500 font-medium">{label}</span>
-            </div>
-          );
-
           return (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm" data-testid="generator-controls">
               {/* Header */}
-              <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+              <div className="px-5 pt-4 pb-2">
                 <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">DSE Steuerung</span>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${isRunning ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
-                  <span className={`text-[10px] font-medium ${isRunning ? "text-emerald-600" : "text-gray-400"}`}>
-                    {isRunning ? "Motor laeuft" : "Motor aus"}
-                  </span>
-                </div>
               </div>
-
-              {/* Status LEDs Row */}
-              {is5510 && (
-                <div className="px-5 py-2.5 flex flex-wrap items-center gap-4 border-t border-gray-100">
-                  <StatusLed on={isRunning} label="Motor laeuft" />
-                  <StatusLed on={isAuto} label="Auto-Modus" />
-                </div>
-              )}
 
               {/* Status Indicators: Generator bereit + Hauptschalter geschlossen */}
               {is5510 && (
@@ -463,11 +441,6 @@ export default function GeneratorDetailPage() {
 
               {/* Main Control Buttons */}
               <div className="px-5 py-5 flex flex-col items-center gap-3 border-t border-gray-100">
-                {is5510 && dseMode && dseMode !== "unknown" && (
-                  <span className="text-[10px] text-gray-400 tracking-wide" data-testid="mode-source-hint">
-                    Letzter Portal-Befehl &mdash; physische Tasten am DSE werden nicht erkannt
-                  </span>
-                )}
                 <div className="flex items-end justify-center gap-4 sm:gap-6 flex-wrap">
                 <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
                   active={isStop} disabled={!canWrite}
