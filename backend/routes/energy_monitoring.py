@@ -1054,7 +1054,7 @@ echo ""
 
 class DSE5510SetupRequest(BaseModel):
     serial_port: str = "/dev/ttyUSB0"
-    baud_rate: int = 9600
+    baud_rate: int = 19200
     slave_id: int = 10
 
 @router.post("/devices/{device_id}/dse5510-setup")
