@@ -361,7 +361,7 @@ export default function GeneratorDetailPage() {
           const is5510 = model.includes("5510");
           const canWrite = true; // FC16 @4104 funktioniert (DSE antwortet mit FC03 Read-Back)
 
-          const DseImgBtn = ({ cmd, label, imgSrc, active, glowColor, size = 64, disabled = false }) => (
+          const DseImgBtn = ({ cmd, label, imgSrc, size = 64, disabled = false }) => (
             <button
               onClick={() => !disabled && sendCommand(cmd, label)}
               disabled={disabled || cmdLoading !== null}
@@ -373,7 +373,7 @@ export default function GeneratorDetailPage() {
                 className="relative rounded-full transition-all duration-200"
                 style={{
                   width: size, height: size,
-                  filter: active ? `drop-shadow(0 0 10px ${glowColor || 'rgba(255,255,255,0.4)'})` : disabled ? 'grayscale(80%)' : 'none',
+                  filter: disabled ? 'grayscale(80%)' : 'none',
                   transform: cmdLoading === cmd ? 'scale(0.92)' : 'scale(1)',
                 }}
               >
@@ -382,14 +382,8 @@ export default function GeneratorDetailPage() {
                   alt={label}
                   className={`w-full h-full object-contain rounded-full transition-all duration-150 ${disabled ? '' : 'group-hover:brightness-110 group-active:brightness-90'}`}
                   draggable={false}
-                  style={{ opacity: active ? 1 : disabled ? 0.5 : 0.85 }}
+                  style={{ opacity: disabled ? 0.5 : 0.85 }}
                 />
-                {active && (
-                  <div
-                    className="absolute inset-0 rounded-full pointer-events-none"
-                    style={{ boxShadow: `0 0 16px 4px ${glowColor || 'rgba(255,255,255,0.3)'}` }}
-                  />
-                )}
               </div>
               <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium tracking-wide">
                 {cmdLoading === cmd ? "..." : label}
@@ -443,28 +437,23 @@ export default function GeneratorDetailPage() {
               <div className="px-5 py-5 flex flex-col items-center gap-3 border-t border-gray-100">
                 <div className="flex items-end justify-center gap-4 sm:gap-6 flex-wrap">
                 <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
-                  active={isStop} disabled={!canWrite}
-                  glowColor="rgba(239,68,68,0.5)" size={68} />
+                  disabled={!canWrite} size={68} />
 
                 {is5510 && (
                   <DseImgBtn cmd="manual" label="Manuell" imgSrc="/dse-buttons/hand.png"
-                    active={isManual} disabled={!canWrite}
-                    glowColor="rgba(251,191,36,0.4)" size={68} />
+                    disabled={!canWrite} size={68} />
                 )}
 
                 <DseImgBtn cmd="auto_on" label="Auto" imgSrc="/dse-buttons/auto.png"
-                  active={isAuto} disabled={!canWrite}
-                  glowColor="rgba(52,211,153,0.5)" size={68} />
+                  disabled={!canWrite} size={68} />
 
                 {is5510 && (
                   <DseImgBtn cmd="mute" label="Hupe Aus" imgSrc="/dse-buttons/hupe-aus.png"
-                    active={false} disabled={!canWrite}
-                    glowColor="rgba(239,68,68,0.3)" size={68} />
+                    disabled={!canWrite} size={68} />
                 )}
 
                 <DseImgBtn cmd="start" label="Start" imgSrc="/dse-buttons/start.png"
-                  active={isRunning} disabled={!canWrite}
-                  glowColor="rgba(34,197,94,0.5)" size={68} />
+                  disabled={!canWrite} size={68} />
                 </div>
               </div>
 
@@ -472,11 +461,9 @@ export default function GeneratorDetailPage() {
               {is5510 && (
                 <div className="px-5 py-4 flex items-end justify-center gap-5 border-t border-gray-100">
                   <DseImgBtn cmd="gen_switch_on" label="Gen EIN" imgSrc="/dse-buttons/geno.png"
-                    active={switchClosed} disabled={!canWrite}
-                    glowColor="rgba(59,130,246,0.5)" size={52} />
+                    disabled={!canWrite} size={52} />
                   <DseImgBtn cmd="gen_switch_off" label="Gen AUS" imgSrc="/dse-buttons/netz.png"
-                    active={false} disabled={!canWrite}
-                    glowColor="rgba(249,115,22,0.4)" size={52} />
+                    disabled={!canWrite} size={52} />
                 </div>
               )}
             </div>
