@@ -462,7 +462,13 @@ export default function GeneratorDetailPage() {
               )}
 
               {/* Main Control Buttons */}
-              <div className="px-5 py-5 flex items-end justify-center gap-4 sm:gap-6 flex-wrap border-t border-gray-100">
+              <div className="px-5 py-5 flex flex-col items-center gap-3 border-t border-gray-100">
+                {is5510 && dseMode && dseMode !== "unknown" && (
+                  <span className="text-[10px] text-gray-400 tracking-wide" data-testid="mode-source-hint">
+                    Letzter Portal-Befehl &mdash; physische Tasten am DSE werden nicht erkannt
+                  </span>
+                )}
+                <div className="flex items-end justify-center gap-4 sm:gap-6 flex-wrap">
                 <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
                   active={isStop} disabled={!canWrite}
                   glowColor="rgba(239,68,68,0.5)" size={68} />
@@ -486,6 +492,7 @@ export default function GeneratorDetailPage() {
                 <DseImgBtn cmd="start" label="Start" imgSrc="/dse-buttons/start.png"
                   active={isRunning} disabled={!canWrite}
                   glowColor="rgba(34,197,94,0.5)" size={68} />
+                </div>
               </div>
 
               {/* Transfer Switches - only 5510 */}

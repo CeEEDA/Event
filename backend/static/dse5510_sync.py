@@ -439,20 +439,10 @@ def read_dse5510(ser, slave_id):
         # Motor-Laufstatus ableiten
         data["engine_running"] = (rpm is not None and rpm > 100)
 
-        # DSE Betriebsmodus - Register 270 (Page 1, Offset 14) lesen
-        # Abgesichert: bei Fehler bleibt "unknown" (crasht nicht den Loop)
-        try:
-            mode_raw = read_uint16(ser, REG_INSTRUMENT_MODE, slave_id)
-            if mode_raw is not None:
-                data["dse_mode_raw"] = mode_raw
-                data["dse_mode"] = DSE_MODE_MAP.get(mode_raw, f"raw_{mode_raw}")
-            else:
-                data["dse_mode_raw"] = None
-                data["dse_mode"] = "unknown"
-        except Exception as mode_err:
-            log.debug(f"Mode-Register nicht lesbar: {mode_err}")
-            data["dse_mode_raw"] = None
-            data["dse_mode"] = "unknown"
+        # DSE Betriebsmodus - NICHT ueber P810 lesbar (Register-Map instabil)
+        # Modus wird ueber Portal-Befehle im Backend getrackt
+        data["dse_mode_raw"] = None
+        data["dse_mode"] = "unknown"
 
         # Generator-Status aus Messwerten ableiten
         has_voltage = (data["voltage_l1"] > 50 or data["voltage_l2"] > 50 or data["voltage_l3"] > 50)
