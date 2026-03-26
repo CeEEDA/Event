@@ -988,6 +988,7 @@ def main():
     ser = None
     last_sync_time = 0
     last_cmd_poll_time = 0
+    last_read_time = 0
     last_gps = None
     last_gps_time = 0
     last_disk_check = 0
@@ -1023,13 +1024,16 @@ def main():
                     time.sleep(int(conf["retry_delay"]))
                     continue
 
-            # DSE 5510 auslesen (jede Sekunde)
-            data = read_dse5510(ser, int(conf["slave_id"]))
-            if data.get("online"):
-                store_telemetry(conf["db_path"], data)
-                consecutive_errors = 0
+            now = time.time()
 
-                # Stoerungserkennung
+            # DSE 5510 auslesen (alle 5 Minuten - Messwerte aendern sich selten)
+            if now - last_read_time >= 300:
+                data = read_dse5510(ser, int(conf["slave_id"]))
+                if data.get("online"):
+                    store_telemetry(conf["db_path"], data)
+                    consecutive_errors = 0
+
+                    # Stoerungserkennung
                 # Plausibilitaetsgrenzen: Werte ausserhalb physikalisch moeglicher
                 # Bereiche sind Sentinel-Reste und werden ignoriert
                 coolant = data.get("coolant_temp_c", 0)
@@ -1064,11 +1068,12 @@ def main():
                     clear_alarm(conf["db_path"], "low_battery")
                     prev_alarm_state["low_batt"] = False
 
-            else:
-                consecutive_errors += 1
+                else:
+                    consecutive_errors += 1
+
+                last_read_time = now
 
             # GPS lesen (alle 60 Sekunden)
-            now = time.time()
             if now - last_gps_time >= 60:
                 gps = read_gps()
                 if gps:
