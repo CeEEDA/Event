@@ -196,7 +196,7 @@ def _calc_crc(data):
     return struct.pack("<H", crc)
 
 
-def _raw_read(ser, slave, register, count, timeout_s=0.15):
+def _raw_read(ser, slave, register, count, timeout_s=0.25):
     """Liest Modbus Holding Register via rohem Serial (FC03)."""
     frame = struct.pack(">BBHH", slave, 0x03, register, count)
     frame += _calc_crc(frame)
@@ -237,7 +237,7 @@ def _raw_read(ser, slave, register, count, timeout_s=0.15):
     return regs
 
 
-def _raw_write(ser, slave, register, values, timeout_s=0.15):
+def _raw_write(ser, slave, register, values, timeout_s=0.5):
     """Schreibt Modbus Holding Register via rohem Serial (FC16)."""
     count = len(values)
     byte_count = count * 2
@@ -252,8 +252,16 @@ def _raw_write(ser, slave, register, values, timeout_s=0.15):
 
     response = ser.read(20)
     if len(response) < 6:
+        log.debug(f"Write: Keine/kurze Antwort ({len(response)} bytes) fuer Register {register}")
         return False
-    if response[0] != slave or response[1] != 0x10:
+    if response[0] != slave:
+        log.debug(f"Write: Falsche Slave-ID in Antwort: {response[0]} != {slave}")
+        return False
+    if response[1] & 0x80:
+        log.debug(f"Write: Modbus Fehler 0x{response[2]:02X} fuer Register {register}")
+        return False
+    if response[1] != 0x10:
+        log.debug(f"Write: Falsche Funktion in Antwort: 0x{response[1]:02X}")
         return False
     return True
 
@@ -353,13 +361,6 @@ def read_dse5510(ser, slave_id):
         pos_kwh = read_uint32(ser, REG_GEN_POS_KWH, slave_id)
         num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
-        # --- Page 1: Betriebsmodus ---
-        instrument_mode_raw = read_uint16(ser, REG_INSTRUMENT_MODE, slave_id)
-
-        # --- Page 3: Status Flags ---
-        gen_available_raw = read_uint16(ser, REG_GEN_AVAILABLE, slave_id)
-        breaker_closed_raw = read_uint16(ser, REG_GEN_BREAKER_CLOSED, slave_id)
-
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
         data["coolant_temp_c"] = coolant_temp if coolant_temp is not None else 0
@@ -401,25 +402,26 @@ def read_dse5510(ser, slave_id):
         # Motor-Laufstatus ableiten
         data["engine_running"] = (rpm is not None and rpm > 100)
 
-        # DSE Betriebsmodus
-        data["dse_mode_raw"] = instrument_mode_raw
-        data["dse_mode"] = DSE_MODE_MAP.get(instrument_mode_raw, "unknown") if instrument_mode_raw is not None else "unknown"
+        # DSE Betriebsmodus - aus vorhandenen Daten ableiten
+        # (Page 1/3 Register-Reads nicht unterstuetzt beim DSE 5510 via P810)
+        data["dse_mode_raw"] = None
+        data["dse_mode"] = "unknown"
 
-        # Generator-Status-Flags
-        data["generator_available"] = bool(gen_available_raw and gen_available_raw > 0) if gen_available_raw is not None else False
-        data["breaker_closed"] = bool(breaker_closed_raw and breaker_closed_raw > 0) if breaker_closed_raw is not None else False
+        # Generator-Status aus Messwerten ableiten
+        has_voltage = (data["voltage_l1"] > 50 or data["voltage_l2"] > 50 or data["voltage_l3"] > 50)
+        has_frequency = data["frequency"] > 40
+        data["generator_available"] = has_voltage and has_frequency
+        data["breaker_closed"] = data["generator_available"] and data["power_total_w"] > 100
 
         data["online"] = True
 
         log.info(
-            f"DSE5510: Mode={data['dse_mode']}({instrument_mode_raw}) "
+            f"DSE5510: "
             f"RPM={'n/a' if rpm is None else rpm} "
             f"V={data['voltage_l1']:.0f}/{data['voltage_l2']:.0f}/{data['voltage_l3']:.0f}V "
             f"I={data['current_l1']:.1f}/{data['current_l2']:.1f}/{data['current_l3']:.1f}A "
             f"P={data['power_total_w']}W F={data['frequency']:.1f}Hz "
             f"Batt={data['battery_voltage']:.1f}V "
-            f"GenReady={'Y' if data['generator_available'] else 'N'} "
-            f"BreakerClosed={'Y' if data['breaker_closed'] else 'N'} "
             f"Oil={'n/a' if oil_press is None else str(oil_press) + 'kPa'} "
             f"Cool={'n/a' if coolant_temp is None else str(coolant_temp) + 'C'} "
             f"Fuel={data['fuel_level_pct']}%"
@@ -460,13 +462,33 @@ def execute_command(ser, slave_id, command_name):
         return False
 
     try:
+        # Seriellen Puffer leeren und kurz warten vor dem Schreiben
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+        time.sleep(0.1)
+
         log.info(f"Fuehre Befehl aus: {cmd['label']} (Key={cmd['key']})")
+
+        # Erster Versuch
         success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [cmd["key"], cmd["complement"]])
-        if not success:
-            log.error(f"Befehl fehlgeschlagen: {command_name}")
-            return False
-        log.info(f"Befehl erfolgreich: {cmd['label']}")
-        return True
+        if success:
+            log.info(f"Befehl erfolgreich: {cmd['label']}")
+            return True
+
+        # Zweiter Versuch nach laengerem Reset
+        log.warning(f"Befehl 1. Versuch fehlgeschlagen, wiederhole: {command_name}")
+        time.sleep(1.0)
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+        time.sleep(0.2)
+        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [cmd["key"], cmd["complement"]])
+        if success:
+            log.info(f"Befehl erfolgreich (2. Versuch): {cmd['label']}")
+            return True
+
+        log.error(f"Befehl fehlgeschlagen nach 2 Versuchen: {command_name}")
+        return False
     except Exception as e:
         log.error(f"Fehler beim Ausfuehren von {command_name}: {e}")
         return False
