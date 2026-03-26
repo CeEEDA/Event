@@ -578,6 +578,19 @@ async def get_telemetry(
     if user["role"] == "kunde" and gen.get("assigned_customer_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
+    # Kunden-Zugriffsbeschraenkung: Zeitraum + Datenkategorien
+    user_doc = None
+    if user["role"] == "kunde":
+        user_doc = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+        gen_app = (user_doc or {}).get("apps", {}).get("generator_monitoring", {})
+        # Zeitraum-Beschraenkung
+        access_start = gen_app.get("data_access_start")
+        access_end = gen_app.get("data_access_end")
+        if access_start and (not from_time or from_time < access_start):
+            from_time = access_start
+        if access_end and (not to_time or to_time > access_end):
+            to_time = access_end
+
     # Zeitfilter: from_time/to_time hat Vorrang vor hours
     if from_time:
         since = from_time
@@ -591,6 +604,22 @@ async def get_telemetry(
     telemetry = await db.generator_telemetry.find(
         query, {"_id": 0}
     ).sort("timestamp", 1).to_list(limit)
+
+    # Felder die zu Elektrisch / Mechanisch gehoeren
+    ELECTRICAL_FIELDS = {"voltage_l1", "voltage_l2", "voltage_l3", "voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1",
+        "current_l1", "current_l2", "current_l3", "power_total_w", "power_kw", "power_factor", "power_factor_avg",
+        "frequency", "energy_kwh"}
+    MECHANICAL_FIELDS = {"rpm", "oil_pressure", "oil_pressure_kpa", "coolant_temp", "coolant_temp_c",
+        "fuel_level", "fuel_level_pct", "battery_voltage", "charge_alt_voltage",
+        "engine_run_hours", "hours_run", "engine_running"}
+
+    # Kunden: Datenfilter nach Freigabe
+    share_electrical = True
+    share_mechanical = True
+    if user_doc:
+        gen_app = user_doc.get("apps", {}).get("generator_monitoring", {})
+        share_electrical = gen_app.get("share_electrical", True)
+        share_mechanical = gen_app.get("share_mechanical", True)
 
     # Normalize Pi-ingest fields for chart compatibility
     for t in telemetry:
@@ -606,6 +635,14 @@ async def get_telemetry(
             t["hours_run"] = t["engine_run_hours"]
         if "power_factor_avg" in t and "power_factor" not in t:
             t["power_factor"] = t["power_factor_avg"]
+
+        # Nicht freigegebene Felder entfernen
+        if not share_electrical:
+            for f in ELECTRICAL_FIELDS:
+                t.pop(f, None)
+        if not share_mechanical:
+            for f in MECHANICAL_FIELDS:
+                t.pop(f, None)
 
     return telemetry
 
