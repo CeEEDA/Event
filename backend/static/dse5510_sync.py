@@ -522,8 +522,8 @@ def poll_commands(conf, ser):
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
-    """Fuehrt einen DSE-Steuerbefehl via FC16 an Register 4104 aus.
-    Schliesst und oeffnet den seriellen Port neu fuer sauberen Write-Zugang."""
+    """Fuehrt einen DSE-Steuerbefehl aus - genau wie das Diagnose-Skript.
+    Erstellt eine komplett neue Serial-Instanz fuer den Schreibzugriff."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -531,44 +531,72 @@ def execute_command(ser, slave_id, command_name):
 
     key = cmd["key"]
     complement = cmd["complement"]
+    port_name = ser.port
+    baudrate = ser.baudrate
 
     try:
         log.info(f"Sende Befehl: {cmd['label']} (Key={key}, Comp={complement})")
 
-        # Port-Einstellungen merken
-        port_name = ser.port
-        baudrate = ser.baudrate
-
-        # Port schliessen und neu oeffnen (wie im Diagnose-Skript)
+        # Hauptport schliessen
         ser.close()
+        time.sleep(1.0)
+
+        # Neue Serial-Instanz (wie im Diagnose-Skript)
+        cmd_ser = serial.Serial(port_name, baudrate, bytesize=8, parity='N', stopbits=1, timeout=2)
         time.sleep(0.5)
-        ser.open()
+
+        # Erst einen Read um Verbindung zu bestaetigen (wie Diagnose-Skript)
+        test_frame = struct.pack(">BBHH", slave_id, 0x03, 1024, 1)
+        test_frame += _calc_crc(test_frame)
+        cmd_ser.reset_input_buffer()
+        cmd_ser.write(test_frame)
         time.sleep(0.5)
-        ser.reset_input_buffer()
-        ser.reset_output_buffer()
+        test_resp = cmd_ser.read(cmd_ser.in_waiting or 20)
+        if len(test_resp) > 0:
+            log.info(f"Verbindung OK ({len(test_resp)} bytes)")
+        else:
+            log.warning("Keine Antwort beim Verbindungstest")
+
+        time.sleep(0.3)
+        cmd_ser.reset_input_buffer()
 
         # Befehl senden
-        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement])
-        if success:
-            log.info(f"Befehl OK: {cmd['label']}")
-            return True
+        count = 2
+        frame = struct.pack(">BBHHB", slave_id, 0x10, REG_CONTROL_KEY, count, count * 2)
+        frame += struct.pack(">H", key)
+        frame += struct.pack(">H", complement)
+        frame += _calc_crc(frame)
 
-        # Retry
-        time.sleep(1.0)
+        cmd_ser.reset_input_buffer()
+        cmd_ser.write(frame)
+        time.sleep(1.5)
+        response = cmd_ser.read(cmd_ser.in_waiting or 50)
+
+        success = False
+        if len(response) > 0 and response[0] == slave_id and not (response[1] & 0x80):
+            log.info(f"Befehl OK: {cmd['label']} (RX: {response.hex()})")
+            success = True
+        elif len(response) > 0:
+            log.warning(f"Befehl Antwort: {response.hex()} ({len(response)} bytes)")
+        else:
+            log.warning(f"Befehl: Keine Antwort (0 bytes)")
+
+        # Cmd-Port schliessen
+        cmd_ser.close()
+        time.sleep(0.5)
+
+        # Hauptport wieder oeffnen
+        ser.open()
+        time.sleep(0.3)
         ser.reset_input_buffer()
-        log.info(f"Retry: {cmd['label']}")
-        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement], timeout_s=2.0)
-        if success:
-            log.info(f"Befehl OK (Retry): {cmd['label']}")
-            return True
 
-        log.error(f"Befehl fehlgeschlagen: {command_name}")
-        return False
+        return success
     except Exception as e:
         log.error(f"Fehler: {command_name}: {e}")
-        # Port sicherheitshalber wieder oeffnen
+        # Sicherstellen dass der Hauptport offen ist
         if not ser.is_open:
             try:
+                time.sleep(0.5)
                 ser.open()
                 time.sleep(0.3)
             except Exception:
