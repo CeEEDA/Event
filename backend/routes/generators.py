@@ -1097,8 +1097,27 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         {"_id": 0}
     ).sort("created_at", 1).to_list(10)
 
-    # Mark as sent
+    # 2-Minuten TTL: Abgelaufene Befehle als expired markieren
+    COMMAND_TTL_SECONDS = 120
+    valid_commands = []
     for cmd in pending:
+        created = cmd.get("created_at", "")
+        try:
+            cmd_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - cmd_time).total_seconds()
+            if age > COMMAND_TTL_SECONDS:
+                await db.generator_pending_commands.update_one(
+                    {"id": cmd["id"]},
+                    {"$set": {"status": "expired", "result_message": f"Abgelaufen nach {int(age)}s (TTL: {COMMAND_TTL_SECONDS}s)"}}
+                )
+                logger.info(f"Befehl {cmd['command']} abgelaufen ({int(age)}s alt)")
+                continue
+        except Exception:
+            pass
+        valid_commands.append(cmd)
+
+    # Mark valid commands as sent
+    for cmd in valid_commands:
         await db.generator_pending_commands.update_one(
             {"id": cmd["id"]},
             {"$set": {"status": "sent", "sent_at": now_iso}}
@@ -1107,7 +1126,7 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     return {
         "inserted": inserted,
         "generator_id": generator_id,
-        "pending_commands": pending,
+        "pending_commands": valid_commands,
     }
 
 
@@ -1197,13 +1216,31 @@ async def poll_commands(device_id: str, request: Request):
         {"_id": 0}
     ).sort("created_at", 1).to_list(10)
 
+    # 2-Minuten TTL: Abgelaufene Befehle als expired markieren
+    COMMAND_TTL_SECONDS = 120
+    valid_commands = []
     for cmd in pending:
+        created = cmd.get("created_at", "")
+        try:
+            cmd_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - cmd_time).total_seconds()
+            if age > COMMAND_TTL_SECONDS:
+                await db.generator_pending_commands.update_one(
+                    {"id": cmd["id"]},
+                    {"$set": {"status": "expired", "result_message": f"Abgelaufen nach {int(age)}s"}}
+                )
+                continue
+        except Exception:
+            pass
+        valid_commands.append(cmd)
+
+    for cmd in valid_commands:
         await db.generator_pending_commands.update_one(
             {"id": cmd["id"]},
             {"$set": {"status": "sent", "sent_at": now_iso}}
         )
 
-    return {"pending_commands": pending}
+    return {"pending_commands": valid_commands}
 
 
 

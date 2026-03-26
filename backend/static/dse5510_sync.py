@@ -1075,8 +1075,8 @@ def main():
                     last_gps = gps
                 last_gps_time = now
 
-            # Schnelles Command-Polling (alle 5 Sekunden)
-            if now - last_cmd_poll_time >= 5:
+            # Schnelles Command-Polling (jede Sekunde fuer sofortige Reaktion)
+            if now - last_cmd_poll_time >= 1:
                 cmd_count, ser = poll_commands(conf, ser)
                 last_cmd_poll_time = now
                 # Falls ser geschlossen wurde (durch execute_command),
