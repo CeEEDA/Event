@@ -34,7 +34,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import requests
-from pymodbus.client import ModbusSerialClient
+import serial
 
 # ====== DSE GenComm Modbus Register Map ======
 # Adressberechnung: address = page * 256 + offset
@@ -156,86 +156,131 @@ logging.basicConfig(
 log = logging.getLogger("dse5510")
 
 
-# ====== Modbus RTU Lesen ======
+# ====== Raw Modbus RTU (ohne pymodbus - P810 kompatibel) ======
 
-def _read_holding(client, register, count, slave_id):
-    """Liest Holding Registers (FC 03) - kompatibel mit pymodbus 3.x."""
-    import pymodbus
-    version = tuple(int(x) for x in pymodbus.__version__.split(".")[:2])
-    if version >= (3, 8):
-        return client.read_holding_registers(register, count=count, device_id=slave_id)
-    else:
-        try:
-            return client.read_holding_registers(register, count, slave=slave_id)
-        except TypeError:
-            return client.read_holding_registers(register, count, unit=slave_id)
+GENCOMM_NA_VALUES = {0xFFFF, 0xFFFE, 0xFFFD, 0xFFFB}
+GENCOMM_NA_SIGNED = {0x7FFB, 0x7FFC, 0x7FFD, 0x7FFE, 0x7FFF}
 
 
-def _write_registers(client, register, values, slave_id):
-    """Schreibt mehrere Holding Registers (FC 16)."""
-    import pymodbus
-    version = tuple(int(x) for x in pymodbus.__version__.split(".")[:2])
-    if version >= (3, 8):
-        return client.write_registers(register, values=values, device_id=slave_id)
-    else:
-        try:
-            return client.write_registers(register, values, slave=slave_id)
-        except TypeError:
-            return client.write_registers(register, values, unit=slave_id)
+def _calc_crc(data):
+    """Modbus RTU CRC16."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x0001:
+                crc = (crc >> 1) ^ 0xA001
+            else:
+                crc >>= 1
+    return struct.pack("<H", crc)
 
 
-def read_uint16(client, register, slave_id):
+def _raw_read(ser, slave, register, count, timeout_s=0.15):
+    """Liest Modbus Holding Register via rohem Serial (FC03)."""
+    frame = struct.pack(">BBHH", slave, 0x03, register, count)
+    frame += _calc_crc(frame)
+
+    ser.reset_input_buffer()
+    ser.write(frame)
+    time.sleep(timeout_s)
+
+    expected = 3 + count * 2 + 2
+    response = ser.read(expected + 10)
+
+    if len(response) < 5:
+        return None
+    if response[0] != slave:
+        return None
+    if response[1] & 0x80:
+        return None
+    if response[1] != 0x03:
+        return None
+
+    byte_count = response[2]
+    if byte_count != count * 2:
+        return None
+
+    data_len = 3 + byte_count
+    if len(response) < data_len + 2:
+        return None
+
+    payload = response[:data_len]
+    crc_recv = response[data_len:data_len + 2]
+    if crc_recv != _calc_crc(payload):
+        return None
+
+    regs = []
+    for i in range(count):
+        val = struct.unpack(">H", response[3 + i * 2: 5 + i * 2])[0]
+        regs.append(val)
+    return regs
+
+
+def _raw_write(ser, slave, register, values, timeout_s=0.15):
+    """Schreibt Modbus Holding Register via rohem Serial (FC16)."""
+    count = len(values)
+    byte_count = count * 2
+    frame = struct.pack(">BBHHB", slave, 0x10, register, count, byte_count)
+    for v in values:
+        frame += struct.pack(">H", v)
+    frame += _calc_crc(frame)
+
+    ser.reset_input_buffer()
+    ser.write(frame)
+    time.sleep(timeout_s)
+
+    response = ser.read(20)
+    if len(response) < 6:
+        return False
+    if response[0] != slave or response[1] != 0x10:
+        return False
+    return True
+
+
+def read_uint16(ser, register, slave_id):
     """Liest einen 16bit unsigned Integer."""
-    try:
-        result = _read_holding(client, register, 1, slave_id)
-        if result.isError():
-            return None
-        val = result.registers[0]
-        return val if val != 0xFFFF else None  # 0xFFFF = nicht implementiert
-    except Exception:
+    regs = _raw_read(ser, slave_id, register, 1)
+    if regs is None:
         return None
+    val = regs[0]
+    if val in GENCOMM_NA_VALUES:
+        return None
+    return val
 
 
-def read_int16(client, register, slave_id):
+def read_int16(ser, register, slave_id):
     """Liest einen 16bit signed Integer."""
-    try:
-        result = _read_holding(client, register, 1, slave_id)
-        if result.isError():
-            return None
-        val = result.registers[0]
-        if val == 0xFFFF:
-            return None
-        return struct.unpack(">h", struct.pack(">H", val))[0]
-    except Exception:
+    regs = _raw_read(ser, slave_id, register, 1)
+    if regs is None:
         return None
+    val = regs[0]
+    if val in GENCOMM_NA_VALUES or val in GENCOMM_NA_SIGNED:
+        return None
+    return struct.unpack(">h", struct.pack(">H", val))[0]
 
 
-def read_uint32(client, register, slave_id):
+def read_uint32(ser, register, slave_id):
     """Liest einen 32bit unsigned Integer (MSB zuerst)."""
-    try:
-        result = _read_holding(client, register, 2, slave_id)
-        if result.isError():
-            return None
-        raw = struct.pack(">HH", result.registers[0], result.registers[1])
-        val = struct.unpack(">I", raw)[0]
-        return val if val != 0xFFFFFFFF else None
-    except Exception:
+    regs = _raw_read(ser, slave_id, register, 2)
+    if regs is None:
         return None
+    raw = struct.pack(">HH", regs[0], regs[1])
+    val = struct.unpack(">I", raw)[0]
+    if val >= 0xFFFFFFFE:
+        return None
+    return val
 
 
-def read_int32(client, register, slave_id):
+def read_int32(ser, register, slave_id):
     """Liest einen 32bit signed Integer (MSB zuerst)."""
-    try:
-        result = _read_holding(client, register, 2, slave_id)
-        if result.isError():
-            return None
-        raw = struct.pack(">HH", result.registers[0], result.registers[1])
-        return struct.unpack(">i", raw)[0]
-    except Exception:
+    regs = _raw_read(ser, slave_id, register, 2)
+    if regs is None:
         return None
+    raw = struct.pack(">HH", regs[0], regs[1])
+    return struct.unpack(">i", raw)[0]
 
 
-def read_dse5510(client, slave_id):
+def read_dse5510(ser, slave_id):
     """Liest alle relevanten Register vom DSE 5510."""
     data = {
         "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
@@ -246,46 +291,46 @@ def read_dse5510(client, slave_id):
 
     try:
         # --- Page 4: Basic Instrumentation ---
-        oil_press = read_uint16(client, REG_OIL_PRESSURE, slave_id)
-        coolant_temp = read_uint16(client, REG_COOLANT_TEMP, slave_id)
-        oil_temp = read_uint16(client, REG_OIL_TEMP, slave_id)
-        fuel_level = read_uint16(client, REG_FUEL_LEVEL, slave_id)
-        charge_alt_v = read_uint16(client, REG_CHARGE_ALT_VOLT, slave_id)
-        battery_v = read_uint16(client, REG_BATTERY_VOLTAGE, slave_id)
-        rpm = read_uint16(client, REG_ENGINE_SPEED, slave_id)
-        frequency = read_uint16(client, REG_GEN_FREQUENCY, slave_id)
+        oil_press = read_uint16(ser, REG_OIL_PRESSURE, slave_id)
+        coolant_temp = read_uint16(ser, REG_COOLANT_TEMP, slave_id)
+        oil_temp = read_uint16(ser, REG_OIL_TEMP, slave_id)
+        fuel_level = read_uint16(ser, REG_FUEL_LEVEL, slave_id)
+        charge_alt_v = read_uint16(ser, REG_CHARGE_ALT_VOLT, slave_id)
+        battery_v = read_uint16(ser, REG_BATTERY_VOLTAGE, slave_id)
+        rpm = read_uint16(ser, REG_ENGINE_SPEED, slave_id)
+        frequency = read_uint16(ser, REG_GEN_FREQUENCY, slave_id)
 
         # Spannungen (32bit, 0.1V)
-        v_l1n = read_uint32(client, REG_GEN_V_L1N, slave_id)
-        v_l2n = read_uint32(client, REG_GEN_V_L2N, slave_id)
-        v_l3n = read_uint32(client, REG_GEN_V_L3N, slave_id)
-        v_l1l2 = read_uint32(client, REG_GEN_V_L1L2, slave_id)
-        v_l2l3 = read_uint32(client, REG_GEN_V_L2L3, slave_id)
-        v_l3l1 = read_uint32(client, REG_GEN_V_L3L1, slave_id)
+        v_l1n = read_uint32(ser, REG_GEN_V_L1N, slave_id)
+        v_l2n = read_uint32(ser, REG_GEN_V_L2N, slave_id)
+        v_l3n = read_uint32(ser, REG_GEN_V_L3N, slave_id)
+        v_l1l2 = read_uint32(ser, REG_GEN_V_L1L2, slave_id)
+        v_l2l3 = read_uint32(ser, REG_GEN_V_L2L3, slave_id)
+        v_l3l1 = read_uint32(ser, REG_GEN_V_L3L1, slave_id)
 
         # Stroeme (32bit, 0.1A)
-        i_l1 = read_uint32(client, REG_GEN_I_L1, slave_id)
-        i_l2 = read_uint32(client, REG_GEN_I_L2, slave_id)
-        i_l3 = read_uint32(client, REG_GEN_I_L3, slave_id)
+        i_l1 = read_uint32(ser, REG_GEN_I_L1, slave_id)
+        i_l2 = read_uint32(ser, REG_GEN_I_L2, slave_id)
+        i_l3 = read_uint32(ser, REG_GEN_I_L3, slave_id)
 
         # Leistung pro Phase (32bit signed, W)
-        w_l1 = read_int32(client, REG_GEN_W_L1, slave_id)
-        w_l2 = read_int32(client, REG_GEN_W_L2, slave_id)
-        w_l3 = read_int32(client, REG_GEN_W_L3, slave_id)
+        w_l1 = read_int32(ser, REG_GEN_W_L1, slave_id)
+        w_l2 = read_int32(ser, REG_GEN_W_L2, slave_id)
+        w_l3 = read_int32(ser, REG_GEN_W_L3, slave_id)
 
         # --- Page 6: Derived Instrumentation ---
-        total_w = read_int32(client, REG_GEN_TOTAL_W, slave_id)
-        total_va = read_uint32(client, REG_GEN_TOTAL_VA, slave_id)
-        total_var = read_int32(client, REG_GEN_TOTAL_VAR, slave_id)
-        pf_l1 = read_int16(client, REG_GEN_PF_L1, slave_id)
-        pf_l2 = read_int16(client, REG_GEN_PF_L2, slave_id)
-        pf_l3 = read_int16(client, REG_GEN_PF_L3, slave_id)
-        pf_avg = read_int16(client, REG_GEN_PF_AVG, slave_id)
+        total_w = read_int32(ser, REG_GEN_TOTAL_W, slave_id)
+        total_va = read_uint32(ser, REG_GEN_TOTAL_VA, slave_id)
+        total_var = read_int32(ser, REG_GEN_TOTAL_VAR, slave_id)
+        pf_l1 = read_int16(ser, REG_GEN_PF_L1, slave_id)
+        pf_l2 = read_int16(ser, REG_GEN_PF_L2, slave_id)
+        pf_l3 = read_int16(ser, REG_GEN_PF_L3, slave_id)
+        pf_avg = read_int16(ser, REG_GEN_PF_AVG, slave_id)
 
         # --- Page 7: Accumulated Instrumentation ---
-        run_time_s = read_uint32(client, REG_ENGINE_RUN_TIME, slave_id)
-        pos_kwh = read_uint32(client, REG_GEN_POS_KWH, slave_id)
-        num_starts = read_uint32(client, REG_NUM_STARTS, slave_id)
+        run_time_s = read_uint32(ser, REG_ENGINE_RUN_TIME, slave_id)
+        pos_kwh = read_uint32(ser, REG_GEN_POS_KWH, slave_id)
+        num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
@@ -366,8 +411,8 @@ def read_gps():
 
 # ====== Steuerbefehle ======
 
-def execute_command(client, slave_id, command_name):
-    """Fuehrt einen DSE-Steuerbefehl via Modbus RTU aus."""
+def execute_command(ser, slave_id, command_name):
+    """Fuehrt einen DSE-Steuerbefehl via Raw Modbus RTU aus."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -375,9 +420,9 @@ def execute_command(client, slave_id, command_name):
 
     try:
         log.info(f"Fuehre Befehl aus: {cmd['label']} (Key={cmd['key']})")
-        result = _write_registers(client, REG_CONTROL_KEY, [cmd["key"], cmd["complement"]], slave_id)
-        if result.isError():
-            log.error(f"Befehl fehlgeschlagen: {result}")
+        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [cmd["key"], cmd["complement"]])
+        if not success:
+            log.error(f"Befehl fehlgeschlagen: {command_name}")
             return False
         log.info(f"Befehl erfolgreich: {cmd['label']}")
         return True
@@ -587,7 +632,7 @@ def cleanup_old(db_path, max_gb=60):
 
 # ====== Portal Sync ======
 
-def sync_to_portal(conf, gps_data, modbus_client):
+def sync_to_portal(conf, gps_data, ser):
     """Sendet Telemetrie-Daten an das Portal und empfaengt Steuerbefehle."""
     unsynced = get_unsynced(conf["db_path"], conf["batch_size"])
     if not unsynced:
@@ -654,8 +699,8 @@ def sync_to_portal(conf, gps_data, modbus_client):
                 cmd_name = cmd.get("command", "")
                 cmd_id = cmd.get("id", "")
                 log.info(f"Steuerbefehl empfangen: {cmd_name} (ID: {cmd_id})")
-                if modbus_client and modbus_client.connected:
-                    success = execute_command(modbus_client, int(conf["slave_id"]), cmd_name)
+                if ser and ser.is_open:
+                    success = execute_command(ser, int(conf["slave_id"]), cmd_name)
                     store_command_result(conf["db_path"], cmd_id, cmd_name, success,
                                         "OK" if success else "Modbus-Schreibfehler")
                 else:
@@ -728,19 +773,11 @@ def main():
     # DB initialisieren
     init_db(conf["db_path"])
 
-    # Modbus RTU Client
-    parity = conf.get("parity", "N")
-    if parity not in ("N", "E", "O"):
-        parity = "N"
-    client = ModbusSerialClient(
-        port=conf["serial_port"],
-        baudrate=int(conf["baud_rate"]),
-        bytesize=8,
-        parity=parity,
-        stopbits=1,
-        timeout=3,
-    )
+    # Serielle Verbindung (Raw Serial - P810 kompatibel)
+    parity_map = {"N": "N", "E": "E", "O": "O"}
+    parity = parity_map.get(conf.get("parity", "N"), "N")
 
+    ser = None
     last_sync_time = 0
     last_gps = None
     last_gps_time = 0
@@ -753,20 +790,32 @@ def main():
 
     while True:
         try:
-            # Modbus verbinden
-            if not client.connected:
-                if not client.connect():
-                    log.warning(f"Modbus-Verbindung zu {conf['serial_port']} fehlgeschlagen")
+            # Serielle Verbindung oeffnen
+            if ser is None or not ser.is_open:
+                try:
+                    ser = serial.Serial(
+                        port=conf["serial_port"],
+                        baudrate=int(conf["baud_rate"]),
+                        bytesize=8,
+                        parity=parity,
+                        stopbits=1,
+                        timeout=1,
+                    )
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
+                    time.sleep(0.5)
+                    log.info(f"Seriell verbunden: {conf['serial_port']} @ {conf['baud_rate']} Baud")
+                    clear_alarm(conf["db_path"], "modbus_disconnect")
+                except Exception as e:
+                    log.warning(f"Serielle Verbindung zu {conf['serial_port']} fehlgeschlagen: {e}")
                     store_alarm(conf["db_path"], "modbus_disconnect", 0,
-                                f"Modbus-Verbindung zu {conf['serial_port']} fehlgeschlagen")
+                                f"Serielle Verbindung fehlgeschlagen: {e}")
                     consecutive_errors += 1
                     time.sleep(int(conf["retry_delay"]))
                     continue
-                log.info(f"Modbus verbunden: {conf['serial_port']}")
-                clear_alarm(conf["db_path"], "modbus_disconnect")
 
             # DSE 5510 auslesen (jede Sekunde)
-            data = read_dse5510(client, int(conf["slave_id"]))
+            data = read_dse5510(ser, int(conf["slave_id"]))
             if data.get("online"):
                 store_telemetry(conf["db_path"], data)
                 consecutive_errors = 0
@@ -806,7 +855,7 @@ def main():
 
             # Periodisch zum Portal syncen
             if now - last_sync_time >= int(conf["sync_interval"]):
-                synced = sync_to_portal(conf, last_gps, client)
+                synced = sync_to_portal(conf, last_gps, ser)
                 portal_connected = synced >= 0  # Track portal connectivity  # noqa: F841
                 last_sync_time = now
 
@@ -828,7 +877,8 @@ def main():
 
         time.sleep(int(conf["read_interval"]))
 
-    client.close()
+    if ser and ser.is_open:
+        ser.close()
     log.info("Verbindung geschlossen.")
 
 

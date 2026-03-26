@@ -160,9 +160,17 @@ def main():
             if signed and val_raw > 32767:
                 val_raw = val_raw - 65536
 
-        # 0xFFFF / 0xFFFE = nicht implementiert in GenComm
-        if val_raw in (65535, 65534) or (count == 2 and val_raw >= 0xFFFFFFFE):
+        # GenComm n/a Sentinel-Werte
+        NA_UNSIGNED = {65535, 65534, 65533, 65531}  # 0xFFFF, 0xFFFE, 0xFFFD, 0xFFFB
+        NA_SIGNED = {32763, 32764, 32765, 32766, 32767}  # 0x7FFB-0x7FFF
+
+        if val_raw in NA_UNSIGNED or (count == 2 and val_raw >= 0xFFFFFFFE):
             print(f"  {label:<28} {addr:>6}   0x{regs[0]:04X}   {CYAN}n/a{RESET}")
+            success += 1
+            continue
+
+        if signed and regs[0] in NA_SIGNED:
+            print(f"  {label:<28} {addr:>6}   0x{regs[0]:04X}   {CYAN}n/a (Sensor inaktiv){RESET}")
             success += 1
             continue
 
