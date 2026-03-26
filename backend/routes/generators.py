@@ -58,6 +58,7 @@ async def _resolve_generator(generator_id: str):
                 "notes": device.get("notes", ""),
                 "last_seen": device.get("last_seen"),
                 "dse_module_uid": device.get("dse_module_uid", ""),
+                "last_dse_mode": device.get("last_dse_mode"),
             }
     return None
 
@@ -412,6 +413,11 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
             latest["hours_run"] = latest["engine_run_hours"]
         if "power_factor_avg" in latest and "power_factor" not in latest:
             latest["power_factor"] = latest["power_factor_avg"]
+        # DSE-Modus aus letztem Steuerbefehl uebernehmen wenn Register nicht lesbar
+        if latest.get("dse_mode") in (None, "unknown", ""):
+            last_mode = gen.get("last_dse_mode")
+            if last_mode:
+                latest["dse_mode"] = last_mode
     gen["latest_telemetry"] = latest
 
     # Attach recent alarms
@@ -963,6 +969,13 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         inserted += 1
 
     # Process command results
+    # Modus-Befehle die den DSE-Modus aendern
+    MODE_COMMANDS = {
+        "stop": "stop",
+        "auto_on": "auto",
+        "manual": "manual",
+    }
+    last_mode_from_cmd = None
     for cr in (payload.command_results or []):
         cmd_id = cr.get("command_id", "")
         if cmd_id:
@@ -974,6 +987,25 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
                     "completed_at": now_iso,
                 }}
             )
+            # Wenn ein Modus-Befehl erfolgreich war, Modus merken
+            if cr.get("success"):
+                cmd_doc = await db.generator_pending_commands.find_one({"id": cmd_id}, {"_id": 0})
+                if cmd_doc:
+                    cmd_name = cmd_doc.get("command", "")
+                    if cmd_name in MODE_COMMANDS:
+                        last_mode_from_cmd = MODE_COMMANDS[cmd_name]
+
+    # DSE-Modus aus letztem erfolgreichen Befehl aktualisieren
+    if last_mode_from_cmd:
+        await db.generators.update_one(
+            {"generator_id": generator_id},
+            {"$set": {"last_dse_mode": last_mode_from_cmd, "last_dse_mode_at": now_iso}}
+        )
+        await db.devices.update_one(
+            {"id": payload.device_id},
+            {"$set": {"last_dse_mode": last_mode_from_cmd, "last_dse_mode_at": now_iso}}
+        )
+        logger.info(f"DSE-Modus aktualisiert: {last_mode_from_cmd} (aus Befehl)")
 
     # Process alarms from Pi into generator_events log
     for alarm in (payload.alarms or []):
