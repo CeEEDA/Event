@@ -359,8 +359,7 @@ export default function GeneratorDetailPage() {
           const switchClosed = t?.breaker_closed === true || (hasPower && isRunning);
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
-          const isPiDevice = id && id.startsWith("dev-");
-          const canWrite = !isPiDevice;
+          const canWrite = true; // FC16 @4104 funktioniert (DSE antwortet mit FC03 Read-Back)
 
           const DseImgBtn = ({ cmd, label, imgSrc, active, glowColor, size = 64, disabled = false }) => (
             <button
@@ -459,15 +458,6 @@ export default function GeneratorDetailPage() {
                 <div className="px-5 py-4 flex flex-wrap items-center justify-center gap-8 border-t border-gray-100">
                   <StatusIndicator on={genReady} label="Generator bereit" imgSrc="/dse-buttons/geno.png" />
                   <StatusIndicator on={switchClosed} label="Hauptschalter geschlossen" imgSrc="/dse-buttons/netz.png" />
-                </div>
-              )}
-
-              {/* Hinweis bei Read-Only Geraeten */}
-              {!canWrite && isPiDevice && (
-                <div className="px-5 py-2 border-t border-gray-100">
-                  <p className="text-[10px] text-gray-400 text-center">
-                    Nur Monitoring via RS232 - Fernsteuerung erfordert DSE 890
-                  </p>
                 </div>
               )}
 

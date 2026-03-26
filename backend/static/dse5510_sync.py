@@ -238,7 +238,8 @@ def _raw_read(ser, slave, register, count, timeout_s=0.25):
 
 
 def _raw_write(ser, slave, register, values, timeout_s=1.0):
-    """Schreibt Modbus Holding Register via rohem Serial (FC16)."""
+    """Schreibt Modbus Holding Register via rohem Serial (FC16).
+    DSE GenComm antwortet mit FC03 Read-Back statt Standard FC16 Response."""
     count = len(values)
     byte_count = count * 2
     frame = struct.pack(">BBHHB", slave, 0x10, register, count, byte_count)
@@ -246,34 +247,28 @@ def _raw_write(ser, slave, register, values, timeout_s=1.0):
         frame += struct.pack(">H", v)
     frame += _calc_crc(frame)
 
-    log.info(f"  TX FC16: {frame.hex()}")
-
     ser.reset_input_buffer()
     ser.write(frame)
-
-    # Laenger warten und alles lesen was kommt
     time.sleep(timeout_s)
+
     response = ser.read(ser.in_waiting or 20)
 
-    if len(response) > 0:
-        log.info(f"  RX: {response.hex()} ({len(response)} bytes)")
-    else:
-        log.warning(f"  RX: LEER (0 bytes) - DSE antwortet nicht auf FC16 @{register}")
+    if len(response) == 0:
+        log.warning(f"Write FC16: Keine Antwort (0 bytes) fuer Register {register}")
         return False
 
-    if len(response) < 6:
-        log.warning(f"  Antwort zu kurz: {len(response)} bytes")
-        return False
-    if response[0] != slave:
-        log.warning(f"  Falsche Slave-ID: {response[0]} != {slave}")
-        return False
+    # DSE GenComm Quirk: Antwortet mit FC03 (Read-Back) statt FC10 (Write-Confirm)
+    # Jede nicht-leere Antwort mit korrekter Slave-ID und ohne Exception = Erfolg
+    if response[0] == slave and not (response[1] & 0x80):
+        return True
+
     if response[1] & 0x80:
-        log.warning(f"  Modbus Exception: 0x{response[2]:02X}")
+        log.warning(f"Write FC16: Modbus Exception 0x{response[2]:02X} fuer Register {register}")
         return False
-    if response[1] != 0x10:
-        log.warning(f"  Unerwartete Funktion: 0x{response[1]:02X}")
-        return False
-    return True
+
+    # Slave-ID stimmt nicht - evtl. verzoegerte Antwort einer vorherigen Abfrage
+    log.warning(f"Write FC16: Unerwartete Antwort Slave={response[0]} Func=0x{response[1]:02X}")
+    return False
 
 
 def _raw_write_single(ser, slave, register, value, timeout_s=1.0):
@@ -527,8 +522,8 @@ def poll_commands(conf, ser):
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
-    """Fuehrt einen DSE-Steuerbefehl via Raw Modbus RTU aus.
-    Versucht verschiedene Methoden: FC16 und FC06, Register 4104 und 4096."""
+    """Fuehrt einen DSE-Steuerbefehl via FC16 an Register 4104 aus.
+    DSE GenComm antwortet mit FC03 Read-Back statt Standard FC16 Response."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -538,52 +533,32 @@ def execute_command(ser, slave_id, command_name):
     complement = cmd["complement"]
 
     try:
-        # Seriellen Puffer leeren
         time.sleep(0.3)
         ser.reset_input_buffer()
         ser.reset_output_buffer()
         time.sleep(0.1)
 
-        log.info(f"Fuehre Befehl aus: {cmd['label']} (Key={key}, Comp={complement})")
-
-        # Methode 1: FC16 an Register 4104 (GenSet Control) - Slave aus Config
+        log.info(f"Sende Befehl: {cmd['label']} (Key={key}, Comp={complement})")
         success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement])
+
         if success:
-            log.info(f"Befehl OK (FC16 @4104 Slave {slave_id}): {cmd['label']}")
+            log.info(f"Befehl OK: {cmd['label']}")
             return True
 
-        # Methode 2: FC06 einzeln an Register 4104
-        time.sleep(0.3)
+        # Ein Retry mit laengerem Timeout
+        time.sleep(1.0)
         ser.reset_input_buffer()
-        s1 = _raw_write_single(ser, slave_id, REG_CONTROL_KEY, key)
-        if s1:
-            time.sleep(0.1)
-            s2 = _raw_write_single(ser, slave_id, REG_CONTROL_KEY + 1, complement)
-            if s2:
-                log.info(f"Befehl OK (FC06 @4104 Slave {slave_id}): {cmd['label']}")
-                return True
+        log.info(f"Retry: {cmd['label']}")
+        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement], timeout_s=2.0)
 
-        # Methode 3: Slave ID 1 (manche DSE nutzen Slave 1 fuer Steuerung)
-        if slave_id != 1:
-            time.sleep(0.3)
-            ser.reset_input_buffer()
-            success = _raw_write(ser, 1, REG_CONTROL_KEY, [key, complement])
-            if success:
-                log.info(f"Befehl OK (FC16 @4104 Slave 1): {cmd['label']}")
-                return True
-
-        # Methode 4: FC16 an Register 4096 (Module Control)
-        time.sleep(0.3)
-        ser.reset_input_buffer()
-        success = _raw_write(ser, slave_id, PAGE16, [key, complement])
         if success:
-            log.info(f"Befehl OK (FC16 @4096 Slave {slave_id}): {cmd['label']}")
+            log.info(f"Befehl OK (Retry): {cmd['label']}")
             return True
 
-        log.error(f"Befehl fehlgeschlagen (alle 4 Methoden): {command_name}")
+        log.error(f"Befehl fehlgeschlagen: {command_name}")
         return False
     except Exception as e:
-        log.error(f"Fehler beim Ausfuehren von {command_name}: {e}")
+        log.error(f"Fehler: {command_name}: {e}")
         return False
 
 
@@ -1024,11 +999,9 @@ def main():
                 last_gps_time = now
 
             # Schnelles Command-Polling (alle 5 Sekunden)
-            # Deaktiviert: P810 RS232 Diagnose-Port unterstuetzt keine Writes (FC06/FC16)
-            # Wird aktiv wenn DSE 890 angebunden ist
-            # if now - last_cmd_poll_time >= 5:
-            #     poll_commands(conf, ser)
-            #     last_cmd_poll_time = now
+            if now - last_cmd_poll_time >= 5:
+                poll_commands(conf, ser)
+                last_cmd_poll_time = now
 
             # Periodisch zum Portal syncen (alle 30 Sekunden)
             if now - last_sync_time >= int(conf["sync_interval"]):
