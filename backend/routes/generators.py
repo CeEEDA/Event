@@ -869,6 +869,24 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     # Resolve generator_id: use "dev-{device_id}" pattern for virtual generators
     generator_id = payload.generator_id or f"dev-{payload.device_id}"
 
+    # Auto-create virtual generator if not exists
+    existing_gen = await db.generators.find_one({"generator_id": generator_id}, {"_id": 0})
+    if not existing_gen:
+        device_name = device.get("name") or device.get("device_type", "Stromerzeuger")
+        gen_doc = {
+            "id": str(uuid.uuid4()),
+            "generator_id": generator_id,
+            "device_id": payload.device_id,
+            "name": f"DSE 5510 ({device_name})",
+            "type": "dse5510_pi",
+            "status": "online",
+            "mqtt_status": "online",
+            "last_seen": now_iso,
+            "created_at": now_iso,
+        }
+        await db.generators.insert_one(gen_doc)
+        logger.info(f"Auto-created generator: {generator_id} for device {payload.device_id}")
+
     # Update device status
     update_fields = {
         "last_seen": now_iso,
@@ -879,6 +897,13 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         update_fields["latitude"] = payload.latitude
         update_fields["longitude"] = payload.longitude
     await db.devices.update_one({"id": payload.device_id}, {"$set": update_fields})
+
+    # Update virtual generator status too
+    gen_update = {"last_seen": now_iso, "mqtt_status": "online", "updated_at": now_iso}
+    if payload.latitude is not None and payload.longitude is not None:
+        gen_update["latitude"] = payload.latitude
+        gen_update["longitude"] = payload.longitude
+    await db.generators.update_one({"generator_id": generator_id}, {"$set": gen_update})
 
     # Store telemetry records
     inserted = 0

@@ -549,7 +549,8 @@ def execute_command(ser, slave_id, command_name):
         pass
     time.sleep(0.3)
 
-    # Subprocess-Skript: Exakt wie diagnose_write.py - 3x senden
+    # Subprocess-Skript: Exakt wie diagnose_write.py
+    # Versucht zuerst konfigurierten Baudrate, dann 19200 (Diagnose-Skript Default)
     py_cmd = f"""
 import serial, struct, time, sys
 def crc(d):
@@ -570,40 +571,55 @@ def send_fc16(ser, slave, reg, key, comp):
     r=ser.read(ser.in_waiting or 50)
     return r
 
-port=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=2)
-time.sleep(0.5)
+def try_write(baud):
+    port=serial.Serial("{port_name}",baud,bytesize=8,parity="N",stopbits=1,timeout=2)
+    time.sleep(0.5)
+    got=False
+    # Muster: Slave -> Broadcast -> Slave -> Slave (wie Diagnose-Test)
+    r1=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
+    if r1: got=True
+    time.sleep(0.3)
+    send_fc16(port,0,{REG_CONTROL_KEY},{key},{complement})
+    time.sleep(0.3)
+    r3=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
+    if r3: got=True
+    time.sleep(0.3)
+    r4=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
+    if r4: got=True
+    port.close()
+    best=r4 or r3 or r1
+    return got, best
 
-# Muster aus erfolgreichem Diagnose-Test: Slave -> Broadcast -> Slave -> Slave
-got_response=False
+# Versuch 1: Konfigurierte Baudrate ({baudrate})
+ok, resp = try_write({baudrate})
+if ok:
+    print(f"OK:1:{{resp.hex() if resp else 'leer'}}:baud={baudrate}")
+    sys.exit(0)
 
-# 1) FC16 an Slave {slave_id}
-r1=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
-if r1: got_response=True
-time.sleep(0.3)
+# Versuch 2: 19200 (DSE Default / Diagnose-Skript)
+if {baudrate} != 19200:
+    time.sleep(0.3)
+    ok2, resp2 = try_write(19200)
+    if ok2:
+        print(f"OK:1:{{resp2.hex() if resp2 else 'leer'}}:baud=19200")
+        sys.exit(0)
 
-# 2) Broadcast (Slave 0) - kein Response erwartet
-send_fc16(port,0,{REG_CONTROL_KEY},{key},{complement})
-time.sleep(0.3)
+# Versuch 3: 9600 falls noch nicht versucht
+if {baudrate} != 9600:
+    time.sleep(0.3)
+    ok3, resp3 = try_write(9600)
+    if ok3:
+        print(f"OK:1:{{resp3.hex() if resp3 else 'leer'}}:baud=9600")
+        sys.exit(0)
 
-# 3) Nochmal FC16 an Slave {slave_id}
-r3=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
-if r3: got_response=True
-time.sleep(0.3)
-
-# 4) Letzter Versuch
-r4=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
-if r4: got_response=True
-
-port.close()
-best=r4 or r3 or r1
-print(f"OK:{{1 if got_response else 0}}:{{best.hex() if best else 'leer'}}")
+print("OK:0:leer:keine_antwort")
 """
     try:
         import subprocess
         log.info(f"Sende Befehl (Subprocess, exklusiv): {cmd['label']} (Key={key})")
         result = subprocess.run(
             [sys.executable, "-c", py_cmd],
-            capture_output=True, text=True, timeout=20
+            capture_output=True, text=True, timeout=60
         )
         output = result.stdout.strip()
         log.info(f"Subprocess Ergebnis: {output}")
