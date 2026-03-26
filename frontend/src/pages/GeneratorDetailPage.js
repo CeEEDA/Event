@@ -359,37 +359,36 @@ export default function GeneratorDetailPage() {
           const switchClosed = t?.breaker_closed === true || (hasPower && isRunning);
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
+          const isPiDevice = id && id.startsWith("dev-");
+          const canWrite = !isPiDevice;
 
-          const DseImgBtn = ({ cmd, label, imgSrc, active, glowColor, size = 64 }) => (
+          const DseImgBtn = ({ cmd, label, imgSrc, active, glowColor, size = 64, disabled = false }) => (
             <button
-              onClick={() => sendCommand(cmd, label)}
-              disabled={cmdLoading !== null}
-              className="group disabled:opacity-40 focus:outline-none flex flex-col items-center"
+              onClick={() => !disabled && sendCommand(cmd, label)}
+              disabled={disabled || cmdLoading !== null}
+              className={`group focus:outline-none flex flex-col items-center ${disabled ? "opacity-30 cursor-not-allowed" : "disabled:opacity-40"}`}
               data-testid={`cmd-${cmd}-btn`}
+              title={disabled ? "Fernsteuerung nur mit DSE 890" : label}
             >
               <div
                 className="relative rounded-full transition-all duration-200"
                 style={{
                   width: size, height: size,
-                  filter: active ? `drop-shadow(0 0 10px ${glowColor || 'rgba(255,255,255,0.4)'})` : 'none',
+                  filter: active ? `drop-shadow(0 0 10px ${glowColor || 'rgba(255,255,255,0.4)'})` : disabled ? 'grayscale(80%)' : 'none',
                   transform: cmdLoading === cmd ? 'scale(0.92)' : 'scale(1)',
                 }}
               >
                 <img
                   src={imgSrc}
                   alt={label}
-                  className="w-full h-full object-contain rounded-full transition-all duration-150 group-hover:brightness-110 group-active:brightness-90"
+                  className={`w-full h-full object-contain rounded-full transition-all duration-150 ${disabled ? '' : 'group-hover:brightness-110 group-active:brightness-90'}`}
                   draggable={false}
-                  style={{
-                    opacity: active ? 1 : 0.85,
-                  }}
+                  style={{ opacity: active ? 1 : disabled ? 0.5 : 0.85 }}
                 />
                 {active && (
                   <div
                     className="absolute inset-0 rounded-full pointer-events-none"
-                    style={{
-                      boxShadow: `0 0 16px 4px ${glowColor || 'rgba(255,255,255,0.3)'}`,
-                    }}
+                    style={{ boxShadow: `0 0 16px 4px ${glowColor || 'rgba(255,255,255,0.3)'}` }}
                   />
                 )}
               </div>
@@ -463,30 +462,39 @@ export default function GeneratorDetailPage() {
                 </div>
               )}
 
+              {/* Hinweis bei Read-Only Geraeten */}
+              {!canWrite && isPiDevice && (
+                <div className="px-5 py-2 border-t border-gray-100">
+                  <p className="text-[10px] text-gray-400 text-center">
+                    Nur Monitoring via RS232 - Fernsteuerung erfordert DSE 890
+                  </p>
+                </div>
+              )}
+
               {/* Main Control Buttons */}
               <div className="px-5 py-5 flex items-end justify-center gap-4 sm:gap-6 flex-wrap border-t border-gray-100">
                 <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
-                  active={isStop}
+                  active={isStop} disabled={!canWrite}
                   glowColor="rgba(239,68,68,0.5)" size={68} />
 
                 {is5510 && (
                   <DseImgBtn cmd="manual" label="Manuell" imgSrc="/dse-buttons/hand.png"
-                    active={isManual}
+                    active={isManual} disabled={!canWrite}
                     glowColor="rgba(251,191,36,0.4)" size={68} />
                 )}
 
                 <DseImgBtn cmd="auto_on" label="Auto" imgSrc="/dse-buttons/auto.png"
-                  active={isAuto}
+                  active={isAuto} disabled={!canWrite}
                   glowColor="rgba(52,211,153,0.5)" size={68} />
 
                 {is5510 && (
                   <DseImgBtn cmd="mute" label="Hupe Aus" imgSrc="/dse-buttons/hupe-aus.png"
-                    active={false}
+                    active={false} disabled={!canWrite}
                     glowColor="rgba(239,68,68,0.3)" size={68} />
                 )}
 
                 <DseImgBtn cmd="start" label="Start" imgSrc="/dse-buttons/start.png"
-                  active={isRunning}
+                  active={isRunning} disabled={!canWrite}
                   glowColor="rgba(34,197,94,0.5)" size={68} />
               </div>
 
@@ -494,16 +502,17 @@ export default function GeneratorDetailPage() {
               {is5510 && (
                 <div className="px-5 py-4 flex items-end justify-center gap-5 border-t border-gray-100">
                   <DseImgBtn cmd="gen_switch_on" label="Gen EIN" imgSrc="/dse-buttons/geno.png"
-                    active={switchClosed}
+                    active={switchClosed} disabled={!canWrite}
                     glowColor="rgba(59,130,246,0.5)" size={52} />
                   <DseImgBtn cmd="gen_switch_off" label="Gen AUS" imgSrc="/dse-buttons/netz.png"
-                    active={false}
+                    active={false} disabled={!canWrite}
                     glowColor="rgba(249,115,22,0.4)" size={52} />
                   <button
                     onClick={() => sendCommand("reset", "Alarme zuruecksetzen")}
-                    disabled={cmdLoading !== null}
-                    className="group disabled:opacity-40 focus:outline-none flex flex-col items-center"
+                    disabled={!canWrite || cmdLoading !== null}
+                    className={`group focus:outline-none flex flex-col items-center ${!canWrite ? "opacity-30 cursor-not-allowed" : "disabled:opacity-40"}`}
                     data-testid="cmd-reset-btn"
+                    title={!canWrite ? "Fernsteuerung nur mit DSE 890" : "Reset"}
                   >
                     <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 flex items-center justify-center ring-2 ring-gray-200 transition-all group-hover:brightness-95 group-active:scale-95"
                       style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.6)' }}>

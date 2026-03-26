@@ -1024,9 +1024,11 @@ def main():
                 last_gps_time = now
 
             # Schnelles Command-Polling (alle 5 Sekunden)
-            if now - last_cmd_poll_time >= 5:
-                poll_commands(conf, ser)
-                last_cmd_poll_time = now
+            # Deaktiviert: P810 RS232 Diagnose-Port unterstuetzt keine Writes (FC06/FC16)
+            # Wird aktiv wenn DSE 890 angebunden ist
+            # if now - last_cmd_poll_time >= 5:
+            #     poll_commands(conf, ser)
+            #     last_cmd_poll_time = now
 
             # Periodisch zum Portal syncen (alle 30 Sekunden)
             if now - last_sync_time >= int(conf["sync_interval"]):

@@ -173,6 +173,14 @@ Internet -> DNS (eventenergie.app -> 217.86.214.29)
 - Windows Installer (.exe) fuer Electron Desktop App
 - Health-Check / Monitoring fuer Portal-Erreichbarkeit
 
+### DSE 5510 Write-Diagnose (2026-03-26)
+- Ergebnis: P810 RS232 Diagnose-Port ist READ-ONLY fuer GenComm/Modbus
+- DSE behandelt FC16/FC06 Write-Frames als FC03 Read-Requests
+- Register 4104 (GenSet Control) gibt Exception 0x02 (Illegal Data Address) beim Lesen
+- Fernsteuerung (Start/Stop/Auto) erfordert DSE 890 MKII Modul
+- Buttons im Portal als "Nur Monitoring" markiert bei RS232-Geraeten
+- diagnose_write.py Skript erstellt fuer zukuenftige Hardware-Tests
+
 ### DSE Control Panel Redesign (abgeschlossen - 2026-03-26)
 - Original DSE 5510 Button-Bilder als interaktive Steuerungsbuttons integriert
 - 5 Hauptbuttons: Stop, Manuell, Auto, Hupe Aus (NEU), Start
