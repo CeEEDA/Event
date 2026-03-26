@@ -278,8 +278,16 @@ export default function GeneratorDetailPage() {
   const sendCommand = async (command, label) => {
     setCmdLoading(command);
     try {
-      await api.post(`/mqtt/control/${id}`, { command });
-      toast.success(`${label} gesendet`);
+      // Pi-basierte Geraete (DSE 5510 via RS232) nutzen HTTP-Polling statt MQTT
+      const isPiDevice = id && id.startsWith("dev-");
+      if (isPiDevice) {
+        const deviceId = id.replace("dev-", "");
+        await api.post(`/generators/pi-command/${deviceId}`, { command });
+        toast.success(`${label} gesendet (wird beim naechsten Sync ausgefuehrt)`);
+      } else {
+        await api.post(`/mqtt/control/${id}`, { command });
+        toast.success(`${label} gesendet`);
+      }
       setTimeout(fetchData, 2000);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Befehl konnte nicht gesendet werden");

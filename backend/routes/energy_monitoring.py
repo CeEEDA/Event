@@ -1122,27 +1122,59 @@ echo "  Aufraumen abgeschlossen."
 
 # ===== SCHRITT 1: SYSTEM AKTUALISIEREN =====
 echo ""
-echo "[1/6] System aktualisieren..."
+echo "[1/7] System aktualisieren..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients
 
-# ===== SCHRITT 2: PYTHON-UMGEBUNG =====
-echo "[2/6] Python-Umgebung einrichten..."
+# ===== SCHRITT 2: GPS KONFIGURIEREN =====
+echo "[2/7] GPS-Antenne konfigurieren..."
+
+GPS_DEV=""
+for dev in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyAMA0; do
+    if [ -e "$dev" ]; then
+        if [ "$dev" != "{body.serial_port}" ]; then
+            GPS_DEV="$dev"
+            echo "  GPS-Geraet gefunden: $GPS_DEV"
+            break
+        fi
+    fi
+done
+
+if [ -z "$GPS_DEV" ]; then
+    echo "  WARNUNG: Kein GPS-Geraet erkannt."
+    echo "  Nach Anschluss: sudo dpkg-reconfigure gpsd"
+    GPS_DEV="/dev/ttyACM0"
+fi
+
+sudo tee /etc/default/gpsd > /dev/null << GPSD_CONF
+START_DAEMON="true"
+USBAUTO="true"
+DEVICES="$GPS_DEV"
+GPSD_OPTIONS="-n"
+GPSD_SOCKET="/var/run/gpsd.sock"
+GPSD_CONF
+
+sudo systemctl enable gpsd
+sudo systemctl restart gpsd
+echo "  gpsd konfiguriert fuer: $GPS_DEV"
+
+# ===== SCHRITT 3: PYTHON-UMGEBUNG =====
+echo "[3/7] Python-Umgebung einrichten..."
 INSTALL_DIR="/opt/dse5510"
 sudo rm -rf "$INSTALL_DIR"
 sudo mkdir -p "$INSTALL_DIR"
 sudo python3 -m venv "$INSTALL_DIR/venv"
-sudo "$INSTALL_DIR/venv/bin/pip" install --quiet "pymodbus>=3.7" pyserial requests gpsd-py3
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet pyserial requests gpsd-py3
 
-# ===== SCHRITT 3: SYNC-SKRIPT =====
-echo "[3/6] Sync-Skript installieren..."
+# ===== SCHRITT 4: SYNC-SKRIPT =====
+echo "[4/7] Sync-Skript installieren..."
 sudo tee "$INSTALL_DIR/dse5510_sync.py" > /dev/null << 'SYNC_SCRIPT'
 {sync_script}
 SYNC_SCRIPT
 sudo chmod +x "$INSTALL_DIR/dse5510_sync.py"
 
-# ===== SCHRITT 4: KONFIGURATION =====
-echo "[4/6] Konfiguration schreiben..."
+# ===== SCHRITT 5: KONFIGURATION =====
+echo "[5/7] Konfiguration schreiben..."
 sudo mkdir -p /var/lib/dse5510
 
 sudo tee /etc/dse5510.conf > /dev/null << 'CONF'
@@ -1164,8 +1196,8 @@ CONF
 
 sudo chmod 600 /etc/dse5510.conf
 
-# ===== SCHRITT 5: SYSTEMD SERVICE =====
-echo "[5/6] Systemd-Service einrichten..."
+# ===== SCHRITT 6: SYSTEMD SERVICE =====
+echo "[6/7] Systemd-Service einrichten..."
 sudo tee /etc/systemd/system/dse5510_sync.service > /dev/null << 'SERVICE'
 [Unit]
 Description=DSE 5510 Sync - Eventenergie Portal
@@ -1189,13 +1221,26 @@ sudo systemctl daemon-reload
 sudo systemctl enable dse5510_sync
 sudo systemctl restart dse5510_sync
 
-# ===== SCHRITT 6: VERIFIZIERUNG =====
-echo "[6/6] Verifiziere Installation..."
+# ===== SCHRITT 7: VERIFIZIERUNG =====
+echo "[7/7] Verifiziere Installation..."
 sleep 3
-if systemctl is-active --quiet dse5510_sync; then
-    echo "  Service laeuft!"
+
+# GPS Status pruefen
+echo ""
+echo "  GPS Status:"
+if systemctl is-active --quiet gpsd; then
+    echo "    gpsd laeuft"
+    timeout 5 gpspipe -w -n 3 2>/dev/null | head -3 || echo "    GPS wartet auf Fix (kann ein paar Minuten dauern)"
 else
-    echo "  WARNUNG: Service ist nicht aktiv!"
+    echo "    gpsd ist NICHT aktiv"
+fi
+
+# Sync-Service pruefen
+echo ""
+if systemctl is-active --quiet dse5510_sync; then
+    echo "  Sync-Service laeuft!"
+else
+    echo "  WARNUNG: Sync-Service ist nicht aktiv!"
     echo "  Pruefe mit: sudo journalctl -u dse5510_sync -n 20"
 fi
 
@@ -1218,7 +1263,11 @@ echo "    sudo systemctl status dse5510_sync"
 echo "    sudo journalctl -u dse5510_sync -f"
 echo ""
 echo "  Serielle Ports auflisten:"
-echo "    ls -la /dev/ttyUSB* /dev/ttyAMA* 2>/dev/null"
+echo "    ls -la /dev/ttyUSB* /dev/ttyAMA* /dev/ttyACM* 2>/dev/null"
+echo ""
+echo "  GPS Status pruefen:"
+echo "    sudo gpsmon"
+echo "    sudo systemctl status gpsd"
 echo ""
 echo "  Falls der Port nicht stimmt, anpassen in:"
 echo "    sudo nano /etc/dse5510.conf"
