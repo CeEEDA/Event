@@ -342,10 +342,13 @@ export default function GeneratorDetailPage() {
         {/* DSE Control Panel */}
         {canControl && (() => {
           const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
-          const isAuto = generator.status === "online" || generator.status === "standby";
+          const dseMode = t?.dse_mode || null;
+          const isAuto = dseMode === "auto" || dseMode === "auto_manual_restore";
+          const isManual = dseMode === "manual";
+          const isStop = dseMode === "stop" || dseMode === "off";
           const hasPower = (t?.power_total_w || t?.power_kw) > 0;
-          const genReady = hasPower || isRunning;
-          const switchClosed = hasPower && isRunning;
+          const genReady = t?.generator_available === true || (hasPower || isRunning);
+          const switchClosed = t?.breaker_closed === true || (hasPower && isRunning);
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
 
@@ -455,12 +458,12 @@ export default function GeneratorDetailPage() {
               {/* Main Control Buttons */}
               <div className="px-5 py-5 flex items-end justify-center gap-4 sm:gap-6 flex-wrap border-t border-gray-100">
                 <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
-                  active={!isRunning && !isAuto}
+                  active={isStop}
                   glowColor="rgba(239,68,68,0.5)" size={68} />
 
                 {is5510 && (
                   <DseImgBtn cmd="manual" label="Manuell" imgSrc="/dse-buttons/hand.png"
-                    active={false}
+                    active={isManual}
                     glowColor="rgba(251,191,36,0.4)" size={68} />
                 )}
 

@@ -917,6 +917,11 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
             "engine_run_hours": record.get("engine_run_hours"),
             "energy_kwh": record.get("energy_kwh"),
             "num_starts": record.get("num_starts"),
+            # DSE Mode & Status
+            "dse_mode": record.get("dse_mode"),
+            "dse_mode_raw": record.get("dse_mode_raw"),
+            "generator_available": record.get("generator_available"),
+            "breaker_closed": record.get("breaker_closed"),
         }
         # Remove None values to keep documents clean
         telemetry_doc = {k: v for k, v in telemetry_doc.items() if v is not None}

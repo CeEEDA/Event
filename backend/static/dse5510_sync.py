@@ -84,6 +84,26 @@ REG_NUM_STARTS         = PAGE7 + 16   # Starts, 32bit, scale 1
 # --- Page 3: Status Information (Base: 768) ---
 PAGE3 = 3 * 256  # = 768
 
+# --- Page 1: Identification & Mode (Base: 256) ---
+PAGE1 = 1 * 256  # = 256
+REG_INSTRUMENT_MODE    = PAGE1 + 14   # Betriebsmodus, 16bit
+# Werte: 0=Stop, 1=Auto, 2=Manual, 3=Test on Load, 4=Auto w/ Manual Restore, 5=User Config, 6=Off
+
+# DSE Mode Mapping
+DSE_MODE_MAP = {
+    0: "stop",
+    1: "auto",
+    2: "manual",
+    3: "test_on_load",
+    4: "auto_manual_restore",
+    5: "user_config",
+    6: "off",
+}
+
+# --- Page 3 Status Flags ---
+REG_GEN_AVAILABLE      = PAGE3 + 14   # Generator verfuegbar Flag, 16bit
+REG_GEN_BREAKER_CLOSED = PAGE3 + 15   # Hauptschalter geschlossen Flag, 16bit
+
 # --- Page 16: System Control (Base: 4096) ---
 PAGE16 = 16 * 256  # = 4096
 REG_CONTROL_KEY        = PAGE16 + 8   # Write only, 16bit
@@ -333,6 +353,13 @@ def read_dse5510(ser, slave_id):
         pos_kwh = read_uint32(ser, REG_GEN_POS_KWH, slave_id)
         num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
+        # --- Page 1: Betriebsmodus ---
+        instrument_mode_raw = read_uint16(ser, REG_INSTRUMENT_MODE, slave_id)
+
+        # --- Page 3: Status Flags ---
+        gen_available_raw = read_uint16(ser, REG_GEN_AVAILABLE, slave_id)
+        breaker_closed_raw = read_uint16(ser, REG_GEN_BREAKER_CLOSED, slave_id)
+
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
         data["coolant_temp_c"] = coolant_temp if coolant_temp is not None else 0
@@ -374,14 +401,25 @@ def read_dse5510(ser, slave_id):
         # Motor-Laufstatus ableiten
         data["engine_running"] = (rpm is not None and rpm > 100)
 
+        # DSE Betriebsmodus
+        data["dse_mode_raw"] = instrument_mode_raw
+        data["dse_mode"] = DSE_MODE_MAP.get(instrument_mode_raw, "unknown") if instrument_mode_raw is not None else "unknown"
+
+        # Generator-Status-Flags
+        data["generator_available"] = bool(gen_available_raw and gen_available_raw > 0) if gen_available_raw is not None else False
+        data["breaker_closed"] = bool(breaker_closed_raw and breaker_closed_raw > 0) if breaker_closed_raw is not None else False
+
         data["online"] = True
 
         log.info(
-            f"DSE5510: RPM={'n/a' if rpm is None else rpm} "
+            f"DSE5510: Mode={data['dse_mode']}({instrument_mode_raw}) "
+            f"RPM={'n/a' if rpm is None else rpm} "
             f"V={data['voltage_l1']:.0f}/{data['voltage_l2']:.0f}/{data['voltage_l3']:.0f}V "
             f"I={data['current_l1']:.1f}/{data['current_l2']:.1f}/{data['current_l3']:.1f}A "
             f"P={data['power_total_w']}W F={data['frequency']:.1f}Hz "
             f"Batt={data['battery_voltage']:.1f}V "
+            f"GenReady={'Y' if data['generator_available'] else 'N'} "
+            f"BreakerClosed={'Y' if data['breaker_closed'] else 'N'} "
             f"Oil={'n/a' if oil_press is None else str(oil_press) + 'kPa'} "
             f"Cool={'n/a' if coolant_temp is None else str(coolant_temp) + 'C'} "
             f"Fuel={data['fuel_level_pct']}%"
