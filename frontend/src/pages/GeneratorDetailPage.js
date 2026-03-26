@@ -497,21 +497,6 @@ export default function GeneratorDetailPage() {
                   <DseImgBtn cmd="gen_switch_off" label="Gen AUS" imgSrc="/dse-buttons/netz.png"
                     active={false} disabled={!canWrite}
                     glowColor="rgba(249,115,22,0.4)" size={52} />
-                  <button
-                    onClick={() => sendCommand("reset", "Alarme zuruecksetzen")}
-                    disabled={!canWrite || cmdLoading !== null}
-                    className={`group focus:outline-none flex flex-col items-center ${!canWrite ? "opacity-30 cursor-not-allowed" : "disabled:opacity-40"}`}
-                    data-testid="cmd-reset-btn"
-                    title={!canWrite ? "Fernsteuerung nur mit DSE 890" : "Reset"}
-                  >
-                    <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-b from-gray-200 via-gray-300 to-gray-400 flex items-center justify-center ring-2 ring-gray-200 transition-all group-hover:brightness-95 group-active:scale-95"
-                      style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.1), inset 0 1px 2px rgba(255,255,255,0.6)' }}>
-                      <RotateCcw className="w-5 h-5 text-gray-600 group-hover:text-gray-800" />
-                    </div>
-                    <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium tracking-wide">
-                      {cmdLoading === "reset" ? "..." : "Reset"}
-                    </span>
-                  </button>
                 </div>
               )}
             </div>
