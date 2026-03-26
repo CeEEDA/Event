@@ -376,12 +376,14 @@ def read_dse5510(ser, slave_id):
         data["online"] = True
 
         log.info(
-            f"DSE5510: RPM={data['rpm']} "
+            f"DSE5510: RPM={'n/a' if rpm is None else rpm} "
             f"V={data['voltage_l1']:.0f}/{data['voltage_l2']:.0f}/{data['voltage_l3']:.0f}V "
             f"I={data['current_l1']:.1f}/{data['current_l2']:.1f}/{data['current_l3']:.1f}A "
             f"P={data['power_total_w']}W F={data['frequency']:.1f}Hz "
-            f"Batt={data['battery_voltage']:.1f}V Oil={data['oil_pressure_kpa']}kPa "
-            f"Cool={data['coolant_temp_c']}C Fuel={data['fuel_level_pct']}%"
+            f"Batt={data['battery_voltage']:.1f}V "
+            f"Oil={'n/a' if oil_press is None else str(oil_press) + 'kPa'} "
+            f"Cool={'n/a' if coolant_temp is None else str(coolant_temp) + 'C'} "
+            f"Fuel={data['fuel_level_pct']}%"
         )
 
     except Exception as e:

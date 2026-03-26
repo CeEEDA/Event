@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://pi-telemetry.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://pi-telemetry.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://pi-telemetry.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://modbus-dash.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://modbus-dash.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://modbus-dash.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }
