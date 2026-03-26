@@ -490,7 +490,9 @@ def read_gps():
 
 
 def poll_commands(conf, ser):
-    """Schnelle Befehlsabfrage (alle 5 Sek.) - leichtgewichtig, ohne Telemetriedaten."""
+    """Schnelle Befehlsabfrage (alle 5 Sek.) - leichtgewichtig, ohne Telemetriedaten.
+    WICHTIG: Bei Steuerbefehlen wird ser geschlossen (exklusiver Subprocess-Zugriff).
+    Gibt (anzahl_befehle, ser) zurueck - ser kann None sein wenn geschlossen."""
     try:
         resp = requests.get(
             f"{conf['api_url']}/generators/poll-commands/{conf['device_id']}",
@@ -505,26 +507,30 @@ def poll_commands(conf, ser):
                 cmd_id = cmd.get("id", "")
                 log.info(f"[POLL] Steuerbefehl: {cmd_name} (ID: {cmd_id})")
                 if ser and ser.is_open:
+                    # execute_command schliesst ser fuer exklusiven Subprocess-Zugriff
                     success = execute_command(ser, int(conf["slave_id"]), cmd_name)
+                    # ser ist jetzt GESCHLOSSEN - auf None setzen
+                    ser = None
                     store_command_result(conf["db_path"], cmd_id, cmd_name, success,
                                         "OK" if success else "Modbus-Schreibfehler")
                 else:
                     store_command_result(conf["db_path"], cmd_id, cmd_name, False,
                                         "Modbus nicht verbunden")
-            return len(cmds)
+            return len(cmds), ser
     except requests.ConnectionError:
         pass
     except Exception as e:
         log.debug(f"Command-Poll Fehler: {e}")
-    return 0
+    return 0, ser
 
 
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
     """Fuehrt den Write-Befehl in einem SEPARATEN Prozess aus.
-    Genau wie beim Diagnose-Skript: eigener File-Descriptor auf den Serial-Port.
-    Der Hauptprozess liest weiter - der Subprocess schreibt parallel."""
+    WICHTIG: Der Hauptprozess SCHLIESST den Serial-Port vorher,
+    damit der Subprocess EXKLUSIVEN Zugriff hat (wie beim Diagnose-Skript).
+    Muster: Slave -> Broadcast -> Slave (3x senden, wie im erfolgreichen Test)."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -535,7 +541,15 @@ def execute_command(ser, slave_id, command_name):
     port_name = ser.port
     baudrate = ser.baudrate
 
-    # Python-Einzeiler der den Write in einem eigenen Prozess ausfuehrt
+    # Hauptprozess: Serial-Port SCHLIESSEN fuer exklusiven Subprocess-Zugriff
+    log.info(f"Schliesse Serial-Port fuer Write-Befehl: {cmd['label']}")
+    try:
+        ser.close()
+    except Exception:
+        pass
+    time.sleep(0.3)
+
+    # Subprocess-Skript: Exakt wie diagnose_write.py - 3x senden
     py_cmd = f"""
 import serial, struct, time, sys
 def crc(d):
@@ -545,30 +559,61 @@ def crc(d):
         for _ in range(8):
             c=(c>>1)^0xA001 if c&1 else c>>1
     return struct.pack("<H",c)
-ser=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=2)
+
+def send_fc16(ser, slave, reg, key, comp):
+    ser.reset_input_buffer()
+    f=struct.pack(">BBHHB",slave,0x10,reg,2,4)
+    f+=struct.pack(">HH",key,comp)
+    f+=crc(f)
+    ser.write(f)
+    time.sleep(1.5)
+    r=ser.read(ser.in_waiting or 50)
+    return r
+
+port=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=2)
+time.sleep(0.5)
+
+# Muster aus erfolgreichem Diagnose-Test: Slave -> Broadcast -> Slave -> Slave
+got_response=False
+
+# 1) FC16 an Slave {slave_id}
+r1=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
+if r1: got_response=True
 time.sleep(0.3)
-f=struct.pack(">BBHHB",{slave_id},0x10,{REG_CONTROL_KEY},2,4)
-f+=struct.pack(">HH",{key},{complement})
-f+=crc(f)
-ser.write(f)
-time.sleep(1.5)
-r=ser.read(ser.in_waiting or 50)
-ser.close()
-print(f"OK:{{len(r)}}:{{r.hex() if r else 'leer'}}")
+
+# 2) Broadcast (Slave 0) - kein Response erwartet
+send_fc16(port,0,{REG_CONTROL_KEY},{key},{complement})
+time.sleep(0.3)
+
+# 3) Nochmal FC16 an Slave {slave_id}
+r3=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
+if r3: got_response=True
+time.sleep(0.3)
+
+# 4) Letzter Versuch
+r4=send_fc16(port,{slave_id},{REG_CONTROL_KEY},{key},{complement})
+if r4: got_response=True
+
+port.close()
+best=r4 or r3 or r1
+print(f"OK:{{1 if got_response else 0}}:{{best.hex() if best else 'leer'}}")
 """
     try:
         import subprocess
-        log.info(f"Sende Befehl (Subprocess): {cmd['label']} (Key={key})")
+        log.info(f"Sende Befehl (Subprocess, exklusiv): {cmd['label']} (Key={key})")
         result = subprocess.run(
             [sys.executable, "-c", py_cmd],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=20
         )
         output = result.stdout.strip()
         log.info(f"Subprocess Ergebnis: {output}")
-        if output.startswith("OK:"):
-            return True
         if result.stderr:
-            log.warning(f"Subprocess Fehler: {result.stderr.strip()[:200]}")
+            log.warning(f"Subprocess Stderr: {result.stderr.strip()[:300]}")
+        if output.startswith("OK:1:"):
+            return True
+        if output.startswith("OK:0:"):
+            log.warning(f"Subprocess: Befehl gesendet aber keine Antwort vom DSE")
+            return False
         return False
     except Exception as e:
         log.error(f"Fehler: {command_name}: {e}")
@@ -844,7 +889,9 @@ def sync_to_portal(conf, gps_data, ser):
                 cmd_id = cmd.get("id", "")
                 log.info(f"Steuerbefehl empfangen: {cmd_name} (ID: {cmd_id})")
                 if ser and ser.is_open:
+                    # execute_command schliesst ser fuer exklusiven Subprocess-Zugriff
                     success = execute_command(ser, int(conf["slave_id"]), cmd_name)
+                    ser = None  # ser ist jetzt geschlossen
                     store_command_result(conf["db_path"], cmd_id, cmd_name, success,
                                         "OK" if success else "Modbus-Schreibfehler")
                 else:
@@ -1013,8 +1060,14 @@ def main():
 
             # Schnelles Command-Polling (alle 5 Sekunden)
             if now - last_cmd_poll_time >= 5:
-                poll_commands(conf, ser)
+                cmd_count, ser = poll_commands(conf, ser)
                 last_cmd_poll_time = now
+                # Falls ser geschlossen wurde (durch execute_command),
+                # springt die naechste Iteration zu "if ser is None or not ser.is_open"
+                # und oeffnet den Port automatisch wieder
+                if cmd_count > 0 and (ser is None or not ser.is_open):
+                    log.info("Serial-Port nach Steuerbefehl geschlossen - wird automatisch neu geoeffnet")
+                    ser = None
 
             # Periodisch zum Portal syncen (alle 30 Sekunden)
             if now - last_sync_time >= int(conf["sync_interval"]):
