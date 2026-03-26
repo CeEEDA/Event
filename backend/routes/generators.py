@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -1074,6 +1074,39 @@ async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depe
         "status": "pending",
         "message": f"Befehl '{DSE_CMD_LABELS.get(command, command)}' wird beim naechsten Sync an den Pi gesendet.",
     }
+
+
+@router.get("/poll-commands/{device_id}")
+async def poll_commands(device_id: str, request: Request):
+    """Lightweight endpoint for Pi to quickly poll for pending commands.
+    Authenticated via device_key query param."""
+    device_key = request.query_params.get("key", "")
+    if not device_key:
+        raise HTTPException(status_code=401, detail="Kein Device-Key")
+
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    # Verify device key
+    import hashlib
+    key_hash = hashlib.sha256(device_key.encode()).hexdigest()
+    if device.get("device_key_hash") != key_hash:
+        raise HTTPException(status_code=401, detail="Falscher Device-Key")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    pending = await db.generator_pending_commands.find(
+        {"device_id": device_id, "status": "pending"},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(10)
+
+    for cmd in pending:
+        await db.generator_pending_commands.update_one(
+            {"id": cmd["id"]},
+            {"$set": {"status": "sent", "sent_at": now_iso}}
+        )
+
+    return {"pending_commands": pending}
 
 
 

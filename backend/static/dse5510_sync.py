@@ -252,16 +252,42 @@ def _raw_write(ser, slave, register, values, timeout_s=0.5):
 
     response = ser.read(20)
     if len(response) < 6:
-        log.debug(f"Write: Keine/kurze Antwort ({len(response)} bytes) fuer Register {register}")
+        log.warning(f"Write FC16: Keine/kurze Antwort ({len(response)} bytes) fuer Register {register}")
         return False
     if response[0] != slave:
-        log.debug(f"Write: Falsche Slave-ID in Antwort: {response[0]} != {slave}")
+        log.warning(f"Write FC16: Falsche Slave-ID: {response[0]} != {slave}")
         return False
     if response[1] & 0x80:
-        log.debug(f"Write: Modbus Fehler 0x{response[2]:02X} fuer Register {register}")
+        log.warning(f"Write FC16: Modbus Fehler 0x{response[2]:02X} fuer Register {register}")
         return False
     if response[1] != 0x10:
-        log.debug(f"Write: Falsche Funktion in Antwort: 0x{response[1]:02X}")
+        log.warning(f"Write FC16: Unerwartete Funktion: 0x{response[1]:02X}")
+        return False
+    return True
+
+
+def _raw_write_single(ser, slave, register, value, timeout_s=0.5):
+    """Schreibt ein einzelnes Modbus Holding Register via FC06."""
+    frame = struct.pack(">BBH", slave, 0x06, register)
+    frame += struct.pack(">H", value)
+    frame += _calc_crc(frame)
+
+    ser.reset_input_buffer()
+    ser.write(frame)
+    time.sleep(timeout_s)
+
+    response = ser.read(20)
+    if len(response) < 6:
+        log.warning(f"Write FC06: Keine/kurze Antwort ({len(response)} bytes) fuer Register {register}")
+        return False
+    if response[0] != slave:
+        log.warning(f"Write FC06: Falsche Slave-ID: {response[0]} != {slave}")
+        return False
+    if response[1] & 0x80:
+        log.warning(f"Write FC06: Modbus Fehler 0x{response[2]:02X} fuer Register {register}")
+        return False
+    if response[1] != 0x06:
+        log.warning(f"Write FC06: Unerwartete Funktion: 0x{response[1]:02X}")
         return False
     return True
 
@@ -452,42 +478,95 @@ def read_gps():
     return None
 
 
+def poll_commands(conf, ser):
+    """Schnelle Befehlsabfrage (alle 5 Sek.) - leichtgewichtig, ohne Telemetriedaten."""
+    try:
+        resp = requests.get(
+            f"{conf['api_url']}/generators/poll-commands/{conf['device_id']}",
+            params={"key": conf["device_key"]},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            cmds = result.get("pending_commands", [])
+            for cmd in cmds:
+                cmd_name = cmd.get("command", "")
+                cmd_id = cmd.get("id", "")
+                log.info(f"[POLL] Steuerbefehl: {cmd_name} (ID: {cmd_id})")
+                if ser and ser.is_open:
+                    success = execute_command(ser, int(conf["slave_id"]), cmd_name)
+                    store_command_result(conf["db_path"], cmd_id, cmd_name, success,
+                                        "OK" if success else "Modbus-Schreibfehler")
+                else:
+                    store_command_result(conf["db_path"], cmd_id, cmd_name, False,
+                                        "Modbus nicht verbunden")
+            return len(cmds)
+    except requests.ConnectionError:
+        pass
+    except Exception as e:
+        log.debug(f"Command-Poll Fehler: {e}")
+    return 0
+
+
 # ====== Steuerbefehle ======
 
 def execute_command(ser, slave_id, command_name):
-    """Fuehrt einen DSE-Steuerbefehl via Raw Modbus RTU aus."""
+    """Fuehrt einen DSE-Steuerbefehl via Raw Modbus RTU aus.
+    Versucht verschiedene Methoden: FC16 und FC06, Register 4104 und 4096."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
         return False
 
+    key = cmd["key"]
+    complement = cmd["complement"]
+
     try:
-        # Seriellen Puffer leeren und kurz warten vor dem Schreiben
-        time.sleep(0.5)
+        # Seriellen Puffer leeren
+        time.sleep(0.3)
         ser.reset_input_buffer()
         ser.reset_output_buffer()
         time.sleep(0.1)
 
-        log.info(f"Fuehre Befehl aus: {cmd['label']} (Key={cmd['key']})")
+        log.info(f"Fuehre Befehl aus: {cmd['label']} (Key={key}, Comp={complement})")
 
-        # Erster Versuch
-        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [cmd["key"], cmd["complement"]])
+        # Methode 1: FC16 an Register 4104 (GenSet Control)
+        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement])
         if success:
-            log.info(f"Befehl erfolgreich: {cmd['label']}")
+            log.info(f"Befehl OK (FC16 @4104): {cmd['label']}")
             return True
 
-        # Zweiter Versuch nach laengerem Reset
-        log.warning(f"Befehl 1. Versuch fehlgeschlagen, wiederhole: {command_name}")
-        time.sleep(1.0)
+        # Methode 2: FC06 einzeln an Register 4104
+        time.sleep(0.5)
         ser.reset_input_buffer()
-        ser.reset_output_buffer()
-        time.sleep(0.2)
-        success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [cmd["key"], cmd["complement"]])
+        s1 = _raw_write_single(ser, slave_id, REG_CONTROL_KEY, key)
+        if s1:
+            time.sleep(0.1)
+            s2 = _raw_write_single(ser, slave_id, REG_CONTROL_KEY + 1, complement)
+            if s2:
+                log.info(f"Befehl OK (FC06 @4104): {cmd['label']}")
+                return True
+
+        # Methode 3: FC16 an Register 4096 (Module Control)
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        success = _raw_write(ser, slave_id, PAGE16, [key, complement])
         if success:
-            log.info(f"Befehl erfolgreich (2. Versuch): {cmd['label']}")
+            log.info(f"Befehl OK (FC16 @4096): {cmd['label']}")
             return True
 
-        log.error(f"Befehl fehlgeschlagen nach 2 Versuchen: {command_name}")
+        # Methode 4: FC06 einzeln an Register 4096
+        time.sleep(0.5)
+        ser.reset_input_buffer()
+        s1 = _raw_write_single(ser, slave_id, PAGE16, key)
+        if s1:
+            time.sleep(0.1)
+            s2 = _raw_write_single(ser, slave_id, PAGE16 + 1, complement)
+            if s2:
+                log.info(f"Befehl OK (FC06 @4096): {cmd['label']}")
+                return True
+
+        log.error(f"Befehl fehlgeschlagen (alle 4 Methoden): {command_name}")
         return False
     except Exception as e:
         log.error(f"Fehler beim Ausfuehren von {command_name}: {e}")
@@ -842,6 +921,7 @@ def main():
 
     ser = None
     last_sync_time = 0
+    last_cmd_poll_time = 0
     last_gps = None
     last_gps_time = 0
     last_disk_check = 0
@@ -929,7 +1009,12 @@ def main():
                     last_gps = gps
                 last_gps_time = now
 
-            # Periodisch zum Portal syncen
+            # Schnelles Command-Polling (alle 5 Sekunden)
+            if now - last_cmd_poll_time >= 5:
+                poll_commands(conf, ser)
+                last_cmd_poll_time = now
+
+            # Periodisch zum Portal syncen (alle 30 Sekunden)
             if now - last_sync_time >= int(conf["sync_interval"]):
                 synced = sync_to_portal(conf, last_gps, ser)
                 portal_connected = synced >= 0  # Track portal connectivity  # noqa: F841
