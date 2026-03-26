@@ -523,7 +523,7 @@ def poll_commands(conf, ser):
 
 def execute_command(ser, slave_id, command_name):
     """Fuehrt einen DSE-Steuerbefehl via FC16 an Register 4104 aus.
-    DSE GenComm antwortet mit FC03 Read-Back statt Standard FC16 Response."""
+    Schliesst und oeffnet den seriellen Port neu fuer sauberen Write-Zugang."""
     cmd = DSE_COMMANDS.get(command_name)
     if not cmd:
         log.warning(f"Unbekannter Befehl: {command_name}")
@@ -533,24 +533,31 @@ def execute_command(ser, slave_id, command_name):
     complement = cmd["complement"]
 
     try:
-        time.sleep(0.3)
+        log.info(f"Sende Befehl: {cmd['label']} (Key={key}, Comp={complement})")
+
+        # Port-Einstellungen merken
+        port_name = ser.port
+        baudrate = ser.baudrate
+
+        # Port schliessen und neu oeffnen (wie im Diagnose-Skript)
+        ser.close()
+        time.sleep(0.5)
+        ser.open()
+        time.sleep(0.5)
         ser.reset_input_buffer()
         ser.reset_output_buffer()
-        time.sleep(0.1)
 
-        log.info(f"Sende Befehl: {cmd['label']} (Key={key}, Comp={complement})")
+        # Befehl senden
         success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement])
-
         if success:
             log.info(f"Befehl OK: {cmd['label']}")
             return True
 
-        # Ein Retry mit laengerem Timeout
+        # Retry
         time.sleep(1.0)
         ser.reset_input_buffer()
         log.info(f"Retry: {cmd['label']}")
         success = _raw_write(ser, slave_id, REG_CONTROL_KEY, [key, complement], timeout_s=2.0)
-
         if success:
             log.info(f"Befehl OK (Retry): {cmd['label']}")
             return True
@@ -559,6 +566,13 @@ def execute_command(ser, slave_id, command_name):
         return False
     except Exception as e:
         log.error(f"Fehler: {command_name}: {e}")
+        # Port sicherheitshalber wieder oeffnen
+        if not ser.is_open:
+            try:
+                ser.open()
+                time.sleep(0.3)
+            except Exception:
+                pass
         return False
 
 
