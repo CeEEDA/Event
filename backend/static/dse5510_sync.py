@@ -800,10 +800,11 @@ def cleanup_old(db_path, max_gb=60):
 # ====== Portal Sync ======
 
 def sync_to_portal(conf, gps_data, ser):
-    """Sendet Telemetrie-Daten an das Portal und empfaengt Steuerbefehle."""
+    """Sendet Telemetrie-Daten an das Portal und empfaengt Steuerbefehle.
+    Gibt (anzahl, ser) zurueck - ser kann None sein wenn durch Steuerbefehl geschlossen."""
     unsynced = get_unsynced(conf["db_path"], conf["batch_size"])
     if not unsynced:
-        return 0
+        return 0, ser
 
     records = []
     row_ids = []
@@ -876,7 +877,7 @@ def sync_to_portal(conf, gps_data, ser):
                     store_command_result(conf["db_path"], cmd_id, cmd_name, False,
                                         "Modbus nicht verbunden")
 
-            return inserted
+            return inserted, ser
         else:
             log.warning(f"Sync Fehler {resp.status_code}: {resp.text[:200]}")
     except requests.ConnectionError:
@@ -884,7 +885,7 @@ def sync_to_portal(conf, gps_data, ser):
     except Exception as e:
         log.error(f"Sync Fehler: {e}")
 
-    return 0
+    return 0, ser
 
 
 def _save_generator_id(gen_id):
@@ -1054,9 +1055,12 @@ def main():
 
             # Periodisch zum Portal syncen (alle 30 Sekunden)
             if now - last_sync_time >= int(conf["sync_interval"]):
-                synced = sync_to_portal(conf, last_gps, ser)
+                synced, ser = sync_to_portal(conf, last_gps, ser)
                 portal_connected = synced >= 0  # Track portal connectivity  # noqa: F841
                 last_sync_time = now
+                # Falls ser durch Steuerbefehl geschlossen wurde
+                if ser is None or (hasattr(ser, 'is_open') and not ser.is_open):
+                    ser = None
 
                 # Disk-Pruefung (nur alle 5 Minuten)
                 if now - last_disk_check >= 300:

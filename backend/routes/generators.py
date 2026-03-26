@@ -1150,6 +1150,8 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         created = cmd.get("created_at", "")
         try:
             cmd_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if cmd_time.tzinfo is None:
+                cmd_time = cmd_time.replace(tzinfo=timezone.utc)
             age = (datetime.now(timezone.utc) - cmd_time).total_seconds()
             if age > COMMAND_TTL_SECONDS:
                 await db.generator_pending_commands.update_one(
@@ -1269,6 +1271,8 @@ async def poll_commands(device_id: str, request: Request):
         created = cmd.get("created_at", "")
         try:
             cmd_time = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if cmd_time.tzinfo is None:
+                cmd_time = cmd_time.replace(tzinfo=timezone.utc)
             age = (datetime.now(timezone.utc) - cmd_time).total_seconds()
             if age > COMMAND_TTL_SECONDS:
                 await db.generator_pending_commands.update_one(
