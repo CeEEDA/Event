@@ -968,6 +968,18 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         await db.generator_telemetry.insert_one(telemetry_doc)
         inserted += 1
 
+        # DSE-Modus aus Register-Read aktualisieren (hat Prioritaet ueber Portal-Befehle)
+        record_dse_mode = record.get("dse_mode")
+        if record_dse_mode and record_dse_mode != "unknown":
+            await db.generators.update_one(
+                {"generator_id": generator_id},
+                {"$set": {"last_dse_mode": record_dse_mode, "last_dse_mode_at": now_iso}}
+            )
+            await db.devices.update_one(
+                {"id": payload.device_id},
+                {"$set": {"last_dse_mode": record_dse_mode, "last_dse_mode_at": now_iso}}
+            )
+
     # Process command results
     # Modus-Befehle die den DSE-Modus aendern
     MODE_COMMANDS = {
