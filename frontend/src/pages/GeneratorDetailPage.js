@@ -247,7 +247,7 @@ export default function GeneratorDetailPage() {
     setExporting(true);
     try {
       const fields = ["timestamp", "voltage_l1", "voltage_l2", "voltage_l3", "current_l1", "current_l2", "current_l3",
-        "power_total_w", "power_kw", "frequency", "battery_voltage", "coolant_temp", "oil_pressure",
+        "power_total_w", "power_kw", "energy_kwh", "frequency", "battery_voltage", "coolant_temp", "oil_pressure",
         "fuel_level", "hours_run", "rpm", "dse_mode"];
       const header = fields.join(";");
       const rows = analyseData.map(r => fields.map(f => {
@@ -678,6 +678,7 @@ export default function GeneratorDetailPage() {
             const chartData = analyseData.map(r => ({
               time: new Date(r.timestamp).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }),
               P_kW: r.power_kw || (r.power_total_w ? Math.round(r.power_total_w / 100) / 10 : 0),
+              kWh: r.energy_kwh || 0,
               U_L1: r.voltage_l1 || 0, U_L2: r.voltage_l2 || 0, U_L3: r.voltage_l3 || 0,
               I_L1: r.current_l1 || 0, I_L2: r.current_l2 || 0, I_L3: r.current_l3 || 0,
               Freq: r.frequency || 0,
@@ -690,16 +691,19 @@ export default function GeneratorDetailPage() {
                 {/* Leistung */}
                 <div className="border border-gray-100 rounded-lg p-4" data-testid="analyse-power-chart">
                   <h3 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Leistung (kW)
+                    <Zap className="w-3.5 h-3.5 text-amber-500" /> Leistung (kW) &amp; Energie (kWh)
                   </h3>
                   <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={chartData}>
+                    <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
-                      <YAxis tick={{ fontSize: 10 }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ fontSize: 12 }} />
-                      <Area type="monotone" dataKey="P_kW" name="Leistung" stroke="#A855F7" fill="#A855F7" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
-                    </AreaChart>
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Line yAxisId="left" type="monotone" dataKey="P_kW" name="kW" stroke="#A855F7" strokeWidth={1.5} dot={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="kWh" name="kWh" stroke="#F59E0B" strokeWidth={1.5} dot={false} />
+                    </LineChart>
                   </ResponsiveContainer>
                 </div>
 
