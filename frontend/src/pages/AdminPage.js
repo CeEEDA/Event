@@ -711,6 +711,7 @@ export default function AdminPage() {
                     <table className="w-full" data-testid="schausteller-table">
                       <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                         <tr>
+                          <th className="px-4 py-3 text-left w-24">Kd-Nr.</th>
                           <th className="px-4 py-3 text-left">Firma</th>
                           <th className="px-4 py-3 text-left">Name</th>
                           <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
@@ -723,13 +724,16 @@ export default function AdminPage() {
                       <tbody className="divide-y divide-gray-100">
                         {schausteller.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                               {schaustellerSearch ? "Keine Schausteller gefunden" : "Noch keine Schausteller registriert"}
                             </td>
                           </tr>
                         ) : (
                           schausteller.map(sch => (
                             <tr key={sch.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/admin/schausteller/${sch.id}`)} data-testid={`sch-row-${sch.id}`}>
+                              <td className="px-4 py-3">
+                                <span className="font-mono text-xs font-semibold text-fuchsia-600 bg-fuchsia-50 px-2 py-0.5 rounded" data-testid={`sch-knr-${sch.id}`}>{sch.kundennummer || "–"}</span>
+                              </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">

@@ -430,8 +430,10 @@ async def register_schausteller(data: SchaustellerRegister):
 
     code = str(random.randint(100000, 999999))
     sch_id = str(uuid.uuid4())
+    kundennummer = await _get_next_kundennummer()
     sch_doc = {
         "id": sch_id,
+        "kundennummer": kundennummer,
         "firma": data.firma,
         "vorname": data.vorname,
         "name": data.name,
@@ -804,11 +806,12 @@ async def list_schausteller(
     query = {}
     if search:
         query["$or"] = [
+            {"kundennummer": {"$regex": search, "$options": "i"}},
             {"firma": {"$regex": search, "$options": "i"}},
             {"name": {"$regex": search, "$options": "i"}},
             {"email": {"$regex": search, "$options": "i"}},
         ]
-    schausteller = await _db.kirmes_schausteller.find(query, {"_id": 0, "password_hash": 0, "verification_code": 0}).sort("firma", 1).to_list(500)
+    schausteller = await _db.kirmes_schausteller.find(query, {"_id": 0, "password_hash": 0, "verification_code": 0}).sort("kundennummer", 1).to_list(500)
     return schausteller
 
 
@@ -885,6 +888,27 @@ async def delete_schausteller(sch_id: str, user: dict = Depends(_require_admin))
 
 # ============== Signup Management (Staff) ==============
 
+@router.post("/schausteller/migrate-kundennummern")
+async def migrate_kundennummern(admin: dict = Depends(_require_admin)):
+    """Einmalige Migration: Weist bestehenden Schaustellern ohne Kundennummer eine fortlaufende K-XXXX zu."""
+    without = await _db.kirmes_schausteller.find(
+        {"$or": [{"kundennummer": {"$exists": False}}, {"kundennummer": None}]},
+        {"_id": 0, "id": 1, "firma": 1, "created_at": 1}
+    ).sort("created_at", 1).to_list(10000)
+
+    if not without:
+        return {"message": "Alle Schausteller haben bereits eine Kundennummer", "count": 0}
+
+    assigned = []
+    for sch in without:
+        knr = await _get_next_kundennummer()
+        await _db.kirmes_schausteller.update_one({"id": sch["id"]}, {"$set": {"kundennummer": knr}})
+        assigned.append({"id": sch["id"], "firma": sch.get("firma"), "kundennummer": knr})
+
+    return {"message": f"{len(assigned)} Kundennummern vergeben", "count": len(assigned), "assigned": assigned}
+
+
+
 @router.get("/signups/{signup_id}")
 async def get_signup(signup_id: str, user: dict = Depends(_require_staff)):
     signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
@@ -956,6 +980,24 @@ async def public_download_invoice_pdf(invoice_id: str, schausteller_id: str = Qu
 async def get_connection_types():
     """Public endpoint - Get available connection types."""
     return CONNECTION_TYPES
+
+
+
+async def _get_next_kundennummer() -> str:
+    """Generate next customer number: K-XXXX (sequential)."""
+    last = await _db.kirmes_schausteller.find_one(
+        {"kundennummer": {"$exists": True, "$ne": None}},
+        {"_id": 0, "kundennummer": 1},
+        sort=[("kundennummer", -1)]
+    )
+    if last and last.get("kundennummer"):
+        try:
+            num = int(last["kundennummer"].split("-")[1]) + 1
+        except (IndexError, ValueError):
+            num = 1
+    else:
+        num = 1
+    return f"K-{num:04d}"
 
 
 # ============== Invoice / Abrechnung ==============

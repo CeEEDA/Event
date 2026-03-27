@@ -81,6 +81,7 @@ export default function SchaustellerDetailPage() {
             <div className="h-5 w-px bg-gray-200" />
             <Tent className="w-5 h-5 text-amber-600" />
             <h1 className="text-base font-semibold text-gray-900">{sch.firma}</h1>
+            {sch.kundennummer && <span className="text-xs font-mono bg-fuchsia-50 text-fuchsia-600 px-2 py-0.5 rounded-full font-semibold">{sch.kundennummer}</span>}
             {sch.kauf_auf_rechnung && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Kauf auf Rechnung</span>}
           </div>
           <Logo size="small" />
@@ -95,6 +96,10 @@ export default function SchaustellerDetailPage() {
               <Building2 className="w-4 h-4 text-fuchsia-500" /> Kontaktdaten
             </h2>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Kundennummer</p>
+                <p className="font-mono font-semibold text-fuchsia-600" data-testid="sch-detail-knr">{sch.kundennummer || "–"}</p>
+              </div>
               <div>
                 <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Firma</p>
                 <p className="font-medium text-gray-900">{sch.firma}</p>
