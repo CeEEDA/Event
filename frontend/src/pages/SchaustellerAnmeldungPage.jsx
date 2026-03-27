@@ -59,6 +59,8 @@ function PasswordInput({ value, onChange, placeholder, testId }) {
 export default function SchaustellerAnmeldungPage() {
   const [searchParams] = useSearchParams();
   const preselectedEvent = searchParams.get("event");
+  const verifiedParam = searchParams.get("verified");
+  const verifiedEmail = searchParams.get("email");
 
   // Steps: auth -> verify -> setpw -> dashboard -> event -> signup -> done
   const [step, setStep] = useState("auth");
@@ -106,6 +108,26 @@ export default function SchaustellerAnmeldungPage() {
   }, [preselectedEvent]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  // Auto-verify: wenn User über E-Mail-Link bestätigt hat → direkt zum Passwort-Schritt
+  useEffect(() => {
+    if (verifiedParam === "1" && verifiedEmail) {
+      setVerifyEmail(verifiedEmail);
+      toast.success("E-Mail erfolgreich bestätigt!");
+      // Prüfen ob Passwort bereits gesetzt ist
+      (async () => {
+        try {
+          const r = await api.post("/kirmes/public/verify-email", { email: verifiedEmail, code: "already-verified" });
+          if (r.data?.password_hash !== undefined || r.data?.email_verified) {
+            goToDashboard(r.data);
+          }
+        } catch {
+          setStep("setpw");
+        }
+      })();
+    }
+  }, [verifiedParam, verifiedEmail]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const goToDashboard = (sch) => {
     setSchausteller(sch);

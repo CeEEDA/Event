@@ -545,6 +545,11 @@ async def register_schausteller(data: SchaustellerRegister):
 
 def _send_verification_email(email, name, code):
     from email_service import send_email
+    import os
+    import urllib.parse
+    frontend_url = os.environ.get("FRONTEND_URL", "")
+    verify_link = f"{frontend_url}/api/kirmes/public/verify-email-link?email={urllib.parse.quote(email)}&code={code}"
+
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f5f5;">
@@ -555,21 +560,21 @@ def _send_verification_email(email, name, code):
   <div style="padding:32px;">
     <p style="color:#333;font-size:15px;">Hallo {name},</p>
     <p style="color:#555;font-size:14px;line-height:1.6;">
-      Bitte bestätigen Sie Ihre E-Mail-Adresse mit folgendem Code:
+      Bitte bestätigen Sie Ihre E-Mail-Adresse mit einem Klick:
     </p>
     <div style="text-align:center;margin:28px 0;">
-      <div style="display:inline-block;background:#f3e8ff;border:2px solid #d946ef;border-radius:12px;padding:16px 40px;">
-        <span style="font-size:32px;font-weight:700;letter-spacing:8px;color:#d946ef;">{code}</span>
-      </div>
+      <a href="{verify_link}" style="display:inline-block;background:#d946ef;color:#fff;text-decoration:none;padding:14px 40px;border-radius:8px;font-size:16px;font-weight:600;">
+        E-Mail bestätigen
+      </a>
     </div>
-    <p style="color:#888;font-size:12px;">Der Code ist 30 Minuten gültig.</p>
+    <p style="color:#888;font-size:12px;">Oder geben Sie diesen Code manuell ein: <strong style="color:#d946ef;letter-spacing:4px;">{code}</strong></p>
   </div>
   <div style="background:#fafafa;padding:16px 32px;border-top:1px solid #eee;">
     <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
   </div>
 </div>
 </body></html>"""
-    send_email(email, "Ihr Bestätigungscode – Eventenergie", html)
+    send_email(email, "E-Mail bestätigen – Eventenergie", html)
 
 
 def _send_booking_confirmation_email(schausteller, event, signup):
@@ -654,6 +659,31 @@ async def verify_email(data: VerifyEmailRequest):
     updated.pop("verification_code", None)
     updated.pop("password_hash", None)
     return updated
+
+
+@router.get("/public/verify-email-link")
+async def verify_email_link(email: str = Query(...), code: str = Query(...)):
+    """One-click email verification via link. Redirects to frontend."""
+    import os
+    frontend_url = os.environ.get("FRONTEND_URL", "")
+    sch = await _db.kirmes_schausteller.find_one({"email": email}, {"_id": 0})
+    if not sch:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"{frontend_url}/kirmes/anmeldung?verify_error=not_found")
+    if sch.get("email_verified"):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"{frontend_url}/kirmes/anmeldung?verified=1&email={email}")
+    if sch.get("verification_code") != code:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"{frontend_url}/kirmes/anmeldung?verify_error=invalid_code")
+    await _db.kirmes_schausteller.update_one(
+        {"email": email},
+        {"$set": {"email_verified": True, "verification_code": None, "verified_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"{frontend_url}/kirmes/anmeldung?verified=1&email={email}")
+
+
 
 
 class SetPasswordPublic(BaseModel):
