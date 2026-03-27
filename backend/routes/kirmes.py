@@ -896,16 +896,27 @@ async def migrate_kundennummern(admin: dict = Depends(_require_admin)):
         {"_id": 0, "id": 1, "firma": 1, "created_at": 1}
     ).sort("created_at", 1).to_list(10000)
 
-    if not without:
-        return {"message": "Alle Schausteller haben bereits eine Kundennummer", "count": 0}
-
     assigned = []
     for sch in without:
         knr = await _get_next_kundennummer()
         await _db.kirmes_schausteller.update_one({"id": sch["id"]}, {"$set": {"kundennummer": knr}})
         assigned.append({"id": sch["id"], "firma": sch.get("firma"), "kundennummer": knr})
 
-    return {"message": f"{len(assigned)} Kundennummern vergeben", "count": len(assigned), "assigned": assigned}
+    # Backfill: Kundennummer in bestehende Rechnungen eintragen (laeuft immer)
+    inv_fixed = 0
+    all_sch = await _db.kirmes_schausteller.find({}, {"_id": 0, "id": 1, "kundennummer": 1}).to_list(10000)
+    sch_map = {s["id"]: s.get("kundennummer", "") for s in all_sch}
+    invoices = await _db.kirmes_invoices.find(
+        {"$or": [{"schausteller_kundennummer": {"$exists": False}}, {"schausteller_kundennummer": None}, {"schausteller_kundennummer": ""}]},
+        {"_id": 0, "id": 1, "schausteller_id": 1}
+    ).to_list(10000)
+    for inv in invoices:
+        knr = sch_map.get(inv.get("schausteller_id"), "")
+        if knr:
+            await _db.kirmes_invoices.update_one({"id": inv["id"]}, {"$set": {"schausteller_kundennummer": knr}})
+            inv_fixed += 1
+
+    return {"message": f"{len(assigned)} Kundennummern vergeben, {inv_fixed} Rechnungen aktualisiert", "count": len(assigned), "invoices_fixed": inv_fixed, "assigned": assigned}
 
 
 
@@ -1132,6 +1143,7 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
         "event_id": signup["event_id"],
         "event_name": event.get("name", ""),
         "schausteller_id": signup["schausteller_id"],
+        "schausteller_kundennummer": sch.get("kundennummer", ""),
         "schausteller_firma": sch.get("firma", ""),
         "schausteller_name": sch.get("name", ""),
         "schausteller_email": sch.get("email", ""),
@@ -1195,6 +1207,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
             "event_id": event_id,
             "event_name": event.get("name", ""),
             "schausteller_id": signup["schausteller_id"],
+            "schausteller_kundennummer": sch.get("kundennummer", ""),
             "schausteller_firma": sch.get("firma", ""),
             "schausteller_name": sch.get("name", ""),
             "schausteller_email": sch.get("email", ""),
@@ -1255,7 +1268,10 @@ async def list_invoices(
     event_id: Optional[str] = None,
     user: dict = Depends(_require_staff)
 ):
-    """List/search invoices."""
+    """List/search invoices. Requires staff + can_billing or admin."""
+    if user.get("role") != "admin" and not user.get("permissions", {}).get("can_billing"):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung für Rechnungen")
+
     query = {}
     if event_id:
         query["event_id"] = event_id
@@ -1264,13 +1280,15 @@ async def list_invoices(
             {"invoice_number": {"$regex": search, "$options": "i"}},
             {"schausteller_firma": {"$regex": search, "$options": "i"}},
             {"schausteller_name": {"$regex": search, "$options": "i"}},
+            {"schausteller_kundennummer": {"$regex": search, "$options": "i"}},
             {"event_name": {"$regex": search, "$options": "i"}},
         ]
     invoices = await _db.kirmes_invoices.find(query, {
         "_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "event_id": 1,
         "schausteller_firma": 1, "schausteller_name": 1, "schausteller_email": 1,
-        "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "created_at": 1,
-    }).sort("created_at", -1).to_list(500)
+        "schausteller_kundennummer": 1,
+        "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "created_at": 1,
+    }).sort("invoice_number", 1).to_list(5000)
     return invoices
 
 

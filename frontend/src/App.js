@@ -27,6 +27,7 @@ import PaymentDashboardPage from "./pages/PaymentDashboardPage";
 import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
+import FinancePage from "./pages/FinancePage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -154,6 +155,14 @@ function AppRoutes() {
         }
       />
       <Route path="/kirmes/anmeldung" element={<SchaustellerAnmeldungPage />} />
+      <Route
+        path="/finance"
+        element={
+          <ProtectedRoute>
+            <FinancePage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/kirmes/meter-zuordnung/:meterId"
         element={

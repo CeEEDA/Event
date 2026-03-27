@@ -12,6 +12,7 @@ import {
   Wrench,
   Zap,
   ClipboardList,
+  Receipt,
   Tent,
   Fuel,
 } from "lucide-react";
@@ -28,6 +29,7 @@ export default function HubPage() {
   const hasFilesharing = isAdmin || user?.apps?.filesharing?.enabled;
   const hasMonitoring = isAdmin || user?.apps?.generator_monitoring?.enabled;
   const hasEnergyMonitoring = isAdmin || user?.apps?.energy_monitoring?.enabled;
+  const hasBilling = isAdmin || user?.permissions?.can_billing;
   const isStaff = isAdmin || user?.role === "mitarbeiter";
 
   return (
@@ -101,6 +103,24 @@ export default function HubPage() {
                   <p className="text-sm text-gray-500">Veranstaltungen, Schausteller-Anmeldungen und Abrechnung</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
+              </button>
+            )}
+
+            {/* Finance / Rechnungsverwaltung */}
+            {hasBilling && (
+              <button
+                onClick={() => navigate("/finance")}
+                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-emerald-400 hover:shadow-lg transition-all group text-left"
+                data-testid="finance-btn"
+              >
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-600 transition-colors">
+                  <Receipt className="w-7 h-7 md:w-8 md:h-8 text-emerald-600 group-hover:text-white transition-colors" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Finance</h2>
+                  <p className="text-sm text-gray-500">Rechnungen verwalten, versenden und exportieren</p>
+                </div>
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-emerald-600 transition-colors" />
               </button>
             )}
 
