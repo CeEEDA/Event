@@ -278,6 +278,26 @@ async def get_event(event_id: str, user: dict = Depends(_require_staff)):
     return event
 
 
+class EventPaymentMode(BaseModel):
+    kauf_auf_rechnung: bool
+
+@router.put("/events/{event_id}/payment-mode")
+async def set_event_payment_mode(event_id: str, data: EventPaymentMode, user: dict = Depends(_require_staff)):
+    """Toggle payment mode for entire event: Rechnung vs Kreditkarte/PayPal."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    await _db.kirmes_events.update_one(
+        {"id": event_id},
+        {"$set": {"kauf_auf_rechnung": data.kauf_auf_rechnung}}
+    )
+    label = "Rechnung" if data.kauf_auf_rechnung else "Kreditkarte / PayPal"
+    return {"message": f"Zahlungsart auf '{label}' gesetzt", "kauf_auf_rechnung": data.kauf_auf_rechnung}
+
+
+
+
 @router.put("/events/{event_id}")
 async def update_event(event_id: str, data: EventUpdate, user: dict = Depends(_require_staff)):
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
@@ -817,9 +837,15 @@ async def signup_for_event(data: EventSignup):
     if data.connection_type not in CONNECTION_TYPES:
         raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {data.connection_type}")
 
-    # Validate payment method - "rechnung" only allowed if kauf_auf_rechnung is enabled
-    if data.payment_method == "rechnung" and not sch.get("kauf_auf_rechnung"):
-        raise HTTPException(status_code=400, detail="Kauf auf Rechnung ist für diesen Schausteller nicht freigeschaltet.")
+    # Validate payment method - "rechnung" allowed if event OR schausteller has kauf_auf_rechnung
+    event_rechnung = event.get("kauf_auf_rechnung", False)
+    sch_rechnung = sch.get("kauf_auf_rechnung", False)
+    if data.payment_method == "rechnung" and not event_rechnung and not sch_rechnung:
+        raise HTTPException(status_code=400, detail="Kauf auf Rechnung ist für diese Veranstaltung nicht freigeschaltet.")
+
+    # If event forces Rechnung, override payment method
+    if event_rechnung:
+        data.payment_method = "rechnung"
 
     # Find price for this connection type
     price = 0.0

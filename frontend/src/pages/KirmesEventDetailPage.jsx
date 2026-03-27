@@ -52,6 +52,7 @@ export default function KirmesEventDetailPage() {
   const [inviteEmailName, setInviteEmailName] = useState("");
   const [sendingEmailInvite, setSendingEmailInvite] = useState(false);
   const [billingInProgress, setBillingInProgress] = useState(false);
+  const [paymentModeLoading, setPaymentModeLoading] = useState(false);
   const [eventInvoices, setEventInvoices] = useState([]);
   const [emuMeters, setEmuMeters] = useState([]);
   const [meterDataMap, setMeterDataMap] = useState({});
@@ -288,6 +289,18 @@ export default function KirmesEventDetailPage() {
   };
 
 
+  const togglePaymentMode = async () => {
+    const newVal = !event.kauf_auf_rechnung;
+    setPaymentModeLoading(true);
+    try {
+      await api.put(`/kirmes/events/${id}/payment-mode`, { kauf_auf_rechnung: newVal });
+      setEvent(prev => ({ ...prev, kauf_auf_rechnung: newVal }));
+      toast.success(newVal ? "Zahlungsart: Rechnung" : "Zahlungsart: Kreditkarte / PayPal");
+    } catch { toast.error("Fehler beim Umschalten"); }
+    finally { setPaymentModeLoading(false); }
+  };
+
+
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Laden...</div>;
   if (!event) return null;
 
@@ -409,6 +422,21 @@ export default function KirmesEventDetailPage() {
             </span>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto flex-shrink-0 scrollbar-hide">
+            {/* Zahlungsart Toggle */}
+            {canBilling && (
+              <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5 mr-1" data-testid="payment-mode-toggle">
+                <span className="text-[10px] font-medium text-gray-500 whitespace-nowrap">{event.kauf_auf_rechnung ? "Rechnung" : "Kreditkarte"}</span>
+                <button
+                  onClick={togglePaymentMode}
+                  disabled={paymentModeLoading}
+                  className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${event.kauf_auf_rechnung ? "bg-emerald-500" : "bg-gray-300"}`}
+                  data-testid="payment-mode-switch"
+                  title={event.kauf_auf_rechnung ? "Zahlungsart: Rechnung (alle Schausteller)" : "Zahlungsart: Kreditkarte / PayPal"}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${event.kauf_auf_rechnung ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            )}
             {(event.signups || []).length > 0 && (
               <>
                 <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600 px-2 sm:px-3" data-testid="export-pdf-btn" title="Montageliste PDF">
