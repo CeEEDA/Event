@@ -426,7 +426,7 @@ export default function KirmesEventDetailPage() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Event Info Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           <div className="bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
               <CalendarDays className="w-4 h-4" /> <span className="text-xs font-medium">Veranstaltung</span>
@@ -455,6 +455,14 @@ export default function KirmesEventDetailPage() {
               <Users className="w-4 h-4" /> <span className="text-xs font-medium">Anmeldungen</span>
             </div>
             <p className="text-sm text-gray-900 font-medium">{event.signup_count || 0}</p>
+          </div>
+          <div className="bg-white border border-emerald-200 rounded-xl p-4" data-testid="total-kwh-card">
+            <div className="flex items-center gap-2 text-emerald-600 mb-2">
+              <Zap className="w-4 h-4" /> <span className="text-xs font-medium">Gesamt kWh</span>
+            </div>
+            <p className="text-sm text-emerald-700 font-bold font-mono">
+              {((event.signups || []).reduce((sum, s) => sum + (s.kwh_used || 0), 0)).toLocaleString("de-DE", { minimumFractionDigits: 2 })} kWh
+            </p>
           </div>
         </div>
 
