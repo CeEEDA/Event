@@ -38,6 +38,7 @@ import {
   Eye,
   EyeOff,
   Shield,
+  MapPin,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
@@ -1298,6 +1299,33 @@ function DeviceExpandedRow({ device, colSpan }) {
                   )}
                 </div>
               </div>
+
+              {/* GPS Position */}
+              {info.gps && info.gps.lat && info.gps.lon && (
+                <div className="flex items-start gap-3 md:col-span-2" data-testid="quick-info-gps">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">GPS Position</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-mono font-semibold text-gray-900">{Number(info.gps.lat).toFixed(6)}, {Number(info.gps.lon).toFixed(6)}</span>
+                      <a
+                        href={`https://www.google.com/maps?q=${info.gps.lat},${info.gps.lon}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        Google Maps
+                      </a>
+                    </div>
+                    {info.gps.timestamp && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">Stand: {formatDate(info.gps.timestamp)}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             {/* Ereignisprotokoll */}
             <div className="mt-4" data-testid="device-event-log">

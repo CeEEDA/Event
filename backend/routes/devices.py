@@ -743,6 +743,19 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
             readings.append(entry)
         result["readings"] = readings
 
+        # GPS: letzte Position aus emu_data (Messkoffer/Kirmeskiste senden gps_lat/gps_lon)
+        gps_doc = await db.emu_data.find_one(
+            {"device_id": device_id, "gps_lat": {"$gt": 0}, "gps_lon": {"$ne": None}},
+            {"_id": 0, "gps_lat": 1, "gps_lon": 1, "ts_utc": 1},
+            sort=[("ts_utc", -1)]
+        )
+        if gps_doc and gps_doc.get("gps_lat") and gps_doc.get("gps_lon"):
+            result["gps"] = {
+                "lat": gps_doc["gps_lat"],
+                "lon": gps_doc["gps_lon"],
+                "timestamp": gps_doc.get("ts_utc"),
+            }
+
     return result
 
 
