@@ -40,7 +40,7 @@ from pymodbus.client import ModbusTcpClient
 
 # ====== Konstanten: EMU Professional II Modbus Register ======
 # Momentanwerte (Float32, Big-Endian, Holding Register, Function Code 03)
-REG_P_SUM   = 9000   # Active Power L123 [W] (Modbus liefert Watt, Umrechnung in kW erfolgt beim Lesen)
+REG_P_SUM   = 9000   # Active Power L123 [W] (EMU liefert Watt, Backend rechnet in kW um)
 REG_P_L1    = 9002   # Active Power L1 [W]
 REG_P_L2    = 9004   # Active Power L2 [W]
 REG_P_L3    = 9006   # Active Power L3 [W]
@@ -218,11 +218,11 @@ def read_meter(ip, port, slave_id, meter_name):
         # Seriennummer
         serial = read_uint32(client, REG_SERIAL, slave_id)
 
-        # Momentanwerte (Float32) - EMU liefert Watt, Umrechnung in kW
-        data["P_sum_kW"] = round((read_float32(client, REG_P_SUM, slave_id) or 0) / 1000, 4)
-        data["P_L1_kW"]  = round((read_float32(client, REG_P_L1, slave_id) or 0) / 1000, 4)
-        data["P_L2_kW"]  = round((read_float32(client, REG_P_L2, slave_id) or 0) / 1000, 4)
-        data["P_L3_kW"]  = round((read_float32(client, REG_P_L3, slave_id) or 0) / 1000, 4)
+        # Momentanwerte (Float32) - EMU liefert Watt, Backend rechnet in kW um
+        data["P_sum_kW"] = read_float32(client, REG_P_SUM, slave_id) or 0
+        data["P_L1_kW"]  = read_float32(client, REG_P_L1, slave_id) or 0
+        data["P_L2_kW"]  = read_float32(client, REG_P_L2, slave_id) or 0
+        data["P_L3_kW"]  = read_float32(client, REG_P_L3, slave_id) or 0
         data["I_sum"]    = read_float32(client, REG_I_SUM, slave_id) or 0
         data["I_L1"]     = read_float32(client, REG_I_L1, slave_id) or 0
         data["I_L2"]     = read_float32(client, REG_I_L2, slave_id) or 0

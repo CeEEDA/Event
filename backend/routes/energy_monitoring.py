@@ -1384,9 +1384,29 @@ async def ingest_data(data: IngestBatch):
     if not data.records:
         return {"inserted": 0, "message": "Keine Datensätze"}
 
+    # Kirmeskiste EMU Professional II: Modbus-Register liefern Watt statt kW
+    # -> Backend rechnet um, damit die Pi-Skripte nicht aktualisiert werden muessen
+    is_kirmeskiste = device.get("device_type") == "kirmeskiste"
+
     # Prepare records for insertion
     docs = []
     for r in data.records:
+        p_sum = r.get("P_sum_kW", 0)
+        p_l1 = r.get("P_L1_kW", 0)
+        p_l2 = r.get("P_L2_kW", 0)
+        p_l3 = r.get("P_L3_kW", 0)
+
+        # Kirmeskiste: Watt -> kW (nur wenn Wert plausibel in Watt, d.h. > 1)
+        if is_kirmeskiste:
+            if abs(p_sum) > 1:
+                p_sum = round(p_sum / 1000, 4)
+            if abs(p_l1) > 1:
+                p_l1 = round(p_l1 / 1000, 4)
+            if abs(p_l2) > 1:
+                p_l2 = round(p_l2 / 1000, 4)
+            if abs(p_l3) > 1:
+                p_l3 = round(p_l3 / 1000, 4)
+
         doc = {
             "id": str(uuid.uuid4()),
             "device_id": actual_device_id,
@@ -1401,10 +1421,10 @@ async def ingest_data(data: IngestBatch):
             "U_L2": r.get("U_L2", 0),
             "U_L3": r.get("U_L3", 0),
             "F_Hz": r.get("F_Hz", 0),
-            "P_sum_kW": r.get("P_sum_kW", 0),
-            "P_L1_kW": r.get("P_L1_kW", 0),
-            "P_L2_kW": r.get("P_L2_kW", 0),
-            "P_L3_kW": r.get("P_L3_kW", 0),
+            "P_sum_kW": p_sum,
+            "P_L1_kW": p_l1,
+            "P_L2_kW": p_l2,
+            "P_L3_kW": p_l3,
             "Q_sum": r.get("Q_sum", 0),
             "Q_L1": r.get("Q_L1", 0),
             "Q_L2": r.get("Q_L2", 0),
@@ -1654,3 +1674,56 @@ async def seed_demo_data(admin: dict = Depends(require_admin)):
     await db.emu_data.create_index([("device_id", 1), ("meter_id", 1), ("ts_utc", -1)])
 
     return {"message": f"Demo-Daten erstellt: {len(records)} Datensätze für {device['serial_number']}", "count": len(records)}
+
+
+
+@router.post("/migrate/kirmeskiste-power-fix")
+async def migrate_kirmeskiste_power(admin: dict = Depends(require_admin)):
+    """Einmalige Migration: Korrigiert P_sum_kW/P_L*_kW Werte fuer Kirmeskiste-Geraete.
+    EMU Professional II Modbus-Register liefern Watt, wurden aber als kW gespeichert.
+    Diese Migration teilt alle Werte > 1 durch 1000."""
+    
+    # Finde alle Kirmeskiste-Geraete
+    kirmeskisten = await db.devices.find({"device_type": "kirmeskiste"}, {"_id": 0, "id": 1, "serial_number": 1}).to_list(50)
+    if not kirmeskisten:
+        return {"message": "Keine Kirmeskiste-Geraete gefunden", "fixed": 0}
+    
+    kirm_ids = [k["id"] for k in kirmeskisten]
+    total_fixed = 0
+    
+    for dev_id in kirm_ids:
+        # Finde alle Datensaetze mit P_sum_kW > 1 (= in Watt statt kW)
+        power_fields = ["P_sum_kW", "P_L1_kW", "P_L2_kW", "P_L3_kW"]
+        
+        cursor = db.emu_data.find(
+            {"device_id": dev_id, "$or": [{f: {"$gt": 1}} for f in power_fields]},
+            {"_id": 1, **{f: 1 for f in power_fields}}
+        )
+        
+        batch = []
+        async for doc in cursor:
+            update = {}
+            for f in power_fields:
+                val = doc.get(f, 0)
+                if val and abs(val) > 1:
+                    update[f] = round(val / 1000, 4)
+            if update:
+                batch.append({"_id": doc["_id"], "update": update})
+            
+            if len(batch) >= 500:
+                for item in batch:
+                    await db.emu_data.update_one({"_id": item["_id"]}, {"$set": item["update"]})
+                total_fixed += len(batch)
+                batch = []
+        
+        if batch:
+            for item in batch:
+                await db.emu_data.update_one({"_id": item["_id"]}, {"$set": item["update"]})
+            total_fixed += len(batch)
+    
+    device_names = ", ".join(k["serial_number"] for k in kirmeskisten)
+    return {
+        "message": f"Migration abgeschlossen: {total_fixed} Datensaetze korrigiert",
+        "devices": device_names,
+        "fixed": total_fixed,
+    }
