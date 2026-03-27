@@ -973,6 +973,38 @@ async def _get_next_invoice_number():
     return f"{year_prefix}0001"
 
 
+async def _auto_set_kwh_ausbau(signup: dict) -> dict:
+    """Setzt kwh_ausbau automatisch vom letzten EMU-Zaehlerstand, falls ein Meter verknuepft ist."""
+    emu_device_id = signup.get("emu_device_id")
+    emu_meter_id = signup.get("emu_meter_id")
+    if not emu_device_id or not emu_meter_id:
+        return signup
+
+    # Nur setzen wenn kwh_ausbau noch nicht manuell gesetzt wurde
+    if signup.get("kwh_ausbau"):
+        return signup
+
+    latest = await _db.emu_data.find_one(
+        {"device_id": emu_device_id, "meter_id": emu_meter_id},
+        {"_id": 0, "E_imp_kWh": 1},
+        sort=[("ts_utc", -1)]
+    )
+    if latest and latest.get("E_imp_kWh") is not None:
+        kwh_ausbau = round(float(latest["E_imp_kWh"]), 2)
+        kwh_einbau = signup.get("kwh_einbau", 0) or 0
+        kwh_used = round(max(0, kwh_ausbau - kwh_einbau), 2)
+
+        await _db.kirmes_signups.update_one(
+            {"id": signup["id"]},
+            {"$set": {"kwh_ausbau": kwh_ausbau, "kwh_used": kwh_used, "meter_end": kwh_ausbau}}
+        )
+        signup["kwh_ausbau"] = kwh_ausbau
+        signup["kwh_used"] = kwh_used
+        signup["meter_end"] = kwh_ausbau
+
+    return signup
+
+
 def _calculate_invoice(signup: dict, event: dict, schausteller: dict) -> dict:
     """Calculate invoice amounts for a signup."""
     line_items = []
@@ -1045,6 +1077,9 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
     if not sch:
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
 
+    # Auto-set kwh_ausbau from latest meter reading
+    signup = await _auto_set_kwh_ausbau(signup)
+
     calc = _calculate_invoice(signup, event, sch)
     inv_number = await _get_next_invoice_number()
 
@@ -1104,6 +1139,9 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
         if not sch:
             skipped.append({"signup_id": signup["id"], "reason": "Schausteller nicht gefunden"})
             continue
+
+        # Auto-set kwh_ausbau from latest meter reading
+        signup = await _auto_set_kwh_ausbau(signup)
 
         calc = _calculate_invoice(signup, event, sch)
         inv_number = await _get_next_invoice_number()
