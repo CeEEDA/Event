@@ -1153,7 +1153,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
 <p>Rechnungsbetrag: <b>{calc['brutto']:.2f} EUR</b></p>
 <p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>
 <p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
-                send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename)
+                send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename, bcc=["accounting@eventenergie-deutschland.de"])
                 await _db.kirmes_invoices.update_one(
                     {"id": invoice_doc["id"]},
                     {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
@@ -1243,7 +1243,8 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
 <p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
 
     try:
-        send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename)
+        accounting_bcc = ["accounting@eventenergie-deutschland.de"]
+        send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename, bcc=accounting_bcc)
         await _db.kirmes_invoices.update_one(
             {"id": invoice_id},
             {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}

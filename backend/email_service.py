@@ -41,7 +41,7 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
         return False
 
 
-def send_email_with_attachment(to_email: str, subject: str, html_body: str, attachment_bytes: bytes, attachment_filename: str) -> bool:
+def send_email_with_attachment(to_email: str, subject: str, html_body: str, attachment_bytes: bytes, attachment_filename: str, bcc: list = None) -> bool:
     cfg = _get_smtp_config()
     if not all([cfg["host"], cfg["user"], cfg["password"]]):
         logger.error("SMTP not configured")
@@ -57,11 +57,17 @@ def send_email_with_attachment(to_email: str, subject: str, html_body: str, atta
     att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
     msg.attach(att)
 
+    # Alle Empfaenger (To + BCC)
+    recipients = [to_email]
+    if bcc:
+        recipients.extend(bcc)
+
     try:
         with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
             server.login(cfg["user"], cfg["password"])
-            server.sendmail(cfg["user"], to_email, msg.as_string())
-        logger.info(f"Email with attachment sent to {to_email}")
+            server.sendmail(cfg["user"], recipients, msg.as_string())
+        bcc_info = f" + BCC: {', '.join(bcc)}" if bcc else ""
+        logger.info(f"Email with attachment sent to {to_email}{bcc_info}")
         return True
     except Exception as e:
         logger.error(f"Email send with attachment failed: {e}")
