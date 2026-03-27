@@ -48,6 +48,9 @@ export default function KirmesEventDetailPage() {
   const [selectedInvites, setSelectedInvites] = useState([]);
   const [inviting, setInviting] = useState(false);
   const [inviteSearch, setInviteSearch] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteEmailName, setInviteEmailName] = useState("");
+  const [sendingEmailInvite, setSendingEmailInvite] = useState(false);
   const [billingInProgress, setBillingInProgress] = useState(false);
   const [eventInvoices, setEventInvoices] = useState([]);
   const [emuMeters, setEmuMeters] = useState([]);
@@ -271,6 +274,19 @@ export default function KirmesEventDetailPage() {
     } catch { toast.error("Fehler beim Versenden"); }
     finally { setInviting(false); }
   };
+
+  const sendEmailInvite = async () => {
+    if (!inviteEmail || !inviteEmail.includes("@")) { toast.error("Bitte eine gültige E-Mail eingeben"); return; }
+    setSendingEmailInvite(true);
+    try {
+      const r = await api.post(`/kirmes/events/${id}/invite-email`, { email: inviteEmail, name: inviteEmailName });
+      toast.success(r.data.message);
+      setInviteEmail("");
+      setInviteEmailName("");
+    } catch { toast.error("Fehler beim Versenden"); }
+    finally { setSendingEmailInvite(false); }
+  };
+
 
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Laden...</div>;
   if (!event) return null;
@@ -1221,11 +1237,42 @@ export default function KirmesEventDetailPage() {
               <h2 className="text-lg font-semibold text-gray-900">Schausteller einladen</h2>
               <button onClick={() => setShowInviteModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-4">
+            <div className="p-4 space-y-4">
+              {/* Neue E-Mail Einladung */}
+              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200" data-testid="email-invite-section">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Neuen Schausteller per E-Mail einladen</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text" placeholder="Name (optional)"
+                    value={inviteEmailName} onChange={e => setInviteEmailName(e.target.value)}
+                    className="w-1/3 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500"
+                    data-testid="invite-email-name"
+                  />
+                  <input
+                    type="email" placeholder="E-Mail-Adresse"
+                    value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500"
+                    data-testid="invite-email-input"
+                    onKeyDown={e => e.key === "Enter" && sendEmailInvite()}
+                  />
+                  <Button size="sm" onClick={sendEmailInvite} disabled={sendingEmailInvite || !inviteEmail} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white whitespace-nowrap" data-testid="send-email-invite-btn">
+                    <Send className="w-3.5 h-3.5 mr-1" /> {sendingEmailInvite ? "..." : "Senden"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Trennlinie */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400">oder bestehende Schausteller einladen</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+
+              {/* Bestehende Schausteller suchen */}
               <input
                 type="text" placeholder="Suche nach Firma, Name..."
                 value={inviteSearch} onChange={e => setInviteSearch(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3 focus:outline-none focus:border-fuchsia-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500"
                 data-testid="invite-search"
               />
               <div className="max-h-64 overflow-y-auto space-y-1">
