@@ -480,7 +480,7 @@ def _generate_girocode(invoice: dict):
     if not iban:
         return None
     
-    amount = float(invoice.get("total_gross", invoice.get("total_amount", 0)))
+    amount = float(invoice.get("brutto", invoice.get("total_gross", invoice.get("total_amount", 0))))
     reference = invoice.get("invoice_number", "")
     
     # EPC QR Code format (GiroCode v002)
