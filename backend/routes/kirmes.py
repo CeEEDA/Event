@@ -1285,7 +1285,7 @@ async def list_invoices(
         ]
     invoices = await _db.kirmes_invoices.find(query, {
         "_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "event_id": 1,
-        "schausteller_firma": 1, "schausteller_name": 1, "schausteller_email": 1,
+        "schausteller_id": 1, "schausteller_firma": 1, "schausteller_name": 1, "schausteller_email": 1,
         "schausteller_kundennummer": 1,
         "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "created_at": 1,
     }).sort("invoice_number", 1).to_list(5000)
