@@ -9,7 +9,7 @@ import {
   Clock, Plug, TrendingUp, CalendarDays,
 } from "lucide-react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Area, AreaChart,
 } from "recharts";
 
@@ -100,8 +100,8 @@ export default function KirmesZaehlerPage() {
       const history = r.data?.history || [];
       if (history.length === 0) { toast.error("Keine Daten zum Exportieren"); return; }
 
-      const cols = ["ts_utc", "P_sum_kW", "I_sum", "U_L1", "F_Hz", "E_imp_kWh"];
-      const headers = ["Zeitstempel", "Leistung (kW)", "Strom (A)", "Spannung (V)", "Frequenz (Hz)", "Energie (kWh)"];
+      const cols = ["ts_utc", "P_sum_kW", "P_L1_kW", "P_L2_kW", "P_L3_kW", "I_L1", "I_L2", "I_L3", "I_sum", "U_L1", "U_L2", "U_L3", "F_Hz", "E_imp_kWh"];
+      const headers = ["Zeitstempel", "Leistung ges. (kW)", "Leistung L1 (kW)", "Leistung L2 (kW)", "Leistung L3 (kW)", "Strom L1 (A)", "Strom L2 (A)", "Strom L3 (A)", "Strom ges. (A)", "Spannung L1 (V)", "Spannung L2 (V)", "Spannung L3 (V)", "Frequenz (Hz)", "Energie (kWh)"];
       let csv = headers.join(";") + "\n";
       for (const row of history) {
         csv += cols.map(c => row[c] ?? "").join(";") + "\n";
@@ -135,9 +135,17 @@ export default function KirmesZaehlerPage() {
     time: h.ts_utc ? new Date(h.ts_utc).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "",
     date: h.ts_utc ? new Date(h.ts_utc).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : "",
     leistung: h.P_sum_kW != null ? parseFloat(h.P_sum_kW.toFixed(3)) : null,
-    strom: h.I_sum != null ? parseFloat(h.I_sum.toFixed(2)) : null,
-    spannung: h.U_L1 != null ? parseFloat(h.U_L1.toFixed(1)) : null,
+    P_L1: h.P_L1_kW != null ? parseFloat(h.P_L1_kW.toFixed(3)) : null,
+    P_L2: h.P_L2_kW != null ? parseFloat(h.P_L2_kW.toFixed(3)) : null,
+    P_L3: h.P_L3_kW != null ? parseFloat(h.P_L3_kW.toFixed(3)) : null,
+    I_L1: h.I_L1 != null ? parseFloat(h.I_L1.toFixed(2)) : null,
+    I_L2: h.I_L2 != null ? parseFloat(h.I_L2.toFixed(2)) : null,
+    I_L3: h.I_L3 != null ? parseFloat(h.I_L3.toFixed(2)) : null,
+    U_L1: h.U_L1 != null ? parseFloat(h.U_L1.toFixed(1)) : null,
+    U_L2: h.U_L2 != null ? parseFloat(h.U_L2.toFixed(1)) : null,
+    U_L3: h.U_L3 != null ? parseFloat(h.U_L3.toFixed(1)) : null,
     energie: h.E_imp_kWh != null ? parseFloat(h.E_imp_kWh.toFixed(2)) : null,
+    frequenz: h.F_Hz != null ? parseFloat(h.F_Hz.toFixed(1)) : null,
   }));
 
   const schausteller = signup?.schausteller;
@@ -209,10 +217,54 @@ export default function KirmesZaehlerPage() {
             {/* Live Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="live-metrics">
               <MetricCard icon={Zap} label="Leistung" value={latest?.P_sum_kW?.toFixed(3)} unit="kW" color="bg-fuchsia-500" />
-              <MetricCard icon={Activity} label="Strom" value={latest?.I_sum?.toFixed(2)} unit="A" color="bg-blue-500" />
-              <MetricCard icon={Gauge} label="Spannung" value={latest?.U_L1?.toFixed(1)} unit="V" color="bg-amber-500" />
               <MetricCard icon={TrendingUp} label="Energie" value={latest?.E_imp_kWh?.toFixed(2)} unit="kWh" color="bg-emerald-500" />
               <MetricCard icon={Clock} label="Frequenz" value={latest?.F_Hz?.toFixed(1)} unit="Hz" color="bg-purple-500" />
+              {/* Spannung pro Phase */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="metric-spannung">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
+                    <Gauge className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-xs text-gray-500">Spannung</span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">L1</span>
+                    <span className="font-bold font-mono text-gray-900">{latest?.U_L1 != null ? `${latest.U_L1.toFixed(1)} V` : "–"}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">L2</span>
+                    <span className="font-bold font-mono text-gray-900">{latest?.U_L2 != null ? `${latest.U_L2.toFixed(1)} V` : "–"}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">L3</span>
+                    <span className="font-bold font-mono text-gray-900">{latest?.U_L3 != null ? `${latest.U_L3.toFixed(1)} V` : "–"}</span>
+                  </div>
+                </div>
+              </div>
+              {/* Strom pro Phase */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="metric-strom">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
+                    <Activity className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-xs text-gray-500">Strom</span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">L1</span>
+                    <span className="font-bold font-mono text-gray-900">{latest?.I_L1 != null ? `${latest.I_L1.toFixed(2)} A` : "–"}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">L2</span>
+                    <span className="font-bold font-mono text-gray-900">{latest?.I_L2 != null ? `${latest.I_L2.toFixed(2)} A` : "–"}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">L3</span>
+                    <span className="font-bold font-mono text-gray-900">{latest?.I_L3 != null ? `${latest.I_L3.toFixed(2)} A` : "–"}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Charts */}
@@ -229,12 +281,14 @@ export default function KirmesZaehlerPage() {
                       <XAxis dataKey="time" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ fontSize: 12 }} />
-                      <Area type="monotone" dataKey="leistung" stroke="#d946ef" fill="#d946ef" fillOpacity={0.1} name="kW" />
+                      <Area type="monotone" dataKey="P_L1" name="L1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                      <Area type="monotone" dataKey="P_L2" name="L2" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                      <Area type="monotone" dataKey="P_L3" name="L3" stroke="#10b981" fill="#10b981" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* Current Chart */}
+                {/* Current Chart - per Phase */}
                 <div className="bg-white border border-gray-200 rounded-xl p-4" data-testid="chart-current">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <Activity className="w-4 h-4 text-blue-500" /> Stromverlauf (A)
@@ -245,7 +299,9 @@ export default function KirmesZaehlerPage() {
                       <XAxis dataKey="time" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip contentStyle={{ fontSize: 12 }} />
-                      <Line type="monotone" dataKey="strom" stroke="#3b82f6" dot={false} name="A" />
+                      <Line type="monotone" dataKey="I_L1" name="L1" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
+                      <Line type="monotone" dataKey="I_L2" name="L2" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
+                      <Line type="monotone" dataKey="I_L3" name="L3" stroke="#10b981" strokeWidth={1.5} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -278,7 +334,7 @@ export default function KirmesZaehlerPage() {
             {history.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-4" data-testid="data-summary">
                 <h3 className="text-sm font-semibold text-gray-900 mb-2">Zusammenfassung</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
                   <div>
                     <span className="text-gray-400">Datenpunkte</span>
                     <p className="font-mono font-semibold">{history.length}</p>
@@ -288,8 +344,12 @@ export default function KirmesZaehlerPage() {
                     <p className="font-mono font-semibold">{Math.max(...history.filter(h => h.P_sum_kW != null).map(h => h.P_sum_kW)).toFixed(3)} kW</p>
                   </div>
                   <div>
-                    <span className="text-gray-400">Max. Strom</span>
-                    <p className="font-mono font-semibold">{Math.max(...history.filter(h => h.I_sum != null).map(h => h.I_sum)).toFixed(2)} A</p>
+                    <span className="text-gray-400">Max. Strom L1</span>
+                    <p className="font-mono font-semibold">{Math.max(...history.filter(h => h.I_L1 != null).map(h => h.I_L1)).toFixed(2)} A</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Max. Strom L2</span>
+                    <p className="font-mono font-semibold">{Math.max(...history.filter(h => h.I_L2 != null).map(h => h.I_L2)).toFixed(2)} A</p>
                   </div>
                   <div>
                     <span className="text-gray-400">Zeitraum</span>

@@ -1367,7 +1367,7 @@ async def get_signup_meter_data(
     signup_id: str,
     from_time: Optional[str] = None,
     to_time: Optional[str] = None,
-    limit: int = Query(default=200, le=5000),
+    limit: int = Query(default=200, le=100000),
     user: dict = Depends(_require_staff),
 ):
     """Get EMU meter telemetry data for a linked signup."""
@@ -1405,7 +1405,11 @@ async def get_signup_meter_data(
             query["ts_utc"]["$lte"] = to_time
 
     history = await _db.emu_data.find(
-        query, {"_id": 0, "ts_utc": 1, "P_sum_kW": 1, "I_sum": 1, "U_L1": 1, "F_Hz": 1, "E_imp_kWh": 1}
+        query, {"_id": 0, "ts_utc": 1,
+                "P_sum_kW": 1, "P_L1_kW": 1, "P_L2_kW": 1, "P_L3_kW": 1,
+                "I_sum": 1, "I_L1": 1, "I_L2": 1, "I_L3": 1,
+                "U_L1": 1, "U_L2": 1, "U_L3": 1,
+                "F_Hz": 1, "E_imp_kWh": 1}
     ).sort("ts_utc", -1).limit(limit).to_list(limit)
     history.reverse()
 
