@@ -89,7 +89,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         elements.append(Paragraph(sch["strasse"], styles["InvNormal"]))
     if sch.get("plz") or sch.get("ort"):
         elements.append(Paragraph(f"{sch.get('plz', '')} {sch.get('ort', '')}", styles["InvNormal"]))
-    elements.append(Spacer(1, 8 * mm))
+    elements.append(Spacer(1, 5 * mm))
 
     # Invoice metadata (right-aligned table)
     inv_date = invoice.get("invoice_date", datetime.now().strftime("%d.%m.%Y"))
@@ -97,7 +97,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ["Rechnungsnummer:", invoice.get("invoice_number", "")],
         ["Rechnungsdatum:", inv_date],
         ["Veranstaltung:", event.get("name", "")],
-        ["Kundennummer:", sch.get("id", "")[:8].upper()],
+        ["Kundennummer:", sch.get("kundennummer", invoice.get("schausteller_kundennummer", ""))],
     ]
     if sch.get("steuernummer"):
         meta_data.append(["Steuernummer Kunde:", sch["steuernummer"]])
@@ -125,11 +125,11 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     elements.append(meta_wrapper)
-    elements.append(Spacer(1, 5 * mm))
+    elements.append(Spacer(1, 3 * mm))
 
     # Title
     elements.append(Paragraph("Rechnung", styles["InvTitle"]))
-    elements.append(Spacer(1, 3 * mm))
+    elements.append(Spacer(1, 2 * mm))
 
     # Introduction
     event_name = event.get("name", "")
@@ -139,7 +139,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         f"<b>{event_name}</b>:",
         styles["InvNormal"]
     ))
-    elements.append(Spacer(1, 4 * mm))
+    elements.append(Spacer(1, 3 * mm))
 
     # Line items table
     items = invoice.get("line_items", [])
@@ -181,7 +181,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
           for i in range(2, len(table_data), 2)],
     ]))
     elements.append(inv_table)
-    elements.append(Spacer(1, 4 * mm))
+    elements.append(Spacer(1, 2 * mm))
 
     # Totals
     netto = invoice.get("netto", 0)
@@ -209,7 +209,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     elements.append(totals_table)
-    elements.append(Spacer(1, 5 * mm))
+    elements.append(Spacer(1, 2 * mm))
 
     # Payment info
     elements.append(Paragraph(
@@ -227,10 +227,10 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         qr_row = []
         if girocode_img:
             from reportlab.platypus import Image as RLImage
-            qr_image = RLImage(girocode_img, width=30*mm, height=30*mm)
+            qr_image = RLImage(girocode_img, width=25*mm, height=25*mm)
             qr_left = Table(
                 [[qr_image], [Paragraph("GiroCode scannen", styles["InvSmall"])]],
-                colWidths=[32*mm],
+                colWidths=[27*mm],
             )
             qr_left.setStyle(TableStyle([
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -251,7 +251,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
             ))
         
         if qr_row:
-            qr_table = Table([qr_row], colWidths=[34*mm, usable_w - 36*mm])
+            qr_table = Table([qr_row], colWidths=[29*mm, usable_w - 31*mm])
             qr_table.setStyle(TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -259,11 +259,11 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
             ]))
             elements.append(qr_table)
     
-    elements.append(Spacer(1, 5 * mm))
+    elements.append(Spacer(1, 3 * mm))
 
     # Closing
     elements.append(Paragraph("Bei Rückfragen stehen wir Ihnen gerne zur Verfügung.", styles["InvNormal"]))
-    elements.append(Spacer(1, 3 * mm))
+    elements.append(Spacer(1, 2 * mm))
     elements.append(Paragraph("Mit freundlichen Grüßen", styles["InvNormal"]))
     elements.append(Paragraph("<b>Eventenergie Deutschland GmbH &amp; Co. KG</b>", styles["InvNormal"]))
 
