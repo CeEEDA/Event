@@ -8,55 +8,34 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - **Backend:** FastAPI (Python) + MongoDB + GridFS
 - **Desktop:** Electron Wrapper
 - **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
-- **Server:** nginx (HTTPS/443) -> Caddy (HTTP/8001) -> FastAPI (8002)
 
-## What's Been Implemented
+## What's Been Implemented (Session 2026-04-02)
 
-### Phase 1-2 (abgeschlossen)
-- Auth, Auftragsverwaltung, Energiemonitoring, Zahlungen, QR, Rechnungen, Admin, Desktop
-- Tankbeleg Portal + Pi Script, EpiRent API Sync
-- MQTT Broker, Serviceplan, Server Deployment, Backup-System, HTTPS/SSL
+### Performance-Optimierung
+- MongoDB Indexes, N+1 Query Fix, RAM-Leak gefixt (25GB -> normal)
 
-### Kirmes Billing Features (abgeschlossen)
-- EMU Meter kW Fix, BCC auf Rechnungs-Emails
-- Auto-Fill Ausbau kWh, L1/L2/L3 Phasen-Anzeige
-- GiroCode QR-Code Fix, 1-Seiten PDF Layout
-- Auto-Kundennummer (K-0001), Finance Dashboard
-- Event-level Zahlungsart Toggle, 1-Click Email-Einladung/-Verifizierung
-- Mehrfachanmeldungen, Smartphone-Optimierung
-
-### DSE Generator Features (abgeschlossen)
-- DSE 5510 via RS232 + Pi, Remote Control, Sentinel-Wert Fix
-- Control Panel Redesign, Event-Log, Offline-Erkennung
-
-### Performance-Optimierung (abgeschlossen - 2026-04-02)
-- MongoDB Indexes, N+1 Query Fix, RAM-Leak gefixt
-
-### Expanded Row Redesign (abgeschlossen - 2026-04-02)
+### Expanded Row Redesign (KirmesEventDetailPage)
 - 3-Spalten Karten-Layout (KONTAKTDATEN | ZAEHLERDATEN | EMU-ZAEHLER)
-- Gelbe Hinterlegung fuer nicht-verknuepfte Zaehler
+- Gelbe Hinterlegung fuer nicht-verknuepfte Zaehler (bg-amber-50)
 - Payment-Labels gefixt (pending_payment -> Ausstehend, abgerechnet -> Abgerechnet)
-- Lade-Delay gefixt (limit=1 auf meter-data API)
+- Lade-Delay gefixt (limit=1 auf meter-data API, ~120ms)
 
-### Diagnose-Feature (abgeschlossen - 2026-04-02)
-- **Backend**: Neuer Endpoint GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=10
-  - Liefert letzte 10 Roh-Messwerte mit ts_utc, E_imp_kWh, P_sum_kW, U_L1/L2/L3, I_sum, F_Hz, cosphi
-  - ~30ms Antwortzeit
-- **Frontend**: Klickbare Zaehler-Eintraege in DeviceExpandedRow
-  - "Klick = Diagnose" Hinweis bei jedem Zaehler
-  - Diagnose-Panel mit vollstaendiger Messtabelle (9 Spalten)
-  - Farbliche Markierung: Rot bei Spannung < 200V, Gelb bei Frequenz ausserhalb 49-51Hz
-  - Neuester Messwert hervorgehoben
-  - Schliessen-Button (X) zum Ausblenden
-- **quick-info API erweitert**: meter_id in jedem Reading-Eintrag
+### Zaehler-Detailseite (MeterDiagnosticsPage) - NEU
+- **Route**: /devices/:deviceId/meters/:meterId
+- **Datumsfilter**: Von/Bis mit "Anzeigen" Button und 7-Tage-Navigation (</>)
+- **Verknuepfungshistorie**: Welche Veranstaltung, welcher Kunde, Zeitraum, Fahrgeschaeft, Platznr, Einbau/Ausbau/Verbrauch, Rechnungsnummer, Status (Aktiv/Beendet)
+- **Messdaten-Tabelle**: 12 Spalten (Zeitstempel, kWh, kW, U L1/L2/L3, I L1/L2/L3, I ges., Hz, cos phi)
+- **Anomalie-Erkennung**: Rot bei Spannung < 200V, Gelb bei Frequenz ausserhalb 49-51Hz
+- Klickbare Zaehler-Eintraege in DeviceManagementPage navigieren zur Detailseite
+- **Backend-Endpoints**:
+  - GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=50&date_from=&date_to=
+  - GET /api/devices/{device_id}/meters/{meter_id}/history
 
 ## Key API Endpoints
 - GET /api/kirmes/signups/{signup_id}/meter-data?limit=1
-- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=10 (NEU)
-- GET /api/devices/{device_id}/quick-info (meter_id hinzugefuegt)
-- /api/kirmes/events/{event_id}/generate-invoices
-- /api/kirmes/public/verify-email-link
-- /api/kirmes/public/register
+- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics (date range, limit)
+- GET /api/devices/{device_id}/meters/{meter_id}/history (assignment history)
+- GET /api/devices/{device_id}/quick-info (meter_id included)
 
 ## Prioritized Backlog
 
@@ -67,7 +46,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Chromium Translate Popup auf Raspberry Pi
 - Admin File Size Limits fuer Uploads
 - Windows Installer fuer Electron Desktop App
-- GPS-Support fuer Kirmeskiste (wartet auf Klaerung)
+- GPS-Support fuer Kirmeskiste
 
 ### Blocked
 - DSE890 Gateway GSM (wartet auf neue SIM-Karten)
