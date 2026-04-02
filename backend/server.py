@@ -1999,9 +1999,38 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error creating small indexes: {e}")
 
-    # ── HINWEIS: emu_data Indexes NICHT beim Start ──────────────────
-    # Die emu_data-Collection ist zu gross fuer automatische Index-Erstellung.
-    # Indexes manuell via POST /api/admin/create-emu-indexes ausloesen.
+    # ── emu_data Indexes: pruefen und ggf. im Hintergrund erstellen ──
+    # Wenn Indexes schon existieren: create_index kehrt sofort zurueck (< 1ms)
+    # Wenn NICHT: wird im Hintergrund gebaut, Server blockiert NICHT
+    try:
+        existing = await db.emu_data.index_information()
+        needed = ["device_id_1_ts_utc_-1", "device_id_1_meter_id_1_ts_utc_-1", "ts_utc_-1"]
+        missing = [n for n in needed if n not in existing]
+
+        if not missing:
+            # Indexes existieren schon → nur ensure (sofort, < 1ms)
+            logger.info("emu_data indexes already exist — skipping.")
+        else:
+            # Indexes fehlen → im Hintergrund erstellen
+            logger.info(f"emu_data: {len(missing)} Index(e) fehlen — erstelle im Hintergrund ...")
+            async def _build_emu_indexes():
+                global _emu_index_running
+                _emu_index_running = True
+                try:
+                    logger.info("  Index 1/3: emu_data (device_id + ts_utc) ...")
+                    await db.emu_data.create_index([("device_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
+                    logger.info("  Index 2/3: emu_data (device_id + meter_id + ts_utc) ...")
+                    await db.emu_data.create_index([("device_id", ASCENDING), ("meter_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
+                    logger.info("  Index 3/3: emu_data (ts_utc) ...")
+                    await db.emu_data.create_index([("ts_utc", DESCENDING)], background=True)
+                    logger.info("  FERTIG: Alle emu_data Indexes erstellt!")
+                except Exception as e:
+                    logger.error(f"Fehler bei emu_data Index-Erstellung: {e}")
+                finally:
+                    _emu_index_running = False
+            asyncio.create_task(_build_emu_indexes())
+    except Exception as e:
+        logger.error(f"Error checking emu_data indexes: {e}")
 
     # ── MQTT ──────────────────────────────────────────────────────────
     loop = asyncio.get_event_loop()
