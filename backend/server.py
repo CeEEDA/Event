@@ -1860,63 +1860,67 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def startup_event():
     import asyncio
-    from pymongo import ASCENDING, DESCENDING
     from mqtt_service import start_mqtt_client
 
-    # ── MongoDB Indexes (idempotent, background) ──────────────────────
-    try:
-        logger.info("Creating MongoDB indexes ...")
+    # ── MongoDB Indexes in Background-Task (blockiert Server-Start NICHT) ──
+    async def _create_indexes():
+        from pymongo import ASCENDING, DESCENDING
+        try:
+            logger.info("Creating MongoDB indexes (background task) ...")
 
-        # emu_data – largest collection, queried by device+meter+time
-        await db.emu_data.create_index([("device_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
-        await db.emu_data.create_index([("device_id", ASCENDING), ("meter_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
-        await db.emu_data.create_index([("ts_utc", DESCENDING)], background=True)
+            # emu_data – largest collection, queried by device+meter+time
+            await db.emu_data.create_index([("device_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
+            await db.emu_data.create_index([("device_id", ASCENDING), ("meter_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
+            await db.emu_data.create_index([("ts_utc", DESCENDING)], background=True)
 
-        # devices – looked up by id, serial_number, device_code, device_type
-        await db.devices.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.devices.create_index([("serial_number", ASCENDING)], background=True)
-        await db.devices.create_index([("device_code", ASCENDING)], background=True)
-        await db.devices.create_index([("device_type", ASCENDING)], background=True)
-        await db.devices.create_index([("last_seen", DESCENDING)], background=True)
+            # devices
+            await db.devices.create_index([("id", ASCENDING)], unique=True, background=True)
+            await db.devices.create_index([("serial_number", ASCENDING)], background=True)
+            await db.devices.create_index([("device_code", ASCENDING)], background=True)
+            await db.devices.create_index([("device_type", ASCENDING)], background=True)
+            await db.devices.create_index([("last_seen", DESCENDING)], background=True)
 
-        # emu_meters – looked up by device_id, id
-        await db.emu_meters.create_index([("device_id", ASCENDING)], background=True)
-        await db.emu_meters.create_index([("id", ASCENDING)], unique=True, background=True)
+            # emu_meters
+            await db.emu_meters.create_index([("device_id", ASCENDING)], background=True)
+            await db.emu_meters.create_index([("id", ASCENDING)], unique=True, background=True)
 
-        # generators – looked up by id, serial_number, device_id
-        await db.generators.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.generators.create_index([("serial_number", ASCENDING)], background=True)
-        await db.generators.create_index([("device_id", ASCENDING)], background=True)
-        await db.generators.create_index([("last_seen", DESCENDING)], background=True)
+            # generators
+            await db.generators.create_index([("id", ASCENDING)], unique=True, background=True)
+            await db.generators.create_index([("serial_number", ASCENDING)], background=True)
+            await db.generators.create_index([("device_id", ASCENDING)], background=True)
+            await db.generators.create_index([("last_seen", DESCENDING)], background=True)
 
-        # generator_telemetry – queried by generator_id + timestamp
-        await db.generator_telemetry.create_index([("generator_id", ASCENDING), ("timestamp", DESCENDING)], background=True)
+            # generator_telemetry
+            await db.generator_telemetry.create_index([("generator_id", ASCENDING), ("timestamp", DESCENDING)], background=True)
 
-        # kirmes collections
-        await db.kirmes_events.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.kirmes_signups.create_index([("event_id", ASCENDING)], background=True)
-        await db.kirmes_signups.create_index([("schausteller_id", ASCENDING)], background=True)
-        await db.kirmes_signups.create_index([("event_id", ASCENDING), ("schausteller_id", ASCENDING)], background=True)
-        await db.kirmes_schausteller.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.kirmes_schausteller.create_index([("email", ASCENDING)], unique=True, background=True)
-        await db.kirmes_invoices.create_index([("schausteller_id", ASCENDING)], background=True)
-        await db.kirmes_invoices.create_index([("event_id", ASCENDING)], background=True)
+            # kirmes collections
+            await db.kirmes_events.create_index([("id", ASCENDING)], unique=True, background=True)
+            await db.kirmes_signups.create_index([("event_id", ASCENDING)], background=True)
+            await db.kirmes_signups.create_index([("schausteller_id", ASCENDING)], background=True)
+            await db.kirmes_signups.create_index([("event_id", ASCENDING), ("schausteller_id", ASCENDING)], background=True)
+            await db.kirmes_schausteller.create_index([("id", ASCENDING)], unique=True, background=True)
+            await db.kirmes_schausteller.create_index([("email", ASCENDING)], unique=True, background=True)
+            await db.kirmes_invoices.create_index([("schausteller_id", ASCENDING)], background=True)
+            await db.kirmes_invoices.create_index([("event_id", ASCENDING)], background=True)
 
-        # users
-        await db.users.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.users.create_index([("email", ASCENDING)], unique=True, background=True)
+            # users
+            await db.users.create_index([("id", ASCENDING)], unique=True, background=True)
+            await db.users.create_index([("email", ASCENDING)], unique=True, background=True)
 
-        # service plans & device documents
-        await db.service_plans.create_index([("device_id", ASCENDING)], background=True)
-        await db.device_documents.create_index([("device_id", ASCENDING)], background=True)
-        await db.device_parts.create_index([("device_id", ASCENDING)], background=True)
+            # service plans & device documents
+            await db.service_plans.create_index([("device_id", ASCENDING)], background=True)
+            await db.device_documents.create_index([("device_id", ASCENDING)], background=True)
+            await db.device_parts.create_index([("device_id", ASCENDING)], background=True)
 
-        # login history
-        await db.login_history.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)], background=True)
+            # login history
+            await db.login_history.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)], background=True)
 
-        logger.info("MongoDB indexes created successfully.")
-    except Exception as e:
-        logger.error(f"Error creating MongoDB indexes: {e}")
+            logger.info("MongoDB indexes created successfully.")
+        except Exception as e:
+            logger.error(f"Error creating MongoDB indexes: {e}")
+
+    # Fire-and-forget: Server startet sofort, Indexes werden im Hintergrund gebaut
+    asyncio.create_task(_create_indexes())
 
     # ── MQTT ──────────────────────────────────────────────────────────
     loop = asyncio.get_event_loop()
