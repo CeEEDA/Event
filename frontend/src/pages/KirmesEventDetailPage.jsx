@@ -964,145 +964,197 @@ export default function KirmesEventDetailPage() {
                         </div>
                       </td>
                     </tr>
-                    {/* Expanded Detail Panel – Compact */}
+                    {/* Expanded Detail Panel – Card-style like Mobile but compact 3-col */}
                     {isExpanded && (
                       <tr>
                         <td colSpan={11} className="p-0">
                           <div className="bg-gray-50 border-y border-gray-200 px-4 py-3" data-testid={`detail-${signup.id}`}>
-                            {/* Row 1: Contact + Registration inline */}
-                            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-gray-600 mb-2">
-                              <span className="font-medium text-gray-900">{sch?.firma || "–"}</span>
-                              <span>{sch?.name || "–"}</span>
-                              {sch?.strasse && <span className="text-gray-400">{sch.strasse}, {sch.plz} {sch.ort}</span>}
-                              {sch?.telefon && <span>Tel: {sch.telefon}</span>}
-                              {sch?.email && <span className="text-gray-400 break-all">{sch.email}</span>}
-                              {sch?.rechnungs_email && sch.rechnungs_email !== sch?.email && <span className="text-gray-400 break-all">RE: {sch.rechnungs_email}</span>}
-                              {sch?.steuernummer && <span className="font-mono text-gray-400">USt: {sch.steuernummer}</span>}
-                              {sch?.kauf_auf_rechnung && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Rechnung</span>}
-                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                              {/* Col 1: KONTAKTDATEN */}
+                              <div>
+                                <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Kontaktdaten</h4>
+                                <div className="space-y-0.5 text-xs">
+                                  <p><span className="text-gray-400">Firma:</span> <span className="font-medium text-gray-900">{sch?.firma || "–"}</span></p>
+                                  <p><span className="text-gray-400">Name:</span> <span className="text-gray-700">{sch?.name || "–"}</span></p>
+                                  <p><span className="text-gray-400">Adresse:</span> <span className="text-gray-700">{sch?.strasse || "–"}, {sch?.plz || ""} {sch?.ort || ""}</span></p>
+                                  {sch?.telefon && <p><span className="text-gray-400">Tel:</span> <a href={`tel:${sch.telefon}`} className="text-fuchsia-600 hover:underline" onClick={e => e.stopPropagation()}>{sch.telefon}</a></p>}
+                                  {sch?.email && <p><span className="text-gray-400">E-Mail:</span> <span className="text-gray-700 break-all">{sch.email}</span></p>}
+                                  {sch?.rechnungs_email && sch.rechnungs_email !== sch?.email && <p><span className="text-gray-400">RE-Mail:</span> <span className="text-gray-700 break-all">{sch.rechnungs_email}</span></p>}
+                                  {sch?.steuernummer && <p><span className="text-gray-400">USt:</span> <span className="font-mono text-gray-700">{sch.steuernummer}</span></p>}
+                                  {sch?.kauf_auf_rechnung && <span className="inline-block mt-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Kauf auf Rechnung</span>}
+                                </div>
+                              </div>
 
-                            {/* Row 2: EMU Meter Data / Linking / Invoice – all inline */}
-                            {(() => {
-                              const hasLinked = signup.emu_device_id && signup.emu_meter_id;
-                              const md = meterDataMap[signup.id];
-                              const isLinking = linkingMeter === signup.id;
-
-                              if (!hasLinked && !isLinking) {
-                                return (
-                                  <div className="flex items-center gap-3 py-1" data-testid={`emu-unlinked-${signup.id}`}>
-                                    <span className="text-xs text-gray-400">Kein EMU-Zähler</span>
-                                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
-                                      className="h-6 text-[11px] text-fuchsia-600 border-fuchsia-200 px-2" data-testid={`link-meter-btn-${signup.id}`}>
-                                      <Link2 className="w-3 h-3 mr-1" /> Verknüpfen
-                                    </Button>
+                              {/* Col 2: ZÄHLERDATEN + Rechnung */}
+                              <div>
+                                <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Zählerdaten</h4>
+                                <div className="grid grid-cols-3 gap-1.5 mb-2">
+                                  <div className="bg-white rounded border border-gray-200 px-2 py-1.5 text-center">
+                                    <p className="text-[9px] text-gray-400">Einbau</p>
+                                    <p className="text-sm font-bold font-mono text-gray-900">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</p>
                                   </div>
-                                );
-                              }
+                                  <div className="bg-white rounded border border-gray-200 px-2 py-1.5 text-center">
+                                    <p className="text-[9px] text-gray-400">Ausbau</p>
+                                    <p className="text-sm font-bold font-mono text-gray-900">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</p>
+                                  </div>
+                                  <div className="bg-white rounded border border-gray-200 px-2 py-1.5 text-center">
+                                    <p className="text-[9px] text-gray-400">Verbrauch</p>
+                                    <p className="text-sm font-bold font-mono text-fuchsia-700">{signup.kwh_used != null ? signup.kwh_used.toFixed(2) : "–"}</p>
+                                  </div>
+                                </div>
+                                {/* Invoice card */}
+                                {signup.invoice_number && (() => {
+                                  const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
+                                  return inv ? (
+                                    <div className="bg-emerald-50 rounded border border-emerald-200 px-2.5 py-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <p className="text-xs font-semibold text-emerald-700">{inv.invoice_number}</p>
+                                          <p className="text-[10px] text-emerald-500">{inv.invoice_date}</p>
+                                        </div>
+                                        <p className="text-sm font-bold text-emerald-800">{inv.brutto?.toFixed(2)} EUR</p>
+                                      </div>
+                                      <div className="flex gap-3 mt-1">
+                                        <button onClick={(e) => { e.stopPropagation(); handleDownloadInvoice(inv.id); }} className="text-[10px] text-emerald-600 hover:text-emerald-800 flex items-center gap-0.5">
+                                          <Download className="w-3 h-3" /> PDF
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleSendInvoice(inv.id); }} className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5">
+                                          <Send className="w-3 h-3" /> E-Mail
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : null;
+                                })()}
+                              </div>
 
-                              if (isLinking) {
-                                return (
-                                  <div className="bg-white rounded border border-fuchsia-200 p-3 my-1 max-w-lg" onClick={e => e.stopPropagation()} data-testid={`emu-linking-${signup.id}`}>
-                                    {scanningMeter === signup.id ? (
-                                      <>
-                                        <QrScanner onScan={(text) => handleQrScan(text, signup.id)} onClose={() => setScanningMeter(null)} />
-                                        <div className="flex items-center justify-center gap-3 mt-2">
-                                          <button onClick={() => setScanningMeter(null)} className="text-xs text-gray-500 hover:text-fuchsia-600 underline" data-testid={`switch-manual-${signup.id}`}>Manuell</button>
-                                          <Button size="sm" variant="outline" onClick={() => { setScanningMeter(null); setLinkingMeter(null); }} className="h-6 text-[11px]" data-testid={`cancel-scan-${signup.id}`}>Abbrechen</Button>
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <Button size="sm" onClick={() => setScanningMeter(signup.id)} className="h-7 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-[11px]" data-testid={`scan-qr-btn-${signup.id}`}>QR scannen</Button>
-                                          <span className="text-[10px] text-gray-400">oder:</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          <select value={selectedMeterCombo} onChange={e => setSelectedMeterCombo(e.target.value)}
-                                            className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-fuchsia-500"
-                                            data-testid={`meter-select-${signup.id}`}>
-                                            <option value="">-- Zähler --</option>
-                                            {emuMeters.map(m => (
-                                              <option key={m.id} value={`${m.device_id}|${m.id}`}>{m.meter_name} ({m.device_name || m.device_id.slice(0,8)}) – {m.meter_ip}</option>
-                                            ))}
-                                          </select>
-                                          <Button size="sm" onClick={() => handleLinkMeter(signup.id)} disabled={!selectedMeterCombo}
-                                            className="h-7 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-[11px]" data-testid={`confirm-link-${signup.id}`}>
-                                            <Link2 className="w-3 h-3 mr-1" /> OK
+                              {/* Col 3: EMU-ZÄHLER */}
+                              <div>
+                                {(() => {
+                                  const hasLinked = signup.emu_device_id && signup.emu_meter_id;
+                                  const md = meterDataMap[signup.id];
+                                  const isLinking = linkingMeter === signup.id;
+
+                                  if (!hasLinked && !isLinking) {
+                                    return (
+                                      <div data-testid={`emu-unlinked-${signup.id}`}>
+                                        <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">EMU-Zähler</h4>
+                                        <div className="bg-white rounded border border-dashed border-gray-300 p-3 text-center">
+                                          <p className="text-xs text-gray-400 mb-1.5">Kein Zähler verknüpft</p>
+                                          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                            className="h-6 text-[11px] text-fuchsia-600 border-fuchsia-200 px-2" data-testid={`link-meter-btn-${signup.id}`}>
+                                            <Link2 className="w-3 h-3 mr-1" /> Verknüpfen
                                           </Button>
-                                          <Button size="sm" variant="outline" onClick={() => { setLinkingMeter(null); setSelectedMeterCombo(""); setScanningMeter(null); }}
-                                            className="h-7 text-[11px]">Abbrechen</Button>
                                         </div>
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              }
+                                      </div>
+                                    );
+                                  }
 
-                              // Linked meter – compact two-line display
-                              return (
-                                <div data-testid={`emu-data-${signup.id}`} className="space-y-1">
-                                  {/* Line 1: Meter values */}
-                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                                    <span className="font-medium text-gray-700 flex items-center gap-1">
-                                      <Activity className="w-3 h-3 text-fuchsia-500" />
-                                      {signup.emu_meter_name || "EMU"}
-                                    </span>
-                                    {md?.is_online ? (
-                                      <span className="flex items-center gap-0.5 text-[10px] text-emerald-600"><Wifi className="w-3 h-3" /> Online</span>
-                                    ) : (
-                                      <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
-                                    )}
-                                    {md?.latest && (
-                                      <>
-                                        <span className="font-mono font-bold text-fuchsia-700">{(md.latest.P_sum_kW || 0).toFixed(2)} kW</span>
-                                        <span className="font-mono text-gray-600">{(md.latest.U_L1 || 0).toFixed(0)}V</span>
-                                        <span className="font-mono text-gray-600">{(md.latest.I_sum || 0).toFixed(1)}A</span>
-                                        <span className="font-mono text-gray-600">{(md.latest.F_Hz || 0).toFixed(1)}Hz</span>
-                                      </>
-                                    )}
-                                    {md?.latest?.ts_utc && (
-                                      <span className="text-[10px] text-gray-400">Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}</span>
-                                    )}
-                                  </div>
-                                  {/* Line 2: Actions */}
-                                  <div className="flex items-center gap-3 text-[10px]">
-                                    <button onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
-                                      className="text-fuchsia-500 hover:text-fuchsia-700 flex items-center gap-0.5" data-testid={`relink-meter-${signup.id}`}>
-                                      <Link2 className="w-3 h-3" /> Neu verknüpfen
-                                    </button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
-                                      className="text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
-                                      <Unlink className="w-3 h-3" /> Trennen
-                                    </button>
-                                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
-                                      target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                                      className="text-gray-400 hover:text-fuchsia-600" data-testid={`qr-label-${signup.id}`}>QR</a>
-                                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
-                                      className="h-6 text-[10px] text-fuchsia-600 border-fuchsia-200 px-2" data-testid={`zaehler-detail-btn-${signup.id}`}>
-                                      <Gauge className="w-3 h-3 mr-1" /> Zählerdaten & Export
-                                    </Button>
-                                  </div>
-                                </div>
-                              );
-                            })()}
+                                  if (isLinking) {
+                                    return (
+                                      <div className="bg-white rounded border border-fuchsia-200 p-2.5" onClick={e => e.stopPropagation()} data-testid={`emu-linking-${signup.id}`}>
+                                        {scanningMeter === signup.id ? (
+                                          <>
+                                            <QrScanner onScan={(text) => handleQrScan(text, signup.id)} onClose={() => setScanningMeter(null)} />
+                                            <div className="flex items-center justify-center gap-3 mt-2">
+                                              <button onClick={() => setScanningMeter(null)} className="text-xs text-gray-500 hover:text-fuchsia-600 underline" data-testid={`switch-manual-${signup.id}`}>Manuell</button>
+                                              <Button size="sm" variant="outline" onClick={() => { setScanningMeter(null); setLinkingMeter(null); }} className="h-6 text-[11px]" data-testid={`cancel-scan-${signup.id}`}>Abbrechen</Button>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <Button size="sm" onClick={() => setScanningMeter(signup.id)} className="h-7 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-[11px]" data-testid={`scan-qr-btn-${signup.id}`}>QR scannen</Button>
+                                              <span className="text-[10px] text-gray-400">oder:</span>
+                                            </div>
+                                            <select value={selectedMeterCombo} onChange={e => setSelectedMeterCombo(e.target.value)}
+                                              className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs mb-2 focus:outline-none focus:border-fuchsia-500"
+                                              data-testid={`meter-select-${signup.id}`}>
+                                              <option value="">-- Zähler --</option>
+                                              {emuMeters.map(m => (
+                                                <option key={m.id} value={`${m.device_id}|${m.id}`}>{m.meter_name} ({m.device_name || m.device_id.slice(0,8)}) – {m.meter_ip}</option>
+                                              ))}
+                                            </select>
+                                            <div className="flex gap-2">
+                                              <Button size="sm" onClick={() => handleLinkMeter(signup.id)} disabled={!selectedMeterCombo}
+                                                className="h-7 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-[11px]" data-testid={`confirm-link-${signup.id}`}>
+                                                <Link2 className="w-3 h-3 mr-1" /> OK
+                                              </Button>
+                                              <Button size="sm" variant="outline" onClick={() => { setLinkingMeter(null); setSelectedMeterCombo(""); setScanningMeter(null); }}
+                                                className="h-7 text-[11px]">Abbrechen</Button>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    );
+                                  }
 
-                            {/* Invoice info inline */}
-                            {signup.invoice_number && (() => {
-                              const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
-                              return inv ? (
-                                <div className="flex items-center gap-3 text-xs mt-1 pt-1 border-t border-gray-200">
-                                  <span className="font-semibold text-emerald-700">{inv.invoice_number}</span>
-                                  <span className="text-gray-400">{inv.invoice_date}</span>
-                                  <span className="font-bold text-emerald-800">{inv.brutto?.toFixed(2)} EUR</span>
-                                  <button onClick={() => handleDownloadInvoice(inv.id)} className="text-emerald-600 hover:text-emerald-800 flex items-center gap-0.5">
-                                    <Download className="w-3 h-3" /> PDF
-                                  </button>
-                                  <button onClick={() => handleSendInvoice(inv.id)} className="text-blue-600 hover:text-blue-800 flex items-center gap-0.5">
-                                    <Send className="w-3 h-3" /> E-Mail
-                                  </button>
-                                </div>
-                              ) : null;
-                            })()}
+                                  // Linked meter – card-style display
+                                  return (
+                                    <div data-testid={`emu-data-${signup.id}`}>
+                                      <div className="flex items-center justify-between mb-1.5">
+                                        <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                          <Activity className="w-3 h-3 text-fuchsia-500" /> EMU-Zähler
+                                        </h4>
+                                        <div className="flex items-center gap-2">
+                                          <button onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                            className="text-[10px] text-fuchsia-500 hover:text-fuchsia-700 flex items-center gap-0.5" data-testid={`relink-meter-${signup.id}`}>
+                                            <Link2 className="w-3 h-3" /> Neu
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
+                                            className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
+                                            <Unlink className="w-3 h-3" /> Trennen
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div className="bg-white rounded border border-gray-200 p-2">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <span className="text-xs font-medium text-gray-700">{signup.emu_meter_name || "EMU-Zähler"}</span>
+                                          {md?.is_online ? (
+                                            <span className="flex items-center gap-0.5 text-[10px] text-emerald-600"><Wifi className="w-3 h-3" /> Online</span>
+                                          ) : (
+                                            <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
+                                          )}
+                                        </div>
+                                        {md?.latest ? (
+                                          <div className="grid grid-cols-2 gap-1">
+                                            <div className="text-center p-1 bg-gray-50 rounded">
+                                              <p className="text-[9px] text-gray-400">Leistung</p>
+                                              <p className="text-xs font-bold font-mono text-fuchsia-700">{(md.latest.P_sum_kW || 0).toFixed(2)} kW</p>
+                                            </div>
+                                            <div className="text-center p-1 bg-gray-50 rounded">
+                                              <p className="text-[9px] text-gray-400">Spannung</p>
+                                              <p className="text-xs font-bold font-mono text-gray-900">{(md.latest.U_L1 || 0).toFixed(0)} V</p>
+                                            </div>
+                                            <div className="text-center p-1 bg-gray-50 rounded">
+                                              <p className="text-[9px] text-gray-400">Strom</p>
+                                              <p className="text-xs font-bold font-mono text-gray-900">{(md.latest.I_sum || 0).toFixed(1)} A</p>
+                                            </div>
+                                            <div className="text-center p-1 bg-gray-50 rounded">
+                                              <p className="text-[9px] text-gray-400">Frequenz</p>
+                                              <p className="text-xs font-bold font-mono text-gray-900">{(md.latest.F_Hz || 0).toFixed(1)} Hz</p>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <p className="text-[10px] text-gray-400 text-center py-1">Keine Messdaten</p>
+                                        )}
+                                      </div>
+                                      {md?.latest?.ts_utc && (
+                                        <p className="text-[9px] text-gray-400 text-right mt-0.5">Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}</p>
+                                      )}
+                                      <div className="flex items-center gap-2 mt-1.5">
+                                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
+                                          className="flex-1 h-6 text-[10px] text-fuchsia-600 border-fuchsia-200 hover:bg-fuchsia-50" data-testid={`zaehler-detail-btn-${signup.id}`}>
+                                          <Gauge className="w-3 h-3 mr-1" /> Zählerdaten & Export
+                                        </Button>
+                                        <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
+                                          target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                          className="text-[10px] text-gray-400 hover:text-fuchsia-600 border border-gray-200 rounded px-1.5 py-0.5" data-testid={`qr-label-${signup.id}`}>QR</a>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            </div>
                           </div>
                         </td>
                       </tr>

@@ -1,0 +1,99 @@
+{
+  "summary": "Kirmes Event Detail Page - Desktop Expanded Row 3-Column Card Layout tested successfully. All features working as expected: 3-column grid layout (KONTAKTDATEN | ZÄHLERDATEN | EMU-ZÄHLER), yellow background for rows without EMU meter, German payment status translations, all action icons visible.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes_expanded_row_iteration49.py",
+    "/app/test_reports/pytest/pytest_kirmes_expanded_row_iteration49.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (5/5 tests passed)",
+    "frontend": "100% (all features verified)"
+  },
+  "test_credentials": {
+    "admin_email": "admin@test.com",
+    "admin_password": "password",
+    "event_id": "648e5d04-53a4-4eac-812c-a9267dd9158a",
+    "signup_with_meter": "ec261fd0-4401-49b6-8d75-f320d0d85012",
+    "signup_without_meter": "6a6ada7d-f5e7-4cfe-94b3-85ad09460eb5"
+  },
+  "seed_data_creation": "None - used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Kirmes Event Detail Page desktop expanded row now uses 3-column card-based layout matching mobile view. Col 1 = KONTAKTDATEN (Firma, Name, Adresse, Tel clickable, E-Mail, RE-Mail, USt), Col 2 = ZÄHLERDATEN (3 card boxes for Einbau/Ausbau/Verbrauch in fuchsia + green invoice card with PDF/E-Mail buttons), Col 3 = EMU-ZÄHLER (Neu/Trennen links, meter name with Online/Offline status, 4 value boxes for Leistung kW/Spannung V/Strom A/Frequenz Hz, timestamp, Zählerdaten & Export button, QR link). Rows without EMU meter have bg-amber-50 yellow background.",
+  "features_tested": {
+    "desktop_table_headers": {
+      "status": "PASS",
+      "headers_verified": ["FIRMA", "NAME", "GESCHÄFT", "PLATZ", "ANSCHL.", "EINBAU", "AUSBAU", "VERBR.", "PREIS", "STATUS"],
+      "description": "All 10 table headers visible on desktop view plus action icons column"
+    },
+    "action_icons_right_side": {
+      "status": "PASS",
+      "icons_verified": ["edit (pencil)", "download", "send", "delete (trash)"],
+      "description": "All action icons visible on right side of each row"
+    },
+    "yellow_background_no_meter": {
+      "status": "PASS",
+      "description": "Rows WITHOUT linked EMU meter have bg-amber-50/60 yellow background. Row WITH meter (Achterbahn Müller) does NOT have yellow background."
+    },
+    "payment_status_german_labels": {
+      "status": "PASS",
+      "translations_verified": {
+        "pending_payment": "Ausstehend (amber color)",
+        "abgerechnet": "Abgerechnet (fuchsia color)"
+      }
+    },
+    "expanded_row_3_column_layout": {
+      "status": "PASS",
+      "description": "Desktop expanded row uses grid-cols-3 for 3-column card-based layout"
+    },
+    "column_1_kontaktdaten": {
+      "status": "PASS",
+      "elements_verified": ["Firma", "Name", "Adresse", "Tel (clickable)", "E-Mail", "RE-Mail", "USt"]
+    },
+    "column_2_zaehlerdaten": {
+      "status": "PASS",
+      "elements_verified": [
+        "Einbau card box with value",
+        "Ausbau card box with value",
+        "Verbrauch card box with fuchsia color value",
+        "Green invoice card (R26-K-0001) with PDF and E-Mail buttons"
+      ]
+    },
+    "column_3_emu_zaehler": {
+      "status": "PASS",
+      "elements_verified": [
+        "Neu/Trennen links in header",
+        "Meter name (EMU Zähler 1)",
+        "Online/Offline status",
+        "4 value boxes: Leistung kW, Spannung V, Strom A, Frequenz Hz",
+        "Timestamp (Messung)",
+        "Zählerdaten & Export button",
+        "QR link"
+      ]
+    },
+    "expanded_row_without_meter": {
+      "status": "PASS",
+      "elements_verified": [
+        "'Kein Zähler verknüpft' message displayed",
+        "Verknüpfen button displayed"
+      ]
+    },
+    "meter_data_api_performance": {
+      "status": "PASS",
+      "endpoint": "GET /api/kirmes/signups/{signup_id}/meter-data?limit=1",
+      "response_time": "< 1 second",
+      "description": "API responds fast with limit=1 parameter"
+    }
+  }
+}
