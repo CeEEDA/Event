@@ -48,13 +48,11 @@ export default function KirmesZaehlerPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const evtRes = await api.get(`/kirmes/events/${eventId}`);
-      const evt = evtRes.data;
-      setEvent(evt);
-
-      const s = evt.signups?.find(s => s.id === signupId);
-      if (!s) { toast.error("Anmeldung nicht gefunden"); navigate(`/kirmes/${eventId}`); return; }
-      setSignup(s);
+      // Load only the single signup (fast) — event name is optional/cosmetic
+      const signupRes = await api.get(`/kirmes/signups/${signupId}`);
+      setSignup(signupRes.data);
+      // Load event name in background (non-blocking)
+      api.get(`/kirmes/events/${eventId}`).then(r => setEvent(r.data)).catch(() => {});
     } catch {
       toast.error("Fehler beim Laden");
       navigate(`/kirmes/${eventId}`);
@@ -74,8 +72,7 @@ export default function KirmesZaehlerPage() {
     } catch { /* ignore */ }
   }, [signupId, selectedDate]);
 
-  useEffect(() => { loadData(); }, [loadData]);
-  useEffect(() => { if (!loading) loadMeterData(); }, [loading, loadMeterData]);
+  useEffect(() => { loadData(); loadMeterData(); }, [loadData, loadMeterData]);
 
   // Auto-refresh every 30s
   useEffect(() => {

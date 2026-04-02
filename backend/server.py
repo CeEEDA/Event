@@ -1869,9 +1869,13 @@ async def startup_event():
             logger.info("Creating MongoDB indexes (background task) ...")
 
             # emu_data – largest collection, queried by device+meter+time
+            logger.info("  Index: emu_data (device_id + ts_utc) ...")
             await db.emu_data.create_index([("device_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
+            logger.info("  Index: emu_data (device_id + meter_id + ts_utc) ...")
             await db.emu_data.create_index([("device_id", ASCENDING), ("meter_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
+            logger.info("  Index: emu_data (ts_utc) ...")
             await db.emu_data.create_index([("ts_utc", DESCENDING)], background=True)
+            logger.info("  emu_data indexes done.")
 
             # devices
             await db.devices.create_index([("id", ASCENDING)], unique=True, background=True)
