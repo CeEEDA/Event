@@ -1,0 +1,98 @@
+{
+  "summary": "Kirmes Billing System - New Diagnostics Feature tested successfully. All features working: Backend diagnostics API returns last 10 raw measurements with all required fields (ts_utc, E_imp_kWh, P_sum_kW, U_L1/L2/L3, I_sum, F_Hz, cosphi), quick-info includes meter_id, frontend diagnostics panel opens on meter click with proper table columns and highlighting.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_diagnostics_iteration51.py",
+    "/app/test_reports/pytest/pytest_diagnostics_iteration51.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_diagnostics_iteration51.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 tests passed)",
+    "frontend": "100% (all features verified)"
+  },
+  "test_credentials": {
+    "admin_email": "admin@test.com",
+    "admin_password": "password",
+    "device_id": "e9db7cea-9e65-484a-8f47-3e01603da0e9",
+    "device_name": "Kirmeskiste_001",
+    "meter_id": "4b5ad9f6-e5f2-41ca-a799-d63c98037323",
+    "meter_name": "EMU Zaehler 1"
+  },
+  "seed_data_creation": "None - used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Diagnostics feature fully implemented and tested. Device Management page at /devices shows device list. Clicking on Kirmeskiste_001 expands row showing LETZTER KONTAKT and ZÄHLERSTÄNDE sections. Each meter entry shows 'Klick = Diagnose' hint. Clicking a meter opens diagnostics panel with table showing columns: ZEITSTEMPEL, KWH, KW, U L1, U L2, U L3, I GES., HZ, COS PHI. First row is highlighted with bg-fuchsia-50/30. Low voltage (<200V when >0) shown in red, bad frequency (<49 or >51 Hz) shown in amber. Close button (X) closes panel. Yellow highlight on Kirmes Event Detail page for unlinked meters still works (4 rows with bg-amber background).",
+  "features_tested": {
+    "backend_diagnostics_api": {
+      "status": "PASS",
+      "endpoint": "GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=10",
+      "tests_passed": [
+        "Returns 10 measurements",
+        "Contains required fields (ts_utc, E_imp_kWh, P_sum_kW, U_L1/L2/L3, I_sum, F_Hz, cosphi)",
+        "Sorted by timestamp descending",
+        "Response time < 1 second",
+        "Returns 404 for invalid device",
+        "Returns 404 for invalid meter",
+        "Requires authentication"
+      ]
+    },
+    "backend_quick_info_meter_id": {
+      "status": "PASS",
+      "endpoint": "GET /api/devices/{device_id}/quick-info",
+      "description": "Each reading entry now includes meter_id field"
+    },
+    "frontend_device_management_page": {
+      "status": "PASS",
+      "url": "/devices",
+      "description": "Device list loads correctly, Kirmeskiste_001 visible"
+    },
+    "frontend_device_row_expansion": {
+      "status": "PASS",
+      "description": "Clicking Kirmeskiste_001 row expands to show LETZTER KONTAKT and ZÄHLERSTÄNDE sections"
+    },
+    "frontend_klick_diagnose_hint": {
+      "status": "PASS",
+      "description": "ZÄHLERSTÄNDE entries show 'Klick = Diagnose' hint text (5 hints found)"
+    },
+    "frontend_diagnostics_panel": {
+      "status": "PASS",
+      "description": "Clicking EMU Zaehler 1 opens diagnostics panel below with table"
+    },
+    "frontend_diagnostics_table_columns": {
+      "status": "PASS",
+      "columns_verified": ["ZEITSTEMPEL", "KWH", "KW", "U L1", "U L2", "U L3", "I GES.", "HZ", "COS PHI"]
+    },
+    "frontend_first_row_highlight": {
+      "status": "PASS",
+      "description": "First row in diagnostics table has bg-fuchsia-50/30 highlight"
+    },
+    "frontend_close_button": {
+      "status": "PASS",
+      "description": "Close button (X) closes the diagnostics panel"
+    },
+    "frontend_yellow_highlight_unlinked_meters": {
+      "status": "PASS",
+      "description": "Kirmes Event Detail page shows 4 rows with bg-amber background for signups without linked EMU meter"
+    },
+    "voltage_highlighting_logic": {
+      "status": "PASS",
+      "description": "Low voltage (<200V when >0) shown in red - code verified: uLow = (v) => v != null && v > 0 && v < 200"
+    },
+    "frequency_highlighting_logic": {
+      "status": "PASS",
+      "description": "Bad frequency (<49 or >51 Hz) shown in amber - code verified: fBad = (v) => v != null && v > 0 && (v < 49 || v > 51)"
+    }
+  }
+}

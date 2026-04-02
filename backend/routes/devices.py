@@ -739,6 +739,7 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
             entry = {
                 "label": meter.get("meter_name") or meter.get("meter_ip", "Zähler"),
                 "value": "Keine Daten",
+                "meter_id": meter["id"],
             }
             if latest:
                 # Build a summary using actual field names from emu_data
@@ -768,7 +769,42 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
     return result
 
 
-# ============== Stats ==============
+@router.get("/{device_id}/meters/{meter_id}/diagnostics")
+async def get_meter_diagnostics(device_id: str, meter_id: str, limit: int = 10, user: dict = Depends(require_staff)):
+    """Get last N raw measurements for a specific meter – for diagnostics."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0, "id": 1})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    meter = await db.emu_meters.find_one({"id": meter_id, "device_id": device_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
+
+    projection = {
+        "_id": 0,
+        "ts_utc": 1,
+        "P_sum_kW": 1,
+        "U_L1": 1, "U_L2": 1, "U_L3": 1,
+        "I_L1": 1, "I_L2": 1, "I_L3": 1,
+        "I_sum": 1,
+        "F_Hz": 1,
+        "E_imp_kWh": 1,
+        "cosphi": 1,
+    }
+
+    docs = await db.emu_data.find(
+        {"device_id": device_id, "meter_id": meter_id},
+        projection,
+        sort=[("ts_utc", -1)],
+    ).to_list(min(limit, 50))
+
+    return {
+        "meter_id": meter_id,
+        "meter_name": meter.get("meter_name") or meter.get("meter_ip", "Zähler"),
+        "device_id": device_id,
+        "count": len(docs),
+        "data": docs,
+    }
 
 @router.get("/stats/overview")
 async def device_stats(user: dict = Depends(require_staff)):
