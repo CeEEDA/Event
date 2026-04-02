@@ -1034,11 +1034,11 @@ export default function KirmesEventDetailPage() {
                                 );
                               }
 
-                              // Linked meter – compact inline display
+                              // Linked meter – compact two-line display
                               return (
-                                <div data-testid={`emu-data-${signup.id}`}>
-                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                                    {/* Meter name + status */}
+                                <div data-testid={`emu-data-${signup.id}`} className="space-y-1">
+                                  {/* Line 1: Meter values */}
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                                     <span className="font-medium text-gray-700 flex items-center gap-1">
                                       <Activity className="w-3 h-3 text-fuchsia-500" />
                                       {signup.emu_meter_name || "EMU"}
@@ -1048,7 +1048,6 @@ export default function KirmesEventDetailPage() {
                                     ) : (
                                       <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
                                     )}
-                                    {/* Live values inline */}
                                     {md?.latest && (
                                       <>
                                         <span className="font-mono font-bold text-fuchsia-700">{(md.latest.P_sum_kW || 0).toFixed(2)} kW</span>
@@ -1060,24 +1059,24 @@ export default function KirmesEventDetailPage() {
                                     {md?.latest?.ts_utc && (
                                       <span className="text-[10px] text-gray-400">Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}</span>
                                     )}
-                                    {/* Actions */}
-                                    <span className="flex items-center gap-2 ml-auto">
-                                      <button onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
-                                        className="text-[10px] text-fuchsia-500 hover:text-fuchsia-700 flex items-center gap-0.5" data-testid={`relink-meter-${signup.id}`}>
-                                        <Link2 className="w-3 h-3" /> Neu
-                                      </button>
-                                      <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
-                                        className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
-                                        <Unlink className="w-3 h-3" /> Trennen
-                                      </button>
-                                      <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
-                                        target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                                        className="text-[10px] text-gray-400 hover:text-fuchsia-600" data-testid={`qr-label-${signup.id}`}>QR</a>
-                                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
-                                        className="h-6 text-[10px] text-fuchsia-600 border-fuchsia-200 px-2" data-testid={`zaehler-detail-btn-${signup.id}`}>
-                                        <Gauge className="w-3 h-3 mr-1" /> Details
-                                      </Button>
-                                    </span>
+                                  </div>
+                                  {/* Line 2: Actions */}
+                                  <div className="flex items-center gap-3 text-[10px]">
+                                    <button onClick={(e) => { e.stopPropagation(); setLinkingMeter(signup.id); setSelectedMeterCombo(""); }}
+                                      className="text-fuchsia-500 hover:text-fuchsia-700 flex items-center gap-0.5" data-testid={`relink-meter-${signup.id}`}>
+                                      <Link2 className="w-3 h-3" /> Neu verknüpfen
+                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleUnlinkMeter(signup.id); }}
+                                      className="text-gray-400 hover:text-red-500 flex items-center gap-0.5" data-testid={`unlink-meter-${signup.id}`}>
+                                      <Unlink className="w-3 h-3" /> Trennen
+                                    </button>
+                                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/meters/${signup.emu_meter_id}/qr-label?token=${localStorage.getItem("token")}`}
+                                      target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                      className="text-gray-400 hover:text-fuchsia-600" data-testid={`qr-label-${signup.id}`}>QR</a>
+                                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
+                                      className="h-6 text-[10px] text-fuchsia-600 border-fuchsia-200 px-2" data-testid={`zaehler-detail-btn-${signup.id}`}>
+                                      <Gauge className="w-3 h-3 mr-1" /> Zählerdaten & Export
+                                    </Button>
                                   </div>
                                 </div>
                               );
