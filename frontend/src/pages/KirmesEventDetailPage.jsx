@@ -28,9 +28,11 @@ const STATUS_COLORS = {
 };
 const PAYMENT_LABELS = {
   ausstehend: "Ausstehend", reserviert: "Reserviert", bezahlt: "Bezahlt", erstattet: "Erstattet",
+  pending_payment: "Ausstehend", abgerechnet: "Abgerechnet", paid: "Bezahlt",
 };
 const PAYMENT_COLORS = {
   ausstehend: "text-amber-600", reserviert: "text-blue-600", bezahlt: "text-emerald-600", erstattet: "text-gray-500",
+  pending_payment: "text-amber-600", abgerechnet: "text-fuchsia-600", paid: "text-emerald-600",
 };
 
 export default function KirmesEventDetailPage() {
@@ -856,20 +858,20 @@ export default function KirmesEventDetailPage() {
 
             {/* Desktop Table View */}
             <div className="hidden lg:block overflow-x-auto -mx-5 px-5">
-              <table className="w-full text-sm min-w-[1300px]" data-testid="signups-table">
+              <table className="w-full text-sm min-w-[1000px]" data-testid="signups-table">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-[11px] text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    <th className="px-2 py-2 text-left">Firma</th>
-                    <th className="px-2 py-2 text-left">Name</th>
-                    <th className="px-2 py-2 text-left">Fahrgeschäft</th>
-                    <th className="px-2 py-2 text-left">Platznr.</th>
-                    <th className="px-2 py-2 text-left">Anschluss</th>
-                    <th className="px-2 py-2 text-right">kWh Einbau</th>
-                    <th className="px-2 py-2 text-right">kWh Ausbau</th>
-                    <th className="px-2 py-2 text-right">Verbrauch</th>
-                    <th className="px-2 py-2 text-right">Preis</th>
-                    <th className="px-2 py-2 text-left">Status</th>
-                    <th className="px-2 py-2 text-right">Aktionen</th>
+                    <th className="px-1.5 py-2 text-left">Firma</th>
+                    <th className="px-1.5 py-2 text-left">Name</th>
+                    <th className="px-1.5 py-2 text-left">Geschäft</th>
+                    <th className="px-1.5 py-2 text-left">Platz</th>
+                    <th className="px-1.5 py-2 text-left">Anschl.</th>
+                    <th className="px-1.5 py-2 text-right">Einbau</th>
+                    <th className="px-1.5 py-2 text-right">Ausbau</th>
+                    <th className="px-1.5 py-2 text-right">Verbr.</th>
+                    <th className="px-1.5 py-2 text-right">Preis</th>
+                    <th className="px-1.5 py-2 text-left">Status</th>
+                    <th className="px-1.5 py-2 text-right w-24"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -883,41 +885,41 @@ export default function KirmesEventDetailPage() {
                       onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
                       data-testid={`signup-${signup.id}`}
                     >
-                      <td className="px-2 py-2 font-medium text-gray-900 text-xs">{sch?.firma || "–"}</td>
-                      <td className="px-2 py-2 text-gray-600 text-xs">{sch?.name || "–"}</td>
-                      <td className="px-2 py-2 text-gray-600 text-xs max-w-[180px] truncate">{signup.fahrgeschaeft || "–"}</td>
-                      <td className="px-2 py-2 font-mono text-gray-900 text-xs">{signup.platznummer}</td>
-                      <td className="px-2 py-2">
-                        <span className="inline-flex items-center gap-1 text-[11px] bg-fuchsia-50 text-fuchsia-700 px-1.5 py-0.5 rounded-full">
-                          <Zap className="w-3 h-3" /> {signup.connection_type}
+                      <td className="px-1.5 py-2 font-medium text-gray-900 text-xs max-w-[130px] truncate">{sch?.firma || "–"}</td>
+                      <td className="px-1.5 py-2 text-gray-600 text-xs max-w-[100px] truncate">{sch?.name || "–"}</td>
+                      <td className="px-1.5 py-2 text-gray-600 text-xs max-w-[140px] truncate">{signup.fahrgeschaeft || "–"}</td>
+                      <td className="px-1.5 py-2 font-mono text-gray-900 text-xs">{signup.platznummer}</td>
+                      <td className="px-1.5 py-2">
+                        <span className="inline-flex items-center gap-0.5 text-[11px] bg-fuchsia-50 text-fuchsia-700 px-1 py-0.5 rounded-full">
+                          <Zap className="w-2.5 h-2.5" /> {signup.connection_type}
                         </span>
                       </td>
                       {editingKwh === signup.id ? (
                         <>
-                          <td className="px-2 py-1" onClick={e => e.stopPropagation()}>
+                          <td className="px-1.5 py-1" onClick={e => e.stopPropagation()}>
                             <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-7 w-20 text-right text-xs" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
                           </td>
-                          <td className="px-2 py-1" onClick={e => e.stopPropagation()}>
+                          <td className="px-1.5 py-1" onClick={e => e.stopPropagation()}>
                             <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-7 w-20 text-right text-xs" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
                           </td>
                         </>
                       ) : (
                         <>
-                          <td className="px-2 py-2 text-right font-mono text-xs text-gray-600">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</td>
-                          <td className="px-2 py-2 text-right font-mono text-xs text-gray-600">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</td>
+                          <td className="px-1.5 py-2 text-right font-mono text-xs text-gray-600">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</td>
+                          <td className="px-1.5 py-2 text-right font-mono text-xs text-gray-600">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</td>
                         </>
                       )}
-                      <td className="px-2 py-2 text-right font-mono text-xs font-medium text-gray-900">
-                        {signup.kwh_used != null ? `${signup.kwh_used.toFixed(2)} kWh` : "–"}
+                      <td className="px-1.5 py-2 text-right font-mono text-xs font-medium text-gray-900">
+                        {signup.kwh_used != null ? `${signup.kwh_used.toFixed(2)}` : "–"}
                       </td>
-                      <td className="px-2 py-2 text-right font-mono text-xs">{(signup.price || 0).toFixed(2)} EUR</td>
-                      <td className="px-2 py-2">
+                      <td className="px-1.5 py-2 text-right font-mono text-xs">{(signup.price || 0).toFixed(2)} €</td>
+                      <td className="px-1.5 py-2">
                         <span className={`text-[11px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
                           {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
                         </span>
                       </td>
-                      <td className="px-2 py-2 text-right" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
+                      <td className="px-1.5 py-2 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5">
                           {editingKwh === signup.id ? (
                             <>
                               <Button size="sm" variant="outline" onClick={() => saveKwh(signup.id)} className="h-7 text-xs text-emerald-600" data-testid={`save-kwh-${signup.id}`}>
@@ -929,31 +931,31 @@ export default function KirmesEventDetailPage() {
                             </>
                           ) : (
                             <>
-                              <button onClick={() => openKwhEdit(signup)} className="p-1.5 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Zählerstände bearbeiten" data-testid={`edit-kwh-${signup.id}`}>
-                                <Pencil className="w-4 h-4" />
+                              <button onClick={() => openKwhEdit(signup)} className="p-1 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Zählerstände bearbeiten" data-testid={`edit-kwh-${signup.id}`}>
+                                <Pencil className="w-3.5 h-3.5" />
                               </button>
                               {signup.invoice_number ? (
                                 <>
                                   <button onClick={() => {
                                     const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
                                     if (inv) handleDownloadInvoice(inv.id);
-                                  }} className="p-1.5 text-emerald-500 hover:text-emerald-700 transition-colors" title={`PDF ${signup.invoice_number}`} data-testid={`download-inv-${signup.id}`}>
-                                    <Download className="w-4 h-4" />
+                                  }} className="p-1 text-emerald-500 hover:text-emerald-700 transition-colors" title={`PDF ${signup.invoice_number}`} data-testid={`download-inv-${signup.id}`}>
+                                    <Download className="w-3.5 h-3.5" />
                                   </button>
                                   {canBilling && <button onClick={() => {
                                     const inv = eventInvoices.find(i => i.invoice_number === signup.invoice_number);
                                     if (inv) handleSendInvoice(inv.id);
-                                  }} className="p-1.5 text-blue-400 hover:text-blue-600 transition-colors" title="Rechnung per E-Mail senden" data-testid={`send-inv-${signup.id}`}>
-                                    <Send className="w-4 h-4" />
+                                  }} className="p-1 text-blue-400 hover:text-blue-600 transition-colors" title="Rechnung per E-Mail senden" data-testid={`send-inv-${signup.id}`}>
+                                    <Send className="w-3.5 h-3.5" />
                                   </button>}
                                 </>
                               ) : (
-                                canBilling && <button onClick={() => handleGenerateSingleInvoice(signup.id)} className="p-1.5 text-amber-400 hover:text-amber-600 transition-colors" title="Rechnung erstellen" data-testid={`create-inv-${signup.id}`}>
-                                  <FileText className="w-4 h-4" />
+                                canBilling && <button onClick={() => handleGenerateSingleInvoice(signup.id)} className="p-1 text-amber-400 hover:text-amber-600 transition-colors" title="Rechnung erstellen" data-testid={`create-inv-${signup.id}`}>
+                                  <FileText className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                              <button onClick={() => handleDeleteSignup(signup.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-signup-${signup.id}`}>
-                                <Trash2 className="w-4 h-4" />
+                              <button onClick={() => handleDeleteSignup(signup.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-signup-${signup.id}`}>
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}

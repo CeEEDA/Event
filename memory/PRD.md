@@ -31,15 +31,24 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ### Performance-Optimierung (abgeschlossen - 2026-04-02)
 - **MongoDB Indexes**: 25+ Indexes auf alle kritischen Collections
-- **N+1 Query Fix**: 5 Endpoints optimiert (batch statt serial):
-  - `GET /kirmes/events` — Signup-Counts via Aggregation
-  - `GET /kirmes/events/{id}` — Schausteller per $in-Query
-  - `GET /devices` — Dokument-Counts via Aggregation
-  - `GET /generators` — Telemetrie+Devices+Plans per Batch
-  - `GET /energy-monitoring/devices` — Meter-Counts+Latest per Aggregation
+- **N+1 Query Fix**: 5 Endpoints optimiert (batch statt serial)
 - API-Antwortzeiten: 30+ Sek -> unter 200ms
+- RAM-Leak gefixt (25GB -> normal)
+
+### Expanded Row Compact UI (abgeschlossen - 2026-04-02)
+- **Lade-Delay gefixt**: `limit=1` auf meter-data API (90.000 -> 1 Datensatz, ~120ms)
+- **Kompaktes Layout**: 3-Spalten-Grid ersetzt durch 4-zeiliges Inline-Layout
+  - Zeile 1: Kontaktdaten inline (Firma | Name | Adresse | Tel | E-Mail | USt)
+  - Zeile 2: EMU-Werte inline (Meter-Name | Online/Offline | kW | V | A | Hz | Messung)
+  - Zeile 3: Aktionen (Neu verknuepfen | Trennen | QR | Zaehlerdaten & Export)
+  - Zeile 4: Rechnung inline (RE-Nr | Datum | Betrag | PDF | E-Mail)
+- **Tabelle kompakter**: min-w 1300px -> 1000px, kuerzere Spaltenheader
+- **Payment-Labels gefixt**: pending_payment -> Ausstehend, abgerechnet -> Abgerechnet
+- **Recharts-Import entfernt** (Chart nicht mehr in Expanded Row)
+- **Invoice Confirmation Dialog** mit irreversibler Warnung
 
 ## Key API Endpoints
+- `GET /api/kirmes/signups/{signup_id}/meter-data?limit=1` (Schneller Abruf)
 - `/api/kirmes/events/{event_id}/generate-invoices`
 - `/api/kirmes/public/verify-email-link`
 - `/api/kirmes/public/register`
@@ -56,6 +65,10 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Chromium Translate Popup auf Raspberry Pi
 - Admin File Size Limits fuer Uploads
 - Windows Installer fuer Electron Desktop App
+- GPS-Support fuer Kirmeskiste (wartet auf Klaerung)
+
+### Blocked
+- DSE890 Gateway GSM (wartet auf neue SIM-Karten)
 
 ## Credentials
 - Admin (lokal): admin@test.com / password
