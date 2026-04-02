@@ -1910,6 +1910,38 @@ async def emu_index_status():
         result[desc] = "vorhanden" if idx_name in existing else "FEHLT"
     return {"indexes": result, "building": _emu_index_running, "total_indexes": len(existing)}
 
+@app.get("/api/admin/db-stats")
+async def db_stats():
+    """Datenbank-Statistiken fuer Admin."""
+    collections = ["emu_data", "devices", "emu_meters", "generators",
+                   "generator_telemetry", "kirmes_signups", "kirmes_schausteller",
+                   "kirmes_events", "kirmes_invoices", "users"]
+    stats = {}
+    for col_name in collections:
+        col = db[col_name]
+        count = await col.estimated_document_count()
+        indexes = await col.index_information()
+        stats[col_name] = {"documents": count, "indexes": len(indexes)}
+
+    # emu_data details
+    try:
+        db_stats_raw = await db.command("collstats", "emu_data")
+        stats["emu_data"]["size_mb"] = round(db_stats_raw.get("size", 0) / 1024 / 1024, 1)
+        stats["emu_data"]["index_size_mb"] = round(db_stats_raw.get("totalIndexSize", 0) / 1024 / 1024, 1)
+    except Exception:
+        pass
+
+    return stats
+
+@app.delete("/api/admin/emu-data-cleanup")
+async def emu_data_cleanup(older_than_days: int = Query(default=180, ge=30)):
+    """Loescht emu_data aelter als X Tage. Standard: 180 Tage."""
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat()
+    result = await db.emu_data.delete_many({"ts_utc": {"$lt": cutoff}})
+    return {"deleted": result.deleted_count, "cutoff_date": cutoff}
+
+
 
 @app.on_event("startup")
 async def startup_event():

@@ -1429,7 +1429,6 @@ async def ingest_data(data: IngestBatch):
             "device_id": actual_device_id,
             "meter_id": data.meter_id,
             "ts_utc": r.get("ts_utc"),
-            "meter_ts": r.get("meter_ts"),
             "I_L1": r.get("I_L1", 0),
             "I_L2": r.get("I_L2", 0),
             "I_L3": r.get("I_L3", 0),
@@ -1442,24 +1441,15 @@ async def ingest_data(data: IngestBatch):
             "P_L1_kW": p_l1,
             "P_L2_kW": p_l2,
             "P_L3_kW": p_l3,
-            "Q_sum": r.get("Q_sum", 0),
-            "Q_L1": r.get("Q_L1", 0),
-            "Q_L2": r.get("Q_L2", 0),
-            "Q_L3": r.get("Q_L3", 0),
-            "PF_L1": r.get("PF_L1", 0),
-            "PF_L2": r.get("PF_L2", 0),
-            "PF_L3": r.get("PF_L3", 0),
             "E_imp_kWh": r.get("E_imp_kWh", 0),
             "E_exp_kWh": r.get("E_exp_kWh", 0),
-            "gps_lat": r.get("gps_lat"),
-            "gps_lon": r.get("gps_lon"),
-            "gps_alt_m": r.get("gps_alt_m"),
-            "gps_speed_mps": r.get("gps_speed_mps"),
-            "gps_mode": r.get("gps_mode"),
-            "http_ok": r.get("http_ok", 1),
-            "error": r.get("error", ""),
-            "source_id": r.get("id"),  # Original SQLite row ID for dedup
         }
+        # GPS nur speichern wenn vorhanden (spart ~40% Platz bei Kirmeskisten)
+        gps_lat = r.get("gps_lat")
+        if gps_lat is not None:
+            doc["gps_lat"] = gps_lat
+            doc["gps_lon"] = r.get("gps_lon")
+            doc["gps_alt_m"] = r.get("gps_alt_m")
         docs.append(doc)
 
     await db.emu_data.insert_many(docs)

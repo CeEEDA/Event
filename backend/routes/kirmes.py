@@ -1577,10 +1577,18 @@ async def get_signup_meter_data(
     signup_id: str,
     from_time: Optional[str] = None,
     to_time: Optional[str] = None,
-    limit: int = Query(default=200, le=100000),
+    limit: int = Query(default=500, le=5000),
     user: dict = Depends(_require_staff),
 ):
     """Get EMU meter telemetry data for a linked signup."""
+    _METER_PROJECTION = {
+        "_id": 0, "ts_utc": 1,
+        "P_sum_kW": 1, "P_L1_kW": 1, "P_L2_kW": 1, "P_L3_kW": 1,
+        "I_sum": 1, "I_L1": 1, "I_L2": 1, "I_L3": 1,
+        "U_L1": 1, "U_L2": 1, "U_L3": 1,
+        "F_Hz": 1, "E_imp_kWh": 1,
+    }
+
     signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
     if not signup:
         raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
@@ -1590,12 +1598,10 @@ async def get_signup_meter_data(
     if not device_id or not meter_id:
         return {"linked": False, "latest": None, "history": [], "meter_name": None}
 
-    # Get latest reading
-    latest = await _db.emu_data.find_one(
-        {"device_id": device_id, "meter_id": meter_id},
-        {"_id": 0},
-        sort=[("ts_utc", -1)]
-    )
+    base_filter = {"device_id": device_id, "meter_id": meter_id}
+
+    # Get latest reading (only needed fields)
+    latest = await _db.emu_data.find_one(base_filter, _METER_PROJECTION, sort=[("ts_utc", -1)])
 
     # Auto-backfill kwh_einbau if missing but live data available
     if signup.get("kwh_einbau") is None and latest and latest.get("E_imp_kWh") is not None:
@@ -1605,8 +1611,8 @@ async def get_signup_meter_data(
             {"$set": {"kwh_einbau": kwh_val, "meter_start": kwh_val}}
         )
 
-    # Get historical data
-    query = {"device_id": device_id, "meter_id": meter_id}
+    # Get historical data with time filter
+    query = dict(base_filter)
     if from_time or to_time:
         query["ts_utc"] = {}
         if from_time:
@@ -1615,11 +1621,7 @@ async def get_signup_meter_data(
             query["ts_utc"]["$lte"] = to_time
 
     history = await _db.emu_data.find(
-        query, {"_id": 0, "ts_utc": 1,
-                "P_sum_kW": 1, "P_L1_kW": 1, "P_L2_kW": 1, "P_L3_kW": 1,
-                "I_sum": 1, "I_L1": 1, "I_L2": 1, "I_L3": 1,
-                "U_L1": 1, "U_L2": 1, "U_L3": 1,
-                "F_Hz": 1, "E_imp_kWh": 1}
+        query, _METER_PROJECTION
     ).sort("ts_utc", -1).limit(limit).to_list(limit)
     history.reverse()
 
