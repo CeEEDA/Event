@@ -1,0 +1,77 @@
+{
+  "summary": "Kirmes Event Detail Page - Expanded Row Features tested successfully. All features working as expected: fast meter-data API with limit=1, yellow background for rows without EMU meter, German payment status translations, compact inline expanded row layout with EMU data and invoice info.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_kirmes_expanded_row_iteration49.py",
+    "/app/test_reports/pytest/pytest_kirmes_expanded_row_iteration49.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_kirmes_expanded_row_iteration49.py"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 tests passed)",
+    "frontend": "100% (all features verified)"
+  },
+  "test_credentials": {
+    "admin_email": "admin@test.com",
+    "admin_password": "password",
+    "event_id": "648e5d04-53a4-4eac-812c-a9267dd9158a",
+    "signup_with_meter": "ec261fd0-4401-49b6-8d75-f320d0d85012",
+    "signup_without_meter": "6a6ada7d-f5e7-4cfe-94b3-85ad09460eb5"
+  },
+  "seed_data_creation": "None - used existing test data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Kirmes Event Detail Page expanded row features fully tested. The desktop table at /kirmes/{eventId} shows all headers (Firma, Name, Geschäft, Platz, Anschl., Einbau, Ausbau, Verbr., Preis, Status). Rows without EMU meter have bg-amber-50 yellow background. Payment status labels show German translations (pending_payment -> Ausstehend, abgerechnet -> Abgerechnet). Expanded rows show compact inline layout with contact info, EMU data (kW/V/A/Hz, Online/Offline), action buttons (Neu verknüpfen, Trennen, QR, Zählerdaten & Export), and invoice info (RE number, date, amount, PDF, E-Mail buttons).",
+  "features_tested": {
+    "desktop_table_headers": {
+      "status": "PASS",
+      "headers_verified": ["FIRMA", "NAME", "GESCHÄFT", "PLATZ", "ANSCHL.", "EINBAU", "AUSBAU", "VERBR.", "PREIS", "STATUS"],
+      "description": "All 10 table headers visible on desktop view"
+    },
+    "yellow_background_no_meter": {
+      "status": "PASS",
+      "description": "Rows WITHOUT linked EMU meter have bg-amber-50/60 yellow background. Row WITH meter (Achterbahn Müller) does NOT have yellow background."
+    },
+    "payment_status_german_labels": {
+      "status": "PASS",
+      "translations_verified": {
+        "pending_payment": "Ausstehend (amber color)",
+        "abgerechnet": "Abgerechnet (fuchsia color)"
+      }
+    },
+    "expanded_row_with_meter": {
+      "status": "PASS",
+      "elements_verified": [
+        "Contact info inline (Firma, Name, Address, Tel, Email, USt)",
+        "EMU meter name and Online/Offline status",
+        "kW/V/A/Hz values displayed",
+        "Action buttons: Neu verknüpfen, Trennen, QR, Zählerdaten & Export",
+        "Invoice info: RE number, date, amount, PDF, E-Mail buttons"
+      ]
+    },
+    "expanded_row_without_meter": {
+      "status": "PASS",
+      "elements_verified": [
+        "Kein EMU-Zähler message displayed",
+        "Verknüpfen button displayed"
+      ]
+    },
+    "meter_data_api_performance": {
+      "status": "PASS",
+      "endpoint": "GET /api/kirmes/signups/{signup_id}/meter-data?limit=1",
+      "response_time": "< 1 second",
+      "description": "API responds fast with limit=1 parameter"
+    }
+  }
+}

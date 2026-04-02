@@ -598,10 +598,11 @@ export default function KirmesEventDetailPage() {
               {(event.signups || []).map(signup => {
                 const sch = signup.schausteller;
                 const isExpanded = expandedSignup === signup.id;
+                const hasNoMeter = !signup.emu_device_id || !signup.emu_meter_id;
                 return (
                   <div key={signup.id} data-testid={`signup-card-${signup.id}`}>
                     <div
-                      className={`p-4 cursor-pointer active:bg-gray-50 transition-colors ${isExpanded ? "bg-fuchsia-50/50" : ""}`}
+                      className={`p-4 cursor-pointer active:bg-gray-50 transition-colors ${isExpanded ? "bg-fuchsia-50/50" : hasNoMeter ? "bg-amber-50/60" : ""}`}
                       onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -878,10 +879,11 @@ export default function KirmesEventDetailPage() {
                   {(event.signups || []).map(signup => {
                     const sch = signup.schausteller;
                     const isExpanded = expandedSignup === signup.id;
+                    const hasNoMeter = !signup.emu_device_id || !signup.emu_meter_id;
                     return (
                     <React.Fragment key={signup.id}>
                     <tr
-                      className={`border-b border-gray-100 cursor-pointer transition-colors whitespace-nowrap ${isExpanded ? "bg-fuchsia-50" : "hover:bg-gray-50"}`}
+                      className={`border-b border-gray-100 cursor-pointer transition-colors whitespace-nowrap ${isExpanded ? "bg-fuchsia-50" : hasNoMeter ? "bg-amber-50/60 hover:bg-amber-100/60" : "hover:bg-gray-50"}`}
                       onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
                       data-testid={`signup-${signup.id}`}
                     >
