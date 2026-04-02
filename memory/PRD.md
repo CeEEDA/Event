@@ -30,29 +30,33 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Control Panel Redesign, Event-Log, Offline-Erkennung
 
 ### Performance-Optimierung (abgeschlossen - 2026-04-02)
-- **MongoDB Indexes**: 25+ Indexes auf alle kritischen Collections
-- **N+1 Query Fix**: 5 Endpoints optimiert (batch statt serial)
-- API-Antwortzeiten: 30+ Sek -> unter 200ms
-- RAM-Leak gefixt (25GB -> normal)
+- MongoDB Indexes, N+1 Query Fix, RAM-Leak gefixt
 
 ### Expanded Row Redesign (abgeschlossen - 2026-04-02)
-- **Lade-Delay gefixt**: limit=1 auf meter-data API (90.000 -> 1 Datensatz, ~120ms)
-- **3-Spalten Karten-Layout** (Desktop Expanded Row):
-  - Spalte 1: KONTAKTDATEN (Firma, Name, Adresse, Tel klickbar, E-Mail, RE-Mail, USt)
-  - Spalte 2: ZAEHLERDATEN (3 Karten-Boxes Einbau/Ausbau/Verbrauch + gruene Rechnungskarte mit PDF/E-Mail)
-  - Spalte 3: EMU-ZAEHLER (Meter-Karte mit 4 Wert-Boxen Leistung/Spannung/Strom/Frequenz + Aktionen)
-- **Tabelle kompakter**: min-w 1300px -> 1000px, kuerzere Spaltenheader
-- **Gelbe Hinterlegung**: Zeilen ohne verknuepften EMU-Zaehler in bg-amber-50 (Desktop + Mobile)
-- **Payment-Labels gefixt**: pending_payment -> Ausstehend, abgerechnet -> Abgerechnet
-- **Invoice Confirmation Dialog** mit irreversibler Warnung
+- 3-Spalten Karten-Layout (KONTAKTDATEN | ZAEHLERDATEN | EMU-ZAEHLER)
+- Gelbe Hinterlegung fuer nicht-verknuepfte Zaehler
+- Payment-Labels gefixt (pending_payment -> Ausstehend, abgerechnet -> Abgerechnet)
+- Lade-Delay gefixt (limit=1 auf meter-data API)
+
+### Diagnose-Feature (abgeschlossen - 2026-04-02)
+- **Backend**: Neuer Endpoint GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=10
+  - Liefert letzte 10 Roh-Messwerte mit ts_utc, E_imp_kWh, P_sum_kW, U_L1/L2/L3, I_sum, F_Hz, cosphi
+  - ~30ms Antwortzeit
+- **Frontend**: Klickbare Zaehler-Eintraege in DeviceExpandedRow
+  - "Klick = Diagnose" Hinweis bei jedem Zaehler
+  - Diagnose-Panel mit vollstaendiger Messtabelle (9 Spalten)
+  - Farbliche Markierung: Rot bei Spannung < 200V, Gelb bei Frequenz ausserhalb 49-51Hz
+  - Neuester Messwert hervorgehoben
+  - Schliessen-Button (X) zum Ausblenden
+- **quick-info API erweitert**: meter_id in jedem Reading-Eintrag
 
 ## Key API Endpoints
-- GET /api/kirmes/signups/{signup_id}/meter-data?limit=1 (Schneller Abruf)
+- GET /api/kirmes/signups/{signup_id}/meter-data?limit=1
+- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=10 (NEU)
+- GET /api/devices/{device_id}/quick-info (meter_id hinzugefuegt)
 - /api/kirmes/events/{event_id}/generate-invoices
 - /api/kirmes/public/verify-email-link
 - /api/kirmes/public/register
-- /api/devices, /api/generators
-- /api/energy-monitoring/devices
 
 ## Prioritized Backlog
 
@@ -60,7 +64,6 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - PayPal Integration
 
 ### P2 - Backlog
-- Diagnose-Feature fuer Zaehler (letzte 10 Rohwerte)
 - Chromium Translate Popup auf Raspberry Pi
 - Admin File Size Limits fuer Uploads
 - Windows Installer fuer Electron Desktop App
