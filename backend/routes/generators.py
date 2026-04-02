@@ -275,19 +275,16 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             g.pop("api_key", None)
 
     # Attach latest telemetry and service warning for each generator
-    # Batch-load latest telemetry for all generators via aggregation
+    # Latest telemetry per generator — einzelne Index-Lookups statt Aggregation
+    # (Aggregation wuerde alle Telemetrie-Docs im RAM sortieren!)
     gen_ids = [g["id"] for g in generators]
     tel_map = {}
-    if gen_ids:
-        tel_pipeline = [
-            {"$match": {"generator_id": {"$in": gen_ids}}},
-            {"$sort": {"timestamp": -1}},
-            {"$group": {"_id": "$generator_id", "doc": {"$first": "$$ROOT"}}},
-        ]
-        async for item in db.generator_telemetry.aggregate(tel_pipeline):
-            doc = item["doc"]
-            doc.pop("_id", None)
-            tel_map[item["_id"]] = doc
+    for gid in gen_ids:
+        doc = await db.generator_telemetry.find_one(
+            {"generator_id": gid}, {"_id": 0}, sort=[("timestamp", -1)]
+        )
+        if doc:
+            tel_map[gid] = doc
 
     # Batch-load devices by serial_number
     serial_numbers_all = list({g.get("serial_number") for g in generators if g.get("serial_number")})

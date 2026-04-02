@@ -204,14 +204,23 @@ async def _run_db_backup() -> dict:
         except Exception as e:
             logger.warning(f"mongodump nicht nutzbar ({e}), Fallback auf Python-Export")
 
-    # Fallback: Python-native JSON export
+    # Fallback: Python-native JSON export (mit Streaming fuer grosse Collections)
     import json as json_mod
     archive_path = str(backup_dir / f"db_backup_{timestamp}.zip")
+    # Collections die zu gross fuer RAM-Export sind → ueberspringe im Fallback
+    SKIP_LARGE_COLLECTIONS = {"emu_data"}
     try:
         collections = await db.list_collection_names()
         with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for coll_name in collections:
-                docs = await db[coll_name].find({}).to_list(None)
+                if coll_name in SKIP_LARGE_COLLECTIONS:
+                    count = await db[coll_name].estimated_document_count()
+                    zf.writestr(f"{coll_name}_SKIPPED.txt",
+                        f"Collection '{coll_name}' hat {count} Dokumente und wurde uebersprungen.\n"
+                        f"Verwende mongodump fuer vollstaendige Backups.")
+                    logger.info(f"Backup: {coll_name} uebersprungen ({count} Docs, zu gross fuer RAM-Export)")
+                    continue
+                docs = await db[coll_name].find({}).to_list(50000)
                 for doc in docs:
                     if "_id" in doc:
                         doc["_id"] = str(doc["_id"])
