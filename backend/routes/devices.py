@@ -821,9 +821,17 @@ async def get_meter_assignment_history(device_id: str, meter_id: str, user: dict
     if not meter:
         raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
 
-    # Find all kirmes_signups that reference this device+meter
-    signups = await db.kirmes_signups.find(
+    # Find all kirmes_signups that reference this meter (by device+meter OR meter alone)
+    signups_by_device = await db.kirmes_signups.find(
         {"emu_device_id": device_id, "emu_meter_id": meter_id},
+        {"_id": 0, "id": 1, "event_id": 1, "schausteller_id": 1,
+         "fahrgeschaeft": 1, "platznummer": 1, "kwh_einbau": 1,
+         "kwh_ausbau": 1, "kwh_used": 1, "created_at": 1, "invoice_number": 1},
+    ).to_list(100)
+
+    # Also search by meter_id alone (meter might have been on a different device before)
+    signups_by_meter = await db.kirmes_signups.find(
+        {"emu_meter_id": meter_id, "emu_device_id": {"$ne": device_id}},
         {"_id": 0, "id": 1, "event_id": 1, "schausteller_id": 1,
          "fahrgeschaeft": 1, "platznummer": 1, "kwh_einbau": 1,
          "kwh_ausbau": 1, "kwh_used": 1, "created_at": 1, "invoice_number": 1},
@@ -837,7 +845,8 @@ async def get_meter_assignment_history(device_id: str, meter_id: str, user: dict
          "kwh_ausbau": 1, "kwh_used": 1, "created_at": 1, "invoice_number": 1},
     ).to_list(100)
 
-    all_signups = {s["id"]: s for s in signups + unlinked}.values()
+    current_ids = {s["id"] for s in signups_by_device}
+    all_signups = {s["id"]: s for s in signups_by_device + signups_by_meter + unlinked}.values()
 
     # Enrich with event names and schausteller names
     event_ids = list({s["event_id"] for s in all_signups if s.get("event_id")})
@@ -871,7 +880,7 @@ async def get_meter_assignment_history(device_id: str, meter_id: str, user: dict
             "kwh_used": s.get("kwh_used"),
             "invoice_number": s.get("invoice_number"),
             "created_at": s.get("created_at"),
-            "is_current": s["id"] in {su["id"] for su in signups},
+            "is_current": s["id"] in current_ids,
         })
 
     history.sort(key=lambda x: x.get("created_at") or "", reverse=True)

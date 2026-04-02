@@ -118,12 +118,14 @@ export default function MeterDiagnosticsPage() {
           </div>
         </div>
 
-        {/* Assignment History */}
-        {history && history.assignments?.length > 0 && (
-          <div className="bg-white rounded-lg border border-gray-200" data-testid="assignment-history">
-            <div className="px-4 py-2.5 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">Verknüpfungshistorie</h2>
-            </div>
+        {/* Assignment History - always visible */}
+        <div className="bg-white rounded-lg border border-gray-200" data-testid="assignment-history">
+          <div className="px-4 py-2.5 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">Verknüpfungshistorie</h2>
+          </div>
+          {!history || history.assignments?.length === 0 ? (
+            <div className="py-4 text-center text-xs text-gray-400">Keine Verknüpfungen mit Kirmes-Veranstaltungen gefunden</div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -164,8 +166,8 @@ export default function MeterDiagnosticsPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Measurement Data Table */}
         <div className="bg-white rounded-lg border border-gray-200" data-testid="measurement-table">
