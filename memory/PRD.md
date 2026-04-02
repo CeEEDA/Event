@@ -35,25 +35,24 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - API-Antwortzeiten: 30+ Sek -> unter 200ms
 - RAM-Leak gefixt (25GB -> normal)
 
-### Expanded Row Compact UI (abgeschlossen - 2026-04-02)
-- **Lade-Delay gefixt**: `limit=1` auf meter-data API (90.000 -> 1 Datensatz, ~120ms)
-- **Kompaktes Layout**: 3-Spalten-Grid ersetzt durch 4-zeiliges Inline-Layout
-  - Zeile 1: Kontaktdaten inline (Firma | Name | Adresse | Tel | E-Mail | USt)
-  - Zeile 2: EMU-Werte inline (Meter-Name | Online/Offline | kW | V | A | Hz | Messung)
-  - Zeile 3: Aktionen (Neu verknuepfen | Trennen | QR | Zaehlerdaten & Export)
-  - Zeile 4: Rechnung inline (RE-Nr | Datum | Betrag | PDF | E-Mail)
+### Expanded Row Redesign (abgeschlossen - 2026-04-02)
+- **Lade-Delay gefixt**: limit=1 auf meter-data API (90.000 -> 1 Datensatz, ~120ms)
+- **3-Spalten Karten-Layout** (Desktop Expanded Row):
+  - Spalte 1: KONTAKTDATEN (Firma, Name, Adresse, Tel klickbar, E-Mail, RE-Mail, USt)
+  - Spalte 2: ZAEHLERDATEN (3 Karten-Boxes Einbau/Ausbau/Verbrauch + gruene Rechnungskarte mit PDF/E-Mail)
+  - Spalte 3: EMU-ZAEHLER (Meter-Karte mit 4 Wert-Boxen Leistung/Spannung/Strom/Frequenz + Aktionen)
 - **Tabelle kompakter**: min-w 1300px -> 1000px, kuerzere Spaltenheader
+- **Gelbe Hinterlegung**: Zeilen ohne verknuepften EMU-Zaehler in bg-amber-50 (Desktop + Mobile)
 - **Payment-Labels gefixt**: pending_payment -> Ausstehend, abgerechnet -> Abgerechnet
-- **Recharts-Import entfernt** (Chart nicht mehr in Expanded Row)
 - **Invoice Confirmation Dialog** mit irreversibler Warnung
 
 ## Key API Endpoints
-- `GET /api/kirmes/signups/{signup_id}/meter-data?limit=1` (Schneller Abruf)
-- `/api/kirmes/events/{event_id}/generate-invoices`
-- `/api/kirmes/public/verify-email-link`
-- `/api/kirmes/public/register`
-- `/api/devices`, `/api/generators`
-- `/api/energy-monitoring/devices`
+- GET /api/kirmes/signups/{signup_id}/meter-data?limit=1 (Schneller Abruf)
+- /api/kirmes/events/{event_id}/generate-invoices
+- /api/kirmes/public/verify-email-link
+- /api/kirmes/public/register
+- /api/devices, /api/generators
+- /api/energy-monitoring/devices
 
 ## Prioritized Backlog
 
