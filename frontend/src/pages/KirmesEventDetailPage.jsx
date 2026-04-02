@@ -53,6 +53,7 @@ export default function KirmesEventDetailPage() {
   const [sendingEmailInvite, setSendingEmailInvite] = useState(false);
   const [billingInProgress, setBillingInProgress] = useState(false);
   const [paymentModeLoading, setPaymentModeLoading] = useState(false);
+  const [invoiceConfirm, setInvoiceConfirm] = useState(null); // { type: "single"|"bulk", signupId?, signupName? }
   const [eventInvoices, setEventInvoices] = useState([]);
   const [emuMeters, setEmuMeters] = useState([]);
   const [meterDataMap, setMeterDataMap] = useState({});
@@ -307,26 +308,38 @@ export default function KirmesEventDetailPage() {
   const getInvoiceForSignup = (signupId) => eventInvoices.find(inv => inv.invoice_number && (event.signups || []).find(s => s.id === signupId && s.invoice_number === inv.invoice_number));
 
   const handleGenerateAllInvoices = async () => {
-    if (!window.confirm(`Rechnungen für alle ${(event.signups || []).length} Anmeldungen erstellen?`)) return;
-    setBillingInProgress(true);
-    try {
-      const r = await api.post(`/kirmes/events/${event.id}/generate-invoices`);
-      toast.success(`${r.data.generated} Rechnung(en) erstellt${r.data.skipped > 0 ? `, ${r.data.skipped} übersprungen` : ""}`);
-      loadEvent();
-      loadInvoices();
-    } catch (err) {
-      toast.error(getErrorMsg(err, "Fehler bei der Abrechnung"));
-    } finally { setBillingInProgress(false); }
+    setInvoiceConfirm({ type: "bulk" });
   };
 
-  const handleGenerateSingleInvoice = async (signupId) => {
-    try {
-      const r = await api.post(`/kirmes/signups/${signupId}/invoice`);
-      toast.success(`Rechnung ${r.data.invoice_number} erstellt`);
-      loadEvent();
-      loadInvoices();
-    } catch (err) {
-      toast.error(getErrorMsg(err, "Fehler"));
+  const handleGenerateSingleInvoice = (signupId) => {
+    const signup = (event.signups || []).find(s => s.id === signupId);
+    const sch = signup?.schausteller;
+    const name = [sch?.firma, signup?.fahrgeschaeft].filter(Boolean).join(" – ") || "Kunde";
+    setInvoiceConfirm({ type: "single", signupId, signupName: name });
+  };
+
+  const executeInvoiceGeneration = async () => {
+    const { type, signupId } = invoiceConfirm;
+    setInvoiceConfirm(null);
+    if (type === "bulk") {
+      setBillingInProgress(true);
+      try {
+        const r = await api.post(`/kirmes/events/${event.id}/generate-invoices`);
+        toast.success(`${r.data.generated} Rechnung(en) erstellt${r.data.skipped > 0 ? `, ${r.data.skipped} übersprungen` : ""}`);
+        loadEvent();
+        loadInvoices();
+      } catch (err) {
+        toast.error(getErrorMsg(err, "Fehler bei der Abrechnung"));
+      } finally { setBillingInProgress(false); }
+    } else {
+      try {
+        const r = await api.post(`/kirmes/signups/${signupId}/invoice`);
+        toast.success(`Rechnung ${r.data.invoice_number} erstellt`);
+        loadEvent();
+        loadInvoices();
+      } catch (err) {
+        toast.error(getErrorMsg(err, "Fehler"));
+      }
     }
   };
 
@@ -1329,6 +1342,37 @@ export default function KirmesEventDetailPage() {
                   <Mail className="w-3.5 h-3.5 mr-1" /> {inviting ? "Wird gesendet..." : `${selectedInvites.length} einladen`}
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rechnungs-Bestätigungsdialog */}
+      {invoiceConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="invoice-confirm-modal">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Rechnung erstellen?</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              {invoiceConfirm.type === "bulk"
+                ? `Für alle ${(event.signups || []).length} Anmeldungen werden Rechnungen erstellt.`
+                : <>Für <strong>{invoiceConfirm.signupName}</strong> wird eine Rechnung erstellt.</>}
+            </p>
+            <p className="text-xs text-red-500 font-medium mb-5">
+              Dieser Vorgang kann nicht rückgängig gemacht werden.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setInvoiceConfirm(null)} data-testid="invoice-confirm-cancel">
+                Abbrechen
+              </Button>
+              <Button size="sm" onClick={executeInvoiceGeneration}
+                className="bg-amber-600 hover:bg-amber-700 text-white" data-testid="invoice-confirm-ok">
+                Rechnung erstellen
+              </Button>
             </div>
           </div>
         </div>
