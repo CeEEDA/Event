@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Zap, Activity, Gauge, Download, RefreshCw,
-  Clock, Plug, TrendingUp, CalendarDays,
+  Clock, Plug, TrendingUp, CalendarDays, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -37,7 +36,6 @@ function toLocalDateStr(d) {
 export default function KirmesZaehlerPage() {
   const { eventId, signupId } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const [event, setEvent] = useState(null);
   const [signup, setSignup] = useState(null);
@@ -45,9 +43,8 @@ export default function KirmesZaehlerPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // Date range from event or query params
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Day-based navigation: start with today
+  const [selectedDate, setSelectedDate] = useState(toLocalDateStr(new Date()));
 
   const loadData = useCallback(async () => {
     try {
@@ -58,28 +55,24 @@ export default function KirmesZaehlerPage() {
       const s = evt.signups?.find(s => s.id === signupId);
       if (!s) { toast.error("Anmeldung nicht gefunden"); navigate(`/kirmes/${eventId}`); return; }
       setSignup(s);
-
-      // Set date range from event
-      if (!dateFrom) setDateFrom(evt.start_date || toLocalDateStr(new Date()));
-      if (!dateTo) setDateTo(evt.end_date || toLocalDateStr(new Date()));
     } catch {
       toast.error("Fehler beim Laden");
       navigate(`/kirmes/${eventId}`);
     } finally {
       setLoading(false);
     }
-  }, [eventId, signupId, navigate, dateFrom, dateTo]);
+  }, [eventId, signupId, navigate]);
 
   const loadMeterData = useCallback(async () => {
-    if (!signupId) return;
+    if (!signupId || !selectedDate) return;
     try {
       const params = { limit: 5000 };
-      if (dateFrom) params.from_time = new Date(dateFrom).toISOString();
-      if (dateTo) params.to_time = new Date(dateTo + "T23:59:59").toISOString();
+      params.from_time = new Date(selectedDate + "T00:00:00").toISOString();
+      params.to_time = new Date(selectedDate + "T23:59:59").toISOString();
       const r = await api.get(`/kirmes/signups/${signupId}/meter-data`, { params });
       setMeterData(r.data);
     } catch { /* ignore */ }
-  }, [signupId, dateFrom, dateTo]);
+  }, [signupId, selectedDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { if (!loading) loadMeterData(); }, [loading, loadMeterData]);
@@ -90,12 +83,21 @@ export default function KirmesZaehlerPage() {
     return () => clearInterval(iv);
   }, [loadMeterData]);
 
+  // Day navigation helpers
+  const goDay = (offset) => {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + offset);
+    setSelectedDate(toLocalDateStr(d));
+  };
+  const isToday = selectedDate === toLocalDateStr(new Date());
+  const displayDate = new Date(selectedDate).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+
   const handleExportCSV = async () => {
     setExporting(true);
     try {
       const params = { limit: 999999 };
-      if (dateFrom) params.from_time = new Date(dateFrom).toISOString();
-      if (dateTo) params.to_time = new Date(dateTo + "T23:59:59").toISOString();
+      params.from_time = new Date(selectedDate + "T00:00:00").toISOString();
+      params.to_time = new Date(selectedDate + "T23:59:59").toISOString();
       const r = await api.get(`/kirmes/signups/${signupId}/meter-data`, { params });
       const history = r.data?.history || [];
       if (history.length === 0) { toast.error("Keine Daten zum Exportieren"); return; }
@@ -112,7 +114,7 @@ export default function KirmesZaehlerPage() {
       const a = document.createElement("a");
       a.href = url;
       const meterName = signup?.emu_meter_name || "Zaehler";
-      a.download = `Zaehlerdaten_${meterName}_${dateFrom}_${dateTo}.csv`;
+      a.download = `Zaehlerdaten_${meterName}_${selectedDate}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success(`${history.length} Datenpunkte exportiert`);
@@ -180,27 +182,33 @@ export default function KirmesZaehlerPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        {/* Event Period Info */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4" data-testid="event-period">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 text-fuchsia-500" />
-              <span className="text-sm font-semibold text-gray-900">{event?.name}</span>
+        {/* Day Navigation */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4" data-testid="day-navigation">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <CalendarDays className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
+              <span className="text-sm font-semibold text-gray-900 truncate">{event?.name}</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div>
-                <label className="text-[10px] text-gray-400 block">Von</label>
-                <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                  className="h-8 text-xs w-full sm:w-36" data-testid="date-from" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 block">Bis</label>
-                <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                  className="h-8 text-xs w-full sm:w-36" data-testid="date-to" />
-              </div>
+            <div className="flex items-center gap-1 sm:gap-2 sm:ml-auto">
+              <Button variant="outline" size="sm" onClick={() => goDay(-1)}
+                className="h-8 w-8 p-0" data-testid="day-prev">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <button
+                onClick={() => setSelectedDate(toLocalDateStr(new Date()))}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-w-[180px] text-center ${isToday ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200" : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"}`}
+                data-testid="day-display"
+              >
+                {displayDate}
+              </button>
+              <Button variant="outline" size="sm" onClick={() => goDay(1)}
+                disabled={isToday}
+                className="h-8 w-8 p-0" data-testid="day-next">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
             </div>
             <Button size="sm" onClick={handleExportCSV} disabled={exporting || !linked}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:ml-auto w-full sm:w-auto" data-testid="export-csv-btn">
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs w-full sm:w-auto" data-testid="export-csv-btn">
               <Download className="w-3 h-3 mr-1" /> {exporting ? "Exportiert..." : "CSV Export"}
             </Button>
           </div>
@@ -353,7 +361,7 @@ export default function KirmesZaehlerPage() {
                   </div>
                   <div>
                     <span className="text-gray-400">Zeitraum</span>
-                    <p className="font-mono font-semibold">{dateFrom} – {dateTo}</p>
+                    <p className="font-mono font-semibold">{displayDate}</p>
                   </div>
                 </div>
               </div>
