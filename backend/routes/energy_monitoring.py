@@ -139,7 +139,7 @@ async def list_energy_devices(
     # Enrich with meter count and latest data (batch instead of N+1)
     device_ids = [d["id"] for d in devices]
 
-    # Batch meter counts
+    # Batch meter counts (emu_meters ist klein → Aggregation OK)
     meter_counts = {}
     if device_ids:
         mc_pipeline = [
@@ -148,18 +148,15 @@ async def list_energy_devices(
         ]
         meter_counts = {doc["_id"]: doc["count"] async for doc in db.emu_meters.aggregate(mc_pipeline)}
 
-    # Batch latest emu_data per device
+    # Latest emu_data per device — einzelne Index-Lookups statt Aggregation
+    # (Aggregation wuerde Millionen Docs im RAM sortieren!)
     latest_map = {}
-    if device_ids:
-        lat_pipeline = [
-            {"$match": {"device_id": {"$in": device_ids}}},
-            {"$sort": {"ts_utc": -1}},
-            {"$group": {"_id": "$device_id", "doc": {"$first": "$$ROOT"}}},
-        ]
-        async for item in db.emu_data.aggregate(lat_pipeline):
-            doc = item["doc"]
-            doc.pop("_id", None)
-            latest_map[item["_id"]] = doc
+    for did in device_ids:
+        doc = await db.emu_data.find_one(
+            {"device_id": did}, {"_id": 0}, sort=[("ts_utc", -1)]
+        )
+        if doc:
+            latest_map[did] = doc
 
     result = []
     for device in devices:
