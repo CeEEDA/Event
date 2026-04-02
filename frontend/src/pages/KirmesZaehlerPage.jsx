@@ -156,6 +156,9 @@ export default function KirmesZaehlerPage() {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
+  // Metriken: letzter Wert des gewaehlten Tages (nicht absolut letzter)
+  const dayLatest = history.length > 0 ? history[history.length - 1] : latest;
+
   const schausteller = signup?.schausteller;
 
   return (
@@ -230,9 +233,9 @@ export default function KirmesZaehlerPage() {
           <>
             {/* Live Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="live-metrics">
-              <MetricCard icon={Zap} label="Leistung" value={latest?.P_sum_kW?.toFixed(3)} unit="kW" color="bg-fuchsia-500" />
-              <MetricCard icon={TrendingUp} label="Energie" value={latest?.E_imp_kWh?.toFixed(2)} unit="kWh" color="bg-emerald-500" />
-              <MetricCard icon={Clock} label="Frequenz" value={latest?.F_Hz?.toFixed(1)} unit="Hz" color="bg-purple-500" />
+              <MetricCard icon={Zap} label="Leistung" value={dayLatest?.P_sum_kW?.toFixed(3)} unit="kW" color="bg-fuchsia-500" />
+              <MetricCard icon={TrendingUp} label="Energie" value={dayLatest?.E_imp_kWh?.toFixed(2)} unit="kWh" color="bg-emerald-500" />
+              <MetricCard icon={Clock} label="Frequenz" value={dayLatest?.F_Hz?.toFixed(1)} unit="Hz" color="bg-purple-500" />
               {/* Spannung pro Phase */}
               <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="metric-spannung">
                 <div className="flex items-center gap-2 mb-2">
@@ -244,15 +247,15 @@ export default function KirmesZaehlerPage() {
                 <div className="space-y-1">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">L1</span>
-                    <span className="font-bold font-mono text-gray-900">{latest?.U_L1 != null ? `${latest.U_L1.toFixed(1)} V` : "–"}</span>
+                    <span className="font-bold font-mono text-gray-900">{dayLatest?.U_L1 != null ? `${dayLatest.U_L1.toFixed(1)} V` : "–"}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">L2</span>
-                    <span className="font-bold font-mono text-gray-900">{latest?.U_L2 != null ? `${latest.U_L2.toFixed(1)} V` : "–"}</span>
+                    <span className="font-bold font-mono text-gray-900">{dayLatest?.U_L2 != null ? `${dayLatest.U_L2.toFixed(1)} V` : "–"}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">L3</span>
-                    <span className="font-bold font-mono text-gray-900">{latest?.U_L3 != null ? `${latest.U_L3.toFixed(1)} V` : "–"}</span>
+                    <span className="font-bold font-mono text-gray-900">{dayLatest?.U_L3 != null ? `${dayLatest.U_L3.toFixed(1)} V` : "–"}</span>
                   </div>
                 </div>
               </div>
@@ -267,15 +270,15 @@ export default function KirmesZaehlerPage() {
                 <div className="space-y-1">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">L1</span>
-                    <span className="font-bold font-mono text-gray-900">{latest?.I_L1 != null ? `${latest.I_L1.toFixed(2)} A` : "–"}</span>
+                    <span className="font-bold font-mono text-gray-900">{dayLatest?.I_L1 != null ? `${dayLatest.I_L1.toFixed(2)} A` : "–"}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">L2</span>
-                    <span className="font-bold font-mono text-gray-900">{latest?.I_L2 != null ? `${latest.I_L2.toFixed(2)} A` : "–"}</span>
+                    <span className="font-bold font-mono text-gray-900">{dayLatest?.I_L2 != null ? `${dayLatest.I_L2.toFixed(2)} A` : "–"}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">L3</span>
-                    <span className="font-bold font-mono text-gray-900">{latest?.I_L3 != null ? `${latest.I_L3.toFixed(2)} A` : "–"}</span>
+                    <span className="font-bold font-mono text-gray-900">{dayLatest?.I_L3 != null ? `${dayLatest.I_L3.toFixed(2)} A` : "–"}</span>
                   </div>
                 </div>
               </div>
