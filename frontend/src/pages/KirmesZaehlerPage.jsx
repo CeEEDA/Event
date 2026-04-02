@@ -64,7 +64,7 @@ export default function KirmesZaehlerPage() {
   const loadMeterData = useCallback(async () => {
     if (!signupId || !selectedDate) return;
     try {
-      const params = { limit: 5000 };
+      const params = { limit: 90000 };
       params.from_time = new Date(selectedDate + "T00:00:00").toISOString();
       params.to_time = new Date(selectedDate + "T23:59:59").toISOString();
       const r = await api.get(`/kirmes/signups/${signupId}/meter-data`, { params });
@@ -129,10 +129,10 @@ export default function KirmesZaehlerPage() {
   const isOnline = meterData?.is_online;
   const linked = meterData?.linked;
 
-  // Chart data
+  // Chart data with full timestamp for proper X-axis scaling
   const chartData = history.map(h => ({
+    timestamp: h.ts_utc ? new Date(h.ts_utc).getTime() : 0,
     time: h.ts_utc ? new Date(h.ts_utc).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "",
-    date: h.ts_utc ? new Date(h.ts_utc).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : "",
     leistung: h.P_sum_kW != null ? parseFloat(h.P_sum_kW.toFixed(3)) : null,
     P_L1: h.P_L1_kW != null ? parseFloat(h.P_L1_kW.toFixed(3)) : null,
     P_L2: h.P_L2_kW != null ? parseFloat(h.P_L2_kW.toFixed(3)) : null,
@@ -146,6 +146,15 @@ export default function KirmesZaehlerPage() {
     energie: h.E_imp_kWh != null ? parseFloat(h.E_imp_kWh.toFixed(2)) : null,
     frequenz: h.F_Hz != null ? parseFloat(h.F_Hz.toFixed(1)) : null,
   }));
+
+  // X-axis domain: 00:00 - 24:00 for selected day
+  const dayStart = new Date(selectedDate + "T00:00:00").getTime();
+  const dayEnd = new Date(selectedDate + "T23:59:59").getTime();
+  const xTicks = Array.from({ length: 13 }, (_, i) => dayStart + i * 2 * 3600000); // every 2h
+  const formatXTick = (ts) => {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
 
   const schausteller = signup?.schausteller;
 
@@ -283,9 +292,10 @@ export default function KirmesZaehlerPage() {
                   <ResponsiveContainer width="100%" height={240}>
                     <AreaChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="timestamp" type="number" domain={[dayStart, dayEnd]}
+                        ticks={xTicks} tickFormatter={formatXTick} tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ fontSize: 12 }} />
+                      <Tooltip labelFormatter={(ts) => formatXTick(ts)} contentStyle={{ fontSize: 12 }} />
                       <Area type="monotone" dataKey="P_L1" name="L1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
                       <Area type="monotone" dataKey="P_L2" name="L2" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
                       <Area type="monotone" dataKey="P_L3" name="L3" stroke="#10b981" fill="#10b981" fillOpacity={0.1} strokeWidth={1.5} dot={false} />
@@ -301,9 +311,10 @@ export default function KirmesZaehlerPage() {
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="timestamp" type="number" domain={[dayStart, dayEnd]}
+                        ticks={xTicks} tickFormatter={formatXTick} tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ fontSize: 12 }} />
+                      <Tooltip labelFormatter={(ts) => formatXTick(ts)} contentStyle={{ fontSize: 12 }} />
                       <Line type="monotone" dataKey="I_L1" name="L1" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
                       <Line type="monotone" dataKey="I_L2" name="L2" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
                       <Line type="monotone" dataKey="I_L3" name="L3" stroke="#10b981" strokeWidth={1.5} dot={false} />
@@ -319,9 +330,10 @@ export default function KirmesZaehlerPage() {
                   <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                      <XAxis dataKey="timestamp" type="number" domain={[dayStart, dayEnd]}
+                        ticks={xTicks} tickFormatter={formatXTick} tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ fontSize: 12 }} />
+                      <Tooltip labelFormatter={(ts) => formatXTick(ts)} contentStyle={{ fontSize: 12 }} />
                       <Area type="monotone" dataKey="energie" stroke="#10b981" fill="#10b981" fillOpacity={0.1} name="kWh" />
                     </AreaChart>
                   </ResponsiveContainer>

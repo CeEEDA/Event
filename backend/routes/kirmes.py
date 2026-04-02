@@ -1577,7 +1577,7 @@ async def get_signup_meter_data(
     signup_id: str,
     from_time: Optional[str] = None,
     to_time: Optional[str] = None,
-    limit: int = Query(default=500, le=5000),
+    limit: int = Query(default=90000, le=100000),
     user: dict = Depends(_require_staff),
 ):
     """Get EMU meter telemetry data for a linked signup."""
