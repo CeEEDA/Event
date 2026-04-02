@@ -1946,91 +1946,73 @@ async def emu_data_cleanup(older_than_days: int = Query(default=180, ge=30)):
 @app.on_event("startup")
 async def startup_event():
     import asyncio
-    from pymongo import ASCENDING, DESCENDING
     from mqtt_service import start_mqtt_client
 
-    # ── Kleine Collections indexieren (sofort, <1 Sek) ──────────────
-    try:
-        logger.info("Creating indexes for small collections ...")
+    # ── ALLE Indexes im Hintergrund (blockiert Startup NIE) ──────────
+    async def _ensure_all_indexes():
+        from pymongo import ASCENDING, DESCENDING
+        global _emu_index_running
+        try:
+            logger.info("Index-Pruefung gestartet (Hintergrund) ...")
 
-        # devices
-        await db.devices.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.devices.create_index([("serial_number", ASCENDING)], background=True)
-        await db.devices.create_index([("device_code", ASCENDING)], background=True)
-        await db.devices.create_index([("device_type", ASCENDING)], background=True)
-        await db.devices.create_index([("last_seen", DESCENDING)], background=True)
-
-        # emu_meters
-        await db.emu_meters.create_index([("device_id", ASCENDING)], background=True)
-        await db.emu_meters.create_index([("id", ASCENDING)], unique=True, background=True)
-
-        # generators
-        await db.generators.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.generators.create_index([("serial_number", ASCENDING)], background=True)
-        await db.generators.create_index([("device_id", ASCENDING)], background=True)
-        await db.generators.create_index([("last_seen", DESCENDING)], background=True)
-
-        # generator_telemetry
-        await db.generator_telemetry.create_index([("generator_id", ASCENDING), ("timestamp", DESCENDING)], background=True)
-
-        # kirmes collections
-        await db.kirmes_events.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.kirmes_signups.create_index([("event_id", ASCENDING)], background=True)
-        await db.kirmes_signups.create_index([("schausteller_id", ASCENDING)], background=True)
-        await db.kirmes_signups.create_index([("event_id", ASCENDING), ("schausteller_id", ASCENDING)], background=True)
-        await db.kirmes_schausteller.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.kirmes_schausteller.create_index([("email", ASCENDING)], unique=True, background=True)
-        await db.kirmes_invoices.create_index([("schausteller_id", ASCENDING)], background=True)
-        await db.kirmes_invoices.create_index([("event_id", ASCENDING)], background=True)
-
-        # users
-        await db.users.create_index([("id", ASCENDING)], unique=True, background=True)
-        await db.users.create_index([("email", ASCENDING)], unique=True, background=True)
-
-        # service plans & device documents
-        await db.service_plans.create_index([("device_id", ASCENDING)], background=True)
-        await db.device_documents.create_index([("device_id", ASCENDING)], background=True)
-        await db.device_parts.create_index([("device_id", ASCENDING)], background=True)
-
-        # login history
-        await db.login_history.create_index([("user_id", ASCENDING), ("timestamp", DESCENDING)], background=True)
-
-        logger.info("Small collection indexes created.")
-    except Exception as e:
-        logger.error(f"Error creating small indexes: {e}")
-
-    # ── emu_data Indexes: pruefen und ggf. im Hintergrund erstellen ──
-    # Wenn Indexes schon existieren: create_index kehrt sofort zurueck (< 1ms)
-    # Wenn NICHT: wird im Hintergrund gebaut, Server blockiert NICHT
-    try:
-        existing = await db.emu_data.index_information()
-        needed = ["device_id_1_ts_utc_-1", "device_id_1_meter_id_1_ts_utc_-1", "ts_utc_-1"]
-        missing = [n for n in needed if n not in existing]
-
-        if not missing:
-            # Indexes existieren schon → nur ensure (sofort, < 1ms)
-            logger.info("emu_data indexes already exist — skipping.")
-        else:
-            # Indexes fehlen → im Hintergrund erstellen
-            logger.info(f"emu_data: {len(missing)} Index(e) fehlen — erstelle im Hintergrund ...")
-            async def _build_emu_indexes():
-                global _emu_index_running
-                _emu_index_running = True
+            # Kleine Collections (ohne unique — unique kann bei Duplikaten haengen)
+            for col, fields in [
+                (db.devices, [("id", ASCENDING)]),
+                (db.devices, [("serial_number", ASCENDING)]),
+                (db.devices, [("device_code", ASCENDING)]),
+                (db.devices, [("device_type", ASCENDING)]),
+                (db.devices, [("last_seen", DESCENDING)]),
+                (db.emu_meters, [("device_id", ASCENDING)]),
+                (db.emu_meters, [("id", ASCENDING)]),
+                (db.generators, [("id", ASCENDING)]),
+                (db.generators, [("serial_number", ASCENDING)]),
+                (db.generators, [("device_id", ASCENDING)]),
+                (db.generators, [("last_seen", DESCENDING)]),
+                (db.generator_telemetry, [("generator_id", ASCENDING), ("timestamp", DESCENDING)]),
+                (db.kirmes_events, [("id", ASCENDING)]),
+                (db.kirmes_signups, [("event_id", ASCENDING)]),
+                (db.kirmes_signups, [("schausteller_id", ASCENDING)]),
+                (db.kirmes_signups, [("event_id", ASCENDING), ("schausteller_id", ASCENDING)]),
+                (db.kirmes_schausteller, [("id", ASCENDING)]),
+                (db.kirmes_schausteller, [("email", ASCENDING)]),
+                (db.kirmes_invoices, [("schausteller_id", ASCENDING)]),
+                (db.kirmes_invoices, [("event_id", ASCENDING)]),
+                (db.users, [("id", ASCENDING)]),
+                (db.users, [("email", ASCENDING)]),
+                (db.service_plans, [("device_id", ASCENDING)]),
+                (db.device_documents, [("device_id", ASCENDING)]),
+                (db.device_parts, [("device_id", ASCENDING)]),
+                (db.login_history, [("user_id", ASCENDING), ("timestamp", DESCENDING)]),
+            ]:
                 try:
-                    logger.info("  Index 1/3: emu_data (device_id + ts_utc) ...")
+                    await col.create_index(fields, background=True)
+                except Exception:
+                    pass  # Duplikat-Fehler bei unique ignorieren
+            logger.info("Kleine Indexes fertig.")
+
+            # emu_data (groesste Collection)
+            _emu_index_running = True
+            try:
+                existing = await db.emu_data.index_information()
+                needed = {"device_id_1_ts_utc_-1", "device_id_1_meter_id_1_ts_utc_-1", "ts_utc_-1"}
+                if needed.issubset(set(existing.keys())):
+                    logger.info("emu_data Indexes existieren bereits.")
+                else:
+                    logger.info("emu_data Indexes werden erstellt ...")
                     await db.emu_data.create_index([("device_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
-                    logger.info("  Index 2/3: emu_data (device_id + meter_id + ts_utc) ...")
                     await db.emu_data.create_index([("device_id", ASCENDING), ("meter_id", ASCENDING), ("ts_utc", DESCENDING)], background=True)
-                    logger.info("  Index 3/3: emu_data (ts_utc) ...")
                     await db.emu_data.create_index([("ts_utc", DESCENDING)], background=True)
-                    logger.info("  FERTIG: Alle emu_data Indexes erstellt!")
-                except Exception as e:
-                    logger.error(f"Fehler bei emu_data Index-Erstellung: {e}")
-                finally:
-                    _emu_index_running = False
-            asyncio.create_task(_build_emu_indexes())
-    except Exception as e:
-        logger.error(f"Error checking emu_data indexes: {e}")
+                    logger.info("emu_data Indexes FERTIG.")
+            except Exception as e:
+                logger.error(f"emu_data Index-Fehler: {e}")
+            finally:
+                _emu_index_running = False
+
+        except Exception as e:
+            logger.error(f"Index-Fehler: {e}")
+
+    # Fire-and-forget: Server startet SOFORT, Indexes im Hintergrund
+    asyncio.create_task(_ensure_all_indexes())
 
     # ── MQTT ──────────────────────────────────────────────────────────
     loop = asyncio.get_event_loop()
