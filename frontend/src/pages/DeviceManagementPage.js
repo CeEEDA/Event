@@ -1227,11 +1227,9 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
 
 // Expandable device detail row
 function DeviceExpandedRow({ device, colSpan }) {
+  const navigate = useNavigate();
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [diagMeter, setDiagMeter] = useState(null);
-  const [diagData, setDiagData] = useState(null);
-  const [diagLoading, setDiagLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1248,30 +1246,10 @@ function DeviceExpandedRow({ device, colSpan }) {
     return () => { cancelled = true; };
   }, [device.id]);
 
-  const openDiagnostics = async (meterId, meterLabel) => {
-    setDiagMeter({ id: meterId, label: meterLabel });
-    setDiagLoading(true);
-    setDiagData(null);
-    try {
-      const res = await api.get(`/devices/${device.id}/meters/${meterId}/diagnostics?limit=10`);
-      setDiagData(res.data);
-    } catch {
-      toast.error("Diagnosedaten konnten nicht geladen werden");
-    } finally {
-      setDiagLoading(false);
-    }
-  };
-
   const formatDate = (iso) => {
     if (!iso) return "–";
     const d = new Date(iso);
     return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
-
-  const formatDateFull = (iso) => {
-    if (!iso) return "–";
-    const d = new Date(iso);
-    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
   return (
@@ -1315,13 +1293,10 @@ function DeviceExpandedRow({ device, colSpan }) {
                       {info.readings.map((r, i) => (
                         <div key={i}
                           className={`flex justify-between items-center bg-white rounded px-2.5 py-1.5 border border-gray-100 ${r.meter_id ? "cursor-pointer hover:border-fuchsia-300 hover:bg-fuchsia-50/30 transition-colors" : ""}`}
-                          onClick={r.meter_id ? (e) => { e.stopPropagation(); openDiagnostics(r.meter_id, r.label); } : undefined}
+                          onClick={r.meter_id ? () => navigate(`/devices/${device.id}/meters/${r.meter_id}`) : undefined}
                           data-testid={`reading-${i}`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 truncate mr-2">{r.label}</span>
-                            {r.meter_id && <span className="text-[9px] text-fuchsia-400">Klick = Diagnose</span>}
-                          </div>
+                          <span className="text-xs text-gray-500 truncate mr-2">{r.label}</span>
                           <div className="text-right">
                             <span className="text-xs font-mono font-semibold text-gray-900 whitespace-nowrap">{r.value}</span>
                             {r.timestamp && <p className="text-[9px] text-gray-400">{formatDate(r.timestamp)}</p>}
@@ -1360,64 +1335,6 @@ function DeviceExpandedRow({ device, colSpan }) {
                 </div>
               )}
             </div>
-
-            {/* Diagnose Modal */}
-            {diagMeter && (
-              <div className="mt-3 bg-white rounded-lg border border-fuchsia-200 shadow-sm" data-testid="diagnostics-panel" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-fuchsia-500" />
-                    <h4 className="text-sm font-semibold text-gray-900">Diagnose: {diagMeter.label}</h4>
-                    <span className="text-[10px] text-gray-400">Letzte 10 Messwerte</span>
-                  </div>
-                  <button onClick={() => setDiagMeter(null)} className="text-gray-400 hover:text-gray-600" data-testid="close-diagnostics">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="overflow-x-auto">
-                  {diagLoading ? (
-                    <div className="text-xs text-gray-400 py-4 text-center">Laden...</div>
-                  ) : !diagData || diagData.count === 0 ? (
-                    <div className="text-xs text-gray-400 py-4 text-center">Keine Messdaten vorhanden</div>
-                  ) : (
-                    <table className="w-full text-xs" data-testid="diagnostics-table">
-                      <thead>
-                        <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wider">
-                          <th className="px-3 py-1.5 text-left">Zeitstempel</th>
-                          <th className="px-2 py-1.5 text-right">kWh</th>
-                          <th className="px-2 py-1.5 text-right">kW</th>
-                          <th className="px-2 py-1.5 text-right">U L1</th>
-                          <th className="px-2 py-1.5 text-right">U L2</th>
-                          <th className="px-2 py-1.5 text-right">U L3</th>
-                          <th className="px-2 py-1.5 text-right">I ges.</th>
-                          <th className="px-2 py-1.5 text-right">Hz</th>
-                          <th className="px-2 py-1.5 text-right">cos phi</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {diagData.data.map((row, idx) => {
-                          const uLow = (v) => v != null && v > 0 && v < 200;
-                          const fBad = (v) => v != null && v > 0 && (v < 49 || v > 51);
-                          return (
-                            <tr key={idx} className={`border-t border-gray-100 ${idx === 0 ? "bg-fuchsia-50/30 font-medium" : "hover:bg-gray-50"}`} data-testid={`diag-row-${idx}`}>
-                              <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">{formatDateFull(row.ts_utc)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-gray-900">{row.E_imp_kWh != null ? row.E_imp_kWh.toFixed(2) : "–"}</td>
-                              <td className="px-2 py-1.5 text-right font-mono font-semibold text-fuchsia-700">{row.P_sum_kW != null ? row.P_sum_kW.toFixed(3) : "–"}</td>
-                              <td className={`px-2 py-1.5 text-right font-mono ${uLow(row.U_L1) ? "text-red-600 font-bold" : "text-gray-700"}`}>{row.U_L1 != null ? row.U_L1.toFixed(1) : "–"}</td>
-                              <td className={`px-2 py-1.5 text-right font-mono ${uLow(row.U_L2) ? "text-red-600 font-bold" : "text-gray-700"}`}>{row.U_L2 != null ? row.U_L2.toFixed(1) : "–"}</td>
-                              <td className={`px-2 py-1.5 text-right font-mono ${uLow(row.U_L3) ? "text-red-600 font-bold" : "text-gray-700"}`}>{row.U_L3 != null ? row.U_L3.toFixed(1) : "–"}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-gray-700">{row.I_sum != null ? row.I_sum.toFixed(2) : "–"}</td>
-                              <td className={`px-2 py-1.5 text-right font-mono ${fBad(row.F_Hz) ? "text-amber-600 font-bold" : "text-gray-700"}`}>{row.F_Hz != null ? row.F_Hz.toFixed(1) : "–"}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-gray-700">{row.cosphi != null ? row.cosphi.toFixed(2) : "–"}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Ereignisprotokoll */}
             <div className="mt-4" data-testid="device-event-log">

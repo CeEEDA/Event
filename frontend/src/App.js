@@ -27,6 +27,7 @@ import PaymentDashboardPage from "./pages/PaymentDashboardPage";
 import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
+import MeterDiagnosticsPage from "./pages/MeterDiagnosticsPage";
 import FinancePage from "./pages/FinancePage";
 import "./App.css";
 
@@ -240,6 +241,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <DeviceManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/devices/:deviceId/meters/:meterId"
+        element={
+          <ProtectedRoute>
+            <MeterDiagnosticsPage />
           </ProtectedRoute>
         }
       />

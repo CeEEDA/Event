@@ -770,40 +770,116 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
 
 
 @router.get("/{device_id}/meters/{meter_id}/diagnostics")
-async def get_meter_diagnostics(device_id: str, meter_id: str, limit: int = 10, user: dict = Depends(require_staff)):
-    """Get last N raw measurements for a specific meter – for diagnostics."""
-    device = await db.devices.find_one({"id": device_id}, {"_id": 0, "id": 1})
-    if not device:
-        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
-
+async def get_meter_diagnostics(
+    device_id: str, meter_id: str,
+    limit: int = 50,
+    date_from: str = None, date_to: str = None,
+    user: dict = Depends(require_staff),
+):
+    """Get raw measurements for a specific meter with optional date range."""
     meter = await db.emu_meters.find_one({"id": meter_id, "device_id": device_id}, {"_id": 0})
     if not meter:
         raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
 
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0, "id": 1, "name": 1})
+
+    query = {"device_id": device_id, "meter_id": meter_id}
+    if date_from or date_to:
+        ts_filter = {}
+        if date_from:
+            ts_filter["$gte"] = date_from + "T00:00:00.000Z" if "T" not in date_from else date_from
+        if date_to:
+            ts_filter["$lte"] = date_to + "T23:59:59.999Z" if "T" not in date_to else date_to
+        if ts_filter:
+            query["ts_utc"] = ts_filter
+
     projection = {
-        "_id": 0,
-        "ts_utc": 1,
-        "P_sum_kW": 1,
+        "_id": 0, "ts_utc": 1, "P_sum_kW": 1,
         "U_L1": 1, "U_L2": 1, "U_L3": 1,
         "I_L1": 1, "I_L2": 1, "I_L3": 1,
-        "I_sum": 1,
-        "F_Hz": 1,
-        "E_imp_kWh": 1,
-        "cosphi": 1,
+        "I_sum": 1, "F_Hz": 1, "E_imp_kWh": 1, "cosphi": 1,
     }
 
     docs = await db.emu_data.find(
-        {"device_id": device_id, "meter_id": meter_id},
-        projection,
-        sort=[("ts_utc", -1)],
-    ).to_list(min(limit, 50))
+        query, projection, sort=[("ts_utc", -1)],
+    ).to_list(min(limit, 500))
 
     return {
         "meter_id": meter_id,
         "meter_name": meter.get("meter_name") or meter.get("meter_ip", "Zähler"),
         "device_id": device_id,
+        "device_name": device.get("name", "") if device else meter.get("device_name", ""),
         "count": len(docs),
         "data": docs,
+    }
+
+
+@router.get("/{device_id}/meters/{meter_id}/history")
+async def get_meter_assignment_history(device_id: str, meter_id: str, user: dict = Depends(require_staff)):
+    """Get assignment history: which events/customers this meter was linked to."""
+    meter = await db.emu_meters.find_one({"id": meter_id, "device_id": device_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zähler nicht gefunden")
+
+    # Find all kirmes_signups that reference this device+meter
+    signups = await db.kirmes_signups.find(
+        {"emu_device_id": device_id, "emu_meter_id": meter_id},
+        {"_id": 0, "id": 1, "event_id": 1, "schausteller_id": 1,
+         "fahrgeschaeft": 1, "platznummer": 1, "kwh_einbau": 1,
+         "kwh_ausbau": 1, "kwh_used": 1, "created_at": 1, "invoice_number": 1},
+    ).to_list(100)
+
+    # Also check archived/unlinked signups that previously had this meter
+    unlinked = await db.kirmes_signups.find(
+        {"previous_emu_meter_id": meter_id},
+        {"_id": 0, "id": 1, "event_id": 1, "schausteller_id": 1,
+         "fahrgeschaeft": 1, "platznummer": 1, "kwh_einbau": 1,
+         "kwh_ausbau": 1, "kwh_used": 1, "created_at": 1, "invoice_number": 1},
+    ).to_list(100)
+
+    all_signups = {s["id"]: s for s in signups + unlinked}.values()
+
+    # Enrich with event names and schausteller names
+    event_ids = list({s["event_id"] for s in all_signups if s.get("event_id")})
+    schausteller_ids = list({s["schausteller_id"] for s in all_signups if s.get("schausteller_id")})
+
+    events_map = {}
+    if event_ids:
+        events = await db.kirmes_events.find({"id": {"$in": event_ids}}, {"_id": 0, "id": 1, "name": 1, "start_date": 1, "end_date": 1}).to_list(100)
+        events_map = {e["id"]: e for e in events}
+
+    schausteller_map = {}
+    if schausteller_ids:
+        schausteller = await db.schausteller.find({"id": {"$in": schausteller_ids}}, {"_id": 0, "id": 1, "firma": 1, "name": 1}).to_list(100)
+        schausteller_map = {s["id"]: s for s in schausteller}
+
+    history = []
+    for s in all_signups:
+        ev = events_map.get(s.get("event_id"), {})
+        sch = schausteller_map.get(s.get("schausteller_id"), {})
+        history.append({
+            "signup_id": s["id"],
+            "event_name": ev.get("name", "–"),
+            "event_start": ev.get("start_date"),
+            "event_end": ev.get("end_date"),
+            "firma": sch.get("firma", "–"),
+            "kunde": sch.get("name", "–"),
+            "fahrgeschaeft": s.get("fahrgeschaeft", "–"),
+            "platznummer": s.get("platznummer", "–"),
+            "kwh_einbau": s.get("kwh_einbau"),
+            "kwh_ausbau": s.get("kwh_ausbau"),
+            "kwh_used": s.get("kwh_used"),
+            "invoice_number": s.get("invoice_number"),
+            "created_at": s.get("created_at"),
+            "is_current": s["id"] in {su["id"] for su in signups},
+        })
+
+    history.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+    return {
+        "meter_id": meter_id,
+        "meter_name": meter.get("meter_name") or meter.get("meter_ip", "Zähler"),
+        "assignments": history,
     }
 
 @router.get("/stats/overview")
