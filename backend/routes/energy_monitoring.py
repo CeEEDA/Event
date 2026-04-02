@@ -136,18 +136,35 @@ async def list_energy_devices(
     if allowed_ids is not None:
         devices = [d for d in devices if d["id"] in allowed_ids]
 
-    # Enrich with meter count and latest data
+    # Enrich with meter count and latest data (batch instead of N+1)
+    device_ids = [d["id"] for d in devices]
+
+    # Batch meter counts
+    meter_counts = {}
+    if device_ids:
+        mc_pipeline = [
+            {"$match": {"device_id": {"$in": device_ids}}},
+            {"$group": {"_id": "$device_id", "count": {"$sum": 1}}}
+        ]
+        meter_counts = {doc["_id"]: doc["count"] async for doc in db.emu_meters.aggregate(mc_pipeline)}
+
+    # Batch latest emu_data per device
+    latest_map = {}
+    if device_ids:
+        lat_pipeline = [
+            {"$match": {"device_id": {"$in": device_ids}}},
+            {"$sort": {"ts_utc": -1}},
+            {"$group": {"_id": "$device_id", "doc": {"$first": "$$ROOT"}}},
+        ]
+        async for item in db.emu_data.aggregate(lat_pipeline):
+            doc = item["doc"]
+            doc.pop("_id", None)
+            latest_map[item["_id"]] = doc
+
     result = []
     for device in devices:
-        meter_count = await db.emu_meters.count_documents({"device_id": device["id"]})
-        device["meter_count"] = meter_count
-
-        # Get latest telemetry summary
-        latest = await db.emu_data.find_one(
-            {"device_id": device["id"]},
-            {"_id": 0},
-            sort=[("ts_utc", -1)]
-        )
+        device["meter_count"] = meter_counts.get(device["id"], 0)
+        latest = latest_map.get(device["id"])
         device["latest_data"] = latest
 
         # Determine online status (has data in last 5 minutes)

@@ -275,12 +275,36 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             g.pop("api_key", None)
 
     # Attach latest telemetry and service warning for each generator
+    # Batch-load latest telemetry for all generators via aggregation
+    gen_ids = [g["id"] for g in generators]
+    tel_map = {}
+    if gen_ids:
+        tel_pipeline = [
+            {"$match": {"generator_id": {"$in": gen_ids}}},
+            {"$sort": {"timestamp": -1}},
+            {"$group": {"_id": "$generator_id", "doc": {"$first": "$$ROOT"}}},
+        ]
+        async for item in db.generator_telemetry.aggregate(tel_pipeline):
+            doc = item["doc"]
+            doc.pop("_id", None)
+            tel_map[item["_id"]] = doc
+
+    # Batch-load devices by serial_number
+    serial_numbers_all = list({g.get("serial_number") for g in generators if g.get("serial_number")})
+    dev_map = {}
+    if serial_numbers_all:
+        devs = await db.devices.find({"serial_number": {"$in": serial_numbers_all}}, {"_id": 0}).to_list(len(serial_numbers_all))
+        dev_map = {d["serial_number"]: d for d in devs}
+
+    # Batch-load service plans for those devices
+    dev_ids_for_plans = [d["id"] for d in dev_map.values() if d.get("next_maintenance_hours")]
+    plan_map = {}
+    if dev_ids_for_plans:
+        plans = await db.service_plans.find({"device_id": {"$in": dev_ids_for_plans}}, {"_id": 0}).to_list(len(dev_ids_for_plans))
+        plan_map = {p["device_id"]: p for p in plans}
+
     for g in generators:
-        latest = await db.generator_telemetry.find_one(
-            {"generator_id": g["id"]},
-            {"_id": 0},
-            sort=[("timestamp", -1)]
-        )
+        latest = tel_map.get(g["id"])
         # Normalize Pi-ingest fields to standard frontend field names
         if latest:
             if "power_total_w" in latest and "power_kw" not in latest:
@@ -298,9 +322,7 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
         g["latest_telemetry"] = latest
 
         # P4: Check for upcoming maintenance via device cross-reference
-        device = await db.devices.find_one(
-            {"serial_number": g.get("serial_number")}, {"_id": 0}
-        )
+        device = dev_map.get(g.get("serial_number"))
         if device:
             warning = False
             warning_reason = []
@@ -319,8 +341,7 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
                     pass
             # Check hours-based maintenance (< 50 hours)
             if device.get("next_maintenance_hours"):
-                # Get current hours from service plan
-                plan = await db.service_plans.find_one({"device_id": device.get("id")}, {"_id": 0})
+                plan = plan_map.get(device.get("id"))
                 current_hrs = plan.get("current_hours", 0) if plan else 0
                 hrs_until = device["next_maintenance_hours"] - current_hrs
                 if hrs_until <= 50:

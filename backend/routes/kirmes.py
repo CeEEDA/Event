@@ -219,9 +219,16 @@ async def list_events(
     if status:
         query["status"] = status
     events = await _db.kirmes_events.find(query, {"_id": 0}).sort("start_date", -1).to_list(500)
-    # Add signup counts
-    for event in events:
-        event["signup_count"] = await _db.kirmes_signups.count_documents({"event_id": event["id"]})
+    # Batch signup counts via aggregation instead of N+1 queries
+    if events:
+        event_ids = [e["id"] for e in events]
+        pipeline = [
+            {"$match": {"event_id": {"$in": event_ids}}},
+            {"$group": {"_id": "$event_id", "count": {"$sum": 1}}}
+        ]
+        counts = {doc["_id"]: doc["count"] async for doc in _db.kirmes_signups.aggregate(pipeline)}
+        for event in events:
+            event["signup_count"] = counts.get(event["id"], 0)
     return events
 
 
@@ -267,11 +274,18 @@ async def get_event(event_id: str, user: dict = Depends(_require_staff)):
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
-    event["signup_count"] = await _db.kirmes_signups.count_documents({"event_id": event_id})
-    # Get signups with schausteller info
+    # Get signups
     signups = await _db.kirmes_signups.find({"event_id": event_id}, {"_id": 0}).to_list(500)
+    event["signup_count"] = len(signups)
+    # Batch-load all Schausteller in one query instead of N+1
+    sch_ids = list({s["schausteller_id"] for s in signups if s.get("schausteller_id")})
+    if sch_ids:
+        sch_docs = await _db.kirmes_schausteller.find({"id": {"$in": sch_ids}}, {"_id": 0}).to_list(len(sch_ids))
+        sch_map = {s["id"]: s for s in sch_docs}
+    else:
+        sch_map = {}
     for signup in signups:
-        sch = await _db.kirmes_schausteller.find_one({"id": signup["schausteller_id"]}, {"_id": 0})
+        sch = sch_map.get(signup.get("schausteller_id"))
         if sch:
             signup["schausteller"] = sch
     event["signups"] = signups
@@ -791,9 +805,15 @@ async def get_my_bookings(schausteller_id: str = Query(...)):
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
 
     signups = await _db.kirmes_signups.find({"schausteller_id": schausteller_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    # Batch-load events
+    evt_ids = list({s["event_id"] for s in signups if s.get("event_id")})
+    if evt_ids:
+        evt_docs = await _db.kirmes_events.find({"id": {"$in": evt_ids}}, {"_id": 0, "id": 1, "name": 1, "location": 1, "start_date": 1, "end_date": 1}).to_list(len(evt_ids))
+        evt_map = {e["id"]: e for e in evt_docs}
+    else:
+        evt_map = {}
     for s in signups:
-        event = await _db.kirmes_events.find_one({"id": s["event_id"]}, {"_id": 0, "name": 1, "location": 1, "start_date": 1, "end_date": 1})
-        s["event"] = event or {}
+        s["event"] = evt_map.get(s.get("event_id"), {})
 
     invoices = await _db.kirmes_invoices.find(
         {"schausteller_id": schausteller_id},
@@ -945,9 +965,16 @@ async def get_schausteller(sch_id: str, user: dict = Depends(_require_staff)):
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
     # Get their signups
     signups = await _db.kirmes_signups.find({"schausteller_id": sch_id}, {"_id": 0}).to_list(100)
+    # Batch-load events
+    evt_ids = list({s["event_id"] for s in signups if s.get("event_id")})
+    if evt_ids:
+        evt_docs = await _db.kirmes_events.find({"id": {"$in": evt_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(evt_ids))
+        evt_map = {e["id"]: e for e in evt_docs}
+    else:
+        evt_map = {}
     for s in signups:
-        event = await _db.kirmes_events.find_one({"id": s["event_id"]}, {"_id": 0, "id": 1, "name": 1})
-        s["event_name"] = event["name"] if event else "Unbekannt"
+        evt = evt_map.get(s.get("event_id"))
+        s["event_name"] = evt["name"] if evt else "Unbekannt"
     sch["signups"] = signups
     # Get their invoices
     invoices = await _db.kirmes_invoices.find(

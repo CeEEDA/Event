@@ -284,9 +284,18 @@ async def list_devices(user: dict = Depends(require_staff)):
             if g.get("last_seen"):
                 gen_last_seen[g["serial_number"]] = g["last_seen"]
 
+    # Batch-count documents per device instead of N+1
+    device_ids = [d["id"] for d in devices]
+    doc_counts = {}
+    if device_ids:
+        pipeline = [
+            {"$match": {"device_id": {"$in": device_ids}}},
+            {"$group": {"_id": "$device_id", "count": {"$sum": 1}}}
+        ]
+        doc_counts = {doc["_id"]: doc["count"] async for doc in db.device_documents.aggregate(pipeline)}
+
     for d in devices:
-        doc_count = await db.device_documents.count_documents({"device_id": d["id"]})
-        d["document_count"] = doc_count
+        d["document_count"] = doc_counts.get(d["id"], 0)
         # Convert ObjectId to string for JSON serialization
         if "image_gridfs_id" in d and d["image_gridfs_id"]:
             d["image_gridfs_id"] = str(d["image_gridfs_id"])
