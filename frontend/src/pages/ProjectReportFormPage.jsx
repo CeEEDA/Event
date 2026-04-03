@@ -390,15 +390,17 @@ export default function ProjectReportFormPage() {
                           className="text-[10px] h-5 border rounded px-1 text-gray-500 bg-white"
                           value=""
                           onChange={e => {
-                            if (!e.target.value) return;
-                            setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: x.beschreibung ? x.beschreibung + "\n" + e.target.value : e.target.value } : x));
-                            e.target.value = "";
+                            const tid = e.target.value;
+                            if (!tid) return;
+                            const tpl = workTemplates.find(t => t.id === tid);
+                            if (!tpl) return;
+                            setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: x.beschreibung ? x.beschreibung + "\n" + tpl.text : tpl.text } : x));
                           }}
                           data-testid={`worklog-template-${wIdx}`}
                         >
                           <option value="">Textbaustein einfuegen...</option>
                           {workTemplates.map(t => (
-                            <option key={t.id} value={t.text}>{t.bezeichnung || t.text}</option>
+                            <option key={t.id} value={t.id}>{t.bezeichnung || t.text}</option>
                           ))}
                         </select>
                       )}
