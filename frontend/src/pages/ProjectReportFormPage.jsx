@@ -78,7 +78,7 @@ export default function ProjectReportFormPage() {
           api.get("/users"),
           api.get("/project-reports/work-templates"),
         ]);
-        setAvailableUsers((usersRes.data || []).filter(u => u.is_active !== false));
+        setAvailableUsers((usersRes.data || []).filter(u => u.is_active !== false && u.role !== "kunde"));
         setWorkTemplates(templatesRes.data || []);
       } catch { /* silent */ }
     })();
