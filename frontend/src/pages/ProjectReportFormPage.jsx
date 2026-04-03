@@ -286,10 +286,6 @@ export default function ProjectReportFormPage() {
               </div>
             </div>
           </div>
-          <label className="flex items-center gap-2 mt-3 text-xs text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={form.kunde_nicht_anwesend} onChange={e => setForm(f => ({ ...f, kunde_nicht_anwesend: e.target.checked }))} className="accent-fuchsia-600" data-testid="kunde-nicht-anwesend" />
-            Kunde nicht anwesend
-          </label>
         </div>
 
         {/* Section 2: Mitarbeiter & Helfer */}
