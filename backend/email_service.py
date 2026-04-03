@@ -57,21 +57,36 @@ def send_email_with_attachment(to_email: str, subject: str, html_body: str, atta
     att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
     msg.attach(att)
 
-    # Alle Empfaenger (To + BCC)
-    recipients = [to_email]
-    if bcc:
-        recipients.extend(bcc)
-
     try:
         with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
             server.login(cfg["user"], cfg["password"])
-            server.sendmail(cfg["user"], recipients, msg.as_string())
-        bcc_info = f" + BCC: {', '.join(bcc)}" if bcc else ""
-        logger.info(f"Email with attachment sent to {to_email}{bcc_info}")
-        return True
+            server.sendmail(cfg["user"], [to_email], msg.as_string())
+        logger.info(f"Email with attachment sent to {to_email}")
     except Exception as e:
         logger.error(f"Email send with attachment failed: {e}")
         raise
+
+    # BCC als separate E-Mail senden (zuverlaessiger als SMTP-BCC)
+    if bcc:
+        for bcc_addr in bcc:
+            try:
+                bcc_msg = MIMEMultipart("mixed")
+                bcc_msg["Subject"] = f"[Kopie] {subject}"
+                bcc_msg["From"] = f"{cfg['sender_name']} <{cfg['user']}>"
+                bcc_msg["To"] = bcc_addr
+                bcc_msg.attach(MIMEText(html_body, "html", "utf-8"))
+                bcc_att = MIMEApplication(attachment_bytes, _subtype="pdf")
+                bcc_att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+                bcc_msg.attach(bcc_att)
+
+                with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
+                    server.login(cfg["user"], cfg["password"])
+                    server.sendmail(cfg["user"], [bcc_addr], bcc_msg.as_string())
+                logger.info(f"BCC copy sent to {bcc_addr}")
+            except Exception as e:
+                logger.error(f"BCC copy to {bcc_addr} failed: {e}")
+
+    return True
 
 
 
