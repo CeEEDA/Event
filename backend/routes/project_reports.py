@@ -559,10 +559,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     ]))
     elems.append(sig_combined)
 
-    # Footer
-    elems.append(Spacer(1, 4*mm))
-    elems.append(Paragraph(f"Erstellt von: {report.get('created_by', '')} | {report.get('created_at', '')[:16]} | EVENTENERGIE DEUTSCHLAND | 0800 POWER24", s_footer))
-
     doc.build(elems)
     buf.seek(0)
     filename = f"Projektbericht_{report.get('projektnummer', report_id[:8])}_{report.get('projekt_datum', '')}.pdf"
