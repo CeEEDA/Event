@@ -9,7 +9,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - **Desktop:** Electron Wrapper
 - **External APIs:** EpiRent (ERP), Stripe (Payments), MQTT, OpenStreetMap
 
-## What's Been Implemented (Session 2026-04-02)
+## What's Been Implemented
 
 ### Performance-Optimierung
 - MongoDB Indexes, N+1 Query Fix, RAM-Leak gefixt (25GB -> normal)
@@ -17,29 +17,38 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ### Expanded Row Redesign (KirmesEventDetailPage)
 - 3-Spalten Karten-Layout (KONTAKTDATEN | ZAEHLERDATEN | EMU-ZAEHLER)
 - Gelbe Hinterlegung fuer nicht-verknuepfte Zaehler (bg-amber-50)
-- Payment-Labels gefixt (pending_payment -> Ausstehend, abgerechnet -> Abgerechnet)
-- Lade-Delay gefixt (limit=1 auf meter-data API, ~120ms)
+- Payment-Labels gefixt
+- Lade-Delay gefixt (limit=1 auf meter-data API)
 
 ### Zaehler-Detailseite (MeterDiagnosticsPage) - NEU
 - **Route**: /devices/:deviceId/meters/:meterId
-- **Datumsfilter**: Von/Bis mit "Anzeigen" Button und 7-Tage-Navigation (</>)
-- **Verknuepfungshistorie**: Welche Veranstaltung, welcher Kunde, Zeitraum, Fahrgeschaeft, Platznr, Einbau/Ausbau/Verbrauch, Rechnungsnummer, Status (Aktiv/Beendet)
-- **Messdaten-Tabelle**: 12 Spalten (Zeitstempel, kWh, kW, U L1/L2/L3, I L1/L2/L3, I ges., Hz, cos phi)
-- **Anomalie-Erkennung**: Rot bei Spannung < 200V, Gelb bei Frequenz ausserhalb 49-51Hz
-- Klickbare Zaehler-Eintraege in DeviceManagementPage navigieren zur Detailseite
-- **Backend-Endpoints**:
-  - GET /api/devices/{device_id}/meters/{meter_id}/diagnostics?limit=50&date_from=&date_to=
-  - GET /api/devices/{device_id}/meters/{meter_id}/history
+- Datumsfilter, Verknuepfungshistorie, Messdaten-Tabelle, Anomalie-Erkennung
+
+### Projektbericht (Digital Project Report) - NEU (2026-04-03)
+- **Backend**: Full CRUD at /api/project-reports (create, list by order, get, update, delete)
+- **Frontend Form**: /project-report/new and /project-report/:reportId
+  - Kundendaten (auto-filled from order API)
+  - Mitarbeiter (auto-filled from logged-in user, roles: PL/ME/T/H)
+  - Arbeitsprotokoll (date, description, hours per employee x type N/E/NO)
+  - Material / Artikel (pos, material, vorbereitung, verarbeitet, bestellung)
+  - Fahrzeuge (PKW, LKW, etc. with KM and hours)
+  - Bemerkungen + Uebernachtung
+  - Digitale Unterschriften (Techniker + Kunde via react-signature-canvas)
+- **Integration**: Projektberichte section in OrderDetailPage (similar to Tankbelege)
+- **Testing**: 100% pass rate (11/11 backend, all frontend flows)
 
 ## Key API Endpoints
 - GET /api/kirmes/signups/{signup_id}/meter-data?limit=1
-- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics (date range, limit)
-- GET /api/devices/{device_id}/meters/{meter_id}/history (assignment history)
-- GET /api/devices/{device_id}/quick-info (meter_id included)
+- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics
+- GET /api/devices/{device_id}/meters/{meter_id}/history
+- POST/GET/PUT/DELETE /api/project-reports
+- GET /api/project-reports/by-order/{order_pk}
+- POST/GET/PUT/DELETE /api/fuel-receipts
 
 ## Prioritized Backlog
 
 ### P1 - Kommend
+- Abrechnung Export (PDF mit allen Stunden/Abrechnungsdaten)
 - PayPal Integration
 
 ### P2 - Backlog
