@@ -223,6 +223,13 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
     import base64, os
 
+    def _short_name(full_name):
+        """Christian Ecker -> C.Ecker, Philipp Bertram -> P.Bertram"""
+        parts = (full_name or "").strip().split()
+        if len(parts) >= 2:
+            return f"{parts[0][0]}.{parts[-1]}"
+        return full_name or ""
+
     if not token:
         raise HTTPException(status_code=401, detail="Token fehlt")
     try:
@@ -258,12 +265,19 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     s_confirm = ParagraphStyle("CF", fontSize=6.5, textColor=DARK, leading=8)
 
     buf = io.BytesIO()
-    pw, ph = A4
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
+    ma_list = report.get("mitarbeiter", [])
+    num_ma = len(ma_list) if ma_list else 1
+
+    # Switch to landscape if many employees
+    from reportlab.lib.pagesizes import landscape
+    if num_ma >= 5:
+        page_size = landscape(A4)
+    else:
+        page_size = A4
+    pw, ph = page_size
+    doc = SimpleDocTemplate(buf, pagesize=page_size, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
     W = pw - 24*mm
     elems = []
-
-    ma_list = report.get("mitarbeiter", [])
 
     # ── HEADER: Logo + Title ──
     logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "logo.png")
@@ -302,7 +316,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         rolle = m.get("rolle", "")
         name = m.get("name", "")
         typ_label = "" if m.get("is_user", True) else " (ext.)"
-        ma_rows.append([Paragraph(f"{i+1}.", s_label), Paragraph(f"{name}{typ_label}", s_value), Paragraph(rolle, s_label)])
+        ma_rows.append([Paragraph(f"{i+1}.", s_label), Paragraph(f"{_short_name(name)}{typ_label}", s_value), Paragraph(rolle, s_label)])
     if not ma_rows:
         ma_rows.append(["", Paragraph("—", s_value), ""])
     ma_header = [[Paragraph("Nr.", s_label), Paragraph("<b>Mitarbeiter:</b>", s_label), Paragraph("Rolle", s_label)]]
@@ -342,19 +356,16 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     # ── ARBEITSPROTOKOLL TABLE ──
     elems.append(Paragraph("Arbeitsprotokoll", s_h2))
 
-    num_ma = len(ma_list) if ma_list else 1
-    # Build header: Datum | Arbeitsbeschreibung | Lohn: N/E/NO per employee
+    # Build header: Datum | Arbeitsbeschreibung | N/E/NO per employee
     hdr1 = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Arbeitsbeschreibung</b>", s_cell_bold)]
     hdr2 = ["", ""]
     for i, m in enumerate(ma_list or [{"name": "MA 1"}]):
-        short = m.get("name", f"MA {i+1}")
-        if len(short) > 12:
-            short = short[:12] + "."
+        short = _short_name(m.get("name", f"MA {i+1}"))
         hdr1.append(Paragraph(f"<b>{short}</b>", ParagraphStyle("MH", fontSize=6.5, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE)))
         hdr1.append("")
         hdr1.append("")
         hdr2.append(Paragraph("N", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
-        hdr2.append(Paragraph("E", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=grey if (grey := colors.grey) else colors.grey)))
+        hdr2.append(Paragraph("E", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
         hdr2.append(Paragraph("NO", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
 
     date_w = 18*mm
@@ -365,11 +376,20 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     rows = [hdr1, hdr2]
     wl = report.get("work_log", [])
     for entry in wl:
+        # Only show rows that have content (description or any hours)
+        stunden = entry.get("stunden", {})
+        has_hours = any(
+            v for emp_hrs in stunden.values() if isinstance(emp_hrs, dict)
+            for v in emp_hrs.values() if v and v != 0 and v != "0" and v != ""
+        )
+        has_content = entry.get("beschreibung", "").strip() or entry.get("datum", "").strip() or has_hours
+        if not has_content:
+            continue
+
         row = [
             Paragraph(entry.get("datum", ""), s_cell),
             Paragraph((entry.get("beschreibung", "") or "").replace("\n", "<br/>"), s_cell),
         ]
-        stunden = entry.get("stunden", {})
         for emp_idx in range(num_ma):
             emp_hrs = stunden.get(str(emp_idx), {})
             for t in ["N", "E", "NO"]:
@@ -379,10 +399,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
                 else:
                     row.append("")
         rows.append(row)
-
-    # Add empty rows to fill the table if < 8
-    for _ in range(max(0, 8 - len(wl))):
-        rows.append(["", ""] + [""] * (num_ma * 3))
 
     wt = Table(rows, colWidths=col_widths, repeatRows=2)
 
@@ -403,7 +419,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("ALIGN", (2, 2), (-1, -1), "CENTER"),
-        ("ROWHEIGHTS", (0, 2), (-1, -1), 14*mm),
     ] + merge_cmds))
     elems.append(wt)
     elems.append(Spacer(1, 2*mm))
