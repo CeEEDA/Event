@@ -332,10 +332,10 @@ export default function ProjectReportFormPage() {
           <div className="mt-4 pt-3 border-t border-gray-100">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
-                <UserPlus className="w-3.5 h-3.5 text-gray-400" /> Helfer (extern)
+                <UserPlus className="w-3.5 h-3.5 text-gray-400" /> Externes Personal
               </span>
               <Button size="sm" variant="outline" onClick={() => setHelfer(h => [...h, { name: "", rolle: "H", is_user: false }])} className="h-6 text-[10px]" data-testid="add-helfer">
-                <Plus className="w-3 h-3 mr-1" /> Helfer
+                <Plus className="w-3 h-3 mr-1" /> Hinzufuegen
               </Button>
             </div>
             <div className="space-y-2">
@@ -354,7 +354,7 @@ export default function ProjectReportFormPage() {
                 </div>
               ))}
               {helfer.length === 0 && (
-                <p className="text-[10px] text-gray-400 text-center py-1">Keine externen Helfer eingetragen</p>
+                <p className="text-[10px] text-gray-400 text-center py-1">Kein externes Personal eingetragen</p>
               )}
             </div>
           </div>
