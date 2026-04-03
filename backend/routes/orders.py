@@ -1096,3 +1096,135 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     filename = f"Abrechnung_{order_no}_{event_name}.pdf".replace(" ", "_")
     from fastapi.responses import StreamingResponse
     return StreamingResponse(final_buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ============== Order Documents (Dokumentenablage) ==============
+
+import os as _os
+import uuid as _uuid
+from fastapi import UploadFile, File, Request
+from fastapi.responses import Response
+
+_ALLOWED_DOC_TYPES = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+_ORDER_DOC_STORAGE = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "storage", "order_documents")
+_os.makedirs(_ORDER_DOC_STORAGE, exist_ok=True)
+
+
+async def _auth_user_from_token(token: str = None, request: Request = None):
+    user = None
+    if token:
+        try:
+            payload = _decode_jwt_token(token)
+            user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        except Exception:
+            pass
+    if not user and request:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                payload = _decode_jwt_token(auth[7:])
+                user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+            except Exception:
+                pass
+    return user
+
+
+@router.post("/order-documents/{order_pk}")
+async def upload_order_document(order_pk: str, file: UploadFile = File(...), credentials: HTTPAuthorizationCredentials = Depends(security)):
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401)
+
+    ct = file.content_type or ""
+    if ct not in _ALLOWED_DOC_TYPES:
+        raise HTTPException(status_code=400, detail="Nur PDF und Bilder (JPG, PNG, WebP, GIF) erlaubt")
+
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Datei zu gross (max. 20 MB)")
+
+    doc_id = str(_uuid.uuid4())
+    ext = _ALLOWED_DOC_TYPES[ct]
+    stored_name = f"{doc_id}{ext}"
+    order_dir = _os.path.join(_ORDER_DOC_STORAGE, order_pk)
+    _os.makedirs(order_dir, exist_ok=True)
+
+    file_path = _os.path.join(order_dir, stored_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    doc = {
+        "id": doc_id,
+        "order_pk": order_pk,
+        "filename": stored_name,
+        "original_name": file.filename or "Dokument",
+        "content_type": ct,
+        "size": len(content),
+        "uploaded_by": user.get("name", user.get("email", "")),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _db.order_documents.insert_one(doc)
+
+    return {"id": doc_id, "original_name": doc["original_name"], "message": "Dokument hochgeladen"}
+
+
+@router.get("/order-documents/{order_pk}")
+async def list_order_documents(order_pk: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401)
+    docs = await _db.order_documents.find(
+        {"order_pk": order_pk}, {"_id": 0}
+    ).sort("uploaded_at", -1).to_list(200)
+    return docs
+
+
+@router.get("/order-documents/{order_pk}/{doc_id}/file")
+async def get_order_document_file(order_pk: str, doc_id: str, token: str = None, request: Request = None):
+    user = await _auth_user_from_token(token, request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+
+    doc = await _db.order_documents.find_one({"id": doc_id, "order_pk": order_pk}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    file_path = _os.path.join(_ORDER_DOC_STORAGE, order_pk, doc["filename"])
+    if not _os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+
+    with open(file_path, "rb") as f:
+        data = f.read()
+
+    return Response(
+        content=data,
+        media_type=doc["content_type"],
+        headers={"Content-Disposition": f'inline; filename="{doc["original_name"]}"'},
+    )
+
+
+@router.delete("/order-documents/{order_pk}/{doc_id}")
+async def delete_order_document(order_pk: str, doc_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins duerfen Dokumente loeschen")
+
+    doc = await _db.order_documents.find_one({"id": doc_id, "order_pk": order_pk}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    file_path = _os.path.join(_ORDER_DOC_STORAGE, order_pk, doc["filename"])
+    if _os.path.exists(file_path):
+        _os.remove(file_path)
+
+    await _db.order_documents.delete_one({"id": doc_id})
+    return {"message": "Dokument geloescht"}

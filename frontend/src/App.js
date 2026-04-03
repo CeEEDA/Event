@@ -29,6 +29,7 @@ import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
 import MeterDiagnosticsPage from "./pages/MeterDiagnosticsPage";
 import ProjectReportFormPage from "./pages/ProjectReportFormPage";
+import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import FinancePage from "./pages/FinancePage";
 import "./App.css";
 
@@ -153,6 +154,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <OrderDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/orders/:pk/dokumente"
+        element={
+          <ProtectedRoute>
+            <OrderDocumentsPage />
           </ProtectedRoute>
         }
       />

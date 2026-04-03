@@ -40,6 +40,8 @@ import {
   Clock,
   User,
   Eye,
+  FolderOpen,
+  ChevronRight,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -222,6 +224,7 @@ export default function OrderDetailPage() {
   // Projektberichte
   const [projectReports, setProjectReports] = useState([]);
   const [projectReportsLoading, setProjectReportsLoading] = useState(false);
+  const [docCount, setDocCount] = useState(0);
 
   const { isAdmin } = useAuth();
 
@@ -289,6 +292,8 @@ export default function OrderDetailPage() {
     fetchAssets();
     fetchFuelReceipts();
     fetchProjectReports();
+    // Document count
+    api.get(`/orders/order-documents/${pk}`).then(r => setDocCount(r.data?.length || 0)).catch(() => {});
   }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports]);
 
   useEffect(() => {
@@ -973,6 +978,31 @@ export default function OrderDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Dokumentenablage */}
+          <div
+            className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-fuchsia-300 hover:bg-fuchsia-50/30 transition-colors"
+            onClick={() => navigate(`/orders/${pk}/dokumente`)}
+            data-testid="documents-card"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-fuchsia-50 rounded-lg flex items-center justify-center">
+                  <FolderOpen className="w-5 h-5 text-fuchsia-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Dokumentenablage</p>
+                  <p className="text-xs text-gray-500">Lageplan, Fotos & Unterlagen</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {docCount > 0 && (
+                  <span className="text-xs bg-fuchsia-100 text-fuchsia-700 px-2 py-0.5 rounded-full font-medium">{docCount}</span>
+                )}
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </div>
+            </div>
+          </div>
 
           {/* Projektberichte Section */}
           <div className="bg-white rounded-lg border border-gray-200" data-testid="project-reports-section">
