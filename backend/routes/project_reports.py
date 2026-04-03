@@ -281,7 +281,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
 
     # ── CUSTOMER + PROJECT INFO (2-column) ──
     left_data = [
-        [Paragraph("Auftrag-/Liefer-/Reparaturanschrift:", s_label), ""],
+        [Paragraph("<b>Auftrags-/Liefer-/Reparaturanschrift:</b>", s_value), ""],
         [Paragraph("Firma:", s_label), Paragraph(report.get("kunde_name", ""), s_value)],
         [Paragraph("Anschrift:", s_label), Paragraph(report.get("kunde_anschrift", ""), s_value)],
         [Paragraph("PLZ / Ort:", s_label), Paragraph(f"{report.get('kunde_plz', '')} {report.get('kunde_ort', '')}", s_value)],
@@ -290,6 +290,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     ]
     lt = Table(left_data, colWidths=[25*mm, 60*mm])
     lt.setStyle(TableStyle([
+        ("SPAN", (0, 0), (1, 0)),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
         ("TOPPADDING", (0, 0), (-1, -1), 1),
         ("LINEBELOW", (1, 1), (1, -1), 0.5, BORDER),
