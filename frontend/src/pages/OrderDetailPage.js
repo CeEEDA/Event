@@ -1047,17 +1047,6 @@ export default function OrderDetailPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => {
-                            const token = localStorage.getItem("token");
-                            window.open(`${BACKEND_URL}/api/project-reports/${r.id}/pdf?token=${token}`, "_blank");
-                          }}
-                          className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-fuchsia-600"
-                          title="PDF herunterladen"
-                          data-testid={`report-pdf-${r.id}`}
-                        >
-                          <FileDown className="w-4 h-4" />
-                        </button>
                         {!r.unterschrift_kunde && (
                           <button
                             onClick={() => navigate(`/project-report/${r.id}`)}
@@ -1078,7 +1067,18 @@ export default function OrderDetailPage() {
                             <Eye className="w-4 h-4" />
                           </button>
                         )}
-                        {isAdmin && !r.unterschrift_kunde && (
+                        <button
+                          onClick={() => {
+                            const token = localStorage.getItem("token");
+                            window.open(`${BACKEND_URL}/api/project-reports/${r.id}/pdf?token=${token}`, "_blank");
+                          }}
+                          className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
+                          title="PDF herunterladen"
+                          data-testid={`report-pdf-${r.id}`}
+                        >
+                          <FileDown className="w-4 h-4" />
+                        </button>
+                        {isAdmin && (
                           <button
                             onClick={() => deleteProjectReport(r.id)}
                             className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400"
@@ -1193,7 +1193,7 @@ export default function OrderDetailPage() {
                           </button>
                         )}
                         <button onClick={() => openFuelPdf(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600" title="PDF" data-testid={`fuel-pdf-${r.id}`}>
-                          <Download className="w-4 h-4" />
+                          <FileDown className="w-4 h-4" />
                         </button>
                         {isAdmin && (
                           <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Loeschen" data-testid={`fuel-delete-${r.id}`}>
