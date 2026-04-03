@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import SignatureCanvas from "react-signature-canvas";
-import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck, UserPlus } from "lucide-react";
 
 const ROLLEN = ["PL", "ME", "T", "H"];
 const STUNDEN_TYPEN = ["N", "E", "NO"];
@@ -55,7 +55,9 @@ export default function ProjectReportFormPage() {
     uebernachtung_naechte: 0,
   });
 
-  const [mitarbeiter, setMitarbeiter] = useState([{ name: user?.name || "", rolle: "T" }]);
+  const [mitarbeiter, setMitarbeiter] = useState([{ name: user?.name || "", rolle: "T", is_user: true }]);
+  const [helfer, setHelfer] = useState([]);
+  const [availableUsers, setAvailableUsers] = useState([]);
   const [workLog, setWorkLog] = useState([emptyWorkLog()]);
   const [material, setMaterial] = useState([emptyMaterial()]);
   const [fahrzeuge, setFahrzeuge] = useState([emptyVehicle()]);
@@ -66,6 +68,16 @@ export default function ProjectReportFormPage() {
   const [sigKundeData, setSigKundeData] = useState(null);
 
   // Load existing report if editing
+  useEffect(() => {
+    // Load available users for employee dropdown
+    (async () => {
+      try {
+        const { data } = await api.get("/users");
+        setAvailableUsers((data || []).filter(u => u.is_active !== false));
+      } catch { /* silent */ }
+    })();
+  }, []);
+
   useEffect(() => {
     if (!isEdit) return;
     (async () => {
@@ -86,7 +98,8 @@ export default function ProjectReportFormPage() {
           uebernachtung_zeitraum: data.uebernachtung_zeitraum || "",
           uebernachtung_naechte: data.uebernachtung_naechte || 0,
         });
-        setMitarbeiter(data.mitarbeiter?.length ? data.mitarbeiter : [emptyEmployee()]);
+        setMitarbeiter(data.mitarbeiter?.filter(m => m.is_user !== false)?.length ? data.mitarbeiter.filter(m => m.is_user !== false) : []);
+        setHelfer(data.mitarbeiter?.filter(m => m.is_user === false) || []);
         setWorkLog(data.work_log?.length ? data.work_log : [emptyWorkLog()]);
         setMaterial(data.material?.length ? data.material : [emptyMaterial()]);
         setFahrzeuge(data.fahrzeuge?.length ? data.fahrzeuge : [emptyVehicle()]);
@@ -158,7 +171,10 @@ export default function ProjectReportFormPage() {
       const payload = {
         ...form,
         uebernachtung_naechte: parseInt(form.uebernachtung_naechte) || 0,
-        mitarbeiter,
+        mitarbeiter: [
+          ...mitarbeiter.filter(m => m.name).map(m => ({ ...m, is_user: true })),
+          ...helfer.filter(h => h.name).map(h => ({ ...h, is_user: false })),
+        ],
         work_log: workLog,
         material: material.filter(m => m.material),
         fahrzeuge: fahrzeuge.filter(f => f.km > 0 || f.stunden > 0),
@@ -271,33 +287,76 @@ export default function ProjectReportFormPage() {
           </label>
         </div>
 
-        {/* Section 2: Mitarbeiter */}
+        {/* Section 2: Mitarbeiter & Helfer */}
         <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="section-mitarbeiter">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Users className="w-4 h-4 text-fuchsia-500" /> Mitarbeiter
             </h2>
-            <Button size="sm" variant="outline" onClick={() => setMitarbeiter(m => [...m, emptyEmployee()])} className="h-7 text-xs" data-testid="add-employee">
-              <Plus className="w-3 h-3 mr-1" /> Hinzufügen
+            <Button size="sm" variant="outline" onClick={() => setMitarbeiter(m => [...m, { name: "", rolle: "T", is_user: true }])} className="h-7 text-xs" data-testid="add-employee">
+              <Plus className="w-3 h-3 mr-1" /> Mitarbeiter
             </Button>
           </div>
           <div className="space-y-2">
             {mitarbeiter.map((emp, idx) => (
               <div key={idx} className="flex items-center gap-2" data-testid={`employee-${idx}`}>
                 <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
-                <Input value={emp.name} onChange={e => setMitarbeiter(m => m.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
-                  placeholder="Name" className="flex-1 h-8 text-sm" />
+                <select
+                  value={emp.name}
+                  onChange={e => setMitarbeiter(m => m.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                  className="flex-1 h-8 border rounded px-2 text-sm bg-white"
+                  data-testid={`employee-select-${idx}`}
+                >
+                  <option value="">-- Mitarbeiter waehlen --</option>
+                  {availableUsers.map(u => (
+                    <option key={u.id} value={u.name}>{u.name} ({u.role})</option>
+                  ))}
+                </select>
                 <select value={emp.rolle} onChange={e => setMitarbeiter(m => m.map((x, i) => i === idx ? { ...x, rolle: e.target.value } : x))}
                   className="h-8 border rounded px-2 text-xs">
                   {ROLLEN.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
-                {mitarbeiter.length > 1 && (
+                {mitarbeiter.length > 0 && (
                   <button onClick={() => setMitarbeiter(m => m.filter((_, i) => i !== idx))} className="text-gray-400 hover:text-red-500">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
             ))}
+            {mitarbeiter.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-2">Keine Mitarbeiter ausgewaehlt</p>
+            )}
+          </div>
+
+          {/* Helfer (Freitext) */}
+          <div className="mt-4 pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                <UserPlus className="w-3.5 h-3.5 text-gray-400" /> Helfer (extern)
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setHelfer(h => [...h, { name: "", rolle: "H", is_user: false }])} className="h-6 text-[10px]" data-testid="add-helfer">
+                <Plus className="w-3 h-3 mr-1" /> Helfer
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {helfer.map((h, idx) => (
+                <div key={idx} className="flex items-center gap-2" data-testid={`helfer-${idx}`}>
+                  <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
+                  <Input value={h.name} onChange={e => setHelfer(hl => hl.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                    placeholder="Name des Helfers" className="flex-1 h-8 text-sm" />
+                  <select value={h.rolle} onChange={e => setHelfer(hl => hl.map((x, i) => i === idx ? { ...x, rolle: e.target.value } : x))}
+                    className="h-8 border rounded px-2 text-xs">
+                    {ROLLEN.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <button onClick={() => setHelfer(hl => hl.filter((_, i) => i !== idx))} className="text-gray-400 hover:text-red-500">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {helfer.length === 0 && (
+                <p className="text-[10px] text-gray-400 text-center py-1">Keine externen Helfer eingetragen</p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -311,15 +370,21 @@ export default function ProjectReportFormPage() {
               <Plus className="w-3 h-3 mr-1" /> Zeile
             </Button>
           </div>
+          {(() => {
+            const allPersonnel = [...mitarbeiter.filter(m => m.name), ...helfer.filter(h => h.name)];
+            if (allPersonnel.length === 0) return (
+              <p className="text-xs text-gray-400 text-center py-4">Bitte zuerst Mitarbeiter oder Helfer hinzufuegen</p>
+            );
+            return (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase">
                   <th className="px-2 py-1.5 text-left w-28">Datum</th>
                   <th className="px-2 py-1.5 text-left">Arbeitsbeschreibung</th>
-                  {mitarbeiter.map((emp, i) => (
+                  {allPersonnel.map((emp, i) => (
                     <th key={i} className="px-1 py-1.5 text-center" colSpan={3}>
-                      <span className="text-fuchsia-600">{emp.name || `MA ${i + 1}`}</span>
+                      <span className={emp.is_user === false ? "text-gray-500" : "text-fuchsia-600"}>{emp.name}</span>
                     </th>
                   ))}
                   <th className="w-8"></th>
@@ -327,7 +392,7 @@ export default function ProjectReportFormPage() {
                 <tr className="bg-gray-50 text-[9px] text-gray-400 uppercase">
                   <th></th>
                   <th></th>
-                  {mitarbeiter.map((_, i) => STUNDEN_TYPEN.map(t => (
+                  {allPersonnel.map((_, i) => STUNDEN_TYPEN.map(t => (
                     <th key={`${i}-${t}`} className="px-1 py-0.5 text-center">{t}</th>
                   )))}
                   <th></th>
@@ -343,7 +408,7 @@ export default function ProjectReportFormPage() {
                       <Input value={wl.beschreibung} onChange={e => setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: e.target.value } : x))}
                         placeholder="Arbeiten beschreiben..." className="h-7 text-xs" />
                     </td>
-                    {mitarbeiter.map((_, empIdx) => STUNDEN_TYPEN.map(t => (
+                    {allPersonnel.map((_, empIdx) => STUNDEN_TYPEN.map(t => (
                       <td key={`${empIdx}-${t}`} className="px-0.5 py-1">
                         <Input type="number" step="0.5" min="0" value={wl.stunden?.[empIdx]?.[t] || ""}
                           onChange={e => updateWorkLogHours(wIdx, empIdx, t, e.target.value)}
@@ -362,6 +427,8 @@ export default function ProjectReportFormPage() {
               </tbody>
             </table>
           </div>
+            );
+          })()}
         </div>
 
         {/* Section 4: Material */}

@@ -42,6 +42,7 @@ class MaterialEntry(BaseModel):
 class EmployeeEntry(BaseModel):
     name: Optional[str] = ""
     rolle: Optional[str] = "T"  # PL, ME, T, H
+    is_user: Optional[bool] = True  # True = registered user, False = external helper
 
 class VehicleEntry(BaseModel):
     typ: Optional[str] = ""  # PKW, LKW, LKW_LDK, PKW_ANH, Tankwagen
