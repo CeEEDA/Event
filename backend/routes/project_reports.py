@@ -424,20 +424,20 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     elems.append(wt)
     elems.append(Spacer(1, 2*mm))
 
-    # ── BEMERKUNGEN ──
+    # ── BEMERKUNGEN (only if filled) ──
     bem = report.get("bemerkungen", "")
-    elems.append(Paragraph("Projektbesprechung, besondere Vorkommnisse, Behinderungen, Verluste, Beschaedigungen:", s_label))
-    bem_data = [[Paragraph(bem.replace("\n", "<br/>") if bem else " ", s_cell)]]
-    bt = Table(bem_data, colWidths=[W])
-    bt.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("MINROWHEIGHT", (0, 0), (-1, -1), 15*mm),
-    ]))
-    elems.append(bt)
-    elems.append(Spacer(1, 3*mm))
+    if bem and bem.strip():
+        elems.append(Paragraph("Projektbesprechung, besondere Vorkommnisse, Behinderungen, Verluste, Beschaedigungen:", s_label))
+        bem_data = [[Paragraph(bem.replace("\n", "<br/>"), s_cell)]]
+        bt = Table(bem_data, colWidths=[W])
+        bt.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        elems.append(bt)
+        elems.append(Spacer(1, 3*mm))
 
     # ── MATERIAL TABLE (only if data exists) ──
     mat = report.get("material", [])
