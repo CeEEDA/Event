@@ -490,6 +490,18 @@ export default function OrderDetailPage() {
             <Button variant="outline" size="sm" onClick={fetchOrder} data-testid="refresh-detail-btn">
               <RefreshCw className="w-4 h-4 mr-1" /> Aktualisieren
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
+              onClick={() => {
+                const token = localStorage.getItem("token");
+                window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
+              }}
+              data-testid="billing-pdf-btn"
+            >
+              <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
+            </Button>
             <Logo size="small" />
           </div>
         </div>
@@ -962,22 +974,6 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          {/* Abrechnung Export Button */}
-          <div className="flex justify-end" data-testid="billing-export-section">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
-              onClick={() => {
-                const token = localStorage.getItem("token");
-                window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
-              }}
-              data-testid="billing-pdf-btn"
-            >
-              <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
-            </Button>
-          </div>
-
           {/* Projektberichte Section */}
           <div className="bg-white rounded-lg border border-gray-200" data-testid="project-reports-section">
             <div className="p-4 border-b border-gray-100">
@@ -987,14 +983,29 @@ export default function OrderDetailPage() {
                   Projektberichte
                   {projectReportsLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                 </h2>
-                <Button
-                  size="sm"
-                  className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
-                  onClick={() => navigate(`/project-report/new?order_pk=${pk}&order_name=${encodeURIComponent(`${order?.order_no || ""} - ${order?.event || order?.contact_name || ""}`)}`)}
-                  data-testid="add-project-report-btn"
-                >
-                  <Plus className="w-3 h-3 mr-1" /> Neuer Bericht
-                </Button>
+                <div className="flex items-center gap-2">
+                  {projectReports.length > 0 && (
+                    <Button
+                      size="sm" variant="outline"
+                      className="h-7 text-xs border-gray-300"
+                      onClick={() => {
+                        const token = localStorage.getItem("token");
+                        window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
+                      }}
+                      data-testid="reports-download-all-btn"
+                    >
+                      <FileDown className="w-3 h-3 mr-1" /> Alle PDFs
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    onClick={() => navigate(`/project-report/new?order_pk=${pk}&order_name=${encodeURIComponent(`${order?.order_no || ""} - ${order?.event || order?.contact_name || ""}`)}`)}
+                    data-testid="add-project-report-btn"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Neuer Bericht
+                  </Button>
+                </div>
               </div>
             </div>
 
