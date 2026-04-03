@@ -541,16 +541,6 @@ export default function AdminPage() {
             <h1 className="text-lg font-semibold text-gray-900">Benutzerverwaltung</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/admin/settings")}
-              className="text-gray-600 hover:text-fuchsia-600"
-              data-testid="admin-settings-link"
-            >
-              <Settings className="w-4 h-4 mr-1" />
-              Administrative Einstellungen
-            </Button>
             <Logo size="small" />
           </div>
         </div>
