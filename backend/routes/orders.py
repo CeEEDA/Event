@@ -818,8 +818,10 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     from reportlab.lib.enums import TA_LEFT, TA_CENTER
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.utils import ImageReader
-    from pypdf import PdfMerger, PdfReader
-    import io, os, base64
+    from pypdf import PdfWriter, PdfReader
+    import io
+    import os
+    import base64
 
     if not token:
         raise HTTPException(status_code=401)
@@ -1029,17 +1031,14 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     # ═══════════════════════════════════════
     # PART 2: Individual project report PDFs
     # ═══════════════════════════════════════
-    from routes.project_reports import router as pr_router
-    # Generate each report PDF using the existing endpoint logic
+    from routes.project_reports import _generate_report_pdf
     report_pdfs = []
     for r in reports:
         rid = r.get("id")
         if not rid:
             continue
         try:
-            # Reuse the PDF generation from project_reports
-            from routes.project_reports import _generate_report_pdf
-            rpdf_buf = await _generate_report_pdf(r)
+            rpdf_buf = _generate_report_pdf(r)
             report_pdfs.append(rpdf_buf)
         except Exception:
             pass
@@ -1072,18 +1071,26 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     # ═══════════════════════════════════════
     # MERGE all PDFs
     # ═══════════════════════════════════════
-    merger = PdfMerger()
-    merger.append(PdfReader(summary_buf))
+    writer = PdfWriter()
+    # Add summary pages
+    summary_reader = PdfReader(summary_buf)
+    for page in summary_reader.pages:
+        writer.add_page(page)
+    # Add individual report PDFs
     for rpdf in report_pdfs:
         rpdf.seek(0)
-        merger.append(PdfReader(rpdf))
+        reader = PdfReader(rpdf)
+        for page in reader.pages:
+            writer.add_page(page)
+    # Add fuel receipt pages
     if fuel_receipts:
         fuel_pdf_buf.seek(0)
-        merger.append(PdfReader(fuel_pdf_buf))
+        fuel_reader = PdfReader(fuel_pdf_buf)
+        for page in fuel_reader.pages:
+            writer.add_page(page)
 
     final_buf = io.BytesIO()
-    merger.write(final_buf)
-    merger.close()
+    writer.write(final_buf)
     final_buf.seek(0)
 
     filename = f"Abrechnung_{order_no}_{event_name}.pdf".replace(" ", "_")

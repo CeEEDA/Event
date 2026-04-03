@@ -213,36 +213,24 @@ async def delete_work_template(template_id: str, user: dict = Depends(_require_a
 
 # ── Single Report CRUD (dynamic /{report_id} LAST) ──
 
-@router.get("/{report_id}/pdf")
-async def get_report_pdf(report_id: str, token: str = Query(None)):
-    from reportlab.lib.pagesizes import A4
+def _short_name(full_name):
+    """Christian Ecker -> C.Ecker, Philipp Bertram -> P.Bertram"""
+    parts = (full_name or "").strip().split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]}.{parts[-1]}"
+    return full_name or ""
+
+
+def _generate_report_pdf(report: dict) -> io.BytesIO:
+    """Generate a project report PDF and return it as a BytesIO buffer."""
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import mm
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-    import base64, os
-
-    def _short_name(full_name):
-        """Christian Ecker -> C.Ecker, Philipp Bertram -> P.Bertram"""
-        parts = (full_name or "").strip().split()
-        if len(parts) >= 2:
-            return f"{parts[0][0]}.{parts[-1]}"
-        return full_name or ""
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Token fehlt")
-    try:
-        payload = _decode_jwt_token(token)
-        user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
-        if not user:
-            raise HTTPException(status_code=401)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Nicht autorisiert")
-
-    report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0})
-    if not report:
-        raise HTTPException(status_code=404, detail="Nicht gefunden")
+    import base64
+    import os
 
     # Colors
     PURPLE = colors.HexColor("#7c3aed")
@@ -268,8 +256,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     ma_list = report.get("mitarbeiter", [])
     num_ma = len(ma_list) if ma_list else 1
 
-    # Switch to landscape if many employees
-    from reportlab.lib.pagesizes import landscape
     if num_ma >= 5:
         page_size = landscape(A4)
     else:
@@ -310,7 +296,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         ("LINEBELOW", (1, 1), (1, -1), 0.5, BORDER),
     ]))
 
-    # Right: Mitarbeiter + Projekt-Nr
     ma_rows = []
     for i, m in enumerate(ma_list):
         rolle = m.get("rolle", "")
@@ -328,7 +313,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         ("LINEBELOW", (0, 0), (-1, 0), 0.5, PURPLE),
     ]))
 
-    # Combine left + right
     info_table = Table([[lt, rt]], colWidths=[W * 0.48, W * 0.52])
     info_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -336,7 +320,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     elems.append(info_table)
     elems.append(Spacer(1, 1*mm))
 
-    # Project number + Bezeichnung line
     order_name = report.get("order_name", "")
     pn_data = [[
         Paragraph("Projektbezeichnung:", s_label),
@@ -358,12 +341,8 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
 
     # ── ARBEITSPROTOKOLL TABLE ──
     elems.append(Paragraph("Arbeitsprotokoll", s_h2))
-
-    # Build header: only show columns that have data
     wl = report.get("work_log", [])
-
-    # First pass: find which (employee_idx, type) combos have any values
-    active_cols = []  # list of (emp_idx, type_key, employee_name)
+    active_cols = []
     for emp_idx in range(num_ma):
         name = _short_name((ma_list[emp_idx] if emp_idx < len(ma_list) else {}).get("name", f"MA {emp_idx+1}"))
         for t in ["N", "E", "NO"]:
@@ -396,7 +375,6 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         has_content = entry.get("beschreibung", "").strip() or entry.get("datum", "").strip() or has_hours
         if not has_content:
             continue
-
         row = [
             Paragraph(entry.get("datum", ""), s_cell),
             Paragraph((entry.get("beschreibung", "") or "").replace("\n", "<br/>"), s_cell),
@@ -425,7 +403,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     elems.append(wt)
     elems.append(Spacer(1, 2*mm))
 
-    # ── BEMERKUNGEN (only if filled) ──
+    # ── BEMERKUNGEN ──
     bem = report.get("bemerkungen", "")
     if bem and bem.strip():
         elems.append(Paragraph("Projektbesprechung, besondere Vorkommnisse, Behinderungen, Verluste, Beschaedigungen:", s_label))
@@ -440,18 +418,18 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         elems.append(bt)
         elems.append(Spacer(1, 3*mm))
 
-    # ── MATERIAL TABLE (only if data exists) ──
+    # ── MATERIAL TABLE ──
     mat = report.get("material", [])
     mat_filled = [m for m in mat if m.get("material")]
     if mat_filled:
         elems.append(Paragraph("Material / Artikel", s_h2))
         mat_hdr = [
-        Paragraph("<b>Pos.</b>", s_cell_bold),
-        Paragraph("<b>Material, Artikel</b>", s_cell_bold),
-        Paragraph("<b>Vorbereitung</b>", s_cell_bold),
-        Paragraph("<b>Verarbeitet</b>", s_cell_bold),
-        Paragraph("<b>Bestellung</b>", s_cell_bold),
-    ]
+            Paragraph("<b>Pos.</b>", s_cell_bold),
+            Paragraph("<b>Material, Artikel</b>", s_cell_bold),
+            Paragraph("<b>Vorbereitung</b>", s_cell_bold),
+            Paragraph("<b>Verarbeitet</b>", s_cell_bold),
+            Paragraph("<b>Bestellung</b>", s_cell_bold),
+        ]
         mat_rows = [mat_hdr]
         for m in mat_filled:
             mat_rows.append([
@@ -473,16 +451,16 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         elems.append(mt)
         elems.append(Spacer(1, 3*mm))
 
-    # ── FAHRZEUGE (only if data exists) ──
+    # ── FAHRZEUGE ──
     fz = report.get("fahrzeuge", [])
     fz_filled = [f for f in fz if f.get("typ")]
     if fz_filled:
         elems.append(Paragraph("Fahrzeuge / Geraete", s_h2))
         fz_hdr = [
-        Paragraph("<b>Typ</b>", s_cell_bold),
-        Paragraph("<b>KM einf. Strecke</b>", s_cell_bold),
-        Paragraph("<b>Stunden</b>", s_cell_bold),
-    ]
+            Paragraph("<b>Typ</b>", s_cell_bold),
+            Paragraph("<b>KM einf. Strecke</b>", s_cell_bold),
+            Paragraph("<b>Stunden</b>", s_cell_bold),
+        ]
         fz_rows = [fz_hdr]
         for f in fz_filled:
             fz_rows.append([
@@ -490,15 +468,15 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
                 Paragraph(str(f.get("km", "")), s_cell),
                 Paragraph(str(f.get("stunden", "")), s_cell),
             ])
-        ft = Table(fz_rows, colWidths=[W * 0.5, W * 0.25, W * 0.25])
-        ft.setStyle(TableStyle([
+        fzt = Table(fz_rows, colWidths=[W * 0.5, W * 0.25, W * 0.25])
+        fzt.setStyle(TableStyle([
             ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
             ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
             ("TOPPADDING", (0, 0), (-1, -1), 2),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ]))
-        elems.append(ft)
+        elems.append(fzt)
         elems.append(Spacer(1, 3*mm))
 
     # ── UEBERNACHTUNG ──
@@ -519,7 +497,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         elems.append(ubt)
         elems.append(Spacer(1, 3*mm))
 
-    # ── HINWEIS (AW explanation) ──
+    # ── HINWEIS ──
     aw_data = [[
         Paragraph("Hinweis:", s_label),
         Paragraph("1 AW = 10 Min | 6 AW = 1 Std. | 0,25 = 1/4 Std. | 1,0 = 1 Std.", s_small),
@@ -562,6 +540,26 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
 
     doc.build(elems)
     buf.seek(0)
+    return buf
+
+
+@router.get("/{report_id}/pdf")
+async def get_report_pdf(report_id: str, token: str = Query(None)):
+    if not token:
+        raise HTTPException(status_code=401, detail="Token fehlt")
+    try:
+        payload = _decode_jwt_token(token)
+        user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+
+    report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+
+    buf = _generate_report_pdf(report)
     filename = f"Projektbericht_{report.get('projektnummer', report_id[:8])}_{report.get('projekt_datum', '')}.pdf"
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
