@@ -219,10 +219,10 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     from reportlab.lib.units import mm
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    import base64
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    import base64, os
 
-    # Auth via query param (for direct download links)
     if not token:
         raise HTTPException(status_code=401, detail="Token fehlt")
     try:
@@ -237,156 +237,314 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     if not report:
         raise HTTPException(status_code=404, detail="Nicht gefunden")
 
+    # Colors
+    PURPLE = colors.HexColor("#7c3aed")
+    LIGHT_PURPLE = colors.HexColor("#f5f3ff")
+    BORDER = colors.HexColor("#d1d5db")
+    HEADER_BG = colors.HexColor("#ede9fe")
+    LIGHT_GRAY = colors.HexColor("#f9fafb")
+    DARK = colors.HexColor("#1f2937")
+
+    # Styles
+    s_title = ParagraphStyle("T", fontSize=18, fontName="Helvetica-Bold", textColor=PURPLE, alignment=TA_LEFT, spaceAfter=2)
+    s_subtitle = ParagraphStyle("ST", fontSize=8, textColor=colors.grey, alignment=TA_LEFT)
+    s_h2 = ParagraphStyle("H2", fontSize=10, fontName="Helvetica-Bold", textColor=PURPLE, spaceBefore=8, spaceAfter=3)
+    s_label = ParagraphStyle("L", fontSize=7.5, textColor=colors.HexColor("#6b7280"), fontName="Helvetica")
+    s_value = ParagraphStyle("V", fontSize=8.5, textColor=DARK, fontName="Helvetica")
+    s_small = ParagraphStyle("SM", fontSize=7, textColor=colors.grey)
+    s_cell = ParagraphStyle("C", fontSize=7.5, textColor=DARK, leading=9)
+    s_cell_bold = ParagraphStyle("CB", fontSize=7.5, textColor=DARK, fontName="Helvetica-Bold", leading=9)
+    s_footer = ParagraphStyle("F", fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+    s_confirm = ParagraphStyle("CF", fontSize=6.5, textColor=DARK, leading=8)
+
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("Title2", parent=styles["Heading1"], fontSize=16, spaceAfter=6)
-    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontSize=11, spaceAfter=4, spaceBefore=10, textColor=colors.HexColor("#a21caf"))
-    normal = ParagraphStyle("Normal2", parent=styles["Normal"], fontSize=9, leading=12)
-    small = ParagraphStyle("Small", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.grey)
-
+    pw, ph = A4
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
+    W = pw - 24*mm
     elems = []
-    elems.append(Paragraph("Projektbericht", title_style))
-    elems.append(Paragraph(f"Nr. {report.get('projektnummer', '')} | Datum: {report.get('projekt_datum', '')}", small))
-    elems.append(Spacer(1, 4*mm))
 
-    # Kundendaten
-    elems.append(Paragraph("Kundendaten", h2))
-    kd = [
-        ["Anrede:", report.get("anrede", "")],
-        ["Name/Firma:", report.get("kunde_name", "")],
-        ["Ansprechpartner:", report.get("kunde_ansprechpartner", "")],
-        ["Anschrift:", report.get("kunde_anschrift", "")],
-        ["PLZ / Ort:", f"{report.get('kunde_plz', '')} {report.get('kunde_ort', '')}"],
-        ["Telefon:", report.get("kunde_telefon", "")],
+    ma_list = report.get("mitarbeiter", [])
+
+    # ── HEADER: Logo + Title ──
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "logo.png")
+    header_data = [[Paragraph("Projektbericht", s_title), ""]]
+    if os.path.exists(logo_path):
+        logo = RLImage(logo_path, width=45*mm, height=10.5*mm)
+        header_data = [[Paragraph("Projektbericht", s_title), logo]]
+    ht = Table(header_data, colWidths=[W - 50*mm, 50*mm])
+    ht.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+    ]))
+    elems.append(ht)
+    elems.append(Spacer(1, 1*mm))
+
+    # ── CUSTOMER + PROJECT INFO (2-column) ──
+    left_data = [
+        [Paragraph("Auftrag-/Liefer-/Reparaturanschrift:", s_label), ""],
+        [Paragraph("Firma:", s_label), Paragraph(report.get("kunde_name", ""), s_value)],
+        [Paragraph("Anschrift:", s_label), Paragraph(report.get("kunde_anschrift", ""), s_value)],
+        [Paragraph("PLZ / Ort:", s_label), Paragraph(f"{report.get('kunde_plz', '')} {report.get('kunde_ort', '')}", s_value)],
+        [Paragraph("Telefon:", s_label), Paragraph(report.get("kunde_telefon", ""), s_value)],
+        [Paragraph("Ansprechpartner:", s_label), Paragraph(report.get("kunde_ansprechpartner", ""), s_value)],
     ]
-    t = Table(kd, colWidths=[35*mm, 140*mm])
-    t.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("TEXTCOLOR", (0, 0), (0, -1), colors.grey),
+    lt = Table(left_data, colWidths=[25*mm, 60*mm])
+    lt.setStyle(TableStyle([
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("LINEBELOW", (1, 1), (1, -1), 0.5, BORDER),
+    ]))
+
+    # Right: Mitarbeiter + Projekt-Nr
+    ma_rows = []
+    for i, m in enumerate(ma_list):
+        rolle = m.get("rolle", "")
+        name = m.get("name", "")
+        typ_label = "" if m.get("is_user", True) else " (ext.)"
+        ma_rows.append([Paragraph(f"{i+1}.", s_label), Paragraph(f"{name}{typ_label}", s_value), Paragraph(rolle, s_label)])
+    if not ma_rows:
+        ma_rows.append(["", Paragraph("—", s_value), ""])
+    ma_header = [[Paragraph("Nr.", s_label), Paragraph("<b>Mitarbeiter:</b>", s_label), Paragraph("Rolle", s_label)]]
+    ma_all = ma_header + ma_rows
+    rt = Table(ma_all, colWidths=[8*mm, 55*mm, 12*mm])
+    rt.setStyle(TableStyle([
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, PURPLE),
+    ]))
+
+    # Combine left + right
+    info_table = Table([[lt, rt]], colWidths=[W * 0.48, W * 0.52])
+    info_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    elems.append(info_table)
+    elems.append(Spacer(1, 1*mm))
+
+    # Project number line
+    pn_data = [[
+        Paragraph("Projektnummer:", s_label),
+        Paragraph(f"<b>{report.get('projektnummer', '')}</b>", s_value),
+        Paragraph("am:", s_label),
+        Paragraph(report.get("projekt_datum", ""), s_value),
+        Paragraph("Rollen: PL=Projektleiter ME=Meister T=Techniker H=Helfer", s_label),
+    ]]
+    pnt = Table(pn_data, colWidths=[22*mm, 25*mm, 8*mm, 20*mm, W - 75*mm])
+    pnt.setStyle(TableStyle([
+        ("LINEBELOW", (1, 0), (1, 0), 0.5, BORDER),
+        ("LINEBELOW", (3, 0), (3, 0), 0.5, BORDER),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
-    elems.append(t)
+    elems.append(pnt)
+    elems.append(Spacer(1, 3*mm))
 
-    # Mitarbeiter
-    ma_list = report.get("mitarbeiter", [])
-    if ma_list:
-        elems.append(Paragraph("Mitarbeiter", h2))
-        ma_data = [["Name", "Rolle", "Typ"]]
-        for m in ma_list:
-            typ = "Mitarbeiter" if m.get("is_user", True) else "Ext. Personal"
-            ma_data.append([m.get("name", ""), m.get("rolle", ""), typ])
-        t = Table(ma_data, colWidths=[70*mm, 30*mm, 40*mm])
-        t.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3e8ff")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ]))
-        elems.append(t)
+    # ── ARBEITSPROTOKOLL TABLE ──
+    elems.append(Paragraph("Arbeitsprotokoll", s_h2))
 
-    # Arbeitsprotokoll
+    num_ma = len(ma_list) if ma_list else 1
+    # Build header: Datum | Arbeitsbeschreibung | Lohn: N/E/NO per employee
+    hdr1 = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Arbeitsbeschreibung</b>", s_cell_bold)]
+    hdr2 = ["", ""]
+    for i, m in enumerate(ma_list or [{"name": "MA 1"}]):
+        short = m.get("name", f"MA {i+1}")
+        if len(short) > 12:
+            short = short[:12] + "."
+        hdr1.append(Paragraph(f"<b>{short}</b>", ParagraphStyle("MH", fontSize=6.5, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE)))
+        hdr1.append("")
+        hdr1.append("")
+        hdr2.append(Paragraph("N", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
+        hdr2.append(Paragraph("E", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=grey if (grey := colors.grey) else colors.grey)))
+        hdr2.append(Paragraph("NO", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
+
+    date_w = 18*mm
+    desc_w = max(W - date_w - num_ma * 3 * 10*mm, 30*mm)
+    hr_w = (W - date_w - desc_w) / max(num_ma * 3, 1)
+    col_widths = [date_w, desc_w] + [hr_w] * (num_ma * 3)
+
+    rows = [hdr1, hdr2]
     wl = report.get("work_log", [])
-    if wl:
-        elems.append(Paragraph("Arbeitsprotokoll", h2))
-        for entry in wl:
-            elems.append(Paragraph(f"<b>{entry.get('datum', '')}</b>", normal))
-            desc = (entry.get("beschreibung", "") or "").replace("\n", "<br/>")
-            elems.append(Paragraph(desc, normal))
-            stunden = entry.get("stunden", {})
-            if stunden and ma_list:
-                hrs_data = [["Person", "N", "E", "NO"]]
-                for idx_str, vals in stunden.items():
-                    idx = int(idx_str) if idx_str.isdigit() else 0
-                    name = ma_list[idx]["name"] if idx < len(ma_list) else f"#{idx}"
-                    hrs_data.append([name, vals.get("N", 0), vals.get("E", 0), vals.get("NO", 0)])
-                t = Table(hrs_data, colWidths=[60*mm, 20*mm, 20*mm, 20*mm])
-                t.setStyle(TableStyle([
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f9fafb")),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ]))
-                elems.append(t)
-            elems.append(Spacer(1, 2*mm))
+    for entry in wl:
+        row = [
+            Paragraph(entry.get("datum", ""), s_cell),
+            Paragraph((entry.get("beschreibung", "") or "").replace("\n", "<br/>"), s_cell),
+        ]
+        stunden = entry.get("stunden", {})
+        for emp_idx in range(num_ma):
+            emp_hrs = stunden.get(str(emp_idx), {})
+            for t in ["N", "E", "NO"]:
+                val = emp_hrs.get(t, "")
+                if val and val != 0 and val != "0":
+                    row.append(Paragraph(str(val), ParagraphStyle("HV", fontSize=7, alignment=TA_CENTER, textColor=DARK)))
+                else:
+                    row.append("")
+        rows.append(row)
 
-    # Material
-    mat = report.get("material", [])
-    if mat:
-        elems.append(Paragraph("Material / Artikel", h2))
-        mat_data = [["Pos", "Material", "Vorber.", "Verarb.", "Bestell."]]
-        for m in mat:
-            mat_data.append([m.get("pos", ""), m.get("material", ""), m.get("vorbereitung", ""), m.get("verarbeitet", ""), m.get("bestellung", "")])
-        t = Table(mat_data, colWidths=[12*mm, 80*mm, 25*mm, 25*mm, 25*mm])
-        t.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fef3c7")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ]))
-        elems.append(t)
+    # Add empty rows to fill the table if < 8
+    for _ in range(max(0, 8 - len(wl))):
+        rows.append(["", ""] + [""] * (num_ma * 3))
 
-    # Fahrzeuge
-    fz = report.get("fahrzeuge", [])
-    if fz:
-        elems.append(Paragraph("Fahrzeuge", h2))
-        fz_data = [["Typ", "KM", "Stunden"]]
-        for f in fz:
-            fz_data.append([f.get("typ", ""), f.get("km", 0), f.get("stunden", 0)])
-        t = Table(fz_data, colWidths=[60*mm, 30*mm, 30*mm])
-        t.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dbeafe")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ]))
-        elems.append(t)
+    wt = Table(rows, colWidths=col_widths, repeatRows=2)
 
-    # Bemerkungen
+    # Merge employee name headers (span 3 cols each)
+    merge_cmds = []
+    for i in range(num_ma):
+        col_start = 2 + i * 3
+        merge_cmds.append(("SPAN", (col_start, 0), (col_start + 2, 0)))
+
+    wt.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("BACKGROUND", (0, 0), (-1, 1), HEADER_BG),
+        ("BACKGROUND", (0, 2), (0, -1), LIGHT_GRAY),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("ALIGN", (2, 2), (-1, -1), "CENTER"),
+        ("ROWHEIGHTS", (0, 2), (-1, -1), 14*mm),
+    ] + merge_cmds))
+    elems.append(wt)
+    elems.append(Spacer(1, 2*mm))
+
+    # ── BEMERKUNGEN ──
     bem = report.get("bemerkungen", "")
-    if bem:
-        elems.append(Paragraph("Bemerkungen", h2))
-        elems.append(Paragraph(bem.replace("\n", "<br/>"), normal))
+    elems.append(Paragraph("Projektbesprechung, besondere Vorkommnisse, Behinderungen, Verluste, Beschaedigungen:", s_label))
+    bem_data = [[Paragraph(bem.replace("\n", "<br/>") if bem else " ", s_cell)]]
+    bt = Table(bem_data, colWidths=[W])
+    bt.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("MINROWHEIGHT", (0, 0), (-1, -1), 15*mm),
+    ]))
+    elems.append(bt)
+    elems.append(Spacer(1, 3*mm))
 
+    # ── MATERIAL TABLE ──
+    mat = report.get("material", [])
+    elems.append(Paragraph("Material / Artikel", s_h2))
+    mat_hdr = [
+        Paragraph("<b>Pos.</b>", s_cell_bold),
+        Paragraph("<b>Material, Artikel</b>", s_cell_bold),
+        Paragraph("<b>Vorbereitung</b>", s_cell_bold),
+        Paragraph("<b>Verarbeitet</b>", s_cell_bold),
+        Paragraph("<b>Bestellung</b>", s_cell_bold),
+    ]
+    mat_rows = [mat_hdr]
+    for m in mat:
+        mat_rows.append([
+            Paragraph(str(m.get("pos", "")), s_cell),
+            Paragraph(m.get("material", ""), s_cell),
+            Paragraph(str(m.get("vorbereitung", "")), s_cell),
+            Paragraph(str(m.get("verarbeitet", "")), s_cell),
+            Paragraph(str(m.get("bestellung", "")), s_cell),
+        ])
+    for _ in range(max(0, 5 - len(mat))):
+        mat_rows.append(["", "", "", "", ""])
+    mt = Table(mat_rows, colWidths=[12*mm, W - 12*mm - 75*mm, 25*mm, 25*mm, 25*mm])
+    mt.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    elems.append(mt)
+    elems.append(Spacer(1, 3*mm))
+
+    # ── FAHRZEUGE ──
+    fz = report.get("fahrzeuge", [])
+    elems.append(Paragraph("Fahrzeuge / Geraete", s_h2))
+    fz_hdr = [
+        Paragraph("<b>Typ</b>", s_cell_bold),
+        Paragraph("<b>KM einf. Strecke</b>", s_cell_bold),
+        Paragraph("<b>Stunden</b>", s_cell_bold),
+    ]
+    fz_rows = [fz_hdr]
+    for f in fz:
+        fz_rows.append([
+            Paragraph(f.get("typ", ""), s_cell),
+            Paragraph(str(f.get("km", "")), s_cell),
+            Paragraph(str(f.get("stunden", "")), s_cell),
+        ])
+    for _ in range(max(0, 3 - len(fz))):
+        fz_rows.append(["", "", ""])
+    ft = Table(fz_rows, colWidths=[W * 0.5, W * 0.25, W * 0.25])
+    ft.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    elems.append(ft)
+    elems.append(Spacer(1, 3*mm))
+
+    # ── UEBERNACHTUNG ──
     ueb = report.get("uebernachtung_zeitraum", "")
-    if ueb:
-        elems.append(Paragraph(f"Uebernachtung: {ueb} ({report.get('uebernachtung_naechte', 0)} Naechte)", small))
+    naechte = report.get("uebernachtung_naechte", 0)
+    if ueb or naechte:
+        ub_data = [[
+            Paragraph("Uebernachtung:", s_label),
+            Paragraph(ueb, s_value),
+            Paragraph("Naechte:", s_label),
+            Paragraph(str(naechte), s_value),
+        ]]
+        ubt = Table(ub_data, colWidths=[22*mm, W * 0.4, 15*mm, 20*mm])
+        ubt.setStyle(TableStyle([
+            ("LINEBELOW", (1, 0), (1, 0), 0.5, BORDER),
+            ("LINEBELOW", (3, 0), (3, 0), 0.5, BORDER),
+        ]))
+        elems.append(ubt)
+        elems.append(Spacer(1, 3*mm))
 
-    # Signatures
-    elems.append(Spacer(1, 6*mm))
-    sig_data = []
-    for label, key in [("Techniker", "unterschrift_techniker"), ("Kunde", "unterschrift_kunde")]:
+    # ── HINWEIS (AW explanation) ──
+    aw_data = [[
+        Paragraph("Hinweis:", s_label),
+        Paragraph("1 AW = 10 Min | 6 AW = 1 Std. | 0,25 = 1/4 Std. | 1,0 = 1 Std.", s_small),
+    ]]
+    awt = Table(aw_data, colWidths=[15*mm, W - 15*mm])
+    elems.append(awt)
+    elems.append(Spacer(1, 4*mm))
+
+    # ── SIGNATURES ──
+    sig_left_content = [Paragraph("Hiermit bestaetige ich die ordnungsgemaesse Ausfuehrung der Arbeiten und die Korrektheit der gemachten Angaben.", s_confirm)]
+    sig_right_content = [Paragraph("Hiermit bestaetige ich die maengelfreie Ausfuehrung der Arbeiten und die Korrektheit der gemachten Angaben.", s_confirm)]
+
+    for label, key, target in [("Techniker", "unterschrift_techniker", sig_left_content), ("Kunde", "unterschrift_kunde", sig_right_content)]:
         sig = report.get(key)
         if sig and sig.startswith("data:image"):
             try:
                 b64 = sig.split(",", 1)[1]
                 img_buf = io.BytesIO(base64.b64decode(b64))
-                img = RLImage(img_buf, width=50*mm, height=20*mm)
-                sig_data.append([f"{label}:", img])
+                target.append(Spacer(1, 2*mm))
+                target.append(RLImage(img_buf, width=45*mm, height=18*mm))
             except Exception:
-                sig_data.append([f"{label}:", "(Unterschrift vorhanden)"])
+                target.append(Paragraph("(Unterschrift vorhanden)", s_small))
         else:
-            sig_data.append([f"{label}:", "(nicht unterschrieben)"])
+            target.append(Spacer(1, 15*mm))
 
-    if sig_data:
-        elems.append(Paragraph("Unterschriften", h2))
-        t = Table(sig_data, colWidths=[30*mm, 60*mm])
-        t.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("TEXTCOLOR", (0, 0), (0, -1), colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        elems.append(t)
+    sig_left_content.append(Paragraph("_" * 40, s_small))
+    sig_left_content.append(Paragraph("Datum, Techniker", s_label))
+    sig_right_content.append(Paragraph("_" * 40, s_small))
+    sig_right_content.append(Paragraph("Datum, Unterschrift Kunde / Bauherr / Bauleiter", s_label))
 
+    sig_left_table = Table([[c] for c in sig_left_content], colWidths=[W * 0.47])
+    sig_right_table = Table([[c] for c in sig_right_content], colWidths=[W * 0.47])
+
+    sig_combined = Table([[sig_left_table, sig_right_table]], colWidths=[W * 0.5, W * 0.5])
+    sig_combined.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    elems.append(sig_combined)
+
+    # Footer
     elems.append(Spacer(1, 4*mm))
-    elems.append(Paragraph(f"Erstellt von: {report.get('created_by', '')} | {report.get('created_at', '')[:16]}", small))
+    elems.append(Paragraph(f"Erstellt von: {report.get('created_by', '')} | {report.get('created_at', '')[:16]} | EVENTENERGIE DEUTSCHLAND | 0800 POWER24", s_footer))
 
     doc.build(elems)
     buf.seek(0)
