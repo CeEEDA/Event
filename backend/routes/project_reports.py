@@ -336,18 +336,21 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     elems.append(info_table)
     elems.append(Spacer(1, 1*mm))
 
-    # Project number line
+    # Project number + Bezeichnung line
+    order_name = report.get("order_name", "")
     pn_data = [[
+        Paragraph("Projektbezeichnung:", s_label),
+        Paragraph(f"<b>{order_name}</b>", s_value),
         Paragraph("Projektnummer:", s_label),
         Paragraph(f"<b>{report.get('projektnummer', '')}</b>", s_value),
         Paragraph("am:", s_label),
         Paragraph(report.get("projekt_datum", ""), s_value),
-        Paragraph("PL=Projektleiter ME=Meister T=Techniker H=Helfer", s_small),
     ]]
-    pnt = Table(pn_data, colWidths=[28*mm, 25*mm, 8*mm, 22*mm, W - 83*mm])
+    pnt = Table(pn_data, colWidths=[28*mm, W - 28*mm - 28*mm - 25*mm - 8*mm - 22*mm, 28*mm, 25*mm, 8*mm, 22*mm])
     pnt.setStyle(TableStyle([
         ("LINEBELOW", (1, 0), (1, 0), 0.5, BORDER),
         ("LINEBELOW", (3, 0), (3, 0), 0.5, BORDER),
+        ("LINEBELOW", (5, 0), (5, 0), 0.5, BORDER),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
     elems.append(pnt)
