@@ -923,10 +923,6 @@ function TextbausteineSection() {
       <div className="p-5 space-y-4">
         {/* Add new */}
         <div className="flex items-end gap-2 flex-wrap" data-testid="add-template-form">
-          <div className="w-28">
-            <Label className="text-xs text-gray-500">Kategorie</Label>
-            <Input value={newKategorie} onChange={e => setNewKategorie(e.target.value)} placeholder="z.B. Elektro" className="mt-0.5 h-8 text-sm" data-testid="new-template-kategorie" />
-          </div>
           <div className="w-48">
             <Label className="text-xs text-gray-500">Bezeichnung</Label>
             <Input value={newBezeichnung} onChange={e => setNewBezeichnung(e.target.value)} placeholder="Kurzname" className="mt-0.5 h-8 text-sm" data-testid="new-template-bezeichnung" />
@@ -952,7 +948,6 @@ function TextbausteineSection() {
               <div key={t.id} className="px-3 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors" data-testid={`template-${t.id}`}>
                 {editingId === t.id ? (
                   <>
-                    <Input value={editKategorie} onChange={e => setEditKategorie(e.target.value)} className="w-24 h-7 text-xs" placeholder="Kategorie" />
                     <Input value={editBezeichnung} onChange={e => setEditBezeichnung(e.target.value)} className="w-36 h-7 text-xs" placeholder="Bezeichnung" />
                     <Input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 h-7 text-xs" placeholder="Text"
                       onKeyDown={e => e.key === "Enter" && handleUpdate(t.id)} />
@@ -963,7 +958,6 @@ function TextbausteineSection() {
                   </>
                 ) : (
                   <>
-                    {t.kategorie && <span className="text-[10px] px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700 font-medium shrink-0">{t.kategorie}</span>}
                     <span className="text-sm font-medium text-gray-900 shrink-0">{t.bezeichnung || "—"}</span>
                     <span className="text-xs text-gray-400 mx-1">→</span>
                     <span className="flex-1 text-sm text-gray-500 truncate">{t.text}</span>
