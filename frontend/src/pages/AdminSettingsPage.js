@@ -862,9 +862,11 @@ function TextbausteineSection() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newText, setNewText] = useState("");
+  const [newBezeichnung, setNewBezeichnung] = useState("");
   const [newKategorie, setNewKategorie] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [editBezeichnung, setEditBezeichnung] = useState("");
   const [editKategorie, setEditKategorie] = useState("");
 
   const load = useCallback(async () => {
@@ -878,10 +880,10 @@ function TextbausteineSection() {
   useEffect(() => { load(); }, [load]);
 
   const handleAdd = async () => {
-    if (!newText.trim()) return;
+    if (!newBezeichnung.trim() || !newText.trim()) { toast.error("Bezeichnung und Text sind erforderlich"); return; }
     try {
-      await api.post("/project-reports/work-templates", { text: newText.trim(), kategorie: newKategorie.trim() });
-      setNewText(""); setNewKategorie("");
+      await api.post("/project-reports/work-templates", { bezeichnung: newBezeichnung.trim(), text: newText.trim(), kategorie: newKategorie.trim() });
+      setNewBezeichnung(""); setNewText(""); setNewKategorie("");
       toast.success("Textbaustein angelegt");
       load();
     } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
@@ -889,7 +891,7 @@ function TextbausteineSection() {
 
   const handleUpdate = async (id) => {
     try {
-      await api.put(`/project-reports/work-templates/${id}`, { text: editText.trim(), kategorie: editKategorie.trim() });
+      await api.put(`/project-reports/work-templates/${id}`, { bezeichnung: editBezeichnung.trim(), text: editText.trim(), kategorie: editKategorie.trim() });
       setEditingId(null);
       toast.success("Aktualisiert");
       load();
@@ -920,14 +922,18 @@ function TextbausteineSection() {
       </div>
       <div className="p-5 space-y-4">
         {/* Add new */}
-        <div className="flex items-end gap-2" data-testid="add-template-form">
+        <div className="flex items-end gap-2 flex-wrap" data-testid="add-template-form">
           <div className="w-28">
             <Label className="text-xs text-gray-500">Kategorie</Label>
             <Input value={newKategorie} onChange={e => setNewKategorie(e.target.value)} placeholder="z.B. Elektro" className="mt-0.5 h-8 text-sm" data-testid="new-template-kategorie" />
           </div>
-          <div className="flex-1">
+          <div className="w-48">
+            <Label className="text-xs text-gray-500">Bezeichnung</Label>
+            <Input value={newBezeichnung} onChange={e => setNewBezeichnung(e.target.value)} placeholder="Kurzname" className="mt-0.5 h-8 text-sm" data-testid="new-template-bezeichnung" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
             <Label className="text-xs text-gray-500">Text</Label>
-            <Input value={newText} onChange={e => setNewText(e.target.value)} placeholder="Textbaustein eingeben..."
+            <Input value={newText} onChange={e => setNewText(e.target.value)} placeholder="Fertiger Text der eingefuegt wird..."
               className="mt-0.5 h-8 text-sm" onKeyDown={e => e.key === "Enter" && handleAdd()} data-testid="new-template-text" />
           </div>
           <Button size="sm" onClick={handleAdd} className="h-8 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="add-template-btn">
@@ -947,7 +953,8 @@ function TextbausteineSection() {
                 {editingId === t.id ? (
                   <>
                     <Input value={editKategorie} onChange={e => setEditKategorie(e.target.value)} className="w-24 h-7 text-xs" placeholder="Kategorie" />
-                    <Input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 h-7 text-xs"
+                    <Input value={editBezeichnung} onChange={e => setEditBezeichnung(e.target.value)} className="w-36 h-7 text-xs" placeholder="Bezeichnung" />
+                    <Input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 h-7 text-xs" placeholder="Text"
                       onKeyDown={e => e.key === "Enter" && handleUpdate(t.id)} />
                     <Button size="sm" onClick={() => handleUpdate(t.id)} className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white">
                       <Save className="w-3 h-3" />
@@ -957,8 +964,10 @@ function TextbausteineSection() {
                 ) : (
                   <>
                     {t.kategorie && <span className="text-[10px] px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700 font-medium shrink-0">{t.kategorie}</span>}
-                    <span className="flex-1 text-sm text-gray-700 truncate">{t.text}</span>
-                    <button onClick={() => { setEditingId(t.id); setEditText(t.text); setEditKategorie(t.kategorie || ""); }}
+                    <span className="text-sm font-medium text-gray-900 shrink-0">{t.bezeichnung || "—"}</span>
+                    <span className="text-xs text-gray-400 mx-1">→</span>
+                    <span className="flex-1 text-sm text-gray-500 truncate">{t.text}</span>
+                    <button onClick={() => { setEditingId(t.id); setEditBezeichnung(t.bezeichnung || ""); setEditText(t.text); setEditKategorie(t.kategorie || ""); }}
                       className="text-gray-400 hover:text-fuchsia-600 p-1" data-testid={`edit-template-${t.id}`}>
                       <Pencil className="w-3.5 h-3.5" />
                     </button>

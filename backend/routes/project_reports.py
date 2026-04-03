@@ -101,10 +101,12 @@ class ProjectReportUpdate(BaseModel):
     unterschrift_kunde: Optional[str] = None
 
 class WorkTemplateCreate(BaseModel):
+    bezeichnung: str
     text: str
     kategorie: Optional[str] = ""
 
 class WorkTemplateUpdate(BaseModel):
+    bezeichnung: Optional[str] = None
     text: Optional[str] = None
     kategorie: Optional[str] = None
     sort_order: Optional[int] = None
@@ -173,6 +175,7 @@ async def create_work_template(data: WorkTemplateCreate, user: dict = Depends(_r
     count = await _db.work_templates.count_documents({})
     doc = {
         "id": tid,
+        "bezeichnung": data.bezeichnung,
         "text": data.text,
         "kategorie": data.kategorie or "",
         "sort_order": count,

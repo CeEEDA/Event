@@ -398,7 +398,7 @@ export default function ProjectReportFormPage() {
                         >
                           <option value="">Textbaustein einfuegen...</option>
                           {workTemplates.map(t => (
-                            <option key={t.id} value={t.text}>{t.kategorie ? `[${t.kategorie}] ` : ""}{t.text}</option>
+                            <option key={t.id} value={t.text}>{t.kategorie ? `[${t.kategorie}] ` : ""}{t.bezeichnung || t.text}</option>
                           ))}
                         </select>
                       )}
