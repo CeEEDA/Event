@@ -5,7 +5,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 
-router = APIRouter(prefix="/project-reports", tags=["Project Reports"])
+router = APIRouter(prefix="/api/project-reports", tags=["Project Reports"])
 security = HTTPBearer()
 _db = None
 _decode_jwt_token = None

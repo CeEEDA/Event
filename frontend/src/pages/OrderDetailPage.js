@@ -218,6 +218,11 @@ export default function OrderDetailPage() {
   const [gpsMapReceipt, setGpsMapReceipt] = useState(null);
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressInput, setAddressInput] = useState("");
+
+  // Projektberichte
+  const [projectReports, setProjectReports] = useState([]);
+  const [projectReportsLoading, setProjectReportsLoading] = useState(false);
+
   const { isAdmin } = useAuth();
 
   const fetchOrder = useCallback(async () => {
@@ -267,11 +272,24 @@ export default function OrderDetailPage() {
     }
   }, [pk]);
 
+  const fetchProjectReports = useCallback(async () => {
+    setProjectReportsLoading(true);
+    try {
+      const { data } = await api.get(`/project-reports/by-order/${pk}`);
+      setProjectReports(data || []);
+    } catch {
+      // silent
+    } finally {
+      setProjectReportsLoading(false);
+    }
+  }, [pk]);
+
   useEffect(() => {
     fetchOrder();
     fetchAssets();
     fetchFuelReceipts();
-  }, [fetchOrder, fetchAssets, fetchFuelReceipts]);
+    fetchProjectReports();
+  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports]);
 
   useEffect(() => {
     if (order?.center_lat) fetchGenerators();
@@ -396,6 +414,15 @@ export default function OrderDetailPage() {
   const downloadAllPdfs = () => {
     const token = localStorage.getItem("token");
     window.open(`${BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`, "_blank");
+  };
+
+  const deleteProjectReport = async (id) => {
+    if (!window.confirm("Projektbericht wirklich loeschen?")) return;
+    try {
+      await api.delete(`/project-reports/${id}`);
+      toast.success("Projektbericht geloescht");
+      fetchProjectReports();
+    } catch { toast.error("Fehler beim Loeschen"); }
   };
 
   const saveAddress = async () => {
@@ -1036,6 +1063,100 @@ export default function OrderDetailPage() {
                         </button>
                         {isAdmin && (
                           <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Loeschen" data-testid={`fuel-delete-${r.id}`}>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Projektberichte Section */}
+          <div className="bg-white rounded-lg border border-gray-200" data-testid="project-reports-section">
+            <div className="p-4 border-b border-gray-100">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-fuchsia-500" />
+                  Projektberichte
+                  {projectReportsLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                </h2>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                  onClick={() => navigate(`/project-report/new?order_pk=${pk}&order_name=${encodeURIComponent(`${order?.order_no || ""} - ${order?.event || order?.contact_name || ""}`)}`)}
+                  data-testid="add-project-report-btn"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Neuer Bericht
+                </Button>
+              </div>
+            </div>
+
+            {projectReports.length === 0 && !projectReportsLoading ? (
+              <div className="p-8 text-center text-gray-400">
+                <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Keine Projektberichte fuer diesen Auftrag</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {projectReports.map((r) => (
+                  <div key={r.id} className="p-4 hover:bg-fuchsia-50/30 transition-colors" data-testid={`project-report-${r.id}`}>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-fuchsia-100 text-fuchsia-700">
+                            Projektbericht
+                          </span>
+                          {r.projektnummer && <span className="text-xs text-gray-400 font-mono">Nr. {r.projektnummer}</span>}
+                          <span className="text-xs text-gray-400">{r.projekt_datum}</span>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {r.kunde_name || "Kein Kunde"} {r.kunde_ort ? `- ${r.kunde_ort}` : ""}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                          {r.mitarbeiter?.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              {r.mitarbeiter.map(m => m.name).filter(Boolean).join(", ") || "Keine MA"}
+                            </span>
+                          )}
+                          {r.work_log?.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {r.work_log.length} Eintraege
+                            </span>
+                          )}
+                          <span>erstellt von {r.created_by}</span>
+                          {r.unterschrift_kunde && <span className="text-emerald-600">Kunde unterschrieben</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => navigate(`/project-report/${r.id}`)}
+                          className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
+                          title="Bearbeiten"
+                          data-testid={`report-edit-${r.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        {r.unterschrift_kunde && (
+                          <button
+                            onClick={() => navigate(`/project-report/${r.id}`)}
+                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600"
+                            title="Ansehen"
+                            data-testid={`report-view-${r.id}`}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button
+                            onClick={() => deleteProjectReport(r.id)}
+                            className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400"
+                            title="Loeschen"
+                            data-testid={`report-delete-${r.id}`}
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}

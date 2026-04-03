@@ -28,6 +28,7 @@ import SchaustellerAnmeldungPage from "./pages/SchaustellerAnmeldungPage";
 import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
 import MeterDiagnosticsPage from "./pages/MeterDiagnosticsPage";
+import ProjectReportFormPage from "./pages/ProjectReportFormPage";
 import FinancePage from "./pages/FinancePage";
 import "./App.css";
 
@@ -285,6 +286,22 @@ function AppRoutes() {
         }
       />
       <Route path="/share/:token" element={<SharedFilePage />} />
+      <Route
+        path="/project-report/new"
+        element={
+          <ProtectedRoute>
+            <ProjectReportFormPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/project-report/:reportId"
+        element={
+          <ProtectedRoute>
+            <ProjectReportFormPage />
+          </ProtectedRoute>
+        }
+      />
       {/* Redirect old dashboard route */}
       <Route path="/dashboard" element={<Navigate to="/hub" replace />} />
     </Routes>
