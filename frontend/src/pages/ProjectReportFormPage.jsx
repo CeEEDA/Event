@@ -108,15 +108,37 @@ export default function ProjectReportFormPage() {
       try {
         const { data } = await api.get(`/orders/epirent/${orderPk}`);
         if (data) {
+          // Parse address string if structured fields are empty
+          let street = data.contact_street || data.address_raw?.street || "";
+          let plz = data.contact_postal_code || data.address_raw?.postal_code || "";
+          let city = data.contact_city || data.address_raw?.city || "";
+          
+          // Fallback: parse from combined address string "Street, PLZ City"
+          if (!street && !plz && data.address) {
+            const parts = data.address.split(",").map(p => p.trim());
+            if (parts.length >= 2) {
+              street = parts[0];
+              const plzCity = parts[parts.length - 1].match(/^(\d{5})\s+(.+)$/);
+              if (plzCity) {
+                plz = plzCity[1];
+                city = plzCity[2];
+              } else {
+                city = parts[parts.length - 1];
+              }
+            } else {
+              street = data.address;
+            }
+          }
+
           setForm(f => ({
             ...f,
-            kunde_name: data.customer_name || data.name || "",
-            kunde_anschrift: data.customer_street || data.location || "",
-            kunde_plz: data.customer_zip || "",
-            kunde_ort: data.customer_city || "",
-            kunde_telefon: data.customer_phone || "",
-            kunde_ansprechpartner: data.customer_contact || "",
-            projektnummer: data.pk || orderPk,
+            kunde_name: data.contact_name || "",
+            kunde_anschrift: street,
+            kunde_plz: plz,
+            kunde_ort: city,
+            kunde_telefon: data.contact_phone || "",
+            kunde_ansprechpartner: data.contact_name || "",
+            projektnummer: String(data.primary_key || orderPk),
           }));
         }
       } catch { /* silent */ }

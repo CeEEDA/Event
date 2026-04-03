@@ -500,6 +500,30 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
         addr_raw = raw.get("address_delivery") or {}
         address_str = _format_delivery_address(addr_raw)
 
+        # Fetch contact details (phone, email, address) from EpiRent
+        contact_details = {"phone": "", "email": "", "street": "", "postal_code": "", "city": ""}
+        contact_pk = contact.get("primary_key")
+        if contact_pk:
+            try:
+                config_c = await _get_epirent_config()
+                c_headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": config_c.get("api_key", "")}
+                async with httpx.AsyncClient(timeout=10, verify=not ssl_skip) as c:
+                    c_resp = await c.get(f"{api_url}/v1/contact/{contact_pk}", headers=c_headers)
+                    c_data = c_resp.json()
+                    c_payload = c_data.get("payload")
+                    if isinstance(c_payload, list) and len(c_payload) > 0:
+                        c_payload = c_payload[0]
+                    if isinstance(c_payload, dict):
+                        contact_details["phone"] = c_payload.get("phone", "") or c_payload.get("phone_mobile", "") or ""
+                        contact_details["email"] = c_payload.get("email", "") or ""
+                        c_addr = c_payload.get("address")
+                        if isinstance(c_addr, dict):
+                            contact_details["street"] = c_addr.get("street", "") or ""
+                            contact_details["postal_code"] = c_addr.get("postal_code", "") or ""
+                            contact_details["city"] = c_addr.get("city", "") or ""
+            except Exception:
+                pass
+
         # Check for manual address override
         override = await _db.order_address_overrides.find_one({"order_pk": str(order_pk)}, {"_id": 0})
         address_manual = False
@@ -591,6 +615,11 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
             "center_lat": center_lat,
             "center_lng": center_lng,
             "radius_km": radius_km,
+            "contact_phone": contact_details.get("phone", ""),
+            "contact_email": contact_details.get("email", ""),
+            "contact_street": contact_details.get("street", ""),
+            "contact_postal_code": contact_details.get("postal_code", ""),
+            "contact_city": contact_details.get("city", ""),
         }
 
     except HTTPException:
