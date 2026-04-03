@@ -1102,7 +1102,8 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
 
 import os as _os
 import uuid as _uuid
-from fastapi import UploadFile, File, Request
+import re as _re
+from fastapi import UploadFile, File, Request, Form
 from fastapi.responses import Response
 
 _ALLOWED_DOC_TYPES = {
@@ -1112,8 +1113,21 @@ _ALLOWED_DOC_TYPES = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
+_VALID_KATEGORIEN = ["messprotokolle", "plaene", "fotos", "sonstiges"]
 _ORDER_DOC_STORAGE = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "storage", "order_documents")
 _os.makedirs(_ORDER_DOC_STORAGE, exist_ok=True)
+
+
+def _detect_kategorie(filename: str, content_type: str) -> str:
+    """Auto-detect document category based on filename and content type."""
+    if content_type.startswith("image/"):
+        return "fotos"
+    name_lower = (filename or "").lower()
+    if _re.search(r"mess|protokoll|pru[eü]f|test|messung|abnahme|zertifikat", name_lower):
+        return "messprotokolle"
+    if _re.search(r"plan|lage|schema|zeichnung|grundriss|skizze|layout|aufbau", name_lower):
+        return "plaene"
+    return "sonstiges"
 
 
 async def _auth_user_from_token(token: str = None, request: Request = None):
@@ -1136,7 +1150,7 @@ async def _auth_user_from_token(token: str = None, request: Request = None):
 
 
 @router.post("/order-documents/{order_pk}")
-async def upload_order_document(order_pk: str, file: UploadFile = File(...), credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def upload_order_document(order_pk: str, file: UploadFile = File(...), kategorie: str = Form(None), credentials: HTTPAuthorizationCredentials = Depends(security)):
     payload = _decode_jwt_token(credentials.credentials)
     user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
     if not user:
@@ -1149,6 +1163,10 @@ async def upload_order_document(order_pk: str, file: UploadFile = File(...), cre
     content = await file.read()
     if len(content) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Datei zu gross (max. 20 MB)")
+
+    # Auto-detect or use provided kategorie
+    detected = _detect_kategorie(file.filename or "", ct)
+    final_kat = kategorie if kategorie and kategorie in _VALID_KATEGORIEN else detected
 
     doc_id = str(_uuid.uuid4())
     ext = _ALLOWED_DOC_TYPES[ct]
@@ -1167,12 +1185,13 @@ async def upload_order_document(order_pk: str, file: UploadFile = File(...), cre
         "original_name": file.filename or "Dokument",
         "content_type": ct,
         "size": len(content),
+        "kategorie": final_kat,
         "uploaded_by": user.get("name", user.get("email", "")),
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
     }
     await _db.order_documents.insert_one(doc)
 
-    return {"id": doc_id, "original_name": doc["original_name"], "message": "Dokument hochgeladen"}
+    return {"id": doc_id, "original_name": doc["original_name"], "kategorie": final_kat, "detected": detected, "message": "Dokument hochgeladen"}
 
 
 @router.get("/order-documents/{order_pk}")
@@ -1185,6 +1204,27 @@ async def list_order_documents(order_pk: str, credentials: HTTPAuthorizationCred
         {"order_pk": order_pk}, {"_id": 0}
     ).sort("uploaded_at", -1).to_list(200)
     return docs
+
+
+@router.put("/order-documents/{order_pk}/{doc_id}")
+async def update_order_document(order_pk: str, doc_id: str, body: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401)
+
+    doc = await _db.order_documents.find_one({"id": doc_id, "order_pk": order_pk}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    update = {}
+    if "kategorie" in body and body["kategorie"] in _VALID_KATEGORIEN:
+        update["kategorie"] = body["kategorie"]
+    if not update:
+        raise HTTPException(status_code=400, detail="Keine gueltige Aenderung")
+
+    await _db.order_documents.update_one({"id": doc_id}, {"$set": update})
+    return {"message": "Dokument aktualisiert"}
 
 
 @router.get("/order-documents/{order_pk}/{doc_id}/file")
