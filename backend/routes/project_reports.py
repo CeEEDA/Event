@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
+import io
 
 router = APIRouter(prefix="/api/project-reports", tags=["Project Reports"])
 security = HTTPBearer()
@@ -211,6 +213,187 @@ async def delete_work_template(template_id: str, user: dict = Depends(_require_a
 
 # ── Single Report CRUD (dynamic /{report_id} LAST) ──
 
+@router.get("/{report_id}/pdf")
+async def get_report_pdf(report_id: str, token: str = Query(None)):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    import base64
+
+    # Auth via query param (for direct download links)
+    if not token:
+        raise HTTPException(status_code=401, detail="Token fehlt")
+    try:
+        payload = _decode_jwt_token(token)
+        user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+
+    report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("Title2", parent=styles["Heading1"], fontSize=16, spaceAfter=6)
+    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontSize=11, spaceAfter=4, spaceBefore=10, textColor=colors.HexColor("#a21caf"))
+    normal = ParagraphStyle("Normal2", parent=styles["Normal"], fontSize=9, leading=12)
+    small = ParagraphStyle("Small", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.grey)
+
+    elems = []
+    elems.append(Paragraph("Projektbericht", title_style))
+    elems.append(Paragraph(f"Nr. {report.get('projektnummer', '')} | Datum: {report.get('projekt_datum', '')}", small))
+    elems.append(Spacer(1, 4*mm))
+
+    # Kundendaten
+    elems.append(Paragraph("Kundendaten", h2))
+    kd = [
+        ["Anrede:", report.get("anrede", "")],
+        ["Name/Firma:", report.get("kunde_name", "")],
+        ["Ansprechpartner:", report.get("kunde_ansprechpartner", "")],
+        ["Anschrift:", report.get("kunde_anschrift", "")],
+        ["PLZ / Ort:", f"{report.get('kunde_plz', '')} {report.get('kunde_ort', '')}"],
+        ["Telefon:", report.get("kunde_telefon", "")],
+    ]
+    t = Table(kd, colWidths=[35*mm, 140*mm])
+    t.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    elems.append(t)
+
+    # Mitarbeiter
+    ma_list = report.get("mitarbeiter", [])
+    if ma_list:
+        elems.append(Paragraph("Mitarbeiter", h2))
+        ma_data = [["Name", "Rolle", "Typ"]]
+        for m in ma_list:
+            typ = "Mitarbeiter" if m.get("is_user", True) else "Ext. Personal"
+            ma_data.append([m.get("name", ""), m.get("rolle", ""), typ])
+        t = Table(ma_data, colWidths=[70*mm, 30*mm, 40*mm])
+        t.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3e8ff")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        elems.append(t)
+
+    # Arbeitsprotokoll
+    wl = report.get("work_log", [])
+    if wl:
+        elems.append(Paragraph("Arbeitsprotokoll", h2))
+        for entry in wl:
+            elems.append(Paragraph(f"<b>{entry.get('datum', '')}</b>", normal))
+            desc = (entry.get("beschreibung", "") or "").replace("\n", "<br/>")
+            elems.append(Paragraph(desc, normal))
+            stunden = entry.get("stunden", {})
+            if stunden and ma_list:
+                hrs_data = [["Person", "N", "E", "NO"]]
+                for idx_str, vals in stunden.items():
+                    idx = int(idx_str) if idx_str.isdigit() else 0
+                    name = ma_list[idx]["name"] if idx < len(ma_list) else f"#{idx}"
+                    hrs_data.append([name, vals.get("N", 0), vals.get("E", 0), vals.get("NO", 0)])
+                t = Table(hrs_data, colWidths=[60*mm, 20*mm, 20*mm, 20*mm])
+                t.setStyle(TableStyle([
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f9fafb")),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ]))
+                elems.append(t)
+            elems.append(Spacer(1, 2*mm))
+
+    # Material
+    mat = report.get("material", [])
+    if mat:
+        elems.append(Paragraph("Material / Artikel", h2))
+        mat_data = [["Pos", "Material", "Vorber.", "Verarb.", "Bestell."]]
+        for m in mat:
+            mat_data.append([m.get("pos", ""), m.get("material", ""), m.get("vorbereitung", ""), m.get("verarbeitet", ""), m.get("bestellung", "")])
+        t = Table(mat_data, colWidths=[12*mm, 80*mm, 25*mm, 25*mm, 25*mm])
+        t.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fef3c7")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elems.append(t)
+
+    # Fahrzeuge
+    fz = report.get("fahrzeuge", [])
+    if fz:
+        elems.append(Paragraph("Fahrzeuge", h2))
+        fz_data = [["Typ", "KM", "Stunden"]]
+        for f in fz:
+            fz_data.append([f.get("typ", ""), f.get("km", 0), f.get("stunden", 0)])
+        t = Table(fz_data, colWidths=[60*mm, 30*mm, 30*mm])
+        t.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dbeafe")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elems.append(t)
+
+    # Bemerkungen
+    bem = report.get("bemerkungen", "")
+    if bem:
+        elems.append(Paragraph("Bemerkungen", h2))
+        elems.append(Paragraph(bem.replace("\n", "<br/>"), normal))
+
+    ueb = report.get("uebernachtung_zeitraum", "")
+    if ueb:
+        elems.append(Paragraph(f"Uebernachtung: {ueb} ({report.get('uebernachtung_naechte', 0)} Naechte)", small))
+
+    # Signatures
+    elems.append(Spacer(1, 6*mm))
+    sig_data = []
+    for label, key in [("Techniker", "unterschrift_techniker"), ("Kunde", "unterschrift_kunde")]:
+        sig = report.get(key)
+        if sig and sig.startswith("data:image"):
+            try:
+                b64 = sig.split(",", 1)[1]
+                img_buf = io.BytesIO(base64.b64decode(b64))
+                img = RLImage(img_buf, width=50*mm, height=20*mm)
+                sig_data.append([f"{label}:", img])
+            except Exception:
+                sig_data.append([f"{label}:", "(Unterschrift vorhanden)"])
+        else:
+            sig_data.append([f"{label}:", "(nicht unterschrieben)"])
+
+    if sig_data:
+        elems.append(Paragraph("Unterschriften", h2))
+        t = Table(sig_data, colWidths=[30*mm, 60*mm])
+        t.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("TEXTCOLOR", (0, 0), (0, -1), colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        elems.append(t)
+
+    elems.append(Spacer(1, 4*mm))
+    elems.append(Paragraph(f"Erstellt von: {report.get('created_by', '')} | {report.get('created_at', '')[:16]}", small))
+
+    doc.build(elems)
+    buf.seek(0)
+    filename = f"Projektbericht_{report.get('projektnummer', report_id[:8])}_{report.get('projekt_datum', '')}.pdf"
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.get("/{report_id}")
 async def get_report(report_id: str, user: dict = Depends(_auth_user)):
     report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0})
@@ -221,9 +404,13 @@ async def get_report(report_id: str, user: dict = Depends(_auth_user)):
 
 @router.put("/{report_id}")
 async def update_report(report_id: str, data: ProjectReportUpdate, user: dict = Depends(_auth_user)):
-    report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0, "id": 1})
+    report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0})
     if not report:
         raise HTTPException(status_code=404, detail="Projektbericht nicht gefunden")
+
+    # Lock: once customer has signed, no more edits
+    if report.get("unterschrift_kunde"):
+        raise HTTPException(status_code=403, detail="Bericht ist gesperrt - Kunde hat bereits unterschrieben")
 
     update = {"updated_at": datetime.now(timezone.utc).isoformat()}
     for field, value in data.dict(exclude_unset=True).items():

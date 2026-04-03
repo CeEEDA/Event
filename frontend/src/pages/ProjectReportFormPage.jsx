@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import SignatureCanvas from "react-signature-canvas";
-import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck, UserPlus } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck, UserPlus, Lock, FileDown } from "lucide-react";
 
 const ROLLEN = ["PL", "ME", "T", "H"];
 const STUNDEN_TYPEN = ["N", "E", "NO"];
@@ -37,6 +37,7 @@ export default function ProjectReportFormPage() {
 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
+  const [locked, setLocked] = useState(false); // true if customer signed
 
   // Form state
   const [form, setForm] = useState({
@@ -110,6 +111,7 @@ export default function ProjectReportFormPage() {
         setFahrzeuge(data.fahrzeuge?.length ? data.fahrzeuge : [emptyVehicle()]);
         setSigTechData(data.unterschrift_techniker);
         setSigKundeData(data.unterschrift_kunde);
+        if (data.unterschrift_kunde) setLocked(true);
       } catch {
         toast.error("Projektbericht nicht gefunden");
         navigate(-1);
@@ -227,14 +229,36 @@ export default function ProjectReportFormPage() {
               {isEdit ? "Projektbericht bearbeiten" : "Neuer Projektbericht"}
             </h1>
           </div>
-          <Button onClick={handleSave} disabled={saving} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-report-btn">
-            {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
-            Speichern
-          </Button>
+          <div className="flex items-center gap-2">
+            {isEdit && (
+              <Button variant="outline" size="sm" onClick={() => {
+                const token = localStorage.getItem("token");
+                window.open(`${process.env.REACT_APP_BACKEND_URL}/api/project-reports/${reportId}/pdf?token=${token}`, "_blank");
+              }} data-testid="pdf-btn">
+                <FileDown className="w-4 h-4 mr-1" /> PDF
+              </Button>
+            )}
+            {locked ? (
+              <div className="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                <Lock className="w-4 h-4" /> Gesperrt (Kunde unterschrieben)
+              </div>
+            ) : (
+              <Button onClick={handleSave} disabled={saving} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-report-btn">
+                {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+                Speichern
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-5 space-y-5">
+      <fieldset disabled={locked} className="max-w-4xl mx-auto px-4 py-5 space-y-5">
+        {locked && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm flex items-center gap-2" data-testid="locked-banner">
+            <Lock className="w-4 h-4 shrink-0" />
+            Dieser Bericht wurde vom Kunden unterschrieben und kann nicht mehr bearbeitet werden.
+          </div>
+        )}
         {/* Section 1: Kundendaten */}
         <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="section-kunde">
           <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -596,13 +620,15 @@ export default function ProjectReportFormPage() {
         </div>
 
         {/* Bottom Save Button */}
-        <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving} size="lg" className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-8" data-testid="save-report-bottom">
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            Projektbericht speichern
-          </Button>
-        </div>
-      </div>
+        {!locked && (
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={saving} size="lg" className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-8" data-testid="save-report-bottom">
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Projektbericht speichern
+            </Button>
+          </div>
+        )}
+      </fieldset>
     </div>
   );
 }

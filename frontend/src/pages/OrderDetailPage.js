@@ -1133,24 +1133,37 @@ export default function OrderDetailPage() {
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          onClick={() => navigate(`/project-report/${r.id}`)}
-                          className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
-                          title="Bearbeiten"
-                          data-testid={`report-edit-${r.id}`}
+                          onClick={() => {
+                            const token = localStorage.getItem("token");
+                            window.open(`${BACKEND_URL}/api/project-reports/${r.id}/pdf?token=${token}`, "_blank");
+                          }}
+                          className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-fuchsia-600"
+                          title="PDF herunterladen"
+                          data-testid={`report-pdf-${r.id}`}
                         >
-                          <Pencil className="w-4 h-4" />
+                          <FileDown className="w-4 h-4" />
                         </button>
+                        {!r.unterschrift_kunde && (
+                          <button
+                            onClick={() => navigate(`/project-report/${r.id}`)}
+                            className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
+                            title="Bearbeiten"
+                            data-testid={`report-edit-${r.id}`}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
                         {r.unterschrift_kunde && (
                           <button
                             onClick={() => navigate(`/project-report/${r.id}`)}
                             className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600"
-                            title="Ansehen"
+                            title="Ansehen (gesperrt)"
                             data-testid={`report-view-${r.id}`}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                         )}
-                        {isAdmin && (
+                        {isAdmin && !r.unterschrift_kunde && (
                           <button
                             onClick={() => deleteProjectReport(r.id)}
                             className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400"
