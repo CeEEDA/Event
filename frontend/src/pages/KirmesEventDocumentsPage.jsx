@@ -9,6 +9,8 @@ import {
   Archive,
 } from "lucide-react";
 
+import CameraCapture from "../components/CameraCapture";
+
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 const KATEGORIEN = [
@@ -30,6 +32,7 @@ export default function KirmesEventDocumentsPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const [showCamera, setShowCamera] = useState(false);
   const [event, setEvent] = useState(null);
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -161,11 +164,9 @@ export default function KirmesEventDocumentsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()} className="text-gray-600" data-testid="camera-btn">
+            <Button variant="outline" size="sm" onClick={() => setShowCamera(true)} className="text-gray-600" data-testid="camera-btn">
               <Camera className="w-4 h-4 mr-1" /> Foto
             </Button>
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-              onChange={e => { if (e.target.files?.length) handleFilesSelected(e.target.files, "fotos"); e.target.value = ""; }} data-testid="camera-input" />
             {docs.length > 0 && (
               <Button variant="outline" size="sm" onClick={downloadZip} className="text-gray-600" data-testid="zip-btn">
                 <Archive className="w-4 h-4 mr-1" /> ZIP
@@ -292,6 +293,17 @@ export default function KirmesEventDocumentsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Camera Capture */}
+      {showCamera && (
+        <CameraCapture
+          onClose={() => setShowCamera(false)}
+          onCapture={(file) => {
+            setShowCamera(false);
+            handleFilesSelected([file], "fotos");
+          }}
+        />
       )}
     </div>
   );

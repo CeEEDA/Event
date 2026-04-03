@@ -9,6 +9,8 @@ import {
   Archive,
 } from "lucide-react";
 
+import CameraCapture from "../components/CameraCapture";
+
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 const KATEGORIEN = [
@@ -30,6 +32,7 @@ export default function OrderDocumentsPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const [showCamera, setShowCamera] = useState(false);
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -160,14 +163,11 @@ export default function OrderDocumentsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Camera button (mobile) */}
-            <Button variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}
+            {/* Camera button */}
+            <Button variant="outline" size="sm" onClick={() => setShowCamera(true)}
               className="text-gray-600" data-testid="camera-btn">
               <Camera className="w-4 h-4 mr-1" /> Foto
             </Button>
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-              onChange={e => { if (e.target.files?.length) handleFilesSelected(e.target.files, "fotos"); e.target.value = ""; }}
-              data-testid="camera-input" />
             {/* ZIP download */}
             {docs.length > 0 && (
               <Button variant="outline" size="sm" onClick={downloadZip} className="text-gray-600" data-testid="zip-btn">
@@ -295,6 +295,17 @@ export default function OrderDocumentsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Camera Capture */}
+      {showCamera && (
+        <CameraCapture
+          onClose={() => setShowCamera(false)}
+          onCapture={(file) => {
+            setShowCamera(false);
+            handleFilesSelected([file], "fotos");
+          }}
+        />
       )}
     </div>
   );
