@@ -356,20 +356,34 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     # ── ARBEITSPROTOKOLL TABLE ──
     elems.append(Paragraph("Arbeitsprotokoll", s_h2))
 
-    # Build header: single row - Datum | Beschreibung | Name/N | Name/E | Name/NO ...
-    hdr = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Arbeitsbeschreibung</b>", s_cell_bold)]
-    for i, m in enumerate(ma_list or [{"name": "MA 1"}]):
-        short = _short_name(m.get("name", f"MA {i+1}"))
+    # Build header: only show columns that have data
+    wl = report.get("work_log", [])
+
+    # First pass: find which (employee_idx, type) combos have any values
+    active_cols = []  # list of (emp_idx, type_key, employee_name)
+    for emp_idx in range(num_ma):
+        name = _short_name((ma_list[emp_idx] if emp_idx < len(ma_list) else {}).get("name", f"MA {emp_idx+1}"))
         for t in ["N", "E", "NO"]:
-            hdr.append(Paragraph(f"<b>{short}</b><br/><font size='5' color='grey'>{t}</font>", ParagraphStyle("MH", fontSize=6, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE, leading=8)))
+            has_val = False
+            for entry in wl:
+                val = entry.get("stunden", {}).get(str(emp_idx), {}).get(t, "")
+                if val and val != 0 and val != "0" and str(val) != "0":
+                    has_val = True
+                    break
+            if has_val:
+                active_cols.append((emp_idx, t, name))
+
+    hdr = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Arbeitsbeschreibung</b>", s_cell_bold)]
+    for emp_idx, t, name in active_cols:
+        hdr.append(Paragraph(f"<b>{name}</b><br/><font size='5' color='grey'>{t}</font>", ParagraphStyle("MH", fontSize=6, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE, leading=8)))
 
     date_w = 18*mm
-    desc_w = max(W - date_w - num_ma * 3 * 10*mm, 30*mm)
-    hr_w = (W - date_w - desc_w) / max(num_ma * 3, 1)
-    col_widths = [date_w, desc_w] + [hr_w] * (num_ma * 3)
+    num_hr_cols = len(active_cols) if active_cols else 1
+    hr_w = min(12*mm, (W - date_w - 30*mm) / num_hr_cols) if active_cols else 10*mm
+    desc_w = W - date_w - num_hr_cols * hr_w
+    col_widths = [date_w, desc_w] + [hr_w] * num_hr_cols
 
     rows = [hdr]
-    wl = report.get("work_log", [])
     for entry in wl:
         stunden = entry.get("stunden", {})
         has_hours = any(
@@ -384,14 +398,12 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
             Paragraph(entry.get("datum", ""), s_cell),
             Paragraph((entry.get("beschreibung", "") or "").replace("\n", "<br/>"), s_cell),
         ]
-        for emp_idx in range(num_ma):
-            emp_hrs = stunden.get(str(emp_idx), {})
-            for t in ["N", "E", "NO"]:
-                val = emp_hrs.get(t, "")
-                if val and val != 0 and val != "0" and str(val) != "0":
-                    row.append(Paragraph(str(val), ParagraphStyle("HV", fontSize=8, alignment=TA_CENTER, textColor=DARK, fontName="Helvetica-Bold")))
-                else:
-                    row.append("")
+        for emp_idx, t, _name in active_cols:
+            val = stunden.get(str(emp_idx), {}).get(t, "")
+            if val and val != 0 and val != "0" and str(val) != "0":
+                row.append(Paragraph(str(val), ParagraphStyle("HV", fontSize=8, alignment=TA_CENTER, textColor=DARK, fontName="Helvetica-Bold")))
+            else:
+                row.append("")
         rows.append(row)
 
     wt = Table(rows, colWidths=col_widths, repeatRows=1)
