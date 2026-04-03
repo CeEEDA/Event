@@ -356,27 +356,21 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     # ── ARBEITSPROTOKOLL TABLE ──
     elems.append(Paragraph("Arbeitsprotokoll", s_h2))
 
-    # Build header: Datum | Arbeitsbeschreibung | N/E/NO per employee
-    hdr1 = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Arbeitsbeschreibung</b>", s_cell_bold)]
-    hdr2 = ["", ""]
+    # Build header: single row - Datum | Beschreibung | Name/N | Name/E | Name/NO ...
+    hdr = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Arbeitsbeschreibung</b>", s_cell_bold)]
     for i, m in enumerate(ma_list or [{"name": "MA 1"}]):
         short = _short_name(m.get("name", f"MA {i+1}"))
-        hdr1.append(Paragraph(f"<b>{short}</b>", ParagraphStyle("MH", fontSize=6.5, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE)))
-        hdr1.append("")
-        hdr1.append("")
-        hdr2.append(Paragraph("N", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
-        hdr2.append(Paragraph("E", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
-        hdr2.append(Paragraph("NO", ParagraphStyle("SH", fontSize=6, alignment=TA_CENTER, textColor=colors.grey)))
+        for t in ["N", "E", "NO"]:
+            hdr.append(Paragraph(f"<b>{short}</b><br/><font size='5' color='grey'>{t}</font>", ParagraphStyle("MH", fontSize=6, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE, leading=8)))
 
     date_w = 18*mm
     desc_w = max(W - date_w - num_ma * 3 * 10*mm, 30*mm)
     hr_w = (W - date_w - desc_w) / max(num_ma * 3, 1)
     col_widths = [date_w, desc_w] + [hr_w] * (num_ma * 3)
 
-    rows = [hdr1, hdr2]
+    rows = [hdr]
     wl = report.get("work_log", [])
     for entry in wl:
-        # Only show rows that have content (description or any hours)
         stunden = entry.get("stunden", {})
         has_hours = any(
             v for emp_hrs in stunden.values() if isinstance(emp_hrs, dict)
@@ -400,27 +394,19 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
                     row.append("")
         rows.append(row)
 
-    wt = Table(rows, colWidths=col_widths, repeatRows=2)
-
-    # Merge employee name headers (span 3 cols each)
-    merge_cmds = []
-    for i in range(num_ma):
-        col_start = 2 + i * 3
-        merge_cmds.append(("SPAN", (col_start, 0), (col_start + 2, 0)))
-
+    wt = Table(rows, colWidths=col_widths, repeatRows=1)
     wt.setStyle(TableStyle([
         ("FONTSIZE", (0, 0), (-1, -1), 7),
         ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
-        ("BACKGROUND", (0, 0), (-1, 1), HEADER_BG),
-        ("BACKGROUND", (0, 2), (0, -1), LIGHT_GRAY),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+        ("BACKGROUND", (0, 1), (0, -1), LIGHT_GRAY),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("ALIGN", (2, 2), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 2), (-1, -1), "MIDDLE"),
-    ] + merge_cmds))
+        ("ALIGN", (2, 0), (-1, -1), "CENTER"),
+    ]))
     elems.append(wt)
     elems.append(Spacer(1, 2*mm))
 
