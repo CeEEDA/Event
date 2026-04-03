@@ -31,6 +31,7 @@ import MeterDiagnosticsPage from "./pages/MeterDiagnosticsPage";
 import ProjectReportFormPage from "./pages/ProjectReportFormPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import FinancePage from "./pages/FinancePage";
+import VerwaltungPage from "./pages/VerwaltungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -166,6 +167,14 @@ function AppRoutes() {
         }
       />
       <Route path="/kirmes/anmeldung" element={<SchaustellerAnmeldungPage />} />
+      <Route
+        path="/verwaltung"
+        element={
+          <ProtectedRoute>
+            <VerwaltungPage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/finance"
         element={

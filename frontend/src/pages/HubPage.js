@@ -15,6 +15,7 @@ import {
   Receipt,
   Tent,
   Fuel,
+  Briefcase,
 } from "lucide-react";
 
 export default function HubPage() {
@@ -106,21 +107,21 @@ export default function HubPage() {
               </button>
             )}
 
-            {/* Finance / Rechnungsverwaltung */}
+            {/* Verwaltung */}
             {hasBilling && (
               <button
-                onClick={() => navigate("/finance")}
-                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-emerald-400 hover:shadow-lg transition-all group text-left"
-                data-testid="finance-btn"
+                onClick={() => navigate("/verwaltung")}
+                className="bg-white border border-gray-200 rounded-xl p-6 md:p-8 flex items-center gap-4 md:gap-6 hover:border-fuchsia-400 hover:shadow-lg transition-all group text-left"
+                data-testid="verwaltung-btn"
               >
-                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-600 transition-colors">
-                  <Receipt className="w-7 h-7 md:w-8 md:h-8 text-emerald-600 group-hover:text-white transition-colors" />
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-fuchsia-100 flex items-center justify-center flex-shrink-0 group-hover:bg-fuchsia-600 transition-colors">
+                  <Briefcase className="w-7 h-7 md:w-8 md:h-8 text-fuchsia-600 group-hover:text-white transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Finance</h2>
-                  <p className="text-sm text-gray-500">Rechnungen verwalten, versenden und exportieren</p>
+                  <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">Verwaltung</h2>
+                  <p className="text-sm text-gray-500">Finance, Dokumente und mehr</p>
                 </div>
-                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-emerald-600 transition-colors" />
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-fuchsia-600 transition-colors" />
               </button>
             )}
 
