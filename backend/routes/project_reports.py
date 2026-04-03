@@ -328,9 +328,9 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         Paragraph(f"<b>{report.get('projektnummer', '')}</b>", s_value),
         Paragraph("am:", s_label),
         Paragraph(report.get("projekt_datum", ""), s_value),
-        Paragraph("Rollen: PL=Projektleiter ME=Meister T=Techniker H=Helfer", s_label),
+        Paragraph("PL=Projektleiter ME=Meister T=Techniker H=Helfer", s_small),
     ]]
-    pnt = Table(pn_data, colWidths=[22*mm, 25*mm, 8*mm, 20*mm, W - 75*mm])
+    pnt = Table(pn_data, colWidths=[28*mm, 25*mm, 8*mm, 22*mm, W - 83*mm])
     pnt.setStyle(TableStyle([
         ("LINEBELOW", (1, 0), (1, 0), 0.5, BORDER),
         ("LINEBELOW", (3, 0), (3, 0), 0.5, BORDER),
