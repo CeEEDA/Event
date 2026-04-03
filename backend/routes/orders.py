@@ -1268,3 +1268,32 @@ async def delete_order_document(order_pk: str, doc_id: str, credentials: HTTPAut
 
     await _db.order_documents.delete_one({"id": doc_id})
     return {"message": "Dokument geloescht"}
+
+
+@router.get("/order-documents/{order_pk}/zip")
+async def download_order_documents_zip(order_pk: str, token: str = None, request: Request = None):
+    """Download all order documents as ZIP with folder structure."""
+    user = await _auth_user_from_token(token, request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+
+    docs = await _db.order_documents.find({"order_pk": order_pk}, {"_id": 0}).to_list(500)
+    if not docs:
+        raise HTTPException(status_code=404, detail="Keine Dokumente vorhanden")
+
+    import zipfile, io
+    buf = io.BytesIO()
+    kat_labels = {"messprotokolle": "Messprotokolle", "plaene": "Plaene", "fotos": "Fotos", "sonstiges": "Sonstiges"}
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for doc in docs:
+            kat = kat_labels.get(doc.get("kategorie", "sonstiges"), "Sonstiges")
+            file_path = _os.path.join(_ORDER_DOC_STORAGE, order_pk, doc["filename"])
+            if _os.path.exists(file_path):
+                arcname = f"{kat}/{doc['original_name']}"
+                zf.write(file_path, arcname)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="Dokumente_Auftrag_{order_pk}.zip"'},
+    )
