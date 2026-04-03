@@ -888,7 +888,7 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     if os.path.exists(logo_path):
         elems.append(RLImage(logo_path, width=55*mm, height=12.8*mm))
     elems.append(Spacer(1, 10*mm))
-    elems.append(Paragraph("Abrechnung", s_title))
+    elems.append(Paragraph("Dokumentation", s_title))
     elems.append(Spacer(1, 8*mm))
 
     # Cover info
