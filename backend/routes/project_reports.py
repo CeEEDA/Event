@@ -423,66 +423,66 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
     elems.append(bt)
     elems.append(Spacer(1, 3*mm))
 
-    # ── MATERIAL TABLE ──
+    # ── MATERIAL TABLE (only if data exists) ──
     mat = report.get("material", [])
-    elems.append(Paragraph("Material / Artikel", s_h2))
-    mat_hdr = [
+    mat_filled = [m for m in mat if m.get("material")]
+    if mat_filled:
+        elems.append(Paragraph("Material / Artikel", s_h2))
+        mat_hdr = [
         Paragraph("<b>Pos.</b>", s_cell_bold),
         Paragraph("<b>Material, Artikel</b>", s_cell_bold),
         Paragraph("<b>Vorbereitung</b>", s_cell_bold),
         Paragraph("<b>Verarbeitet</b>", s_cell_bold),
         Paragraph("<b>Bestellung</b>", s_cell_bold),
     ]
-    mat_rows = [mat_hdr]
-    for m in mat:
-        mat_rows.append([
-            Paragraph(str(m.get("pos", "")), s_cell),
-            Paragraph(m.get("material", ""), s_cell),
-            Paragraph(str(m.get("vorbereitung", "")), s_cell),
-            Paragraph(str(m.get("verarbeitet", "")), s_cell),
-            Paragraph(str(m.get("bestellung", "")), s_cell),
-        ])
-    for _ in range(max(0, 5 - len(mat))):
-        mat_rows.append(["", "", "", "", ""])
-    mt = Table(mat_rows, colWidths=[12*mm, W - 12*mm - 75*mm, 25*mm, 25*mm, 25*mm])
-    mt.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
-        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-    ]))
-    elems.append(mt)
-    elems.append(Spacer(1, 3*mm))
+        mat_rows = [mat_hdr]
+        for m in mat_filled:
+            mat_rows.append([
+                Paragraph(str(m.get("pos", "")), s_cell),
+                Paragraph(m.get("material", ""), s_cell),
+                Paragraph(str(m.get("vorbereitung", "")), s_cell),
+                Paragraph(str(m.get("verarbeitet", "")), s_cell),
+                Paragraph(str(m.get("bestellung", "")), s_cell),
+            ])
+        mt = Table(mat_rows, colWidths=[12*mm, W - 12*mm - 75*mm, 25*mm, 25*mm, 25*mm])
+        mt.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elems.append(mt)
+        elems.append(Spacer(1, 3*mm))
 
-    # ── FAHRZEUGE ──
+    # ── FAHRZEUGE (only if data exists) ──
     fz = report.get("fahrzeuge", [])
-    elems.append(Paragraph("Fahrzeuge / Geraete", s_h2))
-    fz_hdr = [
+    fz_filled = [f for f in fz if f.get("typ")]
+    if fz_filled:
+        elems.append(Paragraph("Fahrzeuge / Geraete", s_h2))
+        fz_hdr = [
         Paragraph("<b>Typ</b>", s_cell_bold),
         Paragraph("<b>KM einf. Strecke</b>", s_cell_bold),
         Paragraph("<b>Stunden</b>", s_cell_bold),
     ]
-    fz_rows = [fz_hdr]
-    for f in fz:
-        fz_rows.append([
-            Paragraph(f.get("typ", ""), s_cell),
-            Paragraph(str(f.get("km", "")), s_cell),
-            Paragraph(str(f.get("stunden", "")), s_cell),
-        ])
-    for _ in range(max(0, 3 - len(fz))):
-        fz_rows.append(["", "", ""])
-    ft = Table(fz_rows, colWidths=[W * 0.5, W * 0.25, W * 0.25])
-    ft.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
-        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-    ]))
-    elems.append(ft)
-    elems.append(Spacer(1, 3*mm))
+        fz_rows = [fz_hdr]
+        for f in fz_filled:
+            fz_rows.append([
+                Paragraph(f.get("typ", ""), s_cell),
+                Paragraph(str(f.get("km", "")), s_cell),
+                Paragraph(str(f.get("stunden", "")), s_cell),
+            ])
+        ft = Table(fz_rows, colWidths=[W * 0.5, W * 0.25, W * 0.25])
+        ft.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elems.append(ft)
+        elems.append(Spacer(1, 3*mm))
 
     # ── UEBERNACHTUNG ──
     ueb = report.get("uebernachtung_zeitraum", "")
