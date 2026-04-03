@@ -962,6 +962,22 @@ export default function OrderDetailPage() {
             </div>
           )}
 
+          {/* Abrechnung Export Button */}
+          <div className="flex justify-end" data-testid="billing-export-section">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
+              onClick={() => {
+                const token = localStorage.getItem("token");
+                window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
+              }}
+              data-testid="billing-pdf-btn"
+            >
+              <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
+            </Button>
+          </div>
+
           {/* Projektberichte Section */}
           <div className="bg-white rounded-lg border border-gray-200" data-testid="project-reports-section">
             <div className="p-4 border-b border-gray-100">

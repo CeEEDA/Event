@@ -805,3 +805,389 @@ async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
     return {"ok": True}
+
+
+@router.get("/epirent/{order_pk}/billing-pdf")
+async def get_billing_pdf(order_pk: int, token: str = Query(None)):
+    """Generate a comprehensive billing PDF for an order."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    import io, os, base64
+
+    if not token:
+        raise HTTPException(status_code=401)
+    try:
+        payload = _decode_jwt_token(token)
+        user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401)
+    except Exception:
+        raise HTTPException(status_code=401)
+
+    # Fetch order data
+    from routes.orders import _get_epirent_config
+    config = await _get_epirent_config()
+    api_url = config.get("api_url", "").rstrip("/")
+    headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": config.get("api_key", "")}
+    ssl_skip = config.get("ssl_skip", False)
+
+    async with httpx.AsyncClient(timeout=15, verify=not ssl_skip) as client:
+        resp = await client.get(f"{api_url}/v1/order/{order_pk}", headers=headers)
+    raw = resp.json().get("payload", {})
+    if isinstance(raw, list) and raw:
+        raw = raw[0]
+    contact = raw.get("contact") or {}
+    order_no = raw.get("order_no", "")
+    event_name = raw.get("event", "") or raw.get("name", "")
+    contact_name = contact.get("name", "")
+    customer_no = raw.get("customer_no", "")
+
+    # Fetch all project reports
+    reports = await _db.project_reports.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    # Fetch all fuel receipts
+    fuel_receipts = await _db.fuel_receipts.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("date", 1).to_list(100)
+
+    # ── PDF Setup ──
+    PURPLE = colors.HexColor("#7c3aed")
+    HEADER_BG = colors.HexColor("#ede9fe")
+    BORDER = colors.HexColor("#d1d5db")
+    DARK = colors.HexColor("#1f2937")
+    LIGHT_GRAY = colors.HexColor("#f9fafb")
+
+    s_title = ParagraphStyle("T", fontSize=22, fontName="Helvetica-Bold", textColor=PURPLE, spaceAfter=4)
+    s_h2 = ParagraphStyle("H2", fontSize=12, fontName="Helvetica-Bold", textColor=PURPLE, spaceBefore=10, spaceAfter=4)
+    s_h3 = ParagraphStyle("H3", fontSize=10, fontName="Helvetica-Bold", textColor=DARK, spaceBefore=6, spaceAfter=3)
+    s_label = ParagraphStyle("L", fontSize=8, textColor=colors.HexColor("#6b7280"))
+    s_value = ParagraphStyle("V", fontSize=9, textColor=DARK)
+    s_value_bold = ParagraphStyle("VB", fontSize=9, textColor=DARK, fontName="Helvetica-Bold")
+    s_cell = ParagraphStyle("C", fontSize=8, textColor=DARK, leading=10)
+    s_cell_bold = ParagraphStyle("CB", fontSize=8, textColor=DARK, fontName="Helvetica-Bold", leading=10)
+    s_cell_right = ParagraphStyle("CR", fontSize=8, textColor=DARK, fontName="Helvetica-Bold", alignment=TA_RIGHT)
+    s_small = ParagraphStyle("SM", fontSize=7, textColor=colors.grey)
+    s_confirm = ParagraphStyle("CF", fontSize=7, textColor=DARK, leading=9)
+
+    def _short_name(full_name):
+        parts = (full_name or "").strip().split()
+        if len(parts) >= 2:
+            return f"{parts[0][0]}.{parts[-1]}"
+        return full_name or ""
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    pw, ph = A4
+    W = pw - 30*mm
+    elems = []
+
+    # ═══════════════════════════════════════
+    # PAGE 1: DECKBLATT (Cover Page)
+    # ═══════════════════════════════════════
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "logo.png")
+    if os.path.exists(logo_path):
+        logo = RLImage(logo_path, width=55*mm, height=12.8*mm)
+        elems.append(logo)
+    elems.append(Spacer(1, 10*mm))
+    elems.append(Paragraph("Abrechnung", s_title))
+    elems.append(Spacer(1, 8*mm))
+
+    cover_data = [
+        [Paragraph("Auftragsnummer:", s_label), Paragraph(f"<b>{order_no}</b>", s_value_bold)],
+        [Paragraph("Kundennummer:", s_label), Paragraph(str(customer_no), s_value)],
+        [Paragraph("Kunde:", s_label), Paragraph(f"<b>{contact_name}</b>", s_value_bold)],
+        [Paragraph("Projekt:", s_label), Paragraph(f"<b>{event_name}</b>", s_value_bold)],
+        [Paragraph("Adresse:", s_label), Paragraph(raw.get("address", ""), s_value)],
+        [Paragraph("Zeitraum:", s_label), Paragraph(f"{raw.get('date_start', '')} - {raw.get('date_end', '')}", s_value)],
+        [Paragraph("Projektberichte:", s_label), Paragraph(f"<b>{len(reports)}</b>", s_value_bold)],
+        [Paragraph("Tankbelege:", s_label), Paragraph(f"<b>{len(fuel_receipts)}</b>", s_value_bold)],
+    ]
+    ct = Table(cover_data, colWidths=[35*mm, W - 35*mm])
+    ct.setStyle(TableStyle([
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (1, 0), (1, -1), 0.5, BORDER),
+    ]))
+    elems.append(ct)
+    elems.append(Spacer(1, 10*mm))
+
+    # ═══════════════════════════════════════
+    # STUNDEN-ZUSAMMENFASSUNG
+    # ═══════════════════════════════════════
+    elems.append(Paragraph("Stunden-Zusammenfassung", s_h2))
+
+    # Collect all employees across all reports
+    all_employees = {}  # name -> set of roles
+    for r in reports:
+        for m in r.get("mitarbeiter", []):
+            name = m.get("name", "")
+            if name:
+                all_employees.setdefault(name, set()).add(m.get("rolle", "T"))
+    emp_names = sorted(all_employees.keys())
+
+    if emp_names and reports:
+        # Aggregate hours by date
+        date_hours = {}  # date -> {emp_name: {N: x, E: x, NO: x}}
+        for r in reports:
+            ma_list = r.get("mitarbeiter", [])
+            for entry in r.get("work_log", []):
+                datum = entry.get("datum", "")
+                if not datum:
+                    continue
+                if datum not in date_hours:
+                    date_hours[datum] = {}
+                stunden = entry.get("stunden", {})
+                for idx_str, vals in stunden.items():
+                    if not isinstance(vals, dict):
+                        continue
+                    idx = int(idx_str) if idx_str.isdigit() else 0
+                    if idx < len(ma_list):
+                        emp_name = ma_list[idx].get("name", "")
+                    else:
+                        continue
+                    if emp_name not in date_hours[datum]:
+                        date_hours[datum][emp_name] = {"N": 0, "E": 0, "NO": 0}
+                    for t in ["N", "E", "NO"]:
+                        v = vals.get(t, 0)
+                        if v and str(v) != "0":
+                            try:
+                                date_hours[datum][emp_name][t] += float(v)
+                            except (ValueError, TypeError):
+                                pass
+
+        # Find which (emp, type) combos have data
+        active_cols = []
+        for emp in emp_names:
+            for t in ["N", "E", "NO"]:
+                has_val = any(
+                    date_hours[d].get(emp, {}).get(t, 0)
+                    for d in date_hours
+                )
+                if has_val:
+                    active_cols.append((emp, t))
+
+        if active_cols:
+            hdr = [Paragraph("<b>Datum</b>", s_cell_bold)]
+            for emp, t in active_cols:
+                hdr.append(Paragraph(f"<b>{_short_name(emp)}</b><br/><font size='5' color='grey'>{t}</font>",
+                    ParagraphStyle("AH", fontSize=7, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE, leading=9)))
+
+            num_cols = len(active_cols)
+            col_w = min(18*mm, (W - 25*mm) / num_cols)
+            h_widths = [25*mm] + [col_w] * num_cols
+
+            h_rows = [hdr]
+            totals = {(e, t): 0 for e, t in active_cols}
+
+            for datum in sorted(date_hours.keys()):
+                row = [Paragraph(datum, s_cell)]
+                for emp, t in active_cols:
+                    val = date_hours[datum].get(emp, {}).get(t, 0)
+                    if val:
+                        totals[(emp, t)] += val
+                        row.append(Paragraph(str(val), ParagraphStyle("HV2", fontSize=8, alignment=TA_CENTER, textColor=DARK)))
+                    else:
+                        row.append("")
+                h_rows.append(row)
+
+            # Totals row
+            total_row = [Paragraph("<b>GESAMT</b>", s_cell_bold)]
+            for emp, t in active_cols:
+                val = totals[(emp, t)]
+                total_row.append(Paragraph(f"<b>{val}</b>", ParagraphStyle("TT", fontSize=8, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE)))
+            h_rows.append(total_row)
+
+            ht = Table(h_rows, colWidths=h_widths)
+            ht.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+                ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f5f3ff")),
+                ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            elems.append(ht)
+    else:
+        elems.append(Paragraph("Keine Stunden erfasst.", s_small))
+
+    elems.append(Spacer(1, 8*mm))
+
+    # ═══════════════════════════════════════
+    # TANKBELEGE-ZUSAMMENFASSUNG
+    # ═══════════════════════════════════════
+    if fuel_receipts:
+        elems.append(Paragraph("Tankbelege-Zusammenfassung", s_h2))
+        fr_hdr = [
+            Paragraph("<b>Datum</b>", s_cell_bold),
+            Paragraph("<b>Kraftstoff</b>", s_cell_bold),
+            Paragraph("<b>Liter</b>", s_cell_bold),
+            Paragraph("<b>Preis/L</b>", s_cell_bold),
+            Paragraph("<b>Gesamt</b>", s_cell_bold),
+        ]
+        fr_rows = [fr_hdr]
+        total_liters = 0
+        total_cost = 0
+        for fr in fuel_receipts:
+            liters = fr.get("quantity_liters", 0) or 0
+            price = fr.get("price_per_liter", 0) or 0
+            cost = liters * price
+            total_liters += liters
+            total_cost += cost
+            fr_rows.append([
+                Paragraph(fr.get("date", ""), s_cell),
+                Paragraph(fr.get("fuel_type_label", fr.get("fuel_type", "")), s_cell),
+                Paragraph(f"{liters:.1f}", s_cell),
+                Paragraph(f"{price:.3f} EUR" if price else "", s_cell),
+                Paragraph(f"{cost:.2f} EUR" if price else "", s_cell),
+            ])
+        # Total row
+        fr_rows.append([
+            Paragraph("<b>GESAMT</b>", s_cell_bold), "", 
+            Paragraph(f"<b>{total_liters:.1f} L</b>", s_cell_bold),
+            "",
+            Paragraph(f"<b>{total_cost:.2f} EUR</b>", s_cell_bold),
+        ])
+        ft = Table(fr_rows, colWidths=[25*mm, 40*mm, 25*mm, 25*mm, W - 115*mm])
+        ft.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f5f3ff")),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elems.append(ft)
+
+    # ═══════════════════════════════════════
+    # ANHANG: Einzelne Projektberichte
+    # ═══════════════════════════════════════
+    for r_idx, report in enumerate(reports):
+        elems.append(PageBreak())
+        ma_list = report.get("mitarbeiter", [])
+        num_ma = len(ma_list) if ma_list else 0
+
+        # Report header
+        header_data = [[Paragraph(f"Projektbericht Nr. {report.get('projektnummer', '')}", s_h2), ""]]
+        if os.path.exists(logo_path):
+            rlogo = RLImage(logo_path, width=40*mm, height=9.3*mm)
+            header_data = [[Paragraph(f"Projektbericht Nr. {report.get('projektnummer', '')}", s_h2), rlogo]]
+        rht = Table(header_data, colWidths=[W - 45*mm, 45*mm])
+        rht.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
+        elems.append(rht)
+
+        # Customer info line
+        elems.append(Paragraph(f"{report.get('kunde_name', '')} | {report.get('kunde_anschrift', '')} {report.get('kunde_plz', '')} {report.get('kunde_ort', '')} | {report.get('projekt_datum', '')}", s_small))
+        elems.append(Spacer(1, 2*mm))
+
+        # Mitarbeiter list
+        if ma_list:
+            ma_text = ", ".join([f"{_short_name(m.get('name',''))} ({m.get('rolle','')})" for m in ma_list])
+            elems.append(Paragraph(f"Mitarbeiter: {ma_text}", s_small))
+            elems.append(Spacer(1, 2*mm))
+
+        # Worklog table
+        wl = report.get("work_log", [])
+        if wl:
+            # Find active cols for this report
+            r_active = []
+            for emp_idx in range(num_ma):
+                name = _short_name(ma_list[emp_idx].get("name", "")) if emp_idx < len(ma_list) else ""
+                for t in ["N", "E", "NO"]:
+                    has_v = any(
+                        e.get("stunden", {}).get(str(emp_idx), {}).get(t, "")
+                        for e in wl
+                        if e.get("stunden", {}).get(str(emp_idx), {}).get(t, "") not in ("", 0, "0")
+                    )
+                    if has_v:
+                        r_active.append((emp_idx, t, name))
+
+            wl_hdr = [Paragraph("<b>Datum</b>", s_cell_bold), Paragraph("<b>Beschreibung</b>", s_cell_bold)]
+            for _, t, name in r_active:
+                wl_hdr.append(Paragraph(f"<b>{name}</b><br/><font size='5' color='grey'>{t}</font>",
+                    ParagraphStyle("WH", fontSize=6, fontName="Helvetica-Bold", alignment=TA_CENTER, textColor=PURPLE, leading=8)))
+
+            n_cols = len(r_active)
+            wl_hr_w = min(12*mm, (W - 18*mm - 30*mm) / max(n_cols, 1)) if n_cols else 10*mm
+            wl_widths = [18*mm, W - 18*mm - n_cols * wl_hr_w] + [wl_hr_w] * n_cols
+
+            wl_rows = [wl_hdr]
+            for entry in wl:
+                stunden = entry.get("stunden", {})
+                has_content = entry.get("beschreibung", "").strip() or entry.get("datum", "").strip()
+                has_hrs = any(stunden.get(str(ei), {}).get(t, "") not in ("", 0, "0") for ei, t, _ in r_active)
+                if not has_content and not has_hrs:
+                    continue
+                row = [
+                    Paragraph(entry.get("datum", ""), s_cell),
+                    Paragraph((entry.get("beschreibung", "") or "").replace("\n", "<br/>"), s_cell),
+                ]
+                for emp_idx, t, _ in r_active:
+                    val = stunden.get(str(emp_idx), {}).get(t, "")
+                    if val and str(val) != "0" and val != 0:
+                        row.append(Paragraph(f"<b>{val}</b>", ParagraphStyle("WV", fontSize=8, alignment=TA_CENTER, textColor=DARK, fontName="Helvetica-Bold")))
+                    else:
+                        row.append("")
+                wl_rows.append(row)
+
+            if len(wl_rows) > 1:
+                wlt = Table(wl_rows, colWidths=wl_widths, repeatRows=1)
+                wlt.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+                    ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("ALIGN", (2, 0), (-1, -1), "CENTER"),
+                ]))
+                elems.append(wlt)
+
+        # Bemerkungen
+        bem = report.get("bemerkungen", "")
+        if bem and bem.strip():
+            elems.append(Spacer(1, 2*mm))
+            elems.append(Paragraph(f"Bemerkungen: {bem}", s_small))
+
+        # Signatures
+        elems.append(Spacer(1, 4*mm))
+        sig_items = []
+        for label, key in [("Techniker", "unterschrift_techniker"), ("Kunde", "unterschrift_kunde")]:
+            sig = report.get(key)
+            if sig and sig.startswith("data:image"):
+                try:
+                    b64 = sig.split(",", 1)[1]
+                    img_buf = io.BytesIO(base64.b64decode(b64))
+                    sig_items.append([Paragraph(f"{label}:", s_label), RLImage(img_buf, width=35*mm, height=14*mm)])
+                except Exception:
+                    sig_items.append([Paragraph(f"{label}:", s_label), Paragraph("(vorhanden)", s_small)])
+            else:
+                sig_items.append([Paragraph(f"{label}:", s_label), Paragraph("—", s_small)])
+        if sig_items:
+            st = Table(sig_items, colWidths=[20*mm, 40*mm])
+            st.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+            elems.append(st)
+
+    # ═══════════════════════════════════════
+    # ANHANG: Einzelne Tankbelege
+    # ═══════════════════════════════════════
+    if fuel_receipts:
+        elems.append(PageBreak())
+        elems.append(Paragraph("Tankbelege (Einzelnachweise)", s_h2))
+        for fr in fuel_receipts:
+            liters = fr.get("quantity_liters", 0) or 0
+            price = fr.get("price_per_liter", 0) or 0
+            cost = liters * price
+            elems.append(Paragraph(
+                f"<b>{fr.get('date', '')}</b> | {fr.get('fuel_type_label', fr.get('fuel_type', ''))} | "
+                f"{liters:.1f} L | {cost:.2f} EUR | {fr.get('location', '')}",
+                s_cell
+            ))
+            elems.append(Spacer(1, 1*mm))
+
+    doc.build(elems)
+    buf.seek(0)
+    filename = f"Abrechnung_{order_no}_{event_name}.pdf".replace(" ", "_")
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})

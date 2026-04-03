@@ -11,44 +11,47 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
-### Performance-Optimierung
-- MongoDB Indexes, N+1 Query Fix, RAM-Leak gefixt (25GB -> normal)
-
-### Expanded Row Redesign (KirmesEventDetailPage)
-- 3-Spalten Karten-Layout (KONTAKTDATEN | ZAEHLERDATEN | EMU-ZAEHLER)
-- Gelbe Hinterlegung fuer nicht-verknuepfte Zaehler (bg-amber-50)
-- Payment-Labels gefixt
-- Lade-Delay gefixt (limit=1 auf meter-data API)
-
-### Zaehler-Detailseite (MeterDiagnosticsPage) - NEU
-- **Route**: /devices/:deviceId/meters/:meterId
-- Datumsfilter, Verknuepfungshistorie, Messdaten-Tabelle, Anomalie-Erkennung
-
 ### Projektbericht (Digital Project Report) - NEU (2026-04-03)
-- **Backend**: Full CRUD at /api/project-reports (create, list by order, get, update, delete)
+- **Backend**: Full CRUD at /api/project-reports
 - **Frontend Form**: /project-report/new and /project-report/:reportId
-  - Kundendaten (auto-filled from order API)
-  - Mitarbeiter (auto-filled from logged-in user, roles: PL/ME/T/H)
-  - Arbeitsprotokoll (date, description, hours per employee x type N/E/NO)
-  - Material / Artikel (pos, material, vorbereitung, verarbeitet, bestellung)
-  - Fahrzeuge (PKW, LKW, etc. with KM and hours)
-  - Bemerkungen + Uebernachtung
-  - Digitale Unterschriften (Techniker + Kunde via react-signature-canvas)
-- **Integration**: Projektberichte section in OrderDetailPage (similar to Tankbelege)
-- **Testing**: 100% pass rate (11/11 backend, all frontend flows)
+  - Kundendaten (auto-filled from EpiRent Kontakt-API)
+  - Mitarbeiter per Dropdown aus Benutzerverwaltung
+  - Externes Personal (Freitext)
+  - Arbeitsprotokoll (Karten-Layout, Textbausteine per Dropdown)
+  - Material/Artikel, Fahrzeuge, Bemerkungen, Uebernachtung
+  - Digitale Unterschriften (Techniker + Kunde)
+- **Sperre**: Nach Kundenunterschrift kein Bearbeiten mehr moeglich
+- **PDF**: Professionelles Layout mit Logo, abgekuerzte Namen (C.Ecker), nur gefuellte Spalten
+
+### Textbausteine (Admin)
+- CRUD at /api/project-reports/work-templates
+- Admin kann Bezeichnung + Text anlegen
+- Mitarbeiter waehlt per Dropdown, Text wird ins Arbeitsprotokoll eingefuegt
+
+### Abrechnung Export - NEU (2026-04-03)
+- **Endpoint**: GET /api/orders/epirent/{pk}/billing-pdf
+- Deckblatt mit Projektinfos (Kunde, Auftragsnr, Zeitraum)
+- Stunden-Zusammenfassung (alle Berichte aggregiert, nur gefuellte Spalten, GESAMT)
+- Tankbelege-Zusammenfassung (Liter, Preise, Summen)
+- Anhang: Alle Projektberichte einzeln mit Arbeitsprotokoll + Unterschriften
+- Anhang: Alle Tankbelege
+
+### Vorherige Features
+- Expanded Row Redesign (3-Spalten Karten-Layout)
+- Zaehler-Detailseite (MeterDiagnosticsPage)
+- Performance-Optimierung (MongoDB Indexes, RAM-Leak Fix)
 
 ## Key API Endpoints
-- GET /api/kirmes/signups/{signup_id}/meter-data?limit=1
-- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics
-- GET /api/devices/{device_id}/meters/{meter_id}/history
 - POST/GET/PUT/DELETE /api/project-reports
 - GET /api/project-reports/by-order/{order_pk}
-- POST/GET/PUT/DELETE /api/fuel-receipts
+- GET /api/project-reports/{id}/pdf
+- GET/POST/PUT/DELETE /api/project-reports/work-templates
+- GET /api/orders/epirent/{pk}/billing-pdf
+- GET /api/devices/{device_id}/meters/{meter_id}/diagnostics
 
 ## Prioritized Backlog
 
 ### P1 - Kommend
-- Abrechnung Export (PDF mit allen Stunden/Abrechnungsdaten)
 - PayPal Integration
 
 ### P2 - Backlog
@@ -59,8 +62,3 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ### Blocked
 - DSE890 Gateway GSM (wartet auf neue SIM-Karten)
-
-## Credentials
-- Admin (lokal): admin@test.com / password
-- Admin (Server): christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
-- SMTP: portal@eventenergie.app / :PlN4sFf:}6AY (smtp.ionos.de, Port 465)
