@@ -2200,8 +2200,9 @@ async def get_meter_info(meter_id: str, user: dict = Depends(_require_staff)):
 # ============== Event Documents (Dokumentenablage) ==============
 
 import os as _os
+import re as _re
 import shutil as _shutil
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, Form as _Form
 
 ALLOWED_DOC_TYPES = {
     "application/pdf": ".pdf",
@@ -2210,12 +2211,25 @@ ALLOWED_DOC_TYPES = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
+_VALID_KATEGORIEN = ["messprotokolle", "plaene", "fotos", "sonstiges"]
 DOC_STORAGE = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "storage", "event_documents")
 _os.makedirs(DOC_STORAGE, exist_ok=True)
 
 
+def _detect_kategorie(filename: str, content_type: str) -> str:
+    """Auto-detect document category based on filename and content type."""
+    if content_type.startswith("image/"):
+        return "fotos"
+    name_lower = (filename or "").lower()
+    if _re.search(r"mess|protokoll|pru[eü]f|test|messung|abnahme|zertifikat", name_lower):
+        return "messprotokolle"
+    if _re.search(r"plan|lage|schema|zeichnung|grundriss|skizze|layout|aufbau", name_lower):
+        return "plaene"
+    return "sonstiges"
+
+
 @router.post("/events/{event_id}/documents")
-async def upload_event_document(event_id: str, file: UploadFile = File(...), user: dict = Depends(_require_staff)):
+async def upload_event_document(event_id: str, file: UploadFile = File(...), kategorie: str = _Form(None), user: dict = Depends(_require_staff)):
     """Upload a document (PDF or image) to an event."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0, "id": 1})
     if not event:
@@ -2225,10 +2239,12 @@ async def upload_event_document(event_id: str, file: UploadFile = File(...), use
     if ct not in ALLOWED_DOC_TYPES:
         raise HTTPException(status_code=400, detail="Nur PDF und Bilder (JPG, PNG, WebP, GIF) erlaubt")
 
-    # Read file (max 20MB)
     content = await file.read()
     if len(content) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Datei zu groß (max. 20 MB)")
+
+    detected = _detect_kategorie(file.filename or "", ct)
+    final_kat = kategorie if kategorie and kategorie in _VALID_KATEGORIEN else detected
 
     doc_id = str(uuid.uuid4())
     ext = ALLOWED_DOC_TYPES[ct]
@@ -2247,12 +2263,13 @@ async def upload_event_document(event_id: str, file: UploadFile = File(...), use
         "original_name": file.filename or "Dokument",
         "content_type": ct,
         "size": len(content),
+        "kategorie": final_kat,
         "uploaded_by": user.get("name", user.get("email", "")),
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
     }
     await _db.kirmes_event_documents.insert_one(doc)
 
-    return {"id": doc_id, "original_name": doc["original_name"], "message": "Dokument hochgeladen"}
+    return {"id": doc_id, "original_name": doc["original_name"], "kategorie": final_kat, "detected": detected, "message": "Dokument hochgeladen"}
 
 
 @router.get("/events/{event_id}/documents")
@@ -2264,16 +2281,29 @@ async def list_event_documents(event_id: str, user: dict = Depends(_require_staf
     return docs
 
 
+@router.put("/events/{event_id}/documents/{doc_id}")
+async def update_event_document(event_id: str, doc_id: str, body: dict, user: dict = Depends(_require_staff)):
+    """Update document category."""
+    doc = await _db.kirmes_event_documents.find_one({"id": doc_id, "event_id": event_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+    update = {}
+    if "kategorie" in body and body["kategorie"] in _VALID_KATEGORIEN:
+        update["kategorie"] = body["kategorie"]
+    if not update:
+        raise HTTPException(status_code=400, detail="Keine gueltige Aenderung")
+    await _db.kirmes_event_documents.update_one({"id": doc_id}, {"$set": update})
+    return {"message": "Dokument aktualisiert"}
+
+
 @router.get("/events/{event_id}/documents/{doc_id}/file")
 async def get_event_document_file(event_id: str, doc_id: str, token: str = None, request: Request = None):
     """Download or preview a document file. Accepts token via query param."""
-    from server import get_user_from_token_param, get_current_user
-    # Auth via query token or header
+    from server import get_user_from_token_param
     user = None
     if token:
         user = await get_user_from_token_param(token)
     else:
-        # Try header auth
         auth = request.headers.get("authorization", "")
         if auth.startswith("Bearer "):
             user = await get_user_from_token_param(auth[7:])
