@@ -154,7 +154,7 @@ export default function OrderDocumentsPage() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => activeFolder ? setActiveFolder(null) : navigate(`/orders/${pk}`)}
               className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn">
-              <ArrowLeft className="w-4 h-4 mr-1" /> {activeFolder ? "Ordner" : "Zurueck"}
+              <ArrowLeft className="w-4 h-4 mr-1" /> {activeFolder ? "Ordner" : "Dokumente"}
             </Button>
             <div className="h-5 w-px bg-gray-200" />
             <div>
