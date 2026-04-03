@@ -1,16 +1,136 @@
-<analysis><>KirmesEventDetailPage.jsx/meter-datalimitlimit=1limit=1loadMeterDataKirmesEventDetailPage.jsxKirmesEventDetailPage.jsxlint_javascriptemu_metersdevice_idasyncio.create_taskserver.py/devices//generators//energy_monitoring//kirmes/emu_datafind_onebackup.pyemu_data< / >KirmesZaehlerPage.jsxKirmesZaehlerPageKirmesEventDetailPage.jsxwhitespace-nowrap
-/app/
-├── backend/
-│   ├── server.py                # FastAPI entry point, background indexing
-│   ├── routes/
-│   │   ├── kirmes.py            # Events, signups, meter data API, invoices
-│   │   ├── energy_monitoring.py # Pi Data ingestion
-│   │   ├── generators.py        # Telemetry ingestion and batching
-│   │   ├── devices.py           # Device quick-info
-│   │   └── backup.py            # Automated backup scheduler
-└── frontend/
-    └── src/
-        └── pages/
-            ├── KirmesEventDetailPage.jsx   # Event management, compact tables, invoices
-            └── KirmesZaehlerPage.jsx       # 24h charts, Day navigation
-find_oneemu_datadevice_id_1_ts_utc_-1kirmes_eventskirmes_signupsemu_device_id/app/backend/server.pyunique=True/app/backend/routes/kirmes.py/app/backend/routes/energy_monitoring.py/app/backend/routes/backup.py/app/frontend/src/pages/KirmesZaehlerPage.jsx/app/frontend/src/pages/KirmesEventDetailPage.jsxKirmesEventDetailPage.jsxGET /api/kirmes/signups/{signup_id}/meter-dataGET /api/kirmes/signups/{signup_id}POST /api/admin/create-emu-indexes/app/frontend/src/pages/KirmesEventDetailPage.jsxemu_dataunique=Truemeter-datatesting_agent_v3_forkKirmesEventDetailPage.jsx/app/frontend/src/pages/KirmesEventDetailPage.jsxisExpandedlimit=1</analysis>
+<analysis>**original_problem_statement**: 
+The user is building a comprehensive Kirmes (Fairground) billing and management system along with an Eventenergie Portal. 
+PRODUCT REQUIREMENTS: 
+- Implement a digital Projektbericht (Project Report) form, modeled after the existing Tankbeleg (Fuel Receipt) feature. 
+- It must be integrated into the order management page (). 
+- It needs a digital signature capture for the customer (to be filled out on a tablet).
+- Customer data must auto-fill via the API, and the employee should be automatically selected based on the login/registration.
+- Later goal: Add a Billing Export button to compile all hours and billing info into a PDF.
+
+**User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
+
+**what currently exists?** 
+A comprehensive full-stack event and fairground management application (React + FastAPI + MongoDB). The app handles vendor registrations, ZUGFeRD invoices, energy monitoring via EMU meters, and fuel receipts. In this session, the agent completely revamped the Kirmes Expanded Row UI into a responsive 3-column card layout, and added a deep Meter Diagnostics page showing 10-point raw measurement history and historical event associations. The agent has just begun working on the Projektbericht (Project Report) feature.
+
+**Last working item**: 
+    - Last item agent was working: Building the new Projektbericht (Project Report) digital form. The agent analyzed the provided PDF, installed the  library, created the backend route file (), registered it in , and just created the frontend file .
+    - Status: IN PROGRESS
+    - Agent Testing Done: N
+    - Which testing method agent to use? both (testing_agent_v3_fork for full feature CRUD and UI verification)
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**: 
+  None. All previous bugs and UI fixes were fully resolved and tested in this session.
+
+**In progress Task List**:
+  Task 1: Digital Projektbericht (Project Report) Feature (P0)
+     - Where to resume: You need to implement the backend CRUD operations in  and the frontend UI in  using . Then, integrate this into the  (creating a section similar to the Tankbeleg section so users can view/add reports for an order).
+     - What will be achieved with this? Allows staff to fill out project reports on a tablet on-site, capturing customer signatures and automatically logging materials/hours against an order.
+     - Status: IN PROGRESS
+     - Should Test frontend/backend/both after fix? both
+     - Blocked on something: None.
+
+**Upcoming and Future Tasks**
+    Upcoming Tasks:
+    - (P1) Abrechnung Export (Billing Export): Add a button that exports all billing and hours information into a generated PDF (Requested by user in this session).
+    - (P1) PayPal Integration: Implement PayPal for payment processing during the Kirmes signup flow.
+    
+    Future Tasks:
+    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk.
+    - (P2) Implement Admin File Size Limits for uploads.
+    - (P2) Create a Windows Installer for the Electron app.
+    - (P2) Add GPS Support to Kirmeskiste (Blocked: waiting on user clarification regarding hardware availability).
+    - (P2) DSE890 Gateway GSM Connection (Blocked: waiting for user to receive new IoT SIM cards).
+
+**Completed work in this session**
+- Expanded Row Loading Delay Fix: Added  to the  API, dropping load times from minutes to ~120ms (DONE).
+- Expanded Row Redesign: Rebuilt the expanded Kirmes row into a compact 3-column card layout (Contact Data | Meter Readings | EMU Device Actions) based on user's mobile UI preference (DONE).
+- Unlinked Meter UI: Added a light yellow background highlight for easily identifying unlinked signups (DONE).
+- Meter Diagnostics API: Created a new endpoint  to fetch the last 10 raw measurement values (DONE).
+- Meter Diagnostics Page: Created  displaying date-filtered charts, historical event/customer associations, and raw power values (DONE).
+- Addressed Hanging User Questions: Confirmed Kirmeskiste QR codes are tied to UUIDs and don't need swapping. User explicitly declined the iOS wrapper (iOS machen wir nicht) (DONE).
+
+**Earlier issues found/mentioned but not fixed**
+None.
+
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: Ignored user questions from two forks ago.
+  - Recurrence count: 0 (Finally resolved in this session).
+  - Status: RESOLVED
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+- React, FastAPI, MongoDB
+-  (Added via yarn for capturing tablet signatures)
+- Relational mapping in NoSQL (Mapping Reports -> Orders -> Customers)
+
+**key DB schema**
+  -  (To be created): Needs to store , , , , , and  (base64 or URL).
+  - : Reference for how order-based documents are stored.
+
+**changes in tech stack**
+  - Added  library to frontend package.json.
+
+**All files of reference** 
+  -  (Newly created, needs implementation)
+  -  (Newly created, needs implementation)
+  -  (Must be modified to display and link to Project Reports)
+  -  (Updated to include )
+  -  (Reference for how to build the project reports API)
+
+**Areas that need refactoring**: 
+-  (~1300 lines) is very large. Adding the  section will grow it further. Consider breaking it down if it becomes unmanageable.
+
+**key api endpoints**
+  -  (Newly built)
+  -  (Needs to be built out completely)
+
+**Critical Info for New Agent** 
+- **YOU MUST RESPOND IN GERMAN.**
+- The user instructed to build the **entire Projektbericht (Project Report) feature at once**, instead of iterating slowly. Baue alles auf einmal. Wir optimieren dann später.
+- The form must include a signature field for the customer using a tablet ( is already installed).
+- Ensure the  is tightly integrated into the , utilizing the exact same UX pattern as the existing  (Fuel Receipt) feature.
+- Auto-fill requirements: Customer data must be pre-filled via the order API, and the employee name should be auto-selected based on the logged-in user.
+
+**documents and test reports created in this job** 
+  - /app/memory/PRD.md
+  - /app/memory/test_credentials.md
+  - /app/test_reports/iteration_49.json
+  - /app/test_reports/iteration_50.json
+  - /app/test_reports/iteration_51.json
+  - /app/test_reports/iteration_52.json
+
+**Last 10 User Messages and any pending HUMAN messages** 
+- *Agent*: Built the MeterDiagnosticsPage. Verified all tests passed.
+- *User*: meine ansicht ist anders. Ich kann keine alten verknüpfungen sehen.
+- *Agent*: Realized empty association states were hiding the section entirely. Fixed it to show Keine Verknüpfungen gefunden and verified.
+- *User (PENDING)*: Uploaded PDF of Projektbericht. Den möchte ich jetzt auch Digital einbinden. Er soll wie der Tankbeleg in der Projektverwaltung abgelegt werden. Dieses Formula möchte ich später mit einem Tablett ausfüllen. Der Kunde muss Unterschreiben. Der Mitarbeiter wählen wir über die Anmeldung automatisch aus. Die Kundendaten sind automatisch hinterlegt...
+- *Agent*: Analyzed PDFs, investigated existing routes. Asked if user wants to build it incrementally.
+- *User (PENDING)*: Baue alles auf einmal. Wir optimieren dann später. Die Daten legen wir dann digital ab... Später baue wir einen Abrechnung Export button ein...
+- *Agent*: Created  and . Added . (Session ended here).
+
+**Project Health Check:**
+- Broken: No
+- Mocked: None
+
+**3rd Party Integrations** 
+- ZUGFeRD e-Invoices
+
+**Testing status**
+  - Testing agent used after significant changes: YES (Ran 4 iterations, 100% pass rate).
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None
+  - Known regressions: None
+
+**Credentials to test flow:**
+- Check 
+
+**What agent forgot to execute**
+- Nothing was forgotten. The agent transitioned successfully to the new feature request right before the context cutoff. 
+
+**Debugging checklist for current issue**
+    Task: Digital Project Report (Projektbericht)
+    - Frontend files to update:  (Build the form with signature canvas) and  (Add UI to view/create reports for the order).
+    - Backend files to update:  (Build CRUD operations, copy patterns from ).</analysis>
