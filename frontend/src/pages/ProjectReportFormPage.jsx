@@ -426,10 +426,10 @@ export default function ProjectReportFormPage() {
                 {allPersonnel.length > 0 && (
                   <div>
                     <Label className="text-[10px] text-gray-400 uppercase mb-1.5 block">Stunden pro Person</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <div className="space-y-1.5">
                       {allPersonnel.map((emp, empIdx) => (
                         <div key={empIdx} className="flex items-center gap-1.5 bg-white border border-gray-100 rounded px-2 py-1.5">
-                          <span className={`text-xs font-medium truncate w-24 ${emp.is_user === false ? "text-gray-500" : "text-fuchsia-700"}`} title={emp.name}>
+                          <span className={`text-xs font-medium w-32 shrink-0 truncate ${emp.is_user === false ? "text-gray-500" : "text-fuchsia-700"}`} title={emp.name}>
                             {emp.name}
                           </span>
                           {STUNDEN_TYPEN.map(t => (
@@ -437,7 +437,7 @@ export default function ProjectReportFormPage() {
                               <span className="text-[9px] text-gray-400">{t}</span>
                               <Input type="number" step="0.5" min="0" value={wl.stunden?.[empIdx]?.[t] || ""}
                                 onChange={e => updateWorkLogHours(wIdx, empIdx, t, e.target.value)}
-                                className="h-6 w-12 text-xs text-center px-0.5" />
+                                className="h-6 w-14 text-xs text-center px-0.5" />
                             </div>
                           ))}
                         </div>
