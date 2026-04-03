@@ -25,12 +25,19 @@ async def _auth_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return user
 
 
+async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    user = await _auth_user(credentials)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Administratoren")
+    return user
+
+
 # ── Models ──
 
 class WorkLogEntry(BaseModel):
     datum: Optional[str] = ""
     beschreibung: Optional[str] = ""
-    stunden: Optional[dict] = {}  # {"1": {"N": 0, "E": 0, "NO": 0}, "2": {...}}
+    stunden: Optional[dict] = {}
 
 class MaterialEntry(BaseModel):
     pos: Optional[int] = 0
@@ -41,45 +48,36 @@ class MaterialEntry(BaseModel):
 
 class EmployeeEntry(BaseModel):
     name: Optional[str] = ""
-    rolle: Optional[str] = "T"  # PL, ME, T, H
-    is_user: Optional[bool] = True  # True = registered user, False = external helper
+    rolle: Optional[str] = "T"
+    is_user: Optional[bool] = True
 
 class VehicleEntry(BaseModel):
-    typ: Optional[str] = ""  # PKW, LKW, LKW_LDK, PKW_ANH, Tankwagen
+    typ: Optional[str] = ""
     km: Optional[float] = 0
     stunden: Optional[float] = 0
 
 class ProjectReportCreate(BaseModel):
     order_pk: Optional[str] = None
     order_name: Optional[str] = None
-    # Kundendaten
-    anrede: Optional[str] = "Firma"  # Herr, Frau, Firma, Projekt
+    anrede: Optional[str] = "Firma"
     kunde_name: Optional[str] = ""
     kunde_anschrift: Optional[str] = ""
     kunde_plz: Optional[str] = ""
     kunde_ort: Optional[str] = ""
     kunde_telefon: Optional[str] = ""
     kunde_ansprechpartner: Optional[str] = ""
-    # Projekt
     projektnummer: Optional[str] = ""
     projekt_datum: Optional[str] = ""
     kunde_nicht_anwesend: Optional[bool] = False
-    # Mitarbeiter
     mitarbeiter: Optional[List[EmployeeEntry]] = []
-    # Arbeitsprotokoll
     work_log: Optional[List[WorkLogEntry]] = []
-    # Material
     material: Optional[List[MaterialEntry]] = []
-    # Fahrzeuge
     fahrzeuge: Optional[List[VehicleEntry]] = []
-    # Bemerkungen
     bemerkungen: Optional[str] = ""
     uebernachtung_zeitraum: Optional[str] = ""
     uebernachtung_naechte: Optional[int] = 0
-    # Unterschriften (base64 data URLs)
     unterschrift_techniker: Optional[str] = None
     unterschrift_kunde: Optional[str] = None
-
 
 class ProjectReportUpdate(BaseModel):
     anrede: Optional[str] = None
@@ -102,8 +100,17 @@ class ProjectReportUpdate(BaseModel):
     unterschrift_techniker: Optional[str] = None
     unterschrift_kunde: Optional[str] = None
 
+class WorkTemplateCreate(BaseModel):
+    text: str
+    kategorie: Optional[str] = ""
 
-# ── Endpoints ──
+class WorkTemplateUpdate(BaseModel):
+    text: Optional[str] = None
+    kategorie: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+# ── Endpoints (static paths FIRST, then dynamic /{id}) ──
 
 @router.post("")
 async def create_project_report(data: ProjectReportCreate, user: dict = Depends(_auth_user)):
@@ -152,6 +159,55 @@ async def get_reports_by_order(order_pk: str, user: dict = Depends(_auth_user)):
     return reports
 
 
+# ── Work Templates (Textbausteine) ──
+
+@router.get("/work-templates")
+async def list_work_templates(user: dict = Depends(_auth_user)):
+    templates = await _db.work_templates.find({}, {"_id": 0}).sort("sort_order", 1).to_list(200)
+    return templates
+
+
+@router.post("/work-templates")
+async def create_work_template(data: WorkTemplateCreate, user: dict = Depends(_require_admin)):
+    tid = str(uuid.uuid4())
+    count = await _db.work_templates.count_documents({})
+    doc = {
+        "id": tid,
+        "text": data.text,
+        "kategorie": data.kategorie or "",
+        "sort_order": count,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _db.work_templates.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/work-templates/{template_id}")
+async def update_work_template(template_id: str, data: WorkTemplateUpdate, user: dict = Depends(_require_admin)):
+    update = {}
+    for field, value in data.dict(exclude_unset=True).items():
+        if value is not None:
+            update[field] = value
+    if not update:
+        raise HTTPException(status_code=400, detail="Keine Aenderungen")
+    await _db.work_templates.update_one({"id": template_id}, {"$set": update})
+    updated = await _db.work_templates.find_one({"id": template_id}, {"_id": 0})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Textbaustein nicht gefunden")
+    return updated
+
+
+@router.delete("/work-templates/{template_id}")
+async def delete_work_template(template_id: str, user: dict = Depends(_require_admin)):
+    result = await _db.work_templates.delete_one({"id": template_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Textbaustein nicht gefunden")
+    return {"message": "Geloescht"}
+
+
+# ── Single Report CRUD (dynamic /{report_id} LAST) ──
+
 @router.get("/{report_id}")
 async def get_report(report_id: str, user: dict = Depends(_auth_user)):
     report = await _db.project_reports.find_one({"id": report_id}, {"_id": 0})
@@ -184,4 +240,4 @@ async def delete_report(report_id: str, user: dict = Depends(_auth_user)):
     result = await _db.project_reports.delete_one({"id": report_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Projektbericht nicht gefunden")
-    return {"message": "Gelöscht"}
+    return {"message": "Geloescht"}

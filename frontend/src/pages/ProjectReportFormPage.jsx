@@ -59,6 +59,7 @@ export default function ProjectReportFormPage() {
   const [helfer, setHelfer] = useState([]);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [workLog, setWorkLog] = useState([emptyWorkLog()]);
+  const [workTemplates, setWorkTemplates] = useState([]);
   const [material, setMaterial] = useState([emptyMaterial()]);
   const [fahrzeuge, setFahrzeuge] = useState([emptyVehicle()]);
 
@@ -69,11 +70,15 @@ export default function ProjectReportFormPage() {
 
   // Load existing report if editing
   useEffect(() => {
-    // Load available users for employee dropdown
+    // Load available users and work templates
     (async () => {
       try {
-        const { data } = await api.get("/users");
-        setAvailableUsers((data || []).filter(u => u.is_active !== false));
+        const [usersRes, templatesRes] = await Promise.all([
+          api.get("/users"),
+          api.get("/project-reports/work-templates"),
+        ]);
+        setAvailableUsers((usersRes.data || []).filter(u => u.is_active !== false));
+        setWorkTemplates(templatesRes.data || []);
       } catch { /* silent */ }
     })();
   }, []);
@@ -360,72 +365,91 @@ export default function ProjectReportFormPage() {
           </div>
         </div>
 
-        {/* Section 3: Arbeitsprotokoll */}
+        {/* Section 3: Arbeitsprotokoll (Karten-Layout) */}
         <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="section-worklog">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Wrench className="w-4 h-4 text-fuchsia-500" /> Arbeitsprotokoll
             </h2>
             <Button size="sm" variant="outline" onClick={() => setWorkLog(w => [...w, emptyWorkLog()])} className="h-7 text-xs" data-testid="add-worklog">
-              <Plus className="w-3 h-3 mr-1" /> Zeile
+              <Plus className="w-3 h-3 mr-1" /> Eintrag
             </Button>
           </div>
           {(() => {
             const allPersonnel = [...mitarbeiter.filter(m => m.name), ...helfer.filter(h => h.name)];
-            if (allPersonnel.length === 0) return (
-              <p className="text-xs text-gray-400 text-center py-4">Bitte zuerst Mitarbeiter oder Helfer hinzufuegen</p>
-            );
             return (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase">
-                  <th className="px-2 py-1.5 text-left w-28">Datum</th>
-                  <th className="px-2 py-1.5 text-left">Arbeitsbeschreibung</th>
-                  {allPersonnel.map((emp, i) => (
-                    <th key={i} className="px-1 py-1.5 text-center" colSpan={3}>
-                      <span className={emp.is_user === false ? "text-gray-500" : "text-fuchsia-600"}>{emp.name}</span>
-                    </th>
-                  ))}
-                  <th className="w-8"></th>
-                </tr>
-                <tr className="bg-gray-50 text-[9px] text-gray-400 uppercase">
-                  <th></th>
-                  <th></th>
-                  {allPersonnel.map((_, i) => STUNDEN_TYPEN.map(t => (
-                    <th key={`${i}-${t}`} className="px-1 py-0.5 text-center">{t}</th>
-                  )))}
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {workLog.map((wl, wIdx) => (
-                  <tr key={wIdx} className="border-t border-gray-100" data-testid={`worklog-row-${wIdx}`}>
-                    <td className="px-1 py-1">
-                      <Input type="date" value={wl.datum} onChange={e => setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, datum: e.target.value } : x))} className="h-7 text-xs" />
-                    </td>
-                    <td className="px-1 py-1">
-                      <Input value={wl.beschreibung} onChange={e => setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: e.target.value } : x))}
-                        placeholder="Arbeiten beschreiben..." className="h-7 text-xs" />
-                    </td>
-                    {allPersonnel.map((_, empIdx) => STUNDEN_TYPEN.map(t => (
-                      <td key={`${empIdx}-${t}`} className="px-0.5 py-1">
-                        <Input type="number" step="0.5" min="0" value={wl.stunden?.[empIdx]?.[t] || ""}
-                          onChange={e => updateWorkLogHours(wIdx, empIdx, t, e.target.value)}
-                          className="h-7 w-12 text-xs text-center px-1" />
-                      </td>
-                    )))}
-                    <td className="px-1 py-1">
-                      {workLog.length > 1 && (
-                        <button onClick={() => setWorkLog(w => w.filter((_, i) => i !== wIdx))} className="text-gray-400 hover:text-red-500">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+          <div className="space-y-4">
+            {workLog.map((wl, wIdx) => (
+              <div key={wIdx} className="border border-gray-200 rounded-lg p-3 bg-gray-50/50" data-testid={`worklog-row-${wIdx}`}>
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-36 shrink-0">
+                    <Label className="text-[10px] text-gray-400 uppercase">Datum</Label>
+                    <Input type="date" value={wl.datum} onChange={e => setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, datum: e.target.value } : x))} className="h-8 text-xs mt-0.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <Label className="text-[10px] text-gray-400 uppercase">Arbeitsbeschreibung</Label>
+                      {workTemplates.length > 0 && (
+                        <select
+                          className="text-[10px] h-5 border rounded px-1 text-gray-500 bg-white"
+                          value=""
+                          onChange={e => {
+                            if (!e.target.value) return;
+                            setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: x.beschreibung ? x.beschreibung + "\n" + e.target.value : e.target.value } : x));
+                            e.target.value = "";
+                          }}
+                          data-testid={`worklog-template-${wIdx}`}
+                        >
+                          <option value="">Textbaustein einfuegen...</option>
+                          {workTemplates.map(t => (
+                            <option key={t.id} value={t.text}>{t.kategorie ? `[${t.kategorie}] ` : ""}{t.text}</option>
+                          ))}
+                        </select>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    <textarea
+                      value={wl.beschreibung}
+                      onChange={e => setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: e.target.value } : x))}
+                      placeholder="Arbeiten beschreiben..."
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-fuchsia-500 bg-white resize-y"
+                      data-testid={`worklog-desc-${wIdx}`}
+                    />
+                  </div>
+                  {workLog.length > 1 && (
+                    <button onClick={() => setWorkLog(w => w.filter((_, i) => i !== wIdx))} className="mt-4 text-gray-400 hover:text-red-500 shrink-0">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {allPersonnel.length > 0 && (
+                  <div>
+                    <Label className="text-[10px] text-gray-400 uppercase mb-1.5 block">Stunden pro Person</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {allPersonnel.map((emp, empIdx) => (
+                        <div key={empIdx} className="flex items-center gap-1.5 bg-white border border-gray-100 rounded px-2 py-1.5">
+                          <span className={`text-xs font-medium truncate w-24 ${emp.is_user === false ? "text-gray-500" : "text-fuchsia-700"}`} title={emp.name}>
+                            {emp.name}
+                          </span>
+                          {STUNDEN_TYPEN.map(t => (
+                            <div key={t} className="flex flex-col items-center">
+                              <span className="text-[9px] text-gray-400">{t}</span>
+                              <Input type="number" step="0.5" min="0" value={wl.stunden?.[empIdx]?.[t] || ""}
+                                onChange={e => updateWorkLogHours(wIdx, empIdx, t, e.target.value)}
+                                className="h-6 w-12 text-xs text-center px-0.5" />
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {allPersonnel.length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-1">Bitte zuerst Mitarbeiter oder Externes Personal hinzufuegen</p>
+                )}
+              </div>
+            ))}
           </div>
             );
           })()}
