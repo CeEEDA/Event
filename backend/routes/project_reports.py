@@ -394,8 +394,8 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
             emp_hrs = stunden.get(str(emp_idx), {})
             for t in ["N", "E", "NO"]:
                 val = emp_hrs.get(t, "")
-                if val and val != 0 and val != "0":
-                    row.append(Paragraph(str(val), ParagraphStyle("HV", fontSize=7, alignment=TA_CENTER, textColor=DARK)))
+                if val and val != 0 and val != "0" and str(val) != "0":
+                    row.append(Paragraph(str(val), ParagraphStyle("HV", fontSize=8, alignment=TA_CENTER, textColor=DARK, fontName="Helvetica-Bold")))
                 else:
                     row.append("")
         rows.append(row)
@@ -419,6 +419,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
         ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("ALIGN", (2, 2), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 2), (-1, -1), "MIDDLE"),
     ] + merge_cmds))
     elems.append(wt)
     elems.append(Spacer(1, 2*mm))
