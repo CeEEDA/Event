@@ -74,6 +74,9 @@ export default function SchaustellerAnmeldungPage() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [myBookings, setMyBookings] = useState({ signups: [], invoices: [] });
+  const [lastdiagramme, setLastdiagramme] = useState({ available: [], purchased: [] });
+  const [ldPurchasing, setLdPurchasing] = useState(null);
+  const [ldDownloading, setLdDownloading] = useState(null);
 
   const [regForm, setRegForm] = useState({
     firma: "", vorname: "", name: "", strasse: "", plz: "", ort: "",
@@ -99,6 +102,50 @@ export default function SchaustellerAnmeldungPage() {
   const loadBookings = useCallback(async (schId) => {
     try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch { /* ignore */ }
   }, []);
+
+  const loadLastdiagramme = useCallback(async (schId) => {
+    try { const r = await api.get(`/kirmes/public/lastdiagramm/available?schausteller_id=${schId}`); setLastdiagramme(r.data); } catch { /* ignore */ }
+  }, []);
+
+  const purchaseLastdiagramm = async (signupId) => {
+    if (!schausteller) return;
+    setLdPurchasing(signupId);
+    try {
+      const payMethod = schausteller.kauf_auf_rechnung ? "rechnung" : "kreditkarte";
+      const r = await api.post("/kirmes/public/lastdiagramm/purchase", {
+        schausteller_id: schausteller.id,
+        signup_id: signupId,
+        payment_method: payMethod,
+      });
+      toast.success(`Lastdiagramm bestellt! Rechnung: ${r.data.invoice?.invoice_number}`);
+      loadLastdiagramme(schausteller.id);
+      loadBookings(schausteller.id);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Fehler beim Bestellen");
+    } finally {
+      setLdPurchasing(null);
+    }
+  };
+
+  const downloadLastdiagramm = async (orderId) => {
+    if (!schausteller) return;
+    setLdDownloading(orderId);
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/kirmes/public/lastdiagramm/${orderId}/pdf?schausteller_id=${schausteller.id}`);
+      if (!resp.ok) { const d = await resp.json(); throw { response: { data: d } }; }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Lastdiagramm.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Fehler beim Download");
+    } finally {
+      setLdDownloading(null);
+    }
+  };
 
   const loadEvents = useCallback(async () => {
     try {
@@ -136,6 +183,7 @@ export default function SchaustellerAnmeldungPage() {
   const goToDashboard = (sch) => {
     setSchausteller(sch);
     loadBookings(sch.id);
+    loadLastdiagramme(sch.id);
     if (preselectedEvent && selectedEvent) { setStep("signup"); }
     else { setStep("dashboard"); }
   };
@@ -246,7 +294,7 @@ export default function SchaustellerAnmeldungPage() {
         toast.success("Kaution erfolgreich bezahlt!");
         setPaymentChecking(false);
         setStep("done");
-        if (schausteller) loadBookings(schausteller.id);
+        if (schausteller) { loadBookings(schausteller.id); loadLastdiagramme(schausteller.id); }
         return;
       }
       if (r.data?.status === "expired") {
@@ -561,6 +609,74 @@ export default function SchaustellerAnmeldungPage() {
                   </div>
                 )}
               </div>
+
+              {/* Lastdiagramme Section */}
+              {(lastdiagramme.available.length > 0 || lastdiagramme.purchased.length > 0) && (
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mt-4" data-testid="lastdiagramm-section">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-amber-500" />
+                    <span className="text-sm font-semibold text-gray-700">Lastdiagramme ({lastdiagramme.available.length + lastdiagramme.purchased.length})</span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {/* Purchased - can download */}
+                    {lastdiagramme.purchased.map(item => (
+                      <div key={item.signup_id} className="px-4 py-3" data-testid={`ld-purchased-${item.signup_id}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-900">{item.event_name}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
+                              {item.event_start && <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{new Date(item.event_start).toLocaleDateString("de-DE")} – {new Date(item.event_end).toLocaleDateString("de-DE")}</span>}
+                              <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{item.connection_type}</span>
+                              <span>Platz: <strong>{item.platznummer}</strong></span>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Gekauft</span>
+                              <span className="text-xs text-gray-400 font-mono">{item.invoice_number}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => downloadLastdiagramm(item.order_id)}
+                            disabled={ldDownloading === item.order_id}
+                            className="ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                            data-testid={`ld-download-${item.signup_id}`}
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            {ldDownloading === item.order_id ? "Laden..." : "PDF"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Available - can purchase */}
+                    {lastdiagramme.available.map(item => (
+                      <div key={item.signup_id} className="px-4 py-3" data-testid={`ld-available-${item.signup_id}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-gray-900">{item.event_name}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
+                              {item.event_start && <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{new Date(item.event_start).toLocaleDateString("de-DE")} – {new Date(item.event_end).toLocaleDateString("de-DE")}</span>}
+                              <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{item.connection_type}</span>
+                              <span>Platz: <strong>{item.platznummer}</strong></span>
+                              {item.kwh_used != null && <span>Verbrauch: <strong>{item.kwh_used.toFixed(2)} kWh</strong></span>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Lastdiagramm für "${item.event_name}" kaufen?\n\n125,00 EUR zzgl. MwSt.\n= 148,75 EUR brutto\n\nZahlung: ${schausteller?.kauf_auf_rechnung ? "Auf Rechnung" : "Kreditkarte / PayPal"}`)) {
+                                purchaseLastdiagramm(item.signup_id);
+                              }
+                            }}
+                            disabled={ldPurchasing === item.signup_id}
+                            className="ml-2 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap"
+                            data-testid={`ld-buy-${item.signup_id}`}
+                          >
+                            {ldPurchasing === item.signup_id ? "Wird bestellt..." : "Kaufen (148,75 EUR)"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -569,7 +685,7 @@ export default function SchaustellerAnmeldungPage() {
             <div data-testid="event-step">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-gray-900">Veranstaltung wählen</h2>
-                <button onClick={() => { loadBookings(schausteller.id); setStep("dashboard"); }} className="text-sm text-fuchsia-600 hover:text-fuchsia-700 flex items-center gap-1" data-testid="back-dashboard-btn">
+                <button onClick={() => { loadBookings(schausteller.id); loadLastdiagramme(schausteller.id); setStep("dashboard"); }} className="text-sm text-fuchsia-600 hover:text-fuchsia-700 flex items-center gap-1" data-testid="back-dashboard-btn">
                   <ArrowLeft className="w-4 h-4" /> Mein Bereich
                 </button>
               </div>

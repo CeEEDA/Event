@@ -740,8 +740,6 @@ async def resend_code(email: str = Query(...)):
     return {"message": "Neuer Code wurde gesendet."}
 
 
-@router.get("/public/my-bookings")
-
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
@@ -2376,4 +2374,260 @@ async def download_event_documents_zip(event_id: str, token: str = None, request
         content=buf.getvalue(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="Dokumente_Event_{event_id[:8]}.zip"'},
+    )
+
+
+
+# ============== Lastdiagramm (Load Diagram) ==============
+
+LASTDIAGRAMM_PRICE_NETTO = 125.00
+LASTDIAGRAMM_MWST_RATE = 19
+
+
+@router.get("/public/lastdiagramm/available")
+async def get_available_lastdiagramme(schausteller_id: str = Query(...)):
+    """Get completed bookings that have linked meters and are eligible for Lastdiagramm purchase."""
+    sch = await _db.kirmes_schausteller.find_one({"id": schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+
+    # Find signups that have a linked meter (emu_device_id + emu_meter_id present)
+    signups = await _db.kirmes_signups.find(
+        {
+            "schausteller_id": schausteller_id,
+            "emu_device_id": {"$exists": True, "$ne": None},
+            "emu_meter_id": {"$exists": True, "$ne": None},
+        },
+        {"_id": 0}
+    ).to_list(100)
+
+    if not signups:
+        return {"available": [], "purchased": []}
+
+    # Load events for these signups
+    evt_ids = list({s["event_id"] for s in signups if s.get("event_id")})
+    if evt_ids:
+        evt_docs = await _db.kirmes_events.find({"id": {"$in": evt_ids}}, {"_id": 0}).to_list(len(evt_ids))
+        evt_map = {e["id"]: e for e in evt_docs}
+    else:
+        evt_map = {}
+
+    # Check which signups already have a purchased Lastdiagramm
+    signup_ids = [s["id"] for s in signups]
+    existing_orders = await _db.kirmes_lastdiagramm_orders.find(
+        {"signup_id": {"$in": signup_ids}},
+        {"_id": 0}
+    ).to_list(100)
+    purchased_map = {o["signup_id"]: o for o in existing_orders}
+
+    available = []
+    purchased = []
+    for s in signups:
+        event = evt_map.get(s.get("event_id"), {})
+        item = {
+            "signup_id": s["id"],
+            "event_id": s.get("event_id"),
+            "event_name": event.get("name", "–"),
+            "event_location": event.get("location", ""),
+            "event_start": event.get("start_date", ""),
+            "event_end": event.get("end_date", ""),
+            "connection_type": s.get("connection_type", ""),
+            "platznummer": s.get("platznummer", ""),
+            "fahrgeschaeft": s.get("fahrgeschaeft", ""),
+            "kwh_used": s.get("kwh_used"),
+            "emu_device_id": s.get("emu_device_id"),
+            "emu_meter_id": s.get("emu_meter_id"),
+        }
+        if s["id"] in purchased_map:
+            order = purchased_map[s["id"]]
+            item["order_id"] = order["id"]
+            item["invoice_number"] = order.get("invoice_number", "")
+            item["status"] = order.get("status", "")
+            purchased.append(item)
+        else:
+            available.append(item)
+
+    return {"available": available, "purchased": purchased}
+
+
+class LastdiagrammPurchase(BaseModel):
+    schausteller_id: str
+    signup_id: str
+    payment_method: str = "rechnung"
+
+
+@router.post("/public/lastdiagramm/purchase")
+async def purchase_lastdiagramm(data: LastdiagrammPurchase):
+    """Purchase a Lastdiagramm for a completed booking. Creates an invoice."""
+    sch = await _db.kirmes_schausteller.find_one({"id": data.schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+
+    signup = await _db.kirmes_signups.find_one({"id": data.signup_id, "schausteller_id": data.schausteller_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    if not signup.get("emu_device_id") or not signup.get("emu_meter_id"):
+        raise HTTPException(status_code=400, detail="Kein Zähler verknüpft")
+
+    # Check if already purchased
+    existing = await _db.kirmes_lastdiagramm_orders.find_one({"signup_id": data.signup_id}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Lastdiagramm bereits bestellt (Rechnung: {existing.get('invoice_number', '')})")
+
+    # Validate payment method
+    sch_rechnung = sch.get("kauf_auf_rechnung", False)
+    if data.payment_method == "rechnung" and not sch_rechnung:
+        raise HTTPException(status_code=400, detail="Kauf auf Rechnung ist für diesen Account nicht freigeschaltet.")
+
+    event = await _db.kirmes_events.find_one({"id": signup["event_id"]}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    # Calculate price
+    netto = LASTDIAGRAMM_PRICE_NETTO
+    mwst_amount = round(netto * LASTDIAGRAMM_MWST_RATE / 100, 2)
+    brutto = round(netto + mwst_amount, 2)
+
+    # Generate invoice number
+    inv_number = await _get_next_invoice_number()
+
+    # Determine status based on payment method
+    requires_payment = data.payment_method != "rechnung"
+
+    order_id = str(uuid.uuid4())
+    invoice_doc = {
+        "id": str(uuid.uuid4()),
+        "invoice_number": inv_number,
+        "type": "lastdiagramm",
+        "lastdiagramm_order_id": order_id,
+        "signup_id": data.signup_id,
+        "event_id": signup["event_id"],
+        "event_name": event.get("name", ""),
+        "schausteller_id": data.schausteller_id,
+        "schausteller_kundennummer": sch.get("kundennummer", ""),
+        "schausteller_firma": sch.get("firma", ""),
+        "schausteller_name": sch.get("name", ""),
+        "schausteller_email": sch.get("email", ""),
+        "invoice_date": datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+        "line_items": [{
+            "pos": 1,
+            "description": f"Lastdiagramm – {event.get('name', '')}\nPlatz {signup.get('platznummer', '')} / {signup.get('fahrgeschaeft', '')}",
+            "quantity": "1",
+            "unit": "Stück",
+            "unit_price": netto,
+            "total": netto,
+        }],
+        "netto": netto,
+        "mwst_rate": LASTDIAGRAMM_MWST_RATE,
+        "mwst_amount": mwst_amount,
+        "brutto": brutto,
+        "status": "erstellt" if requires_payment else "erstellt",
+        "schausteller": sch,
+        "event": {
+            "name": event.get("name", ""),
+            "location": event.get("location", ""),
+            "start_date": event.get("start_date", ""),
+            "end_date": event.get("end_date", ""),
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _db.kirmes_invoices.insert_one(invoice_doc)
+    invoice_doc.pop("_id", None)
+
+    # Create order record
+    order_doc = {
+        "id": order_id,
+        "signup_id": data.signup_id,
+        "schausteller_id": data.schausteller_id,
+        "event_id": signup["event_id"],
+        "invoice_id": invoice_doc["id"],
+        "invoice_number": inv_number,
+        "payment_method": data.payment_method,
+        "status": "bezahlt" if not requires_payment else "pending_payment",
+        "netto": netto,
+        "mwst_amount": mwst_amount,
+        "brutto": brutto,
+        "emu_device_id": signup.get("emu_device_id"),
+        "emu_meter_id": signup.get("emu_meter_id"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _db.kirmes_lastdiagramm_orders.insert_one(order_doc)
+    order_doc.pop("_id", None)
+
+    return {
+        "order": order_doc,
+        "invoice": {
+            "id": invoice_doc["id"],
+            "invoice_number": inv_number,
+            "brutto": brutto,
+        },
+    }
+
+
+@router.get("/public/lastdiagramm/{order_id}/pdf")
+async def download_lastdiagramm_pdf(order_id: str, schausteller_id: str = Query(...)):
+    """Download the Lastdiagramm PDF for a purchased order."""
+    order = await _db.kirmes_lastdiagramm_orders.find_one(
+        {"id": order_id, "schausteller_id": schausteller_id},
+        {"_id": 0}
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Bestellung nicht gefunden")
+
+    # For "rechnung" orders, always allow download. For others, check payment status.
+    if order.get("status") == "pending_payment" and order.get("payment_method") != "rechnung":
+        raise HTTPException(status_code=402, detail="Zahlung ausstehend")
+
+    signup = await _db.kirmes_signups.find_one({"id": order["signup_id"]}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    event = await _db.kirmes_events.find_one({"id": order["event_id"]}, {"_id": 0})
+    sch = await _db.kirmes_schausteller.find_one({"id": schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+
+    # Fetch meter data for the event period
+    device_id = order.get("emu_device_id") or signup.get("emu_device_id")
+    meter_id = order.get("emu_meter_id") or signup.get("emu_meter_id")
+
+    if not device_id or not meter_id:
+        raise HTTPException(status_code=400, detail="Kein Zähler verknüpft")
+
+    # Determine date range from event
+    date_from = event.get("start_date", "") if event else ""
+    date_to = event.get("end_date", "") if event else ""
+
+    query = {"device_id": device_id, "meter_id": meter_id}
+    if date_from or date_to:
+        ts_filter = {}
+        if date_from:
+            ts_filter["$gte"] = date_from + "T00:00:00.000Z" if "T" not in date_from else date_from
+        if date_to:
+            ts_filter["$lte"] = date_to + "T23:59:59.999Z" if "T" not in date_to else date_to
+        if ts_filter:
+            query["ts_utc"] = ts_filter
+
+    measurements = await _db.emu_data.find(
+        query,
+        {"_id": 0, "ts_utc": 1, "P_sum_kW": 1, "I_L1": 1, "I_L2": 1, "I_L3": 1,
+         "U_L1": 1, "U_L2": 1, "U_L3": 1, "E_imp_kWh": 1},
+        sort=[("ts_utc", 1)]
+    ).to_list(50000)
+
+    from services.lastdiagramm_pdf import generate_lastdiagramm_pdf
+
+    pdf_data = {
+        "signup": signup,
+        "event": event or {},
+        "schausteller": sch or {},
+    }
+    pdf_bytes = generate_lastdiagramm_pdf(pdf_data, measurements)
+
+    event_name = (event.get("name", "Lastdiagramm") if event else "Lastdiagramm").replace(" ", "_")
+    filename = f"Lastdiagramm_{event_name}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
