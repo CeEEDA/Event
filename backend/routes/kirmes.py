@@ -17,6 +17,7 @@ _decode_jwt_token = None
 
 # Standard connection types
 CONNECTION_TYPES = ["Schuko", "16A", "32A", "63A", "125A", "Festanschluss"]
+WOHNWAGEN_TYPES = ["Schuko", "16A CEE", "32A CEE"]
 
 
 def _hash_password(password: str) -> str:
@@ -86,6 +87,7 @@ class StandardPrice(BaseModel):
 
 class StandardPriceUpdate(BaseModel):
     prices: List[StandardPrice]
+    wohnwagen_prices: Optional[List[StandardPrice]] = None
     kwh_price: Optional[float] = None
     handling_surcharge: Optional[float] = None
 
@@ -100,6 +102,7 @@ class EventCreate(BaseModel):
     notes: Optional[str] = ""
     use_standard_prices: bool = True
     custom_prices: Optional[List[StandardPrice]] = None
+    custom_wohnwagen_prices: Optional[List[StandardPrice]] = None
 
 
 class EventUpdate(BaseModel):
@@ -114,6 +117,7 @@ class EventUpdate(BaseModel):
     kwh_price: Optional[float] = None
     handling_surcharge: Optional[float] = None
     custom_prices: Optional[List[StandardPrice]] = None
+    custom_wohnwagen_prices: Optional[List[StandardPrice]] = None
 
 
 class SchaustellerRegister(BaseModel):
@@ -156,15 +160,14 @@ class EventSignup(BaseModel):
 
 @router.get("/standard-prices")
 async def get_standard_prices(user: dict = Depends(_require_staff)):
-    prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}}, {"_id": 0}).to_list(100)
+    prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}, "category": {"$ne": "wohnwagen"}}, {"_id": 0}).to_list(100)
     if not prices:
         now = datetime.now(timezone.utc).isoformat()
         defaults = []
         for ct in CONNECTION_TYPES:
             defaults.append({"id": str(uuid.uuid4()), "connection_type": ct, "price": 0.0, "avg_kwh": 0.0, "updated_at": now})
         await _db.kirmes_standard_prices.insert_many(defaults)
-        # Re-fetch to avoid _id issues
-        prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}}, {"_id": 0}).to_list(100)
+        prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}, "category": {"$ne": "wohnwagen"}}, {"_id": 0}).to_list(100)
     # Ensure Schuko exists
     existing_types = [p["connection_type"] for p in prices]
     if "Schuko" not in existing_types:
@@ -176,10 +179,22 @@ async def get_standard_prices(user: dict = Depends(_require_staff)):
     # Sort by CONNECTION_TYPES order
     type_order = {t: i for i, t in enumerate(CONNECTION_TYPES)}
     prices.sort(key=lambda p: type_order.get(p["connection_type"], 99))
+    # Wohnwagen prices
+    wohnwagen_prices = await _db.kirmes_standard_prices.find({"category": "wohnwagen"}, {"_id": 0}).to_list(100)
+    if not wohnwagen_prices:
+        now = datetime.now(timezone.utc).isoformat()
+        ww_defaults = []
+        for ct in WOHNWAGEN_TYPES:
+            ww_defaults.append({"id": str(uuid.uuid4()), "category": "wohnwagen", "connection_type": ct, "price": 0.0, "avg_kwh": 0.0, "updated_at": now})
+        await _db.kirmes_standard_prices.insert_many(ww_defaults)
+        wohnwagen_prices = await _db.kirmes_standard_prices.find({"category": "wohnwagen"}, {"_id": 0}).to_list(100)
+    ww_order = {t: i for i, t in enumerate(WOHNWAGEN_TYPES)}
+    wohnwagen_prices.sort(key=lambda p: ww_order.get(p["connection_type"], 99))
     # Get global settings
     global_settings = await _db.kirmes_standard_prices.find_one({"type": "global"}, {"_id": 0})
     return {
         "prices": prices,
+        "wohnwagen_prices": wohnwagen_prices,
         "kwh_price": global_settings.get("kwh_price", 0.0) if global_settings else 0.0,
         "handling_surcharge": global_settings.get("handling_surcharge", 0.0) if global_settings else 0.0,
     }
@@ -205,6 +220,14 @@ async def update_standard_prices(data: StandardPriceUpdate, user: dict = Depends
         }},
         upsert=True
     )
+    # Save wohnwagen prices
+    if data.wohnwagen_prices:
+        for p in data.wohnwagen_prices:
+            await _db.kirmes_standard_prices.update_one(
+                {"connection_type": p.connection_type, "category": "wohnwagen"},
+                {"$set": {"price": p.price, "avg_kwh": p.avg_kwh, "category": "wohnwagen", "updated_at": now}},
+                upsert=True
+            )
     return await get_standard_prices(user)
 
 
@@ -236,13 +259,16 @@ async def list_events(
 async def create_event(data: EventCreate, user: dict = Depends(_require_staff)):
     # Get prices
     if data.use_standard_prices:
-        std_prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}}, {"_id": 0}).to_list(100)
+        std_prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}, "category": {"$ne": "wohnwagen"}}, {"_id": 0}).to_list(100)
         prices = [{"connection_type": p["connection_type"], "price": p["price"], "avg_kwh": p.get("avg_kwh", 0.0)} for p in std_prices]
+        ww_prices = await _db.kirmes_standard_prices.find({"category": "wohnwagen"}, {"_id": 0}).to_list(100)
+        wohnwagen_prices = [{"connection_type": p["connection_type"], "price": p["price"], "avg_kwh": p.get("avg_kwh", 0.0)} for p in ww_prices]
         global_settings = await _db.kirmes_standard_prices.find_one({"type": "global"}, {"_id": 0})
         kwh_price = global_settings.get("kwh_price", 0.0) if global_settings else 0.0
         handling_surcharge = global_settings.get("handling_surcharge", 0.0) if global_settings else 0.0
     else:
         prices = [p.dict() for p in (data.custom_prices or [])]
+        wohnwagen_prices = [p.dict() for p in (data.custom_wohnwagen_prices or [])]
         kwh_price = 0.0
         handling_surcharge = 0.0
 
@@ -258,6 +284,7 @@ async def create_event(data: EventCreate, user: dict = Depends(_require_staff)):
         "notes": data.notes or "",
         "status": "entwurf",
         "prices": prices,
+        "wohnwagen_prices": wohnwagen_prices,
         "kwh_price": kwh_price,
         "handling_surcharge": handling_surcharge,
         "created_by": user["id"],
@@ -325,6 +352,8 @@ async def update_event(event_id: str, data: EventUpdate, user: dict = Depends(_r
             update[field] = val
     if data.custom_prices is not None:
         update["prices"] = [p.dict() for p in data.custom_prices]
+    if data.custom_wohnwagen_prices is not None:
+        update["wohnwagen_prices"] = [p.dict() for p in data.custom_wohnwagen_prices]
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     await _db.kirmes_events.update_one({"id": event_id}, {"$set": update})
@@ -848,7 +877,7 @@ async def list_public_events():
     """Public endpoint - List all released events for schausteller signup."""
     events = await _db.kirmes_events.find(
         {"status": {"$in": ["freigegeben", "aktiv"]}},
-        {"_id": 0, "id": 1, "name": 1, "location": 1, "start_date": 1, "end_date": 1, "prices": 1, "status": 1}
+        {"_id": 0, "id": 1, "name": 1, "location": 1, "start_date": 1, "end_date": 1, "prices": 1, "wohnwagen_prices": 1, "status": 1}
     ).sort("start_date", 1).to_list(100)
     return events
 
@@ -882,7 +911,8 @@ async def signup_for_event(data: EventSignup):
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
 
     # Validate connection type
-    if data.connection_type not in CONNECTION_TYPES:
+    all_types = CONNECTION_TYPES + WOHNWAGEN_TYPES
+    if data.connection_type not in all_types:
         raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {data.connection_type}")
 
     # Validate payment method - "rechnung" allowed if event OR schausteller has kauf_auf_rechnung
@@ -895,12 +925,17 @@ async def signup_for_event(data: EventSignup):
     if event_rechnung:
         data.payment_method = "rechnung"
 
-    # Find price for this connection type
+    # Find price for this connection type (check regular prices and wohnwagen_prices)
     price = 0.0
     for p in event.get("prices", []):
         if p["connection_type"] == data.connection_type:
             price = p["price"]
             break
+    else:
+        for p in event.get("wohnwagen_prices", []):
+            if p["connection_type"] == data.connection_type:
+                price = p["price"]
+                break
 
     # Determine if upfront payment is required
     # "rechnung" (purchase on account) = immediate confirmation

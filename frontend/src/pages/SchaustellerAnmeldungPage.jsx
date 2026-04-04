@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
   CalendarDays, MapPin, Zap, Check, ArrowRight, ArrowLeft, UserPlus, LogIn,
-  Mail, Eye, EyeOff, FileText, Download, LayoutDashboard, Plus, LogOut, KeyRound, X,
+  Mail, Eye, EyeOff, FileText, Download, LayoutDashboard, Plus, LogOut, KeyRound, X, Home,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -753,6 +753,22 @@ export default function SchaustellerAnmeldungPage() {
                         </button>
                       ))}
                     </div>
+                    {(selectedEvent.wohnwagen_prices || []).length > 0 && (
+                      <>
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wider mt-3 mb-1">Wohnwagen-Anschlüsse</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(selectedEvent.wohnwagen_prices || []).map(p => (
+                            <button key={p.connection_type} onClick={() => setSignupForm(f => ({ ...f, connection_type: p.connection_type }))}
+                              className={`p-3 rounded-lg border text-center transition-colors ${signupForm.connection_type === p.connection_type ? "border-amber-500 bg-amber-50 text-amber-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                              data-testid={`conn-ww-${p.connection_type}`}>
+                              <Home className="w-4 h-4 mx-auto mb-1" />
+                              <span className="text-xs font-medium block">{p.connection_type}</span>
+                              <span className="text-[10px] text-gray-400 block">{p.price.toFixed(2)} EUR</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
@@ -761,7 +777,7 @@ export default function SchaustellerAnmeldungPage() {
                     </select>
                   </div>
                   {signupForm.connection_type && (() => {
-                    const p = (selectedEvent.prices || []).find(pr => pr.connection_type === signupForm.connection_type);
+                    const p = [...(selectedEvent.prices || []), ...(selectedEvent.wohnwagen_prices || [])].find(pr => pr.connection_type === signupForm.connection_type);
                     const depositAmt = depositAmounts[signupForm.connection_type];
                     return (
                       <div className="space-y-2">
@@ -802,7 +818,14 @@ export default function SchaustellerAnmeldungPage() {
                       <Label className="text-gray-700 text-sm">Anschluss</Label>
                       <select value={extra.connection_type} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-connection-${idx}`}>
                         <option value="">Bitte wählen...</option>
-                        {(selectedEvent.prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
+                        <optgroup label="Stromanschluss">
+                          {(selectedEvent.prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
+                        </optgroup>
+                        {(selectedEvent.wohnwagen_prices || []).length > 0 && (
+                          <optgroup label="Wohnwagen">
+                            {(selectedEvent.wohnwagen_prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                     <div>
