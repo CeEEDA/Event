@@ -66,6 +66,8 @@ export default function SchaustellerAnmeldungPage() {
   const [step, setStep] = useState("auth");
   const [authMode, setAuthMode] = useState("register");
   const [showImpressum, setShowImpressum] = useState(false);
+  const [agbAccepted, setAgbAccepted] = useState(false);
+  const [showAgb, setShowAgb] = useState(false);
   const [schausteller, setSchausteller] = useState(null);
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -651,7 +653,26 @@ export default function SchaustellerAnmeldungPage() {
                     );
                   })()}
                 </div>
-                <Button onClick={handleSignup} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="submit-signup-btn">
+                {/* AGB Checkbox */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={agbAccepted}
+                      onChange={e => setAgbAccepted(e.target.checked)}
+                      className="mt-0.5 w-5 h-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                      data-testid="agb-checkbox"
+                    />
+                    <span className="text-sm text-blue-900">
+                      Hiermit akzeptiere ich die{" "}
+                      <button type="button" onClick={(e) => { e.preventDefault(); setShowAgb(true); }} className="text-blue-600 font-semibold underline hover:text-blue-800" data-testid="agb-link">
+                        AGB's der Eventenergie Deutschland GmbH & Co. KG
+                      </button>
+                    </span>
+                  </label>
+                </div>
+
+                <Button onClick={handleSignup} disabled={saving || !agbAccepted} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white disabled:opacity-50" data-testid="submit-signup-btn">
                   {saving ? "Wird angemeldet..." : "Verbindlich anmelden"} <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
@@ -735,6 +756,21 @@ export default function SchaustellerAnmeldungPage() {
         <span className="mx-2">·</span>
         <button onClick={() => setShowImpressum(true)} className="text-fuchsia-600 hover:text-fuchsia-700 underline" data-testid="impressum-btn">Impressum</button>
       </footer>
+
+      {/* AGB Modal */}
+      {showAgb && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowAgb(false)} data-testid="agb-modal">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Allgemeine Geschaeftsbedingungen</h2>
+              <button onClick={() => setShowAgb(false)} className="text-gray-400 hover:text-gray-600" data-testid="agb-close"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4 text-sm text-gray-700">
+              <p className="text-gray-400 italic">AGB-Text wird noch eingefuegt.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Impressum Modal */}
       {showImpressum && (
