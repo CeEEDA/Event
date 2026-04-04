@@ -105,7 +105,7 @@ export default function DocumentManagementPage() {
           const meta = r.data.ai_metadata || {};
           toast.success(`"${file.name}" erkannt: ${meta.subject || r.data.folder_id}`);
         } else {
-          toast.success(`"${file.name}" hochgeladen`);
+          toast.success(`"${file.name}" hochgeladen - KI-Analyse läuft...`);
         }
         successCount++;
       } catch (err) {
@@ -114,7 +114,25 @@ export default function DocumentManagementPage() {
     }
     setUploading(false);
     setUploadProgress("");
-    if (successCount > 0) { loadFolders(); loadDocuments(activeFolder); }
+    if (successCount > 0) {
+      loadFolders();
+      loadDocuments(activeFolder);
+      // Poll for AI analysis completion
+      let pollCount = 0;
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+        await loadFolders();
+        await loadDocuments(activeFolder);
+        // Stop after 60s (12 polls x 5s)
+        if (pollCount >= 12) clearInterval(pollInterval);
+        // Or stop when no more pending docs
+        try {
+          const r = await api.get("/documents/list");
+          const hasPending = r.data.documents.some(d => d.ai_status === "pending");
+          if (!hasPending) clearInterval(pollInterval);
+        } catch { /* ignore */ }
+      }, 5000);
+    }
   };
 
   const handleDelete = async (docId) => {

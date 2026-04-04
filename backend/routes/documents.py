@@ -2,9 +2,10 @@ import os
 import uuid
 import json
 import logging
+import asyncio
 import requests
 from datetime import datetime, timezone
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
@@ -324,9 +325,42 @@ async def delete_folder(folder_id: str):
     return {"status": "deleted"}
 
 
+async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
+    """Background task to run AI analysis on an uploaded document."""
+    try:
+        custom_folders = []
+        async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+            custom_folders.append(cf)
+        all_valid_ids = [f["id"] for f in PREDEFINED_FOLDERS] + [cf["id"] for cf in custom_folders]
+
+        ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
+        suggested_folder = ai_result.get("suggested_folder", folder_id)
+        final_folder = folder_id
+        if folder_id == "sonstiges" and suggested_folder in all_valid_ids:
+            final_folder = suggested_folder
+
+        await db.documents.update_one({"id": doc_id}, {"$set": {
+            "folder_id": final_folder,
+            "ai_status": "completed",
+            "ai_metadata": {k: v for k, v in ai_result.items() if k not in ("full_text", "keywords")},
+            "full_text": ai_result.get("full_text", ""),
+            "keywords": ai_result.get("keywords", []),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }})
+        logger.info(f"AI analysis completed for doc {doc_id} -> folder: {final_folder}")
+    except Exception as e:
+        logger.error(f"AI analysis error for doc {doc_id}: {e}")
+        await db.documents.update_one({"id": doc_id}, {"$set": {"ai_status": "failed"}})
+    finally:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...), folder_id: str = Form("sonstiges")):
-    """Upload a document, store it, and analyze with AI."""
+    """Upload a document, store it, and start AI analysis in background."""
     allowed_types = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/tiff"]
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"Dateityp {file.content_type} nicht unterstützt. Erlaubt: PDF, JPEG, PNG, WebP, TIFF")
@@ -362,45 +396,12 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("s
     }
     await db.documents.insert_one(doc)
 
-    # Save temp file for AI analysis
+    # Save temp file and start background AI analysis
     temp_path = f"/tmp/{uuid.uuid4()}.{ext}"
     with open(temp_path, "wb") as f:
         f.write(file_data)
 
-    try:
-        # Load custom folders for AI context
-        custom_folders = []
-        async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
-            custom_folders.append(cf)
-        all_valid_ids = [f["id"] for f in PREDEFINED_FOLDERS] + [cf["id"] for cf in custom_folders]
-
-        ai_result = await analyze_document_with_ai(temp_path, file.content_type, custom_folders)
-        suggested_folder = ai_result.get("suggested_folder", folder_id)
-        if folder_id == "sonstiges" and suggested_folder in all_valid_ids:
-            doc["folder_id"] = suggested_folder
-
-        doc["ai_status"] = "completed"
-        doc["ai_metadata"] = {k: v for k, v in ai_result.items() if k not in ("full_text", "keywords")}
-        doc["full_text"] = ai_result.get("full_text", "")
-        doc["keywords"] = ai_result.get("keywords", [])
-        doc["updated_at"] = datetime.now(timezone.utc).isoformat()
-
-        await db.documents.update_one({"id": doc_id}, {"$set": {
-            "folder_id": doc["folder_id"],
-            "ai_status": doc["ai_status"],
-            "ai_metadata": doc["ai_metadata"],
-            "full_text": doc["full_text"],
-            "keywords": doc["keywords"],
-            "updated_at": doc["updated_at"],
-        }})
-    except Exception as e:
-        logger.error(f"AI analysis error: {e}")
-        await db.documents.update_one({"id": doc_id}, {"$set": {"ai_status": "failed"}})
-    finally:
-        try:
-            os.remove(temp_path)
-        except OSError:
-            pass
+    asyncio.create_task(_run_ai_analysis(doc_id, temp_path, file.content_type, folder_id))
 
     clean = {k: v for k, v in doc.items() if k != "_id"}
     return clean
