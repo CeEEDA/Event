@@ -890,37 +890,49 @@ export default function SchaustellerAnmeldungPage() {
             </div>
             <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4 text-sm text-gray-700">
               <div>
+                <p className="text-xs text-gray-500 mb-2">Diensteanbieter:</p>
                 <p className="font-semibold text-gray-900">Eventenergie Deutschland GmbH & Co. KG</p>
-                <p>Vertreten durch die persoenlich haftende Gesellschafterin:</p>
-                <p>Eventenergie Deutschland Verwaltungs GmbH</p>
-                <p>Geschaeftsfuehrer: Christian Ecker</p>
+                <p>Geschaeftsfuehrung: Christian Ecker</p>
               </div>
               <div>
-                <p className="font-semibold text-gray-900 mb-1">Kontakt</p>
-                <p>Geisenheimer Str. 6</p>
-                <p>65232 Taunusstein</p>
-                <p className="mt-1">Telefon: +49 800 505 1808</p>
-                <p>E-Mail: <a href="mailto:info@eventenergie-deutschland.de" className="text-fuchsia-600 hover:underline">info@eventenergie-deutschland.de</a></p>
+                <p>Thyssenstrasse 10</p>
+                <p>56626 Andernach</p>
+                <p className="mt-2">Tel.: 02632 30921 0</p>
+                <p className="mt-1"><a href="mailto:info@eventenergie-deutschland.de" className="text-fuchsia-600 hover:underline">info@eventenergie-deutschland.de</a></p>
+                <p><a href="https://www.eventenergie-deutschland.de" target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:underline">www.eventenergie-deutschland.de</a></p>
               </div>
               <div>
-                <p className="font-semibold text-gray-900 mb-1">Registereintrag</p>
-                <p>Handelsregister: Amtsgericht Wiesbaden</p>
-                <p>HRA 9692</p>
+                <p className="font-semibold text-gray-900 mb-1">Verantwortlich fuer den Inhalt</p>
+                <p>Christian Ecker, Thyssenstrasse 10, 56626 Andernach</p>
               </div>
               <div>
                 <p className="font-semibold text-gray-900 mb-1">Umsatzsteuer-ID</p>
-                <p>Umsatzsteuer-Identifikationsnummer gemaess § 27a Umsatzsteuergesetz:</p>
-                <p>DE348545938</p>
+                <p>Umsatzsteuer-Identifikationsnummer gemaess §27 a Umsatzsteuergesetz: DE29/200/02826</p>
+                <p>Steuer-ID: DE333489815</p>
+                <p className="mt-1">Finanzamt Mayen</p>
               </div>
               <div>
-                <p className="font-semibold text-gray-900 mb-1">Verantwortlich fuer den Inhalt nach § 55 Abs. 2 RStV</p>
-                <p>Christian Ecker</p>
-                <p>Geisenheimer Str. 6</p>
-                <p>65232 Taunusstein</p>
+                <p className="font-semibold text-gray-900 mb-1">Handelsregister</p>
+                <p>Handelsregister Nummer: HRA 22723</p>
+                <p>Amtsgericht Koblenz</p>
               </div>
               <div>
-                <p className="font-semibold text-gray-900 mb-1">EU-Streitschlichtung</p>
-                <p className="text-xs text-gray-500">Die Europaeische Kommission stellt eine Plattform zur Online-Streitbeilegung (OS) bereit: <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:underline">https://ec.europa.eu/consumers/odr/</a>. Unsere E-Mail-Adresse finden Sie oben im Impressum. Wir sind nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
+                <p className="font-semibold text-gray-900 mb-1">Persoenlich haftende Gesellschafterin / Komplementaerin</p>
+                <p>ES Verwaltungs GmbH</p>
+                <p>Sitz: Andernach</p>
+                <p>Registergericht: Koblenz HR B 26935</p>
+                <p>Geschaeftsfuehrer: Christian Ecker</p>
+              </div>
+              <div>
+                <p>Herr Christian Ecker ist Elektrotechnikermeister (gesetzliche Berufsbezeichnung), verliehen in der Bundesrepublik Deutschland. Herr Christian Ecker ist Mitglied der Handwerkskammer Koblenz.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">Berufsrechtliche Regelungen</p>
+                <p>Handwerksordnung, einsehbar u.a. unter <a href="http://www.gesetze-im-internet.de/bundesrecht/hwo/gesamt.pdf" target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:underline">www.gesetze-im-internet.de</a></p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">Copyright</p>
+                <p>Alle auf unseren Seiten enthaltenen Fotos sind urheberrechtlich geschuetzt und duerfen nicht kopiert werden.</p>
               </div>
             </div>
           </div>
