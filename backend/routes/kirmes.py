@@ -925,14 +925,17 @@ async def signup_for_event(data: EventSignup):
     if event_rechnung:
         data.payment_method = "rechnung"
 
-    # Find price for this connection type (check regular prices and wohnwagen_prices)
+    # Find price for this connection type
+    # Wohnwagen signups use wohnwagen_prices, regular signups use regular prices
     price = 0.0
-    for p in event.get("prices", []):
-        if p["connection_type"] == data.connection_type:
-            price = p["price"]
-            break
-    else:
+    is_wohnwagen = data.fahrgeschaeft == "Wohnwagen"
+    if is_wohnwagen:
         for p in event.get("wohnwagen_prices", []):
+            if p["connection_type"] == data.connection_type:
+                price = p["price"]
+                break
+    else:
+        for p in event.get("prices", []):
             if p["connection_type"] == data.connection_type:
                 price = p["price"]
                 break

@@ -836,16 +836,17 @@ export default function SchaustellerAnmeldungPage() {
 
                 {/* Gesamtübersicht & Zahlungsmittel */}
                 {(() => {
-                  const allPrices = [...(selectedEvent.prices || []), ...(selectedEvent.wohnwagen_prices || [])];
-                  const mainPrice = allPrices.find(p => p.connection_type === signupForm.connection_type);
-                  const extraPrices = additionalSignups.map(a => allPrices.find(p => p.connection_type === a.connection_type)).filter(Boolean);
-                  const totalNetto = (mainPrice ? mainPrice.price : 0) + extraPrices.reduce((sum, p) => sum + p.price, 0);
+                  const regularPrices = selectedEvent.prices || [];
+                  const wwPrices = selectedEvent.wohnwagen_prices || [];
+                  const mainPrice = regularPrices.find(p => p.connection_type === signupForm.connection_type);
                   const items = [];
                   if (mainPrice) items.push({ label: `${signupForm.fahrgeschaeft || "Hauptanschluss"} – ${signupForm.connection_type}`, price: mainPrice.price });
                   additionalSignups.forEach((a, i) => {
-                    const p = allPrices.find(pr => pr.connection_type === a.connection_type);
+                    const priceList = a.isWohnwagen ? wwPrices : regularPrices;
+                    const p = priceList.find(pr => pr.connection_type === a.connection_type);
                     if (p) items.push({ label: `${a.isWohnwagen ? "Wohnwagen" : (a.fahrgeschaeft || `${i+2}. Anschluss`)} – ${a.connection_type}`, price: p.price });
                   });
+                  const totalNetto = items.reduce((sum, item) => sum + item.price, 0);
                   return items.length > 0 ? (
                     <div className="border border-fuchsia-200 rounded-xl p-4 space-y-3" data-testid="booking-summary">
                       <Label className="text-gray-700 text-sm font-semibold">Buchungsübersicht</Label>
