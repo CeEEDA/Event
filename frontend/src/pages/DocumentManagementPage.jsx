@@ -56,6 +56,7 @@ export default function DocumentManagementPage() {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [editingFolder, setEditingFolder] = useState(null);
   const [editFolderName, setEditFolderName] = useState("");
+  const [dragOver, setDragOver] = useState(false);
 
   const loadFolders = useCallback(async () => {
     try {
@@ -204,8 +205,19 @@ export default function DocumentManagementPage() {
 
   const handleDrop = (e) => {
     e.preventDefault();
+    setDragOver(false);
     const files = e.dataTransfer?.files;
     if (files) handleUpload(Array.from(files));
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setDragOver(false);
   };
 
   return (
@@ -334,7 +346,34 @@ export default function DocumentManagementPage() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-4" onDragOver={e => e.preventDefault()} onDrop={handleDrop}>
+        <main className="flex-1 p-4" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+          {/* Drop Zone */}
+          <div
+            onClick={() => fileInput.current?.click()}
+            className={`mb-4 border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
+              dragOver
+                ? "border-fuchsia-400 bg-fuchsia-50"
+                : uploading
+                ? "border-blue-300 bg-blue-50"
+                : "border-gray-200 bg-white hover:border-fuchsia-300 hover:bg-fuchsia-50/30"
+            }`}
+            data-testid="drop-zone"
+          >
+            {uploading ? (
+              <div className="flex items-center justify-center gap-3">
+                <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                <span className="text-sm text-blue-600 font-medium">{uploadProgress}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-3">
+                <Upload className={`w-5 h-5 ${dragOver ? "text-fuchsia-500" : "text-gray-400"}`} />
+                <span className={`text-sm ${dragOver ? "text-fuchsia-600 font-medium" : "text-gray-500"}`}>
+                  {dragOver ? "Dateien hier ablegen" : "Dateien hierher ziehen oder klicken zum Hochladen"}
+                </span>
+                <span className="text-xs text-gray-400">PDF, JPEG, PNG, WebP, TIFF</span>
+              </div>
+            )}
+          </div>
           {isSearching && (
             <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
               <Search className="w-4 h-4" />
@@ -343,19 +382,12 @@ export default function DocumentManagementPage() {
           )}
 
           {documents.length === 0 && !uploading ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center"
-              onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-fuchsia-400", "bg-fuchsia-50"); }}
-              onDragLeave={e => { e.currentTarget.classList.remove("border-fuchsia-400", "bg-fuchsia-50"); }}
-              onDrop={handleDrop}
-            >
-              <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-                <Upload className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-700 mb-1">
-                {isSearching ? "Keine Treffer" : "Noch keine Dokumente"}
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <h3 className="text-base font-medium text-gray-500 mb-1">
+                {isSearching ? "Keine Treffer" : "Noch keine Dokumente in diesem Ordner"}
               </h3>
-              <p className="text-sm text-gray-500 mb-4 max-w-xs">
-                {isSearching ? "Versuchen Sie andere Suchbegriffe." : "Ziehen Sie Dateien hierher oder klicken Sie auf \"Hochladen\". Die KI erkennt automatisch Typ und Ordner."}
+              <p className="text-sm text-gray-400">
+                {isSearching ? "Versuchen Sie andere Suchbegriffe." : "Laden Sie Dokumente über die Zone oben hoch."}
               </p>
             </div>
           ) : (
