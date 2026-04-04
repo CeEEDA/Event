@@ -254,8 +254,14 @@ export default function SchaustellerAnmeldungPage() {
     }
     for (let i = 0; i < additionalSignups.length; i++) {
       const a = additionalSignups[i];
-      if (!a.platznummer || !a.fahrgeschaeft || !a.connection_type) {
-        toast.error(`Bitte alle Felder beim ${i + 2}. Anschluss ausfüllen`); return;
+      if (a.isWohnwagen) {
+        if (!a.platznummer || !a.connection_type) {
+          toast.error(`Bitte Platznummer und Anschluss beim Wohnwagen ${i + 1} ausfüllen`); return;
+        }
+      } else {
+        if (!a.platznummer || !a.fahrgeschaeft || !a.connection_type) {
+          toast.error(`Bitte alle Felder beim ${i + 2}. Anschluss ausfüllen`); return;
+        }
       }
     }
     setSaving(true);
@@ -267,7 +273,7 @@ export default function SchaustellerAnmeldungPage() {
 
       // Submit additional signups
       for (const extra of additionalSignups) {
-        await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...extra });
+        await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...extra, payment_method: signupForm.payment_method });
       }
 
       if (r.data?.payment_status === "pending_payment") {
@@ -739,7 +745,7 @@ export default function SchaustellerAnmeldungPage() {
                 </div>
                 <div className="border-t border-gray-100 pt-4 space-y-4">
                   <div><Label className="text-gray-700 text-sm">Platznummer *</Label><Input value={signupForm.platznummer} onChange={e => setSignupForm(f => ({ ...f, platznummer: e.target.value }))} placeholder="z.B. A12" className="mt-1" data-testid="signup-platznummer" /></div>
-                  <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Betrieb *</Label><Input value={signupForm.fahrgeschaeft} onChange={e => setSignupForm(f => ({ ...f, fahrgeschaeft: e.target.value }))} placeholder="z.B. Achterbahn, Autoscooter, Imbissbude" className="mt-1" data-testid="signup-fahrgeschaeft" /></div>
+                  <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Betrieb *</Label><Input value={signupForm.fahrgeschaeft} onChange={e => setSignupForm(f => ({ ...f, fahrgeschaeft: e.target.value }))} placeholder="z.B. Achterbahn, Autoscooter, Imbiss" className="mt-1" data-testid="signup-fahrgeschaeft" /></div>
                   <div>
                     <Label className="text-gray-700 text-sm">Stromanschluss *</Label>
                     <div className="grid grid-cols-3 gap-2 mt-1">
@@ -754,42 +760,11 @@ export default function SchaustellerAnmeldungPage() {
                       ))}
                     </div>
                   </div>
-                  <div>
-                    <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
-                    <select value={signupForm.payment_method} onChange={e => setSignupForm(f => ({ ...f, payment_method: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="signup-payment">
-                      {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
-                  </div>
-                  {signupForm.connection_type && (() => {
-                    const p = [...(selectedEvent.prices || []), ...(selectedEvent.wohnwagen_prices || [])].find(pr => pr.connection_type === signupForm.connection_type);
-                    const depositAmt = depositAmounts[signupForm.connection_type];
-                    return (
-                      <div className="space-y-2">
-                        {p && (
-                          <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-4">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-fuchsia-700 font-medium">Anschlussgebühr</span>
-                              <span className="text-lg font-bold text-fuchsia-800">{p.price.toFixed(2)} EUR</span>
-                            </div>
-                          </div>
-                        )}
-                        {depositAmt > 0 && (
-                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-amber-700 font-medium">Kaution ({signupForm.connection_type})</span>
-                              <span className="text-lg font-bold text-amber-800">{depositAmt.toFixed(2)} EUR</span>
-                            </div>
-                            <p className="text-[10px] text-amber-600 mt-1">Wird nach der Anmeldung per Kreditkarte fällig</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Zusätzliche Anschlüsse */}
                 {additionalSignups.map((extra, idx) => (
-                  <div key={idx} className={`border rounded-xl p-4 space-y-4 relative ${extra.isWohnwagen ? "border-amber-200 bg-amber-50/30" : "border-gray-200 bg-gray-50"}`} data-testid={`extra-signup-${idx}`}>
+                  <div key={idx} className={`border rounded-xl p-4 space-y-4 relative ${extra.isWohnwagen ? "border-amber-200" : "border-gray-200"}`} data-testid={`extra-signup-${idx}`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className={`text-xs font-semibold uppercase tracking-wider ${extra.isWohnwagen ? "text-amber-600" : "text-gray-500"}`}>
                         {extra.isWohnwagen ? `Wohnwagen ${idx + 1}` : `${idx + 2}. Anschluss`}
@@ -798,10 +773,7 @@ export default function SchaustellerAnmeldungPage() {
                     </div>
                     {extra.isWohnwagen ? (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div><Label className="text-gray-700 text-sm">Position / Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A15" data-testid={`extra-platznummer-${idx}`} /></div>
-                          <div><Label className="text-gray-700 text-sm">Nutzung</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder="Wohnwagen" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
-                        </div>
+                        <div><Label className="text-gray-700 text-sm">Position / Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A15" data-testid={`extra-platznummer-${idx}`} /></div>
                         <div>
                           <Label className="text-gray-700 text-sm">Anschluss</Label>
                           <div className="grid grid-cols-3 gap-2 mt-1">
@@ -821,7 +793,7 @@ export default function SchaustellerAnmeldungPage() {
                     ) : (
                       <>
                         <div><Label className="text-gray-700 text-sm">Platznummer *</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A12" data-testid={`extra-platznummer-${idx}`} /></div>
-                        <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Betrieb *</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder="z.B. Achterbahn, Autoscooter, Imbissbude" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
+                        <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Betrieb *</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder="z.B. Achterbahn, Autoscooter, Imbiss" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
                         <div>
                           <Label className="text-gray-700 text-sm">Stromanschluss *</Label>
                           <div className="grid grid-cols-3 gap-2 mt-1">
@@ -839,12 +811,6 @@ export default function SchaustellerAnmeldungPage() {
                         </div>
                       </>
                     )}
-                    <div>
-                      <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
-                      <select value={extra.payment_method} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, payment_method: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-payment-${idx}`}>
-                        {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                      </select>
-                    </div>
                   </div>
                 ))}
 
@@ -866,6 +832,44 @@ export default function SchaustellerAnmeldungPage() {
                   >
                     <Plus className="w-4 h-4" /> Wohnwagen-Anschluss anmelden
                   </button>
+                </div>
+
+                {/* Gesamtübersicht & Zahlungsmittel */}
+                {(() => {
+                  const allPrices = [...(selectedEvent.prices || []), ...(selectedEvent.wohnwagen_prices || [])];
+                  const mainPrice = allPrices.find(p => p.connection_type === signupForm.connection_type);
+                  const extraPrices = additionalSignups.map(a => allPrices.find(p => p.connection_type === a.connection_type)).filter(Boolean);
+                  const totalNetto = (mainPrice ? mainPrice.price : 0) + extraPrices.reduce((sum, p) => sum + p.price, 0);
+                  const items = [];
+                  if (mainPrice) items.push({ label: `${signupForm.fahrgeschaeft || "Hauptanschluss"} – ${signupForm.connection_type}`, price: mainPrice.price });
+                  additionalSignups.forEach((a, i) => {
+                    const p = allPrices.find(pr => pr.connection_type === a.connection_type);
+                    if (p) items.push({ label: `${a.isWohnwagen ? "Wohnwagen" : (a.fahrgeschaeft || `${i+2}. Anschluss`)} – ${a.connection_type}`, price: p.price });
+                  });
+                  return items.length > 0 ? (
+                    <div className="border border-fuchsia-200 rounded-xl p-4 space-y-3" data-testid="booking-summary">
+                      <Label className="text-gray-700 text-sm font-semibold">Buchungsübersicht</Label>
+                      <div className="space-y-1.5">
+                        {items.map((item, i) => (
+                          <div key={i} className="flex justify-between text-sm">
+                            <span className="text-gray-600">{item.label}</span>
+                            <span className="font-medium text-gray-800">{item.price.toFixed(2)} EUR</span>
+                          </div>
+                        ))}
+                        <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between">
+                          <span className="text-sm font-bold text-gray-900">Gesamt (netto)</span>
+                          <span className="text-lg font-bold text-fuchsia-700">{totalNetto.toFixed(2)} EUR</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
+                <div>
+                  <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
+                  <select value={signupForm.payment_method} onChange={e => setSignupForm(f => ({ ...f, payment_method: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="signup-payment">
+                    {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
                 </div>
 
                 {/* AGB Checkbox */}

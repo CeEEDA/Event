@@ -1,0 +1,80 @@
+{
+  "summary": "Tested multi-connection booking flow for Kirmes module. Most features working correctly, but found a pricing bug for Wohnwagen signups.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/kirmes/public/signup",
+        "issue": "Wohnwagen signups use regular prices instead of wohnwagen_prices. When a Wohnwagen signup has connection_type='Schuko', it uses 30 EUR (regular Schuko price) instead of 50 EUR (wohnwagen Schuko price). The backend checks regular prices first and only falls back to wohnwagen_prices if no match found.",
+        "priority": "HIGH",
+        "file": "/app/backend/routes/kirmes.py",
+        "line": "928-938",
+        "fix_suggestion": "Check if fahrgeschaeft === 'Wohnwagen' and use wohnwagen_prices for those signups"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "SchaustellerAnmeldungPage - Buchungsübersicht",
+        "issue": "Wohnwagen signups show wrong price in Buchungsübersicht. Uses regular Schuko price (30 EUR) instead of wohnwagen Schuko price (50 EUR)",
+        "selector": "[data-testid='booking-summary']",
+        "priority": "HIGH",
+        "file": "/app/frontend/src/pages/SchaustellerAnmeldungPage.jsx",
+        "line": "839-847",
+        "fix_suggestion": "When calculating price for Wohnwagen signups (isWohnwagen=true), search wohnwagen_prices first"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_55.json"
+  ],
+  "action_items": [
+    "FIX CRITICAL: Backend - In POST /api/kirmes/public/signup, check if fahrgeschaeft === 'Wohnwagen' and use wohnwagen_prices for price lookup",
+    "FIX HIGH: Frontend - In Buchungsübersicht calculation, for Wohnwagen signups (isWohnwagen=true), search wohnwagen_prices first before regular prices"
+  ],
+  "critical_code_review_comments": [
+    "Backend kirmes.py line 928-938: Price lookup logic doesn't distinguish between regular and Wohnwagen signups. Both use same connection_type (e.g., 'Schuko') but have different prices.",
+    "Frontend SchaustellerAnmeldungPage.jsx line 839: allPrices combines both price lists with regular prices first, causing wrong price display for Wohnwagen"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "95% - All APIs working, pricing bug for Wohnwagen",
+    "frontend": "95% - All UI flows working, pricing display bug for Wohnwagen"
+  },
+  "test_credentials": "Vendor: hans@test.de / Test1234!, Admin: admin@test.com / password",
+  "seed_data_creation": "Created 3 new signups for Hans Müller: C20 (32A), C21 (16A), C22 (Wohnwagen Schuko)",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Multi-connection booking flow tested. Found pricing bug for Wohnwagen signups - uses regular prices instead of wohnwagen_prices. All other features verified: (1) No gray background on additional forms, (2) No Nutzung field in Wohnwagen form, (3) Imbiss placeholder correct, (4) Single Zahlungsmittel above AGBs, (5) Buchungsübersicht shows all connections, (6) PDF export works, (7) Invoice generation works.",
+  "verified_features": {
+    "removed_gray_background": "PASS - Additional signup forms have white/transparent background with border",
+    "removed_nutzung_field": "PASS - Wohnwagen form only has Position/Platznummer and Anschluss fields",
+    "imbiss_placeholder": "PASS - Placeholder shows 'z.B. Achterbahn, Autoscooter, Imbiss' (not Imbissbude)",
+    "single_zahlungsmittel": "PASS - ONE Zahlungsmittel dropdown above AGBs, not per-connection",
+    "buchungsuebersicht": "PARTIAL - Shows all connections with prices, but Wohnwagen price is wrong",
+    "unified_payment_method": "PASS - signupForm.payment_method passed to all additional signups on submit",
+    "multi_signup_creation": "PASS - All 3 signups created in database",
+    "admin_signups_visible": "PASS - All signups visible in admin event detail page",
+    "montageliste_pdf": "PASS - PDF export works",
+    "invoice_generation": "PASS - Invoice generation dialog works"
+  },
+  "bugs_found": {
+    "wohnwagen_pricing": {
+      "description": "Wohnwagen signups use regular prices instead of wohnwagen_prices",
+      "reproduction_steps": [
+        "1. Login as vendor hans@test.de",
+        "2. Start new booking, select event",
+        "3. Add Wohnwagen connection with Schuko",
+        "4. Observe Buchungsübersicht shows 30 EUR (should be 50 EUR)",
+        "5. Submit booking",
+        "6. Check database - signup has price 30.0 (should be 50.0)"
+      ],
+      "expected": "Wohnwagen Schuko should be 50 EUR (from wohnwagen_prices)",
+      "actual": "Wohnwagen Schuko is 30 EUR (from regular prices)",
+      "root_cause": "Backend and frontend both search regular prices first, finding Schuko at 30 EUR before checking wohnwagen_prices"
+    }
+  }
+}
