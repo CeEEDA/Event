@@ -227,10 +227,10 @@ export default function DocumentManagementPage() {
 
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
         {/* Folder Sidebar */}
-        <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 p-4 space-y-1">
+        <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 p-4 space-y-1 overflow-y-auto" style={{ maxHeight: "calc(100vh - 57px)" }}>
           <button
             onClick={() => { setActiveFolder(null); setIsSearching(false); setSearchQuery(""); }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               !activeFolder && !isSearching ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-300" : "text-gray-700 hover:bg-gray-100"
             }`}
             data-testid="folder-all"
@@ -265,13 +265,13 @@ export default function DocumentManagementPage() {
                 ) : (
                   <button
                     onClick={() => { setActiveFolder(f.id); setIsSearching(false); setSearchQuery(""); }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
                       isActive ? `${c.active} font-medium border` : "text-gray-700 hover:bg-gray-100 border border-transparent"
                     }`}
                     data-testid={`folder-${f.id}`}
                   >
-                    <div className={`w-7 h-7 rounded-md ${c.bg} flex items-center justify-center flex-shrink-0`}>
-                      <Icon className={`w-3.5 h-3.5 ${c.text}`} />
+                    <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${c.bg}`}>
+                      <Icon className={`w-3 h-3 ${c.text}`} />
                     </div>
                     <span className="flex-1 text-left truncate">{f.name}</span>
                     <span className="text-xs text-gray-400">{f.count}</span>
@@ -306,7 +306,7 @@ export default function DocumentManagementPage() {
           ) : (
             <button
               onClick={() => setShowNewFolder(true)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
               data-testid="new-folder-btn"
             >
               <FolderPlus className="w-4 h-4" />
