@@ -325,6 +325,40 @@ async def delete_folder(folder_id: str):
     return {"status": "deleted"}
 
 
+DATEV_EMAIL = "d5aa2eb6-6bae-417a-8894-664a6eb160c8@uploadmail.datev.de"
+DATEV_FORWARD_FOLDERS = ["rechnungseingang"]
+
+
+async def _forward_to_datev(doc_id: str, storage_path: str, original_filename: str, content_type: str, ai_metadata: dict):
+    """Forward incoming invoices to DATEV Unternehmen Online via email."""
+    try:
+        from email_service import send_email_with_attachment
+
+        file_data, _ = get_object(storage_path)
+        sender = ai_metadata.get("sender", "Unbekannt")
+        inv_nr = ai_metadata.get("invoice_number", "")
+        amount = ai_metadata.get("amount")
+        subject_line = ai_metadata.get("subject", original_filename)
+
+        subject = f"Eingangsrechnung: {subject_line}"
+        if inv_nr:
+            subject += f" (Nr. {inv_nr})"
+
+        html = f"""<p>Automatische Weiterleitung aus dem Eventenergie Dokumentenportal.</p>
+<p><b>Datei:</b> {original_filename}<br/>
+<b>Absender:</b> {sender}<br/>
+{'<b>Rechnungsnummer:</b> ' + inv_nr + '<br/>' if inv_nr else ''}
+{'<b>Betrag:</b> ' + f'{amount:.2f} EUR<br/>' if amount else ''}
+<b>Erkannt als:</b> Eingangsrechnung</p>"""
+
+        send_email_with_attachment(DATEV_EMAIL, subject, html, file_data, original_filename)
+        await db.documents.update_one({"id": doc_id}, {"$set": {"datev_forwarded": True, "datev_forwarded_at": datetime.now(timezone.utc).isoformat()}})
+        logger.info(f"Document {doc_id} forwarded to DATEV: {original_filename}")
+    except Exception as e:
+        logger.error(f"DATEV forwarding failed for doc {doc_id}: {e}")
+        await db.documents.update_one({"id": doc_id}, {"$set": {"datev_forwarded": False, "datev_forward_error": str(e)}})
+
+
 async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
     """Background task to run AI analysis on an uploaded document."""
     try:
@@ -348,6 +382,11 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
         logger.info(f"AI analysis completed for doc {doc_id} -> folder: {final_folder}")
+
+        # Auto-forward incoming invoices to DATEV
+        doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+        if final_folder in DATEV_FORWARD_FOLDERS and doc:
+            await _forward_to_datev(doc_id, doc["storage_path"], doc["original_filename"], content_type, ai_result)
     except Exception as e:
         logger.error(f"AI analysis error for doc {doc_id}: {e}")
         await db.documents.update_one({"id": doc_id}, {"$set": {"ai_status": "failed"}})

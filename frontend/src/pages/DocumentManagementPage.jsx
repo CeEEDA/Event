@@ -7,7 +7,7 @@ import {
   ArrowLeft, Search, Upload, FolderOpen, FileText, Receipt, Car, Shield,
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
-  FolderPlus, Pencil, Check
+  FolderPlus, Pencil, Check, Send
 } from "lucide-react";
 import axios from "axios";
 
@@ -389,6 +389,11 @@ export default function DocumentManagementPage() {
                               <Loader2 className="w-3 h-3 animate-spin" /> Analyse...
                             </span>
                           )}
+                          {doc.datev_forwarded && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-medium flex-shrink-0">
+                              <Send className="w-3 h-3" /> DATEV
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-500">
                           {meta.sender && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{meta.sender}</span>}
@@ -457,6 +462,12 @@ export default function DocumentManagementPage() {
                   <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-medium">
                     <Brain className="w-3.5 h-3.5" /> KI-Analyse abgeschlossen
                   </div>
+                  {selectedDoc.datev_forwarded && (
+                    <div className="flex items-center gap-1.5 text-blue-600 text-xs font-medium">
+                      <Send className="w-3.5 h-3.5" /> An DATEV weitergeleitet
+                      {selectedDoc.datev_forwarded_at && <span className="text-gray-400 ml-1">({formatDate(selectedDoc.datev_forwarded_at)})</span>}
+                    </div>
+                  )}
                   {selectedDoc.ai_metadata.subject && (
                     <div><p className="text-[11px] text-gray-400 mb-0.5">Betreff</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.subject}</p></div>
                   )}
