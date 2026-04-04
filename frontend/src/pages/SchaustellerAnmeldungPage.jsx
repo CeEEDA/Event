@@ -95,6 +95,7 @@ export default function SchaustellerAnmeldungPage() {
   const [signupForm, setSignupForm] = useState({
     platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte",
   });
+  const [additionalSignups, setAdditionalSignups] = useState([]);
   const [lastSignupId, setLastSignupId] = useState(null);
   const [depositAmounts, setDepositAmounts] = useState({});
   const [paymentChecking, setPaymentChecking] = useState(false);
@@ -251,19 +252,32 @@ export default function SchaustellerAnmeldungPage() {
     if (!signupForm.platznummer || !signupForm.fahrgeschaeft || !signupForm.connection_type) {
       toast.error("Bitte Platznummer, Fahrgeschäft und Anschluss angeben"); return;
     }
+    for (let i = 0; i < additionalSignups.length; i++) {
+      const a = additionalSignups[i];
+      if (!a.platznummer || !a.fahrgeschaeft || !a.connection_type) {
+        toast.error(`Bitte alle Felder beim ${i + 2}. Anschluss ausfüllen`); return;
+      }
+    }
     setSaving(true);
     try {
+      // Submit main signup
       const r = await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...signupForm });
       const signupId = r.data?.signup_id || r.data?.id;
       setLastSignupId(signupId);
 
+      // Submit additional signups
+      for (const extra of additionalSignups) {
+        await api.post("/kirmes/public/signup", { event_id: selectedEvent.id, schausteller_id: schausteller.id, ...extra });
+      }
+
       if (r.data?.payment_status === "pending_payment") {
-        toast.success("Anmeldung vorgemerkt! Bitte bezahlen Sie die Kaution.");
+        toast.success(`${1 + additionalSignups.length} Anmeldung(en) vorgemerkt! Bitte bezahlen Sie die Kaution.`);
         setStep("payment");
       } else {
-        toast.success("Anmeldung erfolgreich!");
+        toast.success(`${1 + additionalSignups.length} Anmeldung(en) erfolgreich!`);
         setStep("done");
       }
+      setAdditionalSignups([]);
     } catch (err) {
       toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Anmeldung");
     } finally { setSaving(false); }
@@ -772,6 +786,54 @@ export default function SchaustellerAnmeldungPage() {
                     );
                   })()}
                 </div>
+
+                {/* Zusätzliche Anschlüsse */}
+                {additionalSignups.map((extra, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50 relative" data-testid={`extra-signup-${idx}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{idx + 2}. Anschluss</span>
+                      <button onClick={() => setAdditionalSignups(prev => prev.filter((_, i) => i !== idx))} className="text-xs text-red-400 hover:text-red-600" data-testid={`remove-extra-${idx}`}>Entfernen</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><Label className="text-gray-700 text-sm">Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" data-testid={`extra-platznummer-${idx}`} /></div>
+                      <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Nutzung</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
+                    </div>
+                    <div>
+                      <Label className="text-gray-700 text-sm">Anschluss</Label>
+                      <select value={extra.connection_type} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-connection-${idx}`}>
+                        <option value="">Bitte wählen...</option>
+                        {(selectedEvent.prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
+                      <select value={extra.payment_method} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, payment_method: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-payment-${idx}`}>
+                        {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Buttons: Weiteren Anschluss / Wohnwagen */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: signupForm.payment_method }])}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-fuchsia-300 rounded-lg text-sm font-medium text-fuchsia-600 hover:bg-fuchsia-50 hover:border-fuchsia-400 transition-colors"
+                    data-testid="add-extra-signup-btn"
+                  >
+                    <Plus className="w-4 h-4" /> Weiteren Anschluss anmelden
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "Wohnwagen", connection_type: "", payment_method: signupForm.payment_method }])}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-amber-300 rounded-lg text-sm font-medium text-amber-600 hover:bg-amber-50 hover:border-amber-400 transition-colors"
+                    data-testid="add-wohnwagen-btn"
+                  >
+                    <Plus className="w-4 h-4" /> Wohnwagen-Anschluss anmelden
+                  </button>
+                </div>
+
                 {/* AGB Checkbox */}
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <label className="flex items-start gap-3 cursor-pointer">
@@ -858,7 +920,7 @@ export default function SchaustellerAnmeldungPage() {
                 <p><span className="text-gray-500">Anschluss:</span> <strong>{signupForm.connection_type}</strong></p>
               </div>
               <div className="flex flex-col gap-3">
-                <Button onClick={() => { setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); setStep("signup"); }} variant="outline" className="border-fuchsia-200 text-fuchsia-600 hover:bg-fuchsia-50" data-testid="another-signup-btn">
+                <Button onClick={() => { setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); setAdditionalSignups([]); setStep("signup"); }} variant="outline" className="border-fuchsia-200 text-fuchsia-600 hover:bg-fuchsia-50" data-testid="another-signup-btn">
                   <Plus className="w-4 h-4 mr-1" /> Weiteren Stand anmelden
                 </Button>
                 <Button onClick={() => { loadBookings(schausteller.id); setStep("dashboard"); setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="to-dashboard-btn">
