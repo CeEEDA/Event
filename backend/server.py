@@ -1844,6 +1844,9 @@ from routes.project_reports import router as project_reports_router, init_projec
 init_project_report_routes(db, decode_jwt_token)
 app.include_router(project_reports_router)
 
+from routes.documents import router as documents_router
+app.include_router(documents_router)
+
 
 
 app.add_middleware(
@@ -2040,3 +2043,11 @@ async def startup_event():
         await start_backup_scheduler()
     except Exception:
         pass
+    # Init document storage
+    try:
+        from routes.documents import init_storage
+        init_storage()
+        logger.info("Document storage initialized")
+    except Exception as e:
+        logger.warning(f"Document storage init deferred: {e}")
+

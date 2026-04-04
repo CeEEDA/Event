@@ -32,6 +32,7 @@ import ProjectReportFormPage from "./pages/ProjectReportFormPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import FinancePage from "./pages/FinancePage";
 import VerwaltungPage from "./pages/VerwaltungPage";
+import DocumentManagementPage from "./pages/DocumentManagementPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -172,6 +173,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <VerwaltungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/dokumente"
+        element={
+          <ProtectedRoute>
+            <DocumentManagementPage />
           </ProtectedRoute>
         }
       />

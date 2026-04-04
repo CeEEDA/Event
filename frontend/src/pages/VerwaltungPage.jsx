@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -13,6 +13,14 @@ export default function VerwaltungPage() {
       icon: Receipt,
       color: "emerald",
       path: "/finance",
+    },
+    {
+      key: "documents",
+      label: "Dokumentenverwaltung",
+      description: "Dokumente ablegen, KI-Erkennung, Volltextsuche",
+      icon: FolderOpen,
+      color: "blue",
+      path: "/verwaltung/dokumente",
     },
   ];
 
