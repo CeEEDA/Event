@@ -1244,44 +1244,48 @@ async def _auto_set_kwh_ausbau(signup: dict) -> dict:
     return signup
 
 
-def _calculate_invoice(signup: dict, event: dict, schausteller: dict) -> dict:
-    """Calculate invoice amounts for a signup."""
+def _calculate_invoice(signups: list, event: dict, schausteller: dict) -> dict:
+    """Calculate invoice amounts for all signups of a schausteller."""
     line_items = []
     pos = 1
 
-    # 1. Connection fee (Anschlussgebühr)
-    conn_fee = signup.get("price", 0)
-    conn_type = signup.get("connection_type", "")
-    line_items.append({
-        "pos": pos, "description": f"Stromanschluss {conn_type} – Platz {signup.get('platznummer', '')}",
-        "quantity": "1", "unit": "pauschal", "unit_price": conn_fee, "total": conn_fee,
-    })
-    pos += 1
-
-    # 2. kWh consumption - always show Einbau, Ausbau, Verbrauch
-    kwh_start = signup.get("kwh_einbau") or signup.get("kwh_start") or 0
-    kwh_end = signup.get("kwh_ausbau") or signup.get("kwh_end") or 0
-    kwh_used = max(0, kwh_end - kwh_start)
-    kwh_price = event.get("kwh_price", 0)
-
-    kwh_total = round(kwh_used * kwh_price, 2)
-    line_items.append({
-        "pos": pos,
-        "description": f"Energieverbrauch\nZählerstand Einbau: {kwh_start:.2f} kWh\nZählerstand Ausbau: {kwh_end:.2f} kWh\nVerbrauch: {kwh_used:.2f} kWh",
-        "quantity": f"{kwh_used:.2f}", "unit": "kWh", "unit_price": kwh_price, "total": kwh_total,
-    })
-    pos += 1
-
-    # 3. Handling surcharge = kWh consumed * handling price per kWh
-    handling_per_kwh = event.get("handling_surcharge", 0)
-    if handling_per_kwh > 0:
-        handling_total = round(kwh_used * handling_per_kwh, 2)
+    for signup in signups:
+        # 1. Connection fee (Anschlussgebühr)
+        conn_fee = signup.get("price", 0)
+        conn_type = signup.get("connection_type", "")
+        fahrgeschaeft = signup.get("fahrgeschaeft", "")
+        label = f"{fahrgeschaeft} – " if fahrgeschaeft else ""
         line_items.append({
-            "pos": pos,
-            "description": f"Handlingpauschale ({kwh_used:.2f} kWh)",
-            "quantity": f"{kwh_used:.2f}", "unit": "kWh", "unit_price": handling_per_kwh, "total": handling_total,
+            "pos": pos, "description": f"Stromanschluss {conn_type} – Platz {signup.get('platznummer', '')}\n{label}{conn_type}",
+            "quantity": "1", "unit": "pauschal", "unit_price": conn_fee, "total": conn_fee,
         })
         pos += 1
+
+        # 2. kWh consumption
+        kwh_start = signup.get("kwh_einbau") or signup.get("kwh_start") or 0
+        kwh_end = signup.get("kwh_ausbau") or signup.get("kwh_end") or 0
+        kwh_used = max(0, kwh_end - kwh_start)
+        kwh_price = event.get("kwh_price", 0)
+
+        if kwh_used > 0 or kwh_start > 0 or kwh_end > 0:
+            kwh_total = round(kwh_used * kwh_price, 2)
+            line_items.append({
+                "pos": pos,
+                "description": f"Energieverbrauch Platz {signup.get('platznummer', '')}\nZählerstand Einbau: {kwh_start:.2f} kWh\nZählerstand Ausbau: {kwh_end:.2f} kWh\nVerbrauch: {kwh_used:.2f} kWh",
+                "quantity": f"{kwh_used:.2f}", "unit": "kWh", "unit_price": kwh_price, "total": kwh_total,
+            })
+            pos += 1
+
+            # 3. Handling surcharge
+            handling_per_kwh = event.get("handling_surcharge", 0)
+            if handling_per_kwh > 0:
+                handling_total = round(kwh_used * handling_per_kwh, 2)
+                line_items.append({
+                    "pos": pos,
+                    "description": f"Handlingpauschale Platz {signup.get('platznummer', '')} ({kwh_used:.2f} kWh)",
+                    "quantity": f"{kwh_used:.2f}", "unit": "kWh", "unit_price": handling_per_kwh, "total": handling_total,
+                })
+                pos += 1
 
     netto = round(sum(item["total"] for item in line_items), 2)
     mwst_rate = 19
@@ -1299,15 +1303,10 @@ def _calculate_invoice(signup: dict, event: dict, schausteller: dict) -> dict:
 
 @router.post("/signups/{signup_id}/invoice")
 async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_require_staff)):
-    """Generate an invoice for a single signup."""
+    """Generate a combined invoice for ALL signups of the same schausteller in the same event."""
     signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
     if not signup:
         raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
-
-    # Check if invoice already exists
-    existing = await _db.kirmes_invoices.find_one({"signup_id": signup_id}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Rechnung {existing['invoice_number']} existiert bereits für diese Anmeldung.")
 
     event = await _db.kirmes_events.find_one({"id": signup["event_id"]}, {"_id": 0})
     if not event:
@@ -1316,16 +1315,34 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
     if not sch:
         raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
 
-    # Auto-set kwh_ausbau from latest meter reading
-    signup = await _auto_set_kwh_ausbau(signup)
+    # Find ALL signups of this schausteller for this event
+    all_signups = await _db.kirmes_signups.find(
+        {"event_id": signup["event_id"], "schausteller_id": signup["schausteller_id"]},
+        {"_id": 0}
+    ).to_list(100)
 
-    calc = _calculate_invoice(signup, event, sch)
+    # Check if any of these signups already has an invoice
+    signup_ids = [s["id"] for s in all_signups]
+    existing = await _db.kirmes_invoices.find_one({"signup_ids": {"$in": signup_ids}}, {"_id": 0})
+    if not existing:
+        existing = await _db.kirmes_invoices.find_one({"signup_id": {"$in": signup_ids}}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Rechnung {existing['invoice_number']} existiert bereits für diesen Schausteller.")
+
+    # Auto-set kwh_ausbau for all signups
+    processed_signups = []
+    for s in all_signups:
+        s = await _auto_set_kwh_ausbau(s)
+        processed_signups.append(s)
+
+    calc = _calculate_invoice(processed_signups, event, sch)
     inv_number = await _get_next_invoice_number()
 
     invoice_doc = {
         "id": str(uuid.uuid4()),
         "invoice_number": inv_number,
-        "signup_id": signup_id,
+        "signup_ids": signup_ids,
+        "signup_id": signup_ids[0],
         "event_id": signup["event_id"],
         "event_name": event.get("name", ""),
         "schausteller_id": signup["schausteller_id"],
@@ -1349,18 +1366,19 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
     await _db.kirmes_invoices.insert_one(invoice_doc)
     invoice_doc.pop("_id", None)
 
-    # Update signup status
-    await _db.kirmes_signups.update_one(
-        {"id": signup_id},
-        {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
-    )
+    # Update ALL signups status
+    for sid in signup_ids:
+        await _db.kirmes_signups.update_one(
+            {"id": sid},
+            {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
+        )
 
     return invoice_doc
 
 
 @router.post("/events/{event_id}/generate-invoices")
 async def generate_all_invoices(event_id: str, user: dict = Depends(_require_staff)):
-    """Generate invoices for all signups in an event that don't have one yet."""
+    """Generate one combined invoice per schausteller for all their signups in an event."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
@@ -1369,30 +1387,49 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
     generated = []
     skipped = []
 
+    # Group signups by schausteller_id
+    from collections import defaultdict
+    grouped = defaultdict(list)
     for signup in signups:
-        existing = await _db.kirmes_invoices.find_one({"signup_id": signup["id"]}, {"_id": 0})
-        if existing:
-            skipped.append({"signup_id": signup["id"], "invoice_number": existing["invoice_number"], "reason": "Bereits abgerechnet"})
+        grouped[signup["schausteller_id"]].append(signup)
+
+    for schausteller_id, sch_signups in grouped.items():
+        # Check if any signup already has an invoice
+        sch_signup_ids = [s["id"] for s in sch_signups]
+        has_invoice = False
+        for sid in sch_signup_ids:
+            existing = await _db.kirmes_invoices.find_one(
+                {"$or": [{"signup_id": sid}, {"signup_ids": sid}]}, {"_id": 0}
+            )
+            if existing:
+                skipped.append({"schausteller_id": schausteller_id, "invoice_number": existing["invoice_number"], "reason": "Bereits abgerechnet"})
+                has_invoice = True
+                break
+        if has_invoice:
             continue
 
-        sch = await _db.kirmes_schausteller.find_one({"id": signup["schausteller_id"]}, {"_id": 0, "password_hash": 0, "verification_code": 0})
+        sch = await _db.kirmes_schausteller.find_one({"id": schausteller_id}, {"_id": 0, "password_hash": 0, "verification_code": 0})
         if not sch:
-            skipped.append({"signup_id": signup["id"], "reason": "Schausteller nicht gefunden"})
+            skipped.append({"schausteller_id": schausteller_id, "reason": "Schausteller nicht gefunden"})
             continue
 
-        # Auto-set kwh_ausbau from latest meter reading
-        signup = await _auto_set_kwh_ausbau(signup)
+        # Auto-set kwh_ausbau for all signups
+        processed_signups = []
+        for s in sch_signups:
+            s = await _auto_set_kwh_ausbau(s)
+            processed_signups.append(s)
 
-        calc = _calculate_invoice(signup, event, sch)
+        calc = _calculate_invoice(processed_signups, event, sch)
         inv_number = await _get_next_invoice_number()
 
         invoice_doc = {
             "id": str(uuid.uuid4()),
             "invoice_number": inv_number,
-            "signup_id": signup["id"],
+            "signup_ids": sch_signup_ids,
+            "signup_id": sch_signup_ids[0],
             "event_id": event_id,
             "event_name": event.get("name", ""),
-            "schausteller_id": signup["schausteller_id"],
+            "schausteller_id": schausteller_id,
             "schausteller_kundennummer": sch.get("kundennummer", ""),
             "schausteller_firma": sch.get("firma", ""),
             "schausteller_name": sch.get("name", ""),
@@ -1413,10 +1450,11 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
         await _db.kirmes_invoices.insert_one(invoice_doc)
         invoice_doc.pop("_id", None)
 
-        await _db.kirmes_signups.update_one(
-            {"id": signup["id"]},
-            {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
-        )
+        for sid in sch_signup_ids:
+            await _db.kirmes_signups.update_one(
+                {"id": sid},
+                {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
+            )
 
         # Auto-send invoice via email
         try:
@@ -1440,7 +1478,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
         except Exception:
             pass  # Don't fail batch if single email fails
 
-        generated.append({"signup_id": signup["id"], "invoice_number": inv_number, "brutto": calc["brutto"]})
+        generated.append({"schausteller_id": schausteller_id, "schausteller_firma": sch.get("firma", ""), "invoice_number": inv_number, "brutto": calc["brutto"], "signups_count": len(sch_signups)})
 
     # Update event status
     await _db.kirmes_events.update_one({"id": event_id}, {"$set": {"status": "abgerechnet"}})
