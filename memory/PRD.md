@@ -11,6 +11,14 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### SchaustellerAnmeldungPage Refactoring - FERTIG (2026-04-04)
+- Datei von 1400+ Zeilen in 14 Subkomponenten aufgeteilt
+- Ordner: /app/frontend/src/pages/schausteller/
+- Komponenten: constants.js, AuthStep, VerifyStep, SetPasswordStep, PasswordResetSteps, Dashboard, EventSelector, SignupForm, PaymentStep, PaymentCheckStep, DoneStep, AgbModal, DatenschutzModal, ImpressumModal
+- Hauptdatei ist jetzt ein duenner Wrapper mit State-Management
+- Alle data-testid Attribute beibehalten
+- 100% Frontend-Tests bestanden (iteration_56)
+
 ### Multi-Anschluss Buchung - FERTIG (2026-04-04)
 - Hauptanschluss + beliebig viele Zusatzanschluesse + Wohnwagen in einem Formular
 - "Weiteren Anschluss anmelden" hat gleiche Maske wie Hauptformular (Platznummer, Fahrgeschaeft, Stromanschluss-Karten)
@@ -63,6 +71,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ### P1 - Kommend
 - PayPal/Kreditkarten Integration
+- Lastdiagramm Live-Test mit verknuepften EMU-Zaehlern
 
 ### P2 - Backlog
 - Chromium Translate Popup auf Raspberry Pi
@@ -73,6 +82,3 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ### Blocked
 - DSE890 Gateway GSM (wartet auf neue SIM-Karten)
 - Lastdiagramm Live-Test (braucht verknuepfte EMU-Zaehler mit Messdaten)
-
-### Refactoring
-- SchaustellerAnmeldungPage.jsx aufteilen (aktuell >1300 Zeilen)
