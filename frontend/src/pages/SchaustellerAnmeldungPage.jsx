@@ -64,7 +64,7 @@ export default function SchaustellerAnmeldungPage() {
 
   // Steps: auth -> verify -> setpw -> dashboard -> event -> signup -> done
   const [step, setStep] = useState("auth");
-  const [authMode, setAuthMode] = useState("register");
+  const [authMode, setAuthMode] = useState("login");
   const [showImpressum, setShowImpressum] = useState(false);
   const [showDatenschutz, setShowDatenschutz] = useState(false);
   const [agbAccepted, setAgbAccepted] = useState(false);
@@ -370,14 +370,25 @@ export default function SchaustellerAnmeldungPage() {
                 <p className="text-sm text-gray-500">Registrieren Sie sich einmalig oder melden Sie sich an</p>
               </div>
               <div className="flex gap-2 mb-6">
-                <button onClick={() => setAuthMode("register")} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${authMode === "register" ? "bg-fuchsia-600 text-white" : "bg-gray-100 text-gray-600"}`} data-testid="auth-register-tab">
-                  <UserPlus className="w-4 h-4 inline mr-1" /> Registrieren
-                </button>
                 <button onClick={() => setAuthMode("login")} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${authMode === "login" ? "bg-fuchsia-600 text-white" : "bg-gray-100 text-gray-600"}`} data-testid="auth-login-tab">
                   <LogIn className="w-4 h-4 inline mr-1" /> Anmelden
                 </button>
+                <button onClick={() => setAuthMode("register")} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${authMode === "register" ? "bg-fuchsia-600 text-white" : "bg-gray-100 text-gray-600"}`} data-testid="auth-register-tab">
+                  <UserPlus className="w-4 h-4 inline mr-1" /> Registrieren
+                </button>
               </div>
-              {authMode === "register" ? (
+              {authMode === "login" ? (
+                <div className="space-y-4" data-testid="login-form">
+                  <div><Label className="text-gray-700 text-sm">E-Mail</Label><Input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="Ihre registrierte E-Mail" className="mt-1" data-testid="login-email" /></div>
+                  <div><Label className="text-gray-700 text-sm">Passwort</Label><PasswordInput value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Ihr Passwort" testId="login-password" /></div>
+                  <Button onClick={handleLogin} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="login-btn">
+                    {saving ? "Wird geprüft..." : "Anmelden"} <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                  <button onClick={() => { setResetEmail(loginEmail); setStep("reset-request"); }} className="w-full text-center text-xs text-gray-400 hover:text-fuchsia-600 underline mt-1" data-testid="forgot-password-link">
+                    Passwort vergessen?
+                  </button>
+                </div>
+              ) : (
                 <div className="space-y-3" data-testid="register-form">
                   <div className="grid grid-cols-2 gap-3">
                     <div><Label className="text-gray-700 text-sm">Vorname</Label><Input value={regForm.vorname} onChange={e => setRegForm(f => ({ ...f, vorname: e.target.value }))} className="mt-1" data-testid="reg-vorname" /></div>
@@ -396,17 +407,6 @@ export default function SchaustellerAnmeldungPage() {
                   <Button onClick={handleRegister} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mt-2" data-testid="register-btn">
                     {saving ? "Wird registriert..." : "Registrieren"} <ArrowRight className="w-4 h-4 ml-1" />
                   </Button>
-                </div>
-              ) : (
-                <div className="space-y-4" data-testid="login-form">
-                  <div><Label className="text-gray-700 text-sm">E-Mail</Label><Input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="Ihre registrierte E-Mail" className="mt-1" data-testid="login-email" /></div>
-                  <div><Label className="text-gray-700 text-sm">Passwort</Label><PasswordInput value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Ihr Passwort" testId="login-password" /></div>
-                  <Button onClick={handleLogin} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="login-btn">
-                    {saving ? "Wird geprüft..." : "Anmelden"} <ArrowRight className="w-4 h-4 ml-1" />
-                  </Button>
-                  <button onClick={() => { setResetEmail(loginEmail); setStep("reset-request"); }} className="w-full text-center text-xs text-gray-400 hover:text-fuchsia-600 underline mt-1" data-testid="forgot-password-link">
-                    Passwort vergessen?
-                  </button>
                 </div>
               )}
             </div>
