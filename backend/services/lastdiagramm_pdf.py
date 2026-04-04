@@ -228,6 +228,7 @@ def generate_lastdiagramm_pdf(order: dict, measurements: list) -> bytes:
 
     info_data = [
         ["Kirmes:", event.get("name", "–")],
+        ["Fahrgeschäft:", signup.get("fahrgeschaeft", "–")],
         ["Gebuchter Netzanschluss:", signup.get("connection_type", "–")],
         ["Zeitraum:", f"{start} – {end}"],
         ["Verbrauchte kWh:", f"{kwh_used:.2f} kWh"],
