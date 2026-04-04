@@ -11,40 +11,53 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
-### Multi-Anschluss Buchung (Multi-Connection Booking) - FERTIG (2026-04)
-- **Hauptanschluss** + beliebig viele Zusatzanschluesse + Wohnwagen-Anschluesse in einem Formular
-- **Buchungsuebersicht**: Zeigt alle Anschluesse mit korrekten Preisen und Gesamtsumme (netto)
-- **Einheitliches Zahlungsmittel**: Ein Zahlungsmittel-Dropdown oberhalb der AGBs fuer alle Buchungen
-- **Wohnwagen-Preise korrekt**: Backend und Frontend unterscheiden zwischen regulaeren und Wohnwagen-Preisen (gleicher connection_type, unterschiedliche Preislisten)
-- **Validierung**: Wohnwagen braucht nur Platznummer + Anschluss, normale Anschluesse zusaetzlich Fahrgeschaeft/Betrieb
-- **Buttons untereinander**: "Weiteren Anschluss anmelden" und "Wohnwagen-Anschluss anmelden" vertikal angeordnet
-- **Kein grauer Hintergrund** bei Zusatzanschluss-Formularen
-- **Kein Nutzungs-Feld** beim Wohnwagen-Formular
+### Multi-Anschluss Buchung - FERTIG (2026-04-04)
+- Hauptanschluss + beliebig viele Zusatzanschluesse + Wohnwagen in einem Formular
+- "Weiteren Anschluss anmelden" hat gleiche Maske wie Hauptformular (Platznummer, Fahrgeschaeft, Stromanschluss-Karten)
+- Wohnwagen-Formular: nur Platznummer + Anschluss (kein Nutzungs-Feld)
+- Buttons untereinander (nicht nebeneinander)
+- Kein grauer Hintergrund bei Zusatzformularen
+- Placeholder "Imbiss" statt "Imbissbude"
 
-### Lastdiagramm (Load Diagram) Feature - FERTIG (2026-04)
-- **Dashboard-Sektion**: "Lastdiagramme" zeigt verfuegbare und gekaufte Diagramme
-- **Kaufprozess**: 125,00 EUR netto + 19% MwSt = 148,75 EUR brutto
-- **PDF-Generierung**: Deckblatt + taegliche Lastdiagramme (Leistung kW + Strom A pro Phase L1/L2/L3)
-- **Endpoints**: GET /api/kirmes/public/lastdiagramm/available, POST /purchase, GET /{id}/pdf
+### Zahlungsmittel & Kaution - FERTIG (2026-04-04)
+- EIN Zahlungsmittel-Dropdown UEBER der Buchungsuebersicht (nicht pro Anschluss)
+- Kreditkarte/PayPal: Kautionen werden in Gesamtsumme eingerechnet
+- Auf Rechnung: Nur Anschlussgebuehren, keine Kautionen
+- Buchungsuebersicht zeigt alle Anschluesse mit korrekten Preisen + Gesamtsumme
 
-### Datenschutz-Modal - FERTIG (2026-04)
-- Button "Datenschutz" im Footer, vollstaendige DSGVO-konforme Datenschutzerklaerung
+### Wohnwagen-Preise korrekt - FERTIG (2026-04-04)
+- Backend unterscheidet regulaere und Wohnwagen-Preislisten (gleicher connection_type, andere Preise)
+- Frontend Buchungsuebersicht nutzt korrekte Preisliste je nach isWohnwagen Flag
 
-### Abrechnung Export (Billing PDF) - FERTIG (2026-04-03)
-- Deckblatt mit Projektinfos, Stunden-Zusammenfassung, Tankbelege-Zusammenfassung
+### Kombinierte Rechnung - FERTIG (2026-04-04)
+- EINE Rechnung pro Schausteller pro Event (nicht pro Anschluss)
+- Alle Anschluesse als separate Positionen in einer Rechnung
+- Admin "Rechnung" Button bei beliebigem Anschluss erstellt Gesamtrechnung
+- Sammelabrechnung gruppiert automatisch nach Schausteller
+- PDF-Export mit allen Positionen korrekt
+- Kundenportal zeigt Rechnung korrekt an
 
-### Projektbericht (Digital Project Report) - FERTIG (2026-04-03)
-- Full CRUD, digitale Unterschriften, PDF-Export
+### Bestaetigungsseite - FERTIG (2026-04-04)
+- Zeigt komplette Zusammenfassung aller gebuchten Anschluesse
+- Einzelpreise, Kautionen (bei Kreditkarte), Gesamtsumme, Zahlungsmittel
+
+### Lastdiagramm Feature - FERTIG (2026-04-03)
+- Dashboard-Sektion zeigt verfuegbare und gekaufte Diagramme
+- Kaufprozess: 125 EUR netto + 19% MwSt = 148,75 EUR brutto
+- PDF-Generierung: Deckblatt + taegliche Lastdiagramme
+- Voraussetzung: EMU-Zaehler muss mit Anschluss verknuepft sein
 
 ### Vorherige Features
-- Expanded Row Redesign, Zaehler-Detailseite, Performance-Optimierung
+- Datenschutz-Modal, AGB/Impressum mit korrekten Umlauten
+- Admin Lastdiagramm Download, Schausteller-Detailseite
+- Projektbericht, Abrechnung Export, Expanded Row Redesign
 
 ## Key API Endpoints
 - POST /api/kirmes/public/signup (Multi-Anschluss, korrekte Preisberechnung)
+- POST /api/kirmes/signups/{signup_id}/invoice (Kombinierte Rechnung fuer alle Anschluesse des Schaustellers)
+- POST /api/kirmes/events/{event_id}/generate-invoices (Sammelabrechnung, gruppiert nach Schausteller)
+- GET /api/kirmes/public/my-bookings?schausteller_id=... (Buchungen + Rechnungen)
 - GET/POST /api/kirmes/public/lastdiagramm/*
-- POST /api/kirmes/signups/{signup_id}/invoice
-- POST /api/kirmes/events/{event_id}/generate-invoices
-- GET /api/kirmes/admin/lastdiagramm/{signup_id}/pdf
 
 ## Prioritized Backlog
 
@@ -59,6 +72,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ### Blocked
 - DSE890 Gateway GSM (wartet auf neue SIM-Karten)
+- Lastdiagramm Live-Test (braucht verknuepfte EMU-Zaehler mit Messdaten)
 
 ### Refactoring
 - SchaustellerAnmeldungPage.jsx aufteilen (aktuell >1300 Zeilen)
