@@ -50,10 +50,19 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - GET /api/orders/epirent/{pk}/billing-pdf
 - GET /api/devices/{device_id}/meters/{meter_id}/diagnostics
 
-### Datenschutz-Modal (Schausteller Anmeldung) - FERTIG (2026-02)
+### Datenschutz-Modal (Schausteller Anmeldung) - FERTIG (2026-04)
 - **Button**: "Datenschutz" im Footer neben "Impressum" hinzugefuegt
 - Vollstaendige DSGVO-konforme Datenschutzerklaerung in 5 Abschnitten
 - Scrollbar, Links klickbar, Modal schliessbar
+
+### Lastdiagramm (Load Diagram) Feature - FERTIG (2026-04)
+- **Dashboard-Sektion**: "Lastdiagramme" zeigt verfuegbare und gekaufte Diagramme
+- **Kaufprozess**: 125,00 EUR netto + 19% MwSt = 148,75 EUR brutto
+- **Rechnungserstellung**: Fortlaufende Nummer (R26-K-XXXX), gleiche Collection wie Kirmes-Rechnungen
+- **PDF-Generierung**: Deckblatt (Event, Netzanschluss, Zeitraum, kWh, Max Strom/Phase, Max Leistung) + taegliche Lastdiagramme (Leistung kW + Strom A pro Phase L1/L2/L3)
+- **Zahlungsart**: Abhaengig von Schausteller-Einstellung (kauf_auf_rechnung oder Kreditkarte/PayPal)
+- **Duplikat-Schutz**: Gleiche Buchung kann nur einmal bestellt werden
+- **Endpoints**: GET /api/kirmes/public/lastdiagramm/available, POST /api/kirmes/public/lastdiagramm/purchase, GET /api/kirmes/public/lastdiagramm/{id}/pdf
 
 ## Prioritized Backlog
 
