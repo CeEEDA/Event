@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
   CalendarDays, MapPin, Zap, Check, ArrowRight, ArrowLeft, UserPlus, LogIn,
-  Mail, Eye, EyeOff, FileText, Download, LayoutDashboard, Plus, LogOut, KeyRound,
+  Mail, Eye, EyeOff, FileText, Download, LayoutDashboard, Plus, LogOut, KeyRound, X,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -65,6 +65,7 @@ export default function SchaustellerAnmeldungPage() {
   // Steps: auth -> verify -> setpw -> dashboard -> event -> signup -> done
   const [step, setStep] = useState("auth");
   const [authMode, setAuthMode] = useState("register");
+  const [showImpressum, setShowImpressum] = useState(false);
   const [schausteller, setSchausteller] = useState(null);
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -730,8 +731,57 @@ export default function SchaustellerAnmeldungPage() {
       </main>
 
       <footer className="bg-white border-t border-gray-200 p-4 text-center text-sm text-gray-500">
-        &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
+        <span>&copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG</span>
+        <span className="mx-2">·</span>
+        <button onClick={() => setShowImpressum(true)} className="text-fuchsia-600 hover:text-fuchsia-700 underline" data-testid="impressum-btn">Impressum</button>
       </footer>
+
+      {/* Impressum Modal */}
+      {showImpressum && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowImpressum(false)} data-testid="impressum-modal">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Impressum</h2>
+              <button onClick={() => setShowImpressum(false)} className="text-gray-400 hover:text-gray-600" data-testid="impressum-close"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4 text-sm text-gray-700">
+              <div>
+                <p className="font-semibold text-gray-900">Eventenergie Deutschland GmbH & Co. KG</p>
+                <p>Vertreten durch die persoenlich haftende Gesellschafterin:</p>
+                <p>Eventenergie Deutschland Verwaltungs GmbH</p>
+                <p>Geschaeftsfuehrer: Christian Ecker</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">Kontakt</p>
+                <p>Geisenheimer Str. 6</p>
+                <p>65232 Taunusstein</p>
+                <p className="mt-1">Telefon: +49 800 505 1808</p>
+                <p>E-Mail: <a href="mailto:info@eventenergie-deutschland.de" className="text-fuchsia-600 hover:underline">info@eventenergie-deutschland.de</a></p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">Registereintrag</p>
+                <p>Handelsregister: Amtsgericht Wiesbaden</p>
+                <p>HRA 9692</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">Umsatzsteuer-ID</p>
+                <p>Umsatzsteuer-Identifikationsnummer gemaess § 27a Umsatzsteuergesetz:</p>
+                <p>DE348545938</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">Verantwortlich fuer den Inhalt nach § 55 Abs. 2 RStV</p>
+                <p>Christian Ecker</p>
+                <p>Geisenheimer Str. 6</p>
+                <p>65232 Taunusstein</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 mb-1">EU-Streitschlichtung</p>
+                <p className="text-xs text-gray-500">Die Europaeische Kommission stellt eine Plattform zur Online-Streitbeilegung (OS) bereit: <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:underline">https://ec.europa.eu/consumers/odr/</a>. Unsere E-Mail-Adresse finden Sie oben im Impressum. Wir sind nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
