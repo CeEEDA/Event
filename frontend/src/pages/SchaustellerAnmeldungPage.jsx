@@ -834,17 +834,38 @@ export default function SchaustellerAnmeldungPage() {
                   </button>
                 </div>
 
-                {/* Gesamtübersicht & Zahlungsmittel */}
+                {/* Zahlungsmittel */}
+                <div>
+                  <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
+                  <select value={signupForm.payment_method} onChange={e => setSignupForm(f => ({ ...f, payment_method: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="signup-payment">
+                    {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Buchungsübersicht */}
                 {(() => {
                   const regularPrices = selectedEvent.prices || [];
                   const wwPrices = selectedEvent.wohnwagen_prices || [];
                   const mainPrice = regularPrices.find(p => p.connection_type === signupForm.connection_type);
+                  const isRechnung = signupForm.payment_method === "rechnung";
                   const items = [];
-                  if (mainPrice) items.push({ label: `${signupForm.fahrgeschaeft || "Hauptanschluss"} – ${signupForm.connection_type}`, price: mainPrice.price });
+                  if (mainPrice) {
+                    items.push({ label: `${signupForm.fahrgeschaeft || "Hauptanschluss"} – ${signupForm.connection_type}`, price: mainPrice.price });
+                    if (!isRechnung) {
+                      const dep = depositAmounts[signupForm.connection_type] || 0;
+                      if (dep > 0) items.push({ label: `Kaution ${signupForm.connection_type}`, price: dep, isDeposit: true });
+                    }
+                  }
                   additionalSignups.forEach((a, i) => {
                     const priceList = a.isWohnwagen ? wwPrices : regularPrices;
                     const p = priceList.find(pr => pr.connection_type === a.connection_type);
-                    if (p) items.push({ label: `${a.isWohnwagen ? "Wohnwagen" : (a.fahrgeschaeft || `${i+2}. Anschluss`)} – ${a.connection_type}`, price: p.price });
+                    if (p) {
+                      items.push({ label: `${a.isWohnwagen ? "Wohnwagen" : (a.fahrgeschaeft || `${i+2}. Anschluss`)} – ${a.connection_type}`, price: p.price });
+                      if (!isRechnung && !a.isWohnwagen) {
+                        const dep = depositAmounts[a.connection_type] || 0;
+                        if (dep > 0) items.push({ label: `Kaution ${a.connection_type}`, price: dep, isDeposit: true });
+                      }
+                    }
                   });
                   const totalNetto = items.reduce((sum, item) => sum + item.price, 0);
                   return items.length > 0 ? (
@@ -853,8 +874,8 @@ export default function SchaustellerAnmeldungPage() {
                       <div className="space-y-1.5">
                         {items.map((item, i) => (
                           <div key={i} className="flex justify-between text-sm">
-                            <span className="text-gray-600">{item.label}</span>
-                            <span className="font-medium text-gray-800">{item.price.toFixed(2)} EUR</span>
+                            <span className={item.isDeposit ? "text-amber-600" : "text-gray-600"}>{item.label}</span>
+                            <span className={`font-medium ${item.isDeposit ? "text-amber-700" : "text-gray-800"}`}>{item.price.toFixed(2)} EUR</span>
                           </div>
                         ))}
                         <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between">
@@ -865,13 +886,6 @@ export default function SchaustellerAnmeldungPage() {
                     </div>
                   ) : null;
                 })()}
-
-                <div>
-                  <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
-                  <select value={signupForm.payment_method} onChange={e => setSignupForm(f => ({ ...f, payment_method: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="signup-payment">
-                    {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </select>
-                </div>
 
                 {/* AGB Checkbox */}
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
