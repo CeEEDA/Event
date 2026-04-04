@@ -2631,3 +2631,56 @@ async def download_lastdiagramm_pdf(order_id: str, schausteller_id: str = Query(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/admin/lastdiagramm/{signup_id}/pdf")
+async def admin_download_lastdiagramm_pdf(signup_id: str, user: dict = Depends(_require_staff)):
+    """Admin endpoint: Download Lastdiagramm PDF for any signup with a linked meter."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+
+    device_id = signup.get("emu_device_id")
+    meter_id = signup.get("emu_meter_id")
+    if not device_id or not meter_id:
+        raise HTTPException(status_code=400, detail="Kein Zähler verknüpft")
+
+    event = await _db.kirmes_events.find_one({"id": signup.get("event_id")}, {"_id": 0})
+    sch = await _db.kirmes_schausteller.find_one(
+        {"id": signup.get("schausteller_id")},
+        {"_id": 0, "password_hash": 0, "verification_code": 0}
+    )
+
+    date_from = event.get("start_date", "") if event else ""
+    date_to = event.get("end_date", "") if event else ""
+
+    query = {"device_id": device_id, "meter_id": meter_id}
+    if date_from or date_to:
+        ts_filter = {}
+        if date_from:
+            ts_filter["$gte"] = date_from + "T00:00:00.000Z" if "T" not in date_from else date_from
+        if date_to:
+            ts_filter["$lte"] = date_to + "T23:59:59.999Z" if "T" not in date_to else date_to
+        if ts_filter:
+            query["ts_utc"] = ts_filter
+
+    measurements = await _db.emu_data.find(
+        query,
+        {"_id": 0, "ts_utc": 1, "P_sum_kW": 1, "I_L1": 1, "I_L2": 1, "I_L3": 1,
+         "U_L1": 1, "U_L2": 1, "U_L3": 1, "E_imp_kWh": 1},
+        sort=[("ts_utc", 1)]
+    ).to_list(50000)
+
+    from services.lastdiagramm_pdf import generate_lastdiagramm_pdf
+
+    pdf_data = {"signup": signup, "event": event or {}, "schausteller": sch or {}}
+    pdf_bytes = generate_lastdiagramm_pdf(pdf_data, measurements)
+
+    event_name = (event.get("name", "Lastdiagramm") if event else "Lastdiagramm").replace(" ", "_")
+    filename = f"Lastdiagramm_{event_name}_{signup.get('platznummer', '')}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

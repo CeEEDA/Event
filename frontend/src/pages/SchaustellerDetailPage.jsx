@@ -23,6 +23,7 @@ export default function SchaustellerDetailPage() {
   const [sch, setSch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sendingInvoice, setSendingInvoice] = useState(null);
+  const [ldDownloading, setLdDownloading] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -69,6 +70,26 @@ export default function SchaustellerDetailPage() {
   if (!sch) return null;
 
   const signups = sch.signups || [];
+  const signupsWithMeter = signups.filter(s => s.emu_device_id && s.emu_meter_id);
+
+  const handleDownloadLastdiagramm = async (signupId, eventName, platznummer) => {
+    setLdDownloading(signupId);
+    try {
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/admin/lastdiagramm/${signupId}/pdf`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!response.ok) { const d = await response.json(); throw new Error(d.detail || "Fehler"); }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Lastdiagramm_${eventName}_${platznummer}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err.message || "Fehler beim Download");
+    } finally { setLdDownloading(null); }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="schausteller-detail-page">
@@ -244,6 +265,50 @@ export default function SchaustellerDetailPage() {
                       <Send className="w-4 h-4" />
                     </button>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Lastdiagramme */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-500" /> Lastdiagramme ({signupsWithMeter.length})
+            </h2>
+          </div>
+          {signupsWithMeter.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <Zap className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">Keine Anmeldungen mit verknüpftem Zähler</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {signupsWithMeter.map(s => (
+                <div key={s.id} className="px-5 py-4 flex items-center gap-4" data-testid={`ld-admin-${s.id}`}>
+                  <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                    <Zap className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{s.event_name || "Veranstaltung"}</p>
+                    <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-500">
+                      <span className="flex items-center gap-1"><Tent className="w-3 h-3" /> {s.fahrgeschaeft || "–"}</span>
+                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> Platz {s.platznummer}</span>
+                      <span className="inline-flex items-center gap-1 bg-fuchsia-50 text-fuchsia-700 px-1.5 py-0.5 rounded"><Zap className="w-3 h-3" /> {s.connection_type}</span>
+                      {s.kwh_used != null && <span className="font-mono">{s.kwh_used.toFixed(2)} kWh</span>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDownloadLastdiagramm(s.id, s.event_name || "Event", s.platznummer || "")}
+                    disabled={ldDownloading === s.id}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                    title="Lastdiagramm PDF herunterladen"
+                    data-testid={`ld-download-admin-${s.id}`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {ldDownloading === s.id ? "Laden..." : "PDF"}
+                  </button>
                 </div>
               ))}
             </div>
