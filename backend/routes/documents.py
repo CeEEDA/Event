@@ -96,15 +96,29 @@ Regeln:
 - Wenn ein Feld nicht erkennbar ist, setze null oder leeren String"""
 
 
-async def analyze_document_with_ai(file_path: str, mime_type: str) -> dict:
+async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
     """Analyze a document using Gemini AI."""
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
 
+        # Build dynamic folder list for AI prompt
+        all_folder_ids = [f["id"] for f in PREDEFINED_FOLDERS]
+        extra_hint = ""
+        if custom_folders:
+            for cf in custom_folders:
+                all_folder_ids.append(cf["id"])
+            folder_names = ", ".join(f'{cf["name"]}→{cf["id"]}' for cf in custom_folders)
+            extra_hint = f"\n- Zusätzliche benutzerdefinierte Ordner: {folder_names}"
+
+        system = AI_SYSTEM_PROMPT.replace(
+            "rechnungseingang|kfz_versicherung|betriebshaftpflicht|vertraege|lieferscheine|behoerden|sonstiges",
+            "|".join(all_folder_ids)
+        ) + extra_hint
+
         chat = LlmChat(
             api_key=EMERGENT_KEY,
             session_id=f"doc-analysis-{uuid.uuid4()}",
-            system_message=AI_SYSTEM_PROMPT
+            system_message=system
         ).with_model("gemini", "gemini-2.5-flash")
 
         file_content = FileContentWithMimeType(
@@ -146,7 +160,7 @@ async def analyze_document_with_ai(file_path: str, mime_type: str) -> dict:
 
 @router.get("/folders")
 async def get_folders():
-    """Get all predefined folders with document counts."""
+    """Get all predefined + custom folders with document counts."""
     counts = {}
     pipeline = [
         {"$match": {"is_deleted": False}},
@@ -158,8 +172,86 @@ async def get_folders():
     total = await db.documents.count_documents({"is_deleted": False})
     result = []
     for f in PREDEFINED_FOLDERS:
-        result.append({**f, "count": counts.get(f["id"], 0)})
+        result.append({**f, "count": counts.get(f["id"], 0), "is_custom": False})
+
+    # Add custom folders from DB
+    async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}).sort("created_at", 1):
+        cf["count"] = counts.get(cf["id"], 0)
+        cf["is_custom"] = True
+        result.append(cf)
+
     return {"folders": result, "total": total}
+
+
+@router.post("/folders")
+async def create_folder(body: dict):
+    """Create a custom folder."""
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Ordnername darf nicht leer sein")
+    if len(name) > 60:
+        raise HTTPException(status_code=400, detail="Ordnername zu lang (max. 60 Zeichen)")
+
+    folder_id = name.lower().replace(" ", "_").replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+    folder_id = "".join(c for c in folder_id if c.isalnum() or c == "_")
+
+    # Check for duplicate
+    existing_ids = [f["id"] for f in PREDEFINED_FOLDERS]
+    if folder_id in existing_ids:
+        raise HTTPException(status_code=400, detail="Ein Ordner mit diesem Namen existiert bereits")
+    existing_custom = await db.document_folders.find_one({"id": folder_id, "is_deleted": False})
+    if existing_custom:
+        raise HTTPException(status_code=400, detail="Ein Ordner mit diesem Namen existiert bereits")
+
+    icon = body.get("icon", "folder")
+    color = body.get("color", "gray")
+    folder = {
+        "id": folder_id,
+        "name": name,
+        "icon": icon,
+        "color": color,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.document_folders.insert_one(folder)
+    return {"id": folder_id, "name": name, "icon": icon, "color": color, "count": 0, "is_custom": True}
+
+
+@router.put("/folders/{folder_id}")
+async def rename_folder(folder_id: str, body: dict):
+    """Rename a custom folder."""
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Ordnername darf nicht leer sein")
+    result = await db.document_folders.update_one(
+        {"id": folder_id, "is_deleted": False},
+        {"$set": {"name": name}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Ordner nicht gefunden oder ist ein Systemordner")
+    return {"status": "renamed", "name": name}
+
+
+@router.delete("/folders/{folder_id}")
+async def delete_folder(folder_id: str):
+    """Delete a custom folder (moves documents to 'sonstiges')."""
+    predefined_ids = [f["id"] for f in PREDEFINED_FOLDERS]
+    if folder_id in predefined_ids:
+        raise HTTPException(status_code=400, detail="Systemordner können nicht gelöscht werden")
+
+    result = await db.document_folders.update_one(
+        {"id": folder_id, "is_deleted": False},
+        {"$set": {"is_deleted": True}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Ordner nicht gefunden")
+
+    # Move all documents from this folder to "sonstiges"
+    await db.documents.update_many(
+        {"folder_id": folder_id, "is_deleted": False},
+        {"$set": {"folder_id": "sonstiges", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"status": "deleted"}
 
 
 @router.post("/upload")
@@ -206,9 +298,15 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("s
         f.write(file_data)
 
     try:
-        ai_result = await analyze_document_with_ai(temp_path, file.content_type)
+        # Load custom folders for AI context
+        custom_folders = []
+        async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+            custom_folders.append(cf)
+        all_valid_ids = [f["id"] for f in PREDEFINED_FOLDERS] + [cf["id"] for cf in custom_folders]
+
+        ai_result = await analyze_document_with_ai(temp_path, file.content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
-        if folder_id == "sonstiges" and suggested_folder in [f["id"] for f in PREDEFINED_FOLDERS]:
+        if folder_id == "sonstiges" and suggested_folder in all_valid_ids:
             doc["folder_id"] = suggested_folder
 
         doc["ai_status"] = "completed"
@@ -289,6 +387,9 @@ async def get_document(doc_id: str):
 async def move_document(doc_id: str, folder_id: str = Query(...)):
     """Move a document to a different folder."""
     valid_ids = [f["id"] for f in PREDEFINED_FOLDERS]
+    # Also accept custom folders
+    async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+        valid_ids.append(cf["id"])
     if folder_id not in valid_ids:
         raise HTTPException(status_code=400, detail="Ungültiger Ordner")
 

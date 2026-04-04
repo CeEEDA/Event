@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Search, Upload, FolderOpen, FileText, Receipt, Car, Shield,
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
-  Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock
+  Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
+  FolderPlus, Pencil, Check
 } from "lucide-react";
 import axios from "axios";
 
@@ -51,6 +52,10 @@ export default function DocumentManagementPage() {
   const [uploadProgress, setUploadProgress] = useState("");
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [moveTarget, setMoveTarget] = useState(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [editingFolder, setEditingFolder] = useState(null);
+  const [editFolderName, setEditFolderName] = useState("");
 
   const loadFolders = useCallback(async () => {
     try {
@@ -140,6 +145,45 @@ export default function DocumentManagementPage() {
     } catch { toast.error("Fehler"); }
   };
 
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    try {
+      await api.post("/documents/folders", { name: newFolderName.trim(), icon: "folder", color: "gray" });
+      toast.success(`Ordner "${newFolderName}" erstellt`);
+      setNewFolderName("");
+      setShowNewFolder(false);
+      loadFolders();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Fehler beim Erstellen");
+    }
+  };
+
+  const handleRenameFolder = async (folderId) => {
+    if (!editFolderName.trim()) return;
+    try {
+      await api.put(`/documents/folders/${folderId}`, { name: editFolderName.trim() });
+      toast.success("Ordner umbenannt");
+      setEditingFolder(null);
+      setEditFolderName("");
+      loadFolders();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Fehler");
+    }
+  };
+
+  const handleDeleteFolder = async (folderId, folderName) => {
+    if (!window.confirm(`Ordner "${folderName}" löschen? Dokumente werden nach "Sonstiges" verschoben.`)) return;
+    try {
+      await api.delete(`/documents/folders/${folderId}`);
+      toast.success(`Ordner "${folderName}" gelöscht`);
+      if (activeFolder === folderId) setActiveFolder(null);
+      loadFolders();
+      loadDocuments(activeFolder === folderId ? null : activeFolder);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Fehler");
+    }
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     const files = e.dataTransfer?.files;
@@ -202,23 +246,73 @@ export default function DocumentManagementPage() {
             const Icon = FOLDER_ICONS[f.icon] || Folder;
             const c = FOLDER_COLORS[f.color] || FOLDER_COLORS.gray;
             const isActive = activeFolder === f.id && !isSearching;
+            const isEditing = editingFolder === f.id;
             return (
-              <button
-                key={f.id}
-                onClick={() => { setActiveFolder(f.id); setIsSearching(false); setSearchQuery(""); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  isActive ? `${c.active} font-medium border` : "text-gray-700 hover:bg-gray-100 border border-transparent"
-                }`}
-                data-testid={`folder-${f.id}`}
-              >
-                <div className={`w-7 h-7 rounded-md ${c.bg} flex items-center justify-center flex-shrink-0`}>
-                  <Icon className={`w-3.5 h-3.5 ${c.text}`} />
-                </div>
-                <span className="flex-1 text-left truncate">{f.name}</span>
-                <span className="text-xs text-gray-400">{f.count}</span>
-              </button>
+              <div key={f.id} className="group/folder relative">
+                {isEditing ? (
+                  <div className="flex items-center gap-1 px-2 py-1.5">
+                    <Input
+                      value={editFolderName}
+                      onChange={e => setEditFolderName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") handleRenameFolder(f.id); if (e.key === "Escape") setEditingFolder(null); }}
+                      className="h-8 text-sm flex-1"
+                      autoFocus
+                      data-testid={`rename-input-${f.id}`}
+                    />
+                    <button onClick={() => handleRenameFolder(f.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded" data-testid={`rename-confirm-${f.id}`}><Check className="w-4 h-4" /></button>
+                    <button onClick={() => setEditingFolder(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setActiveFolder(f.id); setIsSearching(false); setSearchQuery(""); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                      isActive ? `${c.active} font-medium border` : "text-gray-700 hover:bg-gray-100 border border-transparent"
+                    }`}
+                    data-testid={`folder-${f.id}`}
+                  >
+                    <div className={`w-7 h-7 rounded-md ${c.bg} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className={`w-3.5 h-3.5 ${c.text}`} />
+                    </div>
+                    <span className="flex-1 text-left truncate">{f.name}</span>
+                    <span className="text-xs text-gray-400">{f.count}</span>
+                    {f.is_custom && (
+                      <div className="hidden group-hover/folder:flex items-center gap-0.5 ml-1" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => { setEditingFolder(f.id); setEditFolderName(f.name); }} className="p-0.5 text-gray-300 hover:text-gray-600 rounded" title="Umbenennen" data-testid={`edit-folder-${f.id}`}><Pencil className="w-3 h-3" /></button>
+                        <button onClick={() => handleDeleteFolder(f.id, f.name)} className="p-0.5 text-gray-300 hover:text-red-600 rounded" title="Löschen" data-testid={`delete-folder-${f.id}`}><Trash2 className="w-3 h-3" /></button>
+                      </div>
+                    )}
+                  </button>
+                )}
+              </div>
             );
           })}
+
+          <div className="h-px bg-gray-200 my-2" />
+
+          {showNewFolder ? (
+            <div className="flex items-center gap-1 px-2 py-1.5">
+              <Input
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleCreateFolder(); if (e.key === "Escape") { setShowNewFolder(false); setNewFolderName(""); } }}
+                placeholder="Ordnername..."
+                className="h-8 text-sm flex-1"
+                autoFocus
+                data-testid="new-folder-input"
+              />
+              <button onClick={handleCreateFolder} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded" data-testid="new-folder-confirm"><Check className="w-4 h-4" /></button>
+              <button onClick={() => { setShowNewFolder(false); setNewFolderName(""); }} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowNewFolder(true)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              data-testid="new-folder-btn"
+            >
+              <FolderPlus className="w-4 h-4" />
+              <span>Neuer Ordner</span>
+            </button>
+          )}
         </aside>
 
         {/* Main Content */}
