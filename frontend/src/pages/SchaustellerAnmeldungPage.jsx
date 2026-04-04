@@ -611,12 +611,12 @@ export default function SchaustellerAnmeldungPage() {
               </div>
 
               {/* Lastdiagramme Section */}
-              {(lastdiagramme.available.length > 0 || lastdiagramme.purchased.length > 0) && (
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mt-4" data-testid="lastdiagramm-section">
-                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-amber-500" />
-                    <span className="text-sm font-semibold text-gray-700">Lastdiagramme ({lastdiagramme.available.length + lastdiagramme.purchased.length})</span>
-                  </div>
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mt-4" data-testid="lastdiagramm-section">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  <span className="text-sm font-semibold text-gray-700">Lastdiagramme ({lastdiagramme.available.length + lastdiagramme.purchased.length})</span>
+                </div>
+                {(lastdiagramme.available.length > 0 || lastdiagramme.purchased.length > 0) ? (
                   <div className="divide-y divide-gray-100">
                     {/* Purchased - can download */}
                     {lastdiagramme.purchased.map(item => (
@@ -675,8 +675,10 @@ export default function SchaustellerAnmeldungPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="p-6 text-center text-sm text-gray-400">Noch keine Lastdiagramme vorhanden</div>
+                )}
+              </div>
             </div>
           )}
 
