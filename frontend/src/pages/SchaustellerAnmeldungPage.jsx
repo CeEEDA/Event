@@ -789,39 +789,56 @@ export default function SchaustellerAnmeldungPage() {
 
                 {/* Zusätzliche Anschlüsse */}
                 {additionalSignups.map((extra, idx) => (
-                  <div key={idx} className={`border rounded-xl p-4 space-y-3 relative ${extra.isWohnwagen ? "border-amber-200 bg-amber-50/30" : "border-gray-200 bg-gray-50"}`} data-testid={`extra-signup-${idx}`}>
+                  <div key={idx} className={`border rounded-xl p-4 space-y-4 relative ${extra.isWohnwagen ? "border-amber-200 bg-amber-50/30" : "border-gray-200 bg-gray-50"}`} data-testid={`extra-signup-${idx}`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className={`text-xs font-semibold uppercase tracking-wider ${extra.isWohnwagen ? "text-amber-600" : "text-gray-500"}`}>
                         {extra.isWohnwagen ? `Wohnwagen ${idx + 1}` : `${idx + 2}. Anschluss`}
                       </span>
                       <button onClick={() => setAdditionalSignups(prev => prev.filter((_, i) => i !== idx))} className="text-xs text-red-400 hover:text-red-600" data-testid={`remove-extra-${idx}`}>Entfernen</button>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div><Label className="text-gray-700 text-sm">Position / Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A15" data-testid={`extra-platznummer-${idx}`} /></div>
-                      <div><Label className="text-gray-700 text-sm">{extra.isWohnwagen ? "Nutzung" : "Fahrgeschäft / Nutzung"}</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder={extra.isWohnwagen ? "Wohnwagen" : "z.B. Imbissbude"} data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
-                    </div>
-                    <div>
-                      <Label className="text-gray-700 text-sm">Anschluss</Label>
-                      {extra.isWohnwagen ? (
-                        <div className="grid grid-cols-3 gap-2 mt-1">
-                          {(selectedEvent.wohnwagen_prices || []).map(p => (
-                            <button key={p.connection_type} type="button"
-                              onClick={() => setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: p.connection_type } : s))}
-                              className={`p-2.5 rounded-lg border text-center transition-colors ${extra.connection_type === p.connection_type ? "border-amber-500 bg-amber-100 text-amber-700" : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"}`}
-                              data-testid={`extra-conn-ww-${idx}-${p.connection_type}`}>
-                              <Home className="w-3.5 h-3.5 mx-auto mb-0.5" />
-                              <span className="text-xs font-medium block">{p.connection_type}</span>
-                              <span className="text-[10px] text-gray-400 block">{p.price.toFixed(2)} EUR</span>
-                            </button>
-                          ))}
+                    {extra.isWohnwagen ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div><Label className="text-gray-700 text-sm">Position / Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A15" data-testid={`extra-platznummer-${idx}`} /></div>
+                          <div><Label className="text-gray-700 text-sm">Nutzung</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder="Wohnwagen" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
                         </div>
-                      ) : (
-                        <select value={extra.connection_type} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-connection-${idx}`}>
-                          <option value="">Bitte wählen...</option>
-                          {(selectedEvent.prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
-                        </select>
-                      )}
-                    </div>
+                        <div>
+                          <Label className="text-gray-700 text-sm">Anschluss</Label>
+                          <div className="grid grid-cols-3 gap-2 mt-1">
+                            {(selectedEvent.wohnwagen_prices || []).map(p => (
+                              <button key={p.connection_type} type="button"
+                                onClick={() => setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: p.connection_type } : s))}
+                                className={`p-2.5 rounded-lg border text-center transition-colors ${extra.connection_type === p.connection_type ? "border-amber-500 bg-amber-100 text-amber-700" : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"}`}
+                                data-testid={`extra-conn-ww-${idx}-${p.connection_type}`}>
+                                <Home className="w-3.5 h-3.5 mx-auto mb-0.5" />
+                                <span className="text-xs font-medium block">{p.connection_type}</span>
+                                <span className="text-[10px] text-gray-400 block">{p.price.toFixed(2)} EUR</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div><Label className="text-gray-700 text-sm">Platznummer *</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A12" data-testid={`extra-platznummer-${idx}`} /></div>
+                        <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Betrieb *</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder="z.B. Achterbahn, Autoscooter, Imbissbude" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
+                        <div>
+                          <Label className="text-gray-700 text-sm">Stromanschluss *</Label>
+                          <div className="grid grid-cols-3 gap-2 mt-1">
+                            {(selectedEvent.prices || []).map(p => (
+                              <button key={p.connection_type} type="button"
+                                onClick={() => setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: p.connection_type } : s))}
+                                className={`p-3 rounded-lg border text-center transition-colors ${extra.connection_type === p.connection_type ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700" : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"}`}
+                                data-testid={`extra-conn-${idx}-${p.connection_type}`}>
+                                <Zap className="w-4 h-4 mx-auto mb-1" />
+                                <span className="text-xs font-medium block">{p.connection_type}</span>
+                                <span className="text-[10px] text-gray-400 block">{p.price.toFixed(2)} EUR</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
                       <select value={extra.payment_method} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, payment_method: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-payment-${idx}`}>
