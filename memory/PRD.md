@@ -50,6 +50,11 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - GET /api/orders/epirent/{pk}/billing-pdf
 - GET /api/devices/{device_id}/meters/{meter_id}/diagnostics
 
+### Datenschutz-Modal (Schausteller Anmeldung) - FERTIG (2026-02)
+- **Button**: "Datenschutz" im Footer neben "Impressum" hinzugefuegt
+- Vollstaendige DSGVO-konforme Datenschutzerklaerung in 5 Abschnitten
+- Scrollbar, Links klickbar, Modal schliessbar
+
 ## Prioritized Backlog
 
 ### P1 - Kommend
