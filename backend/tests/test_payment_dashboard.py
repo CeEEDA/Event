@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://fairground-portal.preview.emergentagent.com"
+                "origin_url": "https://power-track-5.preview.emergentagent.com"
             },
             timeout=30
         )

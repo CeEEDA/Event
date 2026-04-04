@@ -753,22 +753,6 @@ export default function SchaustellerAnmeldungPage() {
                         </button>
                       ))}
                     </div>
-                    {(selectedEvent.wohnwagen_prices || []).length > 0 && (
-                      <>
-                        <p className="text-[10px] text-gray-400 uppercase tracking-wider mt-3 mb-1">Wohnwagen-Anschlüsse</p>
-                        <div className="grid grid-cols-3 gap-2">
-                          {(selectedEvent.wohnwagen_prices || []).map(p => (
-                            <button key={p.connection_type} onClick={() => setSignupForm(f => ({ ...f, connection_type: p.connection_type }))}
-                              className={`p-3 rounded-lg border text-center transition-colors ${signupForm.connection_type === p.connection_type ? "border-amber-500 bg-amber-50 text-amber-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
-                              data-testid={`conn-ww-${p.connection_type}`}>
-                              <Home className="w-4 h-4 mx-auto mb-1" />
-                              <span className="text-xs font-medium block">{p.connection_type}</span>
-                              <span className="text-[10px] text-gray-400 block">{p.price.toFixed(2)} EUR</span>
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
                   </div>
                   <div>
                     <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
@@ -805,28 +789,38 @@ export default function SchaustellerAnmeldungPage() {
 
                 {/* Zusätzliche Anschlüsse */}
                 {additionalSignups.map((extra, idx) => (
-                  <div key={idx} className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50 relative" data-testid={`extra-signup-${idx}`}>
+                  <div key={idx} className={`border rounded-xl p-4 space-y-3 relative ${extra.isWohnwagen ? "border-amber-200 bg-amber-50/30" : "border-gray-200 bg-gray-50"}`} data-testid={`extra-signup-${idx}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{idx + 2}. Anschluss</span>
+                      <span className={`text-xs font-semibold uppercase tracking-wider ${extra.isWohnwagen ? "text-amber-600" : "text-gray-500"}`}>
+                        {extra.isWohnwagen ? `Wohnwagen ${idx + 1}` : `${idx + 2}. Anschluss`}
+                      </span>
                       <button onClick={() => setAdditionalSignups(prev => prev.filter((_, i) => i !== idx))} className="text-xs text-red-400 hover:text-red-600" data-testid={`remove-extra-${idx}`}>Entfernen</button>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div><Label className="text-gray-700 text-sm">Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" data-testid={`extra-platznummer-${idx}`} /></div>
-                      <div><Label className="text-gray-700 text-sm">Fahrgeschäft / Nutzung</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
+                      <div><Label className="text-gray-700 text-sm">Position / Platznummer</Label><Input value={extra.platznummer} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, platznummer: v } : s)); }} className="mt-1" placeholder="z.B. A15" data-testid={`extra-platznummer-${idx}`} /></div>
+                      <div><Label className="text-gray-700 text-sm">{extra.isWohnwagen ? "Nutzung" : "Fahrgeschäft / Nutzung"}</Label><Input value={extra.fahrgeschaeft} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, fahrgeschaeft: v } : s)); }} className="mt-1" placeholder={extra.isWohnwagen ? "Wohnwagen" : "z.B. Imbissbude"} data-testid={`extra-fahrgeschaeft-${idx}`} /></div>
                     </div>
                     <div>
                       <Label className="text-gray-700 text-sm">Anschluss</Label>
-                      <select value={extra.connection_type} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-connection-${idx}`}>
-                        <option value="">Bitte wählen...</option>
-                        <optgroup label="Stromanschluss">
+                      {extra.isWohnwagen ? (
+                        <div className="grid grid-cols-3 gap-2 mt-1">
+                          {(selectedEvent.wohnwagen_prices || []).map(p => (
+                            <button key={p.connection_type} type="button"
+                              onClick={() => setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: p.connection_type } : s))}
+                              className={`p-2.5 rounded-lg border text-center transition-colors ${extra.connection_type === p.connection_type ? "border-amber-500 bg-amber-100 text-amber-700" : "border-gray-200 text-gray-600 hover:border-gray-300 bg-white"}`}
+                              data-testid={`extra-conn-ww-${idx}-${p.connection_type}`}>
+                              <Home className="w-3.5 h-3.5 mx-auto mb-0.5" />
+                              <span className="text-xs font-medium block">{p.connection_type}</span>
+                              <span className="text-[10px] text-gray-400 block">{p.price.toFixed(2)} EUR</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <select value={extra.connection_type} onChange={e => { const v = e.target.value; setAdditionalSignups(prev => prev.map((s, i) => i === idx ? { ...s, connection_type: v } : s)); }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid={`extra-connection-${idx}`}>
+                          <option value="">Bitte wählen...</option>
                           {(selectedEvent.prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
-                        </optgroup>
-                        {(selectedEvent.wohnwagen_prices || []).length > 0 && (
-                          <optgroup label="Wohnwagen">
-                            {(selectedEvent.wohnwagen_prices || []).map(p => <option key={p.connection_type} value={p.connection_type}>{p.connection_type} – {p.price.toFixed(2)} EUR</option>)}
-                          </optgroup>
-                        )}
-                      </select>
+                        </select>
+                      )}
                     </div>
                     <div>
                       <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
@@ -841,7 +835,7 @@ export default function SchaustellerAnmeldungPage() {
                 <div className="flex flex-col sm:flex-row gap-2">
                   <button
                     type="button"
-                    onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: signupForm.payment_method }])}
+                    onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: signupForm.payment_method, isWohnwagen: false }])}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-fuchsia-300 rounded-lg text-sm font-medium text-fuchsia-600 hover:bg-fuchsia-50 hover:border-fuchsia-400 transition-colors"
                     data-testid="add-extra-signup-btn"
                   >
@@ -849,7 +843,7 @@ export default function SchaustellerAnmeldungPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "Wohnwagen", connection_type: "", payment_method: signupForm.payment_method }])}
+                    onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "Wohnwagen", connection_type: "", payment_method: signupForm.payment_method, isWohnwagen: true }])}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-amber-300 rounded-lg text-sm font-medium text-amber-600 hover:bg-amber-50 hover:border-amber-400 transition-colors"
                     data-testid="add-wohnwagen-btn"
                   >
