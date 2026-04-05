@@ -46,6 +46,13 @@ export default function VerwaltungPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
+        {items.length === 0 && (
+          <div className="text-center py-16" data-testid="no-permissions-message">
+            <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500">Keine Verwaltungsbereiche freigeschaltet.</p>
+            <p className="text-sm text-gray-400 mt-1">Bitte kontaktieren Sie den Administrator.</p>
+          </div>
+        )}
         {items.map(item => {
           const Icon = item.icon;
           const colorClasses = {

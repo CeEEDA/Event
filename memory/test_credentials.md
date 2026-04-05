@@ -15,3 +15,8 @@
 - Firma: Achterbahn Müller
 - ID: 95bd69f1-261a-40f7-9bd5-7658ffd20855
 - kauf_auf_rechnung: true
+
+## Mitarbeiter (Preview)
+- Anna Weber: ma1@test.com (Finance + Dokumentenverwaltung enabled)
+- Max: test1@test.de
+- No Perm: test-noperm@test.com / TestPass123!
