@@ -318,8 +318,9 @@ async def _ai_check_expiry(doc_id: str, file_bytes: bytes, filename: str, doc_ty
     import tempfile
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
-        emergent_api_key = os.environ.get("EMERGENT_API_KEY", "")
+        emergent_api_key = os.environ.get("EMERGENT_LLM_KEY", "") or os.environ.get("EMERGENT_API_KEY", "")
         if not emergent_api_key:
+            logger.warning("No EMERGENT_LLM_KEY found, skipping AI expiry check")
             return
 
         label = DOCUMENT_LABELS.get(doc_type, doc_type)
@@ -344,11 +345,15 @@ async def _ai_check_expiry(doc_id: str, file_bytes: bytes, filename: str, doc_ty
         elif lower.endswith((".heic", ".heif")):
             mime = "image/heic"
 
-        prompt = f"""Analysiere dieses Dokument ({label}).
-Suche nach einem Ablaufdatum, Gültigkeitsdatum, "gültig bis" oder ähnlichem.
-Antworte NUR im Format: YYYY-MM-DD
-Falls kein Ablaufdatum gefunden wird, antworte NUR: KEINS
-Keine weiteren Erklärungen."""
+        prompt = f"""Analysiere dieses Dokument. Es handelt sich um einen {label}.
+
+Bei einem Führerschein: Suche das Feld 4b (Ablaufdatum/gültig bis). Das Datum steht meist im Format TT.MM.JJ oder TT.MM.JJJJ.
+Bei einem Personalausweis: Suche das Ablaufdatum auf der Rückseite oder im MRZ-Code.
+Bei einem Zertifikat: Suche nach "gültig bis", "Ablaufdatum", "valid until" oder ähnlichem.
+
+WICHTIG: Antworte NUR mit dem Datum im Format YYYY-MM-DD.
+Wenn das Jahr zweistellig ist (z.B. "30" oder "27"), ergänze es zu vierstellig (2030, 2027).
+Falls absolut kein Ablaufdatum erkennbar ist, antworte NUR: KEINS"""
 
         chat = LlmChat(
             api_key=emergent_api_key,
@@ -357,18 +362,47 @@ Keine weiteren Erklärungen."""
         ).with_model("gemini", "gemini-2.5-flash")
 
         file_content = FileContentWithMimeType(file_path=tmp_path, mime_type=mime)
-        response = await chat.send_message_async(UserMessage(text=prompt, files_with_mime_type=[file_content]))
-        text = response.text.strip()
+
+        user_message = UserMessage(
+            text=prompt,
+            file_contents=[file_content]
+        )
+
+        response = await chat.send_message(user_message)
+        text = response.strip()
+        logger.info(f"AI raw response for {doc_id}: '{text}'")
 
         # Clean up temp file
         os.unlink(tmp_path)
 
-        if text != "KEINS" and len(text) == 10 and text[4] == "-":
+        # Parse date - try multiple formats
+        import re
+        date_str = None
+        # Try YYYY-MM-DD directly
+        match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
+        if match:
+            date_str = match.group(1)
+        else:
+            # Try DD.MM.YYYY
+            match = re.search(r'(\d{2})\.(\d{2})\.(\d{4})', text)
+            if match:
+                date_str = f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+            else:
+                # Try DD.MM.YY
+                match = re.search(r'(\d{2})\.(\d{2})\.(\d{2})', text)
+                if match:
+                    year = int(match.group(3))
+                    year = 2000 + year if year < 80 else 1900 + year
+                    date_str = f"{year}-{match.group(2)}-{match.group(1)}"
+
+        if date_str and "KEINS" not in text.upper():
             await db.employee_documents.update_one(
                 {"id": doc_id},
-                {"$set": {"ai_expiry_date": text, "expiry_date": text}}
+                {"$set": {"ai_expiry_date": date_str, "expiry_date": date_str}}
             )
-            logger.info(f"AI detected expiry for {doc_id}: {text}")
+            logger.info(f"AI detected expiry for {doc_id}: {date_str}")
+        else:
+            logger.info(f"AI could not detect expiry for {doc_id}")
     except Exception as e:
         logger.error(f"AI expiry detection error: {e}")
 

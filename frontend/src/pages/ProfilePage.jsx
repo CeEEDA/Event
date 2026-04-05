@@ -24,6 +24,9 @@ const DOC_TYPES = [
   { key: "baumaschine", label: "Baumaschine", icon: "🚧" },
 ];
 
+const DOCUMENT_LABELS = {};
+DOC_TYPES.forEach(d => { DOCUMENT_LABELS[d.key] = d.label; });
+
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
@@ -38,6 +41,8 @@ export default function ProfilePage() {
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(null);
   const [expandedType, setExpandedType] = useState(null);
+  const [expiryPrompt, setExpiryPrompt] = useState(null);
+  const [manualExpiry, setManualExpiry] = useState("");
 
   const loadProfile = useCallback(async () => {
     try {
@@ -105,11 +110,18 @@ export default function ProfilePage() {
       const fd = new FormData();
       fd.append("doc_type", docType);
       fd.append("file", file);
-      await api.post(`/employee/documents?token=${token}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const res = await api.post(`/employee/documents?token=${token}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Dokument hochgeladen — KI prüft Ablaufdatum...");
+      // Wait for AI result
+      await new Promise(r => setTimeout(r, 5000));
       await loadDocuments();
-      toast.success("Dokument hochgeladen — KI prüft Ablaufdatum");
-      // Reload after a short delay to get AI result
-      setTimeout(loadDocuments, 4000);
+      // Check if AI found a date
+      const updatedDocs = await api.get(`/employee/documents?token=${token}`);
+      const newDoc = updatedDocs.data.find(d => d.id === res.data.id);
+      if (newDoc && !newDoc.expiry_date) {
+        setExpiryPrompt(newDoc);
+        setManualExpiry("");
+      }
     } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
     setUploading(null);
   };
@@ -340,6 +352,44 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Manual Expiry Date Dialog */}
+      {expiryPrompt && (
+        <>
+          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setExpiryPrompt(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-2xl border border-gray-200 p-6 z-50 w-[90%] max-w-sm" data-testid="expiry-dialog">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1">Ablaufdatum eingeben</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Die KI konnte kein Ablaufdatum für <strong>{DOCUMENT_LABELS[expiryPrompt.doc_type] || expiryPrompt.doc_type}</strong> erkennen. Bitte manuell eingeben:
+            </p>
+            <input
+              type="date"
+              value={manualExpiry}
+              onChange={e => setManualExpiry(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-fuchsia-400"
+              autoFocus
+              data-testid="manual-expiry-input"
+            />
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  if (manualExpiry) {
+                    await updateExpiry(expiryPrompt.id, manualExpiry);
+                  }
+                  setExpiryPrompt(null);
+                }}
+                className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                data-testid="save-expiry-btn"
+              >
+                Speichern
+              </Button>
+              <Button variant="outline" onClick={() => setExpiryPrompt(null)} className="flex-1" data-testid="skip-expiry-btn">
+                Überspringen
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
