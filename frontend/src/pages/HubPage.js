@@ -25,6 +25,7 @@ export default function HubPage() {
   const [viewFilter, setViewFilter] = useState("aktuell");
   const [taskSearch, setTaskSearch] = useState("");
   const [showNewTask, setShowNewTask] = useState(false);
+  const [myAvatarUrl, setMyAvatarUrl] = useState(null);
   const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
   const [newTaskFile, setNewTaskFile] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
@@ -56,6 +57,10 @@ export default function HubPage() {
     loadTasks();
     api.get(`/chat/users?token=${token}`).then(r => setAllUsers(r.data)).catch(() => {});
     loadUnreadChats();
+    // Load own avatar
+    api.get(`/employee/profile?token=${token}`).then(r => {
+      if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
+    }).catch(() => {});
     // Poll for updates every 10 seconds
     const poll = setInterval(() => { loadTasks(); loadUnreadChats(); }, 10000);
     return () => clearInterval(poll);
@@ -189,7 +194,7 @@ export default function HubPage() {
                 <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
               </div>
               <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
-                <User className="w-4 h-4 text-gray-500" />
+                {myAvatarUrl ? <img src={myAvatarUrl} alt="" className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-gray-500" />}
               </div>
             </button>
             <Button variant="outline" size="sm" onClick={handleLogout} className="text-gray-600 hover:text-red-600 hover:border-red-300" data-testid="logout-btn">
@@ -239,6 +244,20 @@ export default function HubPage() {
                     <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">{m.label}</span>
                   </button>
                 ))}
+
+                {/* Mitarbeiterverwaltung (Admin only) */}
+                {isAdmin && (
+                  <button
+                    onClick={() => navigate("/admin/mitarbeiter")}
+                    className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
+                    data-testid="module-mitarbeiter"
+                  >
+                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Mitarbeiter</span>
+                  </button>
+                )}
               </div>
             </div>
 

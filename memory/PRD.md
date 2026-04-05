@@ -13,6 +13,13 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Profilbild-Integration & Admin-Mitarbeiterverwaltung - FERTIG (2026-06-04)
+- Profilbild wird im Hub-Header, Chat-Nachrichten und Konversationsliste angezeigt
+- Admin-Seite /admin/mitarbeiter: Alle Mitarbeiter mit Profildaten + Dokumenten-Übersicht
+- Ampel-Status (grün/gelb/rot/grau) für alle 9 Dokumenten-Kategorien pro Mitarbeiter
+- Suchmaske, aufklappbare Detail-Ansicht, direkter Dokumenten-Viewer
+- Mitarbeiter-Kachel im Hub (nur Admin)
+
 ### Mitarbeiter-Profil & Dokumentenverwaltung - FERTIG (2026-06-04)
 - Profilseite: Name, Profilbild, Anschrift, Telefon, Passwort ändern
 - Profilbild-Upload mit Kamera-Button

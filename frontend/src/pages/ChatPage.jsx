@@ -44,20 +44,45 @@ export default function ChatPage() {
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState("");
   const avatarInputRef = useRef(null);
+  const [memberAvatars, setMemberAvatars] = useState({});
 
   const loadConversations = useCallback(async () => {
     try {
       const res = await api.get(`/chat/conversations?token=${token}`);
       setConversations(res.data);
+      // Load avatars for DM partners
+      res.data.forEach(c => {
+        if (c.type === "direct") {
+          const partnerId = c.members?.find(id => id !== user?.id);
+          if (partnerId && !memberAvatars[partnerId]) {
+            api.get(`/employee/profile/${partnerId}?token=${token}`).then(r => {
+              if (r.data.avatar_path) {
+                setMemberAvatars(prev => ({ ...prev, [partnerId]: `${API}/api/employee/avatar/${partnerId}?token=${token}&_=${r.data.avatar_path}` }));
+              }
+            }).catch(() => {});
+          }
+        }
+      });
     } catch {}
-  }, [token]);
+  }, [token, user?.id]);
 
   const loadMessages = useCallback(async (convId) => {
     try {
       const res = await api.get(`/chat/conversations/${convId}/messages?token=${token}`);
       setMessages(res.data);
+      // Load unique sender avatars
+      const senderIds = [...new Set(res.data.map(m => m.sender_id).filter(Boolean))];
+      senderIds.forEach(sid => {
+        if (!memberAvatars[sid]) {
+          api.get(`/employee/profile/${sid}?token=${token}`).then(r => {
+            if (r.data.avatar_path) {
+              setMemberAvatars(prev => ({ ...prev, [sid]: `${API}/api/employee/avatar/${sid}?token=${token}&_=${r.data.avatar_path}` }));
+            }
+          }).catch(() => {});
+        }
+      });
     } catch {}
-  }, [token]);
+  }, [token, memberAvatars]);
 
   useEffect(() => {
     loadConversations();
@@ -278,6 +303,8 @@ export default function ChatPage() {
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${c.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
                   {c.avatar_path ? (
                     <img src={getAvatarUrl(c)} alt="" className="w-full h-full object-cover" />
+                  ) : c.type === "direct" && memberAvatars[c.members?.find(id => id !== user?.id)] ? (
+                    <img src={memberAvatars[c.members?.find(id => id !== user?.id)]} alt="" className="w-full h-full object-cover" />
                   ) : c.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -346,9 +373,15 @@ export default function ChatPage() {
                 {messages.map(m => {
                   const isMine = m.sender_id === user?.id;
                   const isImage = m.attachment?.content_type?.startsWith("image/");
+                  const senderAvatar = memberAvatars[m.sender_id];
                   return (
-                    <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[70%] ${isMine ? "order-2" : ""}`}>
+                    <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"} gap-2`}>
+                      {!isMine && (
+                        <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 mt-4">
+                          {senderAvatar ? <img src={senderAvatar} alt="" className="w-full h-full object-cover" /> : <User className="w-3.5 h-3.5 text-gray-400" />}
+                        </div>
+                      )}
+                      <div className={`max-w-[70%]`}>
                         {!isMine && activeConvo.type === "group" && (
                           <span className="text-[10px] text-gray-400 ml-1">{m.sender_name}</span>
                         )}

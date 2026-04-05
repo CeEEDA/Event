@@ -74,6 +74,57 @@ async def get_profile(token: str = Query(...)):
     }
 
 
+@router.get("/all")
+async def get_all_employees(token: str = Query(...)):
+    """Admin only: get all employees with their profile and document summary."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).to_list(500)
+    result = []
+    for u in users:
+        profile = await db.employee_profiles.find_one({"user_id": u["id"]}, {"_id": 0})
+        docs = await db.employee_documents.find(
+            {"user_id": u["id"], "status": "active"}, {"_id": 0, "doc_type": 1, "expiry_date": 1}
+        ).to_list(100)
+
+        doc_summary = {}
+        expired_count = 0
+        expiring_soon_count = 0
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        for d in docs:
+            doc_summary[d["doc_type"]] = d.get("expiry_date")
+            if d.get("expiry_date"):
+                try:
+                    exp = datetime.fromisoformat(d["expiry_date"])
+                    if exp.tzinfo is None:
+                        exp = exp.replace(tzinfo=timezone.utc)
+                    diff = (exp - now).days
+                    if diff < 0:
+                        expired_count += 1
+                    elif diff <= 60:
+                        expiring_soon_count += 1
+                except Exception:
+                    pass
+
+        result.append({
+            "user_id": u["id"],
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "role": u.get("role", ""),
+            "phone": profile.get("phone", "") if profile else "",
+            "city": profile.get("city", "") if profile else "",
+            "avatar_path": profile.get("avatar_path") if profile else None,
+            "doc_count": len(docs),
+            "doc_summary": doc_summary,
+            "expired_count": expired_count,
+            "expiring_soon_count": expiring_soon_count,
+        })
+    return result
+
+
 @router.get("/profile/{user_id}")
 async def get_profile_by_id(user_id: str, token: str = Query(...)):
     """Admin: get any user's profile."""
