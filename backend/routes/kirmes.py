@@ -1373,6 +1373,54 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
             {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
         )
 
+    # Auto-save invoice PDF to Dokumentenverwaltung (Rechnungsausgang)
+    try:
+        from services.invoice_pdf import generate_invoice_pdf
+        from routes.documents import _ensure_year_month_subfolder, _save_to_local_storage, put_object, db as doc_db
+
+        pdf_bytes = generate_invoice_pdf(invoice_doc)
+        filename = f"{inv_number}.pdf"
+        inv_date = invoice_doc.get("created_at", datetime.now(timezone.utc).isoformat())
+        subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
+        storage_path = f"eventenergie-docs/uploads/{uuid.uuid4()}.pdf"
+        put_object(storage_path, pdf_bytes, "application/pdf")
+
+        doc_entry = {
+            "id": str(uuid.uuid4()),
+            "storage_path": storage_path,
+            "original_filename": filename,
+            "content_type": "application/pdf",
+            "size": len(pdf_bytes),
+            "folder_id": subfolder_id,
+            "ai_status": "completed",
+            "ai_metadata": {
+                "document_type": "rechnung",
+                "suggested_folder": "rechnungsausgang",
+                "sender": "Eventenergie Deutschland GmbH & Co. KG",
+                "recipient": sch.get("firma", sch.get("name", "")),
+                "date": inv_date[:10] if len(inv_date) >= 10 else inv_date,
+                "subject": f"Ausgangsrechnung {inv_number} - {event.get('name', '')}",
+                "amount": calc.get("brutto"),
+                "currency": "EUR",
+                "invoice_number": inv_number,
+                "reference": f"Event: {event.get('name', '')}",
+                "tax_amount": calc.get("mwst_amount"),
+            },
+            "full_text": f"Rechnung {inv_number} {sch.get('firma', '')} {event.get('name', '')} {calc.get('brutto', 0):.2f} EUR",
+            "keywords": [inv_number, sch.get("firma", ""), event.get("name", ""), "Ausgangsrechnung"],
+            "is_deleted": False,
+            "datev_forwarded": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await doc_db.documents.insert_one(doc_entry)
+        await _save_to_local_storage(pdf_bytes, filename, subfolder_id)
+        import logging as _log
+        _log.getLogger(__name__).info(f"Invoice {inv_number} auto-saved to Dokumentenverwaltung (folder: {subfolder_id})")
+    except Exception as doc_err:
+        import logging as _log
+        _log.getLogger(__name__).warning(f"Document storage for invoice {inv_number} failed: {doc_err}")
+
     return invoice_doc
 
 
@@ -1507,7 +1555,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
                     "currency": "EUR",
                     "invoice_number": inv_number,
                     "reference": f"Event: {event.get('name', '')}",
-                    "tax_amount": calc.get("mwst"),
+                    "tax_amount": calc.get("mwst_amount"),
                 },
                 "full_text": f"Rechnung {inv_number} {sch.get('firma', '')} {event.get('name', '')} {calc.get('brutto', 0):.2f} EUR",
                 "keywords": [inv_number, sch.get("firma", ""), event.get("name", ""), "Ausgangsrechnung"],

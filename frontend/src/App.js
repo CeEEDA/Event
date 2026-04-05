@@ -35,7 +35,7 @@ import VerwaltungPage from "./pages/VerwaltungPage";
 import DocumentManagementPage from "./pages/DocumentManagementPage";
 import "./App.css";
 
-const ProtectedRoute = ({ children, requiredRole }) => {
+const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
   const { user, loading } = useAuth();
   
   if (loading) {
@@ -52,6 +52,13 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   
   if (requiredRole && user.role !== requiredRole && user.role !== "admin") {
     return <Navigate to="/hub" replace />;
+  }
+
+  if (requiredApp && user.role !== "admin") {
+    const appPerm = user.apps?.[requiredApp];
+    if (!appPerm?.enabled) {
+      return <Navigate to="/hub" replace />;
+    }
   }
   
   return children;
@@ -179,7 +186,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/dokumente"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredApp="dokumentenverwaltung">
             <DocumentManagementPage />
           </ProtectedRoute>
         }
@@ -187,7 +194,7 @@ function AppRoutes() {
       <Route
         path="/finance"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredApp="finance">
             <FinancePage />
           </ProtectedRoute>
         }

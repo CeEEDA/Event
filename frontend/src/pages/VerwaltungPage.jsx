@@ -1,11 +1,14 @@
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { ArrowLeft, ChevronRight, Receipt, FolderOpen } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
-  const items = [
+  const allItems = [
     {
       key: "finance",
       label: "Finance",
@@ -13,6 +16,7 @@ export default function VerwaltungPage() {
       icon: Receipt,
       color: "emerald",
       path: "/finance",
+      requiredApp: "finance",
     },
     {
       key: "documents",
@@ -21,8 +25,13 @@ export default function VerwaltungPage() {
       icon: FolderOpen,
       color: "blue",
       path: "/verwaltung/dokumente",
+      requiredApp: "dokumentenverwaltung",
     },
   ];
+
+  const items = allItems.filter(item => 
+    isAdmin || user?.apps?.[item.requiredApp]?.enabled
+  );
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="verwaltung-page">
