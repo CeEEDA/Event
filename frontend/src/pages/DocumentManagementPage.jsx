@@ -7,7 +7,7 @@ import {
   ArrowLeft, Search, Upload, FolderOpen, FileText, Receipt, Car, Shield,
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
-  FolderPlus, Pencil, Check, Send
+  FolderPlus, Pencil, Check, Send, ChevronDown, Plus
 } from "lucide-react";
 import axios from "axios";
 
@@ -39,6 +39,90 @@ function formatDate(iso) {
   try { return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch { return iso; }
 }
 
+function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggleExpand, setActiveFolder,
+  editingFolder, editFolderName, setEditFolderName, setEditingFolder, handleRenameFolder, handleDeleteFolder,
+  addSubfolderTo, setAddSubfolderTo, subfolderName, setSubfolderName, handleCreateSubfolder }) {
+
+  // Build tree: root folders (no parent_id) with children
+  const rootFolders = folders.filter(f => !f.parent_id);
+  const childrenOf = (parentId) => folders.filter(f => f.parent_id === parentId);
+  const hasChildren = (folderId) => folders.some(f => f.parent_id === folderId);
+
+  const renderFolder = (f, depth = 0) => {
+    const Icon = FOLDER_ICONS[f.icon] || Folder;
+    const c = FOLDER_COLORS[f.color] || FOLDER_COLORS.gray;
+    const isActive = activeFolder === f.id && !isSearching;
+    const isEditing = editingFolder === f.id;
+    const children = childrenOf(f.id);
+    const expanded = expandedFolders[f.id];
+    const hasKids = hasChildren(f.id);
+    const pl = 8 + depth * 16;
+
+    return (
+      <div key={f.id}>
+        {isEditing ? (
+          <div className="flex items-center gap-1 px-2 py-1" style={{ paddingLeft: pl }}>
+            <Input value={editFolderName} onChange={e => setEditFolderName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleRenameFolder(f.id); if (e.key === "Escape") setEditingFolder(null); }}
+              className="h-6 text-xs flex-1" autoFocus data-testid={`rename-input-${f.id}`} />
+            <button onClick={() => handleRenameFolder(f.id)} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-3 h-3" /></button>
+            <button onClick={() => setEditingFolder(null)} className="p-0.5 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3 h-3" /></button>
+          </div>
+        ) : (
+          <div className="group/folder flex items-center" style={{ paddingLeft: pl }}>
+            {/* Expand toggle */}
+            <button
+              onClick={(e) => { e.stopPropagation(); if (hasKids) toggleExpand(f.id); }}
+              className={`w-4 h-4 flex items-center justify-center flex-shrink-0 ${hasKids ? "text-gray-400 hover:text-gray-600" : "text-transparent"}`}
+            >
+              <ChevronRight className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`} />
+            </button>
+            {/* Folder button */}
+            <button
+              onClick={() => setActiveFolder(f.id)}
+              className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors min-w-0 ${
+                isActive ? `${c.active} font-medium border` : "text-gray-700 hover:bg-gray-50 border border-transparent"
+              }`}
+              data-testid={`folder-${f.id}`}
+            >
+              <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 ${c.bg}`}>
+                <Icon className={`w-2.5 h-2.5 ${c.text}`} />
+              </div>
+              <span className="flex-1 text-left truncate">{f.name}</span>
+              {f.count > 0 && <span className="text-[10px] text-gray-400 flex-shrink-0">{f.count}</span>}
+            </button>
+            {/* Actions */}
+            <div className="hidden group-hover/folder:flex items-center flex-shrink-0 mr-1" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setAddSubfolderTo(f.id)} className="p-0.5 text-gray-300 hover:text-fuchsia-600 rounded" title="Unterordner"><Plus className="w-3 h-3" /></button>
+              {f.is_custom && (
+                <>
+                  <button onClick={() => { setEditingFolder(f.id); setEditFolderName(f.name); }} className="p-0.5 text-gray-300 hover:text-gray-600 rounded" title="Umbenennen"><Pencil className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => handleDeleteFolder(f.id, f.name)} className="p-0.5 text-gray-300 hover:text-red-600 rounded" title="Löschen"><Trash2 className="w-2.5 h-2.5" /></button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        {/* Add subfolder input */}
+        {addSubfolderTo === f.id && (
+          <div className="flex items-center gap-1 py-1" style={{ paddingLeft: pl + 20 }}>
+            <Input value={subfolderName} onChange={e => setSubfolderName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleCreateSubfolder(f.id); if (e.key === "Escape") { setAddSubfolderTo(null); setSubfolderName(""); } }}
+              placeholder="Unterordner..." className="h-6 text-xs flex-1" autoFocus data-testid={`subfolder-input-${f.id}`} />
+            <button onClick={() => handleCreateSubfolder(f.id)} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-3 h-3" /></button>
+            <button onClick={() => { setAddSubfolderTo(null); setSubfolderName(""); }} className="p-0.5 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3 h-3" /></button>
+          </div>
+        )}
+        {/* Children */}
+        {expanded && children.map(child => renderFolder(child, depth + 1))}
+      </div>
+    );
+  };
+
+  return <div className="space-y-0.5">{rootFolders.map(f => renderFolder(f, 0))}</div>;
+}
+
+
 export default function DocumentManagementPage() {
   const navigate = useNavigate();
   const fileInput = useRef(null);
@@ -57,6 +141,9 @@ export default function DocumentManagementPage() {
   const [editingFolder, setEditingFolder] = useState(null);
   const [editFolderName, setEditFolderName] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState({});
+  const [addSubfolderTo, setAddSubfolderTo] = useState(null);
+  const [subfolderName, setSubfolderName] = useState("");
 
   const loadFolders = useCallback(async () => {
     try {
@@ -177,6 +264,24 @@ export default function DocumentManagementPage() {
     }
   };
 
+  const handleCreateSubfolder = async (parentId) => {
+    if (!subfolderName.trim()) return;
+    try {
+      await api.post("/documents/folders", { name: subfolderName.trim(), icon: "folder", color: "gray", parent_id: parentId });
+      toast.success(`Unterordner "${subfolderName}" erstellt`);
+      setSubfolderName("");
+      setAddSubfolderTo(null);
+      setExpandedFolders(prev => ({ ...prev, [parentId]: true }));
+      loadFolders();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Fehler beim Erstellen");
+    }
+  };
+
+  const toggleExpand = (folderId) => {
+    setExpandedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
+  };
+
   const handleRenameFolder = async (folderId) => {
     if (!editFolderName.trim()) return;
     try {
@@ -257,7 +362,7 @@ export default function DocumentManagementPage() {
 
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
         {/* Folder Sidebar */}
-        <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 p-4 space-y-1 overflow-y-auto" style={{ maxHeight: "calc(100vh - 57px)" }}>
+        <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 p-3 overflow-y-auto" style={{ maxHeight: "calc(100vh - 57px)" }}>
           <button
             onClick={() => { setActiveFolder(null); setIsSearching(false); setSearchQuery(""); }}
             className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -272,50 +377,25 @@ export default function DocumentManagementPage() {
 
           <div className="h-px bg-gray-200 my-2" />
 
-          {folders.map(f => {
-            const Icon = FOLDER_ICONS[f.icon] || Folder;
-            const c = FOLDER_COLORS[f.color] || FOLDER_COLORS.gray;
-            const isActive = activeFolder === f.id && !isSearching;
-            const isEditing = editingFolder === f.id;
-            return (
-              <div key={f.id} className="group/folder relative">
-                {isEditing ? (
-                  <div className="flex items-center gap-1 px-2 py-1.5">
-                    <Input
-                      value={editFolderName}
-                      onChange={e => setEditFolderName(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") handleRenameFolder(f.id); if (e.key === "Escape") setEditingFolder(null); }}
-                      className="h-8 text-sm flex-1"
-                      autoFocus
-                      data-testid={`rename-input-${f.id}`}
-                    />
-                    <button onClick={() => handleRenameFolder(f.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded" data-testid={`rename-confirm-${f.id}`}><Check className="w-4 h-4" /></button>
-                    <button onClick={() => setEditingFolder(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => { setActiveFolder(f.id); setIsSearching(false); setSearchQuery(""); }}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                      isActive ? `${c.active} font-medium border` : "text-gray-700 hover:bg-gray-100 border border-transparent"
-                    }`}
-                    data-testid={`folder-${f.id}`}
-                  >
-                    <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${c.bg}`}>
-                      <Icon className={`w-3 h-3 ${c.text}`} />
-                    </div>
-                    <span className="flex-1 text-left truncate">{f.name}</span>
-                    <span className="text-xs text-gray-400">{f.count}</span>
-                    {f.is_custom && (
-                      <div className="hidden group-hover/folder:flex items-center gap-0.5 ml-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => { setEditingFolder(f.id); setEditFolderName(f.name); }} className="p-0.5 text-gray-300 hover:text-gray-600 rounded" title="Umbenennen" data-testid={`edit-folder-${f.id}`}><Pencil className="w-3 h-3" /></button>
-                        <button onClick={() => handleDeleteFolder(f.id, f.name)} className="p-0.5 text-gray-300 hover:text-red-600 rounded" title="Löschen" data-testid={`delete-folder-${f.id}`}><Trash2 className="w-3 h-3" /></button>
-                      </div>
-                    )}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          <FolderTree
+            folders={folders}
+            activeFolder={activeFolder}
+            isSearching={isSearching}
+            expandedFolders={expandedFolders}
+            toggleExpand={toggleExpand}
+            setActiveFolder={(id) => { setActiveFolder(id); setIsSearching(false); setSearchQuery(""); }}
+            editingFolder={editingFolder}
+            editFolderName={editFolderName}
+            setEditFolderName={setEditFolderName}
+            setEditingFolder={setEditingFolder}
+            handleRenameFolder={handleRenameFolder}
+            handleDeleteFolder={handleDeleteFolder}
+            addSubfolderTo={addSubfolderTo}
+            setAddSubfolderTo={setAddSubfolderTo}
+            subfolderName={subfolderName}
+            setSubfolderName={setSubfolderName}
+            handleCreateSubfolder={handleCreateSubfolder}
+          />
 
           <div className="h-px bg-gray-200 my-2" />
 
@@ -326,12 +406,12 @@ export default function DocumentManagementPage() {
                 onChange={e => setNewFolderName(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") handleCreateFolder(); if (e.key === "Escape") { setShowNewFolder(false); setNewFolderName(""); } }}
                 placeholder="Ordnername..."
-                className="h-8 text-sm flex-1"
+                className="h-7 text-xs flex-1"
                 autoFocus
                 data-testid="new-folder-input"
               />
-              <button onClick={handleCreateFolder} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded" data-testid="new-folder-confirm"><Check className="w-4 h-4" /></button>
-              <button onClick={() => { setShowNewFolder(false); setNewFolderName(""); }} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3.5 h-3.5" /></button>
+              <button onClick={handleCreateFolder} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded" data-testid="new-folder-confirm"><Check className="w-3.5 h-3.5" /></button>
+              <button onClick={() => { setShowNewFolder(false); setNewFolderName(""); }} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3 h-3" /></button>
             </div>
           ) : (
             <button

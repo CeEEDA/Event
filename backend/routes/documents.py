@@ -299,9 +299,54 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "subject": "Analyse fehlgeschlagen", "full_text": "", "keywords": []}
 
 
+MONTH_NAMES = {
+    1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
+    7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember"
+}
+AUTO_YEAR_MONTH_FOLDERS = ["rechnungseingang", "rechnungsausgang"]
+
+
+async def _ensure_year_month_subfolder(parent_folder_id: str, doc_date_str: str) -> str:
+    """Create year/month subfolders for invoices and return the target folder_id."""
+    try:
+        if doc_date_str:
+            dt = datetime.fromisoformat(doc_date_str.replace("Z", "+00:00")) if "T" in doc_date_str else datetime.strptime(doc_date_str[:10], "%Y-%m-%d")
+        else:
+            dt = datetime.now(timezone.utc)
+        year = dt.year
+        month = dt.month
+    except Exception:
+        dt = datetime.now(timezone.utc)
+        year = dt.year
+        month = dt.month
+
+    year_id = f"{parent_folder_id}_{year}"
+    month_id = f"{year_id}_{month:02d}"
+
+    # Ensure year subfolder
+    existing_year = await db.document_folders.find_one({"id": year_id, "is_deleted": False})
+    if not existing_year:
+        await db.document_folders.insert_one({
+            "id": year_id, "name": str(year), "icon": "folder", "color": "gray",
+            "parent_id": parent_folder_id, "is_deleted": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    # Ensure month subfolder
+    existing_month = await db.document_folders.find_one({"id": month_id, "is_deleted": False})
+    if not existing_month:
+        await db.document_folders.insert_one({
+            "id": month_id, "name": MONTH_NAMES.get(month, str(month)), "icon": "folder", "color": "gray",
+            "parent_id": year_id, "is_deleted": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    return month_id
+
+
 @router.get("/folders")
 async def get_folders():
-    """Get all predefined + custom folders with document counts."""
+    """Get all predefined + custom folders with document counts, including subfolders."""
     counts = {}
     pipeline = [
         {"$match": {"is_deleted": False}},
@@ -311,23 +356,39 @@ async def get_folders():
         counts[item["_id"]] = item["count"]
 
     total = await db.documents.count_documents({"is_deleted": False})
-    result = []
-    for f in PREDEFINED_FOLDERS:
-        result.append({**f, "count": counts.get(f["id"], 0), "is_custom": False})
 
-    # Add custom folders from DB
+    # Build all folders: predefined (root) + custom/subfolders from DB
+    all_folders = []
+    for f in PREDEFINED_FOLDERS:
+        all_folders.append({**f, "count": counts.get(f["id"], 0), "is_custom": False, "parent_id": None})
+
     async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}).sort("created_at", 1):
         cf["count"] = counts.get(cf["id"], 0)
         cf["is_custom"] = True
-        result.append(cf)
+        if "parent_id" not in cf:
+            cf["parent_id"] = None
+        all_folders.append(cf)
 
-    return {"folders": result, "total": total}
+    # Calculate recursive counts for parent folders
+    folder_map = {f["id"]: f for f in all_folders}
+    for f in all_folders:
+        if f["parent_id"] and f["parent_id"] in folder_map:
+            folder_map[f["parent_id"]]["count"] = folder_map[f["parent_id"]].get("count", 0) + f["count"]
+    # Second pass for grandparent (year -> root)
+    for f in all_folders:
+        if f["parent_id"] and f["parent_id"] in folder_map:
+            parent = folder_map[f["parent_id"]]
+            if parent.get("parent_id") and parent["parent_id"] in folder_map:
+                folder_map[parent["parent_id"]]["count"] = folder_map[parent["parent_id"]].get("count", 0) + f["count"]
+
+    return {"folders": all_folders, "total": total}
 
 
 @router.post("/folders")
 async def create_folder(body: dict):
-    """Create a custom folder."""
+    """Create a custom folder or subfolder."""
     name = body.get("name", "").strip()
+    parent_id = body.get("parent_id", None)
     if not name:
         raise HTTPException(status_code=400, detail="Ordnername darf nicht leer sein")
     if len(name) > 60:
@@ -335,6 +396,8 @@ async def create_folder(body: dict):
 
     folder_id = name.lower().replace(" ", "_").replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     folder_id = "".join(c for c in folder_id if c.isalnum() or c == "_")
+    if parent_id:
+        folder_id = f"{parent_id}_{folder_id}"
 
     # Check for duplicate
     existing_ids = [f["id"] for f in PREDEFINED_FOLDERS]
@@ -351,11 +414,12 @@ async def create_folder(body: dict):
         "name": name,
         "icon": icon,
         "color": color,
+        "parent_id": parent_id,
         "is_deleted": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.document_folders.insert_one(folder)
-    return {"id": folder_id, "name": name, "icon": icon, "color": color, "count": 0, "is_custom": True}
+    return {"id": folder_id, "name": name, "icon": icon, "color": color, "parent_id": parent_id, "count": 0, "is_custom": True}
 
 
 @router.put("/folders/{folder_id}")
@@ -451,6 +515,14 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             "keywords": ai_result.get("keywords", []),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
+
+        # Auto-create year/month subfolders for invoice folders
+        if final_folder in AUTO_YEAR_MONTH_FOLDERS:
+            doc_date = ai_result.get("date", "")
+            subfolder_id = await _ensure_year_month_subfolder(final_folder, doc_date)
+            await db.documents.update_one({"id": doc_id}, {"$set": {"folder_id": subfolder_id}})
+            final_folder = subfolder_id
+
         logger.info(f"AI analysis completed for doc {doc_id} -> folder: {final_folder}")
 
         # Auto-forward incoming invoices to DATEV
@@ -517,11 +589,15 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("s
 
 
 @router.get("/list")
-async def list_documents(folder_id: str = None, page: int = 1, limit: int = 50):
-    """List documents, optionally filtered by folder."""
+async def list_documents(folder_id: str = None, include_children: bool = True, page: int = 1, limit: int = 50):
+    """List documents, optionally filtered by folder (includes subfolder docs)."""
     query = {"is_deleted": False}
     if folder_id:
-        query["folder_id"] = folder_id
+        if include_children:
+            # Include docs from this folder and all subfolders (prefix match)
+            query["folder_id"] = {"$regex": f"^{folder_id}"}
+        else:
+            query["folder_id"] = folder_id
 
     total = await db.documents.count_documents(query)
     skip = (page - 1) * limit
