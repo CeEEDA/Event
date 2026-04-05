@@ -30,6 +30,7 @@ export default function ChatPage() {
   const [searchUsers, setSearchUsers] = useState("");
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const pollRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
@@ -405,8 +406,19 @@ export default function ChatPage() {
                   className="hidden"
                   onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = ""; }}
                 />
+                <input
+                  type="file"
+                  ref={cameraInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = ""; }}
+                />
                 <Button type="button" variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-fuchsia-600 flex-shrink-0" data-testid="attach-file-btn">
                   <Paperclip className="w-4 h-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => cameraInputRef.current?.click()} className="text-gray-400 hover:text-fuchsia-600 flex-shrink-0" data-testid="camera-btn">
+                  <Camera className="w-4 h-4" />
                 </Button>
                 <Input
                   value={newMsg}
