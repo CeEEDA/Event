@@ -37,6 +37,7 @@ import ChatPage from "./pages/ChatPage";
 import ProfilePage from "./pages/ProfilePage";
 import EmployeeAdminPage from "./pages/EmployeeAdminPage";
 import AuswertungPage from "./pages/AuswertungPage";
+import ArbeitszeitPage from "./pages/ArbeitszeitPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -352,6 +353,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AuswertungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/arbeitszeit"
+        element={
+          <ProtectedRoute>
+            <ArbeitszeitPage />
           </ProtectedRoute>
         }
       />

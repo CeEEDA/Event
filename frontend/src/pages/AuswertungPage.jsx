@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, BarChart3, AlertTriangle, Check, Clock, Search,
-  User, FileText, Filter, ChevronDown, ChevronUp,
+  User, FileText, Filter, ChevronDown, ChevronUp, MapPin,
 } from "lucide-react";
 
 export default function AuswertungPage() {
@@ -14,6 +14,8 @@ export default function AuswertungPage() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
   const isAdmin = user?.role === "admin";
+
+  const [activeTab, setActiveTab] = useState("documents");
 
   const [report, setReport] = useState([]);
   const [search, setSearch] = useState("");
@@ -28,6 +30,27 @@ export default function AuswertungPage() {
   }, [token]);
 
   useEffect(() => { loadReport(); }, [loadReport]);
+
+  // Time tracking report
+  const [timeReport, setTimeReport] = useState([]);
+  const [timeMonth, setTimeMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [expandedTimeUser, setExpandedTimeUser] = useState(null);
+
+  const loadTimeReport = useCallback(async () => {
+    const [y, m] = timeMonth.split("-");
+    const from = `${y}-${m}-01`;
+    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+    const to = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+    try {
+      const res = await api.get(`/employee/time/report?token=${token}&date_from=${from}&date_to=${to}`);
+      setTimeReport(res.data);
+    } catch {}
+  }, [token, timeMonth]);
+
+  useEffect(() => { if (activeTab === "time") loadTimeReport(); }, [activeTab, loadTimeReport]);
 
   if (!isAdmin) { navigate("/hub"); return null; }
 
@@ -79,11 +102,23 @@ export default function AuswertungPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <BarChart3 className="w-5 h-5 text-fuchsia-600" />
-          <h1 className="text-lg font-semibold text-gray-900">Auswertung — Dokumenten-Ablauf</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Auswertung</h1>
         </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-5 space-y-5">
+        {/* Tab Switch */}
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <button onClick={() => setActiveTab("documents")} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-1.5 ${activeTab === "documents" ? "bg-white text-fuchsia-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`} data-testid="tab-documents">
+            <FileText className="w-3.5 h-3.5" /> Dokumente
+          </button>
+          <button onClick={() => setActiveTab("time")} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-1.5 ${activeTab === "time" ? "bg-white text-fuchsia-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`} data-testid="tab-time">
+            <Clock className="w-3.5 h-3.5" /> Arbeitszeiten
+          </button>
+        </div>
+
+        {activeTab === "documents" && (
+          <>
         {/* Stats Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button onClick={() => setStatusFilter(statusFilter === "expired" ? "all" : "expired")} className={`rounded-xl border p-4 text-left transition-all ${statusFilter === "expired" ? "ring-2 ring-red-400" : ""} border-red-200 bg-red-50 hover:shadow-md`} data-testid="stat-expired">
@@ -170,6 +205,70 @@ export default function AuswertungPage() {
               );
             })}
           </div>
+        )}
+          </>
+        )}
+
+        {/* Time Tracking Tab */}
+        {activeTab === "time" && (
+          <>
+            {/* Month Selector */}
+            <div className="flex items-center justify-between">
+              <input type="month" value={timeMonth} onChange={e => setTimeMonth(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400" data-testid="time-month-picker" />
+              <div className="text-right">
+                <p className="text-xs text-gray-500">{timeReport.length} Mitarbeiter mit Einträgen</p>
+              </div>
+            </div>
+
+            {/* Employee Time Cards */}
+            {timeReport.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+                <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-400">Keine Zeiteinträge in diesem Monat</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {timeReport.map(emp => {
+                  const hours = Math.floor(emp.total_minutes / 60);
+                  const mins = Math.round(emp.total_minutes % 60);
+                  const isOpen = expandedTimeUser === emp.user_id;
+                  return (
+                    <div key={emp.user_id} className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid={`time-user-${emp.user_id}`}>
+                      <button onClick={() => setExpandedTimeUser(isOpen ? null : emp.user_id)} className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50">
+                        <User className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">{emp.user_name}</p>
+                          <p className="text-xs text-gray-500">{emp.entries.length} Einträge</p>
+                        </div>
+                        <span className="text-lg font-bold text-gray-900">{hours}h {mins}m</span>
+                        {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                      </button>
+                      {isOpen && (
+                        <div className="border-t border-gray-100 divide-y divide-gray-50">
+                          {emp.entries.map(e => (
+                            <div key={e.id} className="px-4 py-2.5 flex items-center gap-3 text-xs" data-testid={`time-entry-${e.id}`}>
+                              <span className="font-medium text-gray-700 w-24">
+                                {new Date(e.clock_in).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                              </span>
+                              <span className="text-green-600">{new Date(e.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
+                              <span className="text-gray-400">—</span>
+                              <span className="text-red-500">{e.clock_out ? new Date(e.clock_out).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "Aktiv"}</span>
+                              <span className="font-semibold text-gray-900 ml-auto">{e.duration_minutes ? `${Math.floor(e.duration_minutes / 60)}h ${Math.round(e.duration_minutes % 60)}m` : "—"}</span>
+                              {e.clock_in_lat && (
+                                <a href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-fuchsia-600" title="Standort Ein">
+                                  <MapPin className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

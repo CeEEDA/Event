@@ -11,7 +11,7 @@ import os
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://doc-hub-chat.preview.emergentagent.com"
+    BASE_URL = "https://gps-zeiterfassung.preview.emergentagent.com"
 
 TEST_DEVICE_ID = "f268c2e1-3933-43b4-85d8-0595338a8287"  # DSE-HBF-001 with image + parts + document
 TEST_DOCUMENT_ID = "a8f22141-b221-4974-b222-5d4a8b537b22"  # test_doc.txt

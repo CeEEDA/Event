@@ -354,7 +354,7 @@ class TestAdminEmailEndpoints:
         response = requests.post(
             f"{BASE_URL}/api/admin/send-reset-email/{user_id}",
             headers=auth_headers,
-            json={"frontend_url": "https://doc-hub-chat.preview.emergentagent.com"}
+            json={"frontend_url": "https://gps-zeiterfassung.preview.emergentagent.com"}
         )
         
         # Endpoint should exist (may fail with 500 due to SMTP config)
@@ -372,7 +372,7 @@ class TestAdminEmailEndpoints:
         """Password reset request accepts frontend_url parameter"""
         response = requests.post(f"{BASE_URL}/api/auth/request-password-reset", json={
             "email": "nonexistent@test.com",  # Using non-existent to not trigger actual email
-            "frontend_url": "https://doc-hub-chat.preview.emergentagent.com"
+            "frontend_url": "https://gps-zeiterfassung.preview.emergentagent.com"
         })
         
         # Should return 200 (doesn't reveal if email exists)

@@ -512,3 +512,128 @@ async def get_expiry_report(token: str = Query(...)):
         })
 
     return result
+
+
+# ==================== TIME TRACKING ====================
+
+@router.get("/time/status")
+async def get_time_status(token: str = Query(...)):
+    """Get current clock-in status for the user."""
+    user = await _get_user(token)
+    # Find open entry (clocked in but not out)
+    entry = await db.time_entries.find_one(
+        {"user_id": user["id"], "clock_out": None},
+        {"_id": 0}
+    )
+    return {
+        "clocked_in": entry is not None,
+        "entry": entry,
+    }
+
+
+@router.post("/time/clock-in")
+async def clock_in(token: str = Query(...), body: dict = {}):
+    """Clock in with GPS coordinates."""
+    user = await _get_user(token)
+    # Check not already clocked in
+    existing = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bereits eingestempelt")
+
+    now = datetime.now(timezone.utc)
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "user_name": user.get("name", ""),
+        "clock_in": now.isoformat(),
+        "clock_in_lat": body.get("lat"),
+        "clock_in_lng": body.get("lng"),
+        "clock_out": None,
+        "clock_out_lat": None,
+        "clock_out_lng": None,
+        "duration_minutes": None,
+        "date": now.strftime("%Y-%m-%d"),
+    }
+    await db.time_entries.insert_one(entry)
+    created = await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
+    return created
+
+
+@router.post("/time/clock-out")
+async def clock_out(token: str = Query(...), body: dict = {}):
+    """Clock out with GPS coordinates."""
+    user = await _get_user(token)
+    entry = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    if not entry:
+        raise HTTPException(status_code=400, detail="Nicht eingestempelt")
+
+    now = datetime.now(timezone.utc)
+    clock_in_time = datetime.fromisoformat(entry["clock_in"])
+    if clock_in_time.tzinfo is None:
+        clock_in_time = clock_in_time.replace(tzinfo=timezone.utc)
+    duration = (now - clock_in_time).total_seconds() / 60.0
+
+    await db.time_entries.update_one(
+        {"id": entry["id"]},
+        {"$set": {
+            "clock_out": now.isoformat(),
+            "clock_out_lat": body.get("lat"),
+            "clock_out_lng": body.get("lng"),
+            "duration_minutes": round(duration, 1),
+        }}
+    )
+    updated = await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
+    return updated
+
+
+@router.get("/time/entries")
+async def get_time_entries(token: str = Query(...), user_id: Optional[str] = None,
+                            date_from: Optional[str] = None, date_to: Optional[str] = None):
+    """Get time entries. Admin can view other users."""
+    caller = await _get_user(token)
+    target_id = user_id if user_id and caller.get("role") == "admin" else caller["id"]
+
+    query = {"user_id": target_id}
+    if date_from:
+        query["date"] = {"$gte": date_from}
+    if date_to:
+        query.setdefault("date", {})
+        if isinstance(query["date"], dict):
+            query["date"]["$lte"] = date_to
+        else:
+            query["date"] = {"$gte": query["date"], "$lte": date_to}
+
+    entries = await db.time_entries.find(query, {"_id": 0}).sort("clock_in", -1).to_list(1000)
+    return entries
+
+
+@router.get("/time/report")
+async def get_time_report(token: str = Query(...),
+                           date_from: Optional[str] = None, date_to: Optional[str] = None):
+    """Admin: get time report for all employees."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    query = {"clock_out": {"$ne": None}}
+    if date_from:
+        query["date"] = {"$gte": date_from}
+    if date_to:
+        query.setdefault("date", {})
+        if isinstance(query["date"], dict):
+            query["date"]["$lte"] = date_to
+        else:
+            query["date"] = {"$gte": query["date"], "$lte": date_to}
+
+    entries = await db.time_entries.find(query, {"_id": 0}).sort("clock_in", -1).to_list(5000)
+
+    # Group by user
+    by_user = {}
+    for e in entries:
+        uid = e["user_id"]
+        if uid not in by_user:
+            by_user[uid] = {"user_id": uid, "user_name": e.get("user_name", ""), "total_minutes": 0, "entries": []}
+        by_user[uid]["entries"].append(e)
+        by_user[uid]["total_minutes"] += e.get("duration_minutes", 0) or 0
+
+    return list(by_user.values())

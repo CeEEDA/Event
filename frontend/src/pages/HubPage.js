@@ -10,8 +10,9 @@ import {
   FolderOpen, Users, LogOut, Activity, Settings, Wrench, Zap,
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
-  Paperclip, Send, MessageCircle, Download, Search,
+  Paperclip, Send, MessageCircle, Download, Search, Clock,
 } from "lucide-react";
+import { SwipeClock } from "../components/SwipeClock";
 
 const API = BACKEND_URL;
 
@@ -26,6 +27,10 @@ export default function HubPage() {
   const [taskSearch, setTaskSearch] = useState("");
   const [showNewTask, setShowNewTask] = useState(false);
   const [myAvatarUrl, setMyAvatarUrl] = useState(null);
+  const [clockedIn, setClockedIn] = useState(false);
+  const [clockEntry, setClockEntry] = useState(null);
+  const [clockLoading, setClockLoading] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState("");
   const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
   const [newTaskFile, setNewTaskFile] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
@@ -57,6 +62,7 @@ export default function HubPage() {
     loadTasks();
     api.get(`/chat/users?token=${token}`).then(r => setAllUsers(r.data)).catch(() => {});
     loadUnreadChats();
+    loadClockStatus();
     // Load own avatar
     api.get(`/employee/profile?token=${token}`).then(r => {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
@@ -65,6 +71,60 @@ export default function HubPage() {
     const poll = setInterval(() => { loadTasks(); loadUnreadChats(); }, 10000);
     return () => clearInterval(poll);
   }, [loadTasks, token]);
+
+  // Clock elapsed timer
+  useEffect(() => {
+    if (!clockedIn || !clockEntry?.clock_in) return;
+    const update = () => {
+      const start = new Date(clockEntry.clock_in);
+      const now = new Date();
+      const diff = Math.floor((now - start) / 1000);
+      const h = Math.floor(diff / 3600);
+      const m = Math.floor((diff % 3600) / 60);
+      const s = diff % 60;
+      setElapsedTime(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`);
+    };
+    update();
+    const iv = setInterval(update, 1000);
+    return () => clearInterval(iv);
+  }, [clockedIn, clockEntry]);
+
+  const loadClockStatus = async () => {
+    try {
+      const res = await api.get(`/employee/time/status?token=${token}`);
+      setClockedIn(res.data.clocked_in);
+      setClockEntry(res.data.entry);
+    } catch {}
+  };
+
+  const getGPS = () => new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve({ lat: null, lng: null }),
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  });
+
+  const handleSwipeClock = async () => {
+    setClockLoading(true);
+    const gps = await getGPS();
+    try {
+      if (clockedIn) {
+        await api.post(`/employee/time/clock-out?token=${token}`, gps);
+        toast.success("Ausgestempelt");
+        setClockedIn(false);
+        setClockEntry(null);
+        setElapsedTime("");
+      } else {
+        const res = await api.post(`/employee/time/clock-in?token=${token}`, gps);
+        toast.success("Eingestempelt");
+        setClockedIn(true);
+        setClockEntry(res.data);
+      }
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+    setClockLoading(false);
+  };
 
   const loadUnreadChats = () => {
     api.get(`/chat/conversations?token=${token}`).then(r => {
@@ -210,6 +270,34 @@ export default function HubPage() {
           {/* Top Row */}
           <div className="flex items-center justify-between mb-5">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
+          </div>
+
+          {/* Time Clock Slider */}
+          <div className="mb-5 bg-white rounded-xl border border-gray-200 p-4" data-testid="time-clock-section">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className={`w-4 h-4 ${clockedIn ? "text-green-600" : "text-gray-400"}`} />
+                  <span className={`text-sm font-semibold ${clockedIn ? "text-green-700" : "text-gray-700"}`}>
+                    {clockedIn ? "Eingestempelt" : "Nicht eingestempelt"}
+                  </span>
+                  {clockedIn && elapsedTime && (
+                    <span className="text-sm font-mono text-green-600 bg-green-50 px-2 py-0.5 rounded" data-testid="elapsed-time">{elapsedTime}</span>
+                  )}
+                </div>
+                <div className="max-w-[280px]">
+                  <SwipeClock clockedIn={clockedIn} onSwipeComplete={handleSwipeClock} disabled={clockLoading} />
+                </div>
+              </div>
+              <button
+                onClick={() => navigate("/arbeitszeit")}
+                className="text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium flex items-center gap-1 flex-shrink-0"
+                data-testid="time-entries-link"
+              >
+                <Clock className="w-3.5 h-3.5" /> Übersicht
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
