@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Send, Plus, Users, User, Paperclip, Image,
   MessageSquare, X, Search, Check, CheckCheck, Loader2,
+  FileText, Download, UserPlus, UserMinus, ChevronRight,
 } from "lucide-react";
 
 const API = BACKEND_URL;
@@ -32,6 +33,13 @@ export default function ChatPage() {
   const pollRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [detailTab, setDetailTab] = useState("members");
+  const [convoMembers, setConvoMembers] = useState([]);
+  const [convoFiles, setConvoFiles] = useState([]);
+  const [convoImages, setConvoImages] = useState([]);
+  const [convoCreatedBy, setConvoCreatedBy] = useState(null);
+  const [addMemberSearch, setAddMemberSearch] = useState("");
 
   const loadConversations = useCallback(async () => {
     try {
@@ -133,6 +141,49 @@ export default function ChatPage() {
     } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
   };
 
+  const openDetail = async () => {
+    if (!activeConvo) return;
+    setShowDetail(true);
+    setDetailTab("members");
+    try {
+      const [membersRes, attachRes] = await Promise.all([
+        api.get(`/chat/conversations/${activeConvo.id}/members?token=${token}`),
+        api.get(`/chat/conversations/${activeConvo.id}/attachments-list?token=${token}`),
+      ]);
+      setConvoMembers(membersRes.data.members || []);
+      setConvoCreatedBy(membersRes.data.created_by);
+      setConvoFiles(attachRes.data.files || []);
+      setConvoImages(attachRes.data.images || []);
+    } catch { toast.error("Fehler beim Laden"); }
+  };
+
+  const addMember = async (uid) => {
+    try {
+      await api.put(`/chat/conversations/${activeConvo.id}/members?token=${token}`, { action: "add", user_id: uid });
+      const res = await api.get(`/chat/conversations/${activeConvo.id}/members?token=${token}`);
+      setConvoMembers(res.data.members || []);
+      setActiveConvo(prev => ({ ...prev, members: res.data.members?.map(m => m.id) }));
+      loadConversations();
+      toast.success("Mitglied hinzugefügt");
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+  };
+
+  const removeMember = async (uid) => {
+    try {
+      await api.put(`/chat/conversations/${activeConvo.id}/members?token=${token}`, { action: "remove", user_id: uid });
+      const res = await api.get(`/chat/conversations/${activeConvo.id}/members?token=${token}`);
+      setConvoMembers(res.data.members || []);
+      setActiveConvo(prev => ({ ...prev, members: res.data.members?.map(m => m.id) }));
+      loadConversations();
+      toast.success("Mitglied entfernt");
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+  };
+
+  const nonMembers = chatUsers.filter(u =>
+    !convoMembers.some(m => m.id === u.id) &&
+    u.name.toLowerCase().includes(addMemberSearch.toLowerCase())
+  );
+
   const isAdmin = user?.role === "admin";
   const filteredUsers = chatUsers.filter(u =>
     u.name.toLowerCase().includes(searchUsers.toLowerCase()) ||
@@ -221,13 +272,16 @@ export default function ChatPage() {
                 <button onClick={() => setActiveConvo(null)} className="md:hidden text-gray-500 hover:text-gray-700 flex-shrink-0" data-testid="chat-mobile-back">
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
-                  {activeConvo.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">{activeConvo.display_name}</h2>
-                  {activeConvo.type === "group" && <p className="text-[10px] text-gray-400">{activeConvo.members?.length} Mitglieder</p>}
-                </div>
+                <button onClick={openDetail} className="flex items-center gap-3 flex-1 min-w-0 hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2 transition-colors" data-testid="chat-header-detail-btn">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
+                    {activeConvo.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-gray-900 truncate">{activeConvo.display_name}</h2>
+                    {activeConvo.type === "group" && <p className="text-[10px] text-gray-400">{activeConvo.members?.length} Mitglieder</p>}
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                </button>
               </div>
 
               {/* Messages */}
@@ -327,6 +381,177 @@ export default function ChatPage() {
           )}
         </main>
       </div>
+
+      {/* Chat Detail Panel */}
+      {showDetail && activeConvo && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowDetail(false)} />
+          <div className="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="chat-detail-panel" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
+                  {activeConvo.type === "group" ? <Users className="w-4.5 h-4.5 text-blue-600" /> : <User className="w-4.5 h-4.5 text-gray-500" />}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-gray-900 text-sm truncate">{activeConvo.display_name}</h3>
+                  <p className="text-[10px] text-gray-400">{activeConvo.type === "group" ? "Gruppenchat" : "Direktnachricht"}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600 ml-2"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-gray-100">
+              {[
+                { key: "members", label: "Mitglieder", icon: Users },
+                { key: "files", label: "Dateien", icon: FileText },
+                { key: "images", label: "Fotos", icon: Image },
+              ].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setDetailTab(t.key)}
+                  className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${detailTab === t.key ? "text-fuchsia-600 border-b-2 border-fuchsia-600" : "text-gray-500 hover:text-gray-700"}`}
+                  data-testid={`detail-tab-${t.key}`}
+                >
+                  <t.icon className="w-3.5 h-3.5" />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto">
+              {/* Members Tab */}
+              {detailTab === "members" && (
+                <div className="p-3 space-y-1">
+                  <p className="text-[10px] text-gray-400 uppercase font-medium px-2 mb-2">{convoMembers.length} Mitglieder</p>
+                  {convoMembers.map(m => (
+                    <div key={m.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50" data-testid={`member-${m.id}`}>
+                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <User className="w-4 h-4 text-gray-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {m.name} {m.id === user?.id && <span className="text-gray-400">(Du)</span>}
+                        </p>
+                        <p className="text-[10px] text-gray-400">{m.role}{m.id === convoCreatedBy ? " · Ersteller" : ""}</p>
+                      </div>
+                      {isAdmin && activeConvo.type === "group" && m.id !== convoCreatedBy && m.id !== user?.id && (
+                        <button
+                          onClick={() => removeMember(m.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                          title="Entfernen"
+                          data-testid={`remove-member-${m.id}`}
+                        >
+                          <UserMinus className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Add Member Section (Admin + Group only) */}
+                  {isAdmin && activeConvo.type === "group" && nonMembers.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                      <p className="text-[10px] text-gray-400 uppercase font-medium px-2 mb-2">Mitglied hinzufügen</p>
+                      <div className="relative px-2 mb-2">
+                        <Search className="w-3.5 h-3.5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          value={addMemberSearch}
+                          onChange={e => setAddMemberSearch(e.target.value)}
+                          placeholder="Suchen..."
+                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-fuchsia-400"
+                          data-testid="add-member-search"
+                        />
+                      </div>
+                      {nonMembers.map(u => (
+                        <button
+                          key={u.id}
+                          onClick={() => addMember(u.id)}
+                          className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-fuchsia-50 transition-colors"
+                          data-testid={`add-member-${u.id}`}
+                        >
+                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                            <User className="w-4 h-4 text-gray-500" />
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-sm text-gray-900 truncate">{u.name}</p>
+                            <p className="text-[10px] text-gray-400">{u.role}</p>
+                          </div>
+                          <UserPlus className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Files Tab */}
+              {detailTab === "files" && (
+                <div className="p-3">
+                  {convoFiles.length === 0 ? (
+                    <div className="py-8 text-center text-gray-400">
+                      <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-xs">Keine Dateien geteilt</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {convoFiles.map(f => (
+                        <a
+                          key={f.attachment_id}
+                          href={`${API}/api/chat/conversations/${activeConvo.id}/file/${f.attachment_id}?token=${token}`}
+                          target="_blank" rel="noreferrer"
+                          className="flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-gray-50 transition-colors group"
+                          data-testid={`file-${f.attachment_id}`}
+                        >
+                          <div className="w-9 h-9 rounded-lg bg-fuchsia-50 flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-4 h-4 text-fuchsia-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-900 truncate">{f.filename}</p>
+                            <p className="text-[10px] text-gray-400">{f.sender_name} · {new Date(f.created_at).toLocaleDateString("de-DE")}</p>
+                          </div>
+                          <Download className="w-4 h-4 text-gray-400 group-hover:text-fuchsia-600 flex-shrink-0" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Images Tab */}
+              {detailTab === "images" && (
+                <div className="p-3">
+                  {convoImages.length === 0 ? (
+                    <div className="py-8 text-center text-gray-400">
+                      <Image className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-xs">Keine Fotos geteilt</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {convoImages.map(img => (
+                        <a
+                          key={img.attachment_id}
+                          href={`${API}/api/chat/conversations/${activeConvo.id}/file/${img.attachment_id}?token=${token}`}
+                          target="_blank" rel="noreferrer"
+                          className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 transition-opacity"
+                          data-testid={`image-${img.attachment_id}`}
+                        >
+                          <img
+                            src={`${API}/api/chat/conversations/${activeConvo.id}/file/${img.attachment_id}?token=${token}`}
+                            alt={img.filename}
+                            className="w-full h-full object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* New Direct Chat Modal */}
       {showNewChat && (

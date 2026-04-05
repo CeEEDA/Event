@@ -13,6 +13,12 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Chat Detail-Panel - FERTIG (2026-06-04)
+- Klick auf Chat-Name öffnet Detail-Panel (Slide-over)
+- Tabs: Mitglieder, Dateien, Fotos
+- Mitglieder hinzufügen/entfernen (Admin, nur Gruppen)
+- Alle geteilten Dateien und Fotos durchsuchbar
+
 ### Aufgaben-Filter Redesign - FERTIG (2026-06-04)
 - Tabs geändert: "Aktuell / Erledigt / Alle" statt "Meine / Erstellt / Alle"
 - Erledigte Aufgaben werden im Aktuell-Tab ausgeblendet

@@ -220,6 +220,91 @@ async def delete_conversation(conv_id: str, token: str = Query(...)):
     return {"status": "deleted"}
 
 
+
+@router.get("/conversations/{conv_id}/attachments-list")
+async def list_conversation_attachments(conv_id: str, token: str = Query(...)):
+    """List all attachments (files & images) in a conversation."""
+    user = await _get_user(token)
+    convo = await db.chat_conversations.find_one({"id": conv_id, "members": user["id"]}, {"_id": 0})
+    if not convo:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+
+    msgs = await db.chat_messages.find(
+        {"conversation_id": conv_id, "attachment": {"$ne": None}},
+        {"_id": 0, "id": 1, "attachment": 1, "sender_name": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(500)
+
+    files = []
+    images = []
+    for m in msgs:
+        att = m.get("attachment")
+        if not att:
+            continue
+        item = {
+            "message_id": m["id"],
+            "attachment_id": att["id"],
+            "filename": att["filename"],
+            "content_type": att.get("content_type", ""),
+            "size": att.get("size", 0),
+            "sender_name": m.get("sender_name", ""),
+            "created_at": m.get("created_at", ""),
+        }
+        if att.get("content_type", "").startswith("image/"):
+            images.append(item)
+        else:
+            files.append(item)
+
+    return {"files": files, "images": images}
+
+
+@router.get("/conversations/{conv_id}/members")
+async def list_conversation_members(conv_id: str, token: str = Query(...)):
+    """List all members of a conversation with details."""
+    user = await _get_user(token)
+    convo = await db.chat_conversations.find_one({"id": conv_id, "members": user["id"]}, {"_id": 0})
+    if not convo:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+
+    members = []
+    for mid in convo.get("members", []):
+        u = await db.users.find_one({"id": mid}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1})
+        if u:
+            members.append(u)
+    return {"members": members, "type": convo.get("type"), "created_by": convo.get("created_by")}
+
+
+@router.put("/conversations/{conv_id}/members")
+async def update_conversation_members(conv_id: str, body: dict, token: str = Query(...)):
+    """Admin only: add or remove members from a group conversation."""
+    user = await _get_user(token)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    convo = await db.chat_conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not convo:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+    if convo.get("type") != "group":
+        raise HTTPException(status_code=400, detail="Nur bei Gruppen möglich")
+
+    action = body.get("action")  # "add" or "remove"
+    user_id = body.get("user_id")
+    if not action or not user_id:
+        raise HTTPException(status_code=400, detail="action und user_id erforderlich")
+
+    if action == "add":
+        await db.chat_conversations.update_one({"id": conv_id}, {"$addToSet": {"members": user_id}})
+    elif action == "remove":
+        if user_id == convo.get("created_by"):
+            raise HTTPException(status_code=400, detail="Ersteller kann nicht entfernt werden")
+        await db.chat_conversations.update_one({"id": conv_id}, {"$pull": {"members": user_id}})
+    else:
+        raise HTTPException(status_code=400, detail="action muss 'add' oder 'remove' sein")
+
+    updated = await db.chat_conversations.find_one({"id": conv_id}, {"_id": 0})
+    return {"status": "ok", "members": updated.get("members", [])}
+
+
+
 # ─── Tasks ───
 
 @router.get("/tasks")
