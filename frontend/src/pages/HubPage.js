@@ -71,7 +71,9 @@ export default function HubPage() {
       const assignees = newTask.assigned_to.length > 0 ? newTask.assigned_to : [user.id];
       formData.append("assigned_to", assignees.join(","));
       if (newTaskFile) formData.append("file", newTaskFile);
-      await api.post(`/chat/tasks?token=${token}`, formData);
+      await api.post(`/chat/tasks?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setShowNewTask(false);
       setNewTask({ title: "", priority: "medium", due_date: "", assigned_to: [] });
       setNewTaskFile(null);
@@ -96,7 +98,9 @@ export default function HubPage() {
       const formData = new FormData();
       formData.append("text", newComment.trim());
       if (file) formData.append("file", file);
-      await api.post(`/chat/tasks/${selectedTask.id}/comments?token=${token}`, formData);
+      await api.post(`/chat/tasks/${selectedTask.id}/comments?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setNewComment("");
       const res = await api.get(`/chat/tasks/${selectedTask.id}/comments?token=${token}`);
       setComments(res.data);

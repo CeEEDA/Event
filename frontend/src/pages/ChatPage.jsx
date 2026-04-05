@@ -76,7 +76,9 @@ export default function ChatPage() {
     try {
       const formData = new FormData();
       formData.append("text", newMsg.trim());
-      await api.post(`/chat/conversations/${activeConvo.id}/messages?token=${token}`, formData);
+      await api.post(`/chat/conversations/${activeConvo.id}/messages?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setNewMsg("");
       loadMessages(activeConvo.id);
       loadConversations();
@@ -91,7 +93,9 @@ export default function ChatPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("text", "");
-      await api.post(`/chat/conversations/${activeConvo.id}/messages?token=${token}`, formData);
+      await api.post(`/chat/conversations/${activeConvo.id}/messages?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       loadMessages(activeConvo.id);
       loadConversations();
     } catch { toast.error("Datei-Upload fehlgeschlagen"); }
