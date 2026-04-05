@@ -11,19 +11,16 @@ logger = logging.getLogger(__name__)
 
 db = None
 decode_jwt = None
-put_object_fn = None
 
 
 def init_chat_routes(_db, _decode_jwt):
     global db, decode_jwt
     db, decode_jwt = _db, _decode_jwt
-    # Try to import object storage
-    try:
-        from routes.documents import put_object
-        global put_object_fn
-        put_object_fn = put_object
-    except Exception:
-        pass
+
+
+def _get_storage_fns():
+    from routes.documents import put_object, get_object
+    return put_object, get_object
 
 
 # ─── Helper ───
@@ -142,8 +139,8 @@ async def send_message(conv_id: str, token: str = Query(...), text: str = Form("
     if file and file.filename:
         file_bytes = await file.read()
         storage_path = f"eventenergie-chat/{uuid.uuid4()}/{file.filename}"
-        if put_object_fn:
-            put_object_fn(storage_path, file_bytes, file.content_type or "application/octet-stream")
+        put_obj, _ = _get_storage_fns()
+        put_obj(storage_path, file_bytes, file.content_type or "application/octet-stream")
         attachment = {
             "id": str(uuid.uuid4()),
             "filename": file.filename,
@@ -191,13 +188,15 @@ async def download_attachment(conv_id: str, attachment_id: str, token: str = Que
 
     att = msg["attachment"]
     try:
-        from routes.documents import get_object
-        data = get_object(att["storage_path"])
+        _, get_obj = _get_storage_fns()
+        result = get_obj(att["storage_path"])
+        data = result[0] if isinstance(result, tuple) else result
         from fastapi.responses import Response
         return Response(content=data, media_type=att["content_type"],
                         headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
-    except Exception:
-        raise HTTPException(status_code=500, detail="Download fehlgeschlagen")
+    except Exception as e:
+        logger.error(f"Chat file download failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Download fehlgeschlagen: {str(e)}")
 
 
 @router.get("/users")
@@ -269,8 +268,8 @@ async def create_task(token: str = Query(...), title: str = Form(""), priority: 
     if file and file.filename:
         file_bytes = await file.read()
         storage_path = f"eventenergie-tasks/{uuid.uuid4()}/{file.filename}"
-        if put_object_fn:
-            put_object_fn(storage_path, file_bytes, file.content_type or "application/octet-stream")
+        put_obj, _ = _get_storage_fns()
+        put_obj(storage_path, file_bytes, file.content_type or "application/octet-stream")
         attachment = {
             "id": str(uuid.uuid4()),
             "filename": file.filename,
@@ -313,8 +312,9 @@ async def download_task_file(task_id: str, token: str = Query(...)):
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     att = task["attachment"]
     try:
-        from routes.documents import get_object
-        data = get_object(att["storage_path"])
+        _, get_obj = _get_storage_fns()
+        result = get_obj(att["storage_path"])
+        data = result[0] if isinstance(result, tuple) else result
         from fastapi.responses import Response
         return Response(content=data, media_type=att["content_type"],
                         headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
@@ -354,8 +354,8 @@ async def add_task_comment(task_id: str, token: str = Query(...), text: str = Fo
     if file and file.filename:
         file_bytes = await file.read()
         storage_path = f"eventenergie-tasks/{uuid.uuid4()}/{file.filename}"
-        if put_object_fn:
-            put_object_fn(storage_path, file_bytes, file.content_type or "application/octet-stream")
+        put_obj, _ = _get_storage_fns()
+        put_obj(storage_path, file_bytes, file.content_type or "application/octet-stream")
         attachment = {
             "id": str(uuid.uuid4()),
             "filename": file.filename,
@@ -388,8 +388,9 @@ async def download_comment_file(task_id: str, comment_id: str, token: str = Quer
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
     att = comment["attachment"]
     try:
-        from routes.documents import get_object
-        data = get_object(att["storage_path"])
+        _, get_obj = _get_storage_fns()
+        result = get_obj(att["storage_path"])
+        data = result[0] if isinstance(result, tuple) else result
         from fastapi.responses import Response
         return Response(content=data, media_type=att["content_type"],
                         headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
