@@ -609,7 +609,10 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="admin-page">
+    <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="admin-page"
+      onDragOver={e => e.preventDefault()}
+      onDrop={e => e.preventDefault()}
+    >
       {/* Header */}
       <header className="bg-white border-b border-gray-200 p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -1047,7 +1050,10 @@ export default function AdminPage() {
                                         </div>
 
                                         {/* Documents Grid */}
-                                        <div>
+                                        <div
+                                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                                          onDrop={e => { e.preventDefault(); e.stopPropagation(); }}
+                                        >
                                           <p className="text-[10px] text-gray-400 uppercase font-medium mb-2">Dokumente & Zertifikate</p>
                                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                                             {DOC_TYPES.map(dt => {
@@ -1057,19 +1063,22 @@ export default function AdminPage() {
                                               const isUploading = uploadingAdminDoc === `${user.id}-${dt.key}`;
                                               const inputId = `admin-upload-${user.id}-${dt.key}`;
                                               return (
-                                                <div key={dt.key} className={`border rounded px-2.5 py-1.5 flex items-center gap-2 text-xs relative group ${
-                                                  !activeDoc ? "border-dashed border-gray-300 bg-gray-50 hover:border-fuchsia-400 hover:bg-fuchsia-50/30 cursor-pointer" :
-                                                  expired ? "border-red-300 bg-red-50" :
-                                                  expiring ? "border-amber-300 bg-amber-50" :
-                                                  "border-green-200 bg-green-50"
-                                                }`} data-testid={`admin-doc-${user.id}-${dt.key}`}
-                                                  onClick={e => { if (!activeDoc) { e.stopPropagation(); document.getElementById(inputId)?.click(); } }}
-                                                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.add("border-fuchsia-500", "bg-fuchsia-50"); }}
-                                                  onDragLeave={e => { e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); }}
-                                                  onDrop={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); const f = e.dataTransfer?.files?.[0]; if (f) handleAdminDocUpload(user.id, dt.key, f); }}
+                                                <div key={dt.key}
+                                                  className={`border-2 rounded-lg px-3 py-2.5 flex items-center gap-2 text-xs relative group transition-all ${
+                                                    !activeDoc ? "border-dashed border-gray-300 bg-gray-50/50 hover:border-fuchsia-400 hover:bg-fuchsia-50/30 cursor-pointer" :
+                                                    expired ? "border-red-300 bg-red-50" :
+                                                    expiring ? "border-amber-300 bg-amber-50" :
+                                                    "border-green-200 bg-green-50"
+                                                  }`}
+                                                  data-testid={`admin-doc-${user.id}-${dt.key}`}
+                                                  onClick={e => { e.stopPropagation(); document.getElementById(inputId)?.click(); }}
+                                                  onDragEnter={e => { e.preventDefault(); e.stopPropagation(); }}
+                                                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = "#d946ef"; e.currentTarget.style.backgroundColor = "#fdf4ff"; }}
+                                                  onDragLeave={e => { e.stopPropagation(); e.currentTarget.style.borderColor = ""; e.currentTarget.style.backgroundColor = ""; }}
+                                                  onDrop={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = ""; e.currentTarget.style.backgroundColor = ""; const f = e.dataTransfer?.files?.[0]; if (f) handleAdminDocUpload(user.id, dt.key, f); }}
                                                 >
-                                                  <input type="file" id={inputId} accept="application/pdf,image/*" className="hidden" onChange={e => { if (e.target.files[0]) handleAdminDocUpload(user.id, dt.key, e.target.files[0]); e.target.value = ""; }} />
-                                                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                                  <input type="file" id={inputId} accept="application/pdf,image/*" className="hidden" onChange={e => { if (e.target.files[0]) handleAdminDocUpload(user.id, dt.key, e.target.files[0]); e.target.value = ""; }} onClick={e => e.stopPropagation()} />
+                                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
                                                     !activeDoc ? "bg-gray-300" : expired ? "bg-red-500" : expiring ? "bg-amber-400" : "bg-green-500"
                                                   }`} />
                                                   <span className="flex-1 truncate font-medium text-gray-800">{dt.label}</span>
@@ -1083,12 +1092,9 @@ export default function AdminPage() {
                                                       <a href={`${API}/api/employee/documents/${activeDoc.id}/file?token=${token}`} target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:text-fuchsia-700" onClick={e => e.stopPropagation()}>
                                                         <Eye className="w-3 h-3" />
                                                       </a>
-                                                      <label htmlFor={inputId} className="text-gray-400 hover:text-fuchsia-600 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()} title="Ersetzen">
-                                                        <FileText className="w-3 h-3" />
-                                                      </label>
                                                     </>
                                                   ) : (
-                                                    <span className="text-[10px] text-gray-400 group-hover:text-fuchsia-600">PDF hochladen</span>
+                                                    <span className="text-[10px] text-gray-400 group-hover:text-fuchsia-600">Hierher ziehen</span>
                                                   )}
                                                 </div>
                                               );
