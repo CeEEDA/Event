@@ -13,6 +13,14 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### GPS-Zeiterfassung (Stempeln) - FERTIG (2026-04-05)
+- SwipeClock-Slider im Hub zum Ein-/Ausstempeln (verhindert versehentliches Stempeln)
+- GPS-Koordinaten werden bei jedem Stempelvorgang erfasst
+- Backend: clock-in, clock-out, status, report Endpunkte
+- Eigene Arbeitszeitseite (`/arbeitszeit`) mit Monatsübersicht und Stundenauswertung
+- Admin-Arbeitszeit-Tab in Auswertungsseite (`/verwaltung/auswertung`)
+- DB-Collection: `time_entries` (user_id, clock_in/out, GPS lat/lng, duration_minutes)
+
 ### Auswertung Dokumenten-Ablauf - FERTIG (2026-06-04)
 - Auswertungsseite unter Verwaltung > Auswertung
 - Dashboard: Abgelaufen / Kritisch / Warnung / Gültig Zähler (klickbar)
