@@ -33,6 +33,7 @@ import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import FinancePage from "./pages/FinancePage";
 import VerwaltungPage from "./pages/VerwaltungPage";
 import DocumentManagementPage from "./pages/DocumentManagementPage";
+import ChatPage from "./pages/ChatPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -196,6 +197,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredApp="finance">
             <FinancePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/chat"
+        element={
+          <ProtectedRoute>
+            <ChatPage />
           </ProtectedRoute>
         }
       />
