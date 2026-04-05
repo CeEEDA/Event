@@ -93,6 +93,11 @@ export default function HubPage() {
     try {
       const res = await api.get(`/chat/tasks/${task.id}/comments?token=${token}`);
       setComments(res.data);
+      // Mark comments as read - reset unread locally
+      if (task.unread_comments > 0 || task.comment_count > 0) {
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, unread_comments: 0 } : t));
+        api.put(`/chat/tasks/${task.id}?token=${token}`, { mark_read: true }).catch(() => {});
+      }
     } catch { setComments([]); }
   };
 
@@ -254,7 +259,7 @@ export default function HubPage() {
                     {openTasks.map(t => {
                       const due = formatDue(t.due_date);
                       return (
-                        <div key={t.id} className={`px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50 group cursor-pointer ${(t.comment_count || 0) > 0 ? "border-l-2 border-l-fuchsia-500 bg-fuchsia-50/30" : ""}`} data-testid={`task-${t.id}`} onClick={() => openTaskDetail(t)}>
+                        <div key={t.id} className={`px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50 group cursor-pointer ${(t.unread_comments || 0) > 0 ? "border-l-2 border-l-fuchsia-500 bg-fuchsia-50/30" : ""}`} data-testid={`task-${t.id}`} onClick={() => openTaskDetail(t)}>
                           <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="mt-0.5 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-fuchsia-500 flex-shrink-0 flex items-center justify-center transition-colors" data-testid={`toggle-task-${t.id}`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-gray-900 leading-tight">{t.title}</p>
@@ -264,9 +269,14 @@ export default function HubPage() {
                               </span>
                               {due && <span className={`text-[10px] flex items-center gap-0.5 ${due.cls}`}><Calendar className="w-2.5 h-2.5" />{due.text}</span>}
                               {t.attachment && <span className="text-[10px] text-gray-400"><Paperclip className="w-2.5 h-2.5 inline" /></span>}
-                              {(t.comment_count || 0) > 0 && (
+                              {(t.unread_comments || 0) > 0 && (
                                 <span className="text-[10px] text-fuchsia-600 font-semibold flex items-center gap-0.5 bg-fuchsia-50 px-1.5 py-0.5 rounded-full animate-pulse">
-                                  <MessageCircle className="w-2.5 h-2.5" />{t.comment_count} Rückfrage{t.comment_count > 1 ? "n" : ""}
+                                  <MessageCircle className="w-2.5 h-2.5" />{t.unread_comments} neu
+                                </span>
+                              )}
+                              {(t.unread_comments || 0) === 0 && (t.comment_count || 0) > 0 && (
+                                <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                                  <MessageCircle className="w-2.5 h-2.5" />{t.comment_count}
                                 </span>
                               )}
                               {t.assigned_to !== t.created_by && (

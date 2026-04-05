@@ -238,6 +238,11 @@ async def list_tasks(token: str = Query(...), filter: str = "mine"):
         query = {"$or": [{"assigned_to": uid}, {"created_by": uid}], "is_deleted": {"$ne": True}}
 
     tasks = await db.tasks.find(query, {"_id": 0}).sort([("completed", 1), ("due_date", 1), ("priority_order", 1)]).to_list(500)
+    # Calculate unread comment count per user
+    for t in tasks:
+        last_read = t.get("last_read_by", {}).get(uid, 0)
+        total = t.get("comment_count", 0)
+        t["unread_comments"] = max(0, total - last_read)
     return tasks
 
 
@@ -427,6 +432,9 @@ async def update_task(task_id: str, body: dict, token: str = Query(...)):
             updates["completed_at"] = None
             updates["completed_by"] = None
             updates["completed_by_name"] = None
+
+    if body.get("mark_read"):
+        updates["last_read_by"] = {**task.get("last_read_by", {}), user["id"]: task.get("comment_count", 0)}
 
     await db.tasks.update_one({"id": task_id}, {"$set": updates})
     task.update(updates)
