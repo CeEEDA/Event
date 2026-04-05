@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Send, Plus, Users, User, Paperclip, Image,
   MessageSquare, X, Search, Check, CheckCheck, Loader2,
-  FileText, Download, UserPlus, UserMinus, ChevronRight,
+  FileText, Download, UserPlus, UserMinus, ChevronRight, Camera, Pencil,
 } from "lucide-react";
 
 const API = BACKEND_URL;
@@ -40,6 +40,9 @@ export default function ChatPage() {
   const [convoImages, setConvoImages] = useState([]);
   const [convoCreatedBy, setConvoCreatedBy] = useState(null);
   const [addMemberSearch, setAddMemberSearch] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [editName, setEditName] = useState("");
+  const avatarInputRef = useRef(null);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -184,6 +187,41 @@ export default function ChatPage() {
     u.name.toLowerCase().includes(addMemberSearch.toLowerCase())
   );
 
+  const uploadAvatar = async (file) => {
+    if (!file || !activeConvo) return;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("name", "");
+      await api.put(`/chat/conversations/${activeConvo.id}/settings?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setActiveConvo(prev => ({ ...prev, avatar_path: "updated_" + Date.now() }));
+      loadConversations();
+      toast.success("Gruppenbild aktualisiert");
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+  };
+
+  const saveGroupName = async () => {
+    if (!editName.trim() || !activeConvo) return;
+    try {
+      const formData = new FormData();
+      formData.append("name", editName.trim());
+      await api.put(`/chat/conversations/${activeConvo.id}/settings?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setActiveConvo(prev => ({ ...prev, display_name: editName.trim(), name: editName.trim() }));
+      setEditingName(false);
+      loadConversations();
+      toast.success("Name geändert");
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
+  };
+
+  const getAvatarUrl = (convo) => {
+    if (!convo?.avatar_path) return null;
+    return `${API}/api/chat/conversations/${convo.id}/avatar?token=${token}&_=${convo.avatar_path}`;
+  };
+
   const isAdmin = user?.role === "admin";
   const filteredUsers = chatUsers.filter(u =>
     u.name.toLowerCase().includes(searchUsers.toLowerCase()) ||
@@ -236,8 +274,10 @@ export default function ChatPage() {
                 className={`w-full text-left px-3 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors flex items-center gap-3 ${activeConvo?.id === c.id ? "bg-fuchsia-50 border-l-2 border-l-fuchsia-500" : ""}`}
                 data-testid={`convo-${c.id}`}
               >
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${c.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
-                  {c.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${c.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
+                  {c.avatar_path ? (
+                    <img src={getAvatarUrl(c)} alt="" className="w-full h-full object-cover" />
+                  ) : c.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
@@ -273,8 +313,10 @@ export default function ChatPage() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <button onClick={openDetail} className="flex items-center gap-3 flex-1 min-w-0 hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2 transition-colors" data-testid="chat-header-detail-btn">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
-                    {activeConvo.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
+                    {activeConvo.avatar_path ? (
+                      <img src={getAvatarUrl(activeConvo)} alt="" className="w-full h-full object-cover" />
+                    ) : activeConvo.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
                   </div>
                   <div className="min-w-0">
                     <h2 className="text-sm font-semibold text-gray-900 truncate">{activeConvo.display_name}</h2>
@@ -388,17 +430,59 @@ export default function ChatPage() {
           <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowDetail(false)} />
           <div className="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="chat-detail-panel" onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
-                  {activeConvo.type === "group" ? <Users className="w-4.5 h-4.5 text-blue-600" /> : <User className="w-4.5 h-4.5 text-gray-500" />}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-gray-900 text-sm truncate">{activeConvo.display_name}</h3>
-                  <p className="text-[10px] text-gray-400">{activeConvo.type === "group" ? "Gruppenchat" : "Direktnachricht"}</p>
-                </div>
+            <div className="px-4 py-4 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex-1" />
+                <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
               </div>
-              <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600 ml-2"><X className="w-5 h-5" /></button>
+              <div className="flex flex-col items-center text-center">
+                {/* Avatar */}
+                <div className="relative mb-3">
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
+                    {activeConvo.avatar_path ? (
+                      <img src={getAvatarUrl(activeConvo)} alt="" className="w-full h-full object-cover" />
+                    ) : activeConvo.type === "group" ? <Users className="w-7 h-7 text-blue-600" /> : <User className="w-7 h-7 text-gray-500" />}
+                  </div>
+                  {isAdmin && activeConvo.type === "group" && (
+                    <>
+                      <input type="file" ref={avatarInputRef} accept="image/*" className="hidden" onChange={e => { if (e.target.files[0]) uploadAvatar(e.target.files[0]); e.target.value = ""; }} />
+                      <button
+                        onClick={() => avatarInputRef.current?.click()}
+                        className="absolute -bottom-1 -right-1 w-7 h-7 bg-fuchsia-600 rounded-full flex items-center justify-center text-white hover:bg-fuchsia-700 transition-colors shadow-md"
+                        title="Gruppenbild ändern"
+                        data-testid="change-avatar-btn"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                {/* Name */}
+                {editingName ? (
+                  <div className="flex items-center gap-2 w-full max-w-[200px]">
+                    <input
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") saveGroupName(); if (e.key === "Escape") setEditingName(false); }}
+                      className="text-sm font-semibold text-center border border-fuchsia-300 rounded-lg px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-fuchsia-400"
+                      autoFocus
+                      data-testid="edit-group-name-input"
+                    />
+                    <button onClick={saveGroupName} className="text-fuchsia-600 hover:text-fuchsia-700"><Check className="w-4 h-4" /></button>
+                    <button onClick={() => setEditingName(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-semibold text-gray-900 text-sm">{activeConvo.display_name}</h3>
+                    {isAdmin && activeConvo.type === "group" && (
+                      <button onClick={() => { setEditName(activeConvo.display_name || ""); setEditingName(true); }} className="text-gray-400 hover:text-fuchsia-600" title="Name ändern" data-testid="edit-name-btn">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <p className="text-[10px] text-gray-400 mt-0.5">{activeConvo.type === "group" ? "Gruppenchat" : "Direktnachricht"}</p>
+              </div>
             </div>
 
             {/* Tabs */}

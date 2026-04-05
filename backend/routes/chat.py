@@ -305,6 +305,62 @@ async def update_conversation_members(conv_id: str, body: dict, token: str = Que
 
 
 
+@router.put("/conversations/{conv_id}/settings")
+async def update_conversation_settings(conv_id: str, token: str = Query(...),
+                                        name: str = Form(""), file: Optional[UploadFile] = None):
+    """Admin only: update group name and/or avatar."""
+    user = await _get_user(token)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    convo = await db.chat_conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not convo:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+
+    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+
+    if name.strip():
+        updates["name"] = name.strip()
+
+    if file and file.filename:
+        file_bytes = await file.read()
+        storage_path = f"eventenergie-chat-avatars/{conv_id}/{file.filename}"
+        put_obj, _ = _get_storage_fns()
+        put_obj(storage_path, file_bytes, file.content_type or "image/png")
+        updates["avatar_path"] = storage_path
+
+    await db.chat_conversations.update_one({"id": conv_id}, {"$set": updates})
+    updated = await db.chat_conversations.find_one({"id": conv_id}, {"_id": 0})
+    return {"status": "ok", "name": updated.get("name"), "avatar_path": updated.get("avatar_path")}
+
+
+@router.get("/conversations/{conv_id}/avatar")
+async def get_conversation_avatar(conv_id: str, token: str = Query(...)):
+    """Get the avatar image for a conversation."""
+    user = await _get_user(token)
+    convo = await db.chat_conversations.find_one({"id": conv_id, "members": user["id"]}, {"_id": 0})
+    if not convo or not convo.get("avatar_path"):
+        raise HTTPException(status_code=404, detail="Kein Avatar")
+
+    try:
+        _, get_obj = _get_storage_fns()
+        result = get_obj(convo["avatar_path"])
+        data = result[0] if isinstance(result, tuple) else result
+        # Guess content type from path
+        path = convo["avatar_path"]
+        ct = "image/png"
+        if path.endswith(".jpg") or path.endswith(".jpeg"):
+            ct = "image/jpeg"
+        elif path.endswith(".webp"):
+            ct = "image/webp"
+        from fastapi.responses import Response
+        return Response(content=data, media_type=ct)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Avatar nicht gefunden")
+
+
+
+
 # ─── Tasks ───
 
 @router.get("/tasks")

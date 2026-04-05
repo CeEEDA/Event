@@ -13,6 +13,12 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Chat Gruppenbild & Namensänderung - FERTIG (2026-06-04)
+- Gruppenbilder hochladen (Kamera-Button im Detail-Panel)
+- Avatar wird in Chat-Liste, Header und Detail-Panel angezeigt
+- Gruppenname per Stift-Icon änderbar
+- Nur für Admins bei Gruppenchats
+
 ### Chat Detail-Panel - FERTIG (2026-06-04)
 - Klick auf Chat-Name öffnet Detail-Panel (Slide-over)
 - Tabs: Mitglieder, Dateien, Fotos
