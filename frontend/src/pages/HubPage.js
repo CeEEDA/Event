@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import api from "../lib/api";
+import api, { BACKEND_URL } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Logo } from "../components/Logo";
@@ -10,7 +10,10 @@ import {
   FolderOpen, Users, LogOut, Activity, Settings, Wrench, Zap,
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
+  Paperclip, Send, MessageCircle, Download,
 } from "lucide-react";
+
+const API = BACKEND_URL;
 
 export default function HubPage() {
   const { user, logout, isAdmin } = useAuth();
@@ -21,8 +24,17 @@ export default function HubPage() {
   const [taskFilter, setTaskFilter] = useState("mine");
   const [showNewTask, setShowNewTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
+  const [newTaskFile, setNewTaskFile] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const [unreadChats, setUnreadChats] = useState(0);
+  // Task detail / comments
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
+  const commentFileRef = useRef(null);
+  const commentsEndRef = useRef(null);
+  const taskFileRef = useRef(null);
 
   const hasFilesharing = isAdmin || user?.apps?.filesharing?.enabled;
   const hasMonitoring = isAdmin || user?.apps?.generator_monitoring?.enabled;
@@ -52,19 +64,50 @@ export default function HubPage() {
   const createTask = async () => {
     if (!newTask.title.trim()) return;
     try {
-      const payload = {
-        title: newTask.title.trim(),
-        priority: newTask.priority,
-        due_date: newTask.due_date || null,
-        assigned_to: newTask.assigned_to.length > 0 ? newTask.assigned_to : [user.id],
-      };
-      await api.post(`/chat/tasks?token=${token}`, payload);
+      const formData = new FormData();
+      formData.append("title", newTask.title.trim());
+      formData.append("priority", newTask.priority);
+      formData.append("due_date", newTask.due_date || "");
+      const assignees = newTask.assigned_to.length > 0 ? newTask.assigned_to : [user.id];
+      formData.append("assigned_to", assignees.join(","));
+      if (newTaskFile) formData.append("file", newTaskFile);
+      await api.post(`/chat/tasks?token=${token}`, formData);
       setShowNewTask(false);
       setNewTask({ title: "", priority: "medium", due_date: "", assigned_to: [] });
+      setNewTaskFile(null);
       loadTasks();
       toast.success("Aufgabe erstellt");
     } catch { toast.error("Fehler"); }
   };
+
+  const openTaskDetail = async (task) => {
+    setSelectedTask(task);
+    try {
+      const res = await api.get(`/chat/tasks/${task.id}/comments?token=${token}`);
+      setComments(res.data);
+    } catch { setComments([]); }
+  };
+
+  const sendComment = async (e, file) => {
+    e?.preventDefault();
+    if (!newComment.trim() && !file) return;
+    setSendingComment(true);
+    try {
+      const formData = new FormData();
+      formData.append("text", newComment.trim());
+      if (file) formData.append("file", file);
+      await api.post(`/chat/tasks/${selectedTask.id}/comments?token=${token}`, formData);
+      setNewComment("");
+      const res = await api.get(`/chat/tasks/${selectedTask.id}/comments?token=${token}`);
+      setComments(res.data);
+      loadTasks();
+    } catch { toast.error("Fehler beim Senden"); }
+    finally { setSendingComment(false); }
+  };
+
+  useEffect(() => {
+    commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [comments]);
 
   const toggleTask = async (task) => {
     try {
@@ -201,8 +244,8 @@ export default function HubPage() {
                     {openTasks.map(t => {
                       const due = formatDue(t.due_date);
                       return (
-                        <div key={t.id} className="px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50 group" data-testid={`task-${t.id}`}>
-                          <button onClick={() => toggleTask(t)} className="mt-0.5 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-fuchsia-500 flex-shrink-0 flex items-center justify-center transition-colors" data-testid={`toggle-task-${t.id}`} />
+                        <div key={t.id} className="px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50 group cursor-pointer" data-testid={`task-${t.id}`} onClick={() => openTaskDetail(t)}>
+                          <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="mt-0.5 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-fuchsia-500 flex-shrink-0 flex items-center justify-center transition-colors" data-testid={`toggle-task-${t.id}`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-gray-900 leading-tight">{t.title}</p>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -210,6 +253,8 @@ export default function HubPage() {
                                 {priorityLabel[t.priority]}
                               </span>
                               {due && <span className={`text-[10px] flex items-center gap-0.5 ${due.cls}`}><Calendar className="w-2.5 h-2.5" />{due.text}</span>}
+                              {t.attachment && <span className="text-[10px] text-gray-400"><Paperclip className="w-2.5 h-2.5 inline" /></span>}
+                              {(t.comment_count || 0) > 0 && <span className="text-[10px] text-gray-400 flex items-center gap-0.5"><MessageCircle className="w-2.5 h-2.5" />{t.comment_count}</span>}
                               {t.assigned_to !== t.created_by && (
                                 <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
                                   <User className="w-2.5 h-2.5" />
@@ -222,7 +267,7 @@ export default function HubPage() {
                               )}
                             </div>
                           </div>
-                          <button onClick={() => deleteTask(t.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all" data-testid={`delete-task-${t.id}`}>
+                          <button onClick={(e) => { e.stopPropagation(); deleteTask(t.id); }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all" data-testid={`delete-task-${t.id}`}>
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -347,6 +392,21 @@ export default function HubPage() {
                   <p className="text-[10px] text-fuchsia-600 mt-1">{newTask.assigned_to.length} Person(en) ausgewählt</p>
                 )}
               </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1.5 block">Dokument anhängen</label>
+                <input type="file" ref={taskFileRef} className="hidden" onChange={e => setNewTaskFile(e.target.files[0])} />
+                {newTaskFile ? (
+                  <div className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm">
+                    <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <span className="flex-1 truncate text-gray-700">{newTaskFile.name}</span>
+                    <button onClick={() => { setNewTaskFile(null); if (taskFileRef.current) taskFileRef.current.value = ""; }} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <Button type="button" variant="outline" size="sm" className="w-full text-xs" onClick={() => taskFileRef.current?.click()} data-testid="task-attach-file-btn">
+                    <Paperclip className="w-3.5 h-3.5 mr-1.5" /> Datei auswählen
+                  </Button>
+                )}
+              </div>
             </div>
 
             <Button onClick={createTask} disabled={!newTask.title.trim()} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="create-task-btn">
@@ -354,6 +414,98 @@ export default function HubPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Task Detail Panel (Overlay) */}
+      {selectedTask && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelectedTask(null)} />
+          <div className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="task-detail-panel" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+              <h3 className="font-semibold text-gray-900 text-sm truncate flex-1">{selectedTask.title}</h3>
+              <button onClick={() => setSelectedTask(null)} className="text-gray-400 hover:text-gray-600 ml-2"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Task Info */}
+            <div className="px-4 py-3 border-b border-gray-100 space-y-2 flex-shrink-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${priorityColor[selectedTask.priority]}`}>{priorityLabel[selectedTask.priority]}</span>
+                {selectedTask.due_date && <span className="text-xs text-gray-500 flex items-center gap-1"><Calendar className="w-3 h-3" />{new Date(selectedTask.due_date).toLocaleDateString("de-DE")}</span>}
+                {selectedTask.completed && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3 h-3" />Erledigt von {selectedTask.completed_by_name}</span>}
+              </div>
+              <div className="text-xs text-gray-500">
+                <span>Erstellt von <strong>{selectedTask.created_by_name}</strong></span>
+                {Object.keys(selectedTask.assigned_to_names || {}).length > 0 && (
+                  <span> &middot; Zugewiesen: <strong>{Object.values(selectedTask.assigned_to_names).join(", ")}</strong></span>
+                )}
+              </div>
+              {selectedTask.attachment && (
+                <a href={`${API}/api/chat/tasks/${selectedTask.id}/file?token=${token}`} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-fuchsia-600 hover:underline bg-fuchsia-50 px-2 py-1 rounded" data-testid="task-attachment-link">
+                  <Download className="w-3 h-3" /> {selectedTask.attachment.filename}
+                </a>
+              )}
+            </div>
+
+            {/* Comments Thread */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" data-testid="task-comments-area">
+              {comments.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-xs">Noch keine Kommentare. Stellen Sie eine Rückfrage!</p>
+                </div>
+              ) : comments.map(c => {
+                const isMine = c.user_id === user?.id;
+                const isImage = c.attachment?.content_type?.startsWith("image/");
+                return (
+                  <div key={c.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] ${isMine ? "" : ""}`}>
+                      {!isMine && <span className="text-[10px] text-gray-400 ml-1 block mb-0.5">{c.user_name}</span>}
+                      <div className={`rounded-2xl px-3 py-2 ${isMine ? "bg-fuchsia-600 text-white rounded-br-sm" : "bg-gray-100 text-gray-900 rounded-bl-sm"}`}>
+                        {c.attachment && (
+                          <div className="mb-1">
+                            {isImage ? (
+                              <img src={`${API}/api/chat/tasks/${selectedTask.id}/comments/${c.id}/file?token=${token}`} alt={c.attachment.filename} className="rounded-lg max-w-full max-h-32" />
+                            ) : (
+                              <a href={`${API}/api/chat/tasks/${selectedTask.id}/comments/${c.id}/file?token=${token}`} target="_blank" rel="noreferrer"
+                                className={`text-xs underline flex items-center gap-1 ${isMine ? "text-white/90" : "text-fuchsia-600"}`}>
+                                <Paperclip className="w-3 h-3" /> {c.attachment.filename}
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        {c.text && <p className="text-sm whitespace-pre-wrap">{c.text}</p>}
+                        <span className={`text-[10px] block text-right mt-0.5 ${isMine ? "text-white/50" : "text-gray-400"}`}>
+                          {new Date(c.created_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={commentsEndRef} />
+            </div>
+
+            {/* Comment Input */}
+            <form onSubmit={e => sendComment(e)} className="border-t border-gray-200 px-3 py-2 flex items-center gap-2 flex-shrink-0" data-testid="comment-input-form">
+              <input type="file" ref={commentFileRef} className="hidden" onChange={e => { if (e.target.files[0]) sendComment(null, e.target.files[0]); e.target.value = ""; }} />
+              <Button type="button" variant="ghost" size="sm" onClick={() => commentFileRef.current?.click()} className="text-gray-400 hover:text-fuchsia-600 flex-shrink-0" data-testid="comment-attach-btn">
+                <Paperclip className="w-4 h-4" />
+              </Button>
+              <Input
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                placeholder="Rückfrage oder Kommentar..."
+                className="flex-1 border-0 bg-gray-100 focus-visible:ring-0 text-sm"
+                data-testid="comment-input"
+              />
+              <Button type="submit" size="sm" disabled={!newComment.trim() || sendingComment} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white flex-shrink-0" data-testid="send-comment-btn">
+                <Send className="w-4 h-4" />
+              </Button>
+            </form>
+          </div>
+        </>
       )}
     </div>
   );

@@ -242,44 +242,55 @@ async def list_tasks(token: str = Query(...), filter: str = "mine"):
 
 
 @router.post("/tasks")
-async def create_task(body: dict, token: str = Query(...)):
+async def create_task(token: str = Query(...), title: str = Form(""), priority: str = Form("medium"),
+                      due_date: str = Form(""), assigned_to: str = Form(""), file: Optional[UploadFile] = None):
     user = await _get_user(token)
     now = datetime.now(timezone.utc).isoformat()
 
-    priority = body.get("priority", "medium")
     priority_order = {"high": 0, "medium": 1, "low": 2}.get(priority, 1)
 
-    # Support multiple assignees
-    assigned_to = body.get("assigned_to", [])
-    if isinstance(assigned_to, str):
-        assigned_to = [assigned_to] if assigned_to else [user["id"]]
-    if not assigned_to:
-        assigned_to = [user["id"]]
+    # Parse assigned_to (comma-separated IDs)
+    assignees = [a.strip() for a in assigned_to.split(",") if a.strip()] if assigned_to else [user["id"]]
 
-    # Build assignee names
     assigned_to_names = {}
-    for aid in assigned_to:
+    for aid in assignees:
         if aid == user["id"]:
             assigned_to_names[aid] = user["name"]
         else:
             a = await db.users.find_one({"id": aid}, {"_id": 0, "name": 1})
             assigned_to_names[aid] = a["name"] if a else "Unbekannt"
 
+    attachment = None
+    if file and file.filename:
+        file_bytes = await file.read()
+        storage_path = f"eventenergie-tasks/{uuid.uuid4()}/{file.filename}"
+        if put_object_fn:
+            put_object_fn(storage_path, file_bytes, file.content_type or "application/octet-stream")
+        attachment = {
+            "id": str(uuid.uuid4()),
+            "filename": file.filename,
+            "content_type": file.content_type or "application/octet-stream",
+            "size": len(file_bytes),
+            "storage_path": storage_path,
+        }
+
     task = {
         "id": str(uuid.uuid4()),
-        "title": body.get("title", "").strip(),
-        "description": body.get("description", "").strip(),
+        "title": title.strip(),
+        "description": "",
         "priority": priority,
         "priority_order": priority_order,
-        "due_date": body.get("due_date"),
+        "due_date": due_date if due_date else None,
         "completed": False,
         "completed_at": None,
         "completed_by": None,
         "completed_by_name": None,
         "created_by": user["id"],
         "created_by_name": user["name"],
-        "assigned_to": assigned_to,
+        "assigned_to": assignees,
         "assigned_to_names": assigned_to_names,
+        "attachment": attachment,
+        "comment_count": 0,
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
@@ -287,6 +298,98 @@ async def create_task(body: dict, token: str = Query(...)):
     await db.tasks.insert_one(task)
     del task["_id"]
     return task
+
+
+@router.get("/tasks/{task_id}/file")
+async def download_task_file(task_id: str, token: str = Query(...)):
+    user = await _get_user(token)
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task or not task.get("attachment"):
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    att = task["attachment"]
+    try:
+        from routes.documents import get_object
+        data = get_object(att["storage_path"])
+        from fastapi.responses import Response
+        return Response(content=data, media_type=att["content_type"],
+                        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
+    except Exception:
+        raise HTTPException(status_code=500, detail="Download fehlgeschlagen")
+
+
+# ─── Task Comments ───
+
+@router.get("/tasks/{task_id}/comments")
+async def list_task_comments(task_id: str, token: str = Query(...)):
+    user = await _get_user(token)
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Aufgabe nicht gefunden")
+    assigned = task.get("assigned_to", [])
+    if isinstance(assigned, str):
+        assigned = [assigned]
+    if user["id"] not in assigned and task["created_by"] != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+
+    comments = await db.task_comments.find(
+        {"task_id": task_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(200)
+    return comments
+
+
+@router.post("/tasks/{task_id}/comments")
+async def add_task_comment(task_id: str, token: str = Query(...), text: str = Form(""), file: Optional[UploadFile] = None):
+    user = await _get_user(token)
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Aufgabe nicht gefunden")
+
+    now = datetime.now(timezone.utc).isoformat()
+    attachment = None
+    if file and file.filename:
+        file_bytes = await file.read()
+        storage_path = f"eventenergie-tasks/{uuid.uuid4()}/{file.filename}"
+        if put_object_fn:
+            put_object_fn(storage_path, file_bytes, file.content_type or "application/octet-stream")
+        attachment = {
+            "id": str(uuid.uuid4()),
+            "filename": file.filename,
+            "content_type": file.content_type or "application/octet-stream",
+            "size": len(file_bytes),
+            "storage_path": storage_path,
+        }
+
+    comment = {
+        "id": str(uuid.uuid4()),
+        "task_id": task_id,
+        "user_id": user["id"],
+        "user_name": user["name"],
+        "text": text.strip(),
+        "attachment": attachment,
+        "created_at": now,
+    }
+    await db.task_comments.insert_one(comment)
+    del comment["_id"]
+
+    await db.tasks.update_one({"id": task_id}, {"$inc": {"comment_count": 1}, "$set": {"updated_at": now}})
+    return comment
+
+
+@router.get("/tasks/{task_id}/comments/{comment_id}/file")
+async def download_comment_file(task_id: str, comment_id: str, token: str = Query(...)):
+    await _get_user(token)
+    comment = await db.task_comments.find_one({"id": comment_id, "task_id": task_id}, {"_id": 0})
+    if not comment or not comment.get("attachment"):
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    att = comment["attachment"]
+    try:
+        from routes.documents import get_object
+        data = get_object(att["storage_path"])
+        from fastapi.responses import Response
+        return Response(content=data, media_type=att["content_type"],
+                        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
+    except Exception:
+        raise HTTPException(status_code=500, detail="Download fehlgeschlagen")
 
 
 @router.put("/tasks/{task_id}")
