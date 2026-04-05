@@ -187,41 +187,50 @@ export default function HubPage() {
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6">
+      <main className="flex-1 p-3 sm:p-4 md:p-6">
         <div className="max-w-6xl mx-auto">
-          {/* Top Row: Chat + Quick Actions */}
+          {/* Top Row */}
           <div className="flex items-center justify-between mb-5">
-            <h1 className="text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
-            <Button onClick={() => navigate("/chat")} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white relative" data-testid="open-chat-btn">
-              <MessageSquare className="w-4 h-4 mr-2" /> Team Chat
-              {unreadChats > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">{unreadChats}</span>
-              )}
-            </Button>
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left: Module Grid */}
             <div className="lg:col-span-2">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3" data-testid="modules-grid">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5" data-testid="modules-grid">
+                {/* Chat Tile with unread indicator */}
+                <button
+                  onClick={() => navigate("/chat")}
+                  className={`relative bg-white border rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:shadow-md transition-all group text-center ${unreadChats > 0 ? "border-fuchsia-400 ring-2 ring-fuchsia-200" : "border-gray-200 hover:border-fuchsia-400"}`}
+                  data-testid="module-chat"
+                >
+                  <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform ${unreadChats > 0 ? "bg-fuchsia-600 text-white" : "bg-fuchsia-100 text-fuchsia-600"}`}>
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Team Chat</span>
+                  {unreadChats > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center animate-pulse">{unreadChats}</span>
+                  )}
+                </button>
+
                 {modules.map(m => (
                   <button
                     key={m.key}
                     onClick={() => navigate(m.path)}
-                    className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center gap-2.5 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
+                    className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
                     data-testid={`module-${m.key}`}
                   >
-                    <div className={`w-11 h-11 rounded-xl ${m.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                    <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl ${m.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
                       <m.icon className="w-5 h-5" />
                     </div>
-                    <span className="text-xs font-medium text-gray-700 leading-tight">{m.label}</span>
+                    <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">{m.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Right: Tasks */}
-            <div className="bg-white rounded-xl border border-gray-200 flex flex-col" style={{ maxHeight: "calc(100vh - 180px)" }} data-testid="tasks-panel">
+            <div className="bg-white rounded-xl border border-gray-200 flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-180px)]" data-testid="tasks-panel">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">Aufgaben</h2>
                 <Button size="sm" onClick={() => setShowNewTask(true)} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white h-7 text-xs" data-testid="new-task-btn">
@@ -452,7 +461,7 @@ export default function HubPage() {
       {selectedTask && (
         <>
           <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelectedTask(null)} />
-          <div className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="task-detail-panel" onClick={e => e.stopPropagation()}>
+          <div className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="task-detail-panel" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <h3 className="font-semibold text-gray-900 text-sm truncate flex-1">{selectedTask.title}</h3>

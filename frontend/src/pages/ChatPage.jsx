@@ -161,7 +161,7 @@ export default function ChatPage() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar - Conversation List */}
-        <aside className="w-72 lg:w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+        <aside className={`${activeConvo ? "hidden md:flex" : "flex"} w-full md:w-72 lg:w-80 bg-white border-r border-gray-200 flex-col flex-shrink-0`}>
           <div className="p-3 border-b border-gray-100 flex items-center gap-2">
             <Button size="sm" onClick={() => setShowNewChat(true)} className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="new-chat-btn">
               <User className="w-3.5 h-3.5 mr-1" /> Direktnachricht
@@ -206,7 +206,7 @@ export default function ChatPage() {
         </aside>
 
         {/* Chat Area */}
-        <main className="flex-1 flex flex-col min-w-0">
+        <main className={`${!activeConvo ? "hidden md:flex" : "flex"} flex-1 flex-col min-w-0`}>
           {!activeConvo ? (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
@@ -218,6 +218,9 @@ export default function ChatPage() {
             <>
               {/* Chat Header */}
               <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3">
+                <button onClick={() => setActiveConvo(null)} className="md:hidden text-gray-500 hover:text-gray-700 flex-shrink-0" data-testid="chat-mobile-back">
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
                   {activeConvo.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
                 </div>
