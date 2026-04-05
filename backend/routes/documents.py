@@ -566,6 +566,13 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         final_folder = folder_id
         if folder_id == "sonstiges" and suggested_folder in all_valid_ids:
             final_folder = suggested_folder
+        elif folder_id == "sonstiges" and suggested_folder not in all_valid_ids:
+            # AI might suggest a year/month subfolder ID (e.g. rechnungseingang_2026_02)
+            # that doesn't exist yet. Fall back to the base auto-year-month folder.
+            for base_folder in AUTO_YEAR_MONTH_FOLDERS:
+                if suggested_folder.startswith(base_folder + "_"):
+                    final_folder = base_folder
+                    break
 
         await db.documents.update_one({"id": doc_id}, {"$set": {
             "folder_id": final_folder,
