@@ -1,65 +1,86 @@
 <analysis>**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and management system along with an Eventenergie Portal. 
-PRODUCT REQUIREMENTS: 
-- Implement a digital Projektbericht (Project Report) form, modeled after the existing Tankbeleg (Fuel Receipt) feature, integrated into  with digital signature capture.
-- Customer data must auto-fill via the API, and the employee should be auto-selected.
-- Add a Billing Export (Abrechnung PDF) button to compile all hours and billing info into a PDF, appending all individual report and receipt PDFs.
+The user is building a comprehensive Kirmes (Fairground) billing and management system. Recently, the scope expanded to include a fully automated, AI-powered Document Management System (Dokumentenablage) for processing incoming/outgoing invoices, contracts, delivery notes, and more. 
+PRODUCT REQUIREMENTS:
+- AI-based document recognition (extracting sender, recipient, amounts, IBAN, auto-categorizing).
+- Automatic forwarding of all incoming and outgoing invoices to DATEV ().
+- Drag & Drop interface for file uploads.
+- Hierarchical folder structure (Tree view) with automatic Year/Month subfolder creation for Rechnungen and Lieferscheine.
+- Local server file storage mirroring (Cloud files must also be saved locally under ).
+- Role-based access control for employees (Finance, Document Management).
 
 **User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
 
 **what currently exists?** 
-A comprehensive full-stack event and fairground management application (React + FastAPI + MongoDB). The new digital Projektbericht feature is fully built and integrated. The report form features employee selection, an Externes Personal section, and a card-based worklog interface. A Textbausteine (Text Templates) management system was added to the Admin Settings. The system generates highly customized, professional PDFs for project reports using . A read-only lock activates once a customer signs the report. The agent was recently modifying the Abrechnung Export (Billing PDF) feature.
+A robust React + FastAPI + MongoDB app. The complex  refactoring (split into 14 components) is 100% complete and tested. 
+The new Document Management module () is fully implemented. It features:
+- Gemini AI auto-classification of uploaded documents (optimized for the event/energy sector).
+- Async file uploads with frontend polling to prevent timeouts.
+- Automatic Year/Month subfolder routing for incoming/outgoing invoices and delivery notes.
+- Automatic DATEV email forwarding.
+- Local file storage mirror ( mapping to the requested C: drive path).
+- Interactive, scrollable folder tree with 66 predefined master folders and custom subfolder creation.
 
 **Last working item**: 
-    - Last item agent was working: Reworking the Abrechnung PDF (Billing Export) generation. The user requested that the billing summary only show aggregated hours by date (Normalstunden, Extrastunden, Notdienststunden) without employee details. Furthermore, the agent modified the  endpoint in  to use  so that it appends the actual PDFs of all associated Projektberichte and Tankbelege to the end of the summary.
+    - Last item agent was working: The user requested two final additions: 
+      1) Auto-save Kirmes invoices (Ausgangsrechnungen) directly into the Document Management module () upon generation. Check if E-Invoices transfer correctly.
+      2) Add access toggles for Finance and Dokumentenverwaltung in the Employee User Management modal ().
+      The agent had just started editing  to intercept the batch invoice generation flow but ran out of context before finishing individual invoice generation and the User Management frontend updates.
     - Status: IN PROGRESS
-    - Agent Testing Done: N (Context window ended immediately after writing the code)
-    - Which testing method agent to use? manual testing by curl/python-c to test the backend PDF generation, then frontend manual download testing. 
+    - Agent Testing Done: N
+    - Which testing method agent to use? both (Curl/Python to verify invoice auto-saving to documents collection, then testing_agent_v3_fork for Admin frontend toggle regression).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  Issue 1: Test and fix (if necessary) the modified  endpoint.
-     - Attempted fixes: The agent just did a  in  to implement the  merging logic. It has not been executed or validated yet.
-     - Next debug checklist: 
-        - Verify if the app builds and backend starts.
-        - Run  against  to verify that a valid merged PDF is returned.
-        - Test with a project that contains multiple reports and fuel receipts to ensure  correctly merges them without memory issues.
-     - Why fix this issue and what will be achieved with the fix? It fulfills the user's requirement to provide a complete billing package (Summary + attached evidence PDFs) in a single click.
-     - Status: TESTING PENDING
+  Issue 1: Auto-save Portal Invoices to Document Management (P0)
+     - Attempted fixes: Agent added logic to the batch generation endpoint () in , but still needs to add it to the single generation endpoint () and verify PDF/E-Invoice compliance formatting during the transfer.
+     - Next debug checklist: Update  ->  to save the generated PDF byte stream into the  collection (using the same logic just added for batch invoices).
+     - Why fix this issue and what will be achieved with the fix? Ensures outgoing invoices bypass manual upload and go straight into the organized AI filing system.
+     - Status: IN PROGRESS
      - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Both (Backend via curl, then Frontend by clicking the Abrechnung PDF button).
+     - Should Test frontend/backend/both after fix? Backend
 
-**In progress Task List**:
-  Task 1: Abrechnung PDF Merging (Billing Export)
-     - Where to resume: . Test the  endpoint.
-     - What will be achieved with this? Automates the billing package generation for large projects (100+ receipts/reports).
-     - Status: TESTING PENDING
+  Issue 2: Employee Permission Toggles (P0)
+     - Attempted fixes: Investigated  and  but made no edits yet.
+     - Next debug checklist: Update  (around line 1125, where  and  toggles exist) to add UI toggles for Finance and Dokumentenverwaltung in the  or  object. Update  endpoint protections to enforce these new permissions for non-admin employees.
+     - Why fix this issue and what will be achieved with the fix? Allows the admin to restrict sensitive financial and document areas to specific staff members.
+     - Status: NOT STARTED
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Both (testing_agent_v3_fork for frontend).
+
+**In progress Task List**: 
+  Task 1: Auto-save Kirmes Invoices & Employee Permission Toggles (P0)
+     - Where to resume:  (around line 1305) and  (around line 1125).
+     - What will be achieved with this? Complete the final requirements of the document management integration phase.
+     - Status: IN PROGRESS
      - Should Test frontend/backend/both after fix? Both
-     - Blocked on something: None
+     - Blocked on something: None.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - (P1) PayPal Integration: Implement PayPal for payment processing during the Kirmes signup flow.
+    - (P1) Microsoft 365 Postfach-Anbindung: Automatic document ingestion from an email inbox.
+    - (P1) PayPal/Kreditkarten Integration: Implement actual payment processing for Kirmes signups.
     
     Future Tasks:
+    - (P2) Lastdiagramm Live-Test (requires EMU meters).
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk.
     - (P2) Implement Admin File Size Limits for uploads.
     - (P2) Create a Windows Installer for the Electron app.
     - (P2) Add GPS Support to Kirmeskiste.
-    - (P2) DSE890 Gateway GSM Connection.
+    - (P2) DSE890 Gateway GSM Connection (Blocked: Waiting for new SIM cards).
 
 **Completed work in this session**
-- Projektbericht Backend CRUD & Frontend Integration (DONE)
-- Projektbericht Auto-Fill Fix: Updated EpiRent Order API to fetch and return contact details (DONE)
-- Mitarbeiter Dropdown: Replaced manual employee entry with a dropdown loaded from  (DONE)
-- Arbeitsprotokoll Redesign: Swapped table for a Card layout with vertically stacked hours (DONE)
-- Textbausteine (Templates): Built Admin UI & Backend API () for reusable text templates (DONE)
-- Projektbericht PDF Engine: Built professional Reportlab layout with logo, responsive grid, dynamic row hiding, and auto-landscape mode for >=5 employees (DONE)
-- Read-only Lock: Reports lock from editing after customer signature is added (DONE)
-- UI Layout: Aligned Projektberichte buttons to match Tankbelege, moved Projektberichte section above Tankbelege in the Order Detail Page (DONE)
+-  refactored into 14 subcomponents (DONE)
+- AI Document Management Backend + Frontend Module (DONE)
+- Predefined 66 Master folders with custom subfolder CRUD (DONE)
+- Gemini AI auto-classification tailored to Eventenergie (DONE)
+- Async document upload with frontend auto-polling (DONE)
+- Drag & Drop Upload UI (DONE)
+- Auto Year/Month subfolders for Incoming/Outgoing invoices and delivery notes (DONE)
+- DATEV automatic Email forwarding for incoming/outgoing invoices (DONE)
+- Local file storage mirror mapping  (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-None
+None.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: None
@@ -71,75 +92,81 @@ None
 
 **Key Technical Concepts**
 - React, FastAPI, MongoDB
-- PDF Generation:  (for creating from scratch) and  (for merging existing PDFs).
-- React Signature Canvas
+- Gemini AI Integration (via Emergent Integrations) for document parsing.
+- Async Background Tasks (FastAPI) for AI analysis to prevent upload timeouts.
+- File system operations (, ) for local mirroring.
 
 **key DB schema**
-  - : Stores project report data including worklogs and signatures.
-  - : Stores reusable text snippets (, , ).
+  - : 
+  - : 
+  - : 
 
 **changes in tech stack**
-  - None strictly new, but heavily utilizing  and  for complex PDF workflows.
+  - Integrated Gemini AI (Gemini 2.5 Flash via Universal Key) for document OCR and classification.
 
 **All files of reference** 
-  -  (Contains the  endpoint you need to test)
-  - 
-  - 
-  - 
-  - 
+  -  (Currently being edited)
+  -  (Core document logic)
+  -  
+  -  (Needs update)
+  -  (Needs update for RBAC)
 
 **Areas that need refactoring**: 
--  is extremely large (~1500 lines).  and  are also growing fast. Breakdowns will be necessary in the future.
+-  is quite large (~1700 lines), but focus on the requested toggles first.
 
 **key api endpoints**
-  -  (IN PROGRESS - Needs testing)
   - 
   - 
+  - 
+  -  (For updating user permissions)
 
 **Critical Info for New Agent** 
 - **YOU MUST RESPOND IN GERMAN.**
-- You are dropping into the *exact* moment right after the agent rewrote  in . The code attempts to generate a billing summary with  and then merge it with the individual report/receipt PDFs using . **This code has not been tested.** Your absolute first priority is to run a curl command against this endpoint to verify it works and doesn't throw 500 errors.
+- The Gemini AI is powered by the Emergent Universal LLM Key (). It is correctly set up in the  and working.
+- When generating Kirmes invoices in , ensure that the generated PDF bytes are also sent to the  collection and saved to the local file mirror under . 
+- Ensure E-Rechnung (Factur-X) XML embedding is preserved when transferring the invoice to the document management system.
 
 **documents and test reports created in this job** 
-  - /app/memory/PRD.md
-  - /app/test_reports/iteration_53.json
+  -  (Frontend tests for Schausteller Refactor)
+  -  (Document Management Backend + Frontend tests)
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
-1. (PENDING) In der Abrechnung brauche ich eine Aufstellung in der Summe mit den Stunden... Da muss nur stehen: Datum, Normalstunden, Extrastunden, Notdienststunden... Und am ende brauche ich eine Summe... Außerdem brauche ich die korrekten Tankbeleg... angehängt. (Agent wrote the code, needs testing)
-2. ändere hier die anordnung der Buttons, dass die gleich sind... (DONE)
-3. Baue hier einen Abrechnung PDF button ein... (DONE)
-4. Hier fügen wir noch die Projektbezeichnung ein (DONE)
-5. Entferne hier alle leeren Zeilen bei den Stunden... (DONE)
-6. hier werden immer noch leere Zeilen angezeigt (DONE)
-7. Die Zeile blenden wir nur dann ein, Wenn hier auch etwas eingetragen wurde (DONE)
-8. Entferne das erstellt am... (DONE)
-9. es sind immer noch leere Zeilen drin (DONE)
-10. Die Namen kürzen wir so ab: C.Ecker... Wie machen wir das bei 6 oder 10 Mitarbeitern? (DONE)
+ - ich hab gerade ein dokument hochgeladen, da kam ein fehler. (Agent fixed timeout by making upload async)
+ - wir müssen alle Eingangsrechnungen an datev automatisch weiterleiten. die E-mail adresse ist: d5aa2eb6-6bae-417a-8894-664a6eb160c8@uploadmail.datev.de (Agent implemented DATEV forwarding)
+ - mache hier ein fenster rein, wo ich die Unterlagen rein ziehen kann (Agent implemented Drag & Drop)
+ - optimiere die ki. das im Anhang ist ein Netzantrag... (Agent optimized AI prompt for energy industry)
+ - die Ordnerstruktur muss auch noch weiter mit Unterordner werden... Eingangs und Ausgangsrechnungen müssen immer in Jahr, Monat Unterteilt werden. (Agent implemented hierarchical folders and auto Year/Month routing)
+ - Erweitere unter Rechnunge noch den Bereich Lieferscheine... Wo legen wir die Dokumemente ab? In C: eventenergie / Dokumentenablage/... (Agent added local file mirroring)
+ - b. auf dem Live Server liegen die daten dort. (Confirmed)
+ - zwei weitere Bauaufgaben. 1. Alle im Portal erstellten Ausgangsrechnungen müssen auch direkt im Rechnungsausgang/ Monat abgelegt werden... 2. In der Benutzerverwaltung Mitarbeiter müssen noch folgende Schalter und Zugriffe gesetzt werden: Finance, Dokumentenverwaltung (Agent started on this, **PENDING COMPLETION**)
 
 **Project Health Check:**
-- Broken: No
+- Broken: None, but  has incomplete logic for the latest request.
 - Mocked: None
 
 **3rd Party Integrations** 
-- None new.
+- Gemini 2.5 Flash via OpenAI SDK structure — uses Emergent LLM Key
+- DATEV (via standard SMTP Email forwarding)
 
 **Testing status**
-  - Testing agent used after significant changes: YES (Ran iteration 53 for early Projektbericht feature testing).
+  - Testing agent used after significant changes: YES
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
-  - Known regressions: The untested  merge function.
+  - Known regressions: None
 
 **Credentials to test flow:**
-- Check 
+- Admin:  / 
 
 **What agent forgot to execute**
-- Testing the  generation logic in  after replacing the code with the  merge implementation.
+- The agent was mid-way through updating  and  to satisfy the user's final two requests (Auto-save invoices and User toggles).
 
 **Debugging checklist for current issue**
-    Task: Test Abrechnung PDF Generation
-    - Backend files to check:  (line 810+ )
-    - Next Steps: 
-      1. Fetch a token.
-      2. Call  via curl.
-      3. Verify the file size and HTTP 200.
-      4. Ensure  correctly processes the in-memory bytes without crashing.</analysis>
+    Task: Auto-save portal invoices + Employee Toggles
+    - Backend files to check:  (line 1305  & line 1380 ),  (Add RBAC for Finance/Docs).
+    - Frontend files to check:  (line 1125, add toggles for Finance and Dokumentenverwaltung).
+    - Next Steps:
+      1. Complete the  logic in  for individual invoices.
+      2. Ensure the resulting PDF maintains E-Invoice data when synced locally and to the DB.
+      3. Update the frontend  to include the two new toggles in the  or  state for mitarbeiter.
+      4. Update  or  to actually enforce these toggles.</analysis>

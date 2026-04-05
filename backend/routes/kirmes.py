@@ -1478,6 +1478,51 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
         except Exception:
             pass  # Don't fail batch if single email fails
 
+        # Store invoice PDF in Dokumentenverwaltung (Rechnungsausgang)
+        try:
+            from routes.documents import _ensure_year_month_subfolder, _save_to_local_storage, put_object, db as doc_db
+            import uuid as _uuid
+
+            inv_date = invoice_doc.get("created_at", datetime.now(timezone.utc).isoformat())
+            subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
+            storage_path = f"eventenergie-docs/uploads/{_uuid.uuid4()}.pdf"
+            put_object(storage_path, pdf_bytes, "application/pdf")
+
+            doc_entry = {
+                "id": str(_uuid.uuid4()),
+                "storage_path": storage_path,
+                "original_filename": filename,
+                "content_type": "application/pdf",
+                "size": len(pdf_bytes),
+                "folder_id": subfolder_id,
+                "ai_status": "completed",
+                "ai_metadata": {
+                    "document_type": "rechnung",
+                    "suggested_folder": "rechnungsausgang",
+                    "sender": "Eventenergie Deutschland GmbH & Co. KG",
+                    "recipient": sch.get("firma", sch.get("name", "")),
+                    "date": inv_date[:10] if len(inv_date) >= 10 else inv_date,
+                    "subject": f"Ausgangsrechnung {inv_number} - {event.get('name', '')}",
+                    "amount": calc.get("brutto"),
+                    "currency": "EUR",
+                    "invoice_number": inv_number,
+                    "reference": f"Event: {event.get('name', '')}",
+                    "tax_amount": calc.get("mwst"),
+                },
+                "full_text": f"Rechnung {inv_number} {sch.get('firma', '')} {event.get('name', '')} {calc.get('brutto', 0):.2f} EUR",
+                "keywords": [inv_number, sch.get("firma", ""), event.get("name", ""), "Ausgangsrechnung"],
+                "is_deleted": False,
+                "datev_forwarded": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await doc_db.documents.insert_one(doc_entry)
+
+            # Save locally
+            await _save_to_local_storage(pdf_bytes, filename, subfolder_id)
+        except Exception as doc_err:
+            logger.warning(f"Document storage for invoice {inv_number} failed: {doc_err}")
+
         generated.append({"schausteller_id": schausteller_id, "schausteller_firma": sch.get("firma", ""), "invoice_number": inv_number, "brutto": calc["brutto"], "signups_count": len(sch_signups)})
 
     # Update event status
