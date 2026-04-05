@@ -36,6 +36,7 @@ import DocumentManagementPage from "./pages/DocumentManagementPage";
 import ChatPage from "./pages/ChatPage";
 import ProfilePage from "./pages/ProfilePage";
 import EmployeeAdminPage from "./pages/EmployeeAdminPage";
+import AuswertungPage from "./pages/AuswertungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -343,6 +344,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <EnergyMonitoringDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/auswertung"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AuswertungPage />
           </ProtectedRoute>
         }
       />

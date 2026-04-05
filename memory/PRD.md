@@ -13,6 +13,14 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Auswertung Dokumenten-Ablauf - FERTIG (2026-06-04)
+- Auswertungsseite unter Verwaltung > Auswertung
+- Dashboard: Abgelaufen / Kritisch / Warnung / Gültig Zähler (klickbar)
+- Gruppierung nach Status oder Mitarbeiter
+- Suche nach Mitarbeiter oder Dokumenttyp
+- Zeigt: Mitarbeitername, Dokumenttyp, Ablaufdatum, Tage verbleibend/überfällig
+- KI-Dokumenterkennung Fix (LlmChat Import korrigiert)
+
 ### Profilbild-Integration & Admin-Mitarbeiterverwaltung - FERTIG (2026-06-04)
 - Profilbild wird im Hub-Header, Chat-Nachrichten und Konversationsliste angezeigt
 - Mitarbeiter-Profil + Dokumente direkt in Benutzerverwaltung eingebettet

@@ -315,14 +315,19 @@ async def upload_document(token: str = Query(...),
 async def _ai_check_expiry(doc_id: str, file_bytes: bytes, filename: str, doc_type: str):
     """Use Gemini to detect expiry date from document."""
     import base64
+    import tempfile
     try:
-        from emergentintegrations.llm.chat import Chat, ChatMessage
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
         emergent_api_key = os.environ.get("EMERGENT_API_KEY", "")
         if not emergent_api_key:
             return
 
-        b64 = base64.b64encode(file_bytes).decode("utf-8")
         label = DOCUMENT_LABELS.get(doc_type, doc_type)
+
+        # Write temp file for the LLM
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
 
         prompt = f"""Analysiere dieses Dokument ({label}).
 Suche nach einem Ablaufdatum, Gültigkeitsdatum, "gültig bis" oder ähnlichem.
@@ -330,13 +335,18 @@ Antworte NUR im Format: YYYY-MM-DD
 Falls kein Ablaufdatum gefunden wird, antworte NUR: KEINS
 Keine weiteren Erklärungen."""
 
-        chat = Chat(
+        chat = LlmChat(
             api_key=emergent_api_key,
-            model="gemini-2.5-flash",
-        )
-        chat.history = [ChatMessage(role="user", text=prompt, images=[b64])]
-        response = await chat.send_message_async("")
+            session_id=f"expiry-{doc_id}",
+            system_message="Du bist ein Dokumenten-Scanner. Extrahiere nur das Ablaufdatum."
+        ).with_model("gemini", "gemini-2.5-flash")
+
+        file_content = FileContentWithMimeType(file_path=tmp_path, mime_type="application/pdf")
+        response = await chat.send_message_async(UserMessage(text=prompt, files_with_mime_type=[file_content]))
         text = response.text.strip()
+
+        # Clean up temp file
+        os.unlink(tmp_path)
 
         if text != "KEINS" and len(text) == 10 and text[4] == "-":
             await db.employee_documents.update_one(
@@ -395,3 +405,61 @@ async def get_document_types(token: str = Query(...)):
     """Get list of all document types with labels."""
     await _get_user(token)
     return [{"key": k, "label": v} for k, v in DOCUMENT_LABELS.items()]
+
+
+@router.get("/report/expiry")
+async def get_expiry_report(token: str = Query(...)):
+    """Admin: Get report of all document expiry dates across all employees."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    # Get all active documents with expiry dates
+    docs = await db.employee_documents.find(
+        {"status": "active"},
+        {"_id": 0}
+    ).sort("expiry_date", 1).to_list(5000)
+
+    # Build user name lookup
+    user_ids = list(set(d["user_id"] for d in docs))
+    users_map = {}
+    for uid in user_ids:
+        u = await db.users.find_one({"id": uid}, {"_id": 0, "id": 1, "name": 1})
+        if u:
+            users_map[uid] = u.get("name", "Unbekannt")
+
+    now = datetime.now(timezone.utc)
+    result = []
+    for d in docs:
+        status = "ok"
+        days_left = None
+        if d.get("expiry_date"):
+            try:
+                exp = datetime.fromisoformat(d["expiry_date"])
+                if exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                days_left = (exp - now).days
+                if days_left < 0:
+                    status = "expired"
+                elif days_left <= 30:
+                    status = "critical"
+                elif days_left <= 60:
+                    status = "warning"
+            except Exception:
+                pass
+        else:
+            status = "no_date"
+
+        result.append({
+            "doc_id": d["id"],
+            "user_id": d["user_id"],
+            "user_name": users_map.get(d["user_id"], "Unbekannt"),
+            "doc_type": d["doc_type"],
+            "doc_label": d.get("doc_label", DOCUMENT_LABELS.get(d["doc_type"], d["doc_type"])),
+            "expiry_date": d.get("expiry_date"),
+            "days_left": days_left,
+            "status": status,
+            "filename": d.get("filename", ""),
+        })
+
+    return result

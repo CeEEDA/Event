@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt, FolderOpen } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3 } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -27,10 +27,19 @@ export default function VerwaltungPage() {
       path: "/verwaltung/dokumente",
       requiredApp: "dokumentenverwaltung",
     },
+    {
+      key: "auswertung",
+      label: "Auswertung",
+      description: "Mitarbeiter-Dokumente, Ablaufdaten und Übersicht",
+      icon: BarChart3,
+      color: "fuchsia",
+      path: "/verwaltung/auswertung",
+      adminOnly: true,
+    },
   ];
 
   const items = allItems.filter(item => 
-    isAdmin || user?.apps?.[item.requiredApp]?.enabled
+    item.adminOnly ? isAdmin : (isAdmin || user?.apps?.[item.requiredApp]?.enabled)
   );
 
   return (
