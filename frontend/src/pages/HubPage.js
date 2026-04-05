@@ -20,7 +20,7 @@ export default function HubPage() {
   const [tasks, setTasks] = useState([]);
   const [taskFilter, setTaskFilter] = useState("mine");
   const [showNewTask, setShowNewTask] = useState(false);
-  const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: "" });
+  const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
   const [allUsers, setAllUsers] = useState([]);
   const [unreadChats, setUnreadChats] = useState(0);
 
@@ -56,11 +56,11 @@ export default function HubPage() {
         title: newTask.title.trim(),
         priority: newTask.priority,
         due_date: newTask.due_date || null,
-        assigned_to: newTask.assigned_to || user.id,
+        assigned_to: newTask.assigned_to.length > 0 ? newTask.assigned_to : [user.id],
       };
       await api.post(`/chat/tasks?token=${token}`, payload);
       setShowNewTask(false);
-      setNewTask({ title: "", priority: "medium", due_date: "", assigned_to: "" });
+      setNewTask({ title: "", priority: "medium", due_date: "", assigned_to: [] });
       loadTasks();
       toast.success("Aufgabe erstellt");
     } catch { toast.error("Fehler"); }
@@ -213,7 +213,11 @@ export default function HubPage() {
                               {t.assigned_to !== t.created_by && (
                                 <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
                                   <User className="w-2.5 h-2.5" />
-                                  {t.assigned_to === user?.id ? `von ${t.created_by_name}` : `an ${t.assigned_to_name}`}
+                                  {Array.isArray(t.assigned_to)
+                                    ? (t.assigned_to.includes(user?.id) && t.created_by !== user?.id
+                                        ? `von ${t.created_by_name}`
+                                        : Object.values(t.assigned_to_names || {}).join(", "))
+                                    : (t.assigned_to === user?.id ? `von ${t.created_by_name}` : `an ${t.assigned_to_name || "?"}`)}
                                 </span>
                               )}
                             </div>
@@ -230,11 +234,16 @@ export default function HubPage() {
                           <span className="text-[10px] font-medium text-gray-400 uppercase">Erledigt ({doneTasks.length})</span>
                         </div>
                         {doneTasks.slice(0, 5).map(t => (
-                          <div key={t.id} className="px-3 py-2 flex items-center gap-2.5 opacity-50 group" data-testid={`task-done-${t.id}`}>
+                          <div key={t.id} className="px-3 py-2 flex items-center gap-2.5 opacity-60 group" data-testid={`task-done-${t.id}`}>
                             <button onClick={() => toggleTask(t)} className="w-5 h-5 rounded-full bg-fuchsia-600 flex-shrink-0 flex items-center justify-center" data-testid={`untoggle-task-${t.id}`}>
                               <Check className="w-3 h-3 text-white" />
                             </button>
-                            <p className="text-sm text-gray-500 line-through flex-1 truncate">{t.title}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-500 line-through truncate">{t.title}</p>
+                              {t.completed_by_name && (
+                                <p className="text-[10px] text-gray-400">Erledigt von {t.completed_by_name}</p>
+                              )}
+                            </div>
                             <button onClick={() => deleteTask(t.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         ))}
@@ -301,18 +310,42 @@ export default function HubPage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Zuweisen an</label>
-                <select
-                  value={newTask.assigned_to}
-                  onChange={e => setNewTask(p => ({ ...p, assigned_to: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                  data-testid="task-assign-select"
-                >
-                  <option value="">Mir selbst</option>
+                <label className="text-xs font-medium text-gray-600 mb-1.5 block">Zuweisen an</label>
+                <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-50">
+                  {/* Self */}
+                  <label className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newTask.assigned_to.length === 0 || newTask.assigned_to.includes(user?.id)}
+                      onChange={e => {
+                        if (e.target.checked) setNewTask(p => ({ ...p, assigned_to: [...p.assigned_to.filter(x => x !== user?.id), user?.id] }));
+                        else setNewTask(p => ({ ...p, assigned_to: p.assigned_to.filter(x => x !== user?.id) }));
+                      }}
+                      className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                      data-testid="task-assign-self"
+                    />
+                    <span className="text-sm text-gray-900">Mir selbst</span>
+                  </label>
                   {allUsers.map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    <label key={u.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTask.assigned_to.includes(u.id)}
+                        onChange={e => {
+                          if (e.target.checked) setNewTask(p => ({ ...p, assigned_to: [...p.assigned_to, u.id] }));
+                          else setNewTask(p => ({ ...p, assigned_to: p.assigned_to.filter(x => x !== u.id) }));
+                        }}
+                        className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                        data-testid={`task-assign-${u.id}`}
+                      />
+                      <span className="text-sm text-gray-900">{u.name}</span>
+                      <span className="text-xs text-gray-400">{u.role}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
+                {newTask.assigned_to.length > 0 && (
+                  <p className="text-[10px] text-fuchsia-600 mt-1">{newTask.assigned_to.length} Person(en) ausgewählt</p>
+                )}
               </div>
             </div>
 

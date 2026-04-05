@@ -249,11 +249,21 @@ async def create_task(body: dict, token: str = Query(...)):
     priority = body.get("priority", "medium")
     priority_order = {"high": 0, "medium": 1, "low": 2}.get(priority, 1)
 
-    assigned_to = body.get("assigned_to", user["id"])
-    assigned_name = user["name"]
-    if assigned_to != user["id"]:
-        assignee = await db.users.find_one({"id": assigned_to}, {"_id": 0, "name": 1})
-        assigned_name = assignee["name"] if assignee else "Unbekannt"
+    # Support multiple assignees
+    assigned_to = body.get("assigned_to", [])
+    if isinstance(assigned_to, str):
+        assigned_to = [assigned_to] if assigned_to else [user["id"]]
+    if not assigned_to:
+        assigned_to = [user["id"]]
+
+    # Build assignee names
+    assigned_to_names = {}
+    for aid in assigned_to:
+        if aid == user["id"]:
+            assigned_to_names[aid] = user["name"]
+        else:
+            a = await db.users.find_one({"id": aid}, {"_id": 0, "name": 1})
+            assigned_to_names[aid] = a["name"] if a else "Unbekannt"
 
     task = {
         "id": str(uuid.uuid4()),
@@ -264,10 +274,12 @@ async def create_task(body: dict, token: str = Query(...)):
         "due_date": body.get("due_date"),
         "completed": False,
         "completed_at": None,
+        "completed_by": None,
+        "completed_by_name": None,
         "created_by": user["id"],
         "created_by_name": user["name"],
         "assigned_to": assigned_to,
-        "assigned_to_name": assigned_name,
+        "assigned_to_names": assigned_to_names,
         "is_deleted": False,
         "created_at": now,
         "updated_at": now,
@@ -283,7 +295,12 @@ async def update_task(task_id: str, body: dict, token: str = Query(...)):
     task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Aufgabe nicht gefunden")
-    if task["assigned_to"] != user["id"] and task["created_by"] != user["id"] and user.get("role") != "admin":
+
+    # Permission: assigned user, creator, or admin
+    assigned = task.get("assigned_to", [])
+    if isinstance(assigned, str):
+        assigned = [assigned]
+    if user["id"] not in assigned and task["created_by"] != user["id"] and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
@@ -299,7 +316,14 @@ async def update_task(task_id: str, body: dict, token: str = Query(...)):
         updates["due_date"] = body["due_date"]
     if "completed" in body:
         updates["completed"] = body["completed"]
-        updates["completed_at"] = datetime.now(timezone.utc).isoformat() if body["completed"] else None
+        if body["completed"]:
+            updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+            updates["completed_by"] = user["id"]
+            updates["completed_by_name"] = user["name"]
+        else:
+            updates["completed_at"] = None
+            updates["completed_by"] = None
+            updates["completed_by_name"] = None
 
     await db.tasks.update_one({"id": task_id}, {"$set": updates})
     task.update(updates)
