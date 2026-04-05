@@ -13,6 +13,11 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Aufgaben-Filter Redesign - FERTIG (2026-06-04)
+- Tabs geändert: "Aktuell / Erledigt / Alle" statt "Meine / Erstellt / Alle"
+- Erledigte Aufgaben werden im Aktuell-Tab ausgeblendet
+- Suchmaske zum Filtern von Aufgaben hinzugefügt
+
 ### Team Chat & Aufgabenverwaltung - FERTIG (2026-04-05)
 - Direktnachrichten zwischen allen Benutzern
 - Gruppenchats (nur Admin kann erstellen)
