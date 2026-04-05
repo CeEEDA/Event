@@ -402,9 +402,17 @@ export default function HubPage() {
                     <button onClick={() => { setNewTaskFile(null); if (taskFileRef.current) taskFileRef.current.value = ""; }} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
                   </div>
                 ) : (
-                  <Button type="button" variant="outline" size="sm" className="w-full text-xs" onClick={() => taskFileRef.current?.click()} data-testid="task-attach-file-btn">
-                    <Paperclip className="w-3.5 h-3.5 mr-1.5" /> Datei auswählen
-                  </Button>
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-fuchsia-400 hover:bg-fuchsia-50/30 transition-colors"
+                    onClick={() => taskFileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-fuchsia-500", "bg-fuchsia-50"); }}
+                    onDragLeave={e => { e.preventDefault(); e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); }}
+                    onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); if (e.dataTransfer.files[0]) setNewTaskFile(e.dataTransfer.files[0]); }}
+                    data-testid="task-drop-zone"
+                  >
+                    <Paperclip className="w-5 h-5 text-gray-400 mx-auto mb-1" />
+                    <p className="text-xs text-gray-500">Datei hierher ziehen oder <span className="text-fuchsia-600 font-medium">klicken</span></p>
+                  </div>
                 )}
               </div>
             </div>
