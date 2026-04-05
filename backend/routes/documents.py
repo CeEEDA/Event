@@ -297,6 +297,40 @@ SONSTIGES:
 - Im Zweifel lieber anfragen_projekte als sonstiges wählen bei technischen Dokumenten"""
 
 
+@router.get("/ai-settings")
+async def get_ai_settings():
+    """Get custom AI prompt instructions."""
+    settings = await db.ai_settings.find_one({"key": "document_analysis"}, {"_id": 0})
+    return settings or {"key": "document_analysis", "custom_instructions": "", "updated_at": None}
+
+
+@router.put("/ai-settings")
+async def update_ai_settings(body: dict):
+    """Update custom AI prompt instructions (admin only)."""
+    custom_instructions = body.get("custom_instructions", "").strip()
+    if len(custom_instructions) > 5000:
+        raise HTTPException(status_code=400, detail="Anweisungen zu lang (max. 5000 Zeichen)")
+    
+    doc = {
+        "key": "document_analysis",
+        "custom_instructions": custom_instructions,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.ai_settings.update_one(
+        {"key": "document_analysis"}, {"$set": doc}, upsert=True
+    )
+    logger.info(f"AI settings updated: {len(custom_instructions)} chars")
+    return doc
+
+
+async def _get_custom_ai_instructions() -> str:
+    """Load custom AI instructions from DB."""
+    settings = await db.ai_settings.find_one({"key": "document_analysis"}, {"_id": 0})
+    if settings and settings.get("custom_instructions"):
+        return settings["custom_instructions"]
+    return ""
+
+
 async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
     """Analyze a document using Gemini AI."""
     try:
@@ -315,6 +349,11 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
             "rechnungseingang|kfz_versicherung|betriebshaftpflicht|vertraege|lieferscheine|behoerden|sonstiges",
             "|".join(all_folder_ids)
         ) + extra_hint
+
+        # Inject custom admin instructions
+        custom_instructions = await _get_custom_ai_instructions()
+        if custom_instructions:
+            system += f"\n\n=== ZUSÄTZLICHE ADMIN-ANWEISUNGEN ===\n{custom_instructions}"
 
         chat = LlmChat(
             api_key=EMERGENT_KEY,

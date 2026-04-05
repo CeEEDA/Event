@@ -24,21 +24,30 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Ausgangsrechnungen (Portal) BCC an DATEV statt Accounting
 - Drag & Drop Upload-Zone
 - Volltextsuche ueber alle Metadaten
-- Detail-Sidebar mit KI-Metadaten, DATEV-Status
+- Detail-Sidebar als Overlay-Panel (kein horizontales Scrollen)
+- PDF-Vorschau inline per iframe + Vollbild-Link
+
+### KI-Training im Admin-Bereich - FERTIG (2026-04-05)
+- Neuer "KI-Training" Tab in Benutzerverwaltung
+- Textfeld fuer zusaetzliche Admin-Anweisungen (max 5000 Zeichen)
+- Beispiele fuer typische Anweisungen
+- Custom-Instruktionen werden bei jeder Dokumentenanalyse injiziert
+- Backend: GET/PUT /api/documents/ai-settings mit MongoDB-Persistenz
+
+### Bug-Fix: KI-Ordnerzuordnung (2026-04-05)
+- Problem: KI schlug Jahr/Monat-Unterordner vor die noch nicht existierten -> Dokument landete in "Sonstiges"
+- Fix: Wenn KI einen AUTO_YEAR_MONTH_FOLDER-Unterordner vorschlaegt, wird der Basis-Ordner erkannt und der Unterordner automatisch angelegt
 
 ### Auto-Speicherung Portal-Rechnungen - FERTIG (2026-04-05)
 - Einzelrechnung (generate_invoice_for_signup) speichert PDF automatisch in Rechnungsausgang/Jahr/Monat
 - Batch-Rechnung (generate_all_invoices) speichert PDF automatisch in Rechnungsausgang/Jahr/Monat
 - Lokale Kopie + Object Storage + MongoDB documents Collection
-- Bug-Fix: tax_amount Feld korrigiert (mwst -> mwst_amount)
 
 ### Mitarbeiter-Berechtigungen (Finance + Dokumentenverwaltung) - FERTIG (2026-04-05)
 - Finance Toggle in AdminPage Benutzerbearbeitung
 - Dokumentenverwaltung Toggle in AdminPage Benutzerbearbeitung
 - ProtectedRoute erweitert mit requiredApp-Prop
 - VerwaltungPage filtert Navigation basierend auf Benutzerberechtigungen
-- Leere-Seite-Hinweis wenn keine Berechtigungen vorhanden
-- 12/12 Backend-Tests + alle Frontend-Tests bestanden
 
 ### SchaustellerAnmeldungPage Refactoring - FERTIG (2026-04-04)
 - 14 Subkomponenten in /pages/schausteller/
@@ -47,23 +56,21 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 ### Lastdiagramm Feature - FERTIG
 
 ## Key API Endpoints
-- POST /api/documents/upload (Async Upload + Background KI)
-- GET /api/documents/folders (Hierarchischer Baum mit Counts)
-- POST /api/documents/folders (Ordner/Unterordner erstellen)
-- PUT /api/documents/folders/{id} (Umbenennen)
-- DELETE /api/documents/folders/{id} (Loeschen)
+- POST /api/documents/upload
+- GET /api/documents/folders
+- POST /api/documents/folders
+- PUT /api/documents/folders/{id}
+- DELETE /api/documents/folders/{id}
 - GET /api/documents/list?folder_id=...&include_children=true
 - GET /api/documents/search?q=...
-- GET /api/documents/{id} (Detail mit Volltext)
-- GET /api/documents/{id}/file (Download)
+- GET /api/documents/{id}
+- GET /api/documents/{id}/file
 - PUT /api/documents/{id}/move?folder_id=...
-- PUT /api/users/{id} (User-Update mit apps.finance, apps.dokumentenverwaltung)
+- GET /api/documents/ai-settings
+- PUT /api/documents/ai-settings
+- PUT /api/users/{id}
 
 ## Prioritized Backlog
-### P0 (Erledigt)
-- Auto-Speicherung Portal-Rechnungen in Dokumentenverwaltung
-- Finance + Dokumentenverwaltung Berechtigungen
-
 ### P1
 - Microsoft 365 Postfach-Anbindung (IMAP/Graph API)
 - PayPal/Kreditkarten Integration

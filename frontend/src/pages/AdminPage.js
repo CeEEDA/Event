@@ -51,6 +51,8 @@ import {
   ChevronDown,
   Clock,
   Globe,
+  Loader2,
+  Check,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -129,6 +131,12 @@ export default function AdminPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmData, setConfirmData] = useState({ title: "", description: "", onConfirm: null });
 
+  // AI Training state
+  const [aiInstructions, setAiInstructions] = useState("");
+  const [aiInstructionsOriginal, setAiInstructionsOriginal] = useState("");
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiLastUpdated, setAiLastUpdated] = useState(null);
+
   // User activity dropdown
   const [expandedUserId, setExpandedUserId] = useState(null);
   const [userActivity, setUserActivity] = useState({});
@@ -182,7 +190,31 @@ export default function AdminPage() {
     loadData();
     loadUsersWithFiles();
     loadSchausteller();
+    loadAiSettings();
   }, []);
+
+  const loadAiSettings = async () => {
+    try {
+      const res = await api.get("/documents/ai-settings");
+      setAiInstructions(res.data.custom_instructions || "");
+      setAiInstructionsOriginal(res.data.custom_instructions || "");
+      setAiLastUpdated(res.data.updated_at);
+    } catch { /* ignore */ }
+  };
+
+  const saveAiSettings = async () => {
+    setAiSaving(true);
+    try {
+      const res = await api.put("/documents/ai-settings", { custom_instructions: aiInstructions });
+      setAiInstructionsOriginal(aiInstructions);
+      setAiLastUpdated(res.data.updated_at);
+      toast.success("KI-Anweisungen gespeichert");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Fehler beim Speichern");
+    } finally {
+      setAiSaving(false);
+    }
+  };
 
   const loadSchausteller = async () => {
     try {
@@ -613,6 +645,10 @@ export default function AdminPage() {
                 <FolderOpen className="w-4 h-4 mr-2" />
                 Dateien
               </TabsTrigger>
+              <TabsTrigger value="ai" className="data-[state=active]:bg-fuchsia-50 data-[state=active]:text-fuchsia-700">
+                <Settings className="w-4 h-4 mr-2" />
+                KI-Training
+              </TabsTrigger>
             </TabsList>
 
             {/* Users Tab */}
@@ -1042,6 +1078,65 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* AI Training Tab */}
+            <TabsContent value="ai" className="mt-4">
+              <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5" data-testid="ai-training-section">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-1">KI-Dokumentenerkennung trainieren</h2>
+                  <p className="text-sm text-gray-500">
+                    Geben Sie hier zusätzliche Anweisungen ein, um die KI bei der Dokumentenerkennung zu verbessern. 
+                    Diese Anweisungen werden bei jeder Dokumentenanalyse automatisch berücksichtigt.
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <h3 className="text-sm font-medium text-gray-700">Beispiele für Anweisungen:</h3>
+                  <ul className="text-xs text-gray-500 space-y-1 list-disc pl-4">
+                    <li>HalloPetra GmbH Rechnungen immer in "rechnungseingang" einordnen</li>
+                    <li>Dokumente von Stadtwerk Andernach sind immer Eingangsrechnungen</li>
+                    <li>Wenn "Netzantrag" im Dokument steht, in "anfragen_projekte" ablegen</li>
+                    <li>Rechnungen von TEBA immer in den Ordner "teba" statt "rechnungseingang"</li>
+                    <li>Lieferscheine von Walther Werke in "walther_werke" einordnen</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Zusätzliche KI-Anweisungen</label>
+                  <textarea
+                    value={aiInstructions}
+                    onChange={e => setAiInstructions(e.target.value)}
+                    placeholder="Geben Sie hier Ihre Anweisungen für die KI-Dokumentenerkennung ein..."
+                    className="w-full h-48 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-fuchsia-500 focus:border-fuchsia-500 resize-y font-mono"
+                    maxLength={5000}
+                    data-testid="ai-instructions-textarea"
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">{aiInstructions.length} / 5000 Zeichen</span>
+                    {aiLastUpdated && (
+                      <span className="text-xs text-gray-400">
+                        Zuletzt gespeichert: {new Date(aiLastUpdated).toLocaleString("de-DE")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={saveAiSettings}
+                    disabled={aiSaving || aiInstructions === aiInstructionsOriginal}
+                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    data-testid="save-ai-settings-btn"
+                  >
+                    {aiSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                    Anweisungen speichern
+                  </Button>
+                  {aiInstructions !== aiInstructionsOriginal && (
+                    <span className="text-xs text-amber-600">Ungespeicherte Änderungen</span>
+                  )}
                 </div>
               </div>
             </TabsContent>

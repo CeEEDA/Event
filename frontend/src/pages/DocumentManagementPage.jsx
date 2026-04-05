@@ -329,8 +329,8 @@ export default function DocumentManagementPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="document-management-page">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/verwaltung")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn">
+        <div className="px-4 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/verwaltung")} className="text-gray-600 hover:text-fuchsia-600 flex-shrink-0" data-testid="back-btn">
             <ArrowLeft className="w-4 h-4 mr-1" /> Verwaltung
           </Button>
           <div className="h-5 w-px bg-gray-200" />
@@ -360,9 +360,9 @@ export default function DocumentManagementPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex max-w-7xl mx-auto w-full">
+      <div className="flex-1 flex w-full overflow-hidden" style={{ maxHeight: "calc(100vh - 57px)" }}>
         {/* Folder Sidebar */}
-        <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 p-3 overflow-y-auto" style={{ maxHeight: "calc(100vh - 57px)" }}>
+        <aside className="w-56 lg:w-64 flex-shrink-0 bg-white border-r border-gray-200 p-3 overflow-y-auto">
           <button
             onClick={() => { setActiveFolder(null); setIsSearching(false); setSearchQuery(""); }}
             className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -426,7 +426,7 @@ export default function DocumentManagementPage() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-4" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <main className="flex-1 min-w-0 p-4 overflow-y-auto" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
           {/* Drop Zone */}
           <div
             onClick={() => fileInput.current?.click()}
@@ -540,9 +540,11 @@ export default function DocumentManagementPage() {
           )}
         </main>
 
-        {/* Document Detail Sidebar */}
+        {/* Document Detail Sidebar - Overlay */}
         {selectedDoc && (
-          <aside className="w-80 flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto">
+          <>
+            <div className="fixed inset-0 bg-black/20 z-30" onClick={() => setSelectedDoc(null)} />
+            <aside className="fixed top-0 right-0 h-full w-96 bg-white border-l border-gray-200 overflow-y-auto z-40 shadow-2xl animate-in slide-in-from-right duration-200">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Details</h3>
               <button onClick={() => setSelectedDoc(null)} className="text-gray-400 hover:text-gray-600" data-testid="close-detail"><X className="w-4 h-4" /></button>
@@ -655,6 +657,7 @@ export default function DocumentManagementPage() {
               </div>
             </div>
           </aside>
+          </>
         )}
       </div>
 
