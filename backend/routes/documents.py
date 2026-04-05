@@ -21,6 +21,11 @@ EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = "eventenergie-docs"
 
+# Lokale Dateiablage auf dem Produktionsserver
+# Auf Windows: C:\eventenergie\Dokumentenablage
+# Auf Linux/Dev: /app/data/Dokumentenablage (Fallback)
+LOCAL_STORAGE_ROOT = os.environ.get("LOCAL_STORAGE_PATH", r"C:\eventenergie\Dokumentenablage")
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -63,7 +68,8 @@ PREDEFINED_FOLDERS = [
     {"id": "wirtschaftsbeirat_andernach", "name": "Wirtschaftsbeirat Andernach", "icon": "landmark", "color": "purple"},
     {"id": "aktionsgemeinschaft_andernach", "name": "Aktionsgemeinschaft Andernach", "icon": "landmark", "color": "purple"},
     # Lieferanten & Partner
-    {"id": "lieferscheine", "name": "Lieferscheine", "icon": "truck", "color": "orange"},
+    {"id": "lieferscheine_eingehend", "name": "Lieferscheine eingehend", "icon": "truck", "color": "orange"},
+    {"id": "lieferscheine_ausgehend", "name": "Lieferscheine ausgehend", "icon": "truck", "color": "orange"},
     {"id": "oel_lieferanten", "name": "Öl-Lieferanten", "icon": "truck", "color": "orange"},
     {"id": "spedition_normann", "name": "Spedition Normann", "icon": "truck", "color": "orange"},
     {"id": "walther_werke", "name": "Walther Werke 10-2025", "icon": "truck", "color": "orange"},
@@ -135,6 +141,59 @@ def get_object(path: str):
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
+def _build_folder_path(folder_id: str, all_folders: list) -> str:
+    """Build the full folder path from folder_id using folder hierarchy."""
+    folder_map = {f["id"]: f for f in all_folders}
+    parts = []
+    current_id = folder_id
+    while current_id:
+        f = folder_map.get(current_id)
+        if f:
+            parts.insert(0, f["name"])
+            current_id = f.get("parent_id")
+        else:
+            # Might be a predefined folder
+            pf = next((p for p in PREDEFINED_FOLDERS if p["id"] == current_id), None)
+            if pf:
+                parts.insert(0, pf["name"])
+            break
+    return os.path.join(*parts) if parts else "Sonstiges"
+
+
+async def _save_to_local_storage(file_data: bytes, filename: str, folder_id: str):
+    """Save the original file to the local filesystem on the production server."""
+    try:
+        # Build folder hierarchy from DB
+        all_folders = []
+        async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+            all_folders.append(cf)
+        for pf in PREDEFINED_FOLDERS:
+            all_folders.append({"id": pf["id"], "name": pf["name"], "parent_id": None})
+
+        folder_path = _build_folder_path(folder_id, all_folders)
+        full_dir = os.path.join(LOCAL_STORAGE_ROOT, folder_path)
+        os.makedirs(full_dir, exist_ok=True)
+
+        # Avoid overwriting: add suffix if file exists
+        target_path = os.path.join(full_dir, filename)
+        if os.path.exists(target_path):
+            name, ext = os.path.splitext(filename)
+            counter = 1
+            while os.path.exists(target_path):
+                target_path = os.path.join(full_dir, f"{name}_{counter}{ext}")
+                counter += 1
+
+        with open(target_path, "wb") as f:
+            f.write(file_data)
+
+        logger.info(f"Local file saved: {target_path}")
+        return target_path
+    except Exception as e:
+        logger.warning(f"Local storage save failed (non-critical): {e}")
+        return None
+
+
+
 AI_SYSTEM_PROMPT = """Du bist ein Dokumentenerkennungssystem für die Firma Eventenergie Deutschland GmbH & Co. KG.
 Die Firma ist ein Elektrotechnik-Meisterbetrieb, spezialisiert auf temporäre Stromversorgung für Events/Kirmes, Photovoltaik-Anlagen, Erzeugungsanlagen, Speicher und Netzanschlüsse.
 
@@ -197,7 +256,8 @@ VERTRÄGE:
 - Mobilfunkverträge (Vodafone, Telekom, O2) → mobilfunkvertraege
 
 LIEFERANTEN:
-- Lieferscheine → lieferscheine
+- Eingehende Lieferscheine (von Lieferanten an Eventenergie) → lieferscheine_eingehend
+- Ausgehende Lieferscheine (von Eventenergie an Kunden) → lieferscheine_ausgehend
 - Öl/Kraftstoff-Lieferungen → oel_lieferanten
 - Spedition Normann → spedition_normann
 - Walther Werke → walther_werke
@@ -303,7 +363,7 @@ MONTH_NAMES = {
     1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
     7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember"
 }
-AUTO_YEAR_MONTH_FOLDERS = ["rechnungseingang", "rechnungsausgang"]
+AUTO_YEAR_MONTH_FOLDERS = ["rechnungseingang", "rechnungsausgang", "lieferscheine_eingehend", "lieferscheine_ausgehend"]
 
 
 async def _ensure_year_month_subfolder(parent_folder_id: str, doc_date_str: str) -> str:
@@ -525,9 +585,21 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
 
         logger.info(f"AI analysis completed for doc {doc_id} -> folder: {final_folder}")
 
-        # Auto-forward incoming invoices to DATEV
+        # Save to local filesystem (C:\eventenergie\Dokumentenablage\...)
         doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
-        if final_folder in DATEV_FORWARD_FOLDERS and doc:
+        if doc:
+            try:
+                file_data, _ = get_object(doc["storage_path"])
+                local_path = await _save_to_local_storage(file_data, doc["original_filename"], final_folder)
+                if local_path:
+                    await db.documents.update_one({"id": doc_id}, {"$set": {"local_path": local_path}})
+            except Exception as e:
+                logger.warning(f"Local storage save failed for doc {doc_id}: {e}")
+
+        # Auto-forward incoming invoices to DATEV
+        if not doc:
+            doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+        if doc and (final_folder.startswith("rechnungseingang") or final_folder in DATEV_FORWARD_FOLDERS):
             await _forward_to_datev(doc_id, doc["storage_path"], doc["original_filename"], content_type, ai_result)
     except Exception as e:
         logger.error(f"AI analysis error for doc {doc_id}: {e}")
