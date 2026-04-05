@@ -161,6 +161,30 @@ export default function AdminPage() {
     return diff > 0 && diff <= 60;
   };
 
+  const [uploadingAdminDoc, setUploadingAdminDoc] = useState(null);
+
+  const handleAdminDocUpload = async (userId, docType, file) => {
+    if (!file) return;
+    setUploadingAdminDoc(`${userId}-${docType}`);
+    try {
+      const fd = new FormData();
+      fd.append("doc_type", docType);
+      fd.append("user_id", userId);
+      fd.append("file", file);
+      await api.post(`/employee/documents?token=${token}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      // Reload docs
+      const docsRes = await api.get(`/employee/documents?token=${token}&user_id=${userId}`);
+      setEmployeeDocs(prev => ({ ...prev, [userId]: docsRes.data }));
+      toast.success("Dokument hochgeladen");
+      // Reload after AI check
+      setTimeout(async () => {
+        const res = await api.get(`/employee/documents?token=${token}&user_id=${userId}`);
+        setEmployeeDocs(prev => ({ ...prev, [userId]: res.data }));
+      }, 4000);
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler beim Hochladen"); }
+    setUploadingAdminDoc(null);
+  };
+
   const toggleUserActivity = async (userId) => {
     if (expandedUserId === userId) {
       setExpandedUserId(null);
@@ -1014,18 +1038,28 @@ export default function AdminPage() {
                                               const activeDoc = docs.find(d => d.doc_type === dt.key && d.status === "active");
                                               const expired = activeDoc && isDocExpired(activeDoc.expiry_date);
                                               const expiring = activeDoc && isDocExpiringSoon(activeDoc.expiry_date);
+                                              const isUploading = uploadingAdminDoc === `${user.id}-${dt.key}`;
+                                              const inputId = `admin-upload-${user.id}-${dt.key}`;
                                               return (
-                                                <div key={dt.key} className={`border rounded px-2.5 py-1.5 flex items-center gap-2 text-xs ${
-                                                  !activeDoc ? "border-gray-200 bg-gray-50 opacity-50" :
+                                                <div key={dt.key} className={`border rounded px-2.5 py-1.5 flex items-center gap-2 text-xs relative group ${
+                                                  !activeDoc ? "border-dashed border-gray-300 bg-gray-50 hover:border-fuchsia-400 hover:bg-fuchsia-50/30 cursor-pointer" :
                                                   expired ? "border-red-300 bg-red-50" :
                                                   expiring ? "border-amber-300 bg-amber-50" :
                                                   "border-green-200 bg-green-50"
-                                                }`} data-testid={`admin-doc-${user.id}-${dt.key}`}>
+                                                }`} data-testid={`admin-doc-${user.id}-${dt.key}`}
+                                                  onClick={e => { if (!activeDoc) { e.stopPropagation(); document.getElementById(inputId)?.click(); } }}
+                                                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.add("border-fuchsia-500", "bg-fuchsia-50"); }}
+                                                  onDragLeave={e => { e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); }}
+                                                  onDrop={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); const f = e.dataTransfer?.files?.[0]; if (f) handleAdminDocUpload(user.id, dt.key, f); }}
+                                                >
+                                                  <input type="file" id={inputId} accept="application/pdf" className="hidden" onChange={e => { if (e.target.files[0]) handleAdminDocUpload(user.id, dt.key, e.target.files[0]); e.target.value = ""; }} />
                                                   <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                                                     !activeDoc ? "bg-gray-300" : expired ? "bg-red-500" : expiring ? "bg-amber-400" : "bg-green-500"
                                                   }`} />
                                                   <span className="flex-1 truncate font-medium text-gray-800">{dt.label}</span>
-                                                  {activeDoc ? (
+                                                  {isUploading ? (
+                                                    <span className="text-[10px] text-fuchsia-600 animate-pulse">Hochladen...</span>
+                                                  ) : activeDoc ? (
                                                     <>
                                                       <span className={`text-[10px] ${expired ? "text-red-600" : expiring ? "text-amber-600" : "text-green-600"}`}>
                                                         {activeDoc.expiry_date || "—"}
@@ -1033,9 +1067,12 @@ export default function AdminPage() {
                                                       <a href={`${API}/api/employee/documents/${activeDoc.id}/file?token=${token}`} target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:text-fuchsia-700" onClick={e => e.stopPropagation()}>
                                                         <Eye className="w-3 h-3" />
                                                       </a>
+                                                      <label htmlFor={inputId} className="text-gray-400 hover:text-fuchsia-600 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()} title="Ersetzen">
+                                                        <FileText className="w-3 h-3" />
+                                                      </label>
                                                     </>
                                                   ) : (
-                                                    <span className="text-[10px] text-gray-400">Fehlt</span>
+                                                    <span className="text-[10px] text-gray-400 group-hover:text-fuchsia-600">PDF hochladen</span>
                                                   )}
                                                 </div>
                                               );
