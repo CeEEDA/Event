@@ -348,12 +348,14 @@ function DocDropZone({ docType, onUpload, uploading }) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
 
+  const ALLOWED = ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"];
+
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer?.files?.[0];
-    if (file && file.type === "application/pdf") onUpload(docType, file);
-    else toast.error("Bitte nur PDF-Dateien hochladen");
+    if (file && (ALLOWED.includes(file.type) || file.type.startsWith("image/"))) onUpload(docType, file);
+    else toast.error("Bitte PDF oder Bild hochladen");
   };
 
   return (
@@ -365,13 +367,13 @@ function DocDropZone({ docType, onUpload, uploading }) {
       onClick={() => inputRef.current?.click()}
       data-testid={`drop-zone-${docType}`}
     >
-      <input type="file" ref={inputRef} accept="application/pdf" className="hidden" onChange={e => { if (e.target.files[0]) onUpload(docType, e.target.files[0]); e.target.value = ""; }} />
+      <input type="file" ref={inputRef} accept="application/pdf,image/*" className="hidden" onChange={e => { if (e.target.files[0]) onUpload(docType, e.target.files[0]); e.target.value = ""; }} />
       {uploading === docType ? (
         <p className="text-xs text-fuchsia-600 animate-pulse">Hochladen & KI-Prüfung...</p>
       ) : (
         <>
           <Upload className="w-5 h-5 text-gray-400 mx-auto mb-1" />
-          <p className="text-xs text-gray-500">PDF hierher ziehen oder klicken</p>
+          <p className="text-xs text-gray-500">PDF oder Bild hierher ziehen oder klicken</p>
         </>
       )}
     </div>

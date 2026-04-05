@@ -325,9 +325,24 @@ async def _ai_check_expiry(doc_id: str, file_bytes: bytes, filename: str, doc_ty
         label = DOCUMENT_LABELS.get(doc_type, doc_type)
 
         # Write temp file for the LLM
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        ext = ".pdf" if doc_type else ".pdf"
+        if filename:
+            ext = "." + filename.rsplit(".", 1)[-1] if "." in filename else ".pdf"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             tmp.write(file_bytes)
             tmp_path = tmp.name
+
+        # Determine mime type
+        mime = "application/pdf"
+        lower = filename.lower() if filename else ""
+        if lower.endswith((".jpg", ".jpeg")):
+            mime = "image/jpeg"
+        elif lower.endswith(".png"):
+            mime = "image/png"
+        elif lower.endswith(".webp"):
+            mime = "image/webp"
+        elif lower.endswith((".heic", ".heif")):
+            mime = "image/heic"
 
         prompt = f"""Analysiere dieses Dokument ({label}).
 Suche nach einem Ablaufdatum, Gültigkeitsdatum, "gültig bis" oder ähnlichem.
@@ -341,7 +356,7 @@ Keine weiteren Erklärungen."""
             system_message="Du bist ein Dokumenten-Scanner. Extrahiere nur das Ablaufdatum."
         ).with_model("gemini", "gemini-2.5-flash")
 
-        file_content = FileContentWithMimeType(file_path=tmp_path, mime_type="application/pdf")
+        file_content = FileContentWithMimeType(file_path=tmp_path, mime_type=mime)
         response = await chat.send_message_async(UserMessage(text=prompt, files_with_mime_type=[file_content]))
         text = response.text.strip()
 

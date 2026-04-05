@@ -1052,7 +1052,7 @@ export default function AdminPage() {
                                                   onDragLeave={e => { e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); }}
                                                   onDrop={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove("border-fuchsia-500", "bg-fuchsia-50"); const f = e.dataTransfer?.files?.[0]; if (f) handleAdminDocUpload(user.id, dt.key, f); }}
                                                 >
-                                                  <input type="file" id={inputId} accept="application/pdf" className="hidden" onChange={e => { if (e.target.files[0]) handleAdminDocUpload(user.id, dt.key, e.target.files[0]); e.target.value = ""; }} />
+                                                  <input type="file" id={inputId} accept="application/pdf,image/*" className="hidden" onChange={e => { if (e.target.files[0]) handleAdminDocUpload(user.id, dt.key, e.target.files[0]); e.target.value = ""; }} />
                                                   <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                                                     !activeDoc ? "bg-gray-300" : expired ? "bg-red-500" : expiring ? "bg-amber-400" : "bg-green-500"
                                                   }`} />
