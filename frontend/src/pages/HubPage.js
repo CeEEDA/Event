@@ -11,6 +11,7 @@ import {
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
+  Sun, Timer, Palmtree, TrendingUp,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 
@@ -31,6 +32,7 @@ export default function HubPage() {
   const [clockEntry, setClockEntry] = useState(null);
   const [clockLoading, setClockLoading] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("");
+  const [recentEntries, setRecentEntries] = useState([]);
   const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
   const [newTaskFile, setNewTaskFile] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
@@ -63,6 +65,7 @@ export default function HubPage() {
     api.get(`/chat/users?token=${token}`).then(r => setAllUsers(r.data)).catch(() => {});
     loadUnreadChats();
     loadClockStatus();
+    loadRecentEntries();
     // Load own avatar
     api.get(`/employee/profile?token=${token}`).then(r => {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
@@ -97,6 +100,13 @@ export default function HubPage() {
     } catch {}
   };
 
+  const loadRecentEntries = async () => {
+    try {
+      const res = await api.get(`/employee/time/entries?token=${token}`);
+      setRecentEntries((res.data || []).filter(e => e.clock_out).slice(0, 5));
+    } catch {}
+  };
+
   const getGPS = () => new Promise((resolve) => {
     if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
     navigator.geolocation.getCurrentPosition(
@@ -116,6 +126,7 @@ export default function HubPage() {
         setClockedIn(false);
         setClockEntry(null);
         setElapsedTime("");
+        loadRecentEntries();
       } else {
         const res = await api.post(`/employee/time/clock-in?token=${token}`, gps);
         toast.success("Eingestempelt");
@@ -272,9 +283,10 @@ export default function HubPage() {
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
           </div>
 
-          {/* Time Clock Slider */}
+          {/* Time Clock Section */}
           <div className="mb-5 bg-white rounded-xl border border-gray-200 p-4" data-testid="time-clock-section">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Left: Slider + Status */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className={`w-4 h-4 ${clockedIn ? "text-green-600" : "text-gray-400"}`} />
@@ -284,19 +296,84 @@ export default function HubPage() {
                   {clockedIn && elapsedTime && (
                     <span className="text-sm font-mono text-green-600 bg-green-50 px-2 py-0.5 rounded" data-testid="elapsed-time">{elapsedTime}</span>
                   )}
+                  {clockedIn && clockEntry?.clock_in && (
+                    <span className="text-xs text-gray-500 ml-1">
+                      seit {new Date(clockEntry.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr
+                    </span>
+                  )}
                 </div>
                 <div className="max-w-[280px]">
                   <SwipeClock clockedIn={clockedIn} onSwipeComplete={handleSwipeClock} disabled={clockLoading} />
                 </div>
+
+                {/* Letzte Stempelungen */}
+                {recentEntries.length > 0 && (
+                  <div className="mt-3" data-testid="recent-entries">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Letzte Stempelungen</p>
+                    <div className="space-y-1">
+                      {recentEntries.slice(0, 3).map(e => {
+                        const cin = new Date(e.clock_in);
+                        const cout = new Date(e.clock_out);
+                        const mins = e.duration_minutes || 0;
+                        const h = Math.floor(mins / 60);
+                        const m = Math.round(mins % 60);
+                        return (
+                          <div key={e.id} className="flex items-center gap-2 text-xs text-gray-600" data-testid={`recent-entry-${e.id}`}>
+                            <span className="text-gray-400 w-[68px] flex-shrink-0">
+                              {cin.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                            </span>
+                            <span className="text-green-600 font-medium">
+                              {cin.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <span className="text-gray-300">&mdash;</span>
+                            <span className="text-red-500 font-medium">
+                              {cout.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <span className="text-gray-400 ml-auto">
+                              {h > 0 ? `${h}h ${m}m` : `${m}m`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => navigate("/arbeitszeit")}
-                className="text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium flex items-center gap-1 flex-shrink-0"
-                data-testid="time-entries-link"
-              >
-                <Clock className="w-3.5 h-3.5" /> Übersicht
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+
+              {/* Right: Info Cards */}
+              <div className="flex flex-row lg:flex-col gap-3 flex-shrink-0">
+                {/* Resturlaubstage */}
+                <div className="flex items-center gap-3 bg-sky-50 rounded-lg px-3 py-2.5 min-w-[150px]" data-testid="vacation-card">
+                  <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center flex-shrink-0">
+                    <Palmtree className="w-4 h-4 text-sky-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-sky-600 uppercase tracking-wider">Resturlaub</p>
+                    <p className="text-lg font-bold text-sky-800 leading-tight" data-testid="vacation-days">-- <span className="text-xs font-normal text-sky-500">Tage</span></p>
+                  </div>
+                </div>
+
+                {/* Überstundenkonto */}
+                <div className="flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 min-w-[150px]" data-testid="overtime-card">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <TrendingUp className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">Überstunden</p>
+                    <p className="text-lg font-bold text-amber-800 leading-tight" data-testid="overtime-hours">-- <span className="text-xs font-normal text-amber-500">Std.</span></p>
+                  </div>
+                </div>
+
+                {/* Link zur Übersicht */}
+                <button
+                  onClick={() => navigate("/arbeitszeit")}
+                  className="flex items-center justify-center gap-1.5 text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium bg-fuchsia-50 hover:bg-fuchsia-100 rounded-lg px-3 py-2.5 transition-colors"
+                  data-testid="time-entries-link"
+                >
+                  <Clock className="w-3.5 h-3.5" /> Übersicht
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
 

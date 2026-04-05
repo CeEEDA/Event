@@ -19,6 +19,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Backend: clock-in, clock-out, status, report Endpunkte
 - Eigene Arbeitszeitseite (`/arbeitszeit`) mit Monatsübersicht und Stundenauswertung
 - Admin-Arbeitszeit-Tab in Auswertungsseite (`/verwaltung/auswertung`)
+- Hub-Dashboard: Heutige Einstempel-Zeit, letzte Stempelungen, Resturlaub (Platzhalter), Überstundenkonto (Platzhalter)
 - DB-Collection: `time_entries` (user_id, clock_in/out, GPS lat/lng, duration_minutes)
 
 ### Auswertung Dokumenten-Ablauf - FERTIG (2026-06-04)
