@@ -138,6 +138,7 @@ export default function AdminPage() {
   const [userActivity, setUserActivity] = useState({});
   const [employeeProfiles, setEmployeeProfiles] = useState({});
   const [employeeDocs, setEmployeeDocs] = useState({});
+  const [employeeTimeEntries, setEmployeeTimeEntries] = useState({});
 
   const API = process.env.REACT_APP_BACKEND_URL;
   const token = localStorage.getItem("token");
@@ -228,6 +229,15 @@ export default function AdminPage() {
       } catch {
         setEmployeeProfiles(prev => ({ ...prev, [userId]: {} }));
         setEmployeeDocs(prev => ({ ...prev, [userId]: [] }));
+      }
+    }
+    // Load time entries
+    if (!employeeTimeEntries[userId]) {
+      try {
+        const res = await api.get(`/employee/time/entries?token=${token}&user_id=${userId}`);
+        setEmployeeTimeEntries(prev => ({ ...prev, [userId]: res.data || [] }));
+      } catch {
+        setEmployeeTimeEntries(prev => ({ ...prev, [userId]: [] }));
       }
     }
   };
@@ -1102,6 +1112,57 @@ export default function AdminPage() {
                                           </div>
                                         </div>
                                       </>
+                                    );
+                                  })()}
+
+                                  {/* Time Tracking Section */}
+                                  {(user.role === "mitarbeiter" || user.role === "admin") && (() => {
+                                    const entries = employeeTimeEntries[user.id] || [];
+                                    const completedEntries = entries.filter(e => e.clock_out);
+                                    const activeEntry = entries.find(e => !e.clock_out);
+                                    const totalMinutes = completedEntries.reduce((sum, e) => sum + (e.duration_minutes || 0), 0);
+                                    const totalH = Math.floor(totalMinutes / 60);
+                                    const totalM = Math.round(totalMinutes % 60);
+                                    return (
+                                      <div data-testid={`time-section-${user.id}`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <Clock className="w-3.5 h-3.5 text-green-500" />
+                                          <span className="text-[10px] text-gray-400 uppercase font-medium">Zeiterfassung</span>
+                                          {activeEntry && (
+                                            <span className="text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium animate-pulse">Eingestempelt seit {new Date(activeEntry.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
+                                          )}
+                                          <span className="text-xs font-bold text-gray-700 ml-auto">{totalH}h {totalM}m gesamt</span>
+                                        </div>
+                                        {completedEntries.length === 0 && !activeEntry ? (
+                                          <p className="text-xs text-gray-400">Keine Zeiteinträge vorhanden</p>
+                                        ) : (
+                                          <div className="bg-gray-50 rounded-lg divide-y divide-gray-100 max-h-[180px] overflow-y-auto">
+                                            {completedEntries.slice(0, 10).map(e => {
+                                              const cin = new Date(e.clock_in);
+                                              const cout = new Date(e.clock_out);
+                                              const mins = e.duration_minutes || 0;
+                                              const h = Math.floor(mins / 60);
+                                              const m = Math.round(mins % 60);
+                                              return (
+                                                <div key={e.id} className="px-3 py-1.5 flex items-center gap-3 text-xs" data-testid={`admin-time-entry-${e.id}`}>
+                                                  <span className="font-medium text-gray-700 w-[80px] flex-shrink-0">
+                                                    {cin.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                                                  </span>
+                                                  <span className="text-green-600">{cin.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
+                                                  <span className="text-gray-300">—</span>
+                                                  <span className="text-red-500">{cout.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
+                                                  <span className="font-semibold text-gray-900 ml-auto">{h > 0 ? `${h}h ${m}m` : `${m}m`}</span>
+                                                  {e.clock_in_lat && (
+                                                    <a href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-fuchsia-600" title="Standort" onClick={ev => ev.stopPropagation()}>
+                                                      <MapPin className="w-3 h-3" />
+                                                    </a>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
                                     );
                                   })()}
 
