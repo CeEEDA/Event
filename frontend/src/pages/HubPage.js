@@ -244,20 +244,6 @@ export default function HubPage() {
                     <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">{m.label}</span>
                   </button>
                 ))}
-
-                {/* Mitarbeiterverwaltung (Admin only) */}
-                {isAdmin && (
-                  <button
-                    onClick={() => navigate("/admin/mitarbeiter")}
-                    className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
-                    data-testid="module-mitarbeiter"
-                  >
-                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Mitarbeiter</span>
-                  </button>
-                )}
               </div>
             </div>
 

@@ -51,6 +51,10 @@ import {
   ChevronDown,
   Clock,
   Globe,
+  Phone,
+  MapPin,
+  AlertTriangle,
+  Check,
 } from "lucide-react";
 
 const ROLE_LABELS = {
@@ -132,6 +136,30 @@ export default function AdminPage() {
   // User activity dropdown
   const [expandedUserId, setExpandedUserId] = useState(null);
   const [userActivity, setUserActivity] = useState({});
+  const [employeeProfiles, setEmployeeProfiles] = useState({});
+  const [employeeDocs, setEmployeeDocs] = useState({});
+
+  const API = process.env.REACT_APP_BACKEND_URL;
+  const token = localStorage.getItem("token");
+
+  const DOC_TYPES = [
+    { key: "personalausweis", label: "Personalausweis" },
+    { key: "fuehrerschein", label: "Führerschein" },
+    { key: "fahrerkarte", label: "Fahrerkarte" },
+    { key: "erste_hilfe", label: "Erste Hilfe" },
+    { key: "sicherheitsunterweisung", label: "Sicherheitsunterweisung" },
+    { key: "staplerschein", label: "Staplerschein" },
+    { key: "hubarbeitsbuehne", label: "Hubarbeitsbühne" },
+    { key: "teleskoplader", label: "Teleskoplader" },
+    { key: "baumaschine", label: "Baumaschine" },
+  ];
+
+  const isDocExpired = (d) => d && new Date(d) < new Date();
+  const isDocExpiringSoon = (d) => {
+    if (!d) return false;
+    const diff = (new Date(d) - new Date()) / (1000 * 60 * 60 * 24);
+    return diff > 0 && diff <= 60;
+  };
 
   const toggleUserActivity = async (userId) => {
     if (expandedUserId === userId) {
@@ -139,12 +167,27 @@ export default function AdminPage() {
       return;
     }
     setExpandedUserId(userId);
+    // Load activity
     if (!userActivity[userId]) {
       try {
         const res = await api.get(`/admin/user-activity/${userId}`);
         setUserActivity(prev => ({ ...prev, [userId]: res.data }));
       } catch {
         setUserActivity(prev => ({ ...prev, [userId]: { logins: [], password_changed_at: null } }));
+      }
+    }
+    // Load employee profile & docs (for mitarbeiter/admin)
+    if (!employeeProfiles[userId]) {
+      try {
+        const [profRes, docsRes] = await Promise.all([
+          api.get(`/employee/profile/${userId}?token=${token}`),
+          api.get(`/employee/documents?token=${token}&user_id=${userId}`),
+        ]);
+        setEmployeeProfiles(prev => ({ ...prev, [userId]: profRes.data }));
+        setEmployeeDocs(prev => ({ ...prev, [userId]: docsRes.data }));
+      } catch {
+        setEmployeeProfiles(prev => ({ ...prev, [userId]: {} }));
+        setEmployeeDocs(prev => ({ ...prev, [userId]: [] }));
       }
     }
   };
@@ -936,7 +979,74 @@ export default function AdminPage() {
                           {expandedUserId === user.id && (
                             <tr data-testid={`user-activity-${user.id}`}>
                               <td colSpan={8} className="px-4 py-0">
-                                <div className="py-3 pl-11">
+                                <div className="py-3 pl-11 space-y-4">
+                                  {/* Employee Profile Section */}
+                                  {(user.role === "mitarbeiter" || user.role === "admin") && (() => {
+                                    const prof = employeeProfiles[user.id];
+                                    const docs = employeeDocs[user.id] || [];
+                                    const avatarUrl = prof?.avatar_path ? `${API}/api/employee/avatar/${user.id}?token=${token}&_=${prof.avatar_path}` : null;
+                                    if (!prof) return <span className="text-xs text-gray-400">Profildaten laden...</span>;
+                                    return (
+                                      <>
+                                        {/* Profile Info Bar */}
+                                        <div className="flex items-center gap-4 flex-wrap">
+                                          {avatarUrl && (
+                                            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
+                                              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                                            </div>
+                                          )}
+                                          {prof.phone && (
+                                            <span className="text-xs text-gray-600 flex items-center gap-1"><Phone className="w-3 h-3 text-gray-400" />{prof.phone}</span>
+                                          )}
+                                          {(prof.street || prof.city) && (
+                                            <span className="text-xs text-gray-600 flex items-center gap-1"><MapPin className="w-3 h-3 text-gray-400" />{[prof.street, `${prof.zip_code} ${prof.city}`].filter(Boolean).join(", ")}</span>
+                                          )}
+                                          {prof.email && (
+                                            <span className="text-xs text-gray-600 flex items-center gap-1"><Mail className="w-3 h-3 text-gray-400" />{prof.email}</span>
+                                          )}
+                                        </div>
+
+                                        {/* Documents Grid */}
+                                        <div>
+                                          <p className="text-[10px] text-gray-400 uppercase font-medium mb-2">Dokumente & Zertifikate</p>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                            {DOC_TYPES.map(dt => {
+                                              const activeDoc = docs.find(d => d.doc_type === dt.key && d.status === "active");
+                                              const expired = activeDoc && isDocExpired(activeDoc.expiry_date);
+                                              const expiring = activeDoc && isDocExpiringSoon(activeDoc.expiry_date);
+                                              return (
+                                                <div key={dt.key} className={`border rounded px-2.5 py-1.5 flex items-center gap-2 text-xs ${
+                                                  !activeDoc ? "border-gray-200 bg-gray-50 opacity-50" :
+                                                  expired ? "border-red-300 bg-red-50" :
+                                                  expiring ? "border-amber-300 bg-amber-50" :
+                                                  "border-green-200 bg-green-50"
+                                                }`} data-testid={`admin-doc-${user.id}-${dt.key}`}>
+                                                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                                    !activeDoc ? "bg-gray-300" : expired ? "bg-red-500" : expiring ? "bg-amber-400" : "bg-green-500"
+                                                  }`} />
+                                                  <span className="flex-1 truncate font-medium text-gray-800">{dt.label}</span>
+                                                  {activeDoc ? (
+                                                    <>
+                                                      <span className={`text-[10px] ${expired ? "text-red-600" : expiring ? "text-amber-600" : "text-green-600"}`}>
+                                                        {activeDoc.expiry_date || "—"}
+                                                      </span>
+                                                      <a href={`${API}/api/employee/documents/${activeDoc.id}/file?token=${token}`} target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:text-fuchsia-700" onClick={e => e.stopPropagation()}>
+                                                        <Eye className="w-3 h-3" />
+                                                      </a>
+                                                    </>
+                                                  ) : (
+                                                    <span className="text-[10px] text-gray-400">Fehlt</span>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+
+                                  {/* Login Activity */}
                                   {(() => {
                                     const act = userActivity[user.id];
                                     if (!act) return <span className="text-xs text-gray-400">Laden...</span>;
