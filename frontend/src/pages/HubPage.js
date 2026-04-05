@@ -363,16 +363,6 @@ export default function HubPage() {
                     <p className="text-lg font-bold text-amber-800 leading-tight" data-testid="overtime-hours">-- <span className="text-xs font-normal text-amber-500">Std.</span></p>
                   </div>
                 </div>
-
-                {/* Link zur Übersicht */}
-                <button
-                  onClick={() => navigate("/arbeitszeit")}
-                  className="flex items-center justify-center gap-1.5 text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium bg-fuchsia-50 hover:bg-fuchsia-100 rounded-lg px-3 py-2.5 transition-colors"
-                  data-testid="time-entries-link"
-                >
-                  <Clock className="w-3.5 h-3.5" /> Übersicht
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
               </div>
             </div>
           </div>
@@ -394,6 +384,18 @@ export default function HubPage() {
                   {unreadChats > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center animate-pulse">{unreadChats}</span>
                   )}
+                </button>
+
+                {/* Arbeitszeit Tile */}
+                <button
+                  onClick={() => navigate("/arbeitszeit")}
+                  className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
+                  data-testid="module-arbeitszeit"
+                >
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-green-100 text-green-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Arbeitszeit</span>
                 </button>
 
                 {modules.map(m => (
