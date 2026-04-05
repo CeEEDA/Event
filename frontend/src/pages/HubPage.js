@@ -183,10 +183,15 @@ export default function HubPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Logo size="normal" />
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-              <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
-            </div>
+            <button onClick={() => navigate("/profile")} className="flex items-center gap-2 hover:bg-gray-50 rounded-lg px-2 py-1 transition-colors" data-testid="profile-link">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                <User className="w-4 h-4 text-gray-500" />
+              </div>
+            </button>
             <Button variant="outline" size="sm" onClick={handleLogout} className="text-gray-600 hover:text-red-600 hover:border-red-300" data-testid="logout-btn">
               <LogOut className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Abmelden</span>

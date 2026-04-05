@@ -1851,6 +1851,13 @@ from routes.chat import router as chat_router, init_chat_routes
 init_chat_routes(db, decode_jwt_token)
 app.include_router(chat_router)
 
+from routes.employee import router as employee_router
+employee_router.db = db  # workaround: set db reference
+import routes.employee as employee_module
+employee_module.db = db
+app.include_router(employee_router)
+
+
 
 
 app.add_middleware(
