@@ -13,6 +13,17 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Mitarbeiter-Profil & Dokumentenverwaltung - FERTIG (2026-06-04)
+- Profilseite: Name, Profilbild, Anschrift, Telefon, Passwort ändern
+- Profilbild-Upload mit Kamera-Button
+- Profil-Link im Hub-Header (klickbar)
+- 9 Dokumenten-Kategorien mit Drag & Drop PDF-Upload
+- KI-Ablaufdatum-Erkennung via Gemini 2.5 Flash
+- Manuell korrigierbares Ablaufdatum
+- Versionierung: Neues Dokument markiert altes als "alt"
+- Ampel-Status: Grün (gültig), Gelb (bald ablaufend), Rot (abgelaufen)
+- Admin kann alle Mitarbeiter-Profile einsehen
+
 ### Chat Gruppenbild & Namensänderung - FERTIG (2026-06-04)
 - Gruppenbilder hochladen (Kamera-Button im Detail-Panel)
 - Avatar wird in Chat-Liste, Header und Detail-Panel angezeigt
