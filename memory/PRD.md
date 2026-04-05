@@ -17,15 +17,15 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Direktnachrichten zwischen allen Benutzern
 - Gruppenchats (nur Admin kann erstellen)
 - Echtzeit-Polling (4 Sekunden)
-- Datei-/Bildanhänge im Chat (Object Storage)
-- Ungelesene-Nachrichten-Zähler (Badge)
-- Aufgaben mit Prioritäten (Hoch/Mittel/Niedrig)
-- Fälligkeitsdaten mit Überfällig-Anzeige
+- Datei-/Bildanhaenge im Chat (Object Storage)
+- Ungelesene-Nachrichten-Zaehler (Badge)
+- Aufgaben mit Prioritaeten (Hoch/Mittel/Niedrig)
+- Faelligkeitsdaten mit Ueberfaellig-Anzeige
 - Aufgaben anderen Benutzern zuweisen
 - Filter: Meine / Erstellt / Alle (Admin)
-- Aufgaben erledigen / wiederherstellen / löschen
+- Aufgaben erledigen / wiederherstellen / loeschen
 - Hub-Seite kompakt redesigned (Icon-Grid + Aufgaben-Panel)
-- 17/17 Backend + 100% Frontend Tests bestanden
+- Chat/Task Datei-Downloads (Tuple-Unpacking Fix) - BEHOBEN (2026-06-04)
 
 ### Dokumentenverwaltung mit KI - FERTIG (2026-04-04/05)
 - 66+ Masterordner, hierarchische Unterordner-Struktur
@@ -54,6 +54,9 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - POST /api/chat/tasks?token=...
 - PUT /api/chat/tasks/{id}?token=...
 - DELETE /api/chat/tasks/{id}?token=...
+- GET /api/chat/tasks/{id}/file?token=...
+- POST /api/chat/tasks/{id}/comments?token=...
+- GET /api/chat/tasks/{id}/comments/{comment_id}/file?token=...
 
 ### Documents
 - POST /api/documents/upload
@@ -64,6 +67,7 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - chat_conversations: {id, type, name, members[], last_message, created_by, ...}
 - chat_messages: {id, conversation_id, sender_id, sender_name, text, attachment, read_by[], ...}
 - tasks: {id, title, description, priority, priority_order, due_date, completed, created_by, assigned_to, ...}
+- task_comments: {id, task_id, user_id, user_name, text, attachment, created_at}
 
 ## Prioritized Backlog
 ### P1
