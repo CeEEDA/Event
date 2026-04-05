@@ -30,6 +30,8 @@ export default function ChatPage() {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -226,7 +228,21 @@ export default function ChatPage() {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1" data-testid="messages-area">
+              <div
+                className={`flex-1 overflow-y-auto px-4 py-3 space-y-1 transition-colors ${dragOver ? "bg-fuchsia-50/50 ring-2 ring-inset ring-fuchsia-400 ring-dashed" : ""}`}
+                data-testid="messages-area"
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
+                onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) setPendingFile(e.dataTransfer.files[0]); }}
+              >
+                {dragOver && (
+                  <div className="flex items-center justify-center py-8 pointer-events-none">
+                    <div className="bg-white/90 rounded-xl px-6 py-4 shadow-lg border-2 border-dashed border-fuchsia-400 text-center">
+                      <Paperclip className="w-6 h-6 text-fuchsia-500 mx-auto mb-1" />
+                      <p className="text-sm text-fuchsia-600 font-medium">Datei hier ablegen</p>
+                    </div>
+                  </div>
+                )}
                 {messages.map(m => {
                   const isMine = m.sender_id === user?.id;
                   const isImage = m.attachment?.content_type?.startsWith("image/");
@@ -270,13 +286,25 @@ export default function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Pending File Preview */}
+              {pendingFile && (
+                <div className="bg-gray-50 border-t border-gray-200 px-3 py-2 flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
+                  <span className="text-sm text-gray-700 flex-1 truncate">{pendingFile.name}</span>
+                  <button onClick={() => setPendingFile(null)} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                  <Button size="sm" onClick={() => { sendFile(pendingFile); setPendingFile(null); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs h-7" data-testid="send-pending-file-btn">
+                    <Send className="w-3 h-3 mr-1" /> Senden
+                  </Button>
+                </div>
+              )}
+
               {/* Input */}
               <form onSubmit={sendMessage} className="bg-white border-t border-gray-200 px-3 py-2 flex items-center gap-2" data-testid="chat-input-form">
                 <input
                   type="file"
                   ref={fileInputRef}
                   className="hidden"
-                  onChange={e => { if (e.target.files[0]) sendFile(e.target.files[0]); e.target.value = ""; }}
+                  onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = ""; }}
                 />
                 <Button type="button" variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-fuchsia-600 flex-shrink-0" data-testid="attach-file-btn">
                   <Paperclip className="w-4 h-4" />
