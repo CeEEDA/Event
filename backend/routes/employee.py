@@ -571,7 +571,7 @@ async def clock_in(token: str = Query(...), body: dict = {}):
 
 @router.post("/time/clock-out")
 async def clock_out(token: str = Query(...), body: dict = {}):
-    """Clock out with GPS coordinates."""
+    """Clock out with GPS coordinates. Auto-calculates overtime vs. schedule."""
     user = await _get_user(token)
     entry = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
     if not entry:
@@ -592,6 +592,46 @@ async def clock_out(token: str = Query(...), body: dict = {}):
             "duration_minutes": round(duration, 1),
         }}
     )
+
+    # ── Overtime calculation based on work schedule ──
+    try:
+        weekday_map = {0: "montag", 1: "dienstag", 2: "mittwoch", 3: "donnerstag", 4: "freitag", 5: "samstag", 6: "sonntag"}
+        # Use local Berlin time for weekday determination
+        import zoneinfo
+        berlin = zoneinfo.ZoneInfo("Europe/Berlin")
+        local_now = now.astimezone(berlin)
+        day_name = weekday_map.get(local_now.weekday())
+
+        schedule = await db.work_schedules.find_one({"user_id": user["id"]}, {"_id": 0})
+        day_schedule = (schedule or {}).get("days", {}).get(day_name, {})
+
+        if day_schedule and day_schedule.get("start") and day_schedule.get("end"):
+            sh, sm = map(int, day_schedule["start"].split(":"))
+            eh, em = map(int, day_schedule["end"].split(":"))
+            break_min = int(day_schedule.get("break_min") or 0)
+            soll_minutes = (eh * 60 + em) - (sh * 60 + sm) - break_min
+        else:
+            # No schedule for this day → all worked time is overtime
+            soll_minutes = 0
+
+        ist_minutes = round(duration)
+        diff_minutes = ist_minutes - soll_minutes  # positive = overtime, negative = undertime
+        diff_hours = round(diff_minutes / 60, 2)
+
+        if diff_minutes != 0:
+            year = local_now.year
+            hr = await db.hr_data.find_one({"user_id": user["id"], "year": year})
+            current_overtime = hr.get("overtime_hours", 0) if hr else 0
+            new_overtime = round(current_overtime + diff_hours, 2)
+            await db.hr_data.update_one(
+                {"user_id": user["id"], "year": year},
+                {"$set": {"overtime_hours": new_overtime}},
+                upsert=True,
+            )
+            logger.info(f"Overtime update: {user.get('name','')} IST={ist_minutes}m SOLL={soll_minutes}m diff={diff_hours}h → new total={new_overtime}h")
+    except Exception as e:
+        logger.error(f"Overtime calc error: {e}")
+
     updated = await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
     return updated
 
