@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -34,6 +34,15 @@ export default function VerwaltungPage() {
       icon: BarChart3,
       color: "fuchsia",
       path: "/verwaltung/auswertung",
+      adminOnly: true,
+    },
+    {
+      key: "zeiterfassung",
+      label: "Arbeitszeiterfassung",
+      description: "Stempelzeiten aller Mitarbeiter mit GPS-Standort",
+      icon: Clock,
+      color: "green",
+      path: "/verwaltung/zeiterfassung",
       adminOnly: true,
     },
   ];
@@ -69,6 +78,7 @@ export default function VerwaltungPage() {
             fuchsia: { bg: "bg-fuchsia-100", text: "text-fuchsia-600", hoverBorder: "hover:border-fuchsia-400", hoverIcon: "group-hover:bg-fuchsia-600" },
             blue:    { bg: "bg-blue-100",    text: "text-blue-600",    hoverBorder: "hover:border-blue-400",    hoverIcon: "group-hover:bg-blue-600" },
             amber:   { bg: "bg-amber-100",   text: "text-amber-600",   hoverBorder: "hover:border-amber-400",   hoverIcon: "group-hover:bg-amber-600" },
+            green:   { bg: "bg-green-100",   text: "text-green-600",   hoverBorder: "hover:border-green-400",   hoverIcon: "group-hover:bg-green-600" },
             gray:    { bg: "bg-gray-100",    text: "text-gray-600",    hoverBorder: "hover:border-gray-400",    hoverIcon: "group-hover:bg-gray-600" },
           };
           const c = colorClasses[item.color] || colorClasses.gray;

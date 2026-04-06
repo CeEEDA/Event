@@ -38,6 +38,7 @@ import ProfilePage from "./pages/ProfilePage";
 import EmployeeAdminPage from "./pages/EmployeeAdminPage";
 import AuswertungPage from "./pages/AuswertungPage";
 import ArbeitszeitPage from "./pages/ArbeitszeitPage";
+import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -353,6 +354,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AuswertungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/zeiterfassung"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminZeiterfassungPage />
           </ProtectedRoute>
         }
       />
