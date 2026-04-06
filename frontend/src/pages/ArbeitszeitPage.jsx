@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import {
-  ArrowLeft, Clock, Calendar, ChevronDown, ChevronUp,
+  ArrowLeft, Clock, CalendarDays,
 } from "lucide-react";
 
 export default function ArbeitszeitPage() {
@@ -12,6 +12,7 @@ export default function ArbeitszeitPage() {
   const token = localStorage.getItem("token");
 
   const [entries, setEntries] = useState([]);
+  const [vacationEntries, setVacationEntries] = useState([]);
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -28,7 +29,16 @@ export default function ArbeitszeitPage() {
     } catch {}
   }, [token, month]);
 
+  const loadVacation = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await api.get(`/employee/vacation/${user.id}?token=${token}`);
+      setVacationEntries(res.data || []);
+    } catch {}
+  }, [token, user?.id]);
+
   useEffect(() => { loadEntries(); }, [loadEntries]);
+  useEffect(() => { loadVacation(); }, [loadVacation]);
 
   const totalMinutes = entries.reduce((sum, e) => sum + (e.duration_minutes || 0), 0);
   const totalHours = Math.floor(totalMinutes / 60);
@@ -46,6 +56,7 @@ export default function ArbeitszeitPage() {
   };
 
   const monthLabel = new Date(month + "-01").toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+  const totalVacDays = vacationEntries.reduce((s, v) => s + (v.days || 0), 0);
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="arbeitszeit-page">
@@ -60,6 +71,32 @@ export default function ArbeitszeitPage() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        {/* Genehmigte Urlaube */}
+        {vacationEntries.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="vacation-overview">
+            <div className="flex items-center gap-2 mb-2">
+              <CalendarDays className="w-4 h-4 text-sky-600" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Genehmigte Urlaube</span>
+              <span className="text-xs font-bold text-sky-700 ml-auto">{totalVacDays} Tage</span>
+            </div>
+            <div className="space-y-1">
+              {vacationEntries.map(v => (
+                <div key={v.id} className="flex items-center gap-3 bg-sky-50 rounded-lg px-3 py-1.5 text-sm" data-testid={`vac-${v.id}`}>
+                  <CalendarDays className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
+                  <span className="text-gray-700">
+                    {new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                  </span>
+                  <span className="text-gray-400">—</span>
+                  <span className="text-gray-700">
+                    {new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                  </span>
+                  <span className="text-sky-700 font-bold ml-auto">{v.days} {v.days === 1 ? "Tag" : "Tage"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Month Selector + Total */}
         <div className="flex items-center justify-between">
           <input
