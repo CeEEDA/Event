@@ -1214,8 +1214,15 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
         totals["night_min"] += night_min
         totals["night_wage"] += night_wage
 
+    # Get deductions for the month
+    deductions = await db.payroll_deductions.find(
+        {"user_id": user_id, "month": month}, {"_id": 0}
+    ).to_list(100)
+    total_deductions = round(sum(float(d.get("amount", 0)) for d in deductions), 2)
+
     totals = {k: round(v, 2) for k, v in totals.items()}
     total_gross = round(totals["regular_wage"] + totals["sunday_wage"] + totals["holiday_wage"] + totals["special_wage"] + totals["night_wage"], 2)
+    total_net = round(total_gross - total_deductions, 2)
 
     return {
         "month": month,
@@ -1225,6 +1232,9 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
         "rows": rows,
         "totals": totals,
         "total_gross": total_gross,
+        "deductions": deductions,
+        "total_deductions": total_deductions,
+        "total_net": total_net,
     }
 
 
@@ -1261,12 +1271,55 @@ async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Qu
     writer.writerow(["Sonderfeiertag", f"{t.get('special_wage', 0):.2f} EUR"])
     writer.writerow(["Nachtzuschlag", f"{t.get('night_wage', 0):.2f} EUR"])
     writer.writerow(["BRUTTO GESAMT", f"{payroll['total_gross']:.2f} EUR"])
+    if payroll.get("deductions"):
+        writer.writerow([])
+        writer.writerow(["Abzüge"])
+        for d in payroll["deductions"]:
+            writer.writerow([d.get("text", ""), f"-{float(d.get('amount', 0)):.2f} EUR"])
+        writer.writerow(["Abzüge gesamt", f"-{payroll['total_deductions']:.2f} EUR"])
+    writer.writerow([])
+    writer.writerow(["NETTO AUSZAHLUNG", f"{payroll['total_net']:.2f} EUR"])
 
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=lohn_{name}_{month}.csv"}
     )
+
+
+# ── Payroll Deductions (Abzüge) ──────────────────────────
+
+@router.get("/deductions/{user_id}")
+async def get_deductions(user_id: str, month: str = Query(...), token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    items = await db.payroll_deductions.find({"user_id": user_id, "month": month}, {"_id": 0}).to_list(100)
+    return items
+
+@router.post("/deductions/{user_id}")
+async def add_deduction(user_id: str, token: str = Query(...), data: dict = Body(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "month": data.get("month"),
+        "text": data.get("text", ""),
+        "amount": float(data.get("amount", 0)),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.payroll_deductions.insert_one(entry)
+    return {"id": entry["id"], "ok": True}
+
+@router.delete("/deductions/entry/{deduction_id}")
+async def delete_deduction(deduction_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    await db.payroll_deductions.delete_one({"id": deduction_id})
+    return {"ok": True}
 
 
 # ── Employee Notes (Mitarbeiter-Notizen) ─────────────────

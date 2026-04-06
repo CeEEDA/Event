@@ -53,6 +53,8 @@ export default function AdminZeitDetailPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [loadingPayroll, setLoadingPayroll] = useState(false);
+  const [deductions, setDeductions] = useState([]);
+  const [newDeduction, setNewDeduction] = useState({ text: "", amount: "" });
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const m = String(i + 1).padStart(2, "0");
@@ -121,11 +123,31 @@ export default function AdminZeitDetailPage() {
     if (!payrollMonth) return;
     setLoadingPayroll(true);
     try {
-      const res = await api.get(`/employee/payroll/${userId}?month=${payrollMonth}&token=${token}`);
-      setPayroll(res.data);
+      const [payRes, dedRes] = await Promise.all([
+        api.get(`/employee/payroll/${userId}?month=${payrollMonth}&token=${token}`),
+        api.get(`/employee/deductions/${userId}?month=${payrollMonth}&token=${token}`),
+      ]);
+      setPayroll(payRes.data);
+      setDeductions(dedRes.data || []);
     } catch { toast.error("Fehler beim Laden der Lohnabrechnung"); }
     setLoadingPayroll(false);
   }, [token, userId, payrollMonth]);
+
+  const addDeduction = async () => {
+    if (!newDeduction.text.trim() || !newDeduction.amount) return toast.error("Text und Betrag erforderlich");
+    try {
+      await api.post(`/employee/deductions/${userId}?token=${token}`, { ...newDeduction, month: payrollMonth });
+      setNewDeduction({ text: "", amount: "" });
+      loadPayroll();
+    } catch { toast.error("Fehler"); }
+  };
+
+  const removeDeduction = async (id) => {
+    try {
+      await api.delete(`/employee/deductions/entry/${id}?token=${token}`);
+      loadPayroll();
+    } catch { toast.error("Fehler"); }
+  };
 
   const downloadCsv = async () => {
     const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/payroll/${userId}/csv?month=${payrollMonth}&token=${token}`;
@@ -465,6 +487,37 @@ export default function AdminZeitDetailPage() {
                   <p className="text-lg font-bold text-emerald-700">{payroll.total_gross?.toFixed(2)}€</p>
                 </div>
               </div>
+
+              {/* Deductions / Abzüge */}
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Abzüge</p>
+                {(payroll.deductions || []).map(d => (
+                  <div key={d.id} className="flex items-center gap-2 py-1 group">
+                    <span className="text-sm text-gray-700 flex-1">{d.text}</span>
+                    <span className="text-sm font-bold text-red-600">-{parseFloat(d.amount).toFixed(2)}€</span>
+                    <button onClick={() => removeDeduction(d.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500" data-testid={`remove-deduction-${d.id}`}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 mt-2">
+                  <input type="text" placeholder="z.B. Arbeitshose" value={newDeduction.text} onChange={e => setNewDeduction(p => ({ ...p, text: e.target.value }))}
+                    className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-300" data-testid="deduction-text" />
+                  <input type="number" step="0.01" min="0" placeholder="Betrag" value={newDeduction.amount} onChange={e => setNewDeduction(p => ({ ...p, amount: e.target.value }))}
+                    className="w-24 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-300" data-testid="deduction-amount" />
+                  <Button onClick={addDeduction} size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" data-testid="add-deduction-btn">
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Abzug
+                  </Button>
+                </div>
+              </div>
+
+              {/* Net total */}
+              {(payroll.total_deductions || 0) > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-700">Netto Auszahlung</span>
+                  <span className="text-xl font-bold text-emerald-700">{payroll.total_net?.toFixed(2)}€</span>
+                </div>
+              )}
             </>
           )}
           {!payroll && !loadingPayroll && (
