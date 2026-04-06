@@ -241,6 +241,24 @@ async def get_avatar(user_id: str, token: str = Query(...)):
         raise HTTPException(status_code=404, detail="Avatar nicht gefunden")
 
 
+@router.post("/avatar/{user_id}/upload")
+async def admin_upload_avatar(user_id: str, token: str = Query(...), file: UploadFile = File(...)):
+    """Admin uploads avatar for any user."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    file_bytes = await file.read()
+    storage_path = f"eventenergie-avatars/{user_id}/{file.filename}"
+    put_obj, _ = _get_storage_fns()
+    put_obj(storage_path, file_bytes, file.content_type or "image/png")
+    existing = await db.employee_profiles.find_one({"user_id": user_id})
+    if existing:
+        await db.employee_profiles.update_one({"user_id": user_id}, {"$set": {"avatar_path": storage_path}})
+    else:
+        await db.employee_profiles.insert_one({"user_id": user_id, "avatar_path": storage_path, "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"ok": True, "avatar_path": storage_path}
+
+
 # ==================== DOCUMENTS / CERTIFICATES ====================
 
 @router.get("/documents")

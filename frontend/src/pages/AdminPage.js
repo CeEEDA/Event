@@ -55,7 +55,9 @@ import {
   MapPin,
   AlertTriangle,
   Check,
+  Camera,
 } from "lucide-react";
+import axios from "axios";
 
 const ROLE_LABELS = {
   admin: "Administrator",
@@ -1049,11 +1051,33 @@ export default function AdminPage() {
                                       <>
                                         {/* Profile Info Bar */}
                                         <div className="flex items-center gap-4 flex-wrap">
-                                          {avatarUrl && (
-                                            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                                              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                                          <div className="relative group flex-shrink-0">
+                                            <div className="w-14 h-14 rounded-full overflow-hidden bg-gray-100 border-2 border-gray-200 flex items-center justify-center">
+                                              {avatarUrl ? (
+                                                <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                                              ) : (
+                                                <User className="w-6 h-6 text-gray-300" />
+                                              )}
                                             </div>
-                                          )}
+                                            <label className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 flex items-center justify-center cursor-pointer transition-colors">
+                                              <input type="file" accept="image/*" className="hidden" onChange={async (ev) => {
+                                                const file = ev.target.files[0];
+                                                if (!file) return;
+                                                const form = new FormData();
+                                                form.append("file", file);
+                                                try {
+                                                  await axios.post(`${API}/api/employee/avatar/${user.id}/upload?token=${token}`, form, { headers: { "Content-Type": "multipart/form-data" } });
+                                                  // Refresh profile cache
+                                                  const profRes = await api.get(`/employee/profile/${user.id}?token=${token}`);
+                                                  setEmployeeProfiles(prev => ({ ...prev, [user.id]: profRes.data }));
+                                                  toast.success("Benutzerbild aktualisiert");
+                                                } catch { toast.error("Upload fehlgeschlagen"); }
+                                                ev.target.value = "";
+                                              }} data-testid={`avatar-upload-${user.id}`} />
+                                              <Camera className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            </label>
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-3">
                                           {prof.phone && (
                                             <span className="text-xs text-gray-600 flex items-center gap-1"><Phone className="w-3 h-3 text-gray-400" />{prof.phone}</span>
                                           )}
@@ -1063,6 +1087,7 @@ export default function AdminPage() {
                                           {prof.email && (
                                             <span className="text-xs text-gray-600 flex items-center gap-1"><Mail className="w-3 h-3 text-gray-400" />{prof.email}</span>
                                           )}
+                                          </div>
                                         </div>
 
                                         {/* Documents Grid */}
@@ -1118,57 +1143,6 @@ export default function AdminPage() {
                                           </div>
                                         </div>
                                       </>
-                                    );
-                                  })()}
-
-                                  {/* Time Tracking Section */}
-                                  {(user.role === "mitarbeiter" || user.role === "admin") && (() => {
-                                    const entries = employeeTimeEntries[user.id] || [];
-                                    const completedEntries = entries.filter(e => e.clock_out);
-                                    const activeEntry = entries.find(e => !e.clock_out);
-                                    const totalMinutes = completedEntries.reduce((sum, e) => sum + (e.duration_minutes || 0), 0);
-                                    const totalH = Math.floor(totalMinutes / 60);
-                                    const totalM = Math.round(totalMinutes % 60);
-                                    return (
-                                      <div data-testid={`time-section-${user.id}`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <Clock className="w-3.5 h-3.5 text-green-500" />
-                                          <span className="text-[10px] text-gray-400 uppercase font-medium">Zeiterfassung — {new Date().toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</span>
-                                          {activeEntry && (
-                                            <span className="text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium animate-pulse">Eingestempelt seit {new Date(activeEntry.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
-                                          )}
-                                          <span className="text-xs font-bold text-gray-700 ml-auto">{totalH}h {totalM}m gesamt</span>
-                                        </div>
-                                        {completedEntries.length === 0 && !activeEntry ? (
-                                          <p className="text-xs text-gray-400">Keine Zeiteinträge vorhanden</p>
-                                        ) : (
-                                          <div className="bg-gray-50 rounded-lg divide-y divide-gray-100 max-h-[180px] overflow-y-auto">
-                                            {completedEntries.slice(0, 10).map(e => {
-                                              const cin = new Date(e.clock_in);
-                                              const cout = new Date(e.clock_out);
-                                              const mins = e.duration_minutes || 0;
-                                              const h = Math.floor(mins / 60);
-                                              const m = Math.round(mins % 60);
-                                              return (
-                                                <div key={e.id} className="px-3 py-1.5 flex items-center gap-3 text-xs" data-testid={`admin-time-entry-${e.id}`}>
-                                                  <span className="font-medium text-gray-700 w-[80px] flex-shrink-0">
-                                                    {cin.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
-                                                  </span>
-                                                  <span className="text-green-600">{cin.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
-                                                  <span className="text-gray-300">—</span>
-                                                  <span className="text-red-500">{cout.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
-                                                  <span className="font-semibold text-gray-900 ml-auto">{h > 0 ? `${h}h ${m}m` : `${m}m`}</span>
-                                                  {e.clock_in_lat && (
-                                                    <a href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-fuchsia-600" title="Standort" onClick={ev => ev.stopPropagation()}>
-                                                      <MapPin className="w-3 h-3" />
-                                                    </a>
-                                                  )}
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
                                     );
                                   })()}
 

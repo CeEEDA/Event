@@ -1,38 +1,40 @@
 <analysis>**original_problem_statement**: 
 The user is building a comprehensive Kirmes (Fairground) billing and management system. The current focus is the internal HR / Employee Management module.
 *PRODUCT REQUIREMENTS (Updated in this session):*
-- GPS-tracked Time Tracking (Zeiterfassung) via a Swipe-to-Clock slider (Employees see times, Admins see times + GPS).
-- HR Data Management: Admins can track and manage employee overtime, total vacation days, and approved vacations.
-- Calendar-based Vacation System: Admins can enter start/end dates, and the system automatically calculates workdays (skipping weekends) and deducts from total vacation.
-- Time-Off Requests (Arbeitsfreie Zeit beantragen): Employees can request time off (Sick, Vacation, Overtime reduction) via the Hub. This creates a Task for Admins. Approving the Task automatically approves the request and handles vacation math.
-- Monthly Accordion Views: Both employees () and Admins () need a clean, expandable monthly view showing time stamps, sickness, and vacation with summary badges.
+- GPS-tracked Time Tracking (Zeiterfassung) via a Swipe-to-Clock slider.
+- HR Data Management: Admins can track/manage employee overtime, vacation days.
+- Time-Off Requests: Employees can request time off, generating tasks for Admins. Admins can Approve/Reject, Employees can Withdraw.
+- Automated Overtime Calculation: Compare actual clocked hours against a standard work schedule (Regelarbeitszeit) and adjust the overtime balance automatically on clock-out.
+- Payroll System (Lohnabrechnung): Calculate wages based on hourly rate, automatic surcharges (Sunday 50%, Holiday 125%, Special Holiday 150%, Night 25%), and manual deductions (Abzüge). Includes CSV export.
+- Employee Notes: Admins can maintain conversation notes for employees with drag-and-drop document attachments.
+- Admin UI: Avatar uploads for users, clean task views, and yearly archives for rejected/withdrawn requests.
 
 **User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
 
 **what currently exists?** 
-- SwipeClock and Time-Off Request UI added to the Employee Hub.
-- Employee Time Tracking view () rebuilt into an expandable monthly accordion showing stamps, sick days, vacations, and summary badges.
-- Admin User Management () shows the current month's time tracking inline.
-- Dedicated Admin Time Tracking Page () added, featuring a live Presence bar (who is currently clocked in) and summary badges per employee.
-- HR backend () updated with collections for , , and .
-- Task-to-TimeOff webhook/logic implemented (Completing an admin task automatically approves the linked employee time-off request).
+- Fully functional Employee Hub and Admin Time Tracking views with expandable monthly accordions and yearly archives for time-off requests.
+- Role-based task buttons: Admins see Genehmigt/Abgelehnt, Employees see Zurückziehen for their requests.
+- Standard Work Schedule (Regelarbeitszeit) UI and backend logic to auto-calculate overtime upon clock-out.
+- Automated Payroll calculation featuring dynamic surcharges, manual deductions (Abzüge), and CSV export capabilities.
+- Employee Notes system () with a drag-and-drop document upload interface.
+- Bug fixes for file uploads (Axios multipart/form-data header fix) and accurate overtime deductions when approving time-off requests.
 
 **Last working item**:
-    - Last item agent was working: Redesigning the Admin's employee time detail page () to match the newly built expandable monthly accordion view from the employee's  page.
-    - Status: IN PROGRESS (Code written, screenshot taken, just needs review and completion)
-    - Agent Testing Done: Y (Screenshot taken)
-    - Which testing method agent to use? Screenshot tool / manual frontend verification (Testing done, but next agent must verify the screenshot results and ask user for approval).
+    - Last item agent was working: Removing the redundant time-tracking UI from the general Admin User Management Page () and adding the ability for Admins to upload User Avatars directly from the user list.
+    - Status: IN PROGRESS (UI built, endpoint  created. Screenshot taken to verify the upload zone overlay on the avatar).
+    - Agent Testing Done: Y (Visual verification via screenshot).
+    - Which testing method agent to use? Screenshot tool (to verify the actual upload flow works before finishing).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
   None currently broken.
 
 **In progress Task List**:
-  Task 1: Verify and Finish AdminZeitDetailPage Redesign (P0)
-     - Where to resume: The agent just updated  to use the expandable monthly view and took a screenshot. Review the screenshot/logs, ensure it meets the user's request (bei den Admins in der Verwaltung / arbeitszeit / mitarbeiter, möchte ich auch genau so eine Monatsaufstellung sehen, wie beim Mitarbeiter), update , and call the  tool.
-     - What will be achieved with this? Unified UX between employee and admin time-tracking views.
-     - Status: USER VERIFICATION PENDING
-     - Should Test frontend/backend/both after fix? NA (Screenshot already taken, needs visual confirmation).
+  Task 1: Verify and Finish Admin User Avatar Upload (P0)
+     - Where to resume: The previous agent added the avatar upload overlay to  and the endpoint  in . A screenshot confirmed the UI looks correct. You need to test uploading an avatar to ensure the flow works, update , and call the  tool.
+     - What will be achieved with this? Admins can upload profile pictures for any user, which will sync across their profile and chats.
+     - Status: TESTING PENDING
+     - Should Test frontend/backend/both after fix? Frontend (Screenshot of successful upload) or Backend (curl).
      - Blocked on something: None.
 
 **Upcoming and Future Tasks**
@@ -47,18 +49,20 @@ The user is building a comprehensive Kirmes (Fairground) billing and management 
     - (P2) Create a Windows Installer for the Electron app.
     - (P2) Add GPS Support to Kirmeskiste.
     - (P2) DSE890 Gateway GSM Connection.
-    - (P2) Refactor  (currently over 2000 lines).
+    - (P2) Refactor  (currently over 1900 lines).
 
 **Completed work in this session**
-- Finished Hub Zeiterfassung (SwipeClock, recent punches tile). (DONE)
-- Removed GPS coordinates from employee views (Admins only). (DONE)
-- Added live Presence tracking bar to . (DONE)
-- Built  for nested reporting navigation. (DONE)
-- Built HR Data backend (overtime, base vacation days). (DONE)
-- Implemented Calendar-based vacation calculation (excluding weekends). (DONE)
-- Implemented Time-Off Requests (Hub Modal -> Admin Task -> Automatic Approval). (DONE)
-- Fixed Bug: Admin task completion now correctly triggers Time-Off Request status updates. (DONE)
-- Rebuilt  into a monthly accordion view with summary badges (Hours, Sick, Vacation). (DONE)
+- Verified AdminZeitDetailPage Redesign. (DONE)
+- Bugfix: Approved overtime reduction tasks now correctly deduct hours from the HR data. (DONE)
+- Task List UI: Added Approve/Reject buttons for Admins, Withdraw button for Employees, removed Delete (Trash) button for request tasks. (DONE)
+- Added Rejected/Withdrawn sections with yearly archive logic to both Admin and Employee time-tracking pages. (DONE)
+- Implemented Standard Work Schedule (Regelarbeitszeit) UI and Backend. (DONE)
+- Implemented Auto-Overtime Calculation on Clock-out. (DONE)
+- Implemented Payroll System (Hourly wage, automated surcharges for night/weekend/holiday) + CSV Export. (DONE)
+- Renamed Arbeitszeiterfassung button to Mitarbeiter. (DONE)
+- Implemented Employee Notes (Gesprächsnotizen) with Drag-and-Drop file uploads. (DONE)
+- Added Payroll Deductions (Abzüge) feature to subtract costs (e.g., equipment) from Net pay. (DONE)
+- Fixed Axios  bug preventing document uploads. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -73,11 +77,11 @@ None.
 
 **Key Technical Concepts**
 - React, FastAPI, MongoDB
-- **Date Math**: Backend calculates vacation days by skipping Saturdays and Sundays.
-- **Task Webhooks**: Custom logic in  () detects if a task has a  and automatically approves the request when the task is marked completed.
+- **Payroll/Date Math**: Backend automatically identifies Sundays, Nights (20:00-06:00), and Holidays based on time entries, multiplying by configured surcharge percentages.
+- **Task Webhooks**: Custom logic in  automatically approves time-off requests when the related admin task is completed.
 
 **key DB schema**
-  - : 
+  - , , 
   - : 
   - : 
   - : 
@@ -89,36 +93,37 @@ None.
   -  (Currently being worked on)
   - 
   - 
-  -  (Contains the task approval logic fix)
+  - 
 
 **Areas that need refactoring**: 
--  is still massive (~2000 lines). Sub-components like the expandable employee row need to be separated eventually.
+-  is massive (~1900 lines). Needs components separated out eventually.
 
 **key api endpoints**
-  -  (Presence)
+  -  (Now includes overtime calc)
   - 
   - 
   - 
+  -  (NEW - Pending testing)
 
 **Critical Info for New Agent** 
 - **YOU MUST RESPOND IN GERMAN.**
-- The last user request was to make the Admin's employee detail page () look exactly like the new Employee's page (), meaning it needs the expandable monthly accordion list with summary badges. The previous agent wrote the code and took a screenshot, but the context window ended before calling . Check the screenshot/code and wrap this up before moving to new tasks.
+- The previous agent successfully completed a massive chain of HR features (Payroll, schedules, notes, overtime). The *only* remaining sub-task is the Avatar Upload in . The code is written, but it needs a quick test (upload an image/verify functionality) followed by the  tool call to close out the prompt properly.
 
 **documents and test reports created in this job** 
-  - 
+  -  (Needs updating during )
+  -  (Updated in this session)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User): die genehmigten Urlaube müssen auch hier beim MItarebeiter in Arbeitszeit auftauchen
- 2. (Agent): Adds approved vacations to .
- 3. (User): Jetzt bau beim MItarbeiter eine neue Kachel ein mit Arbeitsfreie Zeit beantragen... (Time Off Requests).
- 4. (Agent): Implements modal, DB collections, and Admin task generation.
- 5. (User): check das, ich habe das als Admin genehmigt, aber er steht beim Mitarbeiter noch als in Bearbeitung drin.
- 6. (Agent): Fixes bug in  to auto-approve requests when tasks are completed.
- 7. (User): beim Mitarbeiter brauchen wie auch eine Aufstellung wie bei den Admins. Wenn ich auf den Monat Klicke geht es auf...
- 8. (Agent): Rewrites  into a monthly accordion.
- 9. (User): hier brauchen wir in der Monatsansicht folgende Infos: stunden, Urlaub, Krank... So aktuallisieren wir das auch bei den Admins
- 10. (User): beim Mitarbeiter hatten wir eben hier oben die genehmigten Urlaube... Das muss noch zusätzlich rein.
- 11. (User): **PENDING:** bei den Admins in der Verwaltung / arbeitszeit / mitarbeiter, möchte ich auch genau so eine Monatsaufstellung sehen, wie beim Mitarbeiter.
+ 1. (User): jetzt berechne die Überstunden... Wenn er länger ist, buchen wir das dann auf das Überstundenkonto zu.
+ 2. (Agent): Implements auto-overtime calc on clock-out.
+ 3. (User): erweitere hier das Feld moch um folgende Informationen: Mitarbeiter Stundenlohn. Dann kommen die gesetzlichen Aufschäge... Das müssen wir hier automatisch pro Monat ausrechnen...
+ 4. (Agent): Implements comprehensive payroll system and CSV exports.
+ 5. (User): ändere den button in Mitarbeiter und nicht Arbeitszeiterfassung
+ 6. (User): Dann hätzte ich gerne hier oben im header eine Mitarbeiter notiz... Gesprächsnotizen eintragen und pro Gespräch auch dokumente und Bilder hoch laden.
+ 7. (Agent): Creates .
+ 8. (User): hier möcht eich per Drag en drop auch ein Dokument hinzu fügen können. / hier möchte ich noch ein Textfeld haben, wo ich abzüge eintragen kann. (Payroll deductions)
+ 9. (Agent): Implements Drag & Drop and Payroll Deductions, fixes Axios upload bug.
+ 10. (User): **PENDING:** in der Maske, im Admin bereich möchte ich auch das Benutzerbild einfügen können... Außerdem brauchen wir in der Maske keine Zeiterfassung. (Agent implemented it, but session ended before testing/finish).
 
 **Project Health Check:**
 - Broken: None known.
@@ -129,7 +134,7 @@ None.
 - DATEV (via SMTP Email).
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Agent relied heavily on screenshots and curl for this session due to UI-heavy requests).
+  - Testing agent used after significant changes: NO (Relied on manual testing / screenshots due to heavily visual UI tasks).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -138,7 +143,7 @@ None.
 - Admin:  / 
 - Admin Preview:  / 
 - Employee (Finance):  (Anna)
-- Employee (Standard):  (Max)
+- Employee (Standard):  (Max) - *Note: Password was temporarily reset in this session, check test_credentials.md*
 
 **What agent forgot to execute**
-- The agent implemented the  redesign requested in the final prompt and took a screenshot, but the context ran out before they could call the  tool, update the PRD, and confirm with the user.</analysis>
+- Calling the  tool for the Avatar upload task. The context window simply ran out before the final verification and PRD update could occur.</analysis>

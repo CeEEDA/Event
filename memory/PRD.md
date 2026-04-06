@@ -13,162 +13,129 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Admin Avatar Upload in Benutzerverwaltung - FERTIG (2026-04-06)
+- Admins koennen Profilbilder fuer jeden Benutzer direkt in der Benutzerverwaltung hochladen
+- Hover-Overlay mit Kamera-Icon auf dem Avatar-Kreis
+- Backend: `POST /api/employee/avatar/{user_id}/upload` (nur Admins)
+- Frontend: Upload in AdminPage.js, aktualisiert Profilcache nach Upload
+- Redundante Zeiterfassungs-UI aus Admin-Benutzerverwaltung entfernt
+
 ### Admin Mitarbeiter-Zeitdetail Monatsansicht - FERTIG (2026-04-06)
 - AdminZeitDetailPage (`/verwaltung/zeiterfassung/:userId`) komplett redesigned
 - Aufklappbare Monatsansicht (Accordion) identisch zur Mitarbeiter-Seite (`/arbeitszeit`)
 - Summary Badges pro Monat: Stunden, Urlaub, Krank
-- HR-Stammdaten (Überstunden, Urlaubstage) bearbeitbar
-- Genehmigte Urlaube eintragen/löschen mit Kalender-Berechnung
+- HR-Stammdaten (Ueberstunden, Urlaubstage) bearbeitbar
+- Genehmigte Urlaube eintragen/loeschen mit Kalender-Berechnung
 - Jahres-Summary-Karten: Stundenkonto, Genehmigt, Resturlaub, Krankheit
-- GPS-Pins für Ein-/Ausstempeln sichtbar (nur Admin)
-
+- GPS-Pins fuer Ein-/Ausstempeln sichtbar (nur Admin)
 
 ### Regelarbeitszeit (Standard-Arbeitszeiten) - FERTIG (2026-04-06)
 - Admin kann pro Mitarbeiter Mo-Sa Standard-Arbeitszeiten eintragen: Beginn, Ende, Pausenzeit
 - Automatische Netto-Berechnung pro Tag und Wochensumme
 - Backend: `work_schedules` Collection, GET/PUT `/api/employee/work-schedule/{userId}`
 - Frontend: Tabelle in AdminZeitDetailPage mit Speichern-Button
-- Basis für Überstundenberechnung: Stunden über Regelzeit = Überstunden
+- Basis fuer Ueberstundenberechnung: Stunden ueber Regelzeit = Ueberstunden
 
-### Archiv-Funktion für Abgelehnte Anträge - FERTIG (2026-04-06)
-- Abgelehnt/Zurückgezogen-Sektion zeigt nur aktuelles Jahr
-- Archiv-Sektion (klappbar nach Jahr) für vergangene Jahre
-- Am 01.01. wandern alte Einträge automatisch ins Archiv
+### Archiv-Funktion fuer Abgelehnte Antraege - FERTIG (2026-04-06)
+- Abgelehnt/Zurueckgezogen-Sektion zeigt nur aktuelles Jahr
+- Archiv-Sektion (klappbar nach Jahr) fuer vergangene Jahre
+- Am 01.01. wandern alte Eintraege automatisch ins Archiv
 - Auf Admin-Detailseite + Mitarbeiter-Arbeitszeitseite
 
 ### Antrags-Tasks Genehmigt/Abgelehnt Buttons - FERTIG (2026-04-06)
-- Antrags-Tasks zeigen "Genehmigt" und "Abgelehnt" Buttons statt Häkchen
-- Mülleimer-Button bei Antrags-Tasks entfernt
+- Antrags-Tasks zeigen "Genehmigt" und "Abgelehnt" Buttons statt Haekchen
+- Muelleimer-Button bei Antrags-Tasks entfernt
 - "von undefined" Bug behoben (created_by_name fehlte bei Task-Erstellung)
 - Genehmigte/Abgelehnte Antrags-Tasks werden korrekt als erledigt markiert (completed=true)
-- Betrifft: HubPage.js (Frontend), employee.py (Backend Task-Erstellung + Resolve)
 
-### Überstundenabbau-Verrechnung Bugfix - FERTIG (2026-04-06)
-- Bug: Genehmigte Überstundenabbau-Anträge wurden nicht vom Stundenkonto abgezogen
+### Ueberstundenabbau-Verrechnung Bugfix - FERTIG (2026-04-06)
+- Bug: Genehmigte Ueberstundenabbau-Antraege wurden nicht vom Stundenkonto abgezogen
 - Fix: Bei Genehmigung (direkt + via Task) werden automatisch 8h pro Arbeitstag abgezogen
-- Betrifft: employee.py (resolve_time_off_request) + chat.py (update_task auto-approve)
 
-### Arbeitsfreie-Zeit-Anträge - FERTIG (2026-04-06)
-- Mitarbeiter können über Hub-Kachel "Freie Zeit" Anträge stellen (Krank, Urlaub, Überstundenabbau)
-- Dialog mit Dropdown, Datumsauswahl, Ganztägig-Toggle, optionale Uhrzeiten
-- Anträge erscheinen als Aufgabe bei allen Admins
-- Admin kann Anträge genehmigen/ablehnen
-- Bei Genehmigung von Urlaub werden Tage automatisch in Urlaubskonto verrechnet
-- Mitarbeiter sieht Status (In Bearbeitung/Genehmigt/Abgelehnt) in der Arbeitszeitseite
-- DB-Collections: `time_off_requests`, Tasks-Integration
+### Auto-Ueberstundenberechnung bei Clock-out - FERTIG (2026-04-06)
+- Bei Clock-out werden Ist-Stunden mit Regelarbeitszeit verglichen
+- Differenz wird automatisch auf das Ueberstundenkonto gebucht
+- Backend: `/api/employee/time/clock-out` erweitert
 
-### HR-Daten (Überstunden / Urlaub) - FERTIG (2026-04-06)
-- Admin kann pro Mitarbeiter Überstunden (Std.), Urlaubstage (Gesamt/Jahr) und Genehmigten Urlaub eintragen
+### Lohnabrechnung (Payroll) - FERTIG (2026-04-06)
+- Stundenlohn pro Mitarbeiter konfigurierbar
+- Automatische Zuschlaege: Sonntag 50%, Feiertag 125%, Sonderfeiertag 150%, Nacht 25%
+- Manuelle Abzuege (Ausruestung, etc.) verwaltbar
+- CSV-Export der Lohnabrechnung
+- Backend: `GET /api/employee/payroll/{user_id}/{year}/{month}`, `POST /api/employee/payroll/deductions/{user_id}`
+
+### Mitarbeiter-Notizen (Gespraechsnotizen) - FERTIG (2026-04-06)
+- Admins koennen Gespraechsnotizen pro Mitarbeiter erfassen
+- Drag & Drop Dokumenten-Upload pro Notiz
+- Backend: `POST /api/employee/notes/{user_id}`, Collection `employee_notes`
+
+### Arbeitsfreie-Zeit-Antraege - FERTIG (2026-04-06)
+- Mitarbeiter koennen ueber Hub-Kachel "Freie Zeit" Antraege stellen (Krank, Urlaub, Ueberstundenabbau)
+- Dialog mit Dropdown, Datumsauswahl, Ganztaegig-Toggle, optionale Uhrzeiten
+- Antraege erscheinen als Aufgabe bei allen Admins
+- Admin kann Antraege genehmigen/ablehnen, Mitarbeiter kann zurueckziehen
+
+### HR-Daten (Ueberstunden / Urlaub) - FERTIG (2026-04-06)
+- Admin kann pro Mitarbeiter Ueberstunden, Urlaubstage und Genehmigten Urlaub eintragen
 - Berechnete Anzeige: Stundenkonto, Genehmigter Urlaub, Resturlaub
-- Daten im Hub für Mitarbeiter sichtbar (nur lesen)
-- DB-Collection: `hr_data` (user_id, year, overtime_hours, vacation_days_total, vacation_days_used)
 
 ### GPS-Zeiterfassung (Stempeln) - FERTIG (2026-04-05)
-- SwipeClock-Slider im Hub zum Ein-/Ausstempeln (verhindert versehentliches Stempeln)
+- SwipeClock-Slider im Hub zum Ein-/Ausstempeln
 - GPS-Koordinaten werden bei jedem Stempelvorgang erfasst
-- Backend: clock-in, clock-out, status, report Endpunkte
-- Eigene Arbeitszeitseite (`/arbeitszeit`) mit Monatsübersicht und Stundenauswertung
-- Admin-Arbeitszeit-Tab in Auswertungsseite (`/verwaltung/auswertung`)
-- Hub-Dashboard: Heutige Einstempel-Zeit, letzte Stempelungen, Resturlaub (Platzhalter), Überstundenkonto (Platzhalter)
-- DB-Collection: `time_entries` (user_id, clock_in/out, GPS lat/lng, duration_minutes)
+- Eigene Arbeitszeitseite (`/arbeitszeit`) mit Monatsübersicht
 
 ### Auswertung Dokumenten-Ablauf - FERTIG (2026-06-04)
-- Auswertungsseite unter Verwaltung > Auswertung
-- Dashboard: Abgelaufen / Kritisch / Warnung / Gültig Zähler (klickbar)
+- Dashboard: Abgelaufen / Kritisch / Warnung / Gueltig Zaehler
 - Gruppierung nach Status oder Mitarbeiter
-- Suche nach Mitarbeiter oder Dokumenttyp
-- Zeigt: Mitarbeitername, Dokumenttyp, Ablaufdatum, Tage verbleibend/überfällig
-- KI-Dokumenterkennung Fix (LlmChat Import korrigiert)
 
 ### Profilbild-Integration & Admin-Mitarbeiterverwaltung - FERTIG (2026-06-04)
-- Profilbild wird im Hub-Header, Chat-Nachrichten und Konversationsliste angezeigt
+- Profilbild im Hub-Header, Chat-Nachrichten und Konversationsliste
 - Mitarbeiter-Profil + Dokumente direkt in Benutzerverwaltung eingebettet
-- Aufklappbare Zeile zeigt: Kontaktdaten, 9 Dokument-Karten (Ampel), Login-Aktivität
-- Keine separate Seite/Kachel nötig
 
 ### Mitarbeiter-Profil & Dokumentenverwaltung - FERTIG (2026-06-04)
-- Profilseite: Name, Profilbild, Anschrift, Telefon, Passwort ändern
-- Profilbild-Upload mit Kamera-Button
-- Profil-Link im Hub-Header (klickbar)
+- Profilseite: Name, Profilbild, Anschrift, Telefon, Passwort aendern
 - 9 Dokumenten-Kategorien mit Drag & Drop PDF-Upload
 - KI-Ablaufdatum-Erkennung via Gemini 2.5 Flash
-- Manuell korrigierbares Ablaufdatum
-- Versionierung: Neues Dokument markiert altes als "alt"
-- Ampel-Status: Grün (gültig), Gelb (bald ablaufend), Rot (abgelaufen)
-- Admin kann alle Mitarbeiter-Profile einsehen
 
-### Chat Gruppenbild & Namensänderung - FERTIG (2026-06-04)
-- Gruppenbilder hochladen (Kamera-Button im Detail-Panel)
-- Avatar wird in Chat-Liste, Header und Detail-Panel angezeigt
-- Gruppenname per Stift-Icon änderbar
-- Nur für Admins bei Gruppenchats
-
-### Chat Detail-Panel - FERTIG (2026-06-04)
-- Klick auf Chat-Name öffnet Detail-Panel (Slide-over)
-- Tabs: Mitglieder, Dateien, Fotos
-- Mitglieder hinzufügen/entfernen (Admin, nur Gruppen)
-- Alle geteilten Dateien und Fotos durchsuchbar
-
-### Aufgaben-Filter Redesign - FERTIG (2026-06-04)
-- Tabs geändert: "Aktuell / Erledigt / Alle" statt "Meine / Erstellt / Alle"
-- Erledigte Aufgaben werden im Aktuell-Tab ausgeblendet
-- Suchmaske zum Filtern von Aufgaben hinzugefügt
-
-### Team Chat & Aufgabenverwaltung - FERTIG (2026-04-05)
-- Direktnachrichten zwischen allen Benutzern
-- Gruppenchats (nur Admin kann erstellen)
-- Echtzeit-Polling (4 Sekunden)
-- Datei-/Bildanhaenge im Chat (Object Storage)
-- Ungelesene-Nachrichten-Zaehler (Badge)
-- Aufgaben mit Prioritaeten (Hoch/Mittel/Niedrig)
-- Faelligkeitsdaten mit Ueberfaellig-Anzeige
-- Aufgaben anderen Benutzern zuweisen
-- Filter: Meine / Erstellt / Alle (Admin)
-- Aufgaben erledigen / wiederherstellen / loeschen
-- Hub-Seite kompakt redesigned (Icon-Grid + Aufgaben-Panel)
-- Chat/Task Datei-Downloads (Tuple-Unpacking Fix) - BEHOBEN (2026-06-04)
+### Chat & Aufgabenverwaltung - FERTIG (2026-04-05)
+- Direktnachrichten, Gruppenchats, Echtzeit-Polling
+- Aufgaben mit Prioritaeten, Faelligkeitsdaten, Zuweisung
 
 ### Dokumentenverwaltung mit KI - FERTIG (2026-04-04/05)
-- 66+ Masterordner, hierarchische Unterordner-Struktur
-- KI-Erkennung via Gemini 2.5 Flash (asynchron)
-- Automatische DATEV-Weiterleitung
-- Drag & Drop Upload, Volltextsuche
-- PDF-Vorschau inline per iframe
-- Detail-Sidebar als Overlay-Panel
-- KI-Training im Admin (custom Anweisungen)
+- 66+ Masterordner, KI-Erkennung, DATEV-Weiterleitung, Drag & Drop
 
-### Auto-Speicherung Portal-Rechnungen - FERTIG (2026-04-05)
-### Mitarbeiter-Berechtigungen (Finance + Dokumentenverwaltung) - FERTIG
-### SchaustellerAnmeldungPage Refactoring - FERTIG (14 Subkomponenten)
-### Multi-Anschluss Buchung, Kaution, Sammelrechnung - FERTIG
-### Lastdiagramm Feature - FERTIG
+### Weitere Features - FERTIG
+- Auto-Speicherung Portal-Rechnungen
+- Mitarbeiter-Berechtigungen (Finance + Dokumentenverwaltung)
+- SchaustellerAnmeldungPage Refactoring (14 Subkomponenten)
+- Multi-Anschluss Buchung, Kaution, Sammelrechnung
+- Lastdiagramm Feature
+- Chat Detail-Panel, Gruppenbild & Namensaenderung, Aufgaben-Filter Redesign
 
 ## Key API Endpoints
+### Employee/HR
+- POST /api/employee/time/clock-in, clock-out, status, report
+- GET /api/employee/payroll/{user_id}/{year}/{month}
+- POST /api/employee/payroll/deductions/{user_id}
+- POST /api/employee/notes/{user_id}
+- PUT /api/employee/admin-avatar/{user_id}
+- POST /api/employee/avatar/{user_id}/upload
+- GET /api/employee/avatar/{user_id}
+- GET/PUT /api/employee/work-schedule/{userId}
+
 ### Chat & Tasks
-- GET /api/chat/conversations?token=...
-- POST /api/chat/conversations?token=...
-- GET /api/chat/conversations/{id}/messages?token=...
-- POST /api/chat/conversations/{id}/messages?token=... (FormData)
-- GET /api/chat/conversations/{id}/file/{att_id}?token=...
-- GET /api/chat/users?token=...
-- GET /api/chat/tasks?token=...&filter=mine|created|all
-- POST /api/chat/tasks?token=...
-- PUT /api/chat/tasks/{id}?token=...
-- DELETE /api/chat/tasks/{id}?token=...
-- GET /api/chat/tasks/{id}/file?token=...
-- POST /api/chat/tasks/{id}/comments?token=...
-- GET /api/chat/tasks/{id}/comments/{comment_id}/file?token=...
+- GET/POST /api/chat/conversations, messages
+- GET/POST/PUT/DELETE /api/chat/tasks
 
 ### Documents
 - POST /api/documents/upload
 - GET /api/documents/folders
-- GET/PUT /api/documents/ai-settings
 
 ## DB Collections
-- chat_conversations: {id, type, name, members[], last_message, created_by, ...}
-- chat_messages: {id, conversation_id, sender_id, sender_name, text, attachment, read_by[], ...}
-- tasks: {id, title, description, priority, priority_order, due_date, completed, created_by, assigned_to, ...}
-- task_comments: {id, task_id, user_id, user_name, text, attachment, created_at}
+- employee_profiles, employee_documents, hr_data, vacation_entries
+- time_entries, time_off_requests, work_schedules
+- employee_notes, payroll_deductions
+- chat_conversations, chat_messages, tasks, task_comments
 
 ## Prioritized Backlog
 ### P1
@@ -176,6 +143,10 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - PayPal/Kreditkarten Integration
 
 ### P2
-- Chromium Kiosk, Windows Installer, GPS-Support
+- Lastdiagramm Live-Test (EMU-Messgeraete)
+- Chromium Kiosk Translate-Popup unterdruecken
 - Admin Dateigroessen-Limits
-- DSE890 Gateway GSM (SIM-Karten)
+- Windows Installer fuer Electron App
+- GPS-Support fuer Kirmeskiste
+- DSE890 Gateway GSM
+- AdminPage.js Refactoring (~1900 Zeilen)
