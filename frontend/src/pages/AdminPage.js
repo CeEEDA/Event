@@ -231,10 +231,16 @@ export default function AdminPage() {
         setEmployeeDocs(prev => ({ ...prev, [userId]: [] }));
       }
     }
-    // Load time entries
+    // Load time entries (current month only)
     if (!employeeTimeEntries[userId]) {
       try {
-        const res = await api.get(`/employee/time/entries?token=${token}&user_id=${userId}`);
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, "0");
+        const from = `${y}-${m}-01`;
+        const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+        const to = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+        const res = await api.get(`/employee/time/entries?token=${token}&user_id=${userId}&date_from=${from}&date_to=${to}`);
         setEmployeeTimeEntries(prev => ({ ...prev, [userId]: res.data || [] }));
       } catch {
         setEmployeeTimeEntries(prev => ({ ...prev, [userId]: [] }));
@@ -1127,7 +1133,7 @@ export default function AdminPage() {
                                       <div data-testid={`time-section-${user.id}`}>
                                         <div className="flex items-center gap-2 mb-2">
                                           <Clock className="w-3.5 h-3.5 text-green-500" />
-                                          <span className="text-[10px] text-gray-400 uppercase font-medium">Zeiterfassung</span>
+                                          <span className="text-[10px] text-gray-400 uppercase font-medium">Zeiterfassung — {new Date().toLocaleDateString("de-DE", { month: "long", year: "numeric" })}</span>
                                           {activeEntry && (
                                             <span className="text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium animate-pulse">Eingestempelt seit {new Date(activeEntry.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
                                           )}
