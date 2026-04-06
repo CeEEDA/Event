@@ -121,6 +121,48 @@ export default function ArbeitszeitPage() {
           </div>
         </div>
 
+        {/* Genehmigte Urlaube & Überstundenabbau Übersicht */}
+        {(vacationEntries.length > 0 || timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved").length > 0) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3" data-testid="approved-overview">
+            {vacationEntries.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Palmtree className="w-3.5 h-3.5 text-sky-600" />
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Genehmigte Urlaube</span>
+                  <span className="text-xs font-bold text-sky-700 ml-auto">{vacationEntries.reduce((s, v) => s + (v.days || 0), 0)} Tage</span>
+                </div>
+                <div className="space-y-1">
+                  {vacationEntries.map(v => (
+                    <div key={v.id} className="flex items-center gap-2 bg-sky-50 rounded-lg px-3 py-1.5 text-sm">
+                      <span className="text-sky-700">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      <span className="text-gray-400">—</span>
+                      <span className="text-sky-700">{new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      <span className="text-sky-700 font-bold ml-auto">{v.days} Tage</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved").length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Überstundenabbau</span>
+                </div>
+                <div className="space-y-1">
+                  {timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved").map(r => (
+                    <div key={r.id} className="flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-1.5 text-sm">
+                      <span className="text-amber-700">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      {r.end_date !== r.start_date && <><span className="text-gray-400">—</span><span className="text-amber-700">{new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span></>}
+                      {r.days > 0 && <span className="text-amber-700 font-bold ml-auto">{r.days} Tage</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Pending Requests */}
         {timeOffRequests.filter(r => r.status === "pending").length > 0 && (
           <div className="bg-amber-50 rounded-xl border border-amber-200 p-3">
