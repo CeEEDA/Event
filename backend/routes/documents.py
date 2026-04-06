@@ -43,6 +43,7 @@ PREDEFINED_FOLDERS = [
     {"id": "zahlen_bwa_und_ja", "name": "Zahlen - BWA und JA", "icon": "receipt", "color": "emerald"},
     {"id": "anlagevermoegen", "name": "Anlagevermögen", "icon": "receipt", "color": "emerald"},
     {"id": "stille_reserven", "name": "Stille Reserven", "icon": "receipt", "color": "emerald"},
+    {"id": "lohnabrechnung", "name": "Lohnabrechnung", "icon": "receipt", "color": "emerald"},
     # Versicherungen
     {"id": "versicherungen", "name": "Versicherungen", "icon": "shield", "color": "blue"},
     {"id": "kfz_versicherung", "name": "KFZ Versicherung", "icon": "car", "color": "blue"},
@@ -107,7 +108,6 @@ PREDEFINED_FOLDERS = [
     {"id": "betriebsversammlung_meetingprotokolle", "name": "Betriebsversammlung - Meetingprotokolle", "icon": "file-text", "color": "gray"},
     {"id": "ablage_allgemein", "name": "Ablage - allgemein", "icon": "folder", "color": "gray"},
     {"id": "temporaerer_ordner", "name": "temporärer Ordner", "icon": "folder", "color": "gray"},
-    {"id": "lohnabrechnung", "name": "Lohnabrechnung", "icon": "file-text", "color": "green"},
     {"id": "sonstiges", "name": "Sonstiges", "icon": "folder", "color": "gray"},
 ]
 
