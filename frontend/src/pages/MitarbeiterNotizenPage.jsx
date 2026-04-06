@@ -46,7 +46,9 @@ export default function MitarbeiterNotizenPage() {
       for (const f of pendingFiles) {
         const form = new FormData();
         form.append("file", f);
-        await api.post(`/employee/notes/entry/${noteId}/upload?token=${token}`, form);
+        await api.post(`/employee/notes/entry/${noteId}/upload?token=${token}`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
       }
       setNewNote(null);
       setPendingFiles([]);
@@ -79,7 +81,9 @@ export default function MitarbeiterNotizenPage() {
     const form = new FormData();
     form.append("file", file);
     try {
-      await api.post(`/employee/notes/entry/${noteId}/upload?token=${token}`, form);
+      await api.post(`/employee/notes/entry/${noteId}/upload?token=${token}`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       loadNotes();
       toast.success("Datei hochgeladen");
     } catch { toast.error("Upload fehlgeschlagen"); }
