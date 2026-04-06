@@ -13,6 +13,15 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Arbeitsfreie-Zeit-Anträge - FERTIG (2026-04-06)
+- Mitarbeiter können über Hub-Kachel "Freie Zeit" Anträge stellen (Krank, Urlaub, Überstundenabbau)
+- Dialog mit Dropdown, Datumsauswahl, Ganztägig-Toggle, optionale Uhrzeiten
+- Anträge erscheinen als Aufgabe bei allen Admins
+- Admin kann Anträge genehmigen/ablehnen
+- Bei Genehmigung von Urlaub werden Tage automatisch in Urlaubskonto verrechnet
+- Mitarbeiter sieht Status (In Bearbeitung/Genehmigt/Abgelehnt) in der Arbeitszeitseite
+- DB-Collections: `time_off_requests`, Tasks-Integration
+
 ### HR-Daten (Überstunden / Urlaub) - FERTIG (2026-04-06)
 - Admin kann pro Mitarbeiter Überstunden (Std.), Urlaubstage (Gesamt/Jahr) und Genehmigten Urlaub eintragen
 - Berechnete Anzeige: Stundenkonto, Genehmigter Urlaub, Resturlaub

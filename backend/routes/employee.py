@@ -784,6 +784,141 @@ async def delete_vacation_entry(user_id: str, entry_id: str, token: str = Query(
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
+
+
+# ─── Time Off Requests ──────────────────────────────
+
+@router.post("/time-off")
+async def create_time_off_request(token: str = Query(...), data: dict = Body(...)):
+    """Employee creates a time-off request."""
+    caller = await _get_user(token)
+    req_type = data.get("type")  # krank, urlaub, ueberstundenabbau
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    all_day = data.get("all_day", True)
+    start_time = data.get("start_time")
+    end_time = data.get("end_time")
+
+    if not req_type or not start_date:
+        raise HTTPException(status_code=400, detail="Typ und Startdatum erforderlich")
+    if not end_date:
+        end_date = start_date
+
+    days = _count_weekdays(start_date, end_date) if all_day else 0
+
+    type_labels = {"krank": "Krankmeldung", "urlaub": "Urlaubsantrag", "ueberstundenabbau": "Überstundenabbau"}
+    label = type_labels.get(req_type, req_type)
+
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": caller["id"],
+        "user_name": caller.get("name", caller.get("email", "")),
+        "type": req_type,
+        "type_label": label,
+        "start_date": start_date,
+        "end_date": end_date,
+        "all_day": all_day,
+        "start_time": start_time if not all_day else None,
+        "end_time": end_time if not all_day else None,
+        "days": days,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_at": None,
+        "resolved_by": None,
+    }
+    await db.time_off_requests.insert_one(entry)
+
+    # Create a task for all admins
+    task_title = f"{label}: {caller.get('name', caller.get('email',''))} ({start_date}"
+    if end_date != start_date:
+        task_title += f" - {end_date}"
+    task_title += ")"
+    if not all_day and start_time and end_time:
+        task_title += f" {start_time}-{end_time}"
+
+    admins = await db.users.find({"role": "admin"}, {"_id": 0, "id": 1}).to_list(100)
+    admin_ids = [a["id"] for a in admins]
+
+    task = {
+        "id": str(uuid.uuid4()),
+        "title": task_title,
+        "description": f"Antrag von {caller.get('name', '')} auf {label}.\nZeitraum: {start_date} bis {end_date}" + (f"\nUhrzeit: {start_time} - {end_time}" if not all_day else f"\nGanztägig ({days} Tage)"),
+        "priority": "hoch",
+        "status": "open",
+        "created_by": caller["id"],
+        "assigned_to": admin_ids,
+        "due_date": start_date,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": None,
+        "time_off_request_id": entry["id"],
+    }
+    await db.tasks.insert_one(task)
+
+    return {"id": entry["id"], "days": days, "task_id": task["id"]}
+
+
+@router.get("/time-off")
+async def get_time_off_requests(token: str = Query(...), user_id: str = None):
+    """Get time-off requests. Employees see their own, admins can filter by user_id or see all."""
+    caller = await _get_user(token)
+    query = {}
+    if caller.get("role") == "admin":
+        if user_id:
+            query["user_id"] = user_id
+    else:
+        query["user_id"] = caller["id"]
+
+    entries = await db.time_off_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return entries
+
+
+@router.put("/time-off/{request_id}")
+async def resolve_time_off_request(request_id: str, token: str = Query(...), data: dict = Body(...)):
+    """Admin approves or rejects a time-off request."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    status = data.get("status")  # approved, rejected
+    if status not in ("approved", "rejected"):
+        raise HTTPException(status_code=400, detail="Status muss 'approved' oder 'rejected' sein")
+
+    req = await db.time_off_requests.find_one({"id": request_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
+
+    await db.time_off_requests.update_one(
+        {"id": request_id},
+        {"$set": {"status": status, "resolved_at": datetime.now(timezone.utc).isoformat(), "resolved_by": caller["id"]}}
+    )
+
+    # If approved and type is urlaub, add vacation entry
+    if status == "approved" and req.get("type") == "urlaub" and req.get("all_day") and req.get("days", 0) > 0:
+        year = int(req["start_date"][:4])
+        vac_entry = {
+            "id": str(uuid.uuid4()),
+            "user_id": req["user_id"],
+            "year": year,
+            "start_date": req["start_date"],
+            "end_date": req["end_date"],
+            "days": req["days"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "from_request": request_id,
+        }
+        await db.vacation_entries.insert_one(vac_entry)
+        await _recalc_vacation_used(req["user_id"], year)
+
+    # Mark related task as completed
+    task = await db.tasks.find_one({"time_off_request_id": request_id})
+    if task:
+        status_label = "Genehmigt" if status == "approved" else "Abgelehnt"
+        await db.tasks.update_one(
+            {"id": task["id"]},
+            {"$set": {"status": "done", "completed_at": datetime.now(timezone.utc).isoformat(), "title": f"[{status_label}] {task['title']}"}}
+        )
+
+    return {"ok": True, "status": status}
+
     year = entry.get("year", datetime.now(timezone.utc).year)
     await db.vacation_entries.delete_one({"id": entry_id})
     await _recalc_vacation_used(user_id, year)

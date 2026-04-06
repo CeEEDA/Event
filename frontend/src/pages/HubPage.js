@@ -11,9 +11,16 @@ import {
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
-  Sun, Timer, Palmtree, TrendingUp,
+  Sun, Timer, Palmtree, TrendingUp, CalendarOff,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "../components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "../components/ui/select";
+import { Switch } from "../components/ui/switch";
 
 const API = BACKEND_URL;
 
@@ -34,6 +41,16 @@ export default function HubPage() {
   const [elapsedTime, setElapsedTime] = useState("");
   const [recentEntries, setRecentEntries] = useState([]);
   const [hrData, setHrData] = useState(null);
+
+  // Time-off request dialog
+  const [showTimeOff, setShowTimeOff] = useState(false);
+  const [toType, setToType] = useState("");
+  const [toStartDate, setToStartDate] = useState("");
+  const [toEndDate, setToEndDate] = useState("");
+  const [toAllDay, setToAllDay] = useState(true);
+  const [toStartTime, setToStartTime] = useState("");
+  const [toEndTime, setToEndTime] = useState("");
+  const [toSubmitting, setToSubmitting] = useState(false);
   const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
   const [newTaskFile, setNewTaskFile] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
@@ -118,6 +135,30 @@ export default function HubPage() {
       { timeout: 10000, enableHighAccuracy: true }
     );
   });
+
+  const submitTimeOff = async () => {
+    if (!toType) { toast.error("Bitte Art auswählen"); return; }
+    if (!toStartDate) { toast.error("Bitte Startdatum wählen"); return; }
+    if (!toAllDay && (!toStartTime || !toEndTime)) { toast.error("Bitte Uhrzeiten angeben"); return; }
+    setToSubmitting(true);
+    try {
+      await api.post(`/employee/time-off?token=${token}`, {
+        type: toType,
+        start_date: toStartDate,
+        end_date: toEndDate || toStartDate,
+        all_day: toAllDay,
+        start_time: toAllDay ? null : toStartTime,
+        end_time: toAllDay ? null : toEndTime,
+      });
+      toast.success("Antrag eingereicht");
+      setShowTimeOff(false);
+      setToType(""); setToStartDate(""); setToEndDate(""); setToAllDay(true); setToStartTime(""); setToEndTime("");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler beim Einreichen");
+    }
+    setToSubmitting(false);
+  };
+
 
   const handleSwipeClock = async () => {
     setClockLoading(true);
@@ -256,6 +297,7 @@ export default function HubPage() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="hub-page">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3">
@@ -399,6 +441,18 @@ export default function HubPage() {
                     <Clock className="w-5 h-5" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Arbeitszeit</span>
+                </button>
+
+                {/* Time Off Request Tile */}
+                <button
+                  onClick={() => setShowTimeOff(true)}
+                  className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-orange-400 hover:shadow-md transition-all group text-center"
+                  data-testid="module-time-off"
+                >
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <CalendarOff className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Freie Zeit</span>
                 </button>
 
                 {modules.map(m => (
@@ -746,5 +800,61 @@ export default function HubPage() {
         </>
       )}
     </div>
+
+    {/* Time Off Request Dialog */}
+    <Dialog open={showTimeOff} onOpenChange={setShowTimeOff}>
+      <DialogContent className="sm:max-w-md" data-testid="time-off-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarOff className="w-5 h-5 text-orange-600" /> Arbeitsfreie Zeit beantragen
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Art</label>
+            <Select value={toType} onValueChange={setToType}>
+              <SelectTrigger data-testid="to-type-select">
+                <SelectValue placeholder="Bitte wählen..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="krank">Krank</SelectItem>
+                <SelectItem value="urlaub">Urlaub</SelectItem>
+                <SelectItem value="ueberstundenabbau">Überstundenabbau</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Von</label>
+              <input type="date" value={toStartDate} onChange={e => setToStartDate(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="to-start-date" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Bis</label>
+              <input type="date" value={toEndDate} onChange={e => setToEndDate(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="to-end-date" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-gray-700">Ganztägig</label>
+            <Switch checked={toAllDay} onCheckedChange={setToAllDay} data-testid="to-all-day" />
+          </div>
+          {!toAllDay && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Von (Uhrzeit)</label>
+                <input type="time" value={toStartTime} onChange={e => setToStartTime(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="to-start-time" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Bis (Uhrzeit)</label>
+                <input type="time" value={toEndTime} onChange={e => setToEndTime(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="to-end-time" />
+              </div>
+            </div>
+          )}
+          <Button onClick={submitTimeOff} disabled={toSubmitting} className="w-full bg-orange-600 hover:bg-orange-700" data-testid="to-submit-btn">
+            {toSubmitting ? "Wird eingereicht..." : "Absenden"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

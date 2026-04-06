@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import {
-  ArrowLeft, Clock, CalendarDays,
+  ArrowLeft, Clock, CalendarDays, CalendarOff,
 } from "lucide-react";
 
 export default function ArbeitszeitPage() {
@@ -13,6 +13,7 @@ export default function ArbeitszeitPage() {
 
   const [entries, setEntries] = useState([]);
   const [vacationEntries, setVacationEntries] = useState([]);
+  const [timeOffRequests, setTimeOffRequests] = useState([]);
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -39,6 +40,11 @@ export default function ArbeitszeitPage() {
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
   useEffect(() => { loadVacation(); }, [loadVacation]);
+
+  // Load time-off requests
+  useEffect(() => {
+    api.get(`/employee/time-off?token=${token}`).then(r => setTimeOffRequests(r.data || [])).catch(() => {});
+  }, [token]);
 
   const totalMinutes = entries.reduce((sum, e) => sum + (e.duration_minutes || 0), 0);
   const totalHours = Math.floor(totalMinutes / 60);
@@ -71,6 +77,38 @@ export default function ArbeitszeitPage() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        {/* Time-Off Requests */}
+        {timeOffRequests.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="time-off-requests">
+            <div className="flex items-center gap-2 mb-2">
+              <CalendarOff className="w-4 h-4 text-orange-600" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Meine Anträge</span>
+            </div>
+            <div className="space-y-1.5">
+              {timeOffRequests.map(r => {
+                const statusCfg = {
+                  pending: { label: "In Bearbeitung", cls: "bg-amber-100 text-amber-700" },
+                  approved: { label: "Genehmigt", cls: "bg-green-100 text-green-700" },
+                  rejected: { label: "Abgelehnt", cls: "bg-red-100 text-red-700" },
+                };
+                const sc = statusCfg[r.status] || statusCfg.pending;
+                return (
+                  <div key={r.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2 text-sm" data-testid={`to-request-${r.id}`}>
+                    <span className="text-xs font-medium text-gray-600 w-28 flex-shrink-0">{r.type_label}</span>
+                    <span className="text-gray-700">
+                      {new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                      {r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}
+                    </span>
+                    {!r.all_day && r.start_time && <span className="text-gray-500 text-xs">{r.start_time}–{r.end_time}</span>}
+                    {r.all_day && r.days > 0 && <span className="text-gray-500 text-xs">{r.days} Tage</span>}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto ${sc.cls}`}>{sc.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Genehmigte Urlaube */}
         {vacationEntries.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="vacation-overview">
