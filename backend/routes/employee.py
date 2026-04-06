@@ -1517,3 +1517,121 @@ async def delete_note_file(note_id: str, file_id: str, token: str = Query(...)):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.employee_notes.update_one({"id": note_id}, {"$pull": {"files": {"id": file_id}}})
     return {"ok": True}
+
+
+
+# ── Einsatzplanung (Shift Planning) ─────────────────
+
+@router.get("/shift-plan")
+async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
+    """Admin: Get all assignments for a week (e.g. '2026-W15')."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    assignments = await db.shift_assignments.find({"week_key": week}, {"_id": 0}).to_list(1000)
+    # Get release status
+    release = await db.shift_releases.find_one({"week_key": week}, {"_id": 0})
+    # Get all absences (time_off_requests approved) overlapping this week
+    import re
+    m = re.match(r"(\d{4})-W(\d{2})", week)
+    absences = []
+    if m:
+        year, wk = int(m.group(1)), int(m.group(2))
+        from datetime import timedelta
+        monday = datetime.strptime(f"{year}-W{wk:02d}-1", "%Y-W%W-%w").date()
+        sunday = monday + timedelta(days=6)
+        mon_str = monday.isoformat()
+        sun_str = sunday.isoformat()
+        reqs = await db.time_off_requests.find({
+            "status": "approved",
+            "date_from": {"$lte": sun_str},
+            "date_to": {"$gte": mon_str},
+        }, {"_id": 0}).to_list(500)
+        absences = reqs
+    return {
+        "assignments": assignments,
+        "released": bool(release),
+        "released_at": release.get("released_at") if release else None,
+        "absences": absences,
+    }
+
+
+@router.post("/shift-plan")
+async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...)):
+    """Admin: Create or update a shift assignment."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    assignment_id = data.get("id")
+    if assignment_id:
+        await db.shift_assignments.update_one({"id": assignment_id}, {"$set": {
+            "user_id": data.get("user_id"),
+            "date": data.get("date"),
+            "order_pk": data.get("order_pk"),
+            "order_name": data.get("order_name", ""),
+            "role": data.get("role", ""),
+            "note": data.get("note", ""),
+            "week_key": data.get("week_key"),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }})
+    else:
+        assignment_id = str(uuid.uuid4())
+        await db.shift_assignments.insert_one({
+            "id": assignment_id,
+            "user_id": data.get("user_id"),
+            "date": data.get("date"),
+            "order_pk": data.get("order_pk"),
+            "order_name": data.get("order_name", ""),
+            "role": data.get("role", ""),
+            "note": data.get("note", ""),
+            "week_key": data.get("week_key"),
+            "created_by": caller["id"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    return {"ok": True, "id": assignment_id}
+
+
+@router.delete("/shift-plan/{assignment_id}")
+async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
+    """Admin: Delete a shift assignment."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    await db.shift_assignments.delete_one({"id": assignment_id})
+    return {"ok": True}
+
+
+@router.post("/shift-plan/release")
+async def release_shift_plan(week: str = Query(...), token: str = Query(...)):
+    """Admin: Release a week plan so employees can see it."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    await db.shift_releases.update_one({"week_key": week}, {"$set": {
+        "week_key": week,
+        "released_by": caller["id"],
+        "released_at": datetime.now(timezone.utc).isoformat(),
+    }}, upsert=True)
+    return {"ok": True}
+
+
+@router.get("/shift-plan/my-plan")
+async def get_my_shift_plan(token: str = Query(...)):
+    """Employee: Get own released shift assignments for current + next week."""
+    caller = await _get_user(token)
+    from datetime import timedelta
+    today = datetime.now(timezone.utc).date()
+    monday = today - timedelta(days=today.weekday())
+    current_week = monday.strftime("%G-W%V")
+    next_monday = monday + timedelta(days=7)
+    next_week = next_monday.strftime("%G-W%V")
+    # Only show released weeks
+    released_weeks = []
+    async for r in db.shift_releases.find({"week_key": {"$in": [current_week, next_week]}}, {"_id": 0}):
+        released_weeks.append(r["week_key"])
+    assignments = await db.shift_assignments.find({
+        "user_id": caller["id"],
+        "week_key": {"$in": released_weeks},
+    }, {"_id": 0}).sort("date", 1).to_list(100)
+    return {"assignments": assignments, "released_weeks": released_weeks}

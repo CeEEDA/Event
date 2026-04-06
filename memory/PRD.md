@@ -13,36 +13,47 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Einsatzplanung - FERTIG (2026-04-06)
+- Admin-Wochenplan: Raster Mitarbeiter x Wochentage
+- EpiRent-Auftraege der Woche oben angezeigt
+- Einsaetze zuweisen: Auftrag, Rolle, Freitext
+- Abwesenheiten (Urlaub, Krank, UeS-Abbau) direkt im Raster sichtbar
+- Wochenplan freigeben → Mitarbeiter sieht seine Einsaetze im Hub
+- Mitarbeiter-Hub: "Meine Einsaetze" unter der Stempelfunktion
+- Backend: GET/POST/DELETE /api/employee/shift-plan, POST /shift-plan/release, GET /shift-plan/my-plan
+- DB: shift_assignments, shift_releases
+
 ### DATEV Lohnabrechnung KI-Erkennung - FERTIG (2026-04-06)
-- Neuer Ordner "Lohnabrechnung" im Dokumentenstamm mit automatischen Jahr/Monat-Unterordnern
-- KI-Erkennung per Gemini 2.5 Flash: Extrahiert Mitarbeitername, Personalnummer, Monat, Nettobetrag
-- Automatische Zuweisung der Lohnabrechnung zum erkannten Mitarbeiter
+- Ordner "Lohnabrechnung" im Dokumentenstamm (bei Finanz-Ordnern, emerald)
+- KI-Erkennung: Mitarbeitername, Personalnummer, Monat, Nettobetrag
+- Automatische Zuweisung zum erkannten Mitarbeiter
 - Mitarbeiter-Abrechnungsseite zeigt DATEV-PDFs + interne Abrechnungen
-- Backend: `_assign_payroll_to_employee()`, `GET /api/employee/payroll/my-documents`, `GET /api/employee/payroll/documents/{user_id}`
-- DB: `payroll_releases`, `documents.assigned_user_id/payroll_info/payroll_month`
 
 ### Abrechnungs-Freigabe System - FERTIG (2026-04-06)
-- Admin kann Lohnabrechnung pro Monat "Speichern & Freigeben"
-- Mitarbeiter sieht freigegebene Abrechnungen unter "Abrechnung" Kachel im Hub
-- Backend: `POST /api/employee/payroll/{user_id}/release`, `GET /api/employee/payroll/my-releases`
+- Admin: Speichern & Freigeben Button
+- Mitarbeiter: Abrechnung-Kachel im Hub
 
-### Dokumente in Mitarbeiter-Detailseite verschoben - FERTIG (2026-04-06)
-
-### Umbenennung: Arbeitszeiterfassung -> Mitarbeiterverwaltung - FERTIG (2026-04-06)
-
-### Admin Avatar Upload - FERTIG (2026-04-06)
-
-### Regelarbeitszeit, Auto-Ueberstunden, Payroll, Notizen, Antraege, HR-Daten - FERTIG
-
-### GPS-Zeiterfassung, Chat, Dokumentenverwaltung mit KI - FERTIG
+### Weitere fertige Features
+- Dokumente in Mitarbeiter-Detailseite verschoben
+- Mitarbeiterverwaltung: Alle User angezeigt (nicht nur gestempelte)
+- Admin Avatar Upload, Regelarbeitszeit, Auto-Ueberstunden
+- Payroll mit Zuschlaegen + Abzuegen + CSV Export
+- Mitarbeiter-Notizen, Arbeitsfreie-Zeit-Antraege, HR-Daten
+- GPS-Zeiterfassung, Chat, Dokumentenverwaltung mit KI
 
 ## Key API Endpoints
-### Payroll/DATEV
-- POST /api/employee/payroll/{user_id}/release
-- GET /api/employee/payroll/{user_id}/releases
-- GET /api/employee/payroll/my-releases
-- GET /api/employee/payroll/my-documents (DATEV PDFs)
-- GET /api/employee/payroll/documents/{user_id} (Admin: DATEV PDFs)
+### Einsatzplanung
+- GET /api/employee/shift-plan?week=YYYY-WXX (Admin)
+- POST /api/employee/shift-plan (Admin: Create/Update)
+- DELETE /api/employee/shift-plan/{id} (Admin: Delete)
+- POST /api/employee/shift-plan/release?week=YYYY-WXX (Admin: Freigabe)
+- GET /api/employee/shift-plan/my-plan (Mitarbeiter: eigene Einsaetze)
+
+## DB Collections
+- shift_assignments, shift_releases (NEU)
+- payroll_releases, payroll_deductions
+- employee_profiles, employee_documents, hr_data, vacation_entries
+- time_entries, time_off_requests, work_schedules, employee_notes
 
 ## Prioritized Backlog
 ### P1

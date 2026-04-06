@@ -11,7 +11,7 @@ import {
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
-  Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2,
+  Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import {
@@ -135,6 +135,14 @@ export default function HubPage() {
       { timeout: 10000, enableHighAccuracy: true }
     );
   });
+
+  // My shift plan (employee view)
+  const [myPlan, setMyPlan] = useState([]);
+  useEffect(() => {
+    api.get(`/employee/shift-plan/my-plan?token=${token}`)
+      .then(r => setMyPlan(r.data?.assignments || []))
+      .catch(() => {});
+  }, [token]);
 
   const submitTimeOff = async () => {
     if (!toType) { toast.error("Bitte Art auswählen"); return; }
@@ -290,6 +298,7 @@ export default function HubPage() {
     hasFilesharing && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
     isStaff && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
     isAdmin && { key: "admin", icon: Users, label: "Benutzer", path: "/admin", color: "bg-gray-100 text-gray-600" },
+    isAdmin && { key: "einsatzplanung", icon: CalendarDays, label: "Einsatzplanung", path: "/einsatzplanung", color: "bg-indigo-100 text-indigo-600" },
     isAdmin && { key: "settings", icon: Settings, label: "Einstellungen", path: "/admin/settings", color: "bg-gray-100 text-gray-600" },
   ].filter(Boolean);
 
@@ -427,6 +436,36 @@ export default function HubPage() {
               </div>
             </div>
           </div>
+
+          {/* My Shift Plan (Employee) */}
+          {myPlan.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="my-shift-plan">
+              <div className="flex items-center gap-2 mb-3">
+                <CalendarDays className="w-4 h-4 text-indigo-600" />
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Meine Einsätze</p>
+              </div>
+              <div className="space-y-2">
+                {myPlan.map(a => {
+                  const d = new Date(a.date + "T00:00:00");
+                  const dayName = d.toLocaleDateString("de-DE", { weekday: "short" });
+                  const dateStr = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+                  return (
+                    <div key={a.id} className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2" data-testid={`my-plan-${a.id}`}>
+                      <div className="text-center min-w-[44px]">
+                        <p className="text-[10px] text-indigo-500 font-medium uppercase">{dayName}</p>
+                        <p className="text-sm font-bold text-indigo-800">{dateStr}</p>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {a.order_name && <p className="text-xs font-semibold text-gray-900 truncate">{a.order_name}</p>}
+                        {a.role && <p className="text-[10px] text-indigo-600">{a.role}</p>}
+                        {a.note && <p className="text-[10px] text-gray-500 italic truncate">{a.note}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left: Module Grid */}

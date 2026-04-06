@@ -43,6 +43,7 @@ import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
 import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
 import AbrechnungPage from "./pages/AbrechnungPage";
+import EinsatzplanungPage from "./pages/EinsatzplanungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -407,6 +408,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AbrechnungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/einsatzplanung"
+        element={
+          <ProtectedRoute>
+            <EinsatzplanungPage />
           </ProtectedRoute>
         }
       />
