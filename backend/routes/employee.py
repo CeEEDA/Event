@@ -698,3 +698,93 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     remaining = (doc.get("vacation_days_total") or 0) - (doc.get("vacation_days_used") or 0)
     doc["vacation_days_remaining"] = remaining
     return doc
+
+
+
+# ─── Vacation Entries ──────────────────────────────
+
+def _count_weekdays(start_str: str, end_str: str) -> int:
+    """Count weekdays (Mon-Fri) between two dates inclusive."""
+    from datetime import date, timedelta
+    start = date.fromisoformat(start_str)
+    end = date.fromisoformat(end_str)
+    count = 0
+    current = start
+    while current <= end:
+        if current.weekday() < 5:  # Mon=0 .. Fri=4
+            count += 1
+        current += timedelta(days=1)
+    return count
+
+
+async def _recalc_vacation_used(user_id: str, year: int):
+    """Recalculate vacation_days_used from all vacation entries for the year."""
+    entries = await db.vacation_entries.find(
+        {"user_id": user_id, "year": year},
+        {"_id": 0}
+    ).to_list(500)
+    total_days = sum(e.get("days", 0) for e in entries)
+    await db.hr_data.update_one(
+        {"user_id": user_id, "year": year},
+        {"$set": {"vacation_days_used": total_days, "user_id": user_id, "year": year}},
+        upsert=True,
+    )
+    return total_days
+
+
+@router.get("/vacation/{user_id}")
+async def get_vacation_entries(user_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin" and caller["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+    year = datetime.now(timezone.utc).year
+    entries = await db.vacation_entries.find(
+        {"user_id": user_id, "year": year}, {"_id": 0}
+    ).sort("start_date", 1).to_list(500)
+    return entries
+
+
+@router.post("/vacation/{user_id}")
+async def add_vacation_entry(user_id: str, token: str = Query(...), data: dict = Body(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    if not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="Start- und Enddatum erforderlich")
+
+    days = _count_weekdays(start_date, end_date)
+    if days <= 0:
+        raise HTTPException(status_code=400, detail="Ungültiger Zeitraum")
+
+    year = int(start_date[:4])
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "year": year,
+        "start_date": start_date,
+        "end_date": end_date,
+        "days": days,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.vacation_entries.insert_one(entry)
+    await _recalc_vacation_used(user_id, year)
+    return {"id": entry["id"], "days": days}
+
+
+@router.delete("/vacation/{user_id}/{entry_id}")
+async def delete_vacation_entry(user_id: str, entry_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    entry = await db.vacation_entries.find_one({"id": entry_id, "user_id": user_id})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    year = entry.get("year", datetime.now(timezone.utc).year)
+    await db.vacation_entries.delete_one({"id": entry_id})
+    await _recalc_vacation_used(user_id, year)
+    return {"ok": True}
