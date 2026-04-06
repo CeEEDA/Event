@@ -887,16 +887,23 @@ async def get_time_off_requests(token: str = Query(...), user_id: str = None):
 async def resolve_time_off_request(request_id: str, token: str = Query(...), data: dict = Body(...)):
     """Admin approves or rejects a time-off request."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Nur Admins")
 
-    status = data.get("status")  # approved, rejected
-    if status not in ("approved", "rejected"):
-        raise HTTPException(status_code=400, detail="Status muss 'approved' oder 'rejected' sein")
+    status = data.get("status")  # approved, rejected, withdrawn
+    if status not in ("approved", "rejected", "withdrawn"):
+        raise HTTPException(status_code=400, detail="Status muss 'approved', 'rejected' oder 'withdrawn' sein")
 
     req = await db.time_off_requests.find_one({"id": request_id})
     if not req:
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
+
+    # Withdrawn: only the request creator can withdraw
+    if status == "withdrawn":
+        if req["user_id"] != caller["id"]:
+            raise HTTPException(status_code=403, detail="Nur der Antragsteller kann zurückziehen")
+    else:
+        # approved/rejected: only admins
+        if caller.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Nur Admins")
 
     await db.time_off_requests.update_one(
         {"id": request_id},
@@ -936,7 +943,8 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
     # Mark related task as completed
     task = await db.tasks.find_one({"time_off_request_id": request_id})
     if task:
-        status_label = "Genehmigt" if status == "approved" else "Abgelehnt"
+        status_labels = {"approved": "Genehmigt", "rejected": "Abgelehnt", "withdrawn": "Zurückgezogen"}
+        status_label = status_labels.get(status, status)
         await db.tasks.update_one(
             {"id": task["id"]},
             {"$set": {
