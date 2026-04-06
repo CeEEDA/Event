@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Body
 from fastapi.responses import Response
 from typing import Optional
 from datetime import datetime, timezone
@@ -647,3 +647,54 @@ async def get_time_report(token: str = Query(...),
         by_user[uid]["total_minutes"] += e.get("duration_minutes", 0) or 0
 
     return list(by_user.values())
+
+
+
+# ─── HR Data (Overtime / Vacation) ──────────────────────────────
+
+@router.get("/hr-data/{user_id}")
+async def get_hr_data(user_id: str, token: str = Query(...)):
+    """Get HR data (overtime, vacation) for a user. Admins get full data, employees only their own."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin" and caller["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+
+    year = datetime.now(timezone.utc).year
+    doc = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0})
+    if not doc:
+        doc = {"user_id": user_id, "year": year, "overtime_hours": 0, "vacation_days_total": 0, "vacation_days_used": 0}
+
+    remaining = (doc.get("vacation_days_total") or 0) - (doc.get("vacation_days_used") or 0)
+    doc["vacation_days_remaining"] = remaining
+    return doc
+
+
+@router.put("/hr-data/{user_id}")
+async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Body(...)):
+    """Admin only: update HR data for a user."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    year = datetime.now(timezone.utc).year
+    update = {}
+    if "overtime_hours" in data:
+        update["overtime_hours"] = float(data["overtime_hours"])
+    if "vacation_days_total" in data:
+        update["vacation_days_total"] = int(data["vacation_days_total"])
+    if "vacation_days_used" in data:
+        update["vacation_days_used"] = int(data["vacation_days_used"])
+
+    if update:
+        update["user_id"] = user_id
+        update["year"] = year
+        await db.hr_data.update_one(
+            {"user_id": user_id, "year": year},
+            {"$set": update},
+            upsert=True,
+        )
+
+    doc = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0})
+    remaining = (doc.get("vacation_days_total") or 0) - (doc.get("vacation_days_used") or 0)
+    doc["vacation_days_remaining"] = remaining
+    return doc

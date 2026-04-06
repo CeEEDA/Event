@@ -13,6 +13,12 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### HR-Daten (Überstunden / Urlaub) - FERTIG (2026-04-06)
+- Admin kann pro Mitarbeiter Überstunden (Std.), Urlaubstage (Gesamt/Jahr) und Genehmigten Urlaub eintragen
+- Berechnete Anzeige: Stundenkonto, Genehmigter Urlaub, Resturlaub
+- Daten im Hub für Mitarbeiter sichtbar (nur lesen)
+- DB-Collection: `hr_data` (user_id, year, overtime_hours, vacation_days_total, vacation_days_used)
+
 ### GPS-Zeiterfassung (Stempeln) - FERTIG (2026-04-05)
 - SwipeClock-Slider im Hub zum Ein-/Ausstempeln (verhindert versehentliches Stempeln)
 - GPS-Koordinaten werden bei jedem Stempelvorgang erfasst

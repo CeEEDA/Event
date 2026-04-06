@@ -33,6 +33,7 @@ export default function HubPage() {
   const [clockLoading, setClockLoading] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("");
   const [recentEntries, setRecentEntries] = useState([]);
+  const [hrData, setHrData] = useState(null);
   const [newTask, setNewTask] = useState({ title: "", priority: "medium", due_date: "", assigned_to: [] });
   const [newTaskFile, setNewTaskFile] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
@@ -66,6 +67,8 @@ export default function HubPage() {
     loadUnreadChats();
     loadClockStatus();
     loadRecentEntries();
+    // Load HR data
+    api.get(`/employee/hr-data/${user.id}?token=${token}`).then(r => setHrData(r.data)).catch(() => {});
     // Load own avatar
     api.get(`/employee/profile?token=${token}`).then(r => {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
@@ -349,7 +352,7 @@ export default function HubPage() {
                   </div>
                   <div>
                     <p className="text-[10px] font-medium text-sky-600 uppercase tracking-wider">Resturlaub</p>
-                    <p className="text-lg font-bold text-sky-800 leading-tight" data-testid="vacation-days">-- <span className="text-xs font-normal text-sky-500">Tage</span></p>
+                    <p className="text-lg font-bold text-sky-800 leading-tight" data-testid="vacation-days">{hrData ? hrData.vacation_days_remaining : "--"} <span className="text-xs font-normal text-sky-500">Tage</span></p>
                   </div>
                 </div>
 
@@ -360,7 +363,7 @@ export default function HubPage() {
                   </div>
                   <div>
                     <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">Überstunden</p>
-                    <p className="text-lg font-bold text-amber-800 leading-tight" data-testid="overtime-hours">-- <span className="text-xs font-normal text-amber-500">Std.</span></p>
+                    <p className="text-lg font-bold text-amber-800 leading-tight" data-testid="overtime-hours">{hrData ? hrData.overtime_hours : "--"} <span className="text-xs font-normal text-amber-500">Std.</span></p>
                   </div>
                 </div>
               </div>
