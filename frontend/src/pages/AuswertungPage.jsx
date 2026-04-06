@@ -73,7 +73,7 @@ export default function AuswertungPage() {
     <div className="min-h-screen bg-gray-50" data-testid="auswertung-page">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate("/verwaltung")} className="text-gray-500 hover:text-gray-700" data-testid="back-btn">
+          <button onClick={() => navigate("/verwaltung/auswertung")} className="text-gray-500 hover:text-gray-700" data-testid="back-btn">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <BarChart3 className="w-5 h-5 text-fuchsia-600" />

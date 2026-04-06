@@ -37,6 +37,7 @@ import ChatPage from "./pages/ChatPage";
 import ProfilePage from "./pages/ProfilePage";
 import EmployeeAdminPage from "./pages/EmployeeAdminPage";
 import AuswertungPage from "./pages/AuswertungPage";
+import AuswertungIndexPage from "./pages/AuswertungIndexPage";
 import ArbeitszeitPage from "./pages/ArbeitszeitPage";
 import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import "./App.css";
@@ -351,6 +352,14 @@ function AppRoutes() {
       />
       <Route
         path="/verwaltung/auswertung"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AuswertungIndexPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/auswertung/dokumente"
         element={
           <ProtectedRoute requiredRole="admin">
             <AuswertungPage />
