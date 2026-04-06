@@ -113,7 +113,7 @@ export default function AdminZeiterfassungPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <Clock className="w-5 h-5 text-green-600" />
-          <h1 className="text-lg font-semibold text-gray-900">Arbeitszeiterfassung</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Mitarbeiterverwaltung</h1>
         </div>
       </header>
 
