@@ -963,3 +963,31 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
     await db.vacation_entries.delete_one({"id": entry_id})
     await _recalc_vacation_used(user_id, year)
     return {"ok": True}
+
+
+# ── Work Schedule (Regelarbeitszeit) ──────────────────────
+
+WEEKDAYS = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"]
+
+@router.get("/work-schedule/{user_id}")
+async def get_work_schedule(user_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin" and caller["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+    doc = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        doc = {"user_id": user_id, "days": {}}
+    return doc
+
+@router.put("/work-schedule/{user_id}")
+async def update_work_schedule(user_id: str, token: str = Query(...), data: dict = Body(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    days = data.get("days", {})
+    await db.work_schedules.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "days": days, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}

@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
-  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive,
+  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -39,6 +39,12 @@ export default function AdminZeitDetailPage() {
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [archiveOpen, setArchiveOpen] = useState(null);
 
+  // Work Schedule
+  const WEEKDAYS = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"];
+  const WEEKDAY_LABELS = { montag: "Montag", dienstag: "Dienstag", mittwoch: "Mittwoch", donnerstag: "Donnerstag", freitag: "Freitag", samstag: "Samstag" };
+  const [schedule, setSchedule] = useState({});
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
   const months = Array.from({ length: 12 }, (_, i) => {
     const m = String(i + 1).padStart(2, "0");
     return { key: `${year}-${m}`, label: new Date(year, i).toLocaleDateString("de-DE", { month: "long" }), idx: i };
@@ -62,6 +68,39 @@ export default function AdminZeitDetailPage() {
 
   useEffect(() => { loadHrData(); }, [loadHrData]);
   useEffect(() => { loadVacationEntries(); }, [loadVacationEntries]);
+
+  // Load work schedule
+  const loadSchedule = useCallback(async () => {
+    try {
+      const res = await api.get(`/employee/work-schedule/${userId}?token=${token}`);
+      setSchedule(res.data?.days || {});
+    } catch {}
+  }, [token, userId]);
+  useEffect(() => { loadSchedule(); }, [loadSchedule]);
+
+  const updateDay = (day, field, value) => {
+    setSchedule(prev => ({ ...prev, [day]: { ...(prev[day] || {}), [field]: value } }));
+  };
+
+  const calcDayHours = (day) => {
+    const d = schedule[day];
+    if (!d?.start || !d?.end) return null;
+    const [sh, sm] = d.start.split(":").map(Number);
+    const [eh, em] = d.end.split(":").map(Number);
+    const totalMin = (eh * 60 + em) - (sh * 60 + sm) - (parseInt(d.break_min) || 0);
+    return totalMin > 0 ? totalMin : 0;
+  };
+
+  const weeklyTotalMin = WEEKDAYS.reduce((sum, d) => sum + (calcDayHours(d) || 0), 0);
+
+  const saveSchedule = async () => {
+    setSavingSchedule(true);
+    try {
+      await api.put(`/employee/work-schedule/${userId}?token=${token}`, { days: schedule });
+      toast.success("Regelarbeitszeit gespeichert");
+    } catch { toast.error("Fehler"); }
+    setSavingSchedule(false);
+  };
 
   // Load ALL time entries for the year
   useEffect(() => {
@@ -215,6 +254,67 @@ export default function AdminZeitDetailPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Regelarbeitszeit */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="work-schedule-section">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-indigo-600" />
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Regelarbeitszeit</p>
+            </div>
+            <div className="text-xs text-gray-500">Woche: <span className="font-bold text-indigo-700">{Math.floor(weeklyTotalMin / 60)}h {weeklyTotalMin % 60 > 0 ? `${weeklyTotalMin % 60}m` : ""}</span></div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] text-gray-400 uppercase tracking-wider">
+                  <th className="text-left pb-2 pr-2 font-semibold w-28">Tag</th>
+                  <th className="text-left pb-2 px-2 font-semibold">Beginn</th>
+                  <th className="text-left pb-2 px-2 font-semibold">Ende</th>
+                  <th className="text-left pb-2 px-2 font-semibold">Pause (Min.)</th>
+                  <th className="text-right pb-2 pl-2 font-semibold">Netto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {WEEKDAYS.map(day => {
+                  const d = schedule[day] || {};
+                  const mins = calcDayHours(day);
+                  const h = mins !== null ? Math.floor(mins / 60) : null;
+                  const m = mins !== null ? mins % 60 : null;
+                  return (
+                    <tr key={day} className="border-t border-gray-50">
+                      <td className="py-1.5 pr-2 font-medium text-gray-700">{WEEKDAY_LABELS[day]}</td>
+                      <td className="py-1.5 px-2">
+                        <input type="time" value={d.start || ""} onChange={e => updateDay(day, "start", e.target.value)}
+                          className="border border-gray-200 rounded px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid={`schedule-${day}-start`} />
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <input type="time" value={d.end || ""} onChange={e => updateDay(day, "end", e.target.value)}
+                          className="border border-gray-200 rounded px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid={`schedule-${day}-end`} />
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <input type="number" min="0" step="5" value={d.break_min || ""} onChange={e => updateDay(day, "break_min", e.target.value)}
+                          placeholder="0" className="border border-gray-200 rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid={`schedule-${day}-break`} />
+                      </td>
+                      <td className="py-1.5 pl-2 text-right">
+                        {mins !== null ? (
+                          <span className="font-bold text-indigo-700">{h}h{m > 0 ? ` ${m}m` : ""}</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <Button onClick={saveSchedule} disabled={savingSchedule} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="save-schedule-btn">
+              <Save className="w-3.5 h-3.5 mr-1.5" /> {savingSchedule ? "Speichern..." : "Speichern"}
+            </Button>
           </div>
         </div>
 

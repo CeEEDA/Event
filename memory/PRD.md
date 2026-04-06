@@ -22,6 +22,20 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Jahres-Summary-Karten: Stundenkonto, Genehmigt, Resturlaub, Krankheit
 - GPS-Pins für Ein-/Ausstempeln sichtbar (nur Admin)
 
+
+### Regelarbeitszeit (Standard-Arbeitszeiten) - FERTIG (2026-04-06)
+- Admin kann pro Mitarbeiter Mo-Sa Standard-Arbeitszeiten eintragen: Beginn, Ende, Pausenzeit
+- Automatische Netto-Berechnung pro Tag und Wochensumme
+- Backend: `work_schedules` Collection, GET/PUT `/api/employee/work-schedule/{userId}`
+- Frontend: Tabelle in AdminZeitDetailPage mit Speichern-Button
+- Basis für Überstundenberechnung: Stunden über Regelzeit = Überstunden
+
+### Archiv-Funktion für Abgelehnte Anträge - FERTIG (2026-04-06)
+- Abgelehnt/Zurückgezogen-Sektion zeigt nur aktuelles Jahr
+- Archiv-Sektion (klappbar nach Jahr) für vergangene Jahre
+- Am 01.01. wandern alte Einträge automatisch ins Archiv
+- Auf Admin-Detailseite + Mitarbeiter-Arbeitszeitseite
+
 ### Antrags-Tasks Genehmigt/Abgelehnt Buttons - FERTIG (2026-04-06)
 - Antrags-Tasks zeigen "Genehmigt" und "Abgelehnt" Buttons statt Häkchen
 - Mülleimer-Button bei Antrags-Tasks entfernt
