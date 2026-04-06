@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import {
-  ArrowLeft, Clock, Calendar, MapPin, ChevronDown, ChevronUp,
+  ArrowLeft, Clock, Calendar, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 export default function ArbeitszeitPage() {
@@ -102,29 +102,6 @@ export default function ArbeitszeitPage() {
                     <p className="text-sm font-semibold text-gray-900">{formatDuration(e.duration_minutes)}</p>
                   </div>
                 </div>
-                {/* GPS */}
-                {(e.clock_in_lat || e.clock_out_lat) && (
-                  <div className="mt-2 flex gap-4 text-[10px] text-gray-400">
-                    {e.clock_in_lat && (
-                      <a
-                        href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`}
-                        target="_blank" rel="noreferrer"
-                        className="flex items-center gap-0.5 hover:text-fuchsia-600"
-                      >
-                        <MapPin className="w-2.5 h-2.5" /> Ein: {e.clock_in_lat?.toFixed(4)}, {e.clock_in_lng?.toFixed(4)}
-                      </a>
-                    )}
-                    {e.clock_out_lat && (
-                      <a
-                        href={`https://www.google.com/maps?q=${e.clock_out_lat},${e.clock_out_lng}`}
-                        target="_blank" rel="noreferrer"
-                        className="flex items-center gap-0.5 hover:text-fuchsia-600"
-                      >
-                        <MapPin className="w-2.5 h-2.5" /> Aus: {e.clock_out_lat?.toFixed(4)}, {e.clock_out_lng?.toFixed(4)}
-                      </a>
-                    )}
-                  </div>
-                )}
               </div>
             ))}
           </div>
