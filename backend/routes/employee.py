@@ -1024,10 +1024,246 @@ async def update_work_schedule(user_id: str, token: str = Query(...), data: dict
     caller = await _get_user(token)
     if caller.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
-    days = data.get("days", {})
+    update_fields = {"user_id": user_id, "updated_at": datetime.now(timezone.utc).isoformat()}
+    if "days" in data:
+        update_fields["days"] = data["days"]
+    if "hourly_wage" in data:
+        update_fields["hourly_wage"] = float(data["hourly_wage"])
+    if "surcharges" in data:
+        update_fields["surcharges"] = data["surcharges"]
     await db.work_schedules.update_one(
         {"user_id": user_id},
-        {"$set": {"user_id": user_id, "days": days, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": update_fields},
         upsert=True,
     )
     return {"ok": True}
+
+
+# ── Payroll Calculation ──────────────────────────────────
+
+import zoneinfo
+from calendar import monthrange
+import csv
+import io
+
+BERLIN = zoneinfo.ZoneInfo("Europe/Berlin")
+
+# German public holidays (fixed dates, nationwide)
+def _get_holidays(year):
+    """Return dict of date_str -> holiday_name for a given year."""
+    from datetime import date, timedelta
+    holidays = {}
+    # Fixed
+    for d, name in [
+        (date(year, 1, 1), "Neujahr"),
+        (date(year, 5, 1), "Tag der Arbeit"),
+        (date(year, 10, 3), "Tag der Deutschen Einheit"),
+        (date(year, 12, 25), "1. Weihnachtsfeiertag"),
+        (date(year, 12, 26), "2. Weihnachtsfeiertag"),
+    ]:
+        holidays[d.isoformat()] = name
+    # Easter-based (Gauss algorithm)
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d_ = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d_ - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month_e = (h + l - 7 * m + 114) // 31
+    day_e = ((h + l - 7 * m + 114) % 31) + 1
+    easter = date(year, month_e, day_e)
+    for offset, name in [
+        (-2, "Karfreitag"), (1, "Ostermontag"),
+        (39, "Christi Himmelfahrt"), (50, "Pfingstmontag"),
+    ]:
+        d2 = easter + timedelta(days=offset)
+        holidays[d2.isoformat()] = name
+    return holidays
+
+SPECIAL_HOLIDAY_DATES = ["12-24", "12-25", "12-26", "05-01"]  # 150% dates
+
+def _is_special_holiday(date_str):
+    return date_str[5:] in SPECIAL_HOLIDAY_DATES
+
+def _calc_night_minutes(clock_in_local, clock_out_local):
+    """Calculate minutes worked between 20:00 and 06:00 (night hours)."""
+    from datetime import date as dt_date, timedelta
+    night_min = 0
+    current = clock_in_local
+    while current < clock_out_local:
+        hour = current.hour
+        if hour >= 20 or hour < 6:
+            next_min = min(current + timedelta(minutes=1), clock_out_local)
+            night_min += (next_min - current).total_seconds() / 60
+            current = next_min
+        else:
+            # Skip to 20:00 same day or next iteration
+            if hour < 20:
+                jump_to = current.replace(hour=20, minute=0, second=0, microsecond=0)
+                if jump_to > clock_out_local:
+                    break
+                current = jump_to
+            else:
+                current += timedelta(minutes=1)
+    return round(night_min)
+
+
+@router.get("/payroll/{user_id}")
+async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(...)):
+    """Calculate payroll for a user for a given month (YYYY-MM)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin" and caller["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+
+    year_num, month_num = int(month[:4]), int(month[5:7])
+    _, days_in_month = monthrange(year_num, month_num)
+    date_from = f"{month}-01"
+    date_to = f"{month}-{days_in_month:02d}"
+
+    # Get config
+    ws = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+    hourly_wage = (ws or {}).get("hourly_wage", 0)
+    surcharges = (ws or {}).get("surcharges", {})
+    sunday_pct = float(surcharges.get("sunday", 50))
+    holiday_pct = float(surcharges.get("holiday", 125))
+    special_pct = float(surcharges.get("special_holiday", 150))
+    night_pct = float(surcharges.get("night", 25))
+
+    holidays = _get_holidays(year_num)
+
+    # Get time entries for the month
+    entries = await db.time_entries.find(
+        {"user_id": user_id, "date": {"$gte": date_from, "$lte": date_to}, "clock_out": {"$ne": None}},
+        {"_id": 0}
+    ).sort("clock_in", 1).to_list(500)
+
+    rows = []
+    totals = {"regular_min": 0, "sunday_min": 0, "holiday_min": 0, "special_min": 0, "night_min": 0,
+              "regular_wage": 0, "sunday_wage": 0, "holiday_wage": 0, "special_wage": 0, "night_wage": 0}
+
+    for e in entries:
+        ci = datetime.fromisoformat(e["clock_in"])
+        co = datetime.fromisoformat(e["clock_out"])
+        if ci.tzinfo is None:
+            ci = ci.replace(tzinfo=timezone.utc)
+        if co.tzinfo is None:
+            co = co.replace(tzinfo=timezone.utc)
+        ci_local = ci.astimezone(BERLIN)
+        co_local = co.astimezone(BERLIN)
+        total_min = round((co - ci).total_seconds() / 60)
+        date_str = ci_local.strftime("%Y-%m-%d")
+        weekday = ci_local.weekday()  # 0=Mon, 6=Sun
+
+        night_min = _calc_night_minutes(ci_local, co_local)
+        is_holiday = date_str in holidays
+        is_special = _is_special_holiday(date_str)
+        is_sunday = weekday == 6
+
+        # Determine surcharge category (highest wins for base, night is additive)
+        if is_special:
+            surcharge_type = "special"
+            surcharge_min = total_min
+            surcharge_pct = special_pct
+        elif is_holiday:
+            surcharge_type = "holiday"
+            surcharge_min = total_min
+            surcharge_pct = holiday_pct
+        elif is_sunday:
+            surcharge_type = "sunday"
+            surcharge_min = total_min
+            surcharge_pct = sunday_pct
+        else:
+            surcharge_type = "regular"
+            surcharge_min = total_min
+            surcharge_pct = 0
+
+        hours = total_min / 60
+        base_wage = round(hours * hourly_wage, 2)
+        surcharge_wage = round(base_wage * surcharge_pct / 100, 2)
+        night_hours = night_min / 60
+        night_wage = round(night_hours * hourly_wage * night_pct / 100, 2)
+
+        row = {
+            "date": date_str,
+            "weekday": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][weekday],
+            "clock_in": ci_local.strftime("%H:%M"),
+            "clock_out": co_local.strftime("%H:%M"),
+            "total_min": total_min,
+            "total_hours": round(hours, 2),
+            "surcharge_type": surcharge_type,
+            "surcharge_pct": surcharge_pct,
+            "night_min": night_min,
+            "base_wage": base_wage,
+            "surcharge_wage": surcharge_wage,
+            "night_wage": night_wage,
+            "total_wage": round(base_wage + surcharge_wage + night_wage, 2),
+            "holiday_name": holidays.get(date_str, ""),
+        }
+        rows.append(row)
+
+        totals[f"{surcharge_type}_min"] = totals.get(f"{surcharge_type}_min", 0) + total_min
+        totals[f"{surcharge_type}_wage"] = totals.get(f"{surcharge_type}_wage", 0) + surcharge_wage
+        totals["regular_min"] += total_min
+        totals["regular_wage"] += base_wage
+        totals["night_min"] += night_min
+        totals["night_wage"] += night_wage
+
+    totals = {k: round(v, 2) for k, v in totals.items()}
+    total_gross = round(totals["regular_wage"] + totals["sunday_wage"] + totals["holiday_wage"] + totals["special_wage"] + totals["night_wage"], 2)
+
+    return {
+        "month": month,
+        "user_id": user_id,
+        "hourly_wage": hourly_wage,
+        "surcharges": {"sunday": sunday_pct, "holiday": holiday_pct, "special_holiday": special_pct, "night": night_pct},
+        "rows": rows,
+        "totals": totals,
+        "total_gross": total_gross,
+    }
+
+
+@router.get("/payroll/{user_id}/csv")
+async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Query(...)):
+    """Export payroll as CSV."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    payroll = await get_payroll(user_id, month, token)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "name": 1})
+    name = user.get("name", user_id) if user else user_id
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow([f"Lohnabrechnung {name} - {month}"])
+    writer.writerow([f"Stundenlohn: {payroll['hourly_wage']} EUR"])
+    writer.writerow([])
+    writer.writerow(["Datum", "Tag", "Beginn", "Ende", "Stunden", "Typ", "Zuschlag %", "Nacht Min.", "Grundlohn", "Zuschlag", "Nachtzuschlag", "Gesamt", "Feiertag"])
+    for r in payroll["rows"]:
+        writer.writerow([
+            r["date"], r["weekday"], r["clock_in"], r["clock_out"],
+            f"{r['total_hours']:.2f}", r["surcharge_type"], f"{r['surcharge_pct']}%",
+            r["night_min"], f"{r['base_wage']:.2f}", f"{r['surcharge_wage']:.2f}",
+            f"{r['night_wage']:.2f}", f"{r['total_wage']:.2f}", r["holiday_name"],
+        ])
+    writer.writerow([])
+    t = payroll["totals"]
+    writer.writerow(["Zusammenfassung"])
+    writer.writerow(["Grundlohn gesamt", f"{t['regular_wage']:.2f} EUR"])
+    writer.writerow(["Sonntagszuschlag", f"{t.get('sunday_wage', 0):.2f} EUR"])
+    writer.writerow(["Feiertagszuschlag", f"{t.get('holiday_wage', 0):.2f} EUR"])
+    writer.writerow(["Sonderfeiertag", f"{t.get('special_wage', 0):.2f} EUR"])
+    writer.writerow(["Nachtzuschlag", f"{t.get('night_wage', 0):.2f} EUR"])
+    writer.writerow(["BRUTTO GESAMT", f"{payroll['total_gross']:.2f} EUR"])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=lohn_{name}_{month}.csv"}
+    )

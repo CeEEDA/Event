@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
+  DollarSign, Download, Moon, Sun,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -44,6 +45,14 @@ export default function AdminZeitDetailPage() {
   const WEEKDAY_LABELS = { montag: "Montag", dienstag: "Dienstag", mittwoch: "Mittwoch", donnerstag: "Donnerstag", freitag: "Freitag", samstag: "Samstag" };
   const [schedule, setSchedule] = useState({});
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [hourlyWage, setHourlyWage] = useState("");
+  const [surcharges, setSurcharges] = useState({ sunday: 50, holiday: 125, special_holiday: 150, night: 25 });
+  const [payroll, setPayroll] = useState(null);
+  const [payrollMonth, setPayrollMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [loadingPayroll, setLoadingPayroll] = useState(false);
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const m = String(i + 1).padStart(2, "0");
@@ -74,6 +83,8 @@ export default function AdminZeitDetailPage() {
     try {
       const res = await api.get(`/employee/work-schedule/${userId}?token=${token}`);
       setSchedule(res.data?.days || {});
+      if (res.data?.hourly_wage) setHourlyWage(res.data.hourly_wage);
+      if (res.data?.surcharges) setSurcharges(prev => ({ ...prev, ...res.data.surcharges }));
     } catch {}
   }, [token, userId]);
   useEffect(() => { loadSchedule(); }, [loadSchedule]);
@@ -96,10 +107,29 @@ export default function AdminZeitDetailPage() {
   const saveSchedule = async () => {
     setSavingSchedule(true);
     try {
-      await api.put(`/employee/work-schedule/${userId}?token=${token}`, { days: schedule });
-      toast.success("Regelarbeitszeit gespeichert");
+      await api.put(`/employee/work-schedule/${userId}?token=${token}`, {
+        days: schedule,
+        hourly_wage: parseFloat(hourlyWage) || 0,
+        surcharges,
+      });
+      toast.success("Regelarbeitszeit & Lohndaten gespeichert");
     } catch { toast.error("Fehler"); }
     setSavingSchedule(false);
+  };
+
+  const loadPayroll = useCallback(async () => {
+    if (!payrollMonth) return;
+    setLoadingPayroll(true);
+    try {
+      const res = await api.get(`/employee/payroll/${userId}?month=${payrollMonth}&token=${token}`);
+      setPayroll(res.data);
+    } catch { toast.error("Fehler beim Laden der Lohnabrechnung"); }
+    setLoadingPayroll(false);
+  }, [token, userId, payrollMonth]);
+
+  const downloadCsv = async () => {
+    const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/payroll/${userId}/csv?month=${payrollMonth}&token=${token}`;
+    window.open(url, "_blank");
   };
 
   // Load ALL time entries for the year
@@ -311,11 +341,130 @@ export default function AdminZeitDetailPage() {
               </tbody>
             </table>
           </div>
+          {/* Hourly wage & surcharges */}
+          <div className="mt-4 pt-3 border-t border-gray-100 space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div>
+                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Stundenlohn (EUR)</label>
+                <input type="number" step="0.01" min="0" value={hourlyWage} onChange={e => setHourlyWage(e.target.value)}
+                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="hourly-wage" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Sonntagszuschlag %</label>
+                <input type="number" min="0" value={surcharges.sunday} onChange={e => setSurcharges(p => ({ ...p, sunday: parseFloat(e.target.value) || 0 }))}
+                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-sunday" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Feiertagszuschlag %</label>
+                <input type="number" min="0" value={surcharges.holiday} onChange={e => setSurcharges(p => ({ ...p, holiday: parseFloat(e.target.value) || 0 }))}
+                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-holiday" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Bes. Feiertag %</label>
+                <input type="number" min="0" value={surcharges.special_holiday} onChange={e => setSurcharges(p => ({ ...p, special_holiday: parseFloat(e.target.value) || 0 }))}
+                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-special" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Nachtzuschlag %</label>
+                <input type="number" min="0" value={surcharges.night} onChange={e => setSurcharges(p => ({ ...p, night: parseFloat(e.target.value) || 0 }))}
+                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-night" />
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400">Bes. Feiertage: 24.12. ab 14 Uhr, 25./26.12., 1. Mai | Nacht: 20:00–06:00 Uhr</p>
+          </div>
+
           <div className="mt-3 pt-3 border-t border-gray-100">
             <Button onClick={saveSchedule} disabled={savingSchedule} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="save-schedule-btn">
               <Save className="w-3.5 h-3.5 mr-1.5" /> {savingSchedule ? "Speichern..." : "Speichern"}
             </Button>
           </div>
+        </div>
+
+        {/* Payroll / Lohnabrechnung */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="payroll-section">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-emerald-600" />
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Lohnabrechnung</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="month" value={payrollMonth} onChange={e => setPayrollMonth(e.target.value)}
+                className="border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400" data-testid="payroll-month" />
+              <Button onClick={loadPayroll} size="sm" variant="outline" disabled={loadingPayroll} data-testid="calc-payroll-btn">
+                {loadingPayroll ? "Berechne..." : "Berechnen"}
+              </Button>
+              {payroll && (
+                <Button onClick={downloadCsv} size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" data-testid="download-csv-btn">
+                  <Download className="w-3.5 h-3.5 mr-1" /> CSV
+                </Button>
+              )}
+            </div>
+          </div>
+          {payroll && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[10px] text-gray-400 uppercase tracking-wider">
+                      <th className="text-left pb-2 pr-1 font-semibold">Datum</th>
+                      <th className="text-left pb-2 px-1 font-semibold">Tag</th>
+                      <th className="text-left pb-2 px-1 font-semibold">Von</th>
+                      <th className="text-left pb-2 px-1 font-semibold">Bis</th>
+                      <th className="text-right pb-2 px-1 font-semibold">Std.</th>
+                      <th className="text-left pb-2 px-1 font-semibold">Typ</th>
+                      <th className="text-right pb-2 px-1 font-semibold">Nacht</th>
+                      <th className="text-right pb-2 px-1 font-semibold">Grund</th>
+                      <th className="text-right pb-2 px-1 font-semibold">Zuschlag</th>
+                      <th className="text-right pb-2 pl-1 font-semibold">Gesamt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payroll.rows.map((r, i) => {
+                      const typeColors = {
+                        regular: "text-gray-500", sunday: "text-orange-600", holiday: "text-red-600", special: "text-red-700 font-bold",
+                      };
+                      const typeLabels = { regular: "Normal", sunday: "Sonntag", holiday: "Feiertag", special: "Bes. Feiertag" };
+                      return (
+                        <tr key={i} className="border-t border-gray-50">
+                          <td className="py-1 pr-1 text-gray-700">{new Date(r.date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</td>
+                          <td className="py-1 px-1 text-gray-500">{r.weekday}</td>
+                          <td className="py-1 px-1">{r.clock_in}</td>
+                          <td className="py-1 px-1">{r.clock_out}</td>
+                          <td className="py-1 px-1 text-right font-medium">{r.total_hours.toFixed(1)}</td>
+                          <td className={`py-1 px-1 text-[10px] font-semibold ${typeColors[r.surcharge_type]}`}>
+                            {typeLabels[r.surcharge_type]}{r.holiday_name ? ` (${r.holiday_name})` : ""}
+                          </td>
+                          <td className="py-1 px-1 text-right">{r.night_min > 0 ? <span className="text-violet-600">{Math.round(r.night_min / 6) / 10}h</span> : "—"}</td>
+                          <td className="py-1 px-1 text-right">{r.base_wage.toFixed(2)}€</td>
+                          <td className="py-1 px-1 text-right text-orange-600">{(r.surcharge_wage + r.night_wage) > 0 ? `+${(r.surcharge_wage + r.night_wage).toFixed(2)}€` : "—"}</td>
+                          <td className="py-1 pl-1 text-right font-bold">{r.total_wage.toFixed(2)}€</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="bg-gray-50 rounded-lg p-2.5 text-center">
+                  <p className="text-[10px] text-gray-400 uppercase font-semibold">Grundlohn</p>
+                  <p className="text-lg font-bold text-gray-800">{payroll.totals.regular_wage?.toFixed(2)}€</p>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-2.5 text-center">
+                  <p className="text-[10px] text-orange-500 uppercase font-semibold">Zuschläge</p>
+                  <p className="text-lg font-bold text-orange-700">
+                    {((payroll.totals.sunday_wage || 0) + (payroll.totals.holiday_wage || 0) + (payroll.totals.special_wage || 0) + (payroll.totals.night_wage || 0)).toFixed(2)}€
+                  </p>
+                </div>
+                <div className="bg-emerald-50 rounded-lg p-2.5 text-center">
+                  <p className="text-[10px] text-emerald-500 uppercase font-semibold">Brutto Gesamt</p>
+                  <p className="text-lg font-bold text-emerald-700">{payroll.total_gross?.toFixed(2)}€</p>
+                </div>
+              </div>
+            </>
+          )}
+          {!payroll && !loadingPayroll && (
+            <p className="text-sm text-gray-400 text-center py-4">Monat auswählen und "Berechnen" klicken</p>
+          )}
         </div>
 
         {/* Vacation Entries */}
