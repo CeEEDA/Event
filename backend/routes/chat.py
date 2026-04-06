@@ -580,6 +580,33 @@ async def update_task(task_id: str, body: dict, token: str = Query(...)):
 
     await db.tasks.update_one({"id": task_id}, {"$set": updates})
     task.update(updates)
+
+    # Auto-approve linked time-off request when task is completed
+    if body.get("completed") and task.get("time_off_request_id"):
+        req_id = task["time_off_request_id"]
+        req = await db.time_off_requests.find_one({"id": req_id})
+        if req and req.get("status") == "pending":
+            await db.time_off_requests.update_one(
+                {"id": req_id},
+                {"$set": {"status": "approved", "resolved_at": datetime.now(timezone.utc).isoformat(), "resolved_by": user["id"]}}
+            )
+            # If urlaub, add vacation entry
+            if req.get("type") == "urlaub" and req.get("all_day") and req.get("days", 0) > 0:
+                from routes.employee import _recalc_vacation_used, _count_weekdays
+                year = int(req["start_date"][:4])
+                vac_entry = {
+                    "id": str(uuid.uuid4()),
+                    "user_id": req["user_id"],
+                    "year": year,
+                    "start_date": req["start_date"],
+                    "end_date": req["end_date"],
+                    "days": req["days"],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "from_request": req_id,
+                }
+                await db.vacation_entries.insert_one(vac_entry)
+                await _recalc_vacation_used(req["user_id"], year)
+
     return task
 
 
