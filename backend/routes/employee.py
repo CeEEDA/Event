@@ -1267,3 +1267,107 @@ async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Qu
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=lohn_{name}_{month}.csv"}
     )
+
+
+# ── Employee Notes (Mitarbeiter-Notizen) ─────────────────
+
+@router.get("/notes/{user_id}")
+async def get_notes(user_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    notes = await db.employee_notes.find({"user_id": user_id, "deleted": {"$ne": True}}, {"_id": 0}).sort("date", -1).to_list(500)
+    return notes
+
+@router.post("/notes/{user_id}")
+async def create_note(user_id: str, token: str = Query(...), data: dict = Body(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    note = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "title": data.get("title", ""),
+        "text": data.get("text", ""),
+        "date": data.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+        "created_by": caller["id"],
+        "created_by_name": caller.get("name", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "files": [],
+    }
+    await db.employee_notes.insert_one(note)
+    return {"id": note["id"], "ok": True}
+
+@router.put("/notes/entry/{note_id}")
+async def update_note(note_id: str, token: str = Query(...), data: dict = Body(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    for key in ("title", "text", "date"):
+        if key in data:
+            updates[key] = data[key]
+    await db.employee_notes.update_one({"id": note_id}, {"$set": updates})
+    return {"ok": True}
+
+@router.delete("/notes/entry/{note_id}")
+async def delete_note(note_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    await db.employee_notes.update_one({"id": note_id}, {"$set": {"deleted": True}})
+    return {"ok": True}
+
+@router.post("/notes/entry/{note_id}/upload")
+async def upload_note_file(note_id: str, token: str = Query(...), file: UploadFile = File(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    note = await db.employee_notes.find_one({"id": note_id})
+    if not note:
+        raise HTTPException(status_code=404, detail="Notiz nicht gefunden")
+
+    file_bytes = await file.read()
+    file_id = str(uuid.uuid4())
+    storage_path = f"employee-notes/{note['user_id']}/{note_id}/{file_id}_{file.filename}"
+    put_obj, _ = _get_storage_fns()
+    put_obj(storage_path, file_bytes, file.content_type or "application/octet-stream")
+
+    file_meta = {
+        "id": file_id,
+        "filename": file.filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "size": len(file_bytes),
+        "storage_path": storage_path,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.employee_notes.update_one({"id": note_id}, {"$push": {"files": file_meta}})
+    return file_meta
+
+@router.get("/notes/files/{note_id}/{file_id}")
+async def download_note_file(note_id: str, file_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    note = await db.employee_notes.find_one({"id": note_id})
+    if not note:
+        raise HTTPException(status_code=404, detail="Notiz nicht gefunden")
+    file_meta = next((f for f in note.get("files", []) if f["id"] == file_id), None)
+    if not file_meta:
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    _, get_obj = _get_storage_fns()
+    result = get_obj(file_meta["storage_path"])
+    if not result:
+        raise HTTPException(status_code=404, detail="Datei nicht im Storage")
+    data, ct = result
+    return Response(content=data, media_type=ct or file_meta["content_type"],
+                    headers={"Content-Disposition": f"inline; filename=\"{file_meta['filename']}\""})
+
+@router.delete("/notes/files/{note_id}/{file_id}")
+async def delete_note_file(note_id: str, file_id: str, token: str = Query(...)):
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    await db.employee_notes.update_one({"id": note_id}, {"$pull": {"files": {"id": file_id}}})
+    return {"ok": True}

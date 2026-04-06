@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
-  DollarSign, Download, Moon, Sun,
+  DollarSign, Download, Moon, Sun, StickyNote,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -230,7 +230,12 @@ export default function AdminZeitDetailPage() {
           <h1 className="text-lg font-semibold text-gray-900">{userName || "Mitarbeiter"}</h1>
           <span className="text-gray-300">/</span>
           <span className="text-sm text-gray-500">Arbeitszeit</span>
-          <span className="text-sm text-gray-400 ml-auto">{year}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button onClick={() => navigate(`/verwaltung/zeiterfassung/${userId}/notizen`)} size="sm" variant="outline" className="text-amber-700 border-amber-300 hover:bg-amber-50" data-testid="notes-btn">
+              <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Notizen
+            </Button>
+            <span className="text-sm text-gray-400">{year}</span>
+          </div>
         </div>
       </header>
 
