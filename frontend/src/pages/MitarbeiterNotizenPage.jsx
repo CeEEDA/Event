@@ -19,6 +19,8 @@ export default function MitarbeiterNotizenPage() {
   const [expandedNote, setExpandedNote] = useState(null);
   const [editing, setEditing] = useState(null);
   const [newNote, setNewNote] = useState(null);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [dragging, setDragging] = useState(false);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -39,8 +41,16 @@ export default function MitarbeiterNotizenPage() {
     if (!newNote?.title?.trim()) return toast.error("Titel erforderlich");
     try {
       const res = await api.post(`/employee/notes/${userId}?token=${token}`, newNote);
+      const noteId = res.data.id;
+      // Upload pending files
+      for (const f of pendingFiles) {
+        const form = new FormData();
+        form.append("file", f);
+        await api.post(`/employee/notes/entry/${noteId}/upload?token=${token}`, form);
+      }
       setNewNote(null);
-      setExpandedNote(res.data.id);
+      setPendingFiles([]);
+      setExpandedNote(noteId);
       loadNotes();
       toast.success("Notiz erstellt");
     } catch { toast.error("Fehler"); }
@@ -103,7 +113,11 @@ export default function MitarbeiterNotizenPage() {
 
         {/* New Note */}
         {newNote ? (
-          <div className="bg-white rounded-xl border-2 border-amber-300 p-4 mb-4 space-y-3" data-testid="new-note-form">
+          <div className={`bg-white rounded-xl border-2 p-4 mb-4 space-y-3 transition-colors ${dragging ? "border-amber-500 bg-amber-50" : "border-amber-300"}`}
+            data-testid="new-note-form"
+            onDragOver={e => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={e => { e.preventDefault(); setDragging(false); const files = Array.from(e.dataTransfer.files); setPendingFiles(p => [...p, ...files]); }}>
             <input type="text" placeholder="Titel / Betreff" value={newNote.title || ""} onChange={e => setNewNote(p => ({ ...p, title: e.target.value }))}
               className="w-full text-base font-semibold border-b border-gray-200 pb-2 focus:outline-none focus:border-amber-400" autoFocus data-testid="new-note-title" />
             <div className="flex gap-3">
@@ -112,11 +126,36 @@ export default function MitarbeiterNotizenPage() {
             </div>
             <textarea placeholder="Gesprächsnotiz..." value={newNote.text || ""} onChange={e => setNewNote(p => ({ ...p, text: e.target.value }))}
               rows={4} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400 resize-y" data-testid="new-note-text" />
+
+            {/* Drop zone + pending files */}
+            <div className={`border-2 border-dashed rounded-lg p-3 text-center transition-colors ${dragging ? "border-amber-500 bg-amber-100" : "border-gray-200"}`}>
+              <label className="cursor-pointer">
+                <input type="file" multiple className="hidden" onChange={e => { setPendingFiles(p => [...p, ...Array.from(e.target.files)]); e.target.value = ""; }} data-testid="new-note-file-input" />
+                <div className="flex flex-col items-center gap-1">
+                  <Paperclip className="w-5 h-5 text-gray-400" />
+                  <span className="text-xs text-gray-400">Dateien hierher ziehen oder <span className="text-amber-600 font-medium">auswählen</span></span>
+                </div>
+              </label>
+            </div>
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {pendingFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
+                    {f.type?.startsWith("image/") ? <Image className="w-3.5 h-3.5 text-amber-500" /> : <FileText className="w-3.5 h-3.5 text-amber-500" />}
+                    <span className="text-xs text-gray-700 max-w-[150px] truncate">{f.name}</span>
+                    <button onClick={() => setPendingFiles(p => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex gap-2">
               <Button onClick={createNote} size="sm" className="bg-amber-600 hover:bg-amber-700" data-testid="save-new-note-btn">
                 <Save className="w-3.5 h-3.5 mr-1" /> Erstellen
               </Button>
-              <Button onClick={() => setNewNote(null)} size="sm" variant="outline" data-testid="cancel-new-note-btn">Abbrechen</Button>
+              <Button onClick={() => { setNewNote(null); setPendingFiles([]); }} size="sm" variant="outline" data-testid="cancel-new-note-btn">Abbrechen</Button>
             </div>
           </div>
         ) : (
@@ -186,18 +225,24 @@ export default function MitarbeiterNotizenPage() {
                     )}
 
                     {/* Files */}
-                    <div className="border-t border-gray-100 pt-3">
+                    <div className="border-t border-gray-100 pt-3"
+                      onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("bg-amber-50"); }}
+                      onDragLeave={e => { e.currentTarget.classList.remove("bg-amber-50"); }}
+                      onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove("bg-amber-50"); Array.from(e.dataTransfer.files).forEach(f => uploadFile(note.id, f)); }}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Dokumente & Bilder</span>
                         <label className="cursor-pointer">
-                          <input type="file" className="hidden" onChange={e => { if (e.target.files[0]) uploadFile(note.id, e.target.files[0]); e.target.value = ""; }} data-testid={`upload-file-${note.id}`} />
+                          <input type="file" multiple className="hidden" onChange={e => { Array.from(e.target.files).forEach(f => uploadFile(note.id, f)); e.target.value = ""; }} data-testid={`upload-file-${note.id}`} />
                           <span className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium">
                             <Plus className="w-3 h-3" /> Datei hinzufügen
                           </span>
                         </label>
                       </div>
                       {(note.files || []).length === 0 && (
-                        <p className="text-xs text-gray-300 italic">Keine Dateien</p>
+                        <div className="border-2 border-dashed border-gray-200 rounded-lg p-3 text-center">
+                          <Paperclip className="w-4 h-4 text-gray-300 mx-auto mb-1" />
+                          <p className="text-xs text-gray-300">Dateien hierher ziehen oder oben auswählen</p>
+                        </div>
                       )}
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {(note.files || []).map(f => (
