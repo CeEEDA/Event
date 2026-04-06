@@ -1,40 +1,38 @@
 <analysis>**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and management system, which now includes an AI-powered Document Management System, Hub Dashboard, Team Chat, and Task Management. 
-*PRODUCT REQUIREMENTS (New in this session):* Build an internal HR / Employee Management module independent of external tools like CrewBrain. This includes:
-- Employee profiles (avatar, address, phone, changeable passwords).
-- Employee document management (uploading IDs, driver's licenses, certificates via Drag & Drop for PDFs/Images).
-- AI-based expiry date detection for uploaded employee documents, with a manual fallback dialog if the AI fails.
-- Document expiry evaluation (Auswertung) dashboard for admins.
-- GPS-tracked Time Tracking (Zeiterfassung) via a Swipe-to-Clock slider to prevent accidental clock-ins.
+The user is building a comprehensive Kirmes (Fairground) billing and management system. The current focus is the internal HR / Employee Management module.
+*PRODUCT REQUIREMENTS (Updated in this session):*
+- GPS-tracked Time Tracking (Zeiterfassung) via a Swipe-to-Clock slider (Employees see times, Admins see times + GPS).
+- HR Data Management: Admins can track and manage employee overtime, total vacation days, and approved vacations.
+- Calendar-based Vacation System: Admins can enter start/end dates, and the system automatically calculates workdays (skipping weekends) and deducts from total vacation.
+- Time-Off Requests (Arbeitsfreie Zeit beantragen): Employees can request time off (Sick, Vacation, Overtime reduction) via the Hub. This creates a Task for Admins. Approving the Task automatically approves the request and handles vacation math.
+- Monthly Accordion Views: Both employees () and Admins () need a clean, expandable monthly view showing time stamps, sickness, and vacation with summary badges.
 
 **User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
 
 **what currently exists?** 
-- The 500 error for Chat and Task file downloads is fixed.
-- Tasks UI in Hub redesigned with Aktuell / Erledigt / Alle tabs and search functionality.
-- Chat UI enhanced with a slide-over detail panel (members, files, images), group avatar uploads, and an iOS-compatible camera button.
-- Employee Profile page () built for users to manage their data and upload documents.
-- Admin Page () enhanced to display employee profile data and allow Admins to manage/upload employee documents via Drag & Drop directly in the expandable user rows.
-- Document Expiry Evaluation Page () added to track expiring employee documents.
-- AI integration ( + Gemini 2.5 Flash) successfully parses expiry dates from both PDFs and images.
-- Time Tracking (Zeiterfassung) backend and frontend components (Swipe-to-Clock slider, individual user dashboard, and admin evaluation tab) have just been implemented.
+- SwipeClock and Time-Off Request UI added to the Employee Hub.
+- Employee Time Tracking view () rebuilt into an expandable monthly accordion showing stamps, sick days, vacations, and summary badges.
+- Admin User Management () shows the current month's time tracking inline.
+- Dedicated Admin Time Tracking Page () added, featuring a live Presence bar (who is currently clocked in) and summary badges per employee.
+- HR backend () updated with collections for , , and .
+- Task-to-TimeOff webhook/logic implemented (Completing an admin task automatically approves the linked employee time-off request).
 
 **Last working item**:
-    - Last item agent was working: Implementing the Time Tracking (Zeiterfassung) feature. The agent built the backend routes to save clock-in/out times with GPS coordinates, created a  component for the Hub, added an  page, and an Arbeitszeit tab to the Admin Auswertung page. The agent just took screenshots to verify the UI.
-    - Status: IN PROGRESS (Almost complete, just needs to be reviewed and finished)
-    - Agent Testing Done: Y (Backend script and screenshots completed successfully)
-    - Which testing method agent to use? Screenshot tool / curl (Already done, but next agent should review and verify user satisfaction).
+    - Last item agent was working: Redesigning the Admin's employee time detail page () to match the newly built expandable monthly accordion view from the employee's  page.
+    - Status: IN PROGRESS (Code written, screenshot taken, just needs review and completion)
+    - Agent Testing Done: Y (Screenshot taken)
+    - Which testing method agent to use? Screenshot tool / manual frontend verification (Testing done, but next agent must verify the screenshot results and ask user for approval).
     - User Testing Done: N
 
-**All Pending/In progress Issue list**:
+**All Pending/In progress Issue list**:  
   None currently broken.
 
 **In progress Task List**:
-  Task 1: Time Tracking (Zeiterfassung) Verifizierung & Abschluss (P0)
-     - Where to resume: The agent successfully implemented the code and tested it via bash and screenshots. You need to review the recent screenshots (if context allows), verify everything is in order, update the , and call the  tool, or ask the user if the implemented Zeiterfassung meets their expectations.
-     - What will be achieved with this? Completion of the GPS time tracking feature requested by the user.
-     - Status: TESTING PENDING / USER VERIFICATION PENDING
-     - Should Test frontend/backend/both after fix? NA (Testing done, needs user validation).
+  Task 1: Verify and Finish AdminZeitDetailPage Redesign (P0)
+     - Where to resume: The agent just updated  to use the expandable monthly view and took a screenshot. Review the screenshot/logs, ensure it meets the user's request (bei den Admins in der Verwaltung / arbeitszeit / mitarbeiter, möchte ich auch genau so eine Monatsaufstellung sehen, wie beim Mitarbeiter), update , and call the  tool.
+     - What will be achieved with this? Unified UX between employee and admin time-tracking views.
+     - Status: USER VERIFICATION PENDING
+     - Should Test frontend/backend/both after fix? NA (Screenshot already taken, needs visual confirmation).
      - Blocked on something: None.
 
 **Upcoming and Future Tasks**
@@ -49,18 +47,18 @@ The user is building a comprehensive Kirmes (Fairground) billing and management 
     - (P2) Create a Windows Installer for the Electron app.
     - (P2) Add GPS Support to Kirmeskiste.
     - (P2) DSE890 Gateway GSM Connection.
+    - (P2) Refactor  (currently over 2000 lines).
 
 **Completed work in this session**
-- Chat & Task file download HTTP 500 Bug fix (DONE)
-- Task Hub Redesign (Tabs, Search) (DONE)
-- Chat Detail Panel (Members, Files, Photos, Group Name/Avatar edits) (DONE)
-- Chat iOS Camera Integration (DONE)
-- Employee Profile Page () (DONE)
-- Admin Benutzerverwaltung inline Employee Document Management (DONE)
-- Admin Document Expiry Evaluation Page () (DONE)
-- AI Expiry Detection Bug Fix (Switched to , fixed ) (DONE)
-- Drag & Drop fixes for Admin Cards (Event propagation stopped) (DONE)
-- Manual Expiry Date Fallback Dialog (DONE)
+- Finished Hub Zeiterfassung (SwipeClock, recent punches tile). (DONE)
+- Removed GPS coordinates from employee views (Admins only). (DONE)
+- Added live Presence tracking bar to . (DONE)
+- Built  for nested reporting navigation. (DONE)
+- Built HR Data backend (overtime, base vacation days). (DONE)
+- Implemented Calendar-based vacation calculation (excluding weekends). (DONE)
+- Implemented Time-Off Requests (Hub Modal -> Admin Task -> Automatic Approval). (DONE)
+- Fixed Bug: Admin task completion now correctly triggers Time-Off Request status updates. (DONE)
+- Rebuilt  into a monthly accordion view with summary badges (Hours, Sick, Vacation). (DONE)
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -75,52 +73,52 @@ None.
 
 **Key Technical Concepts**
 - React, FastAPI, MongoDB
--  (Emergent Integrations) for AI document parsing (Gemini 2.5 Flash).
-- HTML5 Drag and Drop API (requires overriding  and  to stop browser default file opening).
-- Geolocation API for Time Tracking.
-- Custom UI component: Swipe-to-trigger slider.
+- **Date Math**: Backend calculates vacation days by skipping Saturdays and Sundays.
+- **Task Webhooks**: Custom logic in  () detects if a task has a  and automatically approves the request when the task is marked completed.
 
 **key DB schema**
   - : 
   - : 
-  - :  (NEW)
+  - : 
+  - : 
 
 **changes in tech stack**
-  - Switched internal AI calling method to  and  from  for proper multimodal support.
+None.
 
 **All files of reference** 
-  -  (Handles profiles, AI doc parsing, time tracking)
-  -  (New slider component)
-  -  (Contains complex inline user expansion for HR)
-  -  (Admin reporting for HR)
-  -  (Dashboard)
+  -  (Currently being worked on)
+  - 
+  - 
+  -  (Contains the task approval logic fix)
 
 **Areas that need refactoring**: 
--  is extremely large (~1900 lines). The inline employee document grid and profile editors were injected directly into the user expansion row. Consider breaking the user row expansion into a separate component in the future.
+-  is still massive (~2000 lines). Sub-components like the expandable employee row need to be separated eventually.
 
 **key api endpoints**
+  -  (Presence)
   - 
   - 
   - 
-  - 
-  -  (Triggers AI expiry parsing)
 
 **Critical Info for New Agent** 
 - **YOU MUST RESPOND IN GERMAN.**
-- **AI Integration**: The  must be explicitly loaded from the environment and used with  from . Use  for synchronous calls or  (ensure you check the exact SDK signature).
-- **Drag & Drop**: When adding drag & drop to smaller elements (like cards inside a table), you *must* apply  and  on , , , and  to prevent the browser from opening the file and the parent elements from swallowing the events.
-- The user discarded the idea of a standalone Employee Admin tile and requested all HR/Employee features (profiles, documents) to be embedded directly into the expandable rows of the existing  ().
+- The last user request was to make the Admin's employee detail page () look exactly like the new Employee's page (), meaning it needs the expandable monthly accordion list with summary badges. The previous agent wrote the code and took a screenshot, but the context window ended before calling . Check the screenshot/code and wrap this up before moving to new tasks.
 
 **documents and test reports created in this job** 
-  -  (Profile & Docs testing)
   - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - checke nochmal den Upload. Drag an drop geht nicht... (Agent fixed Drag & Drop propagation).
- - Außerdem erkennt die KI nicht das Ablaufdatum. Wenn die Ki das nicht erkennt, möchte ich, das da ein Fenster auf geht... (Agent fixed Gemini API implementation and added a manual fallback dialog).
- - das mit der ki geht. Hier geht drag n drop auf den feldern immer noch nicht... (Agent fixed the root cause of the Drag&Drop issue by blocking browser defaults on the container).
- - jetzt kommt die Zeiterfassung. Hier oben kommt ein Schiebeschalter hin... Beim setzen der Info Ein oder Ausstempeln möchte ich immer eine GPS korrdinate mit setzen (Agent implemented the SwipeClock slider, backend GPS time tracking, and reporting dashboards. Agent ran tests and took screenshots but did not call finish).
- - **PENDING ACTION**: Follow up with the user on the Zeiterfassung implementation.
+ 1. (User): die genehmigten Urlaube müssen auch hier beim MItarebeiter in Arbeitszeit auftauchen
+ 2. (Agent): Adds approved vacations to .
+ 3. (User): Jetzt bau beim MItarbeiter eine neue Kachel ein mit Arbeitsfreie Zeit beantragen... (Time Off Requests).
+ 4. (Agent): Implements modal, DB collections, and Admin task generation.
+ 5. (User): check das, ich habe das als Admin genehmigt, aber er steht beim Mitarbeiter noch als in Bearbeitung drin.
+ 6. (Agent): Fixes bug in  to auto-approve requests when tasks are completed.
+ 7. (User): beim Mitarbeiter brauchen wie auch eine Aufstellung wie bei den Admins. Wenn ich auf den Monat Klicke geht es auf...
+ 8. (Agent): Rewrites  into a monthly accordion.
+ 9. (User): hier brauchen wir in der Monatsansicht folgende Infos: stunden, Urlaub, Krank... So aktuallisieren wir das auch bei den Admins
+ 10. (User): beim Mitarbeiter hatten wir eben hier oben die genehmigten Urlaube... Das muss noch zusätzlich rein.
+ 11. (User): **PENDING:** bei den Admins in der Verwaltung / arbeitszeit / mitarbeiter, möchte ich auch genau so eine Monatsaufstellung sehen, wie beim Mitarbeiter.
 
 **Project Health Check:**
 - Broken: None known.
@@ -131,7 +129,7 @@ None.
 - DATEV (via SMTP Email).
 
 **Testing status**
-  - Testing agent used after significant changes: YES (iteration_60.json)
+  - Testing agent used after significant changes: NO (Agent relied heavily on screenshots and curl for this session due to UI-heavy requests).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -139,6 +137,8 @@ None.
 **Credentials to test flow:**
 - Admin:  / 
 - Admin Preview:  / 
+- Employee (Finance):  (Anna)
+- Employee (Standard):  (Max)
 
 **What agent forgot to execute**
-- The agent implemented the Zeiterfassung (Time Tracking) feature, tested it via bash, and took screenshots, but forgot to call the  tool and update the  for this specific feature phase before context ran out.</analysis>
+- The agent implemented the  redesign requested in the final prompt and took a screenshot, but the context ran out before they could call the  tool, update the PRD, and confirm with the user.</analysis>

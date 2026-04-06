@@ -5,7 +5,10 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp, Plus, Trash2, CalendarDays } from "lucide-react";
+import {
+  ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
+  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp,
+} from "lucide-react";
 
 export default function AdminZeitDetailPage() {
   const { user } = useAuth();
@@ -14,12 +17,9 @@ export default function AdminZeitDetailPage() {
   const token = localStorage.getItem("token");
   const isAdmin = user?.role === "admin";
 
-  const [entries, setEntries] = useState([]);
   const [userName, setUserName] = useState("");
-  const [month, setMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const year = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
 
   // HR Data
   const [overtimeHours, setOvertimeHours] = useState("");
@@ -33,16 +33,15 @@ export default function AdminZeitDetailPage() {
   const [vacEnd, setVacEnd] = useState("");
   const [addingVac, setAddingVac] = useState(false);
 
-  const loadEntries = useCallback(async () => {
-    const [y, m] = month.split("-");
-    const from = `${y}-${m}-01`;
-    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-    const to = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
-    try {
-      const res = await api.get(`/employee/time/entries?token=${token}&user_id=${userId}&date_from=${from}&date_to=${to}`);
-      setEntries(res.data || []);
-    } catch {}
-  }, [token, userId, month]);
+  // Year data
+  const [yearEntries, setYearEntries] = useState([]);
+  const [timeOffRequests, setTimeOffRequests] = useState([]);
+  const [expandedMonth, setExpandedMonth] = useState(null);
+
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const m = String(i + 1).padStart(2, "0");
+    return { key: `${year}-${m}`, label: new Date(year, i).toLocaleDateString("de-DE", { month: "long" }), idx: i };
+  }).reverse();
 
   const loadHrData = useCallback(async () => {
     try {
@@ -60,9 +59,20 @@ export default function AdminZeitDetailPage() {
     } catch {}
   }, [token, userId]);
 
-  useEffect(() => { loadEntries(); }, [loadEntries]);
   useEffect(() => { loadHrData(); }, [loadHrData]);
   useEffect(() => { loadVacationEntries(); }, [loadVacationEntries]);
+
+  // Load ALL time entries for the year
+  useEffect(() => {
+    api.get(`/employee/time/entries?token=${token}&user_id=${userId}&date_from=${year}-01-01&date_to=${year}-12-31`)
+      .then(r => setYearEntries(r.data || [])).catch(() => {});
+  }, [token, userId, year]);
+
+  // Load time-off requests for this user
+  useEffect(() => {
+    api.get(`/employee/time-off?token=${token}&user_id=${userId}`)
+      .then(r => setTimeOffRequests(r.data || [])).catch(() => {});
+  }, [token, userId]);
 
   useEffect(() => {
     api.get(`/chat/users?token=${token}`).then(r => {
@@ -80,9 +90,7 @@ export default function AdminZeitDetailPage() {
       });
       setHrData(res.data);
       toast.success("Gespeichert");
-    } catch {
-      toast.error("Fehler beim Speichern");
-    }
+    } catch { toast.error("Fehler beim Speichern"); }
     setSaving(false);
   };
 
@@ -93,13 +101,9 @@ export default function AdminZeitDetailPage() {
     try {
       await api.post(`/employee/vacation/${userId}?token=${token}`, { start_date: vacStart, end_date: vacEnd });
       toast.success("Urlaub eingetragen");
-      setVacStart("");
-      setVacEnd("");
-      loadVacationEntries();
-      loadHrData();
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Fehler");
-    }
+      setVacStart(""); setVacEnd("");
+      loadVacationEntries(); loadHrData();
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
     setAddingVac(false);
   };
 
@@ -107,23 +111,43 @@ export default function AdminZeitDetailPage() {
     try {
       await api.delete(`/employee/vacation/${userId}/${entryId}?token=${token}`);
       toast.success("Urlaub gelöscht");
-      loadVacationEntries();
-      loadHrData();
-    } catch {
-      toast.error("Fehler beim Löschen");
-    }
+      loadVacationEntries(); loadHrData();
+    } catch { toast.error("Fehler beim Löschen"); }
   };
 
   if (!isAdmin) { navigate("/hub"); return null; }
 
-  const completed = entries.filter(e => e.clock_out);
-  const totalMinutes = completed.reduce((s, e) => s + (e.duration_minutes || 0), 0);
-  const totalH = Math.floor(totalMinutes / 60);
-  const totalM = Math.round(totalMinutes % 60);
-
   const vacUsed = hrData?.vacation_days_used || 0;
   const vacTotal = parseInt(vacationTotal) || 0;
   const vacRemaining = vacTotal - vacUsed;
+
+  // Group entries by month
+  const entriesByMonth = {};
+  yearEntries.forEach(e => {
+    const m = e.clock_in?.substring(0, 7);
+    if (!m) return;
+    if (!entriesByMonth[m]) entriesByMonth[m] = [];
+    entriesByMonth[m].push(e);
+  });
+
+  const getMonthStats = (monthKey) => {
+    const prefix = monthKey;
+    const entries = entriesByMonth[monthKey] || [];
+    const totalMins = entries.reduce((s, e) => s + (e.duration_minutes || 0), 0);
+    const vacs = vacationEntries.filter(v => v.start_date?.startsWith(prefix) || v.end_date?.startsWith(prefix));
+    const vacDays = vacs.reduce((s, v) => s + (v.days || 0), 0);
+    const sicks = timeOffRequests.filter(r => r.type === "krank" && r.status === "approved" && (r.start_date?.startsWith(prefix) || r.end_date?.startsWith(prefix)));
+    const sickDays = sicks.reduce((s, r) => s + (r.days || 0), 0);
+    const offs = timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved" && (r.start_date?.startsWith(prefix) || r.end_date?.startsWith(prefix)));
+    return { entries, totalMins, vacs, vacDays, sicks, sickDays, offs };
+  };
+
+  const sickDaysYear = timeOffRequests
+    .filter(r => r.type === "krank" && r.status === "approved" && r.start_date?.startsWith(String(year)))
+    .reduce((s, r) => s + (r.days || 0), 0);
+
+  const fmtH = (mins) => { const h = Math.floor(mins / 60); const m = Math.round(mins % 60); return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : ""; };
+  const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="admin-zeit-detail-page">
@@ -136,6 +160,7 @@ export default function AdminZeitDetailPage() {
           <h1 className="text-lg font-semibold text-gray-900">{userName || "Mitarbeiter"}</h1>
           <span className="text-gray-300">/</span>
           <span className="text-sm text-gray-500">Arbeitszeit</span>
+          <span className="text-sm text-gray-400 ml-auto">{year}</span>
         </div>
       </header>
 
@@ -143,7 +168,6 @@ export default function AdminZeitDetailPage() {
         {/* HR Data + Summary */}
         <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="hr-data-section">
           <div className="flex flex-col lg:flex-row gap-4">
-            {/* Left: Editable Fields */}
             <div className="flex-1 space-y-3">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Stammdaten bearbeiten</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -160,34 +184,33 @@ export default function AdminZeitDetailPage() {
                 <Save className="w-3.5 h-3.5 mr-1.5" /> {saving ? "Speichern..." : "Speichern"}
               </Button>
             </div>
-
-            {/* Right: Summary Cards */}
-            <div className="flex flex-row lg:flex-col gap-3 flex-shrink-0 sm:min-w-[170px]">
-              <div className="flex items-center gap-3 bg-amber-50 rounded-lg px-3 py-2.5 flex-1" data-testid="summary-overtime">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                  <TrendingUp className="w-4 h-4 text-amber-600" />
-                </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-shrink-0">
+              <div className="flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-2.5">
+                <TrendingUp className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 <div>
-                  <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">Stundenkonto</p>
-                  <p className="text-lg font-bold text-amber-800 leading-tight">{parseFloat(overtimeHours) || 0} <span className="text-xs font-normal text-amber-500">Std.</span></p>
+                  <p className="text-[10px] font-medium text-amber-600 uppercase">Stundenkonto</p>
+                  <p className="text-lg font-bold text-amber-800">{parseFloat(overtimeHours) || 0} <span className="text-xs font-normal text-amber-500">Std.</span></p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 bg-sky-50 rounded-lg px-3 py-2.5 flex-1" data-testid="summary-vacation-used">
-                <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center flex-shrink-0">
-                  <Palmtree className="w-4 h-4 text-sky-600" />
-                </div>
+              <div className="flex items-center gap-2 bg-sky-50 rounded-lg px-3 py-2.5">
+                <Palmtree className="w-4 h-4 text-sky-600 flex-shrink-0" />
                 <div>
-                  <p className="text-[10px] font-medium text-sky-600 uppercase tracking-wider">Genehmigt</p>
-                  <p className="text-lg font-bold text-sky-800 leading-tight">{vacUsed} <span className="text-xs font-normal text-sky-500">Tage</span></p>
+                  <p className="text-[10px] font-medium text-sky-600 uppercase">Genehmigt</p>
+                  <p className="text-lg font-bold text-sky-800">{vacUsed} <span className="text-xs font-normal text-sky-500">Tage</span></p>
                 </div>
               </div>
-              <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 flex-1 ${vacRemaining < 0 ? "bg-red-50" : "bg-green-50"}`} data-testid="summary-vacation-remaining">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${vacRemaining < 0 ? "bg-red-100" : "bg-green-100"}`}>
-                  <Palmtree className={`w-4 h-4 ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`} />
-                </div>
+              <div className={`flex items-center gap-2 rounded-lg px-3 py-2.5 ${vacRemaining < 0 ? "bg-red-50" : "bg-green-50"}`}>
+                <Palmtree className={`w-4 h-4 flex-shrink-0 ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`} />
                 <div>
-                  <p className={`text-[10px] font-medium uppercase tracking-wider ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`}>Resturlaub</p>
-                  <p className={`text-lg font-bold leading-tight ${vacRemaining < 0 ? "text-red-800" : "text-green-800"}`}>{vacRemaining} <span className={`text-xs font-normal ${vacRemaining < 0 ? "text-red-500" : "text-green-500"}`}>Tage</span></p>
+                  <p className={`text-[10px] font-medium uppercase ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`}>Resturlaub</p>
+                  <p className={`text-lg font-bold ${vacRemaining < 0 ? "text-red-800" : "text-green-800"}`}>{vacRemaining} <span className={`text-xs font-normal ${vacRemaining < 0 ? "text-red-500" : "text-green-500"}`}>Tage</span></p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2.5">
+                <ThermometerSun className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <div>
+                  <p className="text-[10px] font-medium text-red-500 uppercase">Krankheit</p>
+                  <p className="text-lg font-bold text-red-800">{sickDaysYear} <span className="text-xs font-normal text-red-400">Tage</span></p>
                 </div>
               </div>
             </div>
@@ -200,8 +223,6 @@ export default function AdminZeitDetailPage() {
             <CalendarDays className="w-4 h-4 text-sky-600" />
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Genehmigte Urlaube</p>
           </div>
-
-          {/* Add new vacation */}
           <div className="flex flex-wrap items-end gap-3 mb-3 pb-3 border-b border-gray-100">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Von</label>
@@ -215,78 +236,88 @@ export default function AdminZeitDetailPage() {
               <Plus className="w-3.5 h-3.5 mr-1" /> Eintragen
             </Button>
           </div>
-
-          {/* Vacation list */}
           {vacationEntries.length === 0 ? (
             <p className="text-xs text-gray-400">Keine Urlaubseinträge vorhanden</p>
           ) : (
             <div className="space-y-1.5">
               {vacationEntries.map(v => (
-                <div key={v.id} className="flex items-center gap-3 bg-sky-50 rounded-lg px-3 py-2 text-sm" data-testid={`vac-entry-${v.id}`}>
+                <div key={v.id} className="flex items-center gap-3 bg-sky-50 rounded-lg px-3 py-2 text-sm">
                   <CalendarDays className="w-4 h-4 text-sky-500 flex-shrink-0" />
-                  <span className="text-gray-700 font-medium">
-                    {new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
-                  </span>
+                  <span className="text-gray-700 font-medium">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                   <span className="text-gray-400">—</span>
-                  <span className="text-gray-700 font-medium">
-                    {new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
-                  </span>
-                  <span className="text-sky-700 font-bold ml-auto">{v.days} {v.days === 1 ? "Tag" : "Tage"}</span>
-                  <button onClick={() => deleteVacation(v.id)} className="text-gray-400 hover:text-red-500 transition-colors" data-testid={`vac-delete-${v.id}`}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <span className="text-gray-700 font-medium">{new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                  <span className="text-sky-700 font-bold ml-auto">{v.days} Tage</span>
+                  <button onClick={() => deleteVacation(v.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Time Entries */}
-        <div className="flex items-center justify-between">
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" data-testid="detail-month-picker" />
-          <div className="text-right">
-            <p className="text-xs text-gray-500">{completed.length} Einträge</p>
-            <p className="text-lg font-bold text-gray-900">{totalH}h {totalM}m</p>
-          </div>
-        </div>
+        {/* Monthly Breakdown */}
+        <div className="space-y-2">
+          {months.filter(m => m.idx <= currentMonth).map(m => {
+            const stats = getMonthStats(m.key);
+            const isOpen = expandedMonth === m.key;
 
-        {completed.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Keine Einträge in diesem Monat</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-            {completed.map(e => {
-              const cin = new Date(e.clock_in);
-              const cout = new Date(e.clock_out);
-              const dur = e.duration_minutes || 0;
-              const dH = Math.floor(dur / 60);
-              const dM = Math.round(dur % 60);
-              return (
-                <div key={e.id} className="px-4 py-3 flex items-center gap-4 text-sm" data-testid={`detail-entry-${e.id}`}>
-                  <span className="font-medium text-gray-700 w-28 flex-shrink-0">
-                    {cin.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}
-                  </span>
-                  <span className="text-green-600 font-medium">{cin.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
-                  <span className="text-gray-400">—</span>
-                  <span className="text-red-500 font-medium">{cout.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</span>
-                  <span className="font-bold text-gray-900 ml-auto">{dH > 0 ? `${dH}h ${dM}m` : `${dM}m`}</span>
-                  {e.clock_in_lat && (
-                    <a href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-fuchsia-600" onClick={ev => ev.stopPropagation()}>
-                      <MapPin className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                  {e.clock_out_lat && (
-                    <a href={`https://www.google.com/maps?q=${e.clock_out_lat},${e.clock_out_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-green-600" onClick={ev => ev.stopPropagation()}>
-                      <MapPin className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+            return (
+              <div key={m.key} className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid={`month-${m.key}`}>
+                <button onClick={() => setExpandedMonth(isOpen ? null : m.key)} className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors">
+                  <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="text-sm font-semibold text-gray-900">{m.label}</span>
+                  <div className="flex items-center gap-2 ml-auto">
+                    {stats.totalMins > 0 && <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded"><Clock className="w-3 h-3 inline mr-0.5 -mt-0.5" />{fmtH(stats.totalMins)}</span>}
+                    {stats.vacDays > 0 && <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded"><Palmtree className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.vacDays}T</span>}
+                    {stats.sickDays > 0 && <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded"><ThermometerSun className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.sickDays}T</span>}
+                    {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="border-t border-gray-100 divide-y divide-gray-50">
+                    {stats.vacs.map(v => (
+                      <div key={v.id} className="px-4 py-2.5 flex items-center gap-3 bg-sky-50/50">
+                        <Palmtree className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-sky-700">Urlaub</span>
+                        <span className="text-xs text-sky-600">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} — {new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</span>
+                        <span className="text-xs font-bold text-sky-700 ml-auto">{v.days} Tage</span>
+                      </div>
+                    ))}
+                    {stats.sicks.map(r => (
+                      <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 bg-red-50/50">
+                        <ThermometerSun className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-red-600">Krank</span>
+                        <span className="text-xs text-red-500">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
+                        <span className="text-xs font-bold text-red-600 ml-auto">{r.days} Tage</span>
+                      </div>
+                    ))}
+                    {stats.offs.map(r => (
+                      <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 bg-amber-50/50">
+                        <TrendingUp className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-amber-700">Überstundenabbau</span>
+                        <span className="text-xs text-amber-600">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</span>
+                      </div>
+                    ))}
+                    {stats.entries.map(e => (
+                      <div key={e.id} className="px-4 py-2.5 flex items-center gap-3 text-xs">
+                        <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <span className="font-medium text-gray-700 w-24 flex-shrink-0">{new Date(e.clock_in).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+                        <span className="text-green-600 font-medium">{formatTime(e.clock_in)}</span>
+                        <span className="text-gray-300">—</span>
+                        <span className={`font-medium ${e.clock_out ? "text-red-500" : "text-amber-500"}`}>{e.clock_out ? formatTime(e.clock_out) : "Aktiv"}</span>
+                        <span className="font-bold text-gray-900 ml-auto">{e.duration_minutes > 0 ? fmtH(e.duration_minutes) : "—"}</span>
+                        {e.clock_in_lat && <a href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-fuchsia-600" onClick={ev => ev.stopPropagation()}><MapPin className="w-3 h-3" /></a>}
+                        {e.clock_out_lat && <a href={`https://www.google.com/maps?q=${e.clock_out_lat},${e.clock_out_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-green-600" onClick={ev => ev.stopPropagation()}><MapPin className="w-3 h-3" /></a>}
+                      </div>
+                    ))}
+                    {stats.entries.length === 0 && stats.vacs.length === 0 && stats.sicks.length === 0 && stats.offs.length === 0 && (
+                      <div className="px-4 py-4 text-center text-xs text-gray-400">Keine Einträge</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
