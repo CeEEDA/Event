@@ -629,7 +629,7 @@ export default function AdminZeitDetailPage() {
                   <input type="number" step="0.01" min="0" placeholder="Betrag" value={newDeduction.amount} onChange={e => setNewDeduction(p => ({ ...p, amount: e.target.value }))}
                     className="w-24 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-300" data-testid="deduction-amount" />
                   <Button onClick={addDeduction} size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" data-testid="add-deduction-btn">
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Abzug
+                    <span className="text-base font-bold mr-1">−</span> Abzug
                   </Button>
                 </div>
               </div>
