@@ -438,32 +438,37 @@ export default function HubPage() {
           </div>
 
           {/* My Shift Plan (Employee) */}
-          {myPlan.length > 0 && (
+          {!isAdmin && (
             <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="my-shift-plan">
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-indigo-600" />
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Meine Einsätze</p>
               </div>
-              <div className="space-y-2">
-                {myPlan.map(a => {
-                  const d = new Date(a.date + "T00:00:00");
-                  const dayName = d.toLocaleDateString("de-DE", { weekday: "short" });
-                  const dateStr = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
-                  return (
-                    <div key={a.id} className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2" data-testid={`my-plan-${a.id}`}>
-                      <div className="text-center min-w-[44px]">
-                        <p className="text-[10px] text-indigo-500 font-medium uppercase">{dayName}</p>
-                        <p className="text-sm font-bold text-indigo-800">{dateStr}</p>
+              {myPlan.length > 0 ? (
+                <div className="space-y-2">
+                  {myPlan.map(a => {
+                    const d = new Date(a.date + "T00:00:00");
+                    const dayName = d.toLocaleDateString("de-DE", { weekday: "short" });
+                    const dateStr = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+                    return (
+                      <div key={a.id} className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2" data-testid={`my-plan-${a.id}`}>
+                        <div className="text-center min-w-[44px]">
+                          <p className="text-[10px] text-indigo-500 font-medium uppercase">{dayName}</p>
+                          <p className="text-sm font-bold text-indigo-800">{dateStr}</p>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {a.order_name && <p className="text-xs font-semibold text-gray-900 truncate">{a.order_name}</p>}
+                          {a.role && <p className="text-[10px] text-indigo-600">{a.role}</p>}
+                          {a.note && <p className="text-[10px] text-gray-500 italic truncate">{a.note}</p>}
+                          {(a.start_time || a.end_time) && <p className="text-[10px] text-gray-400">{a.start_time || "?"} – {a.end_time || "?"}</p>}
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        {a.order_name && <p className="text-xs font-semibold text-gray-900 truncate">{a.order_name}</p>}
-                        {a.role && <p className="text-[10px] text-indigo-600">{a.role}</p>}
-                        {a.note && <p className="text-[10px] text-gray-500 italic truncate">{a.note}</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-3">Noch keine Einsätze geplant.</p>
+              )}
             </div>
           )}
 
