@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
-  DollarSign, Download, Moon, Sun, StickyNote,
+  DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -55,6 +55,65 @@ export default function AdminZeitDetailPage() {
   const [loadingPayroll, setLoadingPayroll] = useState(false);
   const [deductions, setDeductions] = useState([]);
   const [newDeduction, setNewDeduction] = useState({ text: "", amount: "" });
+
+  // Documents
+  const DOC_TYPES = [
+    { key: "personalausweis", label: "Personalausweis" },
+    { key: "fuehrerschein", label: "Führerschein" },
+    { key: "fahrerkarte", label: "Fahrerkarte" },
+    { key: "erste_hilfe", label: "Erste Hilfe" },
+    { key: "sicherheitsunterweisung", label: "Sicherheitsunterweisung" },
+    { key: "staplerschein", label: "Staplerschein" },
+    { key: "hubarbeitsbuehne", label: "Hubarbeitsbühne" },
+    { key: "teleskoplader", label: "Teleskoplader" },
+    { key: "baumaschine", label: "Baumaschine" },
+  ];
+  const [docs, setDocs] = useState([]);
+  const [uploadingDoc, setUploadingDoc] = useState(null);
+  const [expiryPrompt, setExpiryPrompt] = useState(null);
+  const [manualExpiry, setManualExpiry] = useState("");
+  const isDocExpired = (d) => d && new Date(d) < new Date();
+  const isDocExpiringSoon = (d) => { if (!d) return false; const diff = (new Date(d) - new Date()) / (1000 * 60 * 60 * 24); return diff > 0 && diff <= 60; };
+
+  const loadDocs = useCallback(async () => {
+    try {
+      const res = await api.get(`/employee/documents?token=${token}&user_id=${userId}`);
+      setDocs(res.data || []);
+    } catch {}
+  }, [token, userId]);
+  useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  const handleDocUpload = async (docType, file) => {
+    if (!file) return;
+    setUploadingDoc(docType);
+    try {
+      const fd = new FormData();
+      fd.append("doc_type", docType);
+      fd.append("user_id", userId);
+      fd.append("file", file);
+      const res = await api.post(`/employee/documents?token=${token}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Dokument hochgeladen — KI prüft Ablaufdatum...");
+      await new Promise(r => setTimeout(r, 5000));
+      const docsRes = await api.get(`/employee/documents?token=${token}&user_id=${userId}`);
+      setDocs(docsRes.data || []);
+      const newDoc = (docsRes.data || []).find(d => d.id === res.data.id);
+      if (newDoc && !newDoc.expiry_date) {
+        setExpiryPrompt(newDoc);
+        setManualExpiry("");
+      }
+    } catch (err) { toast.error(err.response?.data?.detail || "Fehler beim Hochladen"); }
+    setUploadingDoc(null);
+  };
+
+  const saveDocExpiry = async () => {
+    if (!expiryPrompt || !manualExpiry) { setExpiryPrompt(null); return; }
+    try {
+      await api.put(`/employee/documents/${expiryPrompt.id}?token=${token}`, { expiry_date: manualExpiry });
+      loadDocs();
+      toast.success("Ablaufdatum gespeichert");
+    } catch { toast.error("Fehler"); }
+    setExpiryPrompt(null);
+  };
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const m = String(i + 1).padStart(2, "0");
@@ -312,6 +371,70 @@ export default function AdminZeitDetailPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Dokumente & Zertifikate */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="documents-section"
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={e => { e.preventDefault(); e.stopPropagation(); }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="w-4 h-4 text-fuchsia-600" />
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Dokumente & Zertifikate</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+            {DOC_TYPES.map(dt => {
+              const activeDoc = docs.find(d => d.doc_type === dt.key && d.status === "active");
+              const expired = activeDoc && isDocExpired(activeDoc.expiry_date);
+              const expiring = activeDoc && isDocExpiringSoon(activeDoc.expiry_date);
+              const isUploading = uploadingDoc === dt.key;
+              const inputId = `doc-upload-${dt.key}`;
+              return (
+                <div key={dt.key}
+                  className={`border-2 rounded-lg px-3 py-2.5 flex items-center gap-2 text-xs relative group transition-all ${
+                    !activeDoc ? "border-dashed border-gray-300 bg-gray-50/50 hover:border-fuchsia-400 hover:bg-fuchsia-50/30 cursor-pointer" :
+                    expired ? "border-red-300 bg-red-50" :
+                    expiring ? "border-amber-300 bg-amber-50" :
+                    "border-green-200 bg-green-50"
+                  }`}
+                  data-testid={`doc-${dt.key}`}
+                  onClick={() => document.getElementById(inputId)?.click()}
+                  onDragEnter={e => { e.preventDefault(); e.stopPropagation(); }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = "#d946ef"; e.currentTarget.style.backgroundColor = "#fdf4ff"; }}
+                  onDragLeave={e => { e.stopPropagation(); e.currentTarget.style.borderColor = ""; e.currentTarget.style.backgroundColor = ""; }}
+                  onDrop={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = ""; e.currentTarget.style.backgroundColor = ""; const f = e.dataTransfer?.files?.[0]; if (f) handleDocUpload(dt.key, f); }}
+                >
+                  <input type="file" id={inputId} accept="application/pdf,image/*" className="hidden" onChange={e => { if (e.target.files[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = ""; }} onClick={e => e.stopPropagation()} />
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    !activeDoc ? "bg-gray-300" : expired ? "bg-red-500" : expiring ? "bg-amber-400" : "bg-green-500"
+                  }`} />
+                  <span className="flex-1 truncate font-medium text-gray-800">{dt.label}</span>
+                  {isUploading ? (
+                    <span className="text-[10px] text-fuchsia-600 animate-pulse">Hochladen...</span>
+                  ) : activeDoc ? (
+                    <>
+                      <span className={`text-[10px] ${expired ? "text-red-600" : expiring ? "text-amber-600" : "text-green-600"}`}>
+                        {activeDoc.expiry_date || "—"}
+                      </span>
+                      <a href={`${process.env.REACT_APP_BACKEND_URL}/api/employee/documents/${activeDoc.id}/file?token=${token}`} target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:text-fuchsia-700" onClick={e => e.stopPropagation()}>
+                        <Eye className="w-3 h-3" />
+                      </a>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-gray-400 group-hover:text-fuchsia-600">Hierher ziehen</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {expiryPrompt && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+              <span className="text-xs text-amber-700">KI konnte kein Ablaufdatum erkennen. Bitte manuell eingeben:</span>
+              <Input type="date" value={manualExpiry} onChange={e => setManualExpiry(e.target.value)} className="w-40 h-8 text-xs" />
+              <Button size="sm" onClick={saveDocExpiry} className="h-8 text-xs bg-amber-600 hover:bg-amber-700">Speichern</Button>
+              <Button size="sm" variant="ghost" onClick={() => setExpiryPrompt(null)} className="h-8 text-xs">Abbrechen</Button>
+            </div>
+          )}
         </div>
 
         {/* Regelarbeitszeit */}
