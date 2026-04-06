@@ -1132,6 +1132,14 @@ def _calc_night_minutes(clock_in_local, clock_out_local):
     return round(night_min)
 
 
+@router.get("/payroll/my-releases")
+async def get_my_releases(token: str = Query(...)):
+    """Employee gets their own released payrolls."""
+    caller = await _get_user(token)
+    releases = await db.payroll_releases.find({"user_id": caller["id"]}, {"_id": 0}).sort("month", -1).to_list(200)
+    return releases
+
+
 @router.get("/payroll/{user_id}")
 async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(...)):
     """Calculate payroll for a user for a given month (YYYY-MM)."""
@@ -1338,6 +1346,43 @@ async def delete_deduction(deduction_id: str, token: str = Query(...)):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.payroll_deductions.delete_one({"id": deduction_id})
     return {"ok": True}
+
+
+# ── Payroll Releases (Freigabe) ─────────────────
+
+@router.post("/payroll/{user_id}/release")
+async def release_payroll(user_id: str, month: str = Query(...), token: str = Query(...)):
+    """Admin releases (saves) a payroll for a specific month."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    # Calculate payroll snapshot
+    payroll_data = await get_payroll(user_id, month, token)
+    # Check if already released
+    existing = await db.payroll_releases.find_one({"user_id": user_id, "month": month})
+    entry = {
+        "user_id": user_id,
+        "month": month,
+        "payroll_data": payroll_data,
+        "released_by": caller["id"],
+        "released_by_name": caller.get("name", ""),
+        "released_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if existing:
+        await db.payroll_releases.update_one({"user_id": user_id, "month": month}, {"$set": entry})
+    else:
+        entry["id"] = str(uuid.uuid4())
+        await db.payroll_releases.insert_one(entry)
+    return {"ok": True, "month": month}
+
+
+@router.get("/payroll/{user_id}/releases")
+async def get_payroll_releases(user_id: str, token: str = Query(...)):
+    """Get all released payrolls for a user. Admins see all, employees see own."""
+    caller = await _get_user(token)
+    target_id = user_id if caller.get("role") == "admin" else caller["id"]
+    releases = await db.payroll_releases.find({"user_id": target_id}, {"_id": 0}).sort("month", -1).to_list(200)
+    return releases
 
 
 # ── Employee Notes (Mitarbeiter-Notizen) ─────────────────

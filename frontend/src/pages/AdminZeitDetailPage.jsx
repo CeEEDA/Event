@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
-  DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText,
+  DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText, Check,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -55,6 +55,8 @@ export default function AdminZeitDetailPage() {
   const [loadingPayroll, setLoadingPayroll] = useState(false);
   const [deductions, setDeductions] = useState([]);
   const [newDeduction, setNewDeduction] = useState({ text: "", amount: "" });
+  const [releasingPayroll, setReleasingPayroll] = useState(false);
+  const [releasedMonths, setReleasedMonths] = useState({});
 
   // Documents
   const DOC_TYPES = [
@@ -113,6 +115,28 @@ export default function AdminZeitDetailPage() {
       toast.success("Ablaufdatum gespeichert");
     } catch { toast.error("Fehler"); }
     setExpiryPrompt(null);
+  };
+
+  // Load released payrolls
+  const loadReleases = useCallback(async () => {
+    try {
+      const res = await api.get(`/employee/payroll/${userId}/releases?token=${token}`);
+      const map = {};
+      (res.data || []).forEach(r => { map[r.month] = r.released_at; });
+      setReleasedMonths(map);
+    } catch {}
+  }, [token, userId]);
+  useEffect(() => { loadReleases(); }, [loadReleases]);
+
+  const releasePayroll = async () => {
+    if (!payroll || !payrollMonth) return;
+    setReleasingPayroll(true);
+    try {
+      await api.post(`/employee/payroll/${userId}/release?month=${payrollMonth}&token=${token}`);
+      toast.success(`Abrechnung ${payrollMonth} freigegeben`);
+      loadReleases();
+    } catch { toast.error("Fehler bei der Freigabe"); }
+    setReleasingPayroll(false);
   };
 
   const months = Array.from({ length: 12 }, (_, i) => {
@@ -641,6 +665,20 @@ export default function AdminZeitDetailPage() {
                   <span className="text-xl font-bold text-emerald-700">{payroll.total_net?.toFixed(2)}€</span>
                 </div>
               )}
+
+              {/* Release Button */}
+              <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {releasedMonths[payrollMonth] && (
+                    <span className="text-xs text-green-600 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Freigegeben am {new Date(releasedMonths[payrollMonth]).toLocaleDateString("de-DE")}
+                    </span>
+                  )}
+                </div>
+                <Button onClick={releasePayroll} disabled={releasingPayroll || !payroll} size="sm" className="bg-green-600 hover:bg-green-700" data-testid="release-payroll-btn">
+                  <Save className="w-3.5 h-3.5 mr-1.5" /> {releasingPayroll ? "Wird freigegeben..." : "Speichern & Freigeben"}
+                </Button>
+              </div>
             </>
           )}
           {!payroll && !loadingPayroll && (

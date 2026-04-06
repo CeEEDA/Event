@@ -471,6 +471,18 @@ export default function HubPage() {
                   <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Freie Zeit</span>
                 </button>
 
+                {/* Abrechnung Tile */}
+                <button
+                  onClick={() => navigate("/abrechnung")}
+                  className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-emerald-400 hover:shadow-md transition-all group text-center"
+                  data-testid="module-abrechnung"
+                >
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Receipt className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Abrechnung</span>
+                </button>
+
                 {modules.map(m => (
                   <button
                     key={m.key}

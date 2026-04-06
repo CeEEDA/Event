@@ -42,6 +42,7 @@ import ArbeitszeitPage from "./pages/ArbeitszeitPage";
 import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
 import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
+import AbrechnungPage from "./pages/AbrechnungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -401,6 +402,14 @@ function AppRoutes() {
         }
       />
       <Route path="/share/:token" element={<SharedFilePage />} />
+      <Route
+        path="/abrechnung"
+        element={
+          <ProtectedRoute>
+            <AbrechnungPage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/project-report/new"
         element={
