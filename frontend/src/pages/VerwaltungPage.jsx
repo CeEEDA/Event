@@ -38,7 +38,7 @@ export default function VerwaltungPage() {
     },
     {
       key: "zeiterfassung",
-      label: "Arbeitszeiterfassung",
+      label: "Mitarbeiter",
       description: "Stempelzeiten aller Mitarbeiter",
       icon: Clock,
       color: "green",
