@@ -281,8 +281,13 @@ BEHÖRDEN:
 - Unbedenklichkeitsbescheinigungen → unbedenklichkeitsbescheinigungen
 
 PERSONAL:
-- Arbeitsverträge, Zeugnisse, Lohnabrechnungen → mitarbeiter
+- Arbeitsverträge, Zeugnisse → mitarbeiter
 - HR/Notar-Dokumente → hr_unterlagen_notarunterlagen
+
+LOHNABRECHNUNG:
+- Lohnabrechnungen, Gehaltsabrechnungen, Entgeltabrechnungen, Lohnzettel → lohnabrechnung
+- DATEV-Lohnabrechnungen, Brutto/Netto-Abrechnungen → lohnabrechnung
+- Erkennbar an: Personal-Nr., Steuerklasse, Sozialversicherung, Bruttolohn, Nettolohn, Lohnsteuer
 
 SONSTIGES:
 - Marketing, Flyer, Werbematerial → marketing_werbung
