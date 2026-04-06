@@ -908,6 +908,20 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
         await db.vacation_entries.insert_one(vac_entry)
         await _recalc_vacation_used(req["user_id"], year)
 
+    # If approved and type is ueberstundenabbau, deduct from overtime account (8h per day)
+    if status == "approved" and req.get("type") == "ueberstundenabbau":
+        days = req.get("days", 0)
+        hours_to_deduct = days * 8 if days > 0 else 8
+        year = int(req["start_date"][:4])
+        hr = await db.hr_data.find_one({"user_id": req["user_id"], "year": year})
+        current_overtime = hr.get("overtime_hours", 0) if hr else 0
+        new_overtime = current_overtime - hours_to_deduct
+        await db.hr_data.update_one(
+            {"user_id": req["user_id"], "year": year},
+            {"$set": {"overtime_hours": new_overtime}},
+            upsert=True
+        )
+
     # Mark related task as completed
     task = await db.tasks.find_one({"time_off_request_id": request_id})
     if task:

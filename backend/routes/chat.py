@@ -606,6 +606,19 @@ async def update_task(task_id: str, body: dict, token: str = Query(...)):
                 }
                 await db.vacation_entries.insert_one(vac_entry)
                 await _recalc_vacation_used(req["user_id"], year)
+            # If ueberstundenabbau, deduct from overtime account (8h per day)
+            if req.get("type") == "ueberstundenabbau":
+                days = req.get("days", 0)
+                hours_to_deduct = days * 8 if days > 0 else 8
+                year = int(req["start_date"][:4])
+                hr = await db.hr_data.find_one({"user_id": req["user_id"], "year": year})
+                current_overtime = hr.get("overtime_hours", 0) if hr else 0
+                new_overtime = current_overtime - hours_to_deduct
+                await db.hr_data.update_one(
+                    {"user_id": req["user_id"], "year": year},
+                    {"$set": {"overtime_hours": new_overtime}},
+                    upsert=True
+                )
 
     return task
 

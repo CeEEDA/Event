@@ -22,6 +22,11 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Jahres-Summary-Karten: Stundenkonto, Genehmigt, Resturlaub, Krankheit
 - GPS-Pins für Ein-/Ausstempeln sichtbar (nur Admin)
 
+### Überstundenabbau-Verrechnung Bugfix - FERTIG (2026-04-06)
+- Bug: Genehmigte Überstundenabbau-Anträge wurden nicht vom Stundenkonto abgezogen
+- Fix: Bei Genehmigung (direkt + via Task) werden automatisch 8h pro Arbeitstag abgezogen
+- Betrifft: employee.py (resolve_time_off_request) + chat.py (update_task auto-approve)
+
 ### Arbeitsfreie-Zeit-Anträge - FERTIG (2026-04-06)
 - Mitarbeiter können über Hub-Kachel "Freie Zeit" Anträge stellen (Krank, Urlaub, Überstundenabbau)
 - Dialog mit Dropdown, Datumsauswahl, Ganztägig-Toggle, optionale Uhrzeiten
