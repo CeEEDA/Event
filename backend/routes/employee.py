@@ -704,6 +704,12 @@ async def get_time_report(token: str = Query(...),
         by_user[uid]["entries"].append(e)
         by_user[uid]["total_minutes"] += e.get("duration_minutes", 0) or 0
 
+    # Include ALL users (even those without time entries)
+    async for u in db.users.find({}, {"_id": 0, "id": 1, "name": 1, "role": 1}):
+        uid = u["id"]
+        if uid not in by_user:
+            by_user[uid] = {"user_id": uid, "user_name": u.get("name", ""), "total_minutes": 0, "entries": []}
+
     return list(by_user.values())
 
 
