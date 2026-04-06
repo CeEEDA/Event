@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
-  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp,
+  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -253,6 +253,42 @@ export default function AdminZeitDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Pending Time-Off Requests */}
+        {timeOffRequests.filter(r => r.status === "pending").length > 0 && (
+          <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CalendarOff className="w-4 h-4 text-amber-600" />
+              <span className="text-[10px] font-semibold text-amber-600 uppercase tracking-wider">Offene Anträge</span>
+            </div>
+            {timeOffRequests.filter(r => r.status === "pending").map(r => (
+              <div key={r.id} className="flex items-center gap-2 text-sm text-amber-800 py-0.5">
+                <span className="font-medium">{r.type_label}</span>
+                <span>{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
+                <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-bold ml-auto">In Bearbeitung</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Rejected / Withdrawn Time-Off Requests */}
+        {timeOffRequests.filter(r => r.status === "rejected" || r.status === "withdrawn").length > 0 && (
+          <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CalendarOff className="w-4 h-4 text-gray-400" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Abgelehnt / Zurückgezogen</span>
+            </div>
+            {timeOffRequests.filter(r => r.status === "rejected" || r.status === "withdrawn").map(r => (
+              <div key={r.id} className="flex items-center gap-2 text-sm text-gray-500 py-0.5">
+                <span className="font-medium">{r.type_label}</span>
+                <span>{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-auto ${r.status === "rejected" ? "bg-red-100 text-red-600" : "bg-gray-200 text-gray-600"}`}>
+                  {r.status === "rejected" ? "Abgelehnt" : "Zurückgezogen"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Monthly Breakdown */}
         <div className="space-y-2">
