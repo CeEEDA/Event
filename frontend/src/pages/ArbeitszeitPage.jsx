@@ -180,6 +180,25 @@ export default function ArbeitszeitPage() {
           </div>
         )}
 
+        {/* Rejected / Withdrawn Requests */}
+        {timeOffRequests.filter(r => r.status === "rejected" || r.status === "withdrawn").length > 0 && (
+          <div className="bg-gray-50 rounded-xl border border-gray-200 p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <CalendarOff className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Abgelehnt / Zurückgezogen</span>
+            </div>
+            {timeOffRequests.filter(r => r.status === "rejected" || r.status === "withdrawn").map(r => (
+              <div key={r.id} className="flex items-center gap-2 text-sm text-gray-500">
+                <span className="font-medium">{r.type_label}</span>
+                <span>{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-auto ${r.status === "rejected" ? "bg-red-100 text-red-600" : "bg-gray-200 text-gray-600"}`}>
+                  {r.status === "rejected" ? "Abgelehnt" : "Zurückgezogen"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Monthly Breakdown */}
         <div className="space-y-2">
           {months.filter(m => m.idx <= currentMonth).map(m => {
