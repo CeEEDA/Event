@@ -1571,6 +1571,8 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             "order_name": data.get("order_name", ""),
             "role": data.get("role", ""),
             "note": data.get("note", ""),
+            "start_time": data.get("start_time", ""),
+            "end_time": data.get("end_time", ""),
             "week_key": data.get("week_key"),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
@@ -1584,6 +1586,8 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             "order_name": data.get("order_name", ""),
             "role": data.get("role", ""),
             "note": data.get("note", ""),
+            "start_time": data.get("start_time", ""),
+            "end_time": data.get("end_time", ""),
             "week_key": data.get("week_key"),
             "created_by": caller["id"],
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1599,6 +1603,35 @@ async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
     if caller.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.shift_assignments.delete_one({"id": assignment_id})
+    return {"ok": True}
+
+
+@router.get("/shift-plan/job-reqs")
+async def get_job_reqs(week: str = Query(...), token: str = Query(...)):
+    """Get job personnel requirements for a week."""
+    await _get_user(token)
+    reqs = await db.shift_job_reqs.find({"week_key": week}, {"_id": 0}).to_list(500)
+    return reqs
+
+
+@router.post("/shift-plan/job-reqs")
+async def upsert_job_req(data: dict = Body(...), token: str = Query(...)):
+    """Admin: Set personnel requirements for a job in a week."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    order_pk = data.get("order_pk")
+    week_key = data.get("week_key")
+    existing = await db.shift_job_reqs.find_one({"order_pk": order_pk, "week_key": week_key})
+    entry = {
+        "order_pk": order_pk, "week_key": week_key,
+        "count": data.get("count", 1), "roles": data.get("roles", ""),
+    }
+    if existing:
+        await db.shift_job_reqs.update_one({"order_pk": order_pk, "week_key": week_key}, {"$set": entry})
+    else:
+        entry["id"] = str(uuid.uuid4())
+        await db.shift_job_reqs.insert_one(entry)
     return {"ok": True}
 
 
