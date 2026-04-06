@@ -531,6 +531,16 @@ async def get_time_status(token: str = Query(...)):
     }
 
 
+@router.get("/time/presence")
+async def get_time_presence(token: str = Query(...)):
+    """Admin: get all currently clocked-in employees."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    entries = await db.time_entries.find({"clock_out": None}, {"_id": 0}).to_list(500)
+    return [{"user_id": e["user_id"], "user_name": e.get("user_name", ""), "clock_in": e["clock_in"]} for e in entries]
+
+
 @router.post("/time/clock-in")
 async def clock_in(token: str = Query(...), body: dict = {}):
     """Clock in with GPS coordinates."""

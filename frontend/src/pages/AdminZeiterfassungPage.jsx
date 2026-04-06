@@ -20,6 +20,8 @@ export default function AdminZeiterfassungPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [expandedUser, setExpandedUser] = useState(null);
+  const [presence, setPresence] = useState([]);
+  const [allEmployees, setAllEmployees] = useState([]);
 
   const loadReport = useCallback(async () => {
     const [y, m] = month.split("-");
@@ -33,6 +35,28 @@ export default function AdminZeiterfassungPage() {
   }, [token, month]);
 
   useEffect(() => { loadReport(); }, [loadReport]);
+
+  // Load presence (who is currently clocked in)
+  const loadPresence = useCallback(async () => {
+    try {
+      const res = await api.get(`/employee/time/presence?token=${token}`);
+      setPresence(res.data || []);
+    } catch {}
+  }, [token]);
+
+  useEffect(() => {
+    loadPresence();
+    const iv = setInterval(loadPresence, 15000);
+    return () => clearInterval(iv);
+  }, [loadPresence]);
+
+  // Load all employees (mitarbeiter + admin)
+  useEffect(() => {
+    api.get(`/chat/users?token=${token}`).then(r => {
+      const staff = (r.data || []).filter(u => u.role === "mitarbeiter" || u.role === "admin");
+      setAllEmployees(staff);
+    }).catch(() => {});
+  }, [token]);
 
   if (!isAdmin) { navigate("/hub"); return null; }
 
@@ -58,6 +82,29 @@ export default function AdminZeiterfassungPage() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-5 space-y-4">
+        {/* Anwesenheits-Übersicht */}
+        <div className="bg-white rounded-xl border border-gray-200 px-4 py-3" data-testid="presence-overview">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Anwesenheit</p>
+          <div className="flex flex-wrap gap-3">
+            {allEmployees.map(emp => {
+              const isPresent = presence.some(p => p.user_id === emp.id);
+              const presenceEntry = presence.find(p => p.user_id === emp.id);
+              return (
+                <div key={emp.id} className="flex items-center gap-1.5" data-testid={`presence-${emp.id}`}>
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPresent ? "bg-green-500" : "bg-gray-300"}`} />
+                  <span className={`text-xs font-medium ${isPresent ? "text-gray-900" : "text-gray-400"}`}>{emp.name}</span>
+                  {isPresent && presenceEntry?.clock_in && (
+                    <span className="text-[10px] text-green-600">
+                      seit {new Date(presenceEntry.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {allEmployees.length === 0 && <span className="text-xs text-gray-400">Laden...</span>}
+          </div>
+        </div>
+
         {/* Controls */}
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
           <div className="flex items-center gap-3">
