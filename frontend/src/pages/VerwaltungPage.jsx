@@ -39,7 +39,7 @@ export default function VerwaltungPage() {
     {
       key: "zeiterfassung",
       label: "Arbeitszeiterfassung",
-      description: "Stempelzeiten aller Mitarbeiter mit GPS-Standort",
+      description: "Stempelzeiten aller Mitarbeiter",
       icon: Clock,
       color: "green",
       path: "/verwaltung/zeiterfassung",
