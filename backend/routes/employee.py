@@ -836,20 +836,31 @@ async def create_time_off_request(token: str = Query(...), data: dict = Body(...
     if not all_day and start_time and end_time:
         task_title += f" {start_time}-{end_time}"
 
-    admins = await db.users.find({"role": "admin"}, {"_id": 0, "id": 1}).to_list(100)
+    admins = await db.users.find({"role": "admin"}, {"_id": 0, "id": 1, "name": 1}).to_list(100)
     admin_ids = [a["id"] for a in admins]
+    assigned_to_names = {a["id"]: a.get("name", "Admin") for a in admins}
 
+    now = datetime.now(timezone.utc).isoformat()
     task = {
         "id": str(uuid.uuid4()),
         "title": task_title,
         "description": f"Antrag von {caller.get('name', '')} auf {label}.\nZeitraum: {start_date} bis {end_date}" + (f"\nUhrzeit: {start_time} - {end_time}" if not all_day else f"\nGanztägig ({days} Tage)"),
         "priority": "hoch",
+        "priority_order": 0,
         "status": "open",
         "created_by": caller["id"],
+        "created_by_name": caller.get("name", caller.get("email", "")),
         "assigned_to": admin_ids,
+        "assigned_to_names": assigned_to_names,
         "due_date": start_date,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
+        "updated_at": now,
+        "completed": False,
         "completed_at": None,
+        "completed_by": None,
+        "completed_by_name": None,
+        "comment_count": 0,
+        "is_deleted": False,
         "time_off_request_id": entry["id"],
     }
     await db.tasks.insert_one(task)
@@ -928,7 +939,14 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
         status_label = "Genehmigt" if status == "approved" else "Abgelehnt"
         await db.tasks.update_one(
             {"id": task["id"]},
-            {"$set": {"status": "done", "completed_at": datetime.now(timezone.utc).isoformat(), "title": f"[{status_label}] {task['title']}"}}
+            {"$set": {
+                "status": "done",
+                "completed": True,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_by": caller["id"],
+                "completed_by_name": caller.get("name", ""),
+                "title": f"[{status_label}] {task['title']}",
+            }}
         )
 
     return {"ok": True, "status": status}

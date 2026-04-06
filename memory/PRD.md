@@ -22,6 +22,13 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 - Jahres-Summary-Karten: Stundenkonto, Genehmigt, Resturlaub, Krankheit
 - GPS-Pins für Ein-/Ausstempeln sichtbar (nur Admin)
 
+### Antrags-Tasks Genehmigt/Abgelehnt Buttons - FERTIG (2026-04-06)
+- Antrags-Tasks zeigen "Genehmigt" und "Abgelehnt" Buttons statt Häkchen
+- Mülleimer-Button bei Antrags-Tasks entfernt
+- "von undefined" Bug behoben (created_by_name fehlte bei Task-Erstellung)
+- Genehmigte/Abgelehnte Antrags-Tasks werden korrekt als erledigt markiert (completed=true)
+- Betrifft: HubPage.js (Frontend), employee.py (Backend Task-Erstellung + Resolve)
+
 ### Überstundenabbau-Verrechnung Bugfix - FERTIG (2026-04-06)
 - Bug: Genehmigte Überstundenabbau-Anträge wurden nicht vom Stundenkonto abgezogen
 - Fix: Bei Genehmigung (direkt + via Task) werden automatisch 8h pro Arbeitstag abgezogen
