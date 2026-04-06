@@ -107,6 +107,7 @@ PREDEFINED_FOLDERS = [
     {"id": "betriebsversammlung_meetingprotokolle", "name": "Betriebsversammlung - Meetingprotokolle", "icon": "file-text", "color": "gray"},
     {"id": "ablage_allgemein", "name": "Ablage - allgemein", "icon": "folder", "color": "gray"},
     {"id": "temporaerer_ordner", "name": "temporärer Ordner", "icon": "folder", "color": "gray"},
+    {"id": "lohnabrechnung", "name": "Lohnabrechnung", "icon": "file-text", "color": "green"},
     {"id": "sonstiges", "name": "Sonstiges", "icon": "folder", "color": "gray"},
 ]
 
@@ -402,7 +403,7 @@ MONTH_NAMES = {
     1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
     7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember"
 }
-AUTO_YEAR_MONTH_FOLDERS = ["rechnungseingang", "rechnungsausgang", "lieferscheine_eingehend", "lieferscheine_ausgehend"]
+AUTO_YEAR_MONTH_FOLDERS = ["rechnungseingang", "rechnungsausgang", "lieferscheine_eingehend", "lieferscheine_ausgehend", "lohnabrechnung"]
 
 
 async def _ensure_year_month_subfolder(parent_folder_id: str, doc_date_str: str) -> str:
@@ -592,6 +593,82 @@ async def _forward_to_datev(doc_id: str, storage_path: str, original_filename: s
         await db.documents.update_one({"id": doc_id}, {"$set": {"datev_forwarded": False, "datev_forward_error": str(e)}})
 
 
+async def _assign_payroll_to_employee(doc_id: str, ai_result: dict, temp_path: str, content_type: str):
+    """Use AI to extract employee name from payroll PDF and assign it to the matching user."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+
+        # Get all users from DB
+        users = []
+        async for u in db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1}):
+            users.append(u)
+        user_list = ", ".join(f'{u["name"]} (ID: {u["id"]})' for u in users)
+
+        system = f"""Du bist ein Spezialist für die Erkennung von Lohnabrechnungen.
+Extrahiere aus dem Dokument:
+1. Den vollständigen Namen des Mitarbeiters
+2. Die Personalnummer
+3. Den Abrechnungsmonat (YYYY-MM Format)
+4. Den Netto-Auszahlungsbetrag
+
+Hier sind die bekannten Mitarbeiter im System:
+{user_list}
+
+Ordne den erkannten Namen dem passenden Mitarbeiter zu. Beachte: Kleine Abweichungen (Vorname/Nachname vertauscht, Umlaute) sind möglich.
+
+Antworte NUR mit JSON:
+{{"employee_name": "...", "personnel_number": "...", "month": "YYYY-MM", "net_amount": 0.00, "matched_user_id": "..." oder null falls kein Match, "matched_user_name": "..."}}"""
+
+        chat = LlmChat(
+            api_key=EMERGENT_KEY,
+            session_id=f"payroll-assign-{uuid.uuid4()}",
+            system_message=system
+        ).with_model("gemini", "gemini-2.5-flash")
+
+        # Re-read the file if temp_path still exists
+        if os.path.exists(temp_path):
+            file_content = FileContentWithMimeType(file_path=temp_path, mime_type=content_type)
+            msg = UserMessage(text="Analysiere diese Lohnabrechnung und ordne sie einem Mitarbeiter zu.", file_contents=[file_content])
+        else:
+            # Fall back to text from first AI analysis
+            full_text = ai_result.get("full_text", "")
+            msg = UserMessage(text=f"Analysiere diese Lohnabrechnung und ordne sie einem Mitarbeiter zu:\n\n{full_text}")
+
+        response = await chat.send_message(msg)
+        response_text = response.strip()
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            json_lines = []
+            in_block = False
+            for line in lines:
+                if line.startswith("```") and not in_block:
+                    in_block = True
+                    continue
+                elif line.startswith("```") and in_block:
+                    break
+                elif in_block:
+                    json_lines.append(line)
+            response_text = "\n".join(json_lines)
+
+        payroll_info = json.loads(response_text)
+        matched_user_id = payroll_info.get("matched_user_id")
+
+        update = {
+            "payroll_info": payroll_info,
+            "assigned_user_id": matched_user_id,
+            "payroll_month": payroll_info.get("month"),
+            "payroll_net_amount": payroll_info.get("net_amount"),
+        }
+        await db.documents.update_one({"id": doc_id}, {"$set": update})
+        if matched_user_id:
+            logger.info(f"Payroll doc {doc_id} assigned to user {matched_user_id} ({payroll_info.get('matched_user_name')})")
+        else:
+            logger.warning(f"Payroll doc {doc_id}: No matching user found for '{payroll_info.get('employee_name')}'")
+    except Exception as e:
+        logger.error(f"Payroll assignment failed for doc {doc_id}: {e}")
+        await db.documents.update_one({"id": doc_id}, {"$set": {"payroll_info": {"error": str(e)}}})
+
+
 async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
     """Background task to run AI analysis on an uploaded document."""
     try:
@@ -647,6 +724,10 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
         if doc and (final_folder.startswith("rechnungseingang") or final_folder in DATEV_FORWARD_FOLDERS):
             await _forward_to_datev(doc_id, doc["storage_path"], doc["original_filename"], content_type, ai_result)
+
+        # Auto-assign payroll documents to employees
+        if final_folder.startswith("lohnabrechnung"):
+            await _assign_payroll_to_employee(doc_id, ai_result, temp_path, content_type)
     except Exception as e:
         logger.error(f"AI analysis error for doc {doc_id}: {e}")
         await db.documents.update_one({"id": doc_id}, {"$set": {"ai_status": "failed"}})

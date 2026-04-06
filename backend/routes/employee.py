@@ -1140,6 +1140,30 @@ async def get_my_releases(token: str = Query(...)):
     return releases
 
 
+@router.get("/payroll/my-documents")
+async def get_my_payroll_documents(token: str = Query(...)):
+    """Employee gets their assigned DATEV payroll PDFs."""
+    caller = await _get_user(token)
+    docs = await db.documents.find(
+        {"assigned_user_id": caller["id"], "folder_id": {"$regex": "^lohnabrechnung"}, "is_deleted": False},
+        {"_id": 0, "id": 1, "original_filename": 1, "payroll_month": 1, "payroll_net_amount": 1, "payroll_info": 1, "created_at": 1, "storage_path": 1}
+    ).sort("payroll_month", -1).to_list(200)
+    return docs
+
+
+@router.get("/payroll/documents/{user_id}")
+async def get_payroll_documents_admin(user_id: str, token: str = Query(...)):
+    """Admin gets assigned DATEV payroll PDFs for a user."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    docs = await db.documents.find(
+        {"assigned_user_id": user_id, "folder_id": {"$regex": "^lohnabrechnung"}, "is_deleted": False},
+        {"_id": 0, "id": 1, "original_filename": 1, "payroll_month": 1, "payroll_net_amount": 1, "payroll_info": 1, "created_at": 1, "storage_path": 1}
+    ).sort("payroll_month", -1).to_list(200)
+    return docs
+
+
 @router.get("/payroll/{user_id}")
 async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(...)):
     """Calculate payroll for a user for a given month (YYYY-MM)."""
