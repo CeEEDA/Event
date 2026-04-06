@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
-  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff,
+  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -37,6 +37,7 @@ export default function AdminZeitDetailPage() {
   const [yearEntries, setYearEntries] = useState([]);
   const [timeOffRequests, setTimeOffRequests] = useState([]);
   const [expandedMonth, setExpandedMonth] = useState(null);
+  const [archiveOpen, setArchiveOpen] = useState(null);
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const m = String(i + 1).padStart(2, "0");
@@ -271,24 +272,74 @@ export default function AdminZeitDetailPage() {
           </div>
         )}
 
-        {/* Rejected / Withdrawn Time-Off Requests */}
-        {timeOffRequests.filter(r => r.status === "rejected" || r.status === "withdrawn").length > 0 && (
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <CalendarOff className="w-4 h-4 text-gray-400" />
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Abgelehnt / Zurückgezogen</span>
-            </div>
-            {timeOffRequests.filter(r => r.status === "rejected" || r.status === "withdrawn").map(r => (
-              <div key={r.id} className="flex items-center gap-2 text-sm text-gray-500 py-0.5">
-                <span className="font-medium">{r.type_label}</span>
-                <span>{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-auto ${r.status === "rejected" ? "bg-red-100 text-red-600" : "bg-gray-200 text-gray-600"}`}>
-                  {r.status === "rejected" ? "Abgelehnt" : "Zurückgezogen"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Rejected / Withdrawn Time-Off Requests - current year only */}
+        {(() => {
+          const currentYearStr = String(year);
+          const currentYearItems = timeOffRequests.filter(r =>
+            (r.status === "rejected" || r.status === "withdrawn") && r.start_date?.startsWith(currentYearStr)
+          );
+          const archiveItems = timeOffRequests.filter(r =>
+            (r.status === "rejected" || r.status === "withdrawn") && !r.start_date?.startsWith(currentYearStr)
+          );
+          const archiveYears = [...new Set(archiveItems.map(r => r.start_date?.slice(0, 4)))].sort((a, b) => b - a);
+
+          return (
+            <>
+              {currentYearItems.length > 0 && (
+                <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CalendarOff className="w-4 h-4 text-gray-400" />
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Abgelehnt / Zurückgezogen ({currentYearStr})</span>
+                  </div>
+                  {currentYearItems.map(r => (
+                    <div key={r.id} className="flex items-center gap-2 text-sm text-gray-500 py-0.5">
+                      <span className="font-medium">{r.type_label}</span>
+                      <span>{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-auto ${r.status === "rejected" ? "bg-red-100 text-red-600" : "bg-gray-200 text-gray-600"}`}>
+                        {r.status === "rejected" ? "Abgelehnt" : "Zurückgezogen"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {archiveYears.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2.5">
+                    <Archive className="w-4 h-4 text-gray-400" />
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Archiv — Abgelehnt / Zurückgezogen</span>
+                  </div>
+                  {archiveYears.map(ay => {
+                    const items = archiveItems.filter(r => r.start_date?.startsWith(ay));
+                    const isOpen = archiveOpen === ay;
+                    return (
+                      <div key={ay} className="border-t border-gray-100">
+                        <button onClick={() => setArchiveOpen(isOpen ? null : ay)} className="w-full text-left px-4 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                          <span className="text-sm font-semibold text-gray-700">{ay}</span>
+                          <span className="text-xs text-gray-400 ml-1">({items.length})</span>
+                          <div className="ml-auto">{isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}</div>
+                        </button>
+                        {isOpen && (
+                          <div className="px-4 pb-3 space-y-0.5">
+                            {items.map(r => (
+                              <div key={r.id} className="flex items-center gap-2 text-sm text-gray-500 py-0.5">
+                                <span className="font-medium">{r.type_label}</span>
+                                <span>{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-auto ${r.status === "rejected" ? "bg-red-100 text-red-600" : "bg-gray-200 text-gray-600"}`}>
+                                  {r.status === "rejected" ? "Abgelehnt" : "Zurückgezogen"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* Monthly Breakdown */}
         <div className="space-y-2">
