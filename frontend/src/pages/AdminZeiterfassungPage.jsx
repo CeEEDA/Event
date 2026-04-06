@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import {
-  ArrowLeft, Clock, User, ChevronRight, Search,
+  ArrowLeft, Clock, User, ChevronRight, Search, Palmtree, ThermometerSun,
 } from "lucide-react";
 import { Input } from "../components/ui/input";
 
@@ -21,6 +21,8 @@ export default function AdminZeiterfassungPage() {
   });
   const [presence, setPresence] = useState([]);
   const [allEmployees, setAllEmployees] = useState([]);
+  const [timeOffByUser, setTimeOffByUser] = useState({});
+  const [vacByUser, setVacByUser] = useState({});
 
   const loadReport = useCallback(async () => {
     const [y, m] = month.split("-");
@@ -57,6 +59,27 @@ export default function AdminZeiterfassungPage() {
     }).catch(() => {});
   }, [token]);
 
+  // Load time-off requests for all users (admin)
+  useEffect(() => {
+    api.get(`/employee/time-off?token=${token}`).then(r => {
+      const byUser = {};
+      (r.data || []).forEach(req => {
+        if (!byUser[req.user_id]) byUser[req.user_id] = [];
+        byUser[req.user_id].push(req);
+      });
+      setTimeOffByUser(byUser);
+    }).catch(() => {});
+  }, [token]);
+
+  // Load vacation entries for all users
+  useEffect(() => {
+    allEmployees.forEach(emp => {
+      api.get(`/employee/vacation/${emp.id}?token=${token}`).then(r => {
+        setVacByUser(prev => ({ ...prev, [emp.id]: r.data || [] }));
+      }).catch(() => {});
+    });
+  }, [token, allEmployees]);
+
   if (!isAdmin) { navigate("/hub"); return null; }
 
   const filtered = timeReport.filter(emp => {
@@ -64,7 +87,21 @@ export default function AdminZeiterfassungPage() {
     return emp.user_name?.toLowerCase().includes(search.toLowerCase());
   });
 
-  const totalAllMinutes = filtered.reduce((s, e) => s + (e.total_minutes || 0), 0);
+  // Add employees that have vacation/sick but no time entries
+  const [y, mo] = month.split("-");
+  const prefix = `${y}-${mo}`;
+  const reportUserIds = new Set(filtered.map(e => e.user_id));
+  const extraEmployees = allEmployees.filter(emp => {
+    if (reportUserIds.has(emp.id)) return false;
+    const hasVac = (vacByUser[emp.id] || []).some(v => v.start_date?.startsWith(prefix) || v.end_date?.startsWith(prefix));
+    const hasSick = (timeOffByUser[emp.id] || []).some(r => r.type === "krank" && r.status === "approved" && (r.start_date?.startsWith(prefix) || r.end_date?.startsWith(prefix)));
+    if (!hasVac && !hasSick) return false;
+    if (search.trim() && !emp.name?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }).map(emp => ({ user_id: emp.id, user_name: emp.name, total_minutes: 0, entries: [] }));
+  const allFiltered = [...filtered, ...extraEmployees];
+
+  const totalAllMinutes = allFiltered.reduce((s, e) => s + (e.total_minutes || 0), 0);
   const totalH = Math.floor(totalAllMinutes / 60);
   const totalM = Math.round(totalAllMinutes % 60);
 
@@ -126,21 +163,27 @@ export default function AdminZeiterfassungPage() {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-xs text-gray-500">{filtered.length} Mitarbeiter &middot; Gesamt: <span className="font-bold text-gray-900">{totalH}h {totalM}m</span></p>
+            <p className="text-xs text-gray-500">{allFiltered.length} Mitarbeiter &middot; Gesamt: <span className="font-bold text-gray-900">{totalH}h {totalM}m</span></p>
           </div>
         </div>
 
         {/* Employee Cards */}
-        {filtered.length === 0 ? (
+        {allFiltered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
             <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2" />
             <p className="text-sm text-gray-400">Keine Zeiteinträge in diesem Monat</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(emp => {
+            {allFiltered.map(emp => {
               const hours = Math.floor(emp.total_minutes / 60);
               const mins = Math.round(emp.total_minutes % 60);
+              const [y, m] = month.split("-");
+              const prefix = `${y}-${m}`;
+              const empVacs = (vacByUser[emp.user_id] || []).filter(v => v.start_date?.startsWith(prefix) || v.end_date?.startsWith(prefix));
+              const vacDays = empVacs.reduce((s, v) => s + (v.days || 0), 0);
+              const empSicks = (timeOffByUser[emp.user_id] || []).filter(r => r.type === "krank" && r.status === "approved" && (r.start_date?.startsWith(prefix) || r.end_date?.startsWith(prefix)));
+              const sickDays = empSicks.reduce((s, r) => s + (r.days || 0), 0);
               return (
                 <div key={emp.user_id} className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid={`time-user-${emp.user_id}`}>
                   <button
@@ -152,7 +195,21 @@ export default function AdminZeiterfassungPage() {
                       <p className="text-sm font-medium text-gray-900">{emp.user_name}</p>
                       <p className="text-xs text-gray-500">{emp.entries.length} Einträge</p>
                     </div>
-                    <span className="text-lg font-bold text-gray-900">{hours}h {mins}m</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                        <Clock className="w-3 h-3 inline mr-0.5 -mt-0.5" />{hours}h {mins}m
+                      </span>
+                      {vacDays > 0 && (
+                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded">
+                          <Palmtree className="w-3 h-3 inline mr-0.5 -mt-0.5" />{vacDays}T
+                        </span>
+                      )}
+                      {sickDays > 0 && (
+                        <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded">
+                          <ThermometerSun className="w-3 h-3 inline mr-0.5 -mt-0.5" />{sickDays}T
+                        </span>
+                      )}
+                    </div>
                     <ChevronRight className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
