@@ -13,6 +13,15 @@ Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung
 
 ## What's Been Implemented
 
+### Admin Mitarbeiter-Zeitdetail Monatsansicht - FERTIG (2026-04-06)
+- AdminZeitDetailPage (`/verwaltung/zeiterfassung/:userId`) komplett redesigned
+- Aufklappbare Monatsansicht (Accordion) identisch zur Mitarbeiter-Seite (`/arbeitszeit`)
+- Summary Badges pro Monat: Stunden, Urlaub, Krank
+- HR-Stammdaten (Überstunden, Urlaubstage) bearbeitbar
+- Genehmigte Urlaube eintragen/löschen mit Kalender-Berechnung
+- Jahres-Summary-Karten: Stundenkonto, Genehmigt, Resturlaub, Krankheit
+- GPS-Pins für Ein-/Ausstempeln sichtbar (nur Admin)
+
 ### Arbeitsfreie-Zeit-Anträge - FERTIG (2026-04-06)
 - Mitarbeiter können über Hub-Kachel "Freie Zeit" Anträge stellen (Krank, Urlaub, Überstundenabbau)
 - Dialog mit Dropdown, Datumsauswahl, Ganztägig-Toggle, optionale Uhrzeiten
