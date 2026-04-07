@@ -43,6 +43,9 @@ import {
   MonitorSmartphone,
   Wrench,
   Zap,
+  Upload,
+  Radio,
+  Check,
 } from "lucide-react";
 
 /* ───── KI-Training Section ───── */
@@ -1147,6 +1150,161 @@ function HilfsmittelSection() {
   );
 }
 
+/* ───── Kirmeskiste OTA Update Management ───── */
+function OtaUpdateSection() {
+  const [versions, setVersions] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [newVersion, setNewVersion] = useState("");
+  const [changelog, setChangelog] = useState("");
+  const [file, setFile] = useState(null);
+
+  const token = localStorage.getItem("token");
+
+  const loadData = useCallback(async () => {
+    try {
+      const [vRes, dRes] = await Promise.all([
+        api.get("/system/ota/versions", { headers: { Authorization: `Bearer ${token}` } }),
+        api.get("/system/ota/devices", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setVersions(vRes.data?.versions || []);
+      setDevices(dRes.data?.devices || []);
+    } catch {}
+    setLoading(false);
+  }, [token]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleUpload = async () => {
+    if (!file || !newVersion) { toast.error("Version und Datei erforderlich"); return; }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post(
+        `/system/ota/upload?version=${encodeURIComponent(newVersion)}&changelog=${encodeURIComponent(changelog)}&publish=true`,
+        fd,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" } }
+      );
+      toast.success(`Version ${newVersion} hochgeladen`);
+      setShowUpload(false); setNewVersion(""); setChangelog(""); setFile(null);
+      loadData();
+    } catch (e) { toast.error(getErrorMsg(e)); }
+    setUploading(false);
+  };
+
+  const togglePublish = async (version) => {
+    try {
+      const r = await api.post(`/system/ota/publish/${version}`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`Version ${version}: ${r.data?.published ? "Veröffentlicht" : "Zurückgezogen"}`);
+      loadData();
+    } catch (e) { toast.error(getErrorMsg(e)); }
+  };
+
+  const latestPublished = versions.find(v => v.published);
+  const needsUpdate = devices.filter(d => d.needs_update).length;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="ota-update-section">
+      <div className="bg-gradient-to-r from-sky-600 to-indigo-600 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Radio className="w-5 h-5 text-white" />
+          <h3 className="text-sm font-semibold text-white">Kirmeskiste OTA-Updates</h3>
+          {needsUpdate > 0 && (
+            <span className="bg-orange-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{needsUpdate} ausstehend</span>
+          )}
+        </div>
+        <Button size="sm" onClick={() => setShowUpload(!showUpload)} className="bg-white/20 hover:bg-white/30 text-white text-xs" data-testid="ota-upload-toggle">
+          <Upload className="w-3.5 h-3.5 mr-1" /> Neue Version
+        </Button>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Upload Form */}
+        {showUpload && (
+          <div className="border border-dashed border-indigo-300 rounded-lg p-4 bg-indigo-50/30 space-y-3" data-testid="ota-upload-form">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-gray-600">Versionsnummer</Label>
+                <Input value={newVersion} onChange={e => setNewVersion(e.target.value)} placeholder="z.B. 1.1.0" className="mt-1" data-testid="ota-version-input" />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-600">Changelog</Label>
+                <Input value={changelog} onChange={e => setChangelog(e.target.value)} placeholder="Was wurde geändert?" className="mt-1" data-testid="ota-changelog-input" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-600">Script-Datei (kirmeskiste_sync.py)</Label>
+              <input type="file" accept=".py" onChange={e => setFile(e.target.files[0])} className="mt-1 text-xs w-full" data-testid="ota-file-input" />
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleUpload} disabled={uploading} className="bg-indigo-600 hover:bg-indigo-700 text-white" data-testid="ota-upload-btn">
+                {uploading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Upload className="w-3.5 h-3.5 mr-1" />}
+                Hochladen & Veröffentlichen
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowUpload(false)}>Abbrechen</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Device Status */}
+        {devices.length > 0 && (
+          <div>
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Geräte-Status ({devices.length})</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {devices.map(d => (
+                <div key={d.device_id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-xs ${
+                  d.needs_update ? "border-orange-200 bg-orange-50" : "border-green-200 bg-green-50"
+                }`} data-testid={`ota-device-${d.device_id}`}>
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${d.needs_update ? "bg-orange-400" : "bg-green-500"}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-800 truncate">{d.device_name || d.serial || d.device_id?.slice(0, 8)}</p>
+                    <p className="text-gray-500">v{d.current_version || "?"} {d.needs_update ? "→ Update" : "aktuell"}</p>
+                  </div>
+                  <p className="text-gray-400 text-[10px] flex-shrink-0">{d.last_seen?.slice(0, 16)?.replace("T", " ") || "—"}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Versions */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Versionen</h4>
+          {loading ? (
+            <div className="flex items-center gap-2 text-gray-400 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Laden...</div>
+          ) : versions.length === 0 ? (
+            <p className="text-xs text-gray-400">Noch keine Version hochgeladen.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {versions.map(v => (
+                <div key={v.version} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-xs ${
+                  v.published ? "border-green-200 bg-green-50/50" : "border-gray-200 bg-gray-50"
+                }`} data-testid={`ota-version-${v.version}`}>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-bold text-gray-800">v{v.version}</span>
+                    {v.published && <span className="ml-2 text-[10px] text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">aktiv</span>}
+                    {v.changelog && <span className="ml-2 text-gray-500">{v.changelog}</span>}
+                  </div>
+                  <span className="text-gray-400">{(v.file_size / 1024).toFixed(1)} KB</span>
+                  <span className="text-gray-400">{v.created_at?.slice(0, 10)}</span>
+                  <Button size="sm" variant="outline" onClick={() => togglePublish(v.version)}
+                    className={`text-[10px] h-6 px-2 ${v.published ? "text-orange-600" : "text-green-600"}`}
+                    data-testid={`ota-toggle-${v.version}`}>
+                    {v.published ? "Zurückziehen" : "Veröffentlichen"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───── Backup-System Einstellungen ───── */
 function BackupSettingsSection() {
   const [settings, setSettings] = useState({
@@ -1615,6 +1773,9 @@ export default function AdminSettingsPage() {
           <div id="hilfsmittel-section">
             <HilfsmittelSection />
           </div>
+
+          {/* Kirmeskiste OTA-Updates */}
+          <OtaUpdateSection />
 
           {/* Mosquitto MQTT Broker */}
           <MosquittoSetupSection />
