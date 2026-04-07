@@ -288,12 +288,15 @@ export default function EinsatzplanungPage() {
             const assigned = getJobAssignedCount(pk);
             const needed = getJobNeeded(pk);
             const isFull = needed > 0 && assigned >= needed;
+            const hasReqs = needed > 0;
             const isSelected = selectedJob?.primary_key === pk;
+            const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
                 className={`flex-shrink-0 border-2 rounded-lg px-3 py-2 text-xs cursor-pointer transition-all min-w-[200px] max-w-[260px] ${
                   isSelected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200" :
-                  isFull ? "border-green-300 bg-green-50 hover:border-green-400" :
+                  isFull ? "border-green-400 bg-green-50 hover:border-green-500 shadow-sm shadow-green-100" :
+                  hasReqs ? "border-orange-200 bg-white hover:border-orange-300" :
                   "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30"
                 }`}
                 onClick={() => setSelectedJob(isSelected ? null : o)}
@@ -301,45 +304,57 @@ export default function EinsatzplanungPage() {
               >
                 <p className="font-semibold text-gray-900 truncate">{o.event || o.order_no}</p>
                 <p className="text-gray-400 truncate">{o.contact_name}</p>
-                <p className="text-gray-400">{o.event_start || o.dispo_start || "—"}</p>
+                <p className="text-gray-400">{o.dispo_start || o.event_start || "—"} – {o.dispo_end || o.event_end || ""}</p>
 
-                {/* EpiRent Crew Requirements */}
                 <div className="mt-1.5 pt-1.5 border-t border-gray-100">
-                  {hasCrew ? (
-                    <div className="space-y-1" data-testid={`crew-${pk}`}>
-                      <div className="flex items-center gap-1 mb-1">
-                        <Users className="w-3 h-3 text-indigo-500" />
-                        <span className={`font-bold text-xs ${isFull ? "text-green-600" : "text-orange-600"}`}>{assigned}/{needed}</span>
-                        <span className="text-[9px] text-indigo-500 font-medium ml-auto">EpiRent</span>
+                  {hasReqs ? (
+                    <div data-testid={hasCrew ? `crew-${pk}` : `req-${pk}`}>
+                      {/* Progress bar */}
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Users className={`w-3.5 h-3.5 ${isFull ? "text-green-600" : "text-orange-500"}`} />
+                        <span className={`font-bold text-xs ${isFull ? "text-green-700" : "text-orange-600"}`}>
+                          {assigned}/{needed} Zugewiesen
+                        </span>
+                        {isFull && <Check className="w-3.5 h-3.5 text-green-600 ml-auto" />}
+                        {hasCrew && <span className="text-[9px] text-indigo-500 font-medium ml-auto">EpiRent</span>}
                       </div>
-                      {crew.map((c, ci) => (
-                        <div key={ci} className="flex items-center gap-1 text-[10px] bg-indigo-50/60 rounded px-1.5 py-0.5">
-                          <span className="font-bold text-indigo-700">{c.count}x</span>
-                          <span className="text-gray-700 truncate flex-1">{c.title || "Personal"}</span>
-                          {c.time_start && c.time_end && (
-                            <span className="text-gray-400 flex items-center gap-0.5 flex-shrink-0">
-                              <Clock className="w-2.5 h-2.5" />{c.time_start}–{c.time_end}
-                            </span>
-                          )}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1.5">
+                        <div className={`h-1.5 rounded-full transition-all ${isFull ? "bg-green-500" : "bg-orange-400"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {/* Role details */}
+                      {hasCrew ? (
+                        <div className="space-y-0.5">
+                          {crew.map((c, ci) => (
+                            <div key={ci} className="flex items-center gap-1 text-[10px] bg-indigo-50/60 rounded px-1.5 py-0.5">
+                              <span className="font-bold text-indigo-700">{c.count}x</span>
+                              <span className="text-gray-700 truncate flex-1">{c.title || "Personal"}</span>
+                              {c.time_start && c.time_end && (
+                                <span className="text-gray-400 flex items-center gap-0.5 flex-shrink-0">
+                                  <Clock className="w-2.5 h-2.5" />{c.time_start}–{c.time_end}
+                                </span>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : req?.roles ? (
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] text-gray-500 truncate">{req.roles}</p>
+                          <button onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: req?.count || 1, roles: req?.roles || "" }); }}
+                            className="text-gray-400 hover:text-indigo-600 p-0.5" data-testid={`edit-req-${pk}`}>
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between">
-                      {needed > 0 ? (
-                        <div className="flex items-center gap-1">
-                          <Users className="w-3 h-3 text-gray-500" />
-                          <span className={`font-bold ${isFull ? "text-green-600" : "text-orange-600"}`}>{assigned}/{needed}</span>
-                          {req?.roles && <span className="text-gray-400 truncate max-w-[100px]">· {req.roles}</span>}
-                        </div>
-                      ) : (
-                        <span className="text-gray-300 text-[10px]">Kein Personal definiert</span>
-                      )}
-                      <button onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: req?.count || 1, roles: req?.roles || "" }); }}
-                        className="text-gray-400 hover:text-indigo-600 p-0.5" data-testid={`edit-req-${pk}`}>
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: 1, roles: "" }); }}
+                      className="w-full flex items-center justify-center gap-1.5 py-1 rounded-md border border-dashed border-gray-300 text-gray-400 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors"
+                      data-testid={`add-req-${pk}`}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span className="text-[10px] font-medium">Personal definieren</span>
+                    </button>
                   )}
                 </div>
               </div>

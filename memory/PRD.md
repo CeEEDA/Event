@@ -22,7 +22,15 @@ Comprehensive "Kirmes" (Fairground) billing and management system with internal 
 
 ## Completed Features (Latest First)
 
-### 2026-04-07: Only Show Confirmed Orders in Einsatzplanung
+### 2026-04-07: Improved Job Cards with Personnel Tracking
+- Job cards show "X/Y Zugewiesen" progress counter with visual progress bar
+- Green background + checkmark when all positions filled
+- Orange border when partially filled
+- "+ Personal definieren" button for cards without requirements
+- Dispo date range shown on cards
+- Both EpiRent crew data AND manual requirements supported
+
+## 2026-04-07: Only Show Confirmed Orders with Dispo in Week
 - Frontend filter changed: only `is_confirmed: true` orders appear in job cards
 - Reduces noise from unconfirmed/draft orders (42 → 14 in test week)
 
