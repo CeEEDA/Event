@@ -451,7 +451,11 @@ export default function HubPage() {
                     const dayName = d.toLocaleDateString("de-DE", { weekday: "short" });
                     const dateStr = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
                     return (
-                      <div key={a.id} className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2" data-testid={`my-plan-${a.id}`}>
+                      <div key={a.id}
+                        className={`flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 ${a.order_pk ? "cursor-pointer hover:bg-indigo-100 hover:border-indigo-300 transition-colors" : ""}`}
+                        onClick={() => a.order_pk && navigate(`/orders/${a.order_pk}`)}
+                        data-testid={`my-plan-${a.id}`}
+                      >
                         <div className="text-center min-w-[44px]">
                           <p className="text-[10px] text-indigo-500 font-medium uppercase">{dayName}</p>
                           <p className="text-sm font-bold text-indigo-800">{dateStr}</p>
@@ -462,6 +466,7 @@ export default function HubPage() {
                           {a.note && <p className="text-[10px] text-gray-500 italic truncate">{a.note}</p>}
                           {(a.start_time || a.end_time) && <p className="text-[10px] text-gray-400">{a.start_time || "?"} – {a.end_time || "?"}</p>}
                         </div>
+                        {a.order_pk && <ChevronRight className="w-4 h-4 text-indigo-400 flex-shrink-0" />}
                       </div>
                     );
                   })}
