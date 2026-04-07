@@ -73,7 +73,7 @@ DEFAULT_CONF = {
     "device_id": "",
     "db_path": "/var/lib/kirmeskiste/kirmeskiste.sqlite",
     "read_interval": 10,
-    "sync_interval": 30,
+    "sync_interval": 1200,
     "retry_delay": 30,
     "batch_size": 500,
 }
@@ -546,7 +546,6 @@ def main():
     log.info(f"Starte Messung mit {len(active_meters)} Zaehlern...")
 
     last_sync_time = 0
-    update_check_counter = 0
     consecutive_errors = 0
 
     while True:
@@ -569,11 +568,8 @@ def main():
                 # Alte Daten aufraeumen (einmal pro Sync-Zyklus)
                 cleanup_old(conf["db_path"])
 
-                # Update-Check alle 60 Sync-Zyklen (~30 Minuten bei 30s Intervall)
-                update_check_counter += 1
-                if update_check_counter >= 60:
-                    check_and_apply_update(conf)
-                    update_check_counter = 0
+                # Update-Check bei jedem Sync-Zyklus (alle 20 Min)
+                check_and_apply_update(conf)
 
         except KeyboardInterrupt:
             log.info("Beendet durch Benutzer")
