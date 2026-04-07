@@ -1,0 +1,147 @@
+<analysis>**original_problem_statement**: 
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. 
+*PRODUCT REQUIREMENTS (Updated in this session):*
+- **Mac/Windows Desktop App:** The user now wants a native Desktop Application (Electron) for Mac (and later Windows). The app must first try to connect to the local server IP  (Ports: Backend 8002, Caddy 8001, Nginx 443). If unreachable, it should fallback to the remote . 
+- **Desktop UI UX:** The desktop app should start with a login screen. After login, it should show a main window with module tiles at the top. Clicking a tile must open that specific module in a *new, separate OS window*.
+- **Kirmeskiste OTA Updates:** Raspberry Pis must automatically check for script updates () from the backend every 20 minutes (sync interval) and self-restart.
+
+**User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
+
+**what currently exists?** 
+- Full-stack FastAPI + React app with Time tracking, Payroll (DATEV PDF AI parsing), Employee Hub, and Orders.
+- Einsatzplanung (Shift planning) UI that deeply integrates with the EpiRent API, fetching exact Crewbrain requirements from Personal chapter sub-items and displaying them on job cards.
+- Kirmeskiste/Device sync script () which runs on Raspberry Pis, syncing every 20 minutes and auto-pulling script updates from the backend.
+- Dedicated KI-Training page to allow admins to upload error samples and tweak the Gemini AI prompt dynamically.
+- 100% passing Regression Test Suite from previous steps.
+
+**Last working item**:
+    - Last item agent was working: Building the native Mac Desktop Application (Electron). The agent had just received the requirement to build an Electron app with local/remote IP fallback and multi-window architecture.
+    - Status: NOT STARTED
+    - Agent Testing Done: N
+    - Which testing method agent to use? manual testing by python -c / npm start for Electron shell validation, then frontend testing agent.
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**:  
+  None currently broken.
+
+**In progress Task List**:
+  Task 1: Build Mac Desktop App (Electron) (P0)
+     - Where to resume: You need to set up the Electron wrapper for the existing React app. Implement the connection logic to check  first (Ports: Backend 8002, Caddy 8001, Nginx 443), and fallback to  if the local IP is unreachable. 
+     - What will be achieved with this? A standalone native Mac application. The UX flow requires a login window first. After login, the main window should only display the module tiles at the top. Clicking a tile must spawn a *new, separate desktop window* for that specific tool/page.
+     - Status: NOT STARTED
+     - Should Test frontend/backend/both after fix? Frontend (Electron build/start process).
+     - Blocked on something: Nothing.
+
+**Upcoming and Future Tasks**
+    Upcoming Tasks:
+    - (P1) Build Windows Desktop App (Electron) (Proceed with this immediately after the Mac version is working).
+    - (P1) Microsoft 365 Postfach-Anbindung: Automatic document ingestion from an email inbox.
+    - (P1) PayPal/Kreditkarten Integration: Implement actual payment processing for Kirmes signups.
+    
+    Future Tasks:
+    - (P2) Lastdiagramm Live-Test (requires EMU meters).
+    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk.
+    - (P2) Implement Admin File Size Limits for uploads.
+    - (P2) Add GPS Support to Kirmeskiste.
+    - (P2) DSE890 Gateway GSM Connection.
+    - (P2) Refactor .
+
+**Completed work in this session**
+- EpiRent Crewbrain integration: Backend endpoint  with concurrency limit and MongoDB caching. (DONE)
+- Filter Einsatzplanung to show only confirmed jobs () that overlap with the current week's Dispo timeframe. (DONE)
+- EpiRent deep fetch: Updated backend to extract Crew data natively from EpiRent Personal chapter sub-items (). (DONE)
+- Added Project Numbers (e.g., 260060-01) to job cards with a clickable link (↗) routing to the Order Detail Page. (DONE)
+- Implemented Manual Task Copy Mode in Einsatzplanung (yellow copy button to stamp tasks onto other employees). (DONE)
+- Made Meine Einsätze items on Employee Hub clickable, routing to the specific Order. (DONE)
+- Hid Abrechnung PDF button for standard employees on Order Detail page. (DONE)
+- Added custom App Icon to  (Favicon/Apple Touch Icon) and configured basic PWA manifest. (DONE)
+- Moved Einsatzplanung button to the top row (position 2) next to Aufträge in the Hub. (DONE)
+- Extracted KI-Training into a standalone page () with error reporting/file upload to dynamically tune the AI prompt. (DONE)
+- Implemented simplified OTA Update flow for Kirmeskisten: Devices auto-pull script updates from the backend every 20 minutes (sync interval updated from 30s to 1200s). (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+None.
+
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: None
+  - Recurrence count: 0
+  - Status: RESOLVED
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+- React, FastAPI, MongoDB
+- **EpiRent API Deep Fetch**: Crewbrain requirements are extracted from  inside the Personal chapter.
+- **Electron (Pending)**: Native OS integration for Mac/Windows, multi-window management, local vs. cloud API routing fallback.
+
+**key DB schema**
+  - : 
+  - : 
+
+**changes in tech stack**
+- Added PWA capabilities (manifest, service worker).
+- **Upcoming:** Electron wrapper needs to be introduced for the React frontend.
+
+**All files of reference** 
+  -  (Updated extensively)
+  -  (Updated with batching and deep fetch)
+  -  (Updated sync interval & auto-pull)
+  -  (New)
+
+**Areas that need refactoring**: 
+- Introducing Electron will require careful adjustment of API Base URLs so that requests dynamically route to either  or .
+
+**key api endpoints**
+  -  (Crew requirements)
+  -  (Device script update)
+
+**Critical Info for New Agent** 
+- **YOU MUST RESPOND IN GERMAN ONLY.**
+- **Electron Network Requirement:** The Desktop App MUST first ping/check  (Internal network). Note the internal ports: Backend is , Caddy is , Nginx is . If the local server is unresponsive, it must fall back to the production URL.
+- **Electron UI Requirement:** 
+  1. Boot into a Login Window. 
+  2. Post-login: Show a slim Hub window with only the module tiles at the top. 
+  3. Clicking any tile MUST spawn a new independent OS Window.
+
+**documents and test reports created in this job** 
+  - 
+  - 
+  -  (Updated)
+
+**Last 10 User Messages and any pending HUMAN messages** 
+ 1. (User): Hide Abrechnung PDF button for employees. (DONE)
+ 2. (User): Use uploaded image as app icon. (DONE)
+ 3. (User): Move Einsatzplanung button to top right near Orders. (DONE)
+ 4. (User): Ask about iOS/Samsung app effort & OTA updates for PIs. (Agent checked Web)
+ 5. (User): Can we update PIs automatically from the backend? (Agent asked clarification)
+ 6. (User): Build PI OTA updates first, Mobile PWA later. (Agent implemented OTA)
+ 7. (User): Move AI-Training to a new Hub tile, add file uploads for errors. (DONE)
+ 8. (User): Simplify PI updates. PIs should auto-pull from the server during their sync. Change sync interval to 20 minutes. (DONE)
+ 9. (User): Remove the info text from the OTA Admin mask. (DONE)
+ 10. (User): **PENDING:** Baue eine Mac version. die soll zuerst checken, ob der Server Local zu erreichen ist. Wenn nicht nehmen wir die Route eventenergie.app. Local liegt die auf 172.20.200.117... Dann sollen als Fenster alle Kacheln oben sein. Zuerst ein Anmeldefenster... Es soll beim Drücken einer Kachel jeweils ein Fenster auf gehen... (NOT STARTED).
+
+**Project Health Check:**
+- Broken: None.
+- Mocked: None.
+
+**3rd Party Integrations** 
+- Gemini (via Emergent LLM Key)
+- DATEV (Email parsing)
+- EpiRent API (ERP)
+
+**Testing status**
+  - Testing agent used after significant changes: YES
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None
+  - Known regressions: None
+
+**Credentials to test flow:**
+- Admin:  / 
+- Admin Preview:  / 
+- Employee:  / 
+- Employee:  /  (used in latest tests)
+- Employee:  / 
+
+**What agent forgot to execute**
+The agent gathered the backend ports for the local  connection but the session ended before writing any initialization code for the Electron application. Start immediately by setting up the Electron project structure.</analysis>
