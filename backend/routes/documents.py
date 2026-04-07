@@ -330,11 +330,22 @@ async def update_ai_settings(body: dict):
 
 
 async def _get_custom_ai_instructions() -> str:
-    """Load custom AI instructions from DB."""
+    """Load custom AI instructions and training samples from DB."""
+    parts = []
     settings = await db.ai_settings.find_one({"key": "document_analysis"}, {"_id": 0})
     if settings and settings.get("custom_instructions"):
-        return settings["custom_instructions"]
-    return ""
+        parts.append(settings["custom_instructions"])
+
+    # Include training samples as correction examples
+    samples = []
+    async for s in db.ai_training_samples.find({}, {"_id": 0, "file_data": 0}).sort("created_at", -1).limit(20):
+        samples.append(s)
+    if samples:
+        parts.append("\n--- Bekannte Fehler und Korrekturen ---")
+        for s in samples:
+            parts.append(f"Datei '{s.get('filename', '?')}': Fehler: {s.get('error_description', '')} | Korrektur: {s.get('correction', '')}")
+
+    return "\n".join(parts)
 
 
 async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
@@ -891,3 +902,44 @@ async def download_file(doc_id: str):
     except Exception as e:
         logger.error(f"File download failed: {e}")
         raise HTTPException(status_code=500, detail="Fehler beim Herunterladen")
+
+
+# ─── AI Training Samples ───
+
+@router.get("/ai-training-samples")
+async def get_training_samples():
+    samples = []
+    async for s in db.ai_training_samples.find({}, {"_id": 0}).sort("created_at", -1).limit(50):
+        samples.append(s)
+    return {"samples": samples}
+
+
+@router.post("/ai-training-samples")
+async def upload_training_sample(
+    file: UploadFile = File(...),
+    error_description: str = Form(...),
+    correction: str = Form(""),
+):
+    import base64
+    content = await file.read()
+    sample_id = str(uuid.uuid4())
+    doc = {
+        "id": sample_id,
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "file_data": base64.b64encode(content).decode("utf-8"),
+        "file_size": len(content),
+        "error_description": error_description,
+        "correction": correction,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.ai_training_samples.insert_one(doc)
+    return {"id": sample_id, "filename": file.filename}
+
+
+@router.delete("/ai-training-samples/{sample_id}")
+async def delete_training_sample(sample_id: str):
+    result = await db.ai_training_samples.delete_one({"id": sample_id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Trainingsbeispiel nicht gefunden")
+    return {"deleted": True}

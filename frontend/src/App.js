@@ -17,6 +17,7 @@ import MqttConfigPage from "./pages/MqttConfigPage";
 import EnergyMonitoringPage from "./pages/EnergyMonitoringPage";
 import EnergyMonitoringDetailPage from "./pages/EnergyMonitoringDetailPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
+import KiTrainingPage from "./pages/KiTrainingPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
@@ -158,6 +159,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ki-training"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <KiTrainingPage />
           </ProtectedRoute>
         }
       />

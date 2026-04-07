@@ -48,95 +48,6 @@ import {
   Check,
 } from "lucide-react";
 
-/* ───── KI-Training Section ───── */
-function AiTrainingSection() {
-  const [instructions, setInstructions] = useState("");
-  const [original, setOriginal] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
-
-  useEffect(() => {
-    api.get("/documents/ai-settings").then(res => {
-      setInstructions(res.data.custom_instructions || "");
-      setOriginal(res.data.custom_instructions || "");
-      setLastUpdated(res.data.updated_at);
-    }).catch(() => {});
-  }, []);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const res = await api.put("/documents/ai-settings", { custom_instructions: instructions });
-      setOriginal(instructions);
-      setLastUpdated(res.data.updated_at);
-      toast.success("KI-Anweisungen gespeichert");
-    } catch (error) {
-      toast.error(getErrorMsg(error) || "Fehler beim Speichern");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4" data-testid="ai-training-section">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-900 mb-1">KI-Dokumentenerkennung trainieren</h2>
-        <p className="text-xs text-gray-400">
-          Zusätzliche Anweisungen, die bei jeder Dokumentenanalyse automatisch berücksichtigt werden.
-        </p>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-        <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-          <h3 className="text-xs font-medium text-gray-600">Beispiele für Anweisungen:</h3>
-          <ul className="text-xs text-gray-500 space-y-0.5 list-disc pl-4">
-            <li>HalloPetra GmbH Rechnungen immer in "rechnungseingang" einordnen</li>
-            <li>Dokumente von Stadtwerk Andernach sind immer Eingangsrechnungen</li>
-            <li>Wenn "Netzantrag" im Dokument steht, in "anfragen_projekte" ablegen</li>
-            <li>Rechnungen von TEBA immer in den Ordner "teba" statt "rechnungseingang"</li>
-          </ul>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-sm text-gray-600">Zusätzliche KI-Anweisungen</Label>
-          <textarea
-            value={instructions}
-            onChange={e => setInstructions(e.target.value)}
-            placeholder="Geben Sie hier Ihre Anweisungen für die KI-Dokumentenerkennung ein..."
-            className="w-full h-40 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-fuchsia-500 focus:border-fuchsia-500 resize-y font-mono bg-white"
-            maxLength={5000}
-            data-testid="ai-instructions-textarea"
-          />
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-400">{instructions.length} / 5000 Zeichen</span>
-            {lastUpdated && (
-              <span className="text-xs text-gray-400">
-                Zuletzt gespeichert: {new Date(lastUpdated).toLocaleString("de-DE")}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            size="sm"
-            onClick={save}
-            disabled={saving || instructions === original}
-            className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
-            data-testid="save-ai-settings-btn"
-          >
-            {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
-            Anweisungen speichern
-          </Button>
-          {instructions !== original && (
-            <span className="text-xs text-amber-600">Ungespeicherte Änderungen</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ───── System Status Dashboard ───── */
 function SystemStatusDashboard() {
   const [status, setStatus] = useState(null);
@@ -1782,9 +1693,6 @@ export default function AdminSettingsPage() {
 
           {/* Schnittstellen */}
           <div>
-
-          {/* KI-Dokumentenerkennung trainieren */}
-          <AiTrainingSection />
 
           </div>
           <div>
