@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, Users, Plus, X, Trash2,
-  Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus,
+  Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus, ExternalLink,
 } from "lucide-react";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -302,8 +302,21 @@ export default function EinsatzplanungPage() {
                 onClick={() => setSelectedJob(isSelected ? null : o)}
                 data-testid={`order-${pk}`}
               >
-                <p className="font-semibold text-gray-900 truncate">{o.event || o.order_no}</p>
-                <p className="text-gray-400 truncate">{o.contact_name}</p>
+                <div className="flex items-start justify-between gap-1">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 truncate">{o.event || o.order_no}</p>
+                    <p className="text-gray-400 truncate">{o.contact_name}</p>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(`/orders/${pk}`); }}
+                    className="flex-shrink-0 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded p-0.5 transition-colors"
+                    title="Auftragsdetails öffnen"
+                    data-testid={`open-order-${pk}`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-[10px] font-mono text-indigo-600 font-semibold">{o.order_no}</p>
                 <p className="text-gray-400">{o.dispo_start || o.event_start || "—"} – {o.dispo_end || o.event_end || ""}</p>
 
                 <div className="mt-1.5 pt-1.5 border-t border-gray-100">
