@@ -176,10 +176,10 @@ function onLoginSuccess() {
 // ── Hub Window (Desktop Mode) ───────────────────────────────────────────────
 function createHubWindow() {
   hubWindow = new BrowserWindow({
-    width: 820,
-    height: 520,
-    minWidth: 600,
-    minHeight: 400,
+    width: 1400,
+    height: 900,
+    minWidth: 900,
+    minHeight: 600,
     title: config.title,
     icon: path.join(__dirname, "assets", process.platform === "win32" ? "icon.ico" : "icon.png"),
     webPreferences: {

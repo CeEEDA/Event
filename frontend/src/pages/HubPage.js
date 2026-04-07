@@ -360,14 +360,11 @@ export default function HubPage() {
       <main className="flex-1 p-3 sm:p-4 md:p-6">
         <div className="max-w-6xl mx-auto">
           {/* Top Row */}
-          {!isDesktopMode && (
           <div className="flex items-center justify-between mb-5">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
           </div>
-          )}
 
           {/* Time Clock Section */}
-          {!isDesktopMode && (
           <div className="mb-5 bg-white rounded-xl border border-gray-200 p-4" data-testid="time-clock-section">
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Left: Slider + Status */}
@@ -450,10 +447,9 @@ export default function HubPage() {
               </div>
             </div>
           </div>
-          )}
 
           {/* My Shift Plan (Employee) */}
-          {!isDesktopMode && !isAdmin && (
+          {!isAdmin && (
             <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="my-shift-plan">
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-indigo-600" />
@@ -492,10 +488,10 @@ export default function HubPage() {
             </div>
           )}
 
-          <div className={isDesktopMode ? "" : "grid grid-cols-1 lg:grid-cols-3 gap-4"}>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left: Module Grid */}
-            <div className={isDesktopMode ? "" : "lg:col-span-2"}>
-              <div className={`gap-2.5 ${isDesktopMode ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6" : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5"}`} data-testid="modules-grid">
+            <div className="lg:col-span-2">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5" data-testid="modules-grid">
                 {/* Chat Tile with unread indicator */}
                 <button
                   onClick={() => handleModuleClick("/chat")}
@@ -564,7 +560,6 @@ export default function HubPage() {
             </div>
 
             {/* Right: Tasks */}
-            {!isDesktopMode && (
             <div className="bg-white rounded-xl border border-gray-200 flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-180px)]" data-testid="tasks-panel">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">Aufgaben</h2>
@@ -711,7 +706,6 @@ export default function HubPage() {
                 )}
               </div>
             </div>
-            )}
           </div>
         </div>
       </main>
@@ -721,7 +715,7 @@ export default function HubPage() {
       </footer>
 
       {/* New Task Modal */}
-      {!isDesktopMode && showNewTask && (
+      {showNewTask && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => setShowNewTask(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-5 space-y-4" onClick={e => e.stopPropagation()} data-testid="new-task-modal">
             <div className="flex items-center justify-between">
@@ -839,7 +833,7 @@ export default function HubPage() {
       )}
 
       {/* Task Detail Panel (Overlay) */}
-      {!isDesktopMode && selectedTask && (
+      {selectedTask && (
         <>
           <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelectedTask(null)} />
           <div className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="task-detail-panel" onClick={e => e.stopPropagation()}>
