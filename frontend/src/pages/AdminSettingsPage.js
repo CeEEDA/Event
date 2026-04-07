@@ -1103,13 +1103,6 @@ function OtaUpdateSection() {
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Hinweis */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 space-y-1">
-          <p className="font-semibold">Automatische Updates via GitHub Deploy</p>
-          <p className="text-blue-600">Code ändern → GitHub Push → Backend Neustart → Alle Geräte updaten sich automatisch beim nächsten Check-in (~30 Min).</p>
-          <p className="text-blue-500">Scripts: <span className="font-mono">/static/kirmeskiste_sync.py</span>, <span className="font-mono">messkoffer_sync.py</span>, etc.</p>
-        </div>
-
         {/* Typ-Übersicht */}
         {Object.keys(typeStats).length > 0 && (
           <div>
