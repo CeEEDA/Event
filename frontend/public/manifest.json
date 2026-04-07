@@ -1,0 +1,17 @@
+{
+  "short_name": "Eventenergie",
+  "name": "Eventenergie Portal",
+  "icons": [
+    {
+      "src": "app-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#4f46e5",
+  "background_color": "#ffffff",
+  "orientation": "any"
+}

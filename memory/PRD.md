@@ -22,6 +22,17 @@ Comprehensive "Kirmes" (Fairground) billing and management system with internal 
 
 ## Completed Features (Latest First)
 
+### 2026-04-07: Kirmeskiste OTA Auto-Update System
+- Backend: `/api/system/ota/check`, `/download`, `/upload`, `/versions`, `/devices`
+- Pi-Script: Auto-update check on startup + every ~30min in sync loop
+- Hash verification, backup before update, systemd restart
+- Admin can upload new versions, see device check-in status
+
+### 2026-04-07: PWA Configuration for Mobile
+- manifest.json, service worker, apple-mobile-web-app meta tags
+- App installable on iPhone, iPad, Samsung via "Add to Homescreen"
+- Auto-updates via browser (always loads latest version)
+
 ### 2026-04-07: Deep Crew Fetch from EpiRent Personal Chapters
 - Backend now searches inside "Personal" chapters (type-5 items) via `_ref_chapter_items` URLs
 - Finds crew data (type-3 sub-items: Elektrotechniker, Helfer etc.) with dates and times

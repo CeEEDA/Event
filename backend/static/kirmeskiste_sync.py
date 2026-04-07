@@ -29,6 +29,7 @@ import logging
 import os
 import sys
 import sqlite3
+import hashlib
 import configparser
 from pathlib import Path
 from datetime import datetime, timezone
@@ -136,6 +137,94 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger("kirmeskiste")
+
+# ====== OTA Auto-Update ======
+
+SCRIPT_VERSION = "1.0.0"
+
+def get_script_hash():
+    """Berechnet den SHA256-Hash des aktuellen Scripts."""
+    try:
+        script_path = Path(os.path.abspath(__file__))
+        return hashlib.sha256(script_path.read_bytes()).hexdigest()
+    except Exception:
+        return ""
+
+
+def check_and_apply_update(conf):
+    """Prueft ob ein Update verfuegbar ist und installiert es."""
+    if not conf.get("api_url"):
+        return False
+    try:
+        resp = requests.get(
+            f"{conf['api_url']}/system/ota/check",
+            params={
+                "api_key": conf["device_key"],
+                "device_id": conf["device_id"],
+                "hash": get_script_hash(),
+                "version": SCRIPT_VERSION,
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.warning(f"Update-Check Fehler: {resp.status_code}")
+            return False
+
+        data = resp.json()
+        if not data.get("update_available"):
+            log.info(f"Kein Update verfuegbar (Version {SCRIPT_VERSION})")
+            return False
+
+        new_version = data.get("version", "?")
+        log.info(f"Update verfuegbar: {SCRIPT_VERSION} -> {new_version}")
+        log.info(f"Changelog: {data.get('changelog', '-')}")
+
+        # Download
+        dl_resp = requests.get(
+            f"{conf['api_url']}/system/ota/download",
+            params={
+                "api_key": conf["device_key"],
+                "device_id": conf["device_id"],
+            },
+            timeout=60,
+        )
+        if dl_resp.status_code != 200:
+            log.error(f"Download Fehler: {dl_resp.status_code}")
+            return False
+
+        new_content = dl_resp.content
+        new_hash = hashlib.sha256(new_content).hexdigest()
+        expected_hash = data.get("file_hash", "")
+
+        if expected_hash and new_hash != expected_hash:
+            log.error(f"Hash-Mismatch! Erwartet: {expected_hash[:16]}... Erhalten: {new_hash[:16]}...")
+            return False
+
+        # Backup + Replace
+        script_path = Path(os.path.abspath(__file__))
+        backup_path = script_path.with_suffix(".py.bak")
+
+        log.info("Erstelle Backup...")
+        if script_path.exists():
+            import shutil
+            shutil.copy2(str(script_path), str(backup_path))
+
+        log.info("Installiere Update...")
+        script_path.write_bytes(new_content)
+        os.chmod(str(script_path), 0o755)
+
+        log.info(f"Update auf Version {new_version} installiert!")
+        log.info("Starte Dienst neu...")
+
+        # Neustart via systemd
+        os.system("sudo systemctl restart kirmeskiste_sync")
+        sys.exit(0)
+
+    except requests.ConnectionError:
+        log.debug("Portal nicht erreichbar fuer Update-Check")
+    except Exception as e:
+        log.error(f"Update-Check Fehler: {e}")
+    return False
 
 
 # ====== Modbus Lesen ======
@@ -450,9 +539,14 @@ def main():
     # DB initialisieren
     init_db(conf["db_path"])
 
+    # Update-Check beim Start
+    log.info("Pruefe auf Updates...")
+    check_and_apply_update(conf)
+
     log.info(f"Starte Messung mit {len(active_meters)} Zaehlern...")
 
     last_sync_time = 0
+    update_check_counter = 0
     consecutive_errors = 0
 
     while True:
@@ -474,6 +568,12 @@ def main():
 
                 # Alte Daten aufraeumen (einmal pro Sync-Zyklus)
                 cleanup_old(conf["db_path"])
+
+                # Update-Check alle 60 Sync-Zyklen (~30 Minuten bei 30s Intervall)
+                update_check_counter += 1
+                if update_check_counter >= 60:
+                    check_and_apply_update(conf)
+                    update_check_counter = 0
 
         except KeyboardInterrupt:
             log.info("Beendet durch Benutzer")

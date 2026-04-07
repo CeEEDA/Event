@@ -1836,6 +1836,9 @@ from routes.payments import router as payments_router, init_payments
 init_payments(db, decode_jwt_token)
 app.include_router(payments_router)
 
+from routes.ota_updates import router as ota_router
+app.include_router(ota_router)
+
 from routes.fuel_receipts import router as fuel_receipts_router, init_fuel_receipt_routes
 init_fuel_receipt_routes(db, decode_jwt_token)
 app.include_router(fuel_receipts_router)
