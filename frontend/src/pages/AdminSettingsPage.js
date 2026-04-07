@@ -46,6 +46,8 @@ import {
   Upload,
   Radio,
   Check,
+  Monitor,
+  Laptop,
 } from "lucide-react";
 
 /* ───── System Status Dashboard ───── */
@@ -1061,6 +1063,81 @@ function HilfsmittelSection() {
   );
 }
 
+/* ───── Software Downloads ───── */
+function SoftwareDownloadsSection() {
+  const [info, setInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get("/system/downloads/info").then(res => {
+      setInfo(res.data);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const handleDownload = (filename) => {
+    const platform = filename.includes("mac") ? "mac" : filename.endsWith(".bat") ? "win-bat" : "win-ps1";
+    window.open(`${BACKEND_URL}/api/system/downloads/${platform}`, "_blank");
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+  };
+
+  const platformIcon = (p) => p === "mac" ? <Laptop className="w-4 h-4" /> : <Monitor className="w-4 h-4" />;
+  const platformLabel = (p) => p === "mac" ? "macOS" : "Windows";
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="software-downloads-section">
+      <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Download className="w-5 h-5 text-white" />
+          <h3 className="text-sm font-semibold text-white">Software Downloads</h3>
+          {info?.version && <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">v{info.version}</span>}
+        </div>
+      </div>
+      <div className="p-5">
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+          </div>
+        ) : !info ? (
+          <p className="text-sm text-gray-500 text-center py-4">Downloads nicht verfügbar</p>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500">Desktop-App Installer herunterladen und auf dem Zielrechner ausführen. Die App verbindet sich automatisch mit dem lokalen Server oder eventenergie.app.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {info.files.filter(f => f.available).map(f => (
+                <button
+                  key={f.filename}
+                  onClick={() => handleDownload(f.filename)}
+                  className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 hover:border-fuchsia-300 hover:bg-fuchsia-50 transition-all text-left group"
+                  data-testid={`download-${f.filename.replace(/\./g, '-')}`}
+                >
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${f.platform === "mac" ? "bg-gray-900 text-white" : "bg-blue-600 text-white"}`}>
+                    {platformIcon(f.platform)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 group-hover:text-fuchsia-700">{f.label}</div>
+                    <div className="text-xs text-gray-400">{platformLabel(f.platform)} · {formatSize(f.size_bytes)}</div>
+                  </div>
+                  <Download className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-500" />
+                </button>
+              ))}
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
+              <p><strong>Mac:</strong> Datei im Terminal ausführen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash install-mac.sh</code></p>
+              <p><strong>Windows:</strong> Die .bat Datei doppelklicken oder PowerShell: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">powershell -ExecutionPolicy Bypass -File install-win.ps1</code></p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ───── Kirmeskiste OTA Update Management ───── */
 function OtaUpdateSection() {
   const [devices, setDevices] = useState([]);
@@ -1627,6 +1704,9 @@ export default function AdminSettingsPage() {
           <div id="hilfsmittel-section">
             <HilfsmittelSection />
           </div>
+
+          {/* Software Downloads */}
+          <SoftwareDownloadsSection />
 
           {/* Kirmeskiste OTA-Updates */}
           <OtaUpdateSection />
