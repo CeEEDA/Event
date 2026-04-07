@@ -61,6 +61,8 @@ export default function EinsatzplanungPage() {
   const [jobReqs, setJobReqs] = useState({});
   const [editingReq, setEditingReq] = useState(null);
   const [reqForm, setReqForm] = useState({ count: 1, roles: "" });
+  const [crewData, setCrewData] = useState({});
+  const [crewLoading, setCrewLoading] = useState(false);
 
   const weekDates = getWeekDates(weekKey);
 
@@ -108,9 +110,26 @@ export default function EinsatzplanungPage() {
     } catch {}
   }, [token, weekKey]);
 
+  const loadCrewData = useCallback(async () => {
+    if (orders.length === 0) return;
+    setCrewLoading(true);
+    try {
+      const pks = orders.slice(0, 20).map(o => o.primary_key);
+      const r = await api.post("/orders/epirent/crew/batch",
+        { order_pks: pks },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCrewData(r.data?.results || {});
+    } catch {
+      // Silently fail - manual reqs still work
+    }
+    setCrewLoading(false);
+  }, [token, orders]);
+
   useEffect(() => { loadUsers(); }, [loadUsers]);
   useEffect(() => { loadPlan(); loadOrders(); loadJobReqs(); }, [loadPlan, loadOrders, loadJobReqs]);
   useEffect(() => { if (users.length > 0) loadSchedules(); }, [users, loadSchedules]);
+  useEffect(() => { if (orders.length > 0) loadCrewData(); }, [orders, loadCrewData]);
 
   const prevWeek = () => { const d = new Date(weekDates[0]); d.setDate(d.getDate() - 7); setWeekKey(getWeekKey(d)); };
   const nextWeek = () => { const d = new Date(weekDates[0]); d.setDate(d.getDate() + 7); setWeekKey(getWeekKey(d)); };
@@ -136,6 +155,14 @@ export default function EinsatzplanungPage() {
     const scheduled = getScheduledHours(userId, dayIndex);
     const assigned = getAssignedHours(userId, date);
     return Math.max(0, scheduled - assigned);
+  };
+
+  const getJobNeeded = (orderPk) => {
+    const crew = crewData[orderPk];
+    if (crew && crew.length > 0) {
+      return crew.reduce((sum, c) => sum + (c.count || 1), 0);
+    }
+    return jobReqs[orderPk]?.count || 0;
   };
 
   const getJobAssignedCount = (orderPk) => {
@@ -250,13 +277,15 @@ export default function EinsatzplanungPage() {
           {orders.slice(0, 20).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
+            const crew = crewData[pk];
+            const hasCrew = crew && crew.length > 0;
             const assigned = getJobAssignedCount(pk);
-            const needed = req?.count || 0;
+            const needed = getJobNeeded(pk);
             const isFull = needed > 0 && assigned >= needed;
             const isSelected = selectedJob?.primary_key === pk;
             return (
               <div key={pk}
-                className={`flex-shrink-0 border-2 rounded-lg px-3 py-2 text-xs cursor-pointer transition-all min-w-[180px] ${
+                className={`flex-shrink-0 border-2 rounded-lg px-3 py-2 text-xs cursor-pointer transition-all min-w-[200px] max-w-[260px] ${
                   isSelected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200" :
                   isFull ? "border-green-300 bg-green-50 hover:border-green-400" :
                   "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30"
@@ -267,21 +296,45 @@ export default function EinsatzplanungPage() {
                 <p className="font-semibold text-gray-900 truncate">{o.event || o.order_no}</p>
                 <p className="text-gray-400 truncate">{o.contact_name}</p>
                 <p className="text-gray-400">{o.event_start || o.dispo_start || "—"}</p>
-                {/* Personnel requirement */}
-                <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex items-center justify-between">
-                  {needed > 0 ? (
-                    <div className="flex items-center gap-1">
-                      <Users className="w-3 h-3 text-gray-500" />
-                      <span className={`font-bold ${isFull ? "text-green-600" : "text-orange-600"}`}>{assigned}/{needed}</span>
-                      {req?.roles && <span className="text-gray-400 truncate max-w-[100px]">· {req.roles}</span>}
+
+                {/* EpiRent Crew Requirements */}
+                <div className="mt-1.5 pt-1.5 border-t border-gray-100">
+                  {hasCrew ? (
+                    <div className="space-y-1" data-testid={`crew-${pk}`}>
+                      <div className="flex items-center gap-1 mb-1">
+                        <Users className="w-3 h-3 text-indigo-500" />
+                        <span className={`font-bold text-xs ${isFull ? "text-green-600" : "text-orange-600"}`}>{assigned}/{needed}</span>
+                        <span className="text-[9px] text-indigo-500 font-medium ml-auto">EpiRent</span>
+                      </div>
+                      {crew.map((c, ci) => (
+                        <div key={ci} className="flex items-center gap-1 text-[10px] bg-indigo-50/60 rounded px-1.5 py-0.5">
+                          <span className="font-bold text-indigo-700">{c.count}x</span>
+                          <span className="text-gray-700 truncate flex-1">{c.title || "Personal"}</span>
+                          {c.time_start && c.time_end && (
+                            <span className="text-gray-400 flex items-center gap-0.5 flex-shrink-0">
+                              <Clock className="w-2.5 h-2.5" />{c.time_start}–{c.time_end}
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   ) : (
-                    <span className="text-gray-300 text-[10px]">Kein Personal definiert</span>
+                    <div className="flex items-center justify-between">
+                      {needed > 0 ? (
+                        <div className="flex items-center gap-1">
+                          <Users className="w-3 h-3 text-gray-500" />
+                          <span className={`font-bold ${isFull ? "text-green-600" : "text-orange-600"}`}>{assigned}/{needed}</span>
+                          {req?.roles && <span className="text-gray-400 truncate max-w-[100px]">· {req.roles}</span>}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-[10px]">Kein Personal definiert</span>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: req?.count || 1, roles: req?.roles || "" }); }}
+                        className="text-gray-400 hover:text-indigo-600 p-0.5" data-testid={`edit-req-${pk}`}>
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   )}
-                  <button onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: req?.count || 1, roles: req?.roles || "" }); }}
-                    className="text-gray-400 hover:text-indigo-600 p-0.5" data-testid={`edit-req-${pk}`}>
-                    <Edit2 className="w-3 h-3" />
-                  </button>
                 </div>
               </div>
             );

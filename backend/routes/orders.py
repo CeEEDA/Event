@@ -1297,3 +1297,146 @@ async def download_order_documents_zip(order_pk: str, token: str = None, request
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="Dokumente_Auftrag_{order_pk}.zip"'},
     )
+
+
+
+def _parse_crew_items(payload):
+    """Extract type-3 crew items from an EpiRent order payload."""
+    crew = []
+    for item in payload.get("order_items", []):
+        if item.get("type") == 3:
+            ts = item.get("time_start", 0)
+            te = item.get("time_end", 0)
+            crew.append({
+                "pk": item.get("primary_key"),
+                "title": item.get("title", ""),
+                "count": item.get("amount_total", 1),
+                "date_start": item.get("date_start", ""),
+                "date_end": item.get("date_end", ""),
+                "time_start": f"{ts // 3600:02d}:{(ts % 3600) // 60:02d}" if ts else "",
+                "time_end": f"{te // 3600:02d}:{(te % 3600) // 60:02d}" if te else "",
+                "hours": item.get("calc_hours", item.get("calc_days", 0)),
+                "service_pk": item.get("service_pk"),
+            })
+    return crew
+
+
+@router.get("/epirent/{order_pk}/crew")
+async def get_order_crew(order_pk: int, user: dict = Depends(_auth_user)):
+    """Get personnel/crew requirements from EpiRent order (Crewbrain data)."""
+    # Check cache first (valid for 30 min)
+    cached = await _db.crew_cache.find_one({"order_pk": order_pk}, {"_id": 0})
+    if cached:
+        cached_at = cached.get("cached_at", "")
+        if cached_at:
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
+                if age < 1800:
+                    return {"crew": cached.get("crew", []), "event": cached.get("event", ""), "is_staff_planning": cached.get("is_staff_planning", False)}
+            except Exception:
+                pass
+
+    config = await _get_epirent_config()
+    api_url = config.get("api_url", "").rstrip("/")
+    api_key = config.get("api_key", "")
+    ssl_skip = config.get("ssl_skip", False)
+    headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+
+    try:
+        async with httpx.AsyncClient(timeout=20, verify=not ssl_skip) as client:
+            resp = await client.get(f"{api_url}/v1/order/{order_pk}", headers=headers)
+            data = resp.json()
+            if not data.get("success"):
+                return {"crew": [], "event": ""}
+            payload = data["payload"][0] if isinstance(data["payload"], list) else data["payload"]
+            crew = _parse_crew_items(payload)
+            result = {
+                "crew": crew,
+                "event": payload.get("event", ""),
+                "is_staff_planning": payload.get("is_staff_planning", False),
+            }
+            # Cache result
+            await _db.crew_cache.update_one(
+                {"order_pk": order_pk},
+                {"$set": {"order_pk": order_pk, "cached_at": datetime.now(timezone.utc).isoformat(), **result}},
+                upsert=True,
+            )
+            return result
+    except Exception as e:
+        logger.warning(f"Crew fetch failed for {order_pk}: {e}")
+        if cached:
+            return {"crew": cached.get("crew", []), "event": cached.get("event", ""), "is_staff_planning": cached.get("is_staff_planning", False)}
+        return {"crew": [], "event": ""}
+
+
+@router.post("/epirent/crew/batch")
+async def get_crew_batch(data: dict, user: dict = Depends(_auth_user)):
+    """Batch fetch crew data for multiple orders with concurrency limiting and caching."""
+    order_pks = data.get("order_pks", [])
+    if not order_pks or len(order_pks) > 50:
+        return {"results": {}}
+
+    now = datetime.now(timezone.utc)
+    results = {}
+
+    # Check cache for all orders first
+    uncached_pks = []
+    for pk in order_pks:
+        cached = await _db.crew_cache.find_one({"order_pk": int(pk)}, {"_id": 0})
+        if cached and cached.get("cached_at"):
+            try:
+                age = (now - datetime.fromisoformat(cached["cached_at"])).total_seconds()
+                if age < 1800:
+                    crew = cached.get("crew", [])
+                    if crew:
+                        results[str(pk)] = crew
+                    continue
+            except Exception:
+                pass
+        uncached_pks.append(int(pk))
+
+    # Fetch uncached with concurrency limit of 3
+    if uncached_pks:
+        try:
+            config = await _get_epirent_config()
+            api_url = config.get("api_url", "").rstrip("/")
+            api_key = config.get("api_key", "")
+            ssl_skip = config.get("ssl_skip", False)
+            headers_epi = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+            sem = asyncio.Semaphore(3)
+
+            async def _fetch_one(pk):
+                async with sem:
+                    try:
+                        async with httpx.AsyncClient(timeout=20, verify=not ssl_skip) as client:
+                            resp = await client.get(f"{api_url}/v1/order/{pk}", headers=headers_epi)
+                            d = resp.json()
+                            if not d.get("success"):
+                                return pk, []
+                            p = d["payload"][0] if isinstance(d["payload"], list) else d["payload"]
+                            crew = _parse_crew_items(p)
+                            # Cache
+                            await _db.crew_cache.update_one(
+                                {"order_pk": pk},
+                                {"$set": {
+                                    "order_pk": pk,
+                                    "cached_at": now.isoformat(),
+                                    "crew": crew,
+                                    "event": p.get("event", ""),
+                                    "is_staff_planning": p.get("is_staff_planning", False),
+                                }},
+                                upsert=True,
+                            )
+                            return pk, crew
+                    except Exception as e:
+                        logger.warning(f"Batch crew fetch failed for {pk}: {e}")
+                        return pk, []
+
+            fetch_results = await asyncio.gather(*[_fetch_one(pk) for pk in uncached_pks])
+            for pk, crew in fetch_results:
+                if crew:
+                    results[str(pk)] = crew
+        except Exception as e:
+            logger.error(f"Batch crew error: {e}")
+
+    return {"results": results}
