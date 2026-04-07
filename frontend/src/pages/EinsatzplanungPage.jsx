@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, Users, Plus, X, Trash2,
-  Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus, ExternalLink,
+  Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus, ExternalLink, Copy,
 } from "lucide-react";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -63,6 +63,7 @@ export default function EinsatzplanungPage() {
   const [reqForm, setReqForm] = useState({ count: 1, roles: "" });
   const [crewData, setCrewData] = useState({});
   const [crewLoading, setCrewLoading] = useState(false);
+  const [copySource, setCopySource] = useState(null);
 
   const weekDates = getWeekDates(weekKey);
 
@@ -183,6 +184,21 @@ export default function EinsatzplanungPage() {
   };
 
   const handleCellClick = async (userId, date) => {
+    // Copy mode: paste the copied assignment to this cell
+    if (copySource) {
+      try {
+        await api.post(`/employee/shift-plan?token=${token}`, {
+          user_id: userId, date, week_key: weekKey,
+          order_pk: copySource.order_pk,
+          order_name: copySource.order_name,
+          role: copySource.role || "", note: copySource.note || "",
+          start_time: copySource.start_time || "", end_time: copySource.end_time || "",
+        });
+        loadPlan();
+        toast.success(`${copySource.order_name || "Aufgabe"} kopiert`);
+      } catch { toast.error("Fehler"); }
+      return;
+    }
     if (selectedJob) {
       try {
         await api.post(`/employee/shift-plan?token=${token}`, {
@@ -259,6 +275,14 @@ export default function EinsatzplanungPage() {
             <button onClick={nextWeek} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="next-week"><ChevronRight className="w-5 h-5" /></button>
           </div>
           <div className="flex items-center gap-2">
+            {copySource && (
+              <div className="flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-lg px-3 py-1.5">
+                <Copy className="w-4 h-4 text-amber-600" />
+                <span className="text-xs font-medium text-amber-800 max-w-[150px] truncate">{copySource.order_name || "Aufgabe"}</span>
+                <span className="text-[10px] text-amber-600">→ Zelle klicken zum Einfügen</span>
+                <button onClick={() => setCopySource(null)} className="text-amber-500 hover:text-amber-700" data-testid="cancel-copy"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
             {selectedJob && (
               <div className="flex items-center gap-2 bg-indigo-100 border border-indigo-300 rounded-lg px-3 py-1.5">
                 <UserPlus className="w-4 h-4 text-indigo-600" />
@@ -429,7 +453,7 @@ export default function EinsatzplanungPage() {
                       <td key={date}
                         className={`px-1 py-1 align-top relative group cursor-pointer ${
                           isToday ? "bg-indigo-50/50" : ""} ${isSun ? "bg-red-50/30" : ""} ${
-                          selectedJob ? "hover:bg-indigo-100/50 hover:ring-1 hover:ring-indigo-300 hover:ring-inset" : ""
+                          selectedJob || copySource ? "hover:bg-indigo-100/50 hover:ring-1 hover:ring-indigo-300 hover:ring-inset" : ""
                         }`}
                         onClick={() => !absence && !isEditing && handleCellClick(user.id, date)}
                       >
@@ -440,17 +464,26 @@ export default function EinsatzplanungPage() {
                         })()}
 
                         {cellAssignments.map(asgn => (
-                          <div key={asgn.id} className="bg-indigo-50 border border-indigo-200 rounded-md px-1.5 py-1 mb-1 relative group/item" data-testid={`asgn-${asgn.id}`}>
+                          <div key={asgn.id} className={`border rounded-md px-1.5 py-1 mb-1 relative group/item ${
+                            copySource?.id === asgn.id ? "bg-amber-50 border-amber-300 ring-1 ring-amber-200" : "bg-indigo-50 border-indigo-200"
+                          }`} data-testid={`asgn-${asgn.id}`}>
                             {asgn.order_name && <p className="text-[10px] font-semibold text-indigo-800 truncate">{asgn.order_name}</p>}
                             {asgn.role && <p className="text-[10px] text-indigo-600">{asgn.role}</p>}
                             {(asgn.start_time || asgn.end_time) && (
                               <p className="text-[10px] text-gray-500 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {asgn.start_time || "?"} – {asgn.end_time || "?"}</p>
                             )}
                             {asgn.note && <p className="text-[10px] text-gray-500 italic truncate">{asgn.note}</p>}
-                            <button onClick={(e) => { e.stopPropagation(); deleteAssignment(asgn.id); }}
-                              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity">
-                              <X className="w-2.5 h-2.5" />
-                            </button>
+                            <div className="absolute -top-1 -right-1 flex gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                              <button onClick={(e) => { e.stopPropagation(); setCopySource(asgn); setSelectedJob(null); }}
+                                className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center" title="Kopieren"
+                                data-testid={`copy-${asgn.id}`}>
+                                <Copy className="w-2.5 h-2.5" />
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); deleteAssignment(asgn.id); }}
+                                className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center" title="Löschen">
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
                           </div>
                         ))}
 
