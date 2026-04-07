@@ -22,7 +22,11 @@ Comprehensive "Kirmes" (Fairground) billing and management system with internal 
 
 ## Completed Features (Latest First)
 
-### 2026-04-07: EpiRent Crewbrain Integration in Einsatzplanung
+### 2026-04-07: Only Show Confirmed Orders in Einsatzplanung
+- Frontend filter changed: only `is_confirmed: true` orders appear in job cards
+- Reduces noise from unconfirmed/draft orders (42 → 14 in test week)
+
+## 2026-04-07: EpiRent Crewbrain Integration in Einsatzplanung
 - Backend: `GET /api/orders/epirent/{order_pk}/crew` with 30-min caching
 - Backend: `POST /api/orders/epirent/crew/batch` with semaphore(3) concurrency limiting
 - Frontend: Job cards show EpiRent crew requirements (count, title, time) with "EpiRent" badge

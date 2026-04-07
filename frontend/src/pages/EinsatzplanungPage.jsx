@@ -85,7 +85,7 @@ export default function EinsatzplanungPage() {
   const loadOrders = useCallback(async () => {
     try {
       const r = await api.get(`/orders/epirent?date_from=${weekDates[0]}&date_to=${weekDates[6]}`, { headers: { Authorization: `Bearer ${token}` } });
-      const all = (r.data?.orders || []).filter(o => o.event || o.order_no);
+      const all = (r.data?.orders || []).filter(o => (o.event || o.order_no) && o.is_confirmed);
       setOrders(all);
     } catch {}
   }, [token, weekDates[0], weekDates[6]]);
