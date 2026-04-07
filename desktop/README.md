@@ -1,11 +1,19 @@
-# Eventenergie Portal - Desktop App
+# Eventenergie Portal - Desktop App v2.0
 
-Native Desktop-Anwendung fuer **Windows** und **macOS**.
+Native Desktop-Anwendung fuer **macOS** und **Windows** mit Multi-Window-Architektur.
+
+## Features
+
+- **Server-Erkennung**: Prueft automatisch lokalen Server (172.20.200.117), Fallback auf eventenergie.app
+- **Login-Fenster**: Separates Anmeldefenster beim Start
+- **Hub-Fenster**: Schlankes Fenster mit allen Modul-Kacheln nach Anmeldung
+- **Multi-Window**: Jede Kachel oeffnet ein eigenes OS-Fenster
+- **Automatische Abmeldung**: Alle Fenster werden bei Logout geschlossen
 
 ## Voraussetzungen
 
 - Node.js 18+ installiert
-- Yarn oder npm
+- Yarn
 
 ## Installation
 
@@ -16,16 +24,20 @@ yarn install
 
 ## Konfiguration
 
-Die Server-URL wird in `config.json` eingestellt:
+Die Server-URLs werden in `config.json` eingestellt:
 
 ```json
 {
-  "portalUrl": "https://eventenergie.app",
+  "remoteUrl": "https://eventenergie.app",
+  "localServers": [
+    { "url": "https://172.20.200.117", "label": "Nginx (HTTPS)" },
+    { "url": "http://172.20.200.117:8001", "label": "Caddy" }
+  ],
   "title": "Eventenergie Portal"
 }
 ```
 
-Passen Sie `portalUrl` an Ihre Server-Adresse an.
+Die App prueft die lokalen Server in Reihenfolge und faellt auf `remoteUrl` zurueck.
 
 ## Entwicklung / Testen
 
@@ -33,17 +45,7 @@ Passen Sie `portalUrl` an Ihre Server-Adresse an.
 yarn start
 ```
 
-Oeffnet die App im Entwicklungsmodus.
-
 ## Installer bauen
-
-### Windows (.exe Installer)
-
-```bash
-yarn build:win
-```
-
-Erstellt einen Windows-Installer unter `dist/Eventenergie Portal Setup 1.0.0.exe`.
 
 ### macOS (.dmg)
 
@@ -51,9 +53,15 @@ Erstellt einen Windows-Installer unter `dist/Eventenergie Portal Setup 1.0.0.exe
 yarn build:mac
 ```
 
-Erstellt ein macOS Disk-Image unter `dist/Eventenergie Portal-1.0.0.dmg`.
+Erstellt ein macOS Disk-Image unter `dist/`.
 
 **Hinweis:** macOS-Builds muessen auf einem Mac erstellt werden.
+
+### Windows (.exe Installer)
+
+```bash
+yarn build:win
+```
 
 ### Beide Plattformen
 
@@ -61,16 +69,20 @@ Erstellt ein macOS Disk-Image unter `dist/Eventenergie Portal-1.0.0.dmg`.
 yarn build:all
 ```
 
-## Verteilung
+## Architektur
 
-1. Installer bauen (siehe oben)
-2. Die Datei aus `dist/` an Mitarbeiter verteilen
-3. Mitarbeiter installieren die App und starten sie
-4. Die App verbindet sich automatisch mit dem Portal
+```
+Start -> Server-Erkennung (Lokal/Remote)
+      -> Login-Fenster (${baseUrl}/login)
+      -> [Login erkannt] -> Hub-Fenster (${baseUrl}/hub?desktop=1)
+      -> [Kachel-Klick] -> Modul-Fenster (${baseUrl}/{modul-pfad})
+```
+
+- Hub-Fenster zeigt nur Modul-Kacheln (Desktop-Modus via ?desktop=1)
+- Jedes Modul-Fenster ist ein eigenstaendiges OS-Fenster
+- Bereits offene Module werden fokussiert statt neu erstellt
 
 ## App-Icon
-
-Legen Sie Ihr eigenes Icon ab:
 
 - `assets/icon.ico` - Windows (256x256 px, ICO-Format)
 - `assets/icon.icns` - macOS (ICNS-Format)
@@ -81,8 +93,5 @@ Legen Sie Ihr eigenes Icon ab:
 | Kuerzel | Aktion |
 |---------|--------|
 | Ctrl+R / Cmd+R | Seite neu laden |
-| Alt+Links | Zurueck |
-| Alt+Rechts | Vorwaerts |
-| F11 | Vollbild |
 | F12 | Entwicklertools |
 | Ctrl+Q / Cmd+Q | Beenden |

@@ -70,6 +70,16 @@ export default function HubPage() {
   const hasBilling = isAdmin || user?.permissions?.can_billing;
   const isStaff = isAdmin || user?.role === "mitarbeiter";
 
+  // Desktop mode: Electron app shows only module tiles
+  const isDesktopMode = new URLSearchParams(window.location.search).get('desktop') === '1';
+  const handleModuleClick = (path) => {
+    if (window.desktopApp?.openModule) {
+      window.desktopApp.openModule(path);
+    } else {
+      navigate(path);
+    }
+  };
+
   const loadTasks = useCallback(async () => {
     try {
       const f = isAdmin ? "all" : "both";
@@ -350,11 +360,14 @@ export default function HubPage() {
       <main className="flex-1 p-3 sm:p-4 md:p-6">
         <div className="max-w-6xl mx-auto">
           {/* Top Row */}
+          {!isDesktopMode && (
           <div className="flex items-center justify-between mb-5">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900">Willkommen, {user?.name?.split(" ")[0]}!</h1>
           </div>
+          )}
 
           {/* Time Clock Section */}
+          {!isDesktopMode && (
           <div className="mb-5 bg-white rounded-xl border border-gray-200 p-4" data-testid="time-clock-section">
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Left: Slider + Status */}
@@ -437,9 +450,10 @@ export default function HubPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* My Shift Plan (Employee) */}
-          {!isAdmin && (
+          {!isDesktopMode && !isAdmin && (
             <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="my-shift-plan">
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-indigo-600" />
@@ -478,13 +492,13 @@ export default function HubPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className={isDesktopMode ? "" : "grid grid-cols-1 lg:grid-cols-3 gap-4"}>
             {/* Left: Module Grid */}
-            <div className="lg:col-span-2">
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5" data-testid="modules-grid">
+            <div className={isDesktopMode ? "" : "lg:col-span-2"}>
+              <div className={`gap-2.5 ${isDesktopMode ? "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6" : "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5"}`} data-testid="modules-grid">
                 {/* Chat Tile with unread indicator */}
                 <button
-                  onClick={() => navigate("/chat")}
+                  onClick={() => handleModuleClick("/chat")}
                   className={`relative bg-white border rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:shadow-md transition-all group text-center ${unreadChats > 0 ? "border-fuchsia-400 ring-2 ring-fuchsia-200" : "border-gray-200 hover:border-fuchsia-400"}`}
                   data-testid="module-chat"
                 >
@@ -499,7 +513,7 @@ export default function HubPage() {
 
                 {/* Arbeitszeit Tile */}
                 <button
-                  onClick={() => navigate("/arbeitszeit")}
+                  onClick={() => handleModuleClick("/arbeitszeit")}
                   className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
                   data-testid="module-arbeitszeit"
                 >
@@ -523,7 +537,7 @@ export default function HubPage() {
 
                 {/* Abrechnung Tile */}
                 <button
-                  onClick={() => navigate("/abrechnung")}
+                  onClick={() => handleModuleClick("/abrechnung")}
                   className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-emerald-400 hover:shadow-md transition-all group text-center"
                   data-testid="module-abrechnung"
                 >
@@ -536,7 +550,7 @@ export default function HubPage() {
                 {modules.map(m => (
                   <button
                     key={m.key}
-                    onClick={() => navigate(m.path)}
+                    onClick={() => handleModuleClick(m.path)}
                     className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
                     data-testid={`module-${m.key}`}
                   >
@@ -550,6 +564,7 @@ export default function HubPage() {
             </div>
 
             {/* Right: Tasks */}
+            {!isDesktopMode && (
             <div className="bg-white rounded-xl border border-gray-200 flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-180px)]" data-testid="tasks-panel">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">Aufgaben</h2>
@@ -696,6 +711,7 @@ export default function HubPage() {
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>
       </main>
@@ -705,7 +721,7 @@ export default function HubPage() {
       </footer>
 
       {/* New Task Modal */}
-      {showNewTask && (
+      {!isDesktopMode && showNewTask && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => setShowNewTask(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-5 space-y-4" onClick={e => e.stopPropagation()} data-testid="new-task-modal">
             <div className="flex items-center justify-between">
@@ -823,7 +839,7 @@ export default function HubPage() {
       )}
 
       {/* Task Detail Panel (Overlay) */}
-      {selectedTask && (
+      {!isDesktopMode && selectedTask && (
         <>
           <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelectedTask(null)} />
           <div className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="task-detail-panel" onClick={e => e.stopPropagation()}>

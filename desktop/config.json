@@ -1,4 +1,8 @@
 {
-  "portalUrl": "https://eventenergie.app",
+  "remoteUrl": "https://eventenergie.app",
+  "localServers": [
+    { "url": "https://172.20.200.117", "label": "Nginx (HTTPS)" },
+    { "url": "http://172.20.200.117:8001", "label": "Caddy" }
+  ],
   "title": "Eventenergie Portal"
 }
