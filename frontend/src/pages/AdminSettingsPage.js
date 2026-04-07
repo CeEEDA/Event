@@ -1076,8 +1076,15 @@ function SoftwareDownloadsSection() {
   }, []);
 
   const handleDownload = (filename) => {
-    const platform = filename.includes("mac") ? "mac" : filename.endsWith(".bat") ? "win-bat" : "win-ps1";
-    window.open(`${BACKEND_URL}/api/system/downloads/${platform}`, "_blank");
+    const routeMap = {
+      "install-mac.sh": "mac",
+      "install-win.bat": "win-bat",
+      "install-win.ps1": "win-ps1",
+      "server-setup.sh": "server-setup",
+      "db-migrate.sh": "db-migrate",
+      "deploy.sh": "deploy",
+    };
+    window.open(`${BACKEND_URL}/api/system/downloads/${routeMap[filename] || filename}`, "_blank");
   };
 
   const formatSize = (bytes) => {
@@ -1086,8 +1093,10 @@ function SoftwareDownloadsSection() {
     return (bytes / 1048576).toFixed(1) + " MB";
   };
 
-  const platformIcon = (p) => p === "mac" ? <Laptop className="w-4 h-4" /> : <Monitor className="w-4 h-4" />;
-  const platformLabel = (p) => p === "mac" ? "macOS" : "Windows";
+  const platformIcon = (p) => p === "mac" ? <Laptop className="w-4 h-4" /> : p === "linux" ? <Server className="w-4 h-4" /> : <Monitor className="w-4 h-4" />;
+
+  const desktopFiles = info?.files?.filter(f => f.category === "desktop" && f.available) || [];
+  const serverFiles = info?.files?.filter(f => f.category === "server" && f.available) || [];
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="software-downloads-section">
@@ -1106,31 +1115,62 @@ function SoftwareDownloadsSection() {
         ) : !info ? (
           <p className="text-sm text-gray-500 text-center py-4">Downloads nicht verfügbar</p>
         ) : (
-          <div className="space-y-4">
-            <p className="text-xs text-gray-500">Desktop-App Installer herunterladen und auf dem Zielrechner ausführen. Die App verbindet sich automatisch mit dem lokalen Server oder eventenergie.app.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {info.files.filter(f => f.available).map(f => (
-                <button
-                  key={f.filename}
-                  onClick={() => handleDownload(f.filename)}
-                  className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 hover:border-fuchsia-300 hover:bg-fuchsia-50 transition-all text-left group"
-                  data-testid={`download-${f.filename.replace(/\./g, '-')}`}
-                >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${f.platform === "mac" ? "bg-gray-900 text-white" : "bg-blue-600 text-white"}`}>
-                    {platformIcon(f.platform)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 group-hover:text-fuchsia-700">{f.label}</div>
-                    <div className="text-xs text-gray-400">{platformLabel(f.platform)} · {formatSize(f.size_bytes)}</div>
-                  </div>
-                  <Download className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-500" />
-                </button>
-              ))}
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
-              <p><strong>Mac:</strong> Terminal öffnen und eintippen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash ~/Downloads/install-mac.sh</code></p>
-              <p><strong>Windows:</strong> Die .bat Datei doppelklicken oder PowerShell: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">powershell -ExecutionPolicy Bypass -File install-win.ps1</code></p>
-            </div>
+          <div className="space-y-5">
+            {/* Desktop Apps */}
+            {desktopFiles.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Desktop Apps</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {desktopFiles.map(f => (
+                    <button key={f.filename} onClick={() => handleDownload(f.filename)}
+                      className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 hover:border-fuchsia-300 hover:bg-fuchsia-50 transition-all text-left group"
+                      data-testid={`download-${f.filename.replace(/\./g, '-')}`}>
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${f.platform === "mac" ? "bg-gray-900 text-white" : "bg-blue-600 text-white"}`}>
+                        {platformIcon(f.platform)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 group-hover:text-fuchsia-700">{f.label}</div>
+                        <div className="text-xs text-gray-400">{formatSize(f.size_bytes)}</div>
+                      </div>
+                      <Download className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-500" />
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
+                  <p><strong>Mac:</strong> Terminal öffnen und eintippen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash ~/Downloads/install-mac.sh</code></p>
+                  <p><strong>Windows:</strong> Die .bat Datei doppelklicken</p>
+                </div>
+              </div>
+            )}
+
+            {/* Server Scripts */}
+            {serverFiles.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Server-Administration</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {serverFiles.map(f => (
+                    <button key={f.filename} onClick={() => handleDownload(f.filename)}
+                      className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-violet-300 hover:bg-violet-50 transition-all text-left group"
+                      data-testid={`download-${f.filename.replace(/\./g, '-')}`}>
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-slate-700 text-white">
+                        {platformIcon(f.platform)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 group-hover:text-violet-700">{f.label}</div>
+                        <div className="text-xs text-gray-400">{formatSize(f.size_bytes)}</div>
+                      </div>
+                      <Download className="w-4 h-4 text-gray-300 group-hover:text-violet-500" />
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
+                  <p><strong>1.</strong> Neuer Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash server-setup.sh</code> (installiert alles)</p>
+                  <p><strong>2.</strong> Alter Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash db-migrate.sh export</code> → Datei auf neuen Server kopieren</p>
+                  <p><strong>3.</strong> Neuer Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash db-migrate.sh import datei.gz</code></p>
+                  <p><strong>4.</strong> Code deployen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash deploy.sh https://github.com/REPO.git</code></p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
