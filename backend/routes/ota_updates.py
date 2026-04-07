@@ -1,21 +1,41 @@
 """
-Kirmeskiste OTA (Over-the-Air) Update System
+OTA Auto-Update System fuer alle Pi-Geraete
 =============================================
-Backend endpoints for managing Kirmeskiste Raspberry Pi updates.
-- Version check endpoint (called by Pis on every sync cycle)
-- Script download endpoint
-- Admin upload endpoint for new versions
+Einfacher Flow:
+1. Code-Aenderung → GitHub Push → Deploy (Backend Neustart)
+2. Pi meldet sich → vergleicht Hash → laed neue Version → Neustart
+
+Unterstuetzte Geraetetypen:
+- kirmeskiste  → kirmeskiste_sync.py
+- messkoffer   → messkoffer_sync.py
+- lkw          → lkw_sync.py
+- stromerzeuger → stromerzeuger_sync.py
+- dse          → dse_sync.py
+
+Die Scripts liegen in /app/backend/static/ und werden direkt aus dem Repo ausgeliefert.
 """
 
 import hashlib
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 logger = logging.getLogger("ota_updates")
 router = APIRouter(prefix="/api/system/ota", tags=["OTA Updates"])
+
+# Script-Dateien pro Geraetetyp (liegen im Repo unter /app/backend/static/)
+DEVICE_SCRIPTS = {
+    "kirmeskiste": "kirmeskiste_sync.py",
+    "messkoffer": "messkoffer_sync.py",
+    "lkw": "lkw_sync.py",
+    "stromerzeuger": "stromerzeuger_sync.py",
+    "dse": "dse_sync.py",
+}
+
+STATIC_DIR = Path("/app/backend/static")
 
 
 def _get_db():
@@ -23,8 +43,19 @@ def _get_db():
     return db
 
 
+def _get_script_hash(device_type: str) -> tuple[str, int]:
+    """Hash + Groesse der aktuellen Script-Datei im Repo."""
+    filename = DEVICE_SCRIPTS.get(device_type)
+    if not filename:
+        return "", 0
+    path = STATIC_DIR / filename
+    if not path.exists():
+        return "", 0
+    content = path.read_bytes()
+    return hashlib.sha256(content).hexdigest(), len(content)
+
+
 async def _auth_admin(request: Request):
-    """Require admin auth for upload endpoints."""
     from server import db
     import jwt, os
     token = request.headers.get("Authorization", "").replace("Bearer ", "") or request.query_params.get("token", "")
@@ -36,12 +67,11 @@ async def _auth_admin(request: Request):
         if not user or user.get("role") not in ("admin", "superadmin"):
             raise HTTPException(403, "Nur Admins")
         return user
-    except jwt.PyJWTError:
+    except Exception:
         raise HTTPException(401, "Ungültiger Token")
 
 
 async def _auth_device(request: Request):
-    """Authenticate device by api_key (device_key from kirmeskiste.conf)."""
     db = _get_db()
     api_key = request.headers.get("X-Device-Key", "") or request.query_params.get("api_key", "")
     device_id = request.headers.get("X-Device-Id", "") or request.query_params.get("device_id", "")
@@ -57,33 +87,31 @@ async def _auth_device(request: Request):
 
 @router.get("/check")
 async def check_update(request: Request, device=Depends(_auth_device)):
-    """Pi calls this to check if an update is available."""
+    """Pi prueft ob ein Update verfuegbar ist. Vergleicht lokalen Hash mit Repo-Datei."""
     db = _get_db()
     current_hash = request.query_params.get("hash", "")
     current_version = request.query_params.get("version", "")
+    device_type = device.get("device_type", "kirmeskiste")
 
-    # Get latest published version
-    latest = await db.ota_versions.find_one(
-        {"target": "kirmeskiste", "published": True},
-        {"_id": 0},
-        sort=[("created_at", -1)],
-    )
-    if not latest:
-        return {"update_available": False, "message": "Keine Version veröffentlicht"}
+    repo_hash, file_size = _get_script_hash(device_type)
+    if not repo_hash:
+        return {"update_available": False, "message": f"Kein Script fuer {device_type}"}
 
-    # Compare hashes
-    needs_update = current_hash != latest.get("file_hash", "")
+    needs_update = current_hash != repo_hash
 
-    # Log the check-in
+    # Check-in loggen
     await db.ota_checkins.update_one(
         {"device_id": device["id"]},
         {"$set": {
             "device_id": device["id"],
             "device_name": device.get("name", ""),
             "serial": device.get("serial_number", ""),
+            "device_type": device_type,
             "current_version": current_version,
             "current_hash": current_hash,
+            "repo_hash": repo_hash,
             "needs_update": needs_update,
+            "file_size": file_size,
             "last_seen": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
@@ -91,123 +119,77 @@ async def check_update(request: Request, device=Depends(_auth_device)):
 
     return {
         "update_available": needs_update,
-        "version": latest.get("version", ""),
-        "file_hash": latest.get("file_hash", ""),
-        "changelog": latest.get("changelog", ""),
+        "file_hash": repo_hash,
+        "file_size": file_size,
         "download_url": "/api/system/ota/download",
     }
 
 
 @router.get("/download")
 async def download_update(request: Request, device=Depends(_auth_device)):
-    """Pi downloads the latest script."""
+    """Pi laed die aktuelle Script-Datei herunter."""
     db = _get_db()
-    latest = await db.ota_versions.find_one(
-        {"target": "kirmeskiste", "published": True},
-        {"_id": 0},
-        sort=[("created_at", -1)],
-    )
-    if not latest or "file_content" not in latest:
-        raise HTTPException(404, "Kein Update verfügbar")
+    device_type = device.get("device_type", "kirmeskiste")
+    filename = DEVICE_SCRIPTS.get(device_type)
+    if not filename:
+        raise HTTPException(404, f"Kein Script fuer {device_type}")
 
-    # Log the download
+    path = STATIC_DIR / filename
+    if not path.exists():
+        raise HTTPException(404, f"Script {filename} nicht gefunden")
+
+    content = path.read_bytes()
+    file_hash = hashlib.sha256(content).hexdigest()
+
+    # Download loggen
     await db.ota_checkins.update_one(
         {"device_id": device["id"]},
-        {"$set": {"last_download": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {
+            "last_download": datetime.now(timezone.utc).isoformat(),
+            "needs_update": False,
+        }},
     )
 
     return Response(
-        content=latest["file_content"].encode("utf-8") if isinstance(latest["file_content"], str) else latest["file_content"],
+        content=content,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": "attachment; filename=kirmeskiste_sync.py",
-            "X-Version": latest.get("version", ""),
-            "X-Hash": latest.get("file_hash", ""),
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Hash": file_hash,
         },
     )
 
 
-@router.post("/upload")
-async def upload_version(
-    version: str,
-    changelog: str = "",
-    publish: bool = True,
-    file: UploadFile = File(...),
-    admin=Depends(_auth_admin),
-):
-    """Admin uploads a new kirmeskiste_sync.py version."""
-    db = _get_db()
-    content = await file.read()
-    file_hash = hashlib.sha256(content).hexdigest()
-
-    # Check for duplicate
-    existing = await db.ota_versions.find_one({"file_hash": file_hash, "target": "kirmeskiste"})
-    if existing:
-        raise HTTPException(409, "Diese Version existiert bereits (gleicher Hash)")
-
-    await db.ota_versions.insert_one({
-        "target": "kirmeskiste",
-        "version": version,
-        "changelog": changelog,
-        "file_hash": file_hash,
-        "file_content": content.decode("utf-8"),
-        "file_size": len(content),
-        "published": publish,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "uploaded_by": admin.get("email", ""),
-    })
-
-    # Also update the static file for new deployments
-    try:
-        import shutil
-        from pathlib import Path
-        static_path = Path("/app/backend/static/kirmeskiste_sync.py")
-        static_path.write_bytes(content)
-    except Exception:
-        pass
-
-    return {
-        "success": True,
-        "version": version,
-        "file_hash": file_hash,
-        "file_size": len(content),
-        "published": publish,
-    }
-
-
-@router.get("/versions")
-async def list_versions(admin=Depends(_auth_admin)):
-    """Admin lists all uploaded versions."""
-    db = _get_db()
-    versions = []
-    async for v in db.ota_versions.find(
-        {"target": "kirmeskiste"},
-        {"_id": 0, "file_content": 0},
-    ).sort("created_at", -1).limit(20):
-        versions.append(v)
-    return {"versions": versions}
-
-
 @router.get("/devices")
 async def list_device_status(admin=Depends(_auth_admin)):
-    """Admin sees which Pis checked in, their version, and update status."""
+    """Admin sieht alle Geraete mit Update-Status."""
     db = _get_db()
+
+    # Aktuelle Hashes fuer alle Typen berechnen
+    repo_hashes = {}
+    for dt in DEVICE_SCRIPTS:
+        h, s = _get_script_hash(dt)
+        if h:
+            repo_hashes[dt] = h
+
     devices = []
     async for d in db.ota_checkins.find({}, {"_id": 0}).sort("last_seen", -1):
+        # Aktuellen Status berechnen (falls Repo sich seit letztem Check-in geaendert hat)
+        dt = d.get("device_type", "kirmeskiste")
+        if dt in repo_hashes:
+            d["needs_update"] = d.get("current_hash", "") != repo_hashes[dt]
         devices.append(d)
-    return {"devices": devices}
 
+    # Stats pro Typ
+    type_stats = {}
+    for d in devices:
+        dt = d.get("device_type", "?")
+        if dt not in type_stats:
+            type_stats[dt] = {"total": 0, "needs_update": 0, "up_to_date": 0}
+        type_stats[dt]["total"] += 1
+        if d.get("needs_update"):
+            type_stats[dt]["needs_update"] += 1
+        else:
+            type_stats[dt]["up_to_date"] += 1
 
-@router.post("/publish/{version}")
-async def toggle_publish(version: str, admin=Depends(_auth_admin)):
-    """Toggle publish status of a version."""
-    db = _get_db()
-    doc = await db.ota_versions.find_one({"target": "kirmeskiste", "version": version})
-    if not doc:
-        raise HTTPException(404, "Version nicht gefunden")
-    new_state = not doc.get("published", False)
-    await db.ota_versions.update_one(
-        {"target": "kirmeskiste", "version": version},
-        {"$set": {"published": new_state}},
-    )
-    return {"version": version, "published": new_state}
+    return {"devices": devices, "type_stats": type_stats, "script_types": list(DEVICE_SCRIPTS.keys())}
