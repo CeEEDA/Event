@@ -64,6 +64,18 @@ async def download_server_setup():
     )
 
 
+@router.get("/server-setup-win")
+async def download_server_setup_win():
+    filepath = DESKTOP_DIR / "server-setup-win.ps1"
+    if not filepath.exists():
+        raise HTTPException(404, "Server-Setup (Win) nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="server-setup-win.ps1",
+        media_type="application/octet-stream",
+    )
+
+
 @router.get("/db-migrate")
 async def download_db_migrate():
     filepath = DESKTOP_DIR / "db-migrate.sh"
@@ -73,6 +85,18 @@ async def download_db_migrate():
         path=str(filepath),
         filename="db-migrate.sh",
         media_type="application/x-sh",
+    )
+
+
+@router.get("/db-migrate-win")
+async def download_db_migrate_win():
+    filepath = DESKTOP_DIR / "db-migrate-win.ps1"
+    if not filepath.exists():
+        raise HTTPException(404, "DB-Migrate (Win) nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="db-migrate-win.ps1",
+        media_type="application/octet-stream",
     )
 
 
@@ -88,6 +112,18 @@ async def download_deploy():
     )
 
 
+@router.get("/deploy-win")
+async def download_deploy_win():
+    filepath = DESKTOP_DIR / "deploy-win.ps1"
+    if not filepath.exists():
+        raise HTTPException(404, "Deploy (Win) nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="deploy-win.ps1",
+        media_type="application/octet-stream",
+    )
+
+
 @router.get("/info")
 async def get_download_info():
     files = []
@@ -95,9 +131,9 @@ async def get_download_info():
         ("install-mac.sh", "Mac Desktop App", "mac", "desktop"),
         ("install-win.bat", "Windows Desktop App (.bat)", "windows", "desktop"),
         ("install-win.ps1", "Windows Desktop App (.ps1)", "windows", "desktop"),
-        ("server-setup.sh", "Server-Installation", "linux", "server"),
-        ("db-migrate.sh", "Datenbank-Migration", "linux", "server"),
-        ("deploy.sh", "Code-Deployment", "linux", "server"),
+        ("server-setup-win.ps1", "Server-Installation (Win Server)", "windows", "server"),
+        ("db-migrate-win.ps1", "Datenbank-Migration (Win Server)", "windows", "server"),
+        ("deploy-win.ps1", "Code-Deployment (Win Server)", "windows", "server"),
     ]:
         filepath = DESKTOP_DIR / name
         exists = filepath.exists()

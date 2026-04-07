@@ -1080,9 +1080,9 @@ function SoftwareDownloadsSection() {
       "install-mac.sh": "mac",
       "install-win.bat": "win-bat",
       "install-win.ps1": "win-ps1",
-      "server-setup.sh": "server-setup",
-      "db-migrate.sh": "db-migrate",
-      "deploy.sh": "deploy",
+      "server-setup-win.ps1": "server-setup-win",
+      "db-migrate-win.ps1": "db-migrate-win",
+      "deploy-win.ps1": "deploy-win",
     };
     window.open(`${BACKEND_URL}/api/system/downloads/${routeMap[filename] || filename}`, "_blank");
   };
@@ -1164,10 +1164,10 @@ function SoftwareDownloadsSection() {
                   ))}
                 </div>
                 <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
-                  <p><strong>1.</strong> Neuer Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash server-setup.sh</code> (installiert alles)</p>
-                  <p><strong>2.</strong> Alter Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash db-migrate.sh export</code> → Datei auf neuen Server kopieren</p>
-                  <p><strong>3.</strong> Neuer Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash db-migrate.sh import datei.gz</code></p>
-                  <p><strong>4.</strong> Code deployen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash deploy.sh https://github.com/REPO.git</code></p>
+                  <p><strong>1.</strong> Neuer Server (Win 2019): PowerShell als Admin <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">.\server-setup-win.ps1</code></p>
+                  <p><strong>2.</strong> Alter Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">.\db-migrate-win.ps1 export</code> → Datei auf neuen Server kopieren</p>
+                  <p><strong>3.</strong> Neuer Server: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">.\db-migrate-win.ps1 import backup.gz</code></p>
+                  <p><strong>4.</strong> Code deployen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">.\deploy-win.ps1 https://github.com/REPO.git</code></p>
                 </div>
               </div>
             )}
