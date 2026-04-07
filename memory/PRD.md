@@ -22,6 +22,13 @@ Comprehensive "Kirmes" (Fairground) billing and management system with internal 
 
 ## Completed Features (Latest First)
 
+### 2026-04-07: Deep Crew Fetch from EpiRent Personal Chapters
+- Backend now searches inside "Personal" chapters (type-5 items) via `_ref_chapter_items` URLs
+- Finds crew data (type-3 sub-items: Elektrotechniker, Helfer etc.) with dates and times
+- Works for orders where crew is nested under chapters (e.g., PK=92 Gartenmarkt)
+- Also works for orders with direct type-3 items (e.g., PK=4 Rheinkirmes)
+- Tested: 100% Backend (9/9), 100% Frontend
+
 ### 2026-04-07: Improved Job Cards with Personnel Tracking
 - Job cards show "X/Y Zugewiesen" progress counter with visual progress bar
 - Green background + checkmark when all positions filled
