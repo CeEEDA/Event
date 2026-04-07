@@ -1300,24 +1300,70 @@ async def download_order_documents_zip(order_pk: str, token: str = None, request
 
 
 
+def _parse_crew_item(item):
+    """Parse a single type-3 crew item into our format."""
+    ts = item.get("time_start", 0)
+    te = item.get("time_end", 0)
+    return {
+        "pk": item.get("primary_key"),
+        "title": item.get("title", ""),
+        "count": item.get("amount_total", 1),
+        "date_start": item.get("date_start", ""),
+        "date_end": item.get("date_end", ""),
+        "time_start": f"{ts // 3600:02d}:{(ts % 3600) // 60:02d}" if ts else "",
+        "time_end": f"{te // 3600:02d}:{(te % 3600) // 60:02d}" if te else "",
+        "hours": item.get("calc_hours", item.get("calc_days", 0)),
+        "service_pk": item.get("service_pk"),
+    }
+
+
 def _parse_crew_items(payload):
-    """Extract type-3 crew items from an EpiRent order payload."""
+    """Extract type-3 crew items from an EpiRent order payload (top-level only)."""
     crew = []
     for item in payload.get("order_items", []):
         if item.get("type") == 3:
-            ts = item.get("time_start", 0)
-            te = item.get("time_end", 0)
-            crew.append({
-                "pk": item.get("primary_key"),
-                "title": item.get("title", ""),
-                "count": item.get("amount_total", 1),
-                "date_start": item.get("date_start", ""),
-                "date_end": item.get("date_end", ""),
-                "time_start": f"{ts // 3600:02d}:{(ts % 3600) // 60:02d}" if ts else "",
-                "time_end": f"{te // 3600:02d}:{(te % 3600) // 60:02d}" if te else "",
-                "hours": item.get("calc_hours", item.get("calc_days", 0)),
-                "service_pk": item.get("service_pk"),
-            })
+            crew.append(_parse_crew_item(item))
+    return crew
+
+
+def _find_personal_chapter_refs(payload):
+    """Find _ref_chapter_items URLs for 'Personal' chapters in order items."""
+    refs = []
+    for item in payload.get("order_items", []):
+        title = (item.get("title") or "").lower()
+        if "personal" in title:
+            ref = item.get("_ref_chapter_items", "")
+            if ref and "chid=" in ref:
+                refs.append(ref)
+    return refs
+
+
+async def _fetch_crew_deep(payload, api_url, headers, ssl_skip):
+    """Fetch crew items: first check top-level, then look inside Personal chapters."""
+    # 1. Check for type-3 items directly in order_items
+    crew = _parse_crew_items(payload)
+    if crew:
+        return crew
+
+    # 2. Look for 'Personal' chapter sub-items
+    refs = _find_personal_chapter_refs(payload)
+    if not refs:
+        return []
+
+    crew = []
+    async with httpx.AsyncClient(timeout=20, verify=not ssl_skip) as client:
+        for ref in refs:
+            try:
+                resp = await client.get(f"{api_url}/v1/{ref}", headers=headers)
+                data = resp.json()
+                sub_items = data.get("payload", [])
+                for item in sub_items:
+                    if item.get("type") == 3:
+                        parsed = _parse_crew_item(item)
+                        if parsed.get("date_start") and parsed["date_start"] != "0000-00-00":
+                            crew.append(parsed)
+            except Exception as e:
+                logger.warning(f"Chapter sub-item fetch failed for {ref}: {e}")
     return crew
 
 
@@ -1349,7 +1395,7 @@ async def get_order_crew(order_pk: int, user: dict = Depends(_auth_user)):
             if not data.get("success"):
                 return {"crew": [], "event": ""}
             payload = data["payload"][0] if isinstance(data["payload"], list) else data["payload"]
-            crew = _parse_crew_items(payload)
+            crew = await _fetch_crew_deep(payload, api_url, headers, ssl_skip)
             result = {
                 "crew": crew,
                 "event": payload.get("event", ""),
@@ -1414,7 +1460,7 @@ async def get_crew_batch(data: dict, user: dict = Depends(_auth_user)):
                             if not d.get("success"):
                                 return pk, []
                             p = d["payload"][0] if isinstance(d["payload"], list) else d["payload"]
-                            crew = _parse_crew_items(p)
+                            crew = await _fetch_crew_deep(p, api_url, headers_epi, ssl_skip)
                             # Cache
                             await _db.crew_cache.update_one(
                                 {"order_pk": pk},
