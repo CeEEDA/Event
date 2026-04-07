@@ -1,65 +1,75 @@
-# Eventenergie Portal - PRD
+# Kirmes Billing & Management System - PRD
 
 ## Original Problem Statement
-Umfassendes "Kirmes" (Jahrmarkt) Abrechnungssystem mit Tankbeleg-Digitalisierung, Auftragsverwaltung, Energiemonitoring, Zahlungsabwicklung, Dokumentenverwaltung, Team Chat und Aufgabenverwaltung.
+Comprehensive "Kirmes" (Fairground) billing and management system with internal HR/Employee Management module. Built with React, FastAPI, MongoDB.
+
+## User Personas
+- **Admin**: Manages employees, shift planning, payroll, EpiRent orders, documents
+- **Employee**: Views assigned shifts, payroll, personal documents
 
 ## Core Architecture
-- **Frontend:** React (CRA) + Tailwind CSS + Shadcn/UI
-- **Backend:** FastAPI (Python) + MongoDB
-- **Desktop:** Electron Wrapper
-- **External APIs:** EpiRent (ERP), Stripe, MQTT, OpenStreetMap, Gemini 2.5 Flash (KI)
-- **Object Storage:** Emergent Object Storage
-- **DATEV:** Automatische Weiterleitung an uploadmail.datev.de
+```
+/app/backend/routes/
+  ├── employee.py       # HR Data, Shift Planning, Absences
+  ├── orders.py         # EpiRent API sync, Crew data (Crewbrain), Documents
+  ├── documents.py      # AI Document Parsing (DATEV Lohnabrechnung)
+/app/frontend/src/pages/
+  ├── HubPage.js                # Employee Hub
+  ├── EinsatzplanungPage.jsx    # Admin Shift Planning (Crewbrain integrated)
+  ├── AbrechnungPage.jsx        # Employee Payroll
+  ├── AdminZeitDetailPage.jsx   # Admin Employee Details
+```
 
-## What's Been Implemented
+## Completed Features (Latest First)
 
-### Einsatzplanung - FERTIG (2026-04-06)
-- Admin-Wochenplan: Raster Mitarbeiter x Wochentage
-- EpiRent-Auftraege der Woche oben angezeigt
-- Einsaetze zuweisen: Auftrag, Rolle, Freitext
-- Abwesenheiten (Urlaub, Krank, UeS-Abbau) direkt im Raster sichtbar
-- Wochenplan freigeben → Mitarbeiter sieht seine Einsaetze im Hub
-- Mitarbeiter-Hub: "Meine Einsaetze" unter der Stempelfunktion
-- Backend: GET/POST/DELETE /api/employee/shift-plan, POST /shift-plan/release, GET /shift-plan/my-plan
-- DB: shift_assignments, shift_releases
+### 2026-04-07: EpiRent Crewbrain Integration in Einsatzplanung
+- Backend: `GET /api/orders/epirent/{order_pk}/crew` with 30-min caching
+- Backend: `POST /api/orders/epirent/crew/batch` with semaphore(3) concurrency limiting
+- Frontend: Job cards show EpiRent crew requirements (count, title, time) with "EpiRent" badge
+- Frontend: Orders without crew data show manual "Kein Personal definiert" editor
+- Tested: 100% Backend (13/13), 100% Frontend - All features verified
 
-### DATEV Lohnabrechnung KI-Erkennung - FERTIG (2026-04-06)
-- Ordner "Lohnabrechnung" im Dokumentenstamm (bei Finanz-Ordnern, emerald)
-- KI-Erkennung: Mitarbeitername, Personalnummer, Monat, Nettobetrag
-- Automatische Zuweisung zum erkannten Mitarbeiter
-- Mitarbeiter-Abrechnungsseite zeigt DATEV-PDFs + interne Abrechnungen
+### Previously Completed
+- Full Time Tracking, Auto-Overtime, Payroll system
+- Admin Avatar Upload
+- Employee Documents Management in AdminZeitDetailPage
+- DATEV Lohnabrechnung PDF AI parsing (Gemini) with auto-assignment
+- Employee "Abrechnung" (Payroll) view with released payrolls
+- "Einsatzplanung" v2 (weekly grid, job cards, shift assignments)
+- "Meine Einsätze" widget on Employee Hub
+- Payroll "Speichern & Freigeben" (Release) functionality
+- Test/Live Database isolation verified
 
-### Abrechnungs-Freigabe System - FERTIG (2026-04-06)
-- Admin: Speichern & Freigeben Button
-- Mitarbeiter: Abrechnung-Kachel im Hub
-
-### Weitere fertige Features
-- Dokumente in Mitarbeiter-Detailseite verschoben
-- Mitarbeiterverwaltung: Alle User angezeigt (nicht nur gestempelte)
-- Admin Avatar Upload, Regelarbeitszeit, Auto-Ueberstunden
-- Payroll mit Zuschlaegen + Abzuegen + CSV Export
-- Mitarbeiter-Notizen, Arbeitsfreie-Zeit-Antraege, HR-Daten
-- GPS-Zeiterfassung, Chat, Dokumentenverwaltung mit KI
+## Key DB Collections
+- `shift_assignments`: `{id, user_id, order_pk, role, note, date, start_time, end_time}`
+- `shift_job_reqs`: `{order_pk, count, roles}` (Manual requirements)
+- `shift_releases`: `{week_str, released_at, released_by}`
+- `crew_cache`: `{order_pk, crew[], event, cached_at}` (30-min EpiRent cache)
+- `payroll_releases`: `{user_id, month, net_amount, released_at}`
 
 ## Key API Endpoints
-### Einsatzplanung
-- GET /api/employee/shift-plan?week=YYYY-WXX (Admin)
-- POST /api/employee/shift-plan (Admin: Create/Update)
-- DELETE /api/employee/shift-plan/{id} (Admin: Delete)
-- POST /api/employee/shift-plan/release?week=YYYY-WXX (Admin: Freigabe)
-- GET /api/employee/shift-plan/my-plan (Mitarbeiter: eigene Einsaetze)
+- `GET /api/orders/epirent/{order_pk}/crew` - Single order crew data (cached)
+- `POST /api/orders/epirent/crew/batch` - Batch crew data (concurrency-limited)
+- `POST /api/employee/shift-plan` - Save shift assignment
+- `POST /api/employee/shift-plan/release` - Release week to employees
+- `GET /api/orders/epirent` - Orders list with date filtering
 
-## DB Collections
-- shift_assignments, shift_releases (NEU)
-- payroll_releases, payroll_deductions
-- employee_profiles, employee_documents, hr_data, vacation_entries
-- time_entries, time_off_requests, work_schedules, employee_notes
+## 3rd Party Integrations
+- Gemini 2.5 Flash via Emergent Integrations `LlmChat` (Emergent LLM Key)
+- DATEV (via SMTP Email)
+- EpiRent API (ERP system - orders, crew/Crewbrain data)
 
-## Prioritized Backlog
-### P1
-- Microsoft 365 Postfach-Anbindung
-- PayPal/Kreditkarten Integration
+## Backlog
 
-### P2
-- Lastdiagramm Live-Test, Chromium Kiosk, Admin Dateigroessen-Limits
-- Windows Installer, GPS-Support, DSE890 Gateway, AdminPage.js Refactoring
+### P1 - Upcoming
+- Microsoft 365 Postfach-Anbindung (automatic document ingestion from email)
+- PayPal/Kreditkarten Integration for Kirmes signups
+
+### P2 - Future
+- Lastdiagramm Live-Test (requires EMU meters)
+- Suppress Chromium "Translate" popup on Raspberry Pi Kiosk
+- Admin File Size Limits for uploads
+- Windows Installer for Electron app
+- GPS Support for Kirmeskiste
+- DSE890 Gateway GSM Connection
+- Refactor AdminPage.js (>1900 lines)
