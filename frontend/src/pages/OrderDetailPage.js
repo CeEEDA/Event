@@ -495,18 +495,20 @@ export default function OrderDetailPage() {
             <Button variant="outline" size="sm" onClick={fetchOrder} data-testid="refresh-detail-btn">
               <RefreshCw className="w-4 h-4 mr-1" /> Aktualisieren
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
-              onClick={() => {
-                const token = localStorage.getItem("token");
-                window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
-              }}
-              data-testid="billing-pdf-btn"
-            >
-              <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
-            </Button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
+                onClick={() => {
+                  const token = localStorage.getItem("token");
+                  window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
+                }}
+                data-testid="billing-pdf-btn"
+              >
+                <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
+              </Button>
+            )}
             <Logo size="small" />
           </div>
         </div>
