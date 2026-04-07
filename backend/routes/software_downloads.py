@@ -124,6 +124,30 @@ async def download_deploy_win():
     )
 
 
+@router.get("/build-mobile-win")
+async def download_build_mobile_win():
+    filepath = DESKTOP_DIR / "build-mobile.ps1"
+    if not filepath.exists():
+        raise HTTPException(404, "Build-Mobile (Win) nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="build-mobile.ps1",
+        media_type="application/octet-stream",
+    )
+
+
+@router.get("/build-mobile-mac")
+async def download_build_mobile_mac():
+    filepath = DESKTOP_DIR / "build-mobile.sh"
+    if not filepath.exists():
+        raise HTTPException(404, "Build-Mobile (Mac) nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="build-mobile.sh",
+        media_type="application/x-sh",
+    )
+
+
 @router.get("/info")
 async def get_download_info():
     files = []
@@ -134,6 +158,8 @@ async def get_download_info():
         ("server-setup-win.ps1", "Server-Installation (Win Server)", "windows", "server"),
         ("db-migrate-win.ps1", "Datenbank-Migration (Win Server)", "windows", "server"),
         ("deploy-win.ps1", "Code-Deployment (Win Server)", "windows", "server"),
+        ("build-mobile.ps1", "Mobile App Build (Windows)", "windows", "mobile"),
+        ("build-mobile.sh", "Mobile App Build (Mac)", "mac", "mobile"),
     ]:
         filepath = DESKTOP_DIR / name
         exists = filepath.exists()

@@ -1083,6 +1083,8 @@ function SoftwareDownloadsSection() {
       "server-setup-win.ps1": "server-setup-win",
       "db-migrate-win.ps1": "db-migrate-win",
       "deploy-win.ps1": "deploy-win",
+      "build-mobile.ps1": "build-mobile-win",
+      "build-mobile.sh": "build-mobile-mac",
     };
     window.open(`${BACKEND_URL}/api/system/downloads/${routeMap[filename] || filename}`, "_blank");
   };
@@ -1097,6 +1099,7 @@ function SoftwareDownloadsSection() {
 
   const desktopFiles = info?.files?.filter(f => f.category === "desktop" && f.available) || [];
   const serverFiles = info?.files?.filter(f => f.category === "server" && f.available) || [];
+  const mobileFiles = info?.files?.filter(f => f.category === "mobile" && f.available) || [];
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="software-downloads-section">
@@ -1139,6 +1142,33 @@ function SoftwareDownloadsSection() {
                 <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
                   <p><strong>Mac:</strong> Terminal öffnen und eintippen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash ~/Downloads/install-mac.sh</code></p>
                   <p><strong>Windows:</strong> Die .bat Datei doppelklicken</p>
+                </div>
+              </div>
+            )}
+
+            {/* Mobile Apps */}
+            {mobileFiles.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Mobile Apps (Android / iOS)</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {mobileFiles.map(f => (
+                    <button key={f.filename} onClick={() => handleDownload(f.filename)}
+                      className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 transition-all text-left group"
+                      data-testid={`download-${f.filename.replace(/\./g, '-')}`}>
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-emerald-600 text-white">
+                        <MonitorSmartphone className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 group-hover:text-emerald-700">{f.label}</div>
+                        <div className="text-xs text-gray-400">{formatSize(f.size_bytes)}</div>
+                      </div>
+                      <Download className="w-4 h-4 text-gray-300 group-hover:text-emerald-500" />
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
+                  <p><strong>Android APK:</strong> <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">.\build-mobile.ps1 android</code> (braucht Android Studio + JDK 17)</p>
+                  <p><strong>iOS App:</strong> <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash build-mobile.sh ios</code> (braucht Mac + Xcode + Apple Developer Account)</p>
                 </div>
               </div>
             )}
