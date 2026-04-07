@@ -1128,7 +1128,7 @@ function SoftwareDownloadsSection() {
               ))}
             </div>
             <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 space-y-1">
-              <p><strong>Mac:</strong> Datei im Terminal ausführen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash install-mac.sh</code></p>
+              <p><strong>Mac:</strong> Terminal öffnen und eintippen: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">bash ~/Downloads/install-mac.sh</code></p>
               <p><strong>Windows:</strong> Die .bat Datei doppelklicken oder PowerShell: <code className="bg-gray-200 px-1.5 py-0.5 rounded text-gray-700">powershell -ExecutionPolicy Bypass -File install-win.ps1</code></p>
             </div>
           </div>
