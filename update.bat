@@ -26,6 +26,7 @@ setlocal enabledelayedexpansion
 
 set "LIVE_DIR=C:\eventenergie"
 set "BRANCH=Main_0.9APP"
+set "REPO_URL=https://github.com/CeEEDA/Event.git"
 set "LOG_DIR=%LIVE_DIR%\logs"
 
 :: Logs-Ordner erstellen
@@ -83,6 +84,14 @@ if !errorlevel! neq 0 (
     echo   Bitte Git installieren: https://git-scm.com/download/win
     pause
     exit /b 1
+)
+
+:: Pruefen ob .git existiert, falls nicht: initialisieren
+if not exist "%LIVE_DIR%\.git" (
+    echo   Kein Git-Repository gefunden. Initialisiere...
+    git init 2>&1
+    git remote add origin %REPO_URL% 2>&1
+    echo   Git-Repository initialisiert mit %REPO_URL%
 )
 
 git fetch --all 2>&1
