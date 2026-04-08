@@ -1,59 +1,70 @@
-# Kirmes Billing & Management System - PRD
+# Eventenergie Portal - PRD
 
 ## Original Problem Statement
-Comprehensive "Kirmes" (Fairground) billing and management system with internal HR/Employee Management module. Built with React, FastAPI, MongoDB. Includes native Desktop Applications (Electron) for Mac/Windows, and Mobile Apps (Capacitor) for Android/iOS.
+Comprehensive "Kirmes" (Fairground) billing and HR management system with:
+- Desktop Apps (Mac/Windows) via Electron
+- Mobile Apps (Android/iOS) via Capacitor
+- Server Infrastructure on Windows Server 2019
+- Time tracking, Payroll (DATEV), Employee Hub, Orders, Shift planning
 
-## Core Architecture
-```
-/app/backend/routes/
-  ├── software_downloads.py    # Desktop + Mobile + Server installer downloads
-/app/frontend/
-  ├── capacitor.config.json    # Capacitor config (Android/iOS)
-  ├── android/                 # Native Android project (Capacitor)
-  ├── ios/                     # Native iOS project (Capacitor)
-/app/desktop/
-  ├── main.js, preload.js      # Electron desktop app
-  ├── install-mac.sh           # Mac desktop installer
-  ├── install-win.bat/ps1      # Windows desktop installer
-  ├── server-setup-win.ps1     # Windows Server 2019 setup
-  ├── db-migrate-win.ps1       # Database migration
-  ├── deploy-win.ps1           # Code deployment
-  ├── build-mobile.ps1/.sh     # Android/iOS build scripts
-```
+## Architecture
+- **Frontend**: React (CRA + craco)
+- **Backend**: FastAPI + MongoDB (motor)
+- **Desktop**: Electron wrapper with local/remote IP fallback
+- **Mobile**: Capacitor 6 native builds
+- **Server**: Windows Server 2019, Caddy (HTTP:8001), nginx (HTTPS:443), MongoDB, Mosquitto MQTT
 
-## Completed Features (Latest First)
+## What's Been Implemented
+- [x] Full-stack app: Time tracking, Payroll, Employee Hub, Orders, Shift planning
+- [x] Mac + Windows Desktop App (Electron)
+- [x] Android + iOS Mobile Apps (Capacitor 6)
+- [x] Software Downloads Portal in Admin
+- [x] Windows Server 2019 deployment scripts (setup, migrate, deploy)
+- [x] **update.bat** - GitHub pull, build & restart (goto-based, locale-independent)
+- [x] **start-all.bat** - Service management (goto-based, auto Caddy download)
+- [x] **stop-all.bat** - Clean service shutdown (locale-independent port killing)
+- [x] **requirements-server.txt** - Optimized for Windows Server (no dev tools)
+- [x] NSSM service disabled, start-all.bat is sole service manager
+- [x] SSL/HTTPS via nginx with existing certificate
+- [x] Mosquitto MQTT broker integration
+- [x] All 4 services running: Backend(8002), Caddy(8001), nginx(443), Mosquitto(1883)
 
-### 2026-04-07: Mobile Apps (Capacitor - Android + iOS)
-- Capacitor 6 integration with existing React frontend
-- Android project with custom app icons (5 density buckets) + splash screen
-- iOS project with full icon set (15 sizes) + AppIcon.appiconset
-- Build scripts: build-mobile.ps1 (Windows) + build-mobile.sh (Mac)
-- Downloads available in Portal Settings → Software Downloads
+## Server Deployment Status (2026-04-08)
+- Windows Server 2019: FULLY OPERATIONAL
+- All services: Backend ✅, Caddy ✅, nginx ✅, Mosquitto ✅
+- SSL Certificate: Copied from old server to C:\eventenergie\ssl\
+- NSSM EventenergieBackend service: DISABLED (start-all.bat manages services)
+- Node 20 LTS + yarn for frontend builds
+- Python 3.11 venv at C:\eventenergie\venv
 
-### 2026-04-07: Windows Server 2019 Setup Scripts
-- server-setup-win.ps1: Chocolatey, Node.js 20, Python 3.11, MongoDB 7, Caddy, NSSM, Mosquitto, Firewall
-- db-migrate-win.ps1: Export/Import/Verify with DB rename
-- deploy-win.ps1: Git clone, pip install, yarn build, service restart
+## Upcoming Tasks (P1)
+- [ ] Microsoft 365 Postfach-Anbindung (email inbox document ingestion)
+- [ ] PayPal/Kreditkarten Integration (payment processing)
 
-### 2026-04-07: Mac + Windows Desktop App (Electron) v2.0
-- Server detection (local 172.20.200.117 → fallback eventenergie.app)
-- Login → Hub → Multi-window architecture
-- Self-contained installers with embedded code + icons
+## Future Tasks (P2)
+- [ ] Lastdiagramm Live-Test (requires EMU meters)
+- [ ] Chromium "Translate" Popup suppression on Raspberry Pi Kiosk
+- [ ] Admin File Size Limits for uploads
+- [ ] GPS Support for Kirmeskiste
+- [ ] DSE890 Gateway GSM Connection
+- [ ] AdminSettingsPage.js Refactoring (~1800+ lines)
+- [ ] MQTT port alignment (backend connects 1884, Mosquitto on 1883)
 
-### 2026-04-07: Software Downloads Portal
-- Admin Settings → Software Downloads section
-- 3 categories: Desktop Apps, Mobile Apps, Server-Administration
-- All files downloadable from the portal
+## Key Files
+- `/app/update.bat` - GitHub update script
+- `/app/start-all.bat` - Service start script
+- `/app/stop-all.bat` - Service stop script
+- `/app/nginx.conf` - HTTPS reverse proxy config
+- `/app/Caddyfile` - HTTP reverse proxy config
+- `/app/backend/requirements-server.txt` - Server-optimized Python packages
 
 ## 3rd Party Integrations
-- Gemini 2.5 Flash via Emergent LLM Key
-- DATEV (via SMTP Email)
-- EpiRent API (ERP system)
-- Capacitor 6 (Android + iOS native wrapper)
+- Gemini (via Emergent LLM Key)
+- DATEV (Email parsing)
+- EpiRent API (ERP)
 
-## Backlog
-### P1
-- Microsoft 365 Postfach-Anbindung
-- PayPal/Kreditkarten Integration
-### P2
-- Lastdiagramm Live-Test, Chromium Translate, Admin Dateigrößen, GPS, DSE890, AdminPage Refactoring
+## Test Credentials
+- Admin: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+- Admin Preview: admin@test.com / password
+- Employee: test1@test.de / Test1234!
+- Employee: test-noperm@test.com / password
