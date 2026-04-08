@@ -541,7 +541,7 @@ async def start_mqtt_client(db_instance, loop):
         config = {
             "enabled": True,
             "broker_url": "127.0.0.1",
-            "broker_port": 1884,
+            "broker_port": 1883,
             "username": "",
             "password": "",
             "use_tls": False,
@@ -551,7 +551,7 @@ async def start_mqtt_client(db_instance, loop):
         }
         await _db.mqtt_config.insert_one(config)
         config.pop("_id", None)
-        logger.info("MQTT: Default-Config erstellt (127.0.0.1:1884)")
+        logger.info("MQTT: Default-Config erstellt (127.0.0.1:1883)")
 
     # Start the offline-checker background task
     asyncio.ensure_future(_offline_checker_loop())
