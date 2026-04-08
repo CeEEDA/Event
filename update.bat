@@ -144,18 +144,33 @@ if not exist "%LIVE_DIR%\frontend\.env" (
 :: ====== 4. Python-Pakete ======
 echo.
 echo  [4/7] Python-Pakete aktualisieren...
+echo   (Das kann einige Minuten dauern - Fortschritt wird angezeigt)
 cd /d "%LIVE_DIR%\backend"
+
+:: Server-optimierte Requirements bevorzugen
+set "REQ_FILE=requirements.txt"
+if exist "%LIVE_DIR%\backend\requirements-server.txt" (
+    set "REQ_FILE=requirements-server.txt"
+    echo   Verwende Server-optimierte Pakete (requirements-server.txt)
+)
+
 if exist "%LIVE_DIR%\venv\Scripts\activate.bat" (
     call "%LIVE_DIR%\venv\Scripts\activate.bat"
-    pip install -r requirements.txt --quiet 2>nul
-    pip install emergentintegrations --quiet --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>nul
+    echo   venv aktiviert: %LIVE_DIR%\venv
+    echo   Installiere Pakete...
+    pip install -r !REQ_FILE! --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
+    if !errorlevel! neq 0 (
+        echo   WARNUNG: Einige Pakete hatten Fehler - Server sollte trotzdem funktionieren
+    )
     echo   Python-Pakete aktualisiert (venv)
 ) else if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
-    pip install -r requirements.txt --quiet 2>nul
+    echo   venv aktiviert: backend\venv
+    pip install -r !REQ_FILE! --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
     echo   Python-Pakete aktualisiert (backend venv)
 ) else (
-    pip install -r requirements.txt --quiet 2>nul
+    echo   WARNUNG: Kein venv gefunden, installiere global
+    pip install -r !REQ_FILE! --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
     echo   Python-Pakete aktualisiert (global)
 )
 
@@ -165,13 +180,16 @@ echo  [5/7] Frontend Build erstellen...
 cd /d "%LIVE_DIR%\frontend"
 where yarn >nul 2>&1
 if !errorlevel! equ 0 (
-    call yarn install 2>nul
-    echo   Node-Pakete installiert (yarn)
-    call yarn build
+    echo   yarn install laeuft...
+    call yarn install 2>&1
+    echo   yarn build laeuft... (kann 2-5 Minuten dauern)
+    call yarn build 2>&1
 ) else (
-    call npm install --legacy-peer-deps 2>nul
-    echo   Node-Pakete installiert (npm)
-    call npm run build
+    echo   WARNUNG: yarn nicht gefunden! Installiere mit: npm install -g yarn
+    echo   Verwende npm als Fallback...
+    call npm install --legacy-peer-deps 2>&1
+    echo   npm run build laeuft...
+    call npm run build 2>&1
 )
 if !errorlevel! equ 0 (
     echo   Build erfolgreich
