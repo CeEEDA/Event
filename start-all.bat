@@ -111,9 +111,12 @@ for /f "delims=" %%f in ('dir /b /o-d "%BACKUP_DIR%\startup_backup_*" 2^>nul') d
 echo.
 echo  [5/8] Python-Umgebung pruefen...
 cd /d "%BACKEND_DIR%"
-if exist "venv\Scripts\activate.bat" (
+if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" (
+    call "%PORTAL_DIR%\venv\Scripts\activate.bat"
+    echo   Python venv aktiviert (%PORTAL_DIR%\venv)
+) else if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
-    echo   Python venv aktiviert
+    echo   Python venv aktiviert (backend\venv)
 ) else (
     echo   System-Python wird genutzt
 )
@@ -133,7 +136,9 @@ if not exist "build" (
 echo.
 echo  [7/8] Backend starten auf Port 8002...
 cd /d "%BACKEND_DIR%"
-if exist "venv\Scripts\activate.bat" (
+if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" (
+    start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call %PORTAL_DIR%\venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+) else if exist "venv\Scripts\activate.bat" (
     start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 ) else (
     start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
@@ -181,8 +186,24 @@ if not exist "%PORTAL_DIR%\Caddyfile" (
 
 :: Caddy starten (HTTP Port 8001)
 if not exist "%PORTAL_DIR%\caddy.exe" (
-    echo   FEHLER: caddy.exe nicht gefunden in %PORTAL_DIR%
-    goto :skip_nginx
+    echo   caddy.exe nicht gefunden - versuche Download...
+    where curl >nul 2>&1
+    if !errorlevel! equ 0 (
+        curl -sL -o "%PORTAL_DIR%\caddy.exe" "https://caddyserver.com/api/download?os=windows&arch=amd64"
+        if exist "%PORTAL_DIR%\caddy.exe" (
+            echo   Caddy erfolgreich heruntergeladen
+        ) else (
+            echo   FEHLER: Caddy Download fehlgeschlagen
+            echo   Bitte manuell herunterladen: https://caddyserver.com/download
+            echo   caddy.exe nach %PORTAL_DIR% kopieren
+            goto :skip_nginx
+        )
+    ) else (
+        echo   FEHLER: curl nicht verfuegbar fuer Caddy-Download
+        echo   Bitte caddy.exe manuell nach %PORTAL_DIR% kopieren
+        echo   Download: https://caddyserver.com/download
+        goto :skip_nginx
+    )
 )
 start "Eventenergie Caddy" /min cmd /c "cd /d %PORTAL_DIR% && caddy.exe run --config Caddyfile"
 echo   Warte auf Caddy-Start (max 12s)...
