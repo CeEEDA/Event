@@ -145,40 +145,61 @@ if not exist "%LIVE_DIR%\frontend\.env" (
 echo.
 echo  [4/7] Python-Pakete aktualisieren...
 cd /d "%LIVE_DIR%\backend"
-if exist "venv\Scripts\activate.bat" (
+if exist "%LIVE_DIR%\venv\Scripts\activate.bat" (
+    call "%LIVE_DIR%\venv\Scripts\activate.bat"
+    pip install -r requirements.txt --quiet 2>nul
+    pip install emergentintegrations --quiet --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>nul
+    echo   Python-Pakete aktualisiert (venv)
+) else if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
     pip install -r requirements.txt --quiet 2>nul
-    echo   Python-Pakete aktualisiert (venv)
+    echo   Python-Pakete aktualisiert (backend venv)
 ) else (
     pip install -r requirements.txt --quiet 2>nul
-    echo   Python-Pakete aktualisiert
+    echo   Python-Pakete aktualisiert (global)
 )
 
 :: ====== 5. Frontend Build ======
 echo.
 echo  [5/7] Frontend Build erstellen...
 cd /d "%LIVE_DIR%\frontend"
-call npm install --legacy-peer-deps 2>nul
-echo   Node-Pakete installiert
-call npm run build
+where yarn >nul 2>&1
+if !errorlevel! equ 0 (
+    call yarn install 2>nul
+    echo   Node-Pakete installiert (yarn)
+    call yarn build
+) else (
+    call npm install --legacy-peer-deps 2>nul
+    echo   Node-Pakete installiert (npm)
+    call npm run build
+)
 if !errorlevel! equ 0 (
     echo   Build erfolgreich
 ) else (
     echo   FEHLER: Build fehlgeschlagen
-    echo   Bitte manuell pruefen: cd %LIVE_DIR%\frontend ^&^& npm run build
+)
+
+:: Desktop-Installer in Backend kopieren
+if exist "%LIVE_DIR%\desktop" (
+    if not exist "%LIVE_DIR%\backend\static\desktop-installers" mkdir "%LIVE_DIR%\backend\static\desktop-installers"
+    for %%f in (install-mac.sh install-win.bat install-win.ps1 server-setup-win.ps1 db-migrate-win.ps1 deploy-win.ps1 build-mobile.ps1 build-mobile.sh) do (
+        if exist "%LIVE_DIR%\desktop\%%f" copy /Y "%LIVE_DIR%\desktop\%%f" "%LIVE_DIR%\backend\static\desktop-installers\" >nul
+    )
+    echo   Desktop-Installer kopiert
 )
 
 :: ====== 6. Dienste starten ======
 echo.
 echo  [6/7] Dienste starten...
 cd /d "%LIVE_DIR%"
+:: NSSM Services (neuer Server)
+net start EventenergieBackend >nul 2>&1
+net start EventenergieCaddy >nul 2>&1
+:: Fallback: start-all.bat (alter Server)
 if exist "%LIVE_DIR%\start-all.bat" (
-    call "%LIVE_DIR%\start-all.bat" nopause
-) else (
-    echo   FEHLER: start-all.bat nicht gefunden!
-    pause
-    exit /b 1
+    call "%LIVE_DIR%\start-all.bat" nopause 2>nul
 )
+echo   Dienste gestartet
 
 :: ====== 7. Finale Port-Verifizierung ======
 echo.
