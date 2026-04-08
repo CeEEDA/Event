@@ -10,12 +10,12 @@ setlocal enabledelayedexpansion
 ::   Doppelklick (Als Administrator empfohlen)
 ::
 :: ABLAUF:
-::   1. Dienste stoppen (stop-all.bat nopause)
+::   1. Dienste stoppen
 ::   2. .env Dateien sichern
 ::   3. Git Pull vom GitHub Repository
 ::   4. Python-Pakete aktualisieren
 ::   5. Frontend Build erstellen
-::   6. Dienste starten (start-all.bat nopause)
+::   6. Dienste starten
 ::   7. Port-Verifizierung
 ::
 :: SICHERHEIT:
@@ -29,7 +29,6 @@ set "BRANCH=Main_0.9APP"
 set "REPO_URL=https://github.com/CeEEDA/Event.git"
 set "LOG_DIR=%LIVE_DIR%\logs"
 
-:: Logs-Ordner erstellen
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 echo.
@@ -39,7 +38,6 @@ echo   %date% %time%
 echo  ==================================================
 echo.
 
-:: Pruefen ob Live-Verzeichnis existiert
 if not exist "%LIVE_DIR%" (
     echo   FEHLER: %LIVE_DIR% nicht gefunden!
     pause
@@ -86,7 +84,6 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-:: Pruefen ob .git existiert, falls nicht: initialisieren
 if not exist "%LIVE_DIR%\.git" (
     echo   Kein Git-Repository gefunden. Initialisiere...
     git init 2>&1
@@ -101,7 +98,6 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-:: Zum richtigen Branch wechseln falls noetig
 for /f "tokens=*" %%b in ('git branch --show-current') do set "CURRENT_BRANCH=%%b"
 if /i not "!CURRENT_BRANCH!"=="%BRANCH%" (
     echo   Wechsle von !CURRENT_BRANCH! zu %BRANCH%...
@@ -144,58 +140,67 @@ if not exist "%LIVE_DIR%\frontend\.env" (
 :: ====== 4. Python-Pakete ======
 echo.
 echo  [4/7] Python-Pakete aktualisieren...
-echo   (Das kann einige Minuten dauern - Fortschritt wird angezeigt)
+echo   (Das kann einige Minuten dauern)
 cd /d "%LIVE_DIR%\backend"
 
-:: Server-optimierte Requirements bevorzugen
 set "REQ_FILE=requirements.txt"
-if exist "%LIVE_DIR%\backend\requirements-server.txt" (
-    set "REQ_FILE=requirements-server.txt"
-    echo   Verwende Server-optimierte Pakete (requirements-server.txt)
-)
+if exist "%LIVE_DIR%\backend\requirements-server.txt" set "REQ_FILE=requirements-server.txt"
+echo   Verwende: %REQ_FILE%
 
-if exist "%LIVE_DIR%\venv\Scripts\activate.bat" (
-    call "%LIVE_DIR%\venv\Scripts\activate.bat"
-    echo   venv aktiviert: %LIVE_DIR%\venv
-    echo   Installiere Pakete...
-    pip install -r !REQ_FILE! --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
-    if !errorlevel! neq 0 (
-        echo   WARNUNG: Einige Pakete hatten Fehler - Server sollte trotzdem funktionieren
-    )
-    echo   Python-Pakete aktualisiert (venv)
-) else if exist "venv\Scripts\activate.bat" (
-    call venv\Scripts\activate.bat
-    echo   venv aktiviert: backend\venv
-    pip install -r !REQ_FILE! --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
-    echo   Python-Pakete aktualisiert (backend venv)
-) else (
-    echo   WARNUNG: Kein venv gefunden, installiere global
-    pip install -r !REQ_FILE! --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
-    echo   Python-Pakete aktualisiert (global)
-)
+:: --- venv Erkennung mit goto (zuverlaessig) ---
+if exist "%LIVE_DIR%\venv\Scripts\activate.bat" goto :pip_venv_root
+if exist "%LIVE_DIR%\backend\venv\Scripts\activate.bat" goto :pip_venv_backend
+goto :pip_global
+
+:pip_venv_root
+echo   venv aktiviert: %LIVE_DIR%\venv
+call "%LIVE_DIR%\venv\Scripts\activate.bat"
+pip install -r %REQ_FILE% --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
+echo   Python-Pakete aktualisiert (venv)
+goto :pip_done
+
+:pip_venv_backend
+echo   venv aktiviert: %LIVE_DIR%\backend\venv
+call "%LIVE_DIR%\backend\venv\Scripts\activate.bat"
+pip install -r %REQ_FILE% --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
+echo   Python-Pakete aktualisiert (backend venv)
+goto :pip_done
+
+:pip_global
+echo   WARNUNG: Kein venv gefunden, installiere global
+pip install -r %REQ_FILE% --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1
+echo   Python-Pakete aktualisiert (global)
+goto :pip_done
+
+:pip_done
 
 :: ====== 5. Frontend Build ======
 echo.
 echo  [5/7] Frontend Build erstellen...
 cd /d "%LIVE_DIR%\frontend"
+
+:: --- yarn/npm Erkennung mit goto (zuverlaessig) ---
 where yarn >nul 2>&1
-if !errorlevel! equ 0 (
-    echo   yarn install laeuft...
-    call yarn install 2>&1
-    echo   yarn build laeuft... (kann 2-5 Minuten dauern)
-    call yarn build 2>&1
-) else (
-    echo   WARNUNG: yarn nicht gefunden! Installiere mit: npm install -g yarn
-    echo   Verwende npm als Fallback...
-    call npm install --legacy-peer-deps 2>&1
-    echo   npm run build laeuft...
-    call npm run build 2>&1
-)
-if !errorlevel! equ 0 (
-    echo   Build erfolgreich
-) else (
-    echo   FEHLER: Build fehlgeschlagen
-)
+if !errorlevel! equ 0 goto :build_yarn
+goto :build_npm
+
+:build_yarn
+echo   yarn install laeuft...
+call yarn install --frozen-lockfile 2>&1
+echo   yarn build laeuft... (kann 2-5 Minuten dauern)
+call yarn build 2>&1
+echo   Build erfolgreich (yarn)
+goto :build_done
+
+:build_npm
+echo   WARNUNG: yarn nicht gefunden! Installiere mit: npm install -g yarn
+echo   Verwende npm als Fallback...
+call npm install --legacy-peer-deps 2>&1
+call npm run build 2>&1
+echo   Build erfolgreich (npm)
+goto :build_done
+
+:build_done
 
 :: Desktop-Installer in Backend kopieren
 if exist "%LIVE_DIR%\desktop" (
@@ -222,8 +227,8 @@ echo   Dienste gestartet
 :: ====== 7. Finale Port-Verifizierung ======
 echo.
 echo  [7/7] Finale Verifizierung...
-echo   Warte 5 Sekunden...
-timeout /t 5 /nobreak >nul
+echo   Warte 10 Sekunden auf Backend-Start...
+timeout /t 10 /nobreak >nul
 
 set "FINAL_BACKEND=0"
 set "FINAL_CADDY=0"
@@ -272,8 +277,6 @@ goto :eof
 
 :: ============================================
 ::  Subroutine fuer Port-Pruefung
-::  Sucht nach 0.0.0.0:PORT (locale-unabhaengig)
-::  Deutsch: "ABHOEREN" statt "LISTENING"
 :: ============================================
 :upd_check_port
 set "_UCP=1"
