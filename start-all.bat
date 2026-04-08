@@ -111,15 +111,22 @@ for /f "delims=" %%f in ('dir /b /o-d "%BACKUP_DIR%\startup_backup_*" 2^>nul') d
 echo.
 echo  [5/8] Python-Umgebung pruefen...
 cd /d "%BACKEND_DIR%"
-if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" (
-    call "%PORTAL_DIR%\venv\Scripts\activate.bat"
-    echo   Python venv aktiviert (%PORTAL_DIR%\venv)
-) else if exist "venv\Scripts\activate.bat" (
-    call venv\Scripts\activate.bat
-    echo   Python venv aktiviert (backend\venv)
-) else (
-    echo   System-Python wird genutzt
-)
+if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" goto :venv_root
+if exist "venv\Scripts\activate.bat" goto :venv_backend
+echo   System-Python wird genutzt
+goto :venv_done
+
+:venv_root
+call "%PORTAL_DIR%\venv\Scripts\activate.bat"
+echo   Python venv aktiviert (%PORTAL_DIR%\venv)
+goto :venv_done
+
+:venv_backend
+call venv\Scripts\activate.bat
+echo   Python venv aktiviert (backend\venv)
+goto :venv_done
+
+:venv_done
 
 :: ====== 6. Frontend Build ======
 echo.
@@ -136,13 +143,23 @@ if not exist "build" (
 echo.
 echo  [7/8] Backend starten auf Port 8002...
 cd /d "%BACKEND_DIR%"
-if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" (
-    start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call %PORTAL_DIR%\venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
-) else if exist "venv\Scripts\activate.bat" (
-    start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
-) else (
-    start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
-)
+if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" goto :start_backend_venv_root
+if exist "venv\Scripts\activate.bat" goto :start_backend_venv_local
+goto :start_backend_global
+
+:start_backend_venv_root
+start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call %PORTAL_DIR%\venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+goto :start_backend_wait
+
+:start_backend_venv_local
+start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && call venv\Scripts\activate.bat && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+goto :start_backend_wait
+
+:start_backend_global
+start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
+goto :start_backend_wait
+
+:start_backend_wait
 echo   Warte auf Backend-Start (max 20s)...
 set /a "_bw=0"
 :wait_backend
@@ -303,7 +320,7 @@ exit /b !_CP!
 :kill_port
 :: Beendet Prozesse auf einem bestimmten Port
 :: Parameter: %1 = Portnummer
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr "0.0.0.0:%~1" 2^>nul') do (
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%~1 " 2^>nul') do (
     if %%a GTR 100 taskkill /PID %%a /F >nul 2>&1
 )
 exit /b 0

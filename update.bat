@@ -215,12 +215,9 @@ if exist "%LIVE_DIR%\desktop" (
 echo.
 echo  [6/7] Dienste starten...
 cd /d "%LIVE_DIR%"
-:: NSSM Services (neuer Server)
-net start EventenergieBackend >nul 2>&1
-net start EventenergieCaddy >nul 2>&1
-:: Fallback: start-all.bat (alter Server)
+:: start-all.bat starten (einziger Startmechanismus)
 if exist "%LIVE_DIR%\start-all.bat" (
-    call "%LIVE_DIR%\start-all.bat" nopause 2>nul
+    call "%LIVE_DIR%\start-all.bat" nopause
 )
 echo   Dienste gestartet
 
