@@ -1,40 +1,125 @@
 <analysis>**original_problem_statement**: 
 The user is building a comprehensive Kirmes (Fairground) billing and HR management system. 
-*PRODUCT REQUIREMENTS (Updated in this session):*
-- **Mac/Windows Desktop App:** The user now wants a native Desktop Application (Electron) for Mac (and later Windows). The app must first try to connect to the local server IP  (Ports: Backend 8002, Caddy 8001, Nginx 443). If unreachable, it should fallback to the remote . 
-- **Desktop UI UX:** The desktop app should start with a login screen. After login, it should show a main window with module tiles at the top. Clicking a tile must open that specific module in a *new, separate OS window*.
-- **Kirmeskiste OTA Updates:** Raspberry Pis must automatically check for script updates () from the backend every 20 minutes (sync interval) and self-restart.
+*PRODUCT REQUIREMENTS:*
+- **Desktop Apps (Mac/Windows):** Native Desktop Applications (Electron) that try to connect to the local server IP  (Ports: Backend 8002, Caddy 8001, Nginx 443) first, and fallback to  if unreachable. The Desktop UI must display the Hub with all panels (Time clock, Task panel, Modules) and spawn specific modules in *new, separate OS windows*.
+- **Mobile Apps:** Android and iOS apps wrapped via Capacitor, utilizing the existing PWA.
+- **Server Infrastructure:** Windows Server 2019. Needs automated PowerShell setup, deployment, and DB migration scripts.
+- **Software Downloads:** An Admin section inside the portal to directly download desktop installers, mobile build scripts, and server admin scripts.
 
 **User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
 
 **what currently exists?** 
-- Full-stack FastAPI + React app with Time tracking, Payroll (DATEV PDF AI parsing), Employee Hub, and Orders.
-- Einsatzplanung (Shift planning) UI that deeply integrates with the EpiRent API, fetching exact Crewbrain requirements from Personal chapter sub-items and displaying them on job cards.
-- Kirmeskiste/Device sync script () which runs on Raspberry Pis, syncing every 20 minutes and auto-pulling script updates from the backend.
-- Dedicated KI-Training page to allow admins to upload error samples and tweak the Gemini AI prompt dynamically.
-- 100% passing Regression Test Suite from previous steps.
+- Full-stack FastAPI + React app with Time tracking, Payroll (DATEV), Employee Hub, Orders, and Shift planning (Einsatzplanung).
+- Mac and Windows Electron wrapper files + PowerShell/Bash auto-installers with embedded Base64 icons.
+- Capacitor 6 native Android/iOS project directories.
+- Automated Windows Server 2019 Setup, Migration, and Deployment  scripts available in the Admin settings.
+- Corrected  for Windows Server that forces yarn install v1.22.22
+[1/4] Resolving packages...
+[2/4] Fetching packages...
+[3/4] Linking dependencies...
+[4/4] Building fresh packages...
+success Saved lockfile.
+Done in 0.03s. (instead of npm), checks for Node 20 LTS, and uses NSSM services (, ).
 
 **Last working item**:
-    - Last item agent was working: Building the native Mac Desktop Application (Electron). The agent had just received the requirement to build an Electron app with local/remote IP fallback and multi-window architecture.
-    - Status: NOT STARTED
-    - Agent Testing Done: N
-    - Which testing method agent to use? manual testing by python -c / npm start for Electron shell validation, then frontend testing agent.
+    - Last item agent was working: Assisting the user in debugging the execution of  and the frontend build process on their live Windows Server 2019. The user experienced  module errors because they used Node v24 and npm <command>
+
+Usage:
+
+npm install        install all the dependencies in your project
+npm install <foo>  add the <foo> dependency to your project
+npm test           run this project's tests
+npm run <foo>      run the script named <foo>
+npm <command> -h   quick help on <command>
+npm -l             display usage info for all commands
+npm help <term>    search for help on <term>
+npm help npm       more involved overview
+
+All commands:
+
+    access, adduser, audit, bugs, cache, ci, completion,
+    config, dedupe, deprecate, diff, dist-tag, docs, doctor,
+    edit, exec, explain, explore, find-dupes, fund, get, help,
+    help-search, hook, init, install, install-ci-test,
+    install-test, link, ll, login, logout, ls, org, outdated,
+    owner, pack, ping, pkg, prefix, profile, prune, publish,
+    query, rebuild, repo, restart, root, run-script, sbom,
+    search, set, shrinkwrap, star, stars, start, stop, team,
+    test, token, uninstall, unpublish, unstar, update, version,
+    view, whoami
+
+Specify configs in the ini-formatted file:
+    /root/.npmrc
+or on the command line via: npm <command> --key=value
+
+More configuration info: npm help config
+Configuration fields: npm help 7 config
+
+npm@10.8.2 /usr/lib/node_modules/npm instead of Node v20 LTS and yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s.. The agent updated  to fix paths, enforce yarn, and switch to NSSM services, but the user still needs to Save to GitHub and pull the latest changes on their server to verify.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y (for code changes, but local server execution relies on user)
+    - Which testing method agent to use? NA (Waiting for user to confirm if their local Windows Server build succeeded).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  None currently broken.
+  Issue 1: Verify Windows Server Deployment ( execution) (P0)
+     - Attempted fixes: Agent pushed updates to  to replace npm <command>
+
+Usage:
+
+npm install        install all the dependencies in your project
+npm install <foo>  add the <foo> dependency to your project
+npm test           run this project's tests
+npm run <foo>      run the script named <foo>
+npm <command> -h   quick help on <command>
+npm -l             display usage info for all commands
+npm help <term>    search for help on <term>
+npm help npm       more involved overview
+
+All commands:
+
+    access, adduser, audit, bugs, cache, ci, completion,
+    config, dedupe, deprecate, diff, dist-tag, docs, doctor,
+    edit, exec, explain, explore, find-dupes, fund, get, help,
+    help-search, hook, init, install, install-ci-test,
+    install-test, link, ll, login, logout, ls, org, outdated,
+    owner, pack, ping, pkg, prefix, profile, prune, publish,
+    query, rebuild, repo, restart, root, run-script, sbom,
+    search, set, shrinkwrap, star, stars, start, stop, team,
+    test, token, uninstall, unpublish, unstar, update, version,
+    view, whoami
+
+Specify configs in the ini-formatted file:
+    /root/.npmrc
+or on the command line via: npm <command> --key=value
+
+More configuration info: npm help config
+Configuration fields: npm help 7 config
+
+npm@10.8.2 /usr/lib/node_modules/npm with yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s., correct the Python  path to , and use NSSM service starts instead of .
+     - Next debug checklist: Ask the user if the frontend build successfully completed on the server after clearing  and using yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.07s.
+yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command..
+     - Why fix this issue and what will be achieved with the fix? Ensures the new Windows Server 2019 is stable, can pull updates automatically, and cleanly builds the React app.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Both (Server health check).
+     - Blocked on other issue: None.
 
 **In progress Task List**:
-  Task 1: Build Mac Desktop App (Electron) (P0)
-     - Where to resume: You need to set up the Electron wrapper for the existing React app. Implement the connection logic to check  first (Ports: Backend 8002, Caddy 8001, Nginx 443), and fallback to  if the local IP is unreachable. 
-     - What will be achieved with this? A standalone native Mac application. The UX flow requires a login window first. After login, the main window should only display the module tiles at the top. Clicking a tile must spawn a *new, separate desktop window* for that specific tool/page.
-     - Status: NOT STARTED
-     - Should Test frontend/backend/both after fix? Frontend (Electron build/start process).
-     - Blocked on something: Nothing.
+  None. (All requested structural features from the previous iteration were completed).
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - (P1) Build Windows Desktop App (Electron) (Proceed with this immediately after the Mac version is working).
     - (P1) Microsoft 365 Postfach-Anbindung: Automatic document ingestion from an email inbox.
     - (P1) PayPal/Kreditkarten Integration: Implement actual payment processing for Kirmes signups.
     
@@ -47,20 +132,18 @@ The user is building a comprehensive Kirmes (Fairground) billing and HR manageme
     - (P2) Refactor .
 
 **Completed work in this session**
-- EpiRent Crewbrain integration: Backend endpoint  with concurrency limit and MongoDB caching. (DONE)
-- Filter Einsatzplanung to show only confirmed jobs () that overlap with the current week's Dispo timeframe. (DONE)
-- EpiRent deep fetch: Updated backend to extract Crew data natively from EpiRent Personal chapter sub-items (). (DONE)
-- Added Project Numbers (e.g., 260060-01) to job cards with a clickable link (↗) routing to the Order Detail Page. (DONE)
-- Implemented Manual Task Copy Mode in Einsatzplanung (yellow copy button to stamp tasks onto other employees). (DONE)
-- Made Meine Einsätze items on Employee Hub clickable, routing to the specific Order. (DONE)
-- Hid Abrechnung PDF button for standard employees on Order Detail page. (DONE)
-- Added custom App Icon to  (Favicon/Apple Touch Icon) and configured basic PWA manifest. (DONE)
-- Moved Einsatzplanung button to the top row (position 2) next to Aufträge in the Hub. (DONE)
-- Extracted KI-Training into a standalone page () with error reporting/file upload to dynamically tune the AI prompt. (DONE)
-- Implemented simplified OTA Update flow for Kirmeskisten: Devices auto-pull script updates from the backend every 20 minutes (sync interval updated from 30s to 1200s). (DONE)
+- Implemented Mac Desktop App (Electron) with local/remote IP fallback and separate OS window spawning on tile clicks. (DONE)
+- Implemented Windows Desktop App (Electron) with  and  installer wrappers. (DONE)
+- Integrated Capacitor 6 for native Android and iOS mobile app builds with generated app icons. (DONE)
+- Created  API and updated  to host installers/scripts for Desktop, Mobile, and Server. (DONE)
+- Developed Windows Server 2019 deployment scripts: , , and . (DONE)
+- Fixed  to use NSSM, yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s., and the correct  path for the new Windows Server environment. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-None.
+  None.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: None
@@ -72,57 +155,102 @@ None.
 
 **Key Technical Concepts**
 - React, FastAPI, MongoDB
-- **EpiRent API Deep Fetch**: Crewbrain requirements are extracted from  inside the Personal chapter.
-- **Electron (Pending)**: Native OS integration for Mac/Windows, multi-window management, local vs. cloud API routing fallback.
+- **Electron**: Native desktop wrapper. Connects to local IP  or cloud fallback.
+- **Capacitor 6**: Turns the React PWA into native iOS/Android apps.
+- **Windows Server Admin**: PowerShell (), NSSM (Non-Sucking Service Manager) for persistent backend/caddy services, yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s. strictly required for frontend builds.
 
 **key DB schema**
-  - : 
-  - : 
+  No major DB changes in this session.
 
 **changes in tech stack**
-- Added PWA capabilities (manifest, service worker).
-- **Upcoming:** Electron wrapper needs to be introduced for the React frontend.
+- Added Electron for Desktop clients.
+- Added Capacitor for Mobile clients.
+- Transitioned production server context to Windows Server 2019 using NSSM and Caddy.
 
 **All files of reference** 
-  -  (Updated extensively)
-  -  (Updated with batching and deep fetch)
-  -  (Updated sync interval & auto-pull)
-  -  (New)
+  -  (Crucial for the user's ongoing server deployment)
+  -  (Contains Electron window spawning logic)
+  -  (Downloads section UI)
+  -  (All installer scripts and electron config)
 
 **Areas that need refactoring**: 
-- Introducing Electron will require careful adjustment of API Base URLs so that requests dynamically route to either  or .
+-  is quite large (~1800+ lines) and could be broken into smaller components (Noted in P2 tasks).
 
 **key api endpoints**
-  -  (Crew requirements)
-  -  (Device script update)
+  -  (Fetches installer/script files)
 
 **Critical Info for New Agent** 
 - **YOU MUST RESPOND IN GERMAN ONLY.**
-- **Electron Network Requirement:** The Desktop App MUST first ping/check  (Internal network). Note the internal ports: Backend is , Caddy is , Nginx is . If the local server is unresponsive, it must fall back to the production URL.
-- **Electron UI Requirement:** 
-  1. Boot into a Login Window. 
-  2. Post-login: Show a slim Hub window with only the module tiles at the top. 
-  3. Clicking any tile MUST spawn a new independent OS Window.
+- The user is currently executing commands on their live Windows Server 2019. The latest fixes to  rely on the user successfully pushing the code from the chat UI (Save to Github) and pulling it onto their server.
+- The React build requires Node 20 LTS and yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s.. Do NOT suggest npm <command>
+
+Usage:
+
+npm install        install all the dependencies in your project
+npm install <foo>  add the <foo> dependency to your project
+npm test           run this project's tests
+npm run <foo>      run the script named <foo>
+npm <command> -h   quick help on <command>
+npm -l             display usage info for all commands
+npm help <term>    search for help on <term>
+npm help npm       more involved overview
+
+All commands:
+
+    access, adduser, audit, bugs, cache, ci, completion,
+    config, dedupe, deprecate, diff, dist-tag, docs, doctor,
+    edit, exec, explain, explore, find-dupes, fund, get, help,
+    help-search, hook, init, install, install-ci-test,
+    install-test, link, ll, login, logout, ls, org, outdated,
+    owner, pack, ping, pkg, prefix, profile, prune, publish,
+    query, rebuild, repo, restart, root, run-script, sbom,
+    search, set, shrinkwrap, star, stars, start, stop, team,
+    test, token, uninstall, unpublish, unstar, update, version,
+    view, whoami
+
+Specify configs in the ini-formatted file:
+    /root/.npmrc
+or on the command line via: npm <command> --key=value
+
+More configuration info: npm help config
+Configuration fields: npm help 7 config
+
+npm@10.8.2 /usr/lib/node_modules/npm commands, as it causes dependency errors () in the user's environment.
+- Caddy and the Backend are now managed via Windows services using **NSSM** ( and ).
 
 **documents and test reports created in this job** 
-  - 
-  - 
+  -  (Electron HubPage test report)
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User): Hide Abrechnung PDF button for employees. (DONE)
- 2. (User): Use uploaded image as app icon. (DONE)
- 3. (User): Move Einsatzplanung button to top right near Orders. (DONE)
- 4. (User): Ask about iOS/Samsung app effort & OTA updates for PIs. (Agent checked Web)
- 5. (User): Can we update PIs automatically from the backend? (Agent asked clarification)
- 6. (User): Build PI OTA updates first, Mobile PWA later. (Agent implemented OTA)
- 7. (User): Move AI-Training to a new Hub tile, add file uploads for errors. (DONE)
- 8. (User): Simplify PI updates. PIs should auto-pull from the server during their sync. Change sync interval to 20 minutes. (DONE)
- 9. (User): Remove the info text from the OTA Admin mask. (DONE)
- 10. (User): **PENDING:** Baue eine Mac version. die soll zuerst checken, ob der Server Local zu erreichen ist. Wenn nicht nehmen wir die Route eventenergie.app. Local liegt die auf 172.20.200.117... Dann sollen als Fenster alle Kacheln oben sein. Zuerst ein Anmeldefenster... Es soll beim Drücken einer Kachel jeweils ein Fenster auf gehen... (NOT STARTED).
+ 1. (User): da ich auf einen neuen server umziehe, was brauchen wir alles für Software...? (Agent created bash scripts).
+ 2. (User): der server hat Microsoft Server 2019 Installiert. Da müssen wir auch drauf aufbauen (Agent rewrote scripts to PowerShell).
+ 3. (User): ist die windows app für die Dokumentenverwaltung auch dabei? (Agent confirmed yes).
+ 4. (User): wie ist das mit der Android und ios app? Ist das ein großer Aufwand? (Agent implemented Capacitor 6).
+ 5. (User): User ran , faced PowerShell execution policy issues.
+ 6. (User): User ran setup, faced chocolatey/npm errors due to Node 24.
+ 7. (User): Agent provided commands to clear Node 24 and install Node 20 LTS.
+ 8. (User): User ran  manually copied from old server without Git context. Agent added git init logic to .
+ 9. (User): User tried git fetch, faced . Agent provided  fix.
+ 10. (User): User ran , faced  build errors.
+ **PENDING HUMAN MESSAGE**: Agent provided the fix (clear , install via yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s., and updated ). Waiting for user to confirm if the yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.02s.
+yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. successfully passed on their server.
 
 **Project Health Check:**
-- Broken: None.
+- Broken:  / Frontend build on the user's local Windows server (Pending user running the provided fix).
 - Mocked: None.
 
 **3rd Party Integrations** 
@@ -140,8 +268,7 @@ None.
 - Admin:  / 
 - Admin Preview:  / 
 - Employee:  / 
-- Employee:  /  (used in latest tests)
 - Employee:  / 
 
 **What agent forgot to execute**
-The agent gathered the backend ports for the local  connection but the session ended before writing any initialization code for the Electron application. Start immediately by setting up the Electron project structure.</analysis>
+The agent has properly rewritten the  script and pushed the fix into the codebase but the user might need explicit instructions to run  manually before attempting to run  again, as their current local script is broken. Ensure the user successfully completes the server deployment.</analysis>
