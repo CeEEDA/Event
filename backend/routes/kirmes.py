@@ -1682,9 +1682,61 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
             {"id": invoice_id},
             {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
         )
-        return {"message": f"Rechnung an {sch_email} versendet."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"E-Mail konnte nicht gesendet werden: {str(e)}")
+
+    # Save invoice PDF to Dokumentenverwaltung (Rechnungsausgang) if not already there
+    try:
+        from routes.documents import _ensure_year_month_subfolder, _save_to_local_storage, put_object, db as doc_db
+
+        inv_number = inv["invoice_number"]
+        existing_doc = await doc_db.documents.find_one(
+            {"original_filename": filename, "is_deleted": False}, {"_id": 0, "id": 1}
+        )
+        if not existing_doc:
+            inv_date = inv.get("created_at", datetime.now(timezone.utc).isoformat())
+            subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
+            storage_path = f"eventenergie-docs/uploads/{uuid.uuid4()}.pdf"
+            put_object(storage_path, pdf_bytes, "application/pdf")
+
+            sch_data = inv.get("schausteller", {})
+            doc_entry = {
+                "id": str(uuid.uuid4()),
+                "storage_path": storage_path,
+                "original_filename": filename,
+                "content_type": "application/pdf",
+                "size": len(pdf_bytes),
+                "folder_id": subfolder_id,
+                "ai_status": "completed",
+                "ai_metadata": {
+                    "document_type": "rechnung",
+                    "suggested_folder": "rechnungsausgang",
+                    "sender": "Eventenergie Deutschland GmbH & Co. KG",
+                    "recipient": sch_data.get("firma", sch_data.get("name", "")),
+                    "date": inv_date[:10] if len(inv_date) >= 10 else inv_date,
+                    "subject": f"Ausgangsrechnung {inv_number} - {inv.get('event_name', '')}",
+                    "amount": inv.get("brutto"),
+                    "currency": "EUR",
+                    "invoice_number": inv_number,
+                    "reference": f"Event: {inv.get('event_name', '')}",
+                    "tax_amount": inv.get("mwst_amount"),
+                },
+                "full_text": f"Rechnung {inv_number} {sch_data.get('firma', '')} {inv.get('event_name', '')} {inv.get('brutto', 0):.2f} EUR",
+                "keywords": [inv_number, sch_data.get("firma", ""), inv.get("event_name", ""), "Ausgangsrechnung"],
+                "is_deleted": False,
+                "datev_forwarded": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await doc_db.documents.insert_one(doc_entry)
+            await _save_to_local_storage(pdf_bytes, filename, subfolder_id)
+            import logging as _log
+            _log.getLogger(__name__).info(f"Invoice {inv_number} saved to Dokumentenverwaltung via send")
+    except Exception as doc_err:
+        import logging as _log
+        _log.getLogger(__name__).warning(f"Document storage for invoice {inv.get('invoice_number', '')} on send failed: {doc_err}")
+
+    return {"message": f"Rechnung an {sch_email} versendet (DATEV + Dokumentenablage)."}
 
 
 
