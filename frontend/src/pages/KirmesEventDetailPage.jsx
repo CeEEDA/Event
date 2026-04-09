@@ -472,7 +472,7 @@ export default function KirmesEventDetailPage() {
                 {canBilling && <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
                   <Receipt className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
                 </Button>}
-                {canBilling && invoices.length > 0 && <Button size="sm" variant="outline" onClick={handleResetInvoices} className="text-red-600 border-red-200 px-2 sm:px-3" data-testid="reset-invoices-btn" title="Rechnungen zurücksetzen">
+                {canBilling && eventInvoices.length > 0 && <Button size="sm" variant="outline" onClick={handleResetInvoices} className="text-red-600 border-red-200 px-2 sm:px-3" data-testid="reset-invoices-btn" title="Rechnungen zurücksetzen">
                   <RotateCcw className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Neu berechnen</span>
                 </Button>}
               </>
