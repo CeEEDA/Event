@@ -80,27 +80,24 @@ if !errorlevel! neq 0 (
     echo   MongoDB laeuft bereits
 )
 
-:: ====== 4. Datenbank-Backup ======
+:: ====== 4. Datenbank-Backup (Hintergrund) ======
 echo.
-echo  [4/8] Sicherheits-Backup der Datenbank...
+echo  [4/8] Datenbank-Backup wird im Hintergrund gestartet...
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 set "TIMESTAMP=%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
 set "TIMESTAMP=!TIMESTAMP: =0!"
 where mongodump >nul 2>&1
 if !errorlevel! equ 0 (
-    mongodump --uri="mongodb://localhost:27017" --db=eventenergie --archive="%BACKUP_DIR%\startup_backup_!TIMESTAMP!.gz" --gzip >nul 2>&1
-    if !errorlevel! equ 0 (
-        echo   DB-Backup erstellt: startup_backup_!TIMESTAMP!.gz
-    ) else (
-        echo   WARNUNG: DB-Backup fehlgeschlagen
-    )
+    start "DB-Backup" /min cmd /c "mongodump --host localhost --port 27017 --db=eventenergie --archive=%BACKUP_DIR%\startup_backup_%TIMESTAMP%.gz --gzip >%LOG_DIR%\backup.log 2>&1"
+    echo   Backup laeuft im Hintergrund (Log: %LOG_DIR%\backup.log)
 ) else (
     echo   mongodump nicht gefunden - Backup uebersprungen
 )
-set count=0
+:: Alte Backups aufraeumen (behalte nur die letzten 5)
+set "_bc=0"
 for /f "delims=" %%f in ('dir /b /o-d "%BACKUP_DIR%\startup_backup_*" 2^>nul') do (
-    set /a count+=1
-    if !count! gtr 5 del "%BACKUP_DIR%\%%f" >nul 2>&1
+    set /a "_bc+=1"
+    if !_bc! gtr 5 del "%BACKUP_DIR%\%%f" >nul 2>&1
 )
 
 :: ====== 5. Python venv (goto-basiert) ======
@@ -154,10 +151,10 @@ goto :start_be_wait
 start "Eventenergie Backend" cmd /k "cd /d %BACKEND_DIR% && python -m uvicorn server:app --host 0.0.0.0 --port 8002"
 goto :start_be_wait
 :start_be_wait
-echo   Warte auf Backend-Start (max 20s)...
+echo   Warte auf Backend-Start (max 40s)...
 set /a "_bw=0"
 :wait_backend
-if !_bw! geq 10 goto :backend_done
+if !_bw! geq 20 goto :backend_done
 set /a "_bw+=1"
 timeout /t 2 /nobreak >nul
 call :check_port 8002

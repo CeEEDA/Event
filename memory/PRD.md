@@ -50,6 +50,11 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [ ] AdminSettingsPage.js Refactoring (~1800+ lines)
 - [ ] MQTT port alignment (backend connects 1884, Mosquitto on 1883)
 
+## Recent Changes (2026-04-10)
+- [x] DB-Backup in start-all.bat läuft nun asynchron im Hintergrund (start /min)
+- [x] Backend-Startup-Timeout von 20s auf 40s erhöht
+- [x] Backup-Log wird geschrieben nach %LOG_DIR%\backup.log
+
 ## Key Files
 - `/app/update.bat` - GitHub update script
 - `/app/start-all.bat` - Service start script
