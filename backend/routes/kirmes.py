@@ -1579,6 +1579,24 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
     return {"generated": len(generated), "skipped": len(skipped), "invoices": generated, "skipped_details": skipped}
 
 
+@router.post("/events/{event_id}/reset-invoices")
+async def reset_and_regenerate_invoices(event_id: str, user: dict = Depends(_require_admin)):
+    """Delete all invoices for an event and reset signup payment status, so invoices can be regenerated."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    deleted = await _db.kirmes_invoices.delete_many({"event_id": event_id})
+    await _db.kirmes_signups.update_many(
+        {"event_id": event_id},
+        {"$unset": {"invoice_id": "", "invoice_number": ""}, "$set": {"payment_status": "offen"}}
+    )
+    await _db.kirmes_events.update_one({"id": event_id}, {"$set": {"status": "freigegeben"}})
+
+    return {"message": f"{deleted.deleted_count} Rechnungen gelöscht. Anmeldungen zurückgesetzt. Rechnungen können neu erstellt werden."}
+
+
+
 @router.get("/invoices")
 async def list_invoices(
     search: Optional[str] = None,

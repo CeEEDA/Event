@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
   Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard, ChevronDown,
-  Menu,
+  Menu, RotateCcw,
 } from "lucide-react";
 
 import { Input } from "../components/ui/input";
@@ -371,6 +371,18 @@ export default function KirmesEventDetailPage() {
     }
   };
 
+  const handleResetInvoices = async () => {
+    if (!window.confirm("Alle Rechnungen für diese Veranstaltung löschen und zurücksetzen?\n\nAnmeldungen werden auf 'offen' gesetzt.\nDanach können neue Rechnungen erstellt werden.")) return;
+    try {
+      const r = await api.post(`/kirmes/events/${event.id}/reset-invoices`);
+      toast.success(r.data.message);
+      loadEvent();
+      loadInvoices();
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler beim Zurücksetzen"));
+    }
+  };
+
   const handleLinkMeter = async (signupId) => {
     if (!selectedMeterCombo) return;
     const [deviceId, meterId] = selectedMeterCombo.split("|");
@@ -459,6 +471,9 @@ export default function KirmesEventDetailPage() {
                 </Button>
                 {canBilling && <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
                   <Receipt className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
+                </Button>}
+                {canBilling && invoices.length > 0 && <Button size="sm" variant="outline" onClick={handleResetInvoices} className="text-red-600 border-red-200 px-2 sm:px-3" data-testid="reset-invoices-btn" title="Rechnungen zurücksetzen">
+                  <RotateCcw className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Neu berechnen</span>
                 </Button>}
               </>
             )}
