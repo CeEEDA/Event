@@ -1534,11 +1534,17 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
             inv_date = invoice_doc.get("created_at", datetime.now(timezone.utc).isoformat())
             subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
             storage_path = f"eventenergie-docs/uploads/{_uuid.uuid4()}.pdf"
-            put_object(storage_path, pdf_bytes, "application/pdf")
+            cloud_path = None
+            try:
+                put_object(storage_path, pdf_bytes, "application/pdf")
+                cloud_path = storage_path
+            except Exception:
+                pass
+            final_path = cloud_path or f"local://{storage_path}"
 
             doc_entry = {
                 "id": str(_uuid.uuid4()),
-                "storage_path": storage_path,
+                "storage_path": final_path,
                 "original_filename": filename,
                 "content_type": "application/pdf",
                 "size": len(pdf_bytes),
@@ -1697,12 +1703,18 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
             inv_date = inv.get("created_at", datetime.now(timezone.utc).isoformat())
             subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
             storage_path = f"eventenergie-docs/uploads/{uuid.uuid4()}.pdf"
-            put_object(storage_path, pdf_bytes, "application/pdf")
+            cloud_path = None
+            try:
+                put_object(storage_path, pdf_bytes, "application/pdf")
+                cloud_path = storage_path
+            except Exception:
+                pass
+            final_path = cloud_path or f"local://{storage_path}"
 
             sch_data = inv.get("schausteller", {})
             doc_entry = {
                 "id": str(uuid.uuid4()),
-                "storage_path": storage_path,
+                "storage_path": final_path,
                 "original_filename": filename,
                 "content_type": "application/pdf",
                 "size": len(pdf_bytes),

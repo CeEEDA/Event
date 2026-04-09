@@ -142,6 +142,32 @@ def get_object(path: str):
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
+async def _get_file_data_fallback(storage_path: str, filename: str, folder_id: str):
+    """Try cloud storage first, then local filesystem as fallback."""
+    # Try cloud storage
+    if not storage_path.startswith("local://"):
+        try:
+            data, ct = get_object(storage_path)
+            return data, ct
+        except Exception:
+            pass
+
+    # Fallback: read from local filesystem
+    all_folders = []
+    async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+        all_folders.append(cf)
+    for pf in PREDEFINED_FOLDERS:
+        all_folders.append({"id": pf["id"], "name": pf["name"], "parent_id": None})
+
+    folder_path = _build_folder_path(folder_id, all_folders)
+    local_file = os.path.join(LOCAL_STORAGE_ROOT, folder_path, filename)
+    if os.path.exists(local_file):
+        with open(local_file, "rb") as f:
+            return f.read(), "application/octet-stream"
+
+    raise FileNotFoundError(f"File not found in cloud or local storage: {filename}")
+
+
 def _build_folder_path(folder_id: str, all_folders: list) -> str:
     """Build the full folder path from folder_id using folder hierarchy."""
     folder_map = {f["id"]: f for f in all_folders}
@@ -584,7 +610,7 @@ async def _forward_to_datev(doc_id: str, storage_path: str, original_filename: s
     try:
         from email_service import send_email_with_attachment
 
-        file_data, _ = get_object(storage_path)
+        file_data, _ = await _get_file_data_fallback(storage_path, original_filename, "rechnungseingang")
         sender = ai_metadata.get("sender", "Unbekannt")
         inv_nr = ai_metadata.get("invoice_number", "")
         amount = ai_metadata.get("amount")
@@ -728,7 +754,7 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
         if doc:
             try:
-                file_data, _ = get_object(doc["storage_path"])
+                file_data, _ = await _get_file_data_fallback(doc["storage_path"], doc["original_filename"], final_folder)
                 local_path = await _save_to_local_storage(file_data, doc["original_filename"], final_folder)
                 if local_path:
                     await db.documents.update_one({"id": doc_id}, {"$set": {"local_path": local_path}})
@@ -768,19 +794,23 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("s
     ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
     storage_path = f"{APP_NAME}/uploads/{uuid.uuid4()}.{ext}"
 
+    cloud_storage_path = None
     try:
         result = put_object(storage_path, file_data, file.content_type)
+        cloud_storage_path = result["path"]
     except Exception as e:
-        logger.error(f"Storage upload failed: {e}")
-        raise HTTPException(status_code=500, detail="Fehler beim Speichern der Datei")
+        logger.warning(f"Cloud storage upload failed (using local fallback): {e}")
+
+    # If cloud storage failed, use local path as storage_path
+    final_storage_path = cloud_storage_path or f"local://{storage_path}"
 
     doc_id = str(uuid.uuid4())
     doc = {
         "id": doc_id,
-        "storage_path": result["path"],
+        "storage_path": final_storage_path,
         "original_filename": file.filename,
         "content_type": file.content_type,
-        "size": result.get("size", len(file_data)),
+        "size": len(file_data),
         "folder_id": folder_id,
         "ai_status": "pending",
         "ai_metadata": {},
@@ -791,6 +821,9 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("s
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.documents.insert_one(doc)
+
+    # Always save locally as well
+    await _save_to_local_storage(file_data, file.filename, folder_id)
 
     # Save temp file and start background AI analysis
     temp_path = f"/tmp/{uuid.uuid4()}.{ext}"
@@ -892,16 +925,44 @@ async def download_file(doc_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
 
+    sp = doc.get("storage_path", "")
+
+    # Try cloud storage first, then local fallback
     try:
-        data, ct = get_object(doc["storage_path"])
+        if sp.startswith("local://"):
+            raise Exception("Local-only document")
+        data, ct = get_object(sp)
         return Response(
             content=data,
             media_type=doc.get("content_type", ct),
             headers={"Content-Disposition": f'inline; filename="{doc["original_filename"]}"'}
         )
+    except Exception:
+        pass
+
+    # Fallback: try to read from local storage
+    try:
+        all_folders = []
+        async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+            all_folders.append(cf)
+        for pf in PREDEFINED_FOLDERS:
+            all_folders.append({"id": pf["id"], "name": pf["name"], "parent_id": None})
+
+        folder_path = _build_folder_path(doc.get("folder_id", "sonstiges"), all_folders)
+        local_file = os.path.join(LOCAL_STORAGE_ROOT, folder_path, doc["original_filename"])
+
+        if os.path.exists(local_file):
+            with open(local_file, "rb") as f:
+                data = f.read()
+            return Response(
+                content=data,
+                media_type=doc.get("content_type", "application/octet-stream"),
+                headers={"Content-Disposition": f'inline; filename="{doc["original_filename"]}"'}
+            )
     except Exception as e:
-        logger.error(f"File download failed: {e}")
-        raise HTTPException(status_code=500, detail="Fehler beim Herunterladen")
+        logger.error(f"Local file read failed: {e}")
+
+    raise HTTPException(status_code=500, detail="Fehler beim Herunterladen")
 
 
 # ─── AI Training Samples ───
