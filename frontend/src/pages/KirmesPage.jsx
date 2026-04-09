@@ -211,6 +211,8 @@ function EventModal({ open, onClose, onSaved, editing }) {
       if (editing) {
         await api.put(`/kirmes/events/${editing.id}`, {
           ...form,
+          kwh_price: parseFloat(kwhPrice) || 0,
+          handling_surcharge: parseFloat(handlingSurcharge) || 0,
           custom_prices: customPrices.map(p => ({ connection_type: p.connection_type, price: parseFloat(p.price) || 0, avg_kwh: parseFloat(p.avg_kwh) || 0 })),
           custom_wohnwagen_prices: customWohnwagenPrices.map(p => ({ connection_type: p.connection_type, price: parseFloat(p.price) || 0, avg_kwh: parseFloat(p.avg_kwh) || 0 })),
         });
@@ -218,6 +220,8 @@ function EventModal({ open, onClose, onSaved, editing }) {
       } else {
         await api.post("/kirmes/events", {
           ...form,
+          kwh_price: parseFloat(kwhPrice) || 0,
+          handling_surcharge: parseFloat(handlingSurcharge) || 0,
           custom_prices: form.use_standard_prices ? null : customPrices.map(p => ({ connection_type: p.connection_type, price: parseFloat(p.price) || 0, avg_kwh: parseFloat(p.avg_kwh) || 0 })),
           custom_wohnwagen_prices: form.use_standard_prices ? null : customWohnwagenPrices.map(p => ({ connection_type: p.connection_type, price: parseFloat(p.price) || 0, avg_kwh: parseFloat(p.avg_kwh) || 0 })),
         });
