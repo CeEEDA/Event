@@ -472,9 +472,9 @@ def _generate_girocode(invoice: dict):
     """
     import qrcode
     
-    # Company bank details - from environment or invoice settings
-    iban = os.environ.get("COMPANY_IBAN", "")
-    bic = os.environ.get("COMPANY_BIC", "")
+    # Company bank details - from environment with company defaults
+    iban = os.environ.get("COMPANY_IBAN") or "DE72570928000221481704"
+    bic = os.environ.get("COMPANY_BIC") or "GENODE51DIE"
     company_name = "Eventenergie Deutschland GmbH"
     
     if not iban:
