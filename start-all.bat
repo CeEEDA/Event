@@ -44,6 +44,21 @@ echo   Alte Prozesse beendet.
 echo.
 echo  [2/8] Mosquitto MQTT Broker pruefen...
 set "MOSQUITTO_DIR=C:\Program Files\Mosquitto"
+:: Sicherstellen dass die richtige Config verwendet wird (0.0.0.0 statt localhost)
+if exist "%BASE_DIR%\backend\static\mosquitto_eventenergie.conf" (
+    fc /b "%BASE_DIR%\backend\static\mosquitto_eventenergie.conf" "%MOSQUITTO_DIR%\mosquitto.conf" >nul 2>&1
+    if !errorlevel! neq 0 (
+        copy /Y "%BASE_DIR%\backend\static\mosquitto_eventenergie.conf" "%MOSQUITTO_DIR%\mosquitto.conf" >nul 2>&1
+        echo   Mosquitto Config aktualisiert (0.0.0.0 Binding)
+        taskkill /IM mosquitto.exe /F >nul 2>&1
+        timeout /t 1 /nobreak >nul
+    )
+)
+:: Passwort-Datei anlegen falls sie nicht existiert (leer, wird vom Portal befuellt)
+if not exist "%MOSQUITTO_DIR%\passwd" (
+    echo. > "%MOSQUITTO_DIR%\passwd"
+    echo   Mosquitto Passwort-Datei angelegt
+)
 call :check_port 1883
 if !errorlevel! equ 0 (
     set "MQTT_OK=1"
