@@ -1140,7 +1140,24 @@ fi
 echo "  UART aktiviert, Serial Console deaktiviert."
 
 # PPP installieren
-sudo apt-get install -y -qq ppp socat
+sudo apt-get install -y -qq ppp
+
+# Kleines AT-Command Helper-Skript fuer Modem-Test (nutzt pyserial statt socat)
+sudo tee /tmp/at_test.py > /dev/null << 'ATTEST'
+import serial, sys, time
+port, cmd = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "AT"
+try:
+    s = serial.Serial(port, 115200, timeout=3)
+    s.write((cmd + "\r\n").encode())
+    time.sleep(1.5)
+    resp = s.read(s.in_waiting or 256).decode(errors="ignore").strip()
+    s.close()
+    print(resp)
+    sys.exit(0 if "OK" in resp or "READY" in resp else 1)
+except Exception as e:
+    print(f"Fehler: {{e}}")
+    sys.exit(1)
+ATTEST
 
 # SIM7600E-H einschalten via GPIO4 (Power Key)
 echo "  SIM7600E-H einschalten..."
@@ -1159,14 +1176,16 @@ if command -v gpioset &> /dev/null; then
     sleep 5
 fi
 
+# pyserial fuer AT-Tests installieren (in System-Python)
+sudo pip3 install --quiet --break-system-packages pyserial 2>/dev/null || sudo pip3 install --quiet pyserial 2>/dev/null || true
+
 # Warten bis Modem antwortet
 echo "  Warte auf Modem..."
 MODEM_PORT="{body.lte_port}"
 MODEM_OK=0
 for i in $(seq 1 15); do
     if [ -e "$MODEM_PORT" ]; then
-        RESPONSE=$(echo -e "AT\\r" | sudo timeout 3 socat - "$MODEM_PORT",b115200,raw,echo=0 2>/dev/null || true)
-        if echo "$RESPONSE" | grep -q "OK"; then
+        if sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT" 2>/dev/null; then
             MODEM_OK=1
             echo "  Modem antwortet auf $MODEM_PORT"
             break
@@ -1177,13 +1196,15 @@ done
 
 if [ "$MODEM_OK" -eq 0 ]; then
     echo "  WARNUNG: Modem antwortet noch nicht."
-    echo "  Nach Neustart pruefen: echo AT | sudo socat - $MODEM_PORT,b115200,raw,echo=0"
+    echo "  Nach Neustart pruefen: sudo python3 /tmp/at_test.py $MODEM_PORT AT"
 fi
 
 # SIM-Status pruefen (kein PIN)
 if [ "$MODEM_OK" -eq 1 ]; then
-    echo -e "AT+CPIN?\\r" | sudo timeout 3 socat - "$MODEM_PORT",b115200,raw,echo=0 2>/dev/null || true
-    echo -e "AT+CSQ\\r" | sudo timeout 3 socat - "$MODEM_PORT",b115200,raw,echo=0 2>/dev/null || true
+    echo "  SIM-Status:"
+    sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CPIN?" 2>/dev/null || true
+    echo "  Signalstaerke:"
+    sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CSQ" 2>/dev/null || true
 fi
 
 # PPP Chatscript erstellen
