@@ -1267,6 +1267,42 @@ ip route del default via $IPREMOTE dev $IFNAME metric 700 2>/dev/null || true
 LTEFALLBACKDOWN
 sudo chmod +x /etc/ppp/ip-down.d/99-lte-fallback
 
+# DNS-Fix: Google DNS hinzufuegen (Telekom-LTE DNS funktioniert nicht immer)
+if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
+fi
+# Persistent machen (ueberlebt dhclient/NetworkManager)
+sudo tee /etc/resolv.conf.tail > /dev/null << 'DNSFIX'
+nameserver 8.8.8.8
+DNSFIX
+# dhcpcd hook fuer persistenten DNS
+sudo mkdir -p /etc/dhcpcd.exit-hook.d 2>/dev/null || true
+sudo tee /etc/dhcpcd.exit-hook.d/add-google-dns > /dev/null << 'DNSHOOK'
+#!/bin/bash
+if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+fi
+DNSHOOK
+sudo chmod +x /etc/dhcpcd.exit-hook.d/add-google-dns 2>/dev/null || true
+
+# AT-Test Skript persistent ablegen (nicht in /tmp)
+sudo tee /usr/local/bin/at_test.py > /dev/null << 'ATTEST'
+import serial, sys, time
+port, cmd = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "AT"
+try:
+    s = serial.Serial(port, 115200, timeout=3)
+    s.write((cmd + "\r\n").encode())
+    time.sleep(1.5)
+    resp = s.read(s.in_waiting or 256).decode(errors="ignore").strip()
+    s.close()
+    print(resp)
+    sys.exit(0 if "OK" in resp or "READY" in resp else 1)
+except Exception as e:
+    print(f"Fehler: {{e}}")
+    sys.exit(1)
+ATTEST
+sudo chmod +x /usr/local/bin/at_test.py
+
 # Systemd-Service fuer LTE Auto-Reconnect
 sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESERVICE'
 [Unit]
