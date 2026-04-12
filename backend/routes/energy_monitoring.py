@@ -1236,7 +1236,6 @@ sudo tee /etc/ppp/peers/sim7600 > /dev/null << PPPCONF
 connect '/usr/sbin/chat -v -f /etc/chatscripts/sim7600'
 noauth
 nodefaultroute
-usepeerdns
 persist
 maxfail 0
 holdoff 15
@@ -1307,12 +1306,13 @@ sudo chmod +x /usr/local/bin/at_test.py
 sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESERVICE'
 [Unit]
 Description=LTE Datenverbindung (SIM7600E-H)
-After=network.target
+After=network-online.target
+Wants=network-online.target
 Before=dse5510_sync.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/sleep 10
+ExecStartPre=/bin/sleep 30
 ExecStart=/usr/sbin/pppd call sim7600
 Restart=always
 RestartSec=30
