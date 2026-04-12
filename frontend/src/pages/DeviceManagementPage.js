@@ -182,6 +182,9 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
   const [serialPort, setSerialPort] = useState("/dev/ttyUSB0");
   const [baudRate, setBaudRate] = useState(9600);
   const [slaveId, setSlaveId] = useState(10);
+  const [enableLte, setEnableLte] = useState(false);
+  const [lteApn, setLteApn] = useState("internet.m2mportal.de");
+  const [ltePort, setLtePort] = useState("/dev/ttyAMA0");
 
   const handleGenerateSetup = async () => {
     if (!window.confirm("Ein neuer Geraeteschluessel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schluessel existiert, wird er ersetzt.\n\nFortfahren?")) return;
@@ -191,6 +194,9 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
         serial_port: serialPort,
         baud_rate: baudRate,
         slave_id: slaveId,
+        enable_lte: enableLte,
+        lte_apn: lteApn,
+        lte_port: ltePort,
       });
       setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
       toast.success("DSE 5510 Setup-Skript generiert!");
@@ -243,6 +249,37 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
         </div>
       </div>
 
+      {/* LTE Konfiguration (SIM7600E-H) */}
+      <div className="mt-3 border-t border-gray-100 pt-3">
+        <label className="flex items-center gap-2 cursor-pointer" data-testid="dse5510-enable-lte">
+          <input type="checkbox" checked={enableLte} onChange={e => setEnableLte(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500" />
+          <span className="text-xs font-medium text-gray-700">LTE-Modem (SIM7600E-H)</span>
+        </label>
+        {enableLte && (
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div>
+              <Label className="text-gray-600 text-[11px]">APN</Label>
+              <Input type="text" value={lteApn} onChange={e => setLteApn(e.target.value)}
+                className="mt-0.5 text-xs h-[30px]"
+                data-testid="dse5510-lte-apn" />
+            </div>
+            <div>
+              <Label className="text-gray-600 text-[11px]">Modem Port</Label>
+              <select value={ltePort} onChange={e => setLtePort(e.target.value)}
+                className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
+                data-testid="dse5510-lte-port">
+                <option value="/dev/ttyAMA0">/dev/ttyAMA0</option>
+                <option value="/dev/serial0">/dev/serial0</option>
+                <option value="/dev/ttyS0">/dev/ttyS0</option>
+                <option value="/dev/ttyUSB2">/dev/ttyUSB2</option>
+                <option value="/dev/ttyUSB3">/dev/ttyUSB3</option>
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
       {wgetCommand && (
         <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="dse5510-setup-instructions">
           <p className="text-xs text-emerald-800 font-medium mb-2">Diesen Befehl auf dem Pi ausfuehren:</p>
@@ -265,6 +302,7 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
       </Button>
       <p className="text-[10px] text-gray-400 mt-2">
         Enthält: RS232 Modbus RTU + GPS + Steuerung (Start/Stop/Auto) + Lokale DB + Systemd-Dienst
+        {enableLte && " + LTE (SIM7600E-H PPP)"}
       </p>
 
       <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-3">

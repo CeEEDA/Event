@@ -1070,6 +1070,9 @@ class DSE5510SetupRequest(BaseModel):
     serial_port: str = "/dev/ttyUSB0"
     baud_rate: int = 19200
     slave_id: int = 10
+    enable_lte: bool = False
+    lte_apn: str = "internet.m2mportal.de"
+    lte_port: str = "/dev/ttyAMA0"
 
 @router.post("/devices/{device_id}/dse5510-setup")
 async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
@@ -1098,24 +1101,213 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
     with open(script_path, "r") as f:
         sync_script = f.read()
 
+    # Dynamic step count based on LTE
+    total_steps = 8 if body.enable_lte else 7
+    lte_port = body.lte_port if body.enable_lte else ""
+
+    # Build LTE setup block (only if enabled)
+    lte_setup_block = ""
+    lte_verify_block = ""
+    if body.enable_lte:
+        lte_setup_block = f"""
+# ===== SCHRITT 3: LTE MODEM (SIM7600E-H) =====
+echo ""
+echo "[3/{total_steps}] LTE-Modem konfigurieren (SIM7600E-H)..."
+
+# UART aktivieren auf Pi 5
+echo "  UART aktivieren..."
+BOOT_CFG="/boot/firmware/config.txt"
+if [ ! -f "$BOOT_CFG" ]; then
+    BOOT_CFG="/boot/config.txt"
+fi
+
+# dtoverlay fuer UART hinzufuegen falls nicht vorhanden
+if ! grep -q "enable_uart=1" "$BOOT_CFG" 2>/dev/null; then
+    echo "enable_uart=1" | sudo tee -a "$BOOT_CFG" > /dev/null
+fi
+
+# Serial Console deaktivieren (damit der Modem-Port frei ist)
+sudo raspi-config nonint do_serial_hw 0 2>/dev/null || true
+sudo raspi-config nonint do_serial_cons 1 2>/dev/null || true
+# cmdline.txt bereinigen
+if [ -f /boot/firmware/cmdline.txt ]; then
+    sudo sed -i 's/console=serial0,[0-9]* //g' /boot/firmware/cmdline.txt
+    sudo sed -i 's/console=ttyAMA0,[0-9]* //g' /boot/firmware/cmdline.txt
+elif [ -f /boot/cmdline.txt ]; then
+    sudo sed -i 's/console=serial0,[0-9]* //g' /boot/cmdline.txt
+    sudo sed -i 's/console=ttyAMA0,[0-9]* //g' /boot/cmdline.txt
+fi
+echo "  UART aktiviert, Serial Console deaktiviert."
+
+# PPP installieren
+sudo apt-get install -y -qq ppp socat
+
+# SIM7600E-H einschalten via GPIO4 (Power Key)
+echo "  SIM7600E-H einschalten..."
+if [ -d /sys/class/gpio ]; then
+    echo 4 | sudo tee /sys/class/gpio/export 2>/dev/null || true
+    echo out | sudo tee /sys/class/gpio/gpio4/direction 2>/dev/null || true
+    echo 1 | sudo tee /sys/class/gpio/gpio4/value > /dev/null
+    sleep 2
+    echo 0 | sudo tee /sys/class/gpio/gpio4/value > /dev/null
+    sleep 5
+fi
+
+# Alternativ: libgpiod fuer Pi 5
+if command -v gpioset &> /dev/null; then
+    gpioset -t 2000ms gpiochip4 4=1 2>/dev/null || gpioset -t 2000ms gpiochip0 4=1 2>/dev/null || true
+    sleep 5
+fi
+
+# Warten bis Modem antwortet
+echo "  Warte auf Modem..."
+MODEM_PORT="{body.lte_port}"
+MODEM_OK=0
+for i in $(seq 1 15); do
+    if [ -e "$MODEM_PORT" ]; then
+        RESPONSE=$(echo -e "AT\\r" | sudo timeout 3 socat - "$MODEM_PORT",b115200,raw,echo=0 2>/dev/null || true)
+        if echo "$RESPONSE" | grep -q "OK"; then
+            MODEM_OK=1
+            echo "  Modem antwortet auf $MODEM_PORT"
+            break
+        fi
+    fi
+    sleep 2
+done
+
+if [ "$MODEM_OK" -eq 0 ]; then
+    echo "  WARNUNG: Modem antwortet noch nicht."
+    echo "  Nach Neustart pruefen: echo AT | sudo socat - $MODEM_PORT,b115200,raw,echo=0"
+fi
+
+# SIM-Status pruefen (kein PIN)
+if [ "$MODEM_OK" -eq 1 ]; then
+    echo -e "AT+CPIN?\\r" | sudo timeout 3 socat - "$MODEM_PORT",b115200,raw,echo=0 2>/dev/null || true
+    echo -e "AT+CSQ\\r" | sudo timeout 3 socat - "$MODEM_PORT",b115200,raw,echo=0 2>/dev/null || true
+fi
+
+# PPP Chatscript erstellen
+echo "  PPP konfigurieren..."
+sudo mkdir -p /etc/chatscripts
+sudo tee /etc/chatscripts/sim7600 > /dev/null << 'CHATSCRIPT'
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+ABORT 'NO DIALTONE'
+ABORT 'NO ANSWER'
+ABORT 'DELAYED'
+ABORT 'ERROR'
+TIMEOUT 30
+'' AT
+OK ATH
+OK ATE0
+OK 'AT+CGDCONT=1,"IP","{body.lte_apn}"'
+OK ATD*99#
+CONNECT ''
+CHATSCRIPT
+
+# PPP Peer-Konfiguration
+sudo tee /etc/ppp/peers/sim7600 > /dev/null << PPPCONF
+{body.lte_port}
+115200
+connect '/usr/sbin/chat -v -f /etc/chatscripts/sim7600'
+noauth
+defaultroute
+replacedefaultroute
+usepeerdns
+persist
+maxfail 0
+holdoff 15
+noipdefault
+novj
+novjccomp
+noccp
+ipcp-accept-local
+ipcp-accept-remote
+local
+lock
+nodetach
+PPPCONF
+
+# Systemd-Service fuer LTE Auto-Reconnect
+sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESERVICE'
+[Unit]
+Description=LTE Datenverbindung (SIM7600E-H)
+After=network.target
+Before=dse5510_sync.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/sbin/pppd call sim7600
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+LTESERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable lte-connection
+sudo systemctl start lte-connection
+
+echo "  LTE-Verbindung wird aufgebaut..."
+echo "  APN: {body.lte_apn}"
+echo "  Port: {body.lte_port}"
+
+# Warte kurz auf PPP-Verbindung
+sleep 10
+if ip link show ppp0 &>/dev/null; then
+    PPP_IP=$(ip -4 addr show ppp0 2>/dev/null | grep inet | awk '{{print $2}}')
+    echo "  LTE verbunden! IP: $PPP_IP"
+else
+    echo "  LTE wird noch aufgebaut (kann bis zu 30s dauern)"
+    echo "  Pruefen mit: ip addr show ppp0"
+fi
+"""
+
+        lte_verify_block = f"""
+# LTE Status pruefen
+echo ""
+echo "  LTE Status:"
+if ip link show ppp0 &>/dev/null; then
+    PPP_IP=$(ip -4 addr show ppp0 2>/dev/null | grep inet | awk '{{print $2}}')
+    echo "    LTE verbunden - IP: $PPP_IP"
+else
+    echo "    LTE: Verbindung wird aufgebaut..."
+    echo "    Pruefen: sudo journalctl -u lte-connection -n 20"
+fi
+"""
+
+    lte_after_line = "\nAfter=lte-connection.service" if body.enable_lte else ""
+
+    # Pre-build conditional echo lines (backslashes not allowed in f-string expressions)
+    lte_header_echo = f'echo "  LTE: SIM7600E-H ({body.lte_apn})"' if body.enable_lte else ""
+    lte_apn_echo = f'echo "  LTE APN:      {body.lte_apn}"' if body.enable_lte else ""
+    lte_port_echo = f'echo "  LTE Port:     {body.lte_port}"' if body.enable_lte else ""
+    lte_check_echo = ('echo ""\necho "  LTE pruefen:"\n'
+                      'echo "    sudo systemctl status lte-connection"\n'
+                      'echo "    ip addr show ppp0"\n'
+                      'echo "    sudo journalctl -u lte-connection -f"') if body.enable_lte else ""
+
     bash_script = f"""#!/bin/bash
 # ==============================================================
 #  DSE 5510 Auto-Setup - {device.get('serial_number', device_id[:12])}
 #  Generiert am {datetime.now().strftime('%d.%m.%Y %H:%M')}
-#  RS232 Modbus RTU + GPS
+#  RS232 Modbus RTU + GPS{" + LTE (SIM7600E-H)" if body.enable_lte else ""}
 # ==============================================================
 set -e
 
 echo "========================================================"
 echo "  DSE 5510 Auto-Setup"
 echo "  Geraet: {device.get('serial_number', device_id[:12])}"
+{lte_header_echo}
 echo "========================================================"
 
 # ===== SCHRITT 0: ALTE INSTALLATION AUFRAUMEN =====
 echo ""
-echo "[0/6] Alte Installation aufraumen..."
+echo "[0/{total_steps}] Alte Installation aufraumen..."
 
-for SVC in dse5510_sync dse5510; do
+for SVC in dse5510_sync dse5510 lte-connection; do
     if systemctl is-active --quiet "$SVC" 2>/dev/null; then
         sudo systemctl stop "$SVC" 2>/dev/null || true
     fi
@@ -1136,17 +1328,17 @@ echo "  Aufraumen abgeschlossen."
 
 # ===== SCHRITT 1: SYSTEM AKTUALISIEREN =====
 echo ""
-echo "[1/7] System aktualisieren..."
+echo "[1/{total_steps}] System aktualisieren..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients
 
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
-echo "[2/7] GPS-Antenne konfigurieren..."
+echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
 
 GPS_DEV=""
 for dev in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyAMA0; do
     if [ -e "$dev" ]; then
-        if [ "$dev" != "{body.serial_port}" ]; then
+        if [ "$dev" != "{body.serial_port}" ] && [ "$dev" != "{lte_port}" ]; then
             GPS_DEV="$dev"
             echo "  GPS-Geraet gefunden: $GPS_DEV"
             break
@@ -1171,24 +1363,24 @@ GPSD_CONF
 sudo systemctl enable gpsd
 sudo systemctl restart gpsd
 echo "  gpsd konfiguriert fuer: $GPS_DEV"
-
-# ===== SCHRITT 3: PYTHON-UMGEBUNG =====
-echo "[3/7] Python-Umgebung einrichten..."
+{lte_setup_block}
+# ===== SCHRITT {"4" if body.enable_lte else "3"}: PYTHON-UMGEBUNG =====
+echo "[{"4" if body.enable_lte else "3"}/{total_steps}] Python-Umgebung einrichten..."
 INSTALL_DIR="/opt/dse5510"
 sudo rm -rf "$INSTALL_DIR"
 sudo mkdir -p "$INSTALL_DIR"
 sudo python3 -m venv "$INSTALL_DIR/venv"
 sudo "$INSTALL_DIR/venv/bin/pip" install --quiet pyserial requests gpsd-py3
 
-# ===== SCHRITT 4: SYNC-SKRIPT =====
-echo "[4/7] Sync-Skript installieren..."
+# ===== SCHRITT {"5" if body.enable_lte else "4"}: SYNC-SKRIPT =====
+echo "[{"5" if body.enable_lte else "4"}/{total_steps}] Sync-Skript installieren..."
 sudo tee "$INSTALL_DIR/dse5510_sync.py" > /dev/null << 'SYNC_SCRIPT'
 {sync_script}
 SYNC_SCRIPT
 sudo chmod +x "$INSTALL_DIR/dse5510_sync.py"
 
-# ===== SCHRITT 5: KONFIGURATION =====
-echo "[5/7] Konfiguration schreiben..."
+# ===== SCHRITT {"6" if body.enable_lte else "5"}: KONFIGURATION =====
+echo "[{"6" if body.enable_lte else "5"}/{total_steps}] Konfiguration schreiben..."
 sudo mkdir -p /var/lib/dse5510
 
 sudo tee /etc/dse5510.conf > /dev/null << 'CONF'
@@ -1210,12 +1402,12 @@ CONF
 
 sudo chmod 600 /etc/dse5510.conf
 
-# ===== SCHRITT 6: SYSTEMD SERVICE =====
-echo "[6/7] Systemd-Service einrichten..."
+# ===== SCHRITT {"7" if body.enable_lte else "6"}: SYSTEMD SERVICE =====
+echo "[{"7" if body.enable_lte else "6"}/{total_steps}] Systemd-Service einrichten..."
 sudo tee /etc/systemd/system/dse5510_sync.service > /dev/null << 'SERVICE'
 [Unit]
 Description=DSE 5510 Sync - Eventenergie Portal
-After=network-online.target
+After=network-online.target{lte_after_line}
 Wants=network-online.target
 
 [Service]
@@ -1235,8 +1427,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable dse5510_sync
 sudo systemctl restart dse5510_sync
 
-# ===== SCHRITT 7: VERIFIZIERUNG =====
-echo "[7/7] Verifiziere Installation..."
+# ===== SCHRITT {total_steps}: VERIFIZIERUNG =====
+echo "[{total_steps}/{total_steps}] Verifiziere Installation..."
 sleep 3
 
 # GPS Status pruefen
@@ -1257,7 +1449,7 @@ else
     echo "  WARNUNG: Sync-Service ist nicht aktiv!"
     echo "  Pruefe mit: sudo journalctl -u dse5510_sync -n 20"
 fi
-
+{lte_verify_block}
 echo ""
 echo "========================================================"
 echo "  Setup abgeschlossen!"
@@ -1269,12 +1461,15 @@ echo "  Portal:        {api_url}"
 echo "  Serial Port:   {body.serial_port}"
 echo "  Baud Rate:     {body.baud_rate}"
 echo "  Slave ID:      {body.slave_id}"
+{lte_apn_echo}
+{lte_port_echo}
 echo "  Konfiguration: /etc/dse5510.conf"
 echo "  Datenbank:     /var/lib/dse5510/dse5510.sqlite"
 echo ""
 echo "  Service pruefen:"
 echo "    sudo systemctl status dse5510_sync"
 echo "    sudo journalctl -u dse5510_sync -f"
+{lte_check_echo}
 echo ""
 echo "  Serielle Ports auflisten:"
 echo "    ls -la /dev/ttyUSB* /dev/ttyAMA* /dev/ttyACM* 2>/dev/null"
