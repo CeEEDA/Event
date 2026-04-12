@@ -55,6 +55,20 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Backend-Startup-Timeout von 20s auf 40s erhöht
 - [x] Backup-Log wird geschrieben nach %LOG_DIR%\backup.log
 
+## Recent Changes (2026-04-12)
+- [x] GiroCode Fallback: IBAN/BIC hardcoded als Default (funktioniert auch ohne .env)
+- [x] Dokumentenablage: Cloud-Storage Fallback auf lokalen Speicher (put_object optional)
+- [x] Download: Liest erst Cloud, dann lokales Dateisystem
+- [x] Flieger-Button: Speichert jetzt auch in Dokumentenablage/Rechnungsausgang/YYYY/Monat
+- [x] DSE 5510 Setup-Skript: LTE-Erweiterung (SIM7600E-H via UART)
+  - PPP mit Fallback-Routing (metric 700, LAN bevorzugt)
+  - DNS-Fix (8.8.8.8 persistent)
+  - GPIO 6 Power Key via pinctrl (Pi 5)
+  - AT-Test Tool persistent unter /usr/local/bin/at_test.py
+  - Reboot-sicher getestet
+- [x] Mosquitto: Config Auto-Copy in start-all.bat + passwd-Datei Auto-Create
+- [x] MOSQUITTO_PASSWD_FILE Default-Pfad gesetzt
+
 ## Key Files
 - `/app/update.bat` - GitHub update script
 - `/app/start-all.bat` - Service start script
