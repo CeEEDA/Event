@@ -1139,8 +1139,8 @@ elif [ -f /boot/cmdline.txt ]; then
 fi
 echo "  UART aktiviert, Serial Console deaktiviert."
 
-# PPP installieren
-sudo apt-get install -y -qq ppp
+# PPP und GPIO-Tools installieren
+sudo apt-get install -y -qq ppp gpiod
 
 # Kleines AT-Command Helper-Skript fuer Modem-Test (nutzt pyserial statt socat)
 sudo tee /tmp/at_test.py > /dev/null << 'ATTEST'
@@ -1159,21 +1159,24 @@ except Exception as e:
     sys.exit(1)
 ATTEST
 
-# SIM7600E-H einschalten via GPIO4 (Power Key)
-echo "  SIM7600E-H einschalten..."
-if [ -d /sys/class/gpio ]; then
-    echo 4 | sudo tee /sys/class/gpio/export 2>/dev/null || true
-    echo out | sudo tee /sys/class/gpio/gpio4/direction 2>/dev/null || true
-    echo 1 | sudo tee /sys/class/gpio/gpio4/value > /dev/null
-    sleep 2
-    echo 0 | sudo tee /sys/class/gpio/gpio4/value > /dev/null
-    sleep 5
-fi
+# SIM7600E-H einschalten via GPIO 6 (Waveshare HAT Power Key)
+echo "  SIM7600E-H einschalten (GPIO 6)..."
 
-# Alternativ: libgpiod fuer Pi 5
-if command -v gpioset &> /dev/null; then
-    gpioset -t 2000ms gpiochip4 4=1 2>/dev/null || gpioset -t 2000ms gpiochip0 4=1 2>/dev/null || true
+# Pi 5: pinctrl verwenden (nativ verfuegbar)
+if command -v pinctrl &> /dev/null; then
+    pinctrl set 6 op dh
+    sleep 1
+    pinctrl set 6 op dl
+    echo "  Power-Puls gesendet (pinctrl GPIO 6)"
     sleep 5
+# Fallback: gpioset (libgpiod)
+elif command -v gpioset &> /dev/null; then
+    gpioset -t 1000ms gpiochip0 6=1 2>/dev/null || gpioset -t 1000ms gpiochip4 6=1 2>/dev/null || true
+    echo "  Power-Puls gesendet (gpioset GPIO 6)"
+    sleep 5
+else
+    echo "  WARNUNG: Kein GPIO-Tool gefunden. SIM7600E evtl. manuell einschalten."
+    echo "  Alternativ: PWR-Jumper auf 3V3 setzen fuer Auto-Power-On."
 fi
 
 # pyserial fuer AT-Tests installieren (in System-Python)
