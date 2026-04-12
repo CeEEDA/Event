@@ -1229,14 +1229,13 @@ OK ATD*99#
 CONNECT ''
 CHATSCRIPT
 
-# PPP Peer-Konfiguration
+# PPP Peer-Konfiguration (LTE als Fallback, ueberschreibt NICHT die LAN-Route)
 sudo tee /etc/ppp/peers/sim7600 > /dev/null << PPPCONF
 {body.lte_port}
 115200
 connect '/usr/sbin/chat -v -f /etc/chatscripts/sim7600'
 noauth
-defaultroute
-replacedefaultroute
+nodefaultroute
 usepeerdns
 persist
 maxfail 0
@@ -1251,6 +1250,22 @@ local
 lock
 nodetach
 PPPCONF
+
+# Routing-Skript: LTE nur als Fallback wenn LAN ausfaellt
+sudo tee /etc/ppp/ip-up.d/99-lte-fallback > /dev/null << 'LTEFALLBACK'
+#!/bin/bash
+# LTE-Route mit niedriger Prioritaet (metric 700) hinzufuegen
+# LAN bleibt bevorzugt (metric ~100)
+ip route add default via $IPREMOTE dev $IFNAME metric 700 2>/dev/null || true
+LTEFALLBACK
+sudo chmod +x /etc/ppp/ip-up.d/99-lte-fallback
+
+sudo tee /etc/ppp/ip-down.d/99-lte-fallback > /dev/null << 'LTEFALLBACKDOWN'
+#!/bin/bash
+# LTE-Fallback-Route entfernen wenn PPP disconnected
+ip route del default via $IPREMOTE dev $IFNAME metric 700 2>/dev/null || true
+LTEFALLBACKDOWN
+sudo chmod +x /etc/ppp/ip-down.d/99-lte-fallback
 
 # Systemd-Service fuer LTE Auto-Reconnect
 sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESERVICE'
