@@ -1330,7 +1330,8 @@ echo "  Aufraumen abgeschlossen."
 echo ""
 echo "[1/{total_steps}] System aktualisieren..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients
+sudo apt-get install -y -qq python3-pip python3-venv gpsd
+sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nicht verfuegbar (optional, Debug-Tools)"
 
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
 echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
