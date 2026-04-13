@@ -3,6 +3,11 @@
 }
 
 http://:8001 {
+    handle /api/download-* {
+        header Cache-Control "no-cache, no-store, must-revalidate"
+        header Pragma "no-cache"
+        reverse_proxy localhost:8002
+    }
     handle /api/* {
         reverse_proxy localhost:8002
     }
