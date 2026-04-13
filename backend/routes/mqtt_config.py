@@ -287,29 +287,20 @@ async def clear_raw_messages(admin: dict = Depends(require_admin)):
 # DSE Gencomm System Control Keys (Page 16, Offset 8+9)
 # Register 4104 = Control Key, Register 4105 = Complement (65535 - Key)
 # Both must be written simultaneously (Modbus Function Code 16)
+# DSE System Control Keys – Function 3: Gateway berechnet Complement automatisch
+# Payload: {"key": VALUE} – NICHT das volle GenComm JSON!
 DSE_COMMANDS = {
-    "stop":                {"key": 35700, "complement": 29835, "label": "Stop-Modus"},
-    "auto_on":             {"key": 35701, "complement": 29834, "label": "Automatikmodus"},
-    "manual":              {"key": 35702, "complement": 29833, "label": "Manueller Modus"},
-    "test_on_load":        {"key": 35703, "complement": 29832, "label": "Testlauf unter Last"},
-    "auto_manual_restore": {"key": 35704, "complement": 29831, "label": "Auto mit manueller Rueckkehr"},
-    "start":               {"key": 35705, "complement": 29830, "label": "Motor starten (Manuell/Test)"},
-    "mute":                {"key": 35706, "complement": 29829, "label": "Alarm stumm"},
-    "reset":               {"key": 35707, "complement": 29828, "label": "Alarme zuruecksetzen"},
-    "gen_switch_on":       {"key": 35708, "complement": 29827, "label": "Generator zuschalten"},
-    "gen_switch_off":      {"key": 35709, "complement": 29826, "label": "Generator abschalten"},
-    "reset_mains":         {"key": 35710, "complement": 29825, "label": "Netzausfall zuruecksetzen"},
-}
-
-
-# L401 uses Page 3 Register 0-1 (Modbus 4104/4105) for control
-L401_COMMANDS = {
-    "stop":    {"key": 29833, "complement": 35702, "label": "Stop-Modus"},
-    "auto_on": {"key": 29835, "complement": 35700, "label": "Automatikmodus"},
-    "start":   {"key": 29834, "complement": 35701, "label": "Motor starten"},
-    "manual":  {"key": 29834, "complement": 35701, "label": "Manueller Modus"},
-    "reset":   {"key": 29833, "complement": 35702, "label": "Reset"},
-    "mute":    {"key": 29833, "complement": 35702, "label": "Alarm stumm"},
+    "stop":                {"key": 35700, "label": "Stop-Modus"},
+    "auto_on":             {"key": 35701, "label": "Automatikmodus"},
+    "manual":              {"key": 35702, "label": "Manueller Modus"},
+    "test_on_load":        {"key": 35703, "label": "Testlauf unter Last"},
+    "auto_manual_restore": {"key": 35704, "label": "Auto mit manueller Rueckkehr"},
+    "start":               {"key": 35705, "label": "Motor starten (Manuell/Test)"},
+    "mute":                {"key": 35706, "label": "Alarm stumm"},
+    "reset":               {"key": 35707, "label": "Alarme zuruecksetzen"},
+    "gen_switch_on":       {"key": 35708, "label": "Generator zuschalten"},
+    "gen_switch_off":      {"key": 35709, "label": "Generator abschalten"},
+    "reset_mains":         {"key": 35710, "label": "Netzausfall zuruecksetzen"},
 }
 
 
@@ -405,8 +396,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
             control_topic = f"eventenergie/{module_uid}/control"
 
         dse_cmd = DSE_COMMANDS[cmd.command]
-        # GenComm: Page 16, Register 8-9 (Modbus 4104/4105) = System Control Key + Complement
-        payload = json.dumps({module_uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
+        # Function 3: nur Key senden – Gateway berechnet Complement automatisch
+        payload = json.dumps({"key": dse_cmd["key"]})
 
         try:
             success = publish_command(control_topic, payload)
@@ -474,8 +465,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         raise HTTPException(status_code=400, detail="Kein aktives Gerät gefunden. Gateway muss zuerst Daten senden.")
 
     dse_cmd = DSE_COMMANDS[cmd.command]
-    # DSE Gencomm: Write System Control Key + Complement to Page 16, Offset 8+9
-    payload = json.dumps({uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
+    # Function 3: nur Key senden – Gateway berechnet Complement automatisch
+    payload = json.dumps({"key": dse_cmd["key"]})
 
     try:
         publish_command(control_topic, payload)
