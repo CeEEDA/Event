@@ -213,9 +213,48 @@ async def _process_message(msg):
             await _ingest_telemetry_device(device_id, topic, payload_str, parsed, timestamp)
             return
 
-    # No mapping found - log for discovery (reduced frequency)
+    # No mapping found - check if it's a GPS from gateway (apply to all connected devices)
+    if topic.endswith("/gps") and parsed:
+        await _process_gateway_gps(topic, payload_str, parsed, timestamp)
+        return
+
     stored_uids = [d.get("dse_module_uid", "") for d in _devices_cache] if _devices_cache else []
     logger.debug(f"MQTT: Unmatched topic '{topic}' | stored_uids={stored_uids}")
+
+
+async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
+    """Process GPS from a DSE 890 gateway and apply to all connected devices/generators."""
+    lat = None
+    lng = None
+    if isinstance(parsed, dict):
+        for uid_key, uid_data in parsed.items():
+            if isinstance(uid_data, dict):
+                lat = uid_data.get("LAT") or uid_data.get("lat")
+                lng = uid_data.get("LON") or uid_data.get("lon") or uid_data.get("lng")
+                if lat is not None:
+                    break
+        if lat is None:
+            lat = parsed.get("LAT") or parsed.get("lat")
+            lng = parsed.get("LON") or parsed.get("lon") or parsed.get("lng")
+    if lat is None or lng is None:
+        return
+    try:
+        lat = float(lat)
+        lng = float(lng)
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180) or (lat == 0 and lng == 0):
+            return
+    except (ValueError, TypeError):
+        return
+
+    # Apply GPS to ALL devices that have dse_module_uid (connected via DSE gateway)
+    gps_update = {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}
+    if _devices_cache:
+        for dev in _devices_cache:
+            dev_id = dev.get("id")
+            if dev_id:
+                await _db.devices.update_one({"id": dev_id}, {"$set": gps_update})
+                await _db.generators.update_one({"id": f"dev-{dev_id}"}, {"$set": gps_update})
+        logger.info(f"MQTT: Gateway GPS {lat},{lng} applied to {len(_devices_cache)} devices")
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
