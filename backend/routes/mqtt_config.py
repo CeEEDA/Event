@@ -314,19 +314,17 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if cmd.command not in DSE_COMMANDS:
         raise HTTPException(status_code=400, detail=f"Unbekannter Befehl: {cmd.command}. Erlaubt: {list(DSE_COMMANDS.keys())}")
 
-    # Find the generator or device
+    # Find the generator AND device (for dev- generators, always lookup both)
     gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
     device = None
-    if not gen and generator_id.startswith("dev-"):
+    if generator_id.startswith("dev-"):
         device_id = generator_id[4:]
         device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not gen and not device:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
     # Check if this is a Pi-based generator (DSE 5510) -> queue command instead of MQTT
-    pi_device = device if device else None
-    if not pi_device and generator_id.startswith("dev-"):
-        pi_device = await db.devices.find_one({"id": generator_id[4:]}, {"_id": 0})
+    pi_device = device
     if pi_device and pi_device.get("controller") == "DSE 5510":
         dse_cmd = DSE_COMMANDS[cmd.command]
         cmd_doc = {

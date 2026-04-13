@@ -146,7 +146,30 @@ function DeploymentHistory({ generatorId }) {
   );
 }
 
-function MetricBox({ icon: Icon, label, value, unit, color = "text-gray-900" }) {
+// Sanitize telemetry values: catch any remaining DSE sentinel garbage on the frontend
+const METRIC_MAX = {
+  voltage_l1: 2000, voltage_l2: 2000, voltage_l3: 2000,
+  voltage_l1_l2: 2000, voltage_l2_l3: 2000, voltage_l3_l1: 2000,
+  current_l1: 50000, current_l2: 50000, current_l3: 50000,
+  frequency: 200, power_kw: 100000, power_kva: 100000,
+  oil_pressure: 5000, coolant_temp: 500, fuel_level: 200,
+  battery_voltage: 100, rpm: 50000, load_percent: 200,
+  power_factor: 10, hours_run: 1000000,
+};
+
+function sanitizeValue(val, fieldHint) {
+  if (val === null || val === undefined) return null;
+  if (typeof val !== "number" || isNaN(val)) return null;
+  // Generic large-number catch (DSE sentinel ~2.1 billion / 10 = ~214 million)
+  if (Math.abs(val) > 10_000_000) return null;
+  // Field-specific threshold
+  if (fieldHint && METRIC_MAX[fieldHint] && Math.abs(val) > METRIC_MAX[fieldHint]) return null;
+  return val;
+}
+
+function MetricBox({ icon: Icon, label, value, unit, color = "text-gray-900", field }) {
+  const safeVal = sanitizeValue(value, field);
+  const displayVal = safeVal !== null ? (typeof safeVal === "number" ? Math.round(safeVal * 100) / 100 : safeVal) : null;
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
@@ -154,8 +177,8 @@ function MetricBox({ icon: Icon, label, value, unit, color = "text-gray-900" }) 
         {label}
       </div>
       <p className={`text-xl font-bold font-mono ${color}`}>
-        {value !== null && value !== undefined ? value : "–"}
-        {unit && value !== null && <span className="text-xs text-gray-400 ml-1">{unit}</span>}
+        {displayVal !== null ? displayVal : "–"}
+        {unit && displayVal !== null && <span className="text-xs text-gray-400 ml-1">{unit}</span>}
       </p>
     </div>
   );
@@ -300,19 +323,19 @@ export default function GeneratorDetailPage() {
   const sendCommand = async (command, label) => {
     setCmdLoading(command);
     try {
-      // Pi-basierte Geraete (DSE 5510 via RS232) nutzen HTTP-Polling statt MQTT
-      const isPiDevice = id && id.startsWith("dev-");
-      if (isPiDevice) {
-        const deviceId = id.replace("dev-", "");
-        await api.post(`/generators/pi-command/${deviceId}`, { command });
-        toast.success(`${label} gesendet (wird beim naechsten Sync ausgefuehrt)`);
-      } else {
-        await api.post(`/mqtt/control/${id}`, { command });
-        toast.success(`${label} gesendet`);
-      }
+      // Backend entscheidet ob MQTT (DSE 890) oder Pi-Queue (DSE 5510)
+      await api.post(`/mqtt/control/${id}`, { command });
+      toast.success(`${label} gesendet`);
       setTimeout(fetchData, 2000);
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Befehl konnte nicht gesendet werden");
+      const detail = err?.response?.data?.detail || "";
+      if (detail.includes("MQTT client nicht verbunden")) {
+        toast.error("MQTT-Broker nicht verbunden. Bitte Verbindung pruefen.");
+      } else if (detail.includes("Kein MQTT-Gateway")) {
+        toast.error("Bitte zuerst die DSE-Modul USB ID im Geraet hinterlegen.");
+      } else {
+        toast.error(detail || "Befehl konnte nicht gesendet werden");
+      }
     } finally {
       setCmdLoading(null);
     }
@@ -372,11 +395,11 @@ export default function GeneratorDetailPage() {
         {/* DSE Control Panel */}
         {canControl && (() => {
           const isRunning = generator.status === "running" || generator.latest_telemetry?.engine_running === true || (generator.latest_telemetry?.rpm || 0) > 0;
-          const dseMode = t?.dse_mode || null;
+          const dseMode = t?.dse_mode || generator?.last_dse_mode || null;
           const isAuto = dseMode === "auto" || dseMode === "auto_manual_restore";
           const isManual = dseMode === "manual";
           const isStop = dseMode === "stop" || dseMode === "off";
-          const hasPower = (t?.power_total_w || t?.power_kw) > 0;
+          const hasPower = sanitizeValue(t?.power_total_w || t?.power_kw, "power_kw") > 0;
           const genReady = t?.generator_available === true || (hasPower || isRunning);
           const switchClosed = t?.breaker_closed === true || (hasPower && isRunning);
           const model = (generator.model || "").toUpperCase();
@@ -528,12 +551,12 @@ export default function GeneratorDetailPage() {
         {/* Live Metrics */}
         {t ? (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="live-metrics">
-            <MetricBox icon={Zap} label="Leistung" value={t.power_kw} unit="kW" color="text-fuchsia-600" />
-            <MetricBox icon={Gauge} label="Last" value={t.load_percent} unit="%" color={t.load_percent > 85 ? "text-red-500" : "text-gray-900"} />
-            <MetricBox icon={Activity} label="Frequenz" value={t.frequency} unit="Hz" />
-            <MetricBox icon={Thermometer} label="Kühlmittel" value={t.coolant_temp} unit="°C" color={t.coolant_temp > 90 ? "text-amber-600" : "text-gray-900"} />
-            <MetricBox icon={Fuel} label="Tankstand" value={t.fuel_level} unit="%" color={t.fuel_level < 25 ? "text-red-500" : "text-gray-900"} />
-            <MetricBox icon={Battery} label="Batterie" value={t.battery_voltage} unit="V" />
+            <MetricBox icon={Zap} label="Leistung" value={t.power_kw} unit="kW" color="text-fuchsia-600" field="power_kw" />
+            <MetricBox icon={Gauge} label="Last" value={t.load_percent} unit="%" color={sanitizeValue(t.load_percent, "load_percent") > 85 ? "text-red-500" : "text-gray-900"} field="load_percent" />
+            <MetricBox icon={Activity} label="Frequenz" value={t.frequency} unit="Hz" field="frequency" />
+            <MetricBox icon={Thermometer} label="Kühlmittel" value={t.coolant_temp} unit="°C" color={sanitizeValue(t.coolant_temp, "coolant_temp") > 90 ? "text-amber-600" : "text-gray-900"} field="coolant_temp" />
+            <MetricBox icon={Fuel} label="Tankstand" value={t.fuel_level} unit="%" color={sanitizeValue(t.fuel_level, "fuel_level") < 25 ? "text-red-500" : "text-gray-900"} field="fuel_level" />
+            <MetricBox icon={Battery} label="Batterie" value={t.battery_voltage} unit="V" field="battery_voltage" />
           </div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-400">
@@ -544,22 +567,22 @@ export default function GeneratorDetailPage() {
         {/* Electrical Details */}
         {t && (
           <div className="grid grid-cols-3 md:grid-cols-6 gap-3" data-testid="electrical-details">
-            <MetricBox icon={Zap} label="U L1" value={t.voltage_l1} unit="V" />
-            <MetricBox icon={Zap} label="U L2" value={t.voltage_l2} unit="V" />
-            <MetricBox icon={Zap} label="U L3" value={t.voltage_l3} unit="V" />
-            <MetricBox icon={Activity} label="I L1" value={t.current_l1} unit="A" />
-            <MetricBox icon={Activity} label="I L2" value={t.current_l2} unit="A" />
-            <MetricBox icon={Activity} label="I L3" value={t.current_l3} unit="A" />
+            <MetricBox icon={Zap} label="U L1" value={t.voltage_l1} unit="V" field="voltage_l1" />
+            <MetricBox icon={Zap} label="U L2" value={t.voltage_l2} unit="V" field="voltage_l2" />
+            <MetricBox icon={Zap} label="U L3" value={t.voltage_l3} unit="V" field="voltage_l3" />
+            <MetricBox icon={Activity} label="I L1" value={t.current_l1} unit="A" field="current_l1" />
+            <MetricBox icon={Activity} label="I L2" value={t.current_l2} unit="A" field="current_l2" />
+            <MetricBox icon={Activity} label="I L3" value={t.current_l3} unit="A" field="current_l3" />
           </div>
         )}
 
         {/* Engine Details */}
         {t && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="engine-details">
-            <MetricBox icon={RotateCcw} label="Drehzahl" value={t.rpm} unit="U/min" />
-            <MetricBox icon={Gauge} label="Öldruck" value={t.oil_pressure} unit="bar" />
-            <MetricBox icon={Clock} label="Betriebsstunden" value={t.hours_run} unit="h" />
-            <MetricBox icon={Activity} label="cos φ" value={t.power_factor} unit="" />
+            <MetricBox icon={RotateCcw} label="Drehzahl" value={t.rpm} unit="U/min" field="rpm" />
+            <MetricBox icon={Gauge} label="Öldruck" value={t.oil_pressure} unit="bar" field="oil_pressure" />
+            <MetricBox icon={Clock} label="Betriebsstunden" value={t.hours_run} unit="h" field="hours_run" />
+            <MetricBox icon={Activity} label="cos φ" value={t.power_factor} unit="" field="power_factor" />
           </div>
         )}
 
@@ -677,14 +700,18 @@ export default function GeneratorDetailPage() {
           {analyseData.length > 0 && (() => {
             const chartData = analyseData.map(r => ({
               time: new Date(r.timestamp).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }),
-              P_kW: r.power_kw || (r.power_total_w ? Math.round(r.power_total_w / 100) / 10 : 0),
+              P_kW: sanitizeValue(r.power_kw, "power_kw") || (r.power_total_w ? Math.round(sanitizeValue(r.power_total_w) / 100) / 10 : 0) || 0,
               kWh: r.energy_kwh || 0,
-              U_L1: r.voltage_l1 || 0, U_L2: r.voltage_l2 || 0, U_L3: r.voltage_l3 || 0,
-              I_L1: r.current_l1 || 0, I_L2: r.current_l2 || 0, I_L3: r.current_l3 || 0,
-              Freq: r.frequency || 0,
-              Batt: r.battery_voltage || 0,
-              Fuel: r.fuel_level || r.fuel_level_pct || 0,
-              Cool: r.coolant_temp || r.coolant_temp_c || 0,
+              U_L1: sanitizeValue(r.voltage_l1, "voltage_l1") || 0,
+              U_L2: sanitizeValue(r.voltage_l2, "voltage_l2") || 0,
+              U_L3: sanitizeValue(r.voltage_l3, "voltage_l3") || 0,
+              I_L1: sanitizeValue(r.current_l1, "current_l1") || 0,
+              I_L2: sanitizeValue(r.current_l2, "current_l2") || 0,
+              I_L3: sanitizeValue(r.current_l3, "current_l3") || 0,
+              Freq: sanitizeValue(r.frequency, "frequency") || 0,
+              Batt: sanitizeValue(r.battery_voltage, "battery_voltage") || 0,
+              Fuel: sanitizeValue(r.fuel_level, "fuel_level") || sanitizeValue(r.fuel_level_pct, "fuel_level") || 0,
+              Cool: sanitizeValue(r.coolant_temp, "coolant_temp") || sanitizeValue(r.coolant_temp_c, "coolant_temp") || 0,
             }));
             return (
               <div className="px-5 pb-5 space-y-4">

@@ -31,6 +31,29 @@ def init_generator_routes(_db, _decode_jwt_token, _get_current_user, _require_ad
     require_admin = _require_admin
 
 
+# DSE sentinel value thresholds for post-processing cleanup
+_TELEMETRY_MAX_THRESHOLDS = {
+    "voltage_l1": 2000, "voltage_l2": 2000, "voltage_l3": 2000,
+    "voltage_l1_l2": 2000, "voltage_l2_l3": 2000, "voltage_l3_l1": 2000,
+    "current_l1": 50000, "current_l2": 50000, "current_l3": 50000,
+    "frequency": 200, "power_kw": 100000, "power_kva": 100000,
+    "power_l1_w": 100_000_000, "power_l2_w": 100_000_000, "power_l3_w": 100_000_000,
+    "oil_pressure": 5000, "coolant_temp": 500, "fuel_level": 200,
+    "battery_voltage": 100, "rpm": 50000, "load_percent": 200,
+    "power_factor": 10, "hours_run": 1_000_000,
+}
+
+
+def _sanitize_telemetry(t: dict):
+    """Remove obviously invalid values from telemetry dict in-place.
+    Catches DSE sentinel values that slipped through parsing (historical data)."""
+    for field, max_val in _TELEMETRY_MAX_THRESHOLDS.items():
+        val = t.get(field)
+        if val is not None and isinstance(val, (int, float)):
+            if abs(val) > max_val:
+                t[field] = None
+
+
 async def _resolve_generator(generator_id: str):
     """Find a generator by ID, including virtual generators from devices."""
     gen = await db.generators.find_one({"id": generator_id}, {"_id": 0})
@@ -436,8 +459,9 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
         {"_id": 0},
         sort=[("timestamp", -1)]
     )
-    # Normalize Pi-ingest fields to standard frontend field names
+    # Sanitize telemetry: remove DSE sentinel values that may have been stored historically
     if latest:
+        _sanitize_telemetry(latest)
         if "power_total_w" in latest and "power_kw" not in latest:
             latest["power_kw"] = round(latest["power_total_w"] / 1000, 2) if latest["power_total_w"] else 0
         if "coolant_temp_c" in latest and "coolant_temp" not in latest:
@@ -653,6 +677,9 @@ async def get_telemetry(
             t["hours_run"] = t["engine_run_hours"]
         if "power_factor_avg" in t and "power_factor" not in t:
             t["power_factor"] = t["power_factor_avg"]
+
+        # Sanitize: remove DSE sentinel values from historical data
+        _sanitize_telemetry(t)
 
         # Nicht freigegebene Felder entfernen
         if not share_electrical:

@@ -300,6 +300,23 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         {"id": device_id},
         {"$set": {"last_seen": timestamp, "last_telemetry": timestamp, "mqtt_status": "online"}}
     )
+
+    # Also update virtual generator status
+    gen_status = {"last_seen": timestamp}
+    if telemetry.get("engine_running") is True or telemetry.get("rpm", 0) > 0:
+        gen_status["status"] = "running"
+    elif telemetry.get("engine_running") is False:
+        gen_status["status"] = "standby"
+    else:
+        gen_status["status"] = "online"
+    dse_mode = telemetry.get("dse_mode")
+    if dse_mode and dse_mode not in ("unknown", ""):
+        gen_status["last_dse_mode"] = dse_mode
+    await _db.generators.update_one(
+        {"id": f"dev-{device_id}"},
+        {"$set": gen_status}
+    )
+
     logger.info(f"MQTT: Telemetry stored for device {device_id} from topic {topic}")
 
 
@@ -392,6 +409,11 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
         status_update["latitude"] = telemetry["gps_lat"]
         status_update["longitude"] = telemetry["gps_lng"]
 
+    # Derive DSE mode from control register if available
+    dse_mode = telemetry.get("dse_mode")
+    if dse_mode and dse_mode not in ("unknown", ""):
+        status_update["last_dse_mode"] = dse_mode
+
     await _db.generators.update_one({"id": generator_id}, {"$set": status_update})
 
     logger.info(f"MQTT: Telemetry stored for generator {generator_id}")
@@ -426,9 +448,21 @@ def _parse_gencomm_registers(parsed, topic):
         """Check if value is a valid reading (not DSE error/unavailable marker)."""
         if val is None:
             return False
-        if val in (INVALID_16, INVALID_16 + 1, INVALID_16 + 2, INVALID_16 + 3,
-                   INVALID_32, INVALID_32 + 1, INVALID_32 + 2, INVALID_32 + 3,
-                   32767, 2147483647, 65535, 4294967295):
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            return False
+        # Exact DSE sentinel values (int and float comparison)
+        sentinel_vals = (
+            INVALID_16, INVALID_16 + 1, INVALID_16 + 2, INVALID_16 + 3,
+            INVALID_32, INVALID_32 + 1, INVALID_32 + 2, INVALID_32 + 3,
+            32767, 2147483647, 65535, 4294967295,
+        )
+        for s in sentinel_vals:
+            if abs(num - s) < 0.5:
+                return False
+        # Range-based safety: any raw register value above 1 million is almost certainly invalid
+        if abs(num) > 1_000_000:
             return False
         return True
 
@@ -477,6 +511,28 @@ def _parse_gencomm_registers(parsed, topic):
     # Total power (32-bit at offset 34)
     if valid(registers.get((4, 34))):
         result["power_kw"] = registers[(4, 34)] / 1000.0    # W -> kW
+
+    # Page 7: Run hours, kWh, starts
+    if valid(registers.get((7, 0))):
+        result["hours_run"] = registers[(7, 0)] / 10.0      # 0.1h -> h
+    if valid(registers.get((7, 4))):
+        result["energy_kwh"] = registers[(7, 4)]             # kWh
+    if valid(registers.get((7, 6))):
+        result["engine_starts"] = registers[(7, 6)]
+
+    # Page 6: Power factor
+    if valid(registers.get((6, 0))):
+        result["power_factor"] = registers[(6, 0)] / 100.0  # 0.01 -> pf
+
+    # Page 16: Control status (DSE mode)
+    mode_val = registers.get((16, 0))
+    if mode_val is not None and valid(mode_val):
+        DSE_MODE_MAP = {
+            0: "stop", 1: "auto", 2: "manual", 3: "test_on_load",
+            4: "auto_manual_restore", 5: "user_config", 6: "test_off_load",
+            7: "off", 8: "stop",
+        }
+        result["dse_mode"] = DSE_MODE_MAP.get(mode_val, f"mode_{mode_val}")
 
     return result if result else None
 

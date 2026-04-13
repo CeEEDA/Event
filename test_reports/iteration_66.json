@@ -1,0 +1,68 @@
+{
+  "summary": "Tested DSE 890 Gateway UI fixes for sentinel value filtering, control button routing, and status LEDs. Backend: 11/11 tests passed (100%). Frontend: All features working correctly - sentinel values filtered, control buttons responsive, status LEDs displayed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/mqtt/control/{id}",
+        "issue": "Returns HTTP 500 instead of 503 when MQTT client not connected. Error message is correct but status code should be 503 (Service Unavailable)",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dse890_sentinel_fix_iteration66.py",
+    "/app/test_reports/pytest/pytest_dse890_sentinel_iteration66.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend _parse_gencomm_registers() valid() function correctly filters DSE sentinel values (2147483644, 32764, etc.) using abs(num-s)<0.5 comparison",
+    "Backend _parse_gencomm_registers() valid() function correctly filters values >1M as invalid",
+    "Backend _sanitize_telemetry() correctly filters historical telemetry values exceeding field-specific thresholds",
+    "Frontend sanitizeValue() correctly filters values >10M and field-specific thresholds",
+    "Frontend MetricBox component correctly shows '-' for null/undefined/invalid values",
+    "Backend send_generator_command() correctly looks up device for dev- generators to get dse_module_uid",
+    "Frontend sendCommand() correctly routes ALL commands through /api/mqtt/control/{id} (no frontend Pi/MQTT split)",
+    "DSE mode correctly read from telemetry and falls back to generator.last_dse_mode",
+    "Status LEDs (Motor laeuft, Auto-Modus) correctly displayed based on telemetry data"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dse890_sentinel_fix_iteration66.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 passed)",
+    "frontend": "100% - All tested features working"
+  },
+  "test_credentials": "Admin: admin@test.com / password",
+  "seed_data_creation": "No new seed data - used existing generators and devices",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "DSE 890 Gateway UI fixes tested. Key findings: 1) Sentinel values (2147483644, 32764, etc.) are properly filtered in both backend and frontend. 2) Generator S50-18A01 (dev-72c3022f-3d51-4005-a21c-b09ec926fe97) shows valid telemetry: 120.5 kW, 50 Hz, 78.3°C, 80% tank, 13.6V battery, 231.2V L1, 1500 RPM. 3) Control buttons (Stop/Auto/Start) are clickable and route to /api/mqtt/control/{id}. 4) MQTT broker not connected in preview - control commands return 'MQTT client nicht verbunden' which is expected. 5) Device 07d42e9d has dse_module_uid='TESTUID123' for testing. 6) Status LEDs show 'Motor laeuft' (green) when engine running.",
+  "verified_features": {
+    "backend_health": "PASS - /api/health returns healthy",
+    "backend_auth": "PASS - Admin login works with token response",
+    "backend_generators_list": "PASS - Returns generators without sentinel values in telemetry",
+    "backend_generator_detail": "PASS - Returns sanitized telemetry for individual generator",
+    "backend_control_endpoint": "PASS - Accepts valid commands, rejects invalid commands",
+    "backend_control_valid_commands": "PASS - All 11 DSE commands accepted (stop, auto_on, manual, test_on_load, auto_manual_restore, start, mute, reset, gen_switch_on, gen_switch_off, reset_mains)",
+    "backend_dev_generator_lookup": "PASS - dev- generators correctly resolved from devices collection",
+    "backend_dev_generator_control": "PASS - Control commands for dev- generators look up device for dse_module_uid",
+    "backend_telemetry_thresholds": "PASS - No threshold violations found in telemetry",
+    "backend_dse_mode": "PASS - DSE mode available in generator detail (from telemetry or last_dse_mode fallback)",
+    "frontend_login": "PASS - Login form works correctly",
+    "frontend_generators_list": "PASS - Shows 6 generators with valid telemetry values (no sentinel values)",
+    "frontend_generator_detail": "PASS - Shows S50-18A01 with valid metrics (120.5 kW, 50 Hz, 78.3°C, 80%, 13.6V, 231.2V, 1500 RPM)",
+    "frontend_sentinel_filtering": "PASS - No sentinel values (2147483644, 32764, etc.) visible in UI",
+    "frontend_missing_values": "PASS - Missing values show '-' instead of large numbers",
+    "frontend_control_buttons": "PASS - Stop, Auto, Start buttons visible and clickable",
+    "frontend_control_routing": "PASS - Commands route to /api/mqtt/control/{id}",
+    "frontend_status_leds": "PASS - 'Motor laeuft' LED shows green when engine running",
+    "frontend_auto_mode_led": "PASS - 'Auto-Modus' LED displayed (gray when not in auto mode)"
+  },
+  "mqtt_note": "MQTT broker is NOT available in preview environment. Control commands return 'MQTT client nicht verbunden' or 'Kein aktives Gerät gefunden' which is expected behavior."
+}
