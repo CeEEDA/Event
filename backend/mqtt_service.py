@@ -429,7 +429,7 @@ async def _auto_store_module_uid(generator_id, topic):
         return  # Recently stored, skip DB write
 
     uid, prefix = _extract_module_uid_from_topic(topic)
-    if uid and _db:
+    if uid and _db is not None:
         update = {"last_mqtt_module_uid": uid}
         if prefix:
             update["last_mqtt_topic_prefix"] = prefix
