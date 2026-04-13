@@ -55,8 +55,8 @@ if exist "%BASE_DIR%\backend\static\mosquitto_eventenergie.conf" (
     )
 )
 :: Passwort-Datei anlegen falls sie nicht existiert (leer, wird vom Portal befuellt)
-if not exist "%MOSQUITTO_DIR%\passwd" (
-    echo. > "%MOSQUITTO_DIR%\passwd"
+if not exist "%BASE_DIR%\mosquitto_passwd" (
+    echo. > "%BASE_DIR%\mosquitto_passwd"
     echo   Mosquitto Passwort-Datei angelegt
 )
 call :check_port 1883
