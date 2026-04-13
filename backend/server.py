@@ -1532,20 +1532,33 @@ async def download_dse8610_module():
 
 @api_router.get("/download-dsel401-module-topics")
 async def download_dsel401_module():
-    path = os.path.join(STATIC_DIR, "dsel401_module_topics.csv")
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
+    # Hardcoded correct content to bypass any file/cache issues
+    content = """Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,1,1,0,,,,,,Coolant temp degC
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,3,1,0,,,,,,Fuel level percent
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,6,1,0,,,,,,Engine speed RPM
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,10,2,0,,,,,,Gen L2-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,12,2,0,,,,,,Gen L3-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,14,2,0,,,,,,Gen L1-L2 voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,16,2,0,,,,,,Gen L2-L3 voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,18,2,0,,,,,,Gen L3-L1 voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,22,2,0,,,,,,Gen L2 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,24,2,0,,,,,,Gen L3 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,28,2,0,,,,,,Gen L1 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,30,2,0,,,,,,Gen L2 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,32,2,0,,,,,,Gen L3 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,34,2,0,,,,,,Gen total watts
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control subscribe
+""".strip()
     from starlette.responses import Response
-    return Response(
-        content=content,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=dsel401_module_topics.csv",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        }
-    )
+    return Response(content=content, media_type="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=dsel401_module_topics.csv",
+                             "Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @api_router.get("/download/desktop-app-mac")
 async def download_desktop_app_mac():
@@ -1669,6 +1682,35 @@ CONTROLLER_TOPIC_MAP = {
 
 @api_router.get("/download-controller-topics/{controller_type}")
 async def download_controller_topics(controller_type: str):
+    # L401: return hardcoded correct content (file cache workaround)
+    if "l401" in controller_type.lower():
+        content = """Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,1,1,0,,,,,,Coolant temp degC
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,3,1,0,,,,,,Fuel level percent
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
+%GROUP%/%TYPE%/%UID%/engine,,P,,10,0,,,1,4,6,1,0,,,,,,Engine speed RPM
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,10,2,0,,,,,,Gen L2-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,12,2,0,,,,,,Gen L3-N voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,14,2,0,,,,,,Gen L1-L2 voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,16,2,0,,,,,,Gen L2-L3 voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,18,2,0,,,,,,Gen L3-L1 voltage 0.1V
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,22,2,0,,,,,,Gen L2 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,24,2,0,,,,,,Gen L3 current 0.1A
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,28,2,0,,,,,,Gen L1 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,30,2,0,,,,,,Gen L2 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,32,2,0,,,,,,Gen L3 watts
+%GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,34,2,0,,,,,,Gen total watts
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control subscribe
+""".strip()
+        from starlette.responses import Response
+        return Response(content=content, media_type="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=dsel401_module_topics.csv",
+                                 "Cache-Control": "no-cache, no-store, must-revalidate"})
+
     mapping = CONTROLLER_TOPIC_MAP.get(controller_type)
     if not mapping:
         raise HTTPException(status_code=404, detail=f"Keine Topic-Datei für Steuerung '{controller_type}' verfügbar")
@@ -1684,8 +1726,6 @@ async def download_controller_topics(controller_type: str):
         headers={
             "Content-Disposition": f"attachment; filename={mapping[1]}",
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
         }
     )
 
