@@ -322,34 +322,50 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
 
 def _extract_module_uid_from_topic(topic):
     """Extract the DSE module UID from an MQTT topic.
-    Topics: eventenergie/UIDHERE/engine, /32788/UIDHERE/engine, etc.
-    The UID is typically a hex string like '6D2B5CDE5F' or 'OS2NU8TZ'."""
+    Topics: eventenergie/DSE8610/6D2B5CDE5F/engine, etc.
+    Returns (uid, topic_prefix) where prefix = group/type/uid."""
     parts = topic.strip("/").split("/")
-    # Skip known prefixes: eventenergie, dse, DSEGateway4G, numeric gateway IDs
-    skip_prefixes = {"eventenergie", "dse", "dsegateway4g"}
-    # Skip known suffixes: engine, gps, status, control, instrumentation
+    # DSE 890 topics always have: GROUP/TYPE/UID/subtopic (4+ parts)
+    # The UID is typically the 3rd part (index 2)
+    # The subtopic is the 4th part (engine, generator, gps, status, control, etc.)
     skip_suffixes = {"engine", "gps", "status", "control", "instrumentation",
-                     "alarms", "config", "events"}
-    for part in parts:
+                     "alarms", "config", "events", "mains", "generator",
+                     "alarm", "topic_file"}
+    if len(parts) >= 4:
+        # Standard format: group/type/uid/subtopic
+        subtopic = parts[-1].lower()
+        if subtopic in skip_suffixes:
+            # Everything before the subtopic is the prefix
+            prefix_parts = parts[:-1]
+            uid = prefix_parts[-1]  # Last part before subtopic is the UID
+            prefix = "/".join(prefix_parts)
+            return uid, prefix
+    # Fallback: try to find UID-like string
+    for i, part in enumerate(parts):
         lower = part.lower()
-        if lower in skip_prefixes or lower in skip_suffixes:
+        if lower in skip_suffixes:
             continue
-        # Numeric gateway IDs (like 32788) are not UIDs
+        if lower in {"eventenergie", "dse", "dsegateway4g"}:
+            continue
         if part.isdigit():
             continue
-        # UID is typically 6+ alphanumeric chars
         if len(part) >= 6 and part.replace("-", "").replace("_", "").isalnum():
-            return part
-    return None
+            prefix = "/".join(parts[:i+1])
+            return part, prefix
+    return None, None
 
 
 async def _auto_store_module_uid(generator_id, topic):
-    """Extract module UID from MQTT topic and store on generator for control routing."""
-    uid = _extract_module_uid_from_topic(topic)
+    """Extract module UID and full topic prefix from MQTT topic.
+    Stores both on the generator for control routing."""
+    uid, prefix = _extract_module_uid_from_topic(topic)
     if uid and _db:
+        update = {"last_mqtt_module_uid": uid}
+        if prefix:
+            update["last_mqtt_topic_prefix"] = prefix
         await _db.generators.update_one(
             {"id": generator_id},
-            {"$set": {"last_mqtt_module_uid": uid}}
+            {"$set": update}
         )
 
 

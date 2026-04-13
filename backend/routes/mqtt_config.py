@@ -365,8 +365,17 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if not module_uid and gen:
         module_uid = gen.get("dse_module_uid", "") or gen.get("last_mqtt_module_uid", "")
 
+    # Get the full topic prefix (group/type/uid) from auto-detection
+    topic_prefix = (gen or {}).get("last_mqtt_topic_prefix", "")
+
     if module_uid:
-        control_topic = f"eventenergie/{module_uid}/control"
+        # Build control topic: use stored prefix if available (includes TYPE segment)
+        # Otherwise fallback to eventenergie/{uid} (legacy, might not work with DSE890)
+        if topic_prefix:
+            control_topic = f"{topic_prefix}/control"
+        else:
+            control_topic = f"eventenergie/{module_uid}/control"
+
         dse_cmd = DSE_COMMANDS[cmd.command]
         # DSE Gencomm: Write System Control Key + Complement to Page 16, Offset 8+9
         payload = json.dumps({module_uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
@@ -405,10 +414,18 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         {"_id": 0, "topic": 1}
     )
     if latest_msg:
-        # Extract UID from topic like /32788/6D2B5CDE5F/engine -> 6D2B5CDE5F
+        # Extract full prefix from topic like eventenergie/DSE8610/6D2B5CDE5F/engine
+        # The control topic is: everything-before-last-segment/control
         parts = latest_msg["topic"].strip("/").split("/")
-        uid = parts[1] if len(parts) >= 2 else ""
-        control_topic = f"{prefix}/{uid}/control"
+        if len(parts) >= 4:
+            # Standard: group/type/uid/subtopic → control = group/type/uid/control
+            uid = parts[-2]  # UID is second-to-last
+            control_topic = "/".join(parts[:-1]) + "/control"
+        elif len(parts) >= 2:
+            uid = parts[1] if len(parts) >= 2 else ""
+            control_topic = f"{prefix}/{uid}/control"
+        else:
+            raise HTTPException(status_code=400, detail="Topic-Format nicht erkannt")
     else:
         raise HTTPException(status_code=400, detail="Kein aktives Gerät gefunden. Gateway muss zuerst Daten senden.")
 
