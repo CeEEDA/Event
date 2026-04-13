@@ -371,8 +371,7 @@ async def _process_status_device(device_id, raw_payload, timestamp):
     )
     await _db.generators.update_one(
         {"id": f"dev-{device_id}"},
-        {"$set": {"last_seen": timestamp, "status": status}},
-        upsert=True
+        {"$set": {"last_seen": timestamp, "status": status}}
     )
     logger.debug(f"MQTT: Status for device {device_id}")
 
@@ -532,8 +531,7 @@ async def _auto_store_module_uid(generator_id, topic):
             update["last_mqtt_topic_prefix"] = prefix
         await _db.generators.update_one(
             {"id": generator_id},
-            {"$set": update},
-            upsert=True
+            {"$set": update}
         )
         if generator_id.startswith("dev-"):
             device_id = generator_id[4:]
