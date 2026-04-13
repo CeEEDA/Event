@@ -340,7 +340,7 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
     return CONTROLLER_TOPIC_INFO[ctrl] || null;
   };
   const topicInfo = resolveTopicInfo(controller);
-  const brokerUrl = "eventenergie.app";
+  const brokerUrl = "217.86.214.29";
   const brokerPort = "1883";
   const groupName = "eventenergie";
 
@@ -411,20 +411,40 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
         <p className="text-xs text-gray-700 font-medium mb-2">MQTT-Einstellungen im DSE890:</p>
         <div className="space-y-1.5 text-xs font-mono">
           <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Broker</span>
+            <span className="text-gray-400">Broker URL</span>
             <span className="text-gray-900 select-all">{brokerUrl}</span>
           </div>
           <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
             <span className="text-gray-400">Port</span>
             <span className="text-gray-900 select-all">{brokerPort}</span>
           </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Connection Method</span>
+            <span className="text-gray-900">GSM</span>
+          </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Clean Session</span>
+            <span className="text-gray-900">Ja (Haken setzen)</span>
+          </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Keep Alive</span>
+            <span className="text-gray-900">60</span>
+          </div>
           <div className="flex justify-between items-center bg-amber-50 px-2 py-1.5 rounded border border-amber-200">
             <span className="text-amber-600">Group Name</span>
             <span className="text-amber-800 font-semibold select-all">{groupName}</span>
           </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Use Login Credentials</span>
+            <span className="text-gray-900">Ja (Haken setzen)</span>
+          </div>
+          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
+            <span className="text-gray-400">Use Secure MQTT</span>
+            <span className="text-gray-900">Nein</span>
+          </div>
         </div>
         <p className="text-[10px] text-amber-600 mt-2 font-medium">
-          Der Group Name muss im DSE890 unter MQTT &gt; Group Name eingetragen werden. Ohne Group Name werden keine Daten empfangen.
+          Alle Einstellungen unter DSE890 &gt; MQTT-Tab eintragen. Username und Password unten generieren und dort einfuegen.
         </p>
       </div>
 
