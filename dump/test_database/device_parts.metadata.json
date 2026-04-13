@@ -1,1 +1,1 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"394c67c7d31b4faeab5b669006008236","collectionName":"device_parts","type":"collection"}
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"device_id":{"$numberInt":"1"}},"name":"device_id_1","background":true}],"uuid":"394c67c7d31b4faeab5b669006008236","collectionName":"device_parts","type":"collection"}

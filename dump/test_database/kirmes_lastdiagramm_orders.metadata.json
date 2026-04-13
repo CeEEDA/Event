@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"f5a2728075e448c1a17cf358bfad5170","collectionName":"kirmes_lastdiagramm_orders","type":"collection"}

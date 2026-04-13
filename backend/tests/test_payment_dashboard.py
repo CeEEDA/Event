@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://billing-hub-150.preview.emergentagent.com"
+                "origin_url": "https://dse-gateway-fix.preview.emergentagent.com"
             },
             timeout=30
         )

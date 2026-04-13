@@ -1,1 +1,1 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"e12020f6119b46be9a2db9ba35d8fe95","collectionName":"kirmes_invoices","type":"collection"}
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"schausteller_id":{"$numberInt":"1"}},"name":"schausteller_id_1","background":true},{"v":{"$numberInt":"2"},"key":{"event_id":{"$numberInt":"1"}},"name":"event_id_1","background":true}],"uuid":"e12020f6119b46be9a2db9ba35d8fe95","collectionName":"kirmes_invoices","type":"collection"}
