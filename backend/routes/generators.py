@@ -227,11 +227,22 @@ async def delete_demo_data(admin: dict = Depends(require_admin_user)):
 
 @router.delete("/cleanup-ghost-generators")
 async def cleanup_ghost_generators(user: dict = Depends(get_authenticated_user)):
-    """Delete auto-created ghost generators that have no matching device."""
+    """Delete ghost generators: dev- entries without matching device or without serial_number."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
-    result = await db.generators.delete_many({"source": "mqtt_auto"})
-    return {"message": f"{result.deleted_count} Geister-Generatoren geloescht"}
+    deleted = 0
+    # Find all dev- generators
+    gens = await db.generators.find({"id": {"$regex": "^dev-"}}, {"_id": 0, "id": 1, "serial_number": 1}).to_list(500)
+    for g in gens:
+        device_id = g["id"][4:]
+        device = await db.devices.find_one({"id": device_id}, {"_id": 1})
+        if not device:
+            await db.generators.delete_one({"id": g["id"]})
+            deleted += 1
+    # Also delete mqtt_auto without serial_number
+    result = await db.generators.delete_many({"source": "mqtt_auto", "serial_number": {"$exists": False}})
+    deleted += result.deleted_count
+    return {"message": f"{deleted} Geister-Generatoren geloescht"}
 
 @router.get("")
 async def list_generators(user: dict = Depends(get_authenticated_user)):
