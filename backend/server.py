@@ -1533,8 +1533,19 @@ async def download_dse8610_module():
 @api_router.get("/download-dsel401-module-topics")
 async def download_dsel401_module():
     path = os.path.join(STATIC_DIR, "dsel401_module_topics.csv")
-    return FileResponse(path, media_type="text/csv", filename="dsel401_module_topics.csv",
-                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    from starlette.responses import Response
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=dsel401_module_topics.csv",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 
 @api_router.get("/download/desktop-app-mac")
 async def download_desktop_app_mac():
@@ -1664,8 +1675,19 @@ async def download_controller_topics(controller_type: str):
     file_path = os.path.join(STATIC_DIR, mapping[0])
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Topic-Datei nicht gefunden")
-    return FileResponse(file_path, media_type="text/csv", filename=mapping[1],
-                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    from starlette.responses import Response
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={mapping[1]}",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 
 @api_router.get("/download/frontend-env")
 async def download_frontend_env():
