@@ -329,8 +329,12 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
     # Attach latest telemetry from snapshot (fast: no extra DB queries)
     for g in generators:
         latest = g.get("latest_snapshot")
+        # Fallback: device snapshot for dev- generators
+        if not latest and g["id"].startswith("dev-"):
+            dev_doc = await db.devices.find_one({"id": g["id"][4:]}, {"_id": 0, "latest_snapshot": 1})
+            if dev_doc:
+                latest = dev_doc.get("latest_snapshot")
         if not latest:
-            # Fallback: single query for generators without snapshot
             latest = await db.generator_telemetry.find_one(
                 {"generator_id": g["id"]}, {"_id": 0}, sort=[("timestamp", -1)]
             )
@@ -484,7 +488,13 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
 
     # Attach latest telemetry from snapshot (fast: already merged on write)
     latest = gen.get("latest_snapshot") if gen else None
-    # Fallback: if no snapshot yet, fetch from telemetry collection
+    # Fallback: check device snapshot (for dev- generators where gen doc may not have snapshot)
+    if (not latest or not latest.get("timestamp")) and generator_id.startswith("dev-"):
+        dev_id = generator_id[4:]
+        dev_doc = await db.devices.find_one({"id": dev_id}, {"_id": 0, "latest_snapshot": 1})
+        if dev_doc and dev_doc.get("latest_snapshot"):
+            latest = dev_doc["latest_snapshot"]
+    # Fallback: fetch from telemetry collection
     if not latest or not latest.get("timestamp"):
         latest = await db.generator_telemetry.find_one(
             {"generator_id": generator_id},
