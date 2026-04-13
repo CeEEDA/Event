@@ -569,11 +569,10 @@ export default function GeneratorDetailPage() {
           </div>
         )}
 
-        {/* Electrical Details - hide L2/L3 for single-phase devices (Lichtmasten) */}
+        {/* Electrical Details - DSE L401 = 1-phasig (Lichtmasten) */}
         {t && (() => {
-          const isSinglePhase = (t.voltage_l2 === null || t.voltage_l2 === undefined) &&
-                                (t.voltage_l3 === null || t.voltage_l3 === undefined) &&
-                                (t.current_l2 === null || t.current_l2 === undefined);
+          const model = (generator.model || generator.controller || "").toLowerCase();
+          const isSinglePhase = model.includes("l401");
           return isSinglePhase ? (
             <div className="grid grid-cols-2 md:grid-cols-2 gap-3" data-testid="electrical-details">
               <MetricBox icon={Zap} label="Spannung" value={t.voltage_l1} unit="V" field="voltage_l1" />
