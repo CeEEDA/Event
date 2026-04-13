@@ -413,10 +413,18 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
             }
             await db.generator_control_log.insert_one(log_entry)
 
-            # Force immediate status refresh: invalidate status cache so next
-            # MQTT message updates DB right away (gives instant feedback)
-            from mqtt_service import _status_cache, _uid_store_cache
+            # Store commanded mode on device + generator for instant UI feedback
             dev_id = generator_id[4:] if generator_id.startswith("dev-") else None
+            mode_map = {"stop": "stop", "auto_on": "auto", "manual": "manual", "start": "manual"}
+            commanded_mode = mode_map.get(cmd.command, "")
+            if commanded_mode:
+                mode_update = {"last_dse_mode": commanded_mode}
+                await db.generators.update_one({"id": generator_id}, {"$set": mode_update})
+                if dev_id:
+                    await db.devices.update_one({"id": dev_id}, {"$set": mode_update})
+
+            # Force immediate status refresh: invalidate status cache
+            from mqtt_service import _status_cache, _uid_store_cache
             if dev_id and dev_id in _status_cache:
                 del _status_cache[dev_id]
             if generator_id in _uid_store_cache:
