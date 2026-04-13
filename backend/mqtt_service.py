@@ -205,7 +205,11 @@ async def _process_message(msg):
                 await _process_gps_device(device_id, payload_str, parsed, timestamp)
                 return
             if topic.endswith("/status"):
-                await _process_status_device(device_id, payload_str, timestamp)
+                # JSON payload = telemetry data (e.g. run hours), text = online/offline status
+                if parsed and isinstance(parsed, dict):
+                    await _ingest_telemetry_device(device_id, topic, payload_str, parsed, timestamp)
+                else:
+                    await _process_status_device(device_id, payload_str, timestamp)
                 return
             if topic.endswith("/alarm"):
                 await _process_alarm(f"dev-{device_id}", payload_str, parsed, timestamp)
