@@ -470,9 +470,16 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
 
         telemetry_data = {}
         if isinstance(parsed, dict):
-            gencomm_data = _parse_gencomm_registers(parsed, topic)
-            if gencomm_data:
-                telemetry_data = gencomm_data
+            # Check for simple J1939 format (e.g. {"hours": 1234.5} from Function 6)
+            if "hours" in parsed and len(parsed) <= 2:
+                try:
+                    telemetry_data["hours_run"] = float(parsed["hours"])
+                except (ValueError, TypeError):
+                    pass
+            else:
+                gencomm_data = _parse_gencomm_registers(parsed, topic)
+                if gencomm_data:
+                    telemetry_data = gencomm_data
 
         # Always update snapshot on device + generator (fast, no new documents)
         snapshot_fields = {}
