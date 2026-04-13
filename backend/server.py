@@ -1553,7 +1553,7 @@ async def download_dsel401_module():
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,30,2,0,,,,,,Gen L2 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,32,2,0,,,,,,Gen L3 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control subscribe
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,16,8,2,0,,,,,,Control write P16 R8
 """.strip()
     from starlette.responses import Response
     return Response(content=content, media_type="text/csv",
@@ -1704,7 +1704,7 @@ async def download_controller_topics(controller_type: str):
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,30,2,0,,,,,,Gen L2 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,32,2,0,,,,,,Gen L3 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control subscribe
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,16,8,2,0,,,,,,Control write P16 R8
 """.strip()
         from starlette.responses import Response
         return Response(content=content, media_type="text/csv",
