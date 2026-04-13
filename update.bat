@@ -158,7 +158,7 @@ echo   yarn install...
 call yarn install --frozen-lockfile 2>&1
 echo   yarn build... (kann 2-5 Minuten dauern)
 set GENERATE_SOURCEMAP=false
-set NODE_OPTIONS=--max-old-space-size=4096
+set NODE_OPTIONS=--max-old-space-size=8192
 call yarn build 2>&1
 echo   Build erfolgreich (yarn)
 goto :build_done
@@ -166,7 +166,7 @@ goto :build_done
 echo   WARNUNG: yarn nicht gefunden - verwende npm
 call npm install --legacy-peer-deps 2>&1
 set GENERATE_SOURCEMAP=false
-set NODE_OPTIONS=--max-old-space-size=4096
+set NODE_OPTIONS=--max-old-space-size=8192
 call npm run build 2>&1
 echo   Build erfolgreich (npm)
 goto :build_done
