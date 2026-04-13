@@ -374,19 +374,17 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
 
     if module_uid:
         # Build control topic: use stored prefix if available (includes TYPE segment)
-        # Otherwise fallback to eventenergie/{uid} (legacy, might not work with DSE890)
         if topic_prefix:
             control_topic = f"{topic_prefix}/control"
         else:
             control_topic = f"eventenergie/{module_uid}/control"
 
         dse_cmd = DSE_COMMANDS[cmd.command]
-        # DSE Gencomm: Write System Control Key + Complement to Page 16, Offset 8+9
         payload = json.dumps({module_uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
 
         try:
             success = publish_command(control_topic, payload)
-            await db.generator_control_log.insert_one({
+            log_entry = {
                 "id": str(uuid.uuid4()),
                 "generator_id": generator_id,
                 "command": cmd.command,
@@ -395,8 +393,24 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
                 "success": success,
                 "user": user.get("email", ""),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-            return {"success": success, "message": dse_cmd["label"], "topic": control_topic}
+            }
+            await db.generator_control_log.insert_one(log_entry)
+
+            # Force immediate status refresh: invalidate status cache so next
+            # MQTT message updates DB right away (gives instant feedback)
+            from mqtt_service import _status_cache, _uid_store_cache
+            dev_id = generator_id[4:] if generator_id.startswith("dev-") else None
+            if dev_id and dev_id in _status_cache:
+                del _status_cache[dev_id]
+            if generator_id in _uid_store_cache:
+                del _uid_store_cache[generator_id]
+
+            return {
+                "success": success,
+                "message": dse_cmd["label"],
+                "topic": control_topic,
+                "command_sent": cmd.command,
+            }
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=f"Fehler: {str(e)}")
         except Exception as e:

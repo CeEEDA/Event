@@ -288,7 +288,7 @@ async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
 
 # Throttle for status updates (avoid DB write every 5s for unchanged status)
 _status_cache = {}  # device_id -> (last_status, last_update_time)
-_STATUS_UPDATE_INTERVAL = 30  # only write status to DB every 30s if unchanged
+_STATUS_UPDATE_INTERVAL = 1200  # only write status to DB every 20 minutes if unchanged
 
 
 async def _process_status_device(device_id, raw_payload, timestamp):
