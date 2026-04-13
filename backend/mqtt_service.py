@@ -30,6 +30,10 @@ _devices_cache = None
 _devices_cache_ts = 0
 _CACHE_TTL = 30  # seconds
 
+# Cache for module UID storage (avoid repeated DB writes)
+_uid_store_cache = {}  # generator_id -> last_store_time
+_UID_STORE_INTERVAL = 300  # only update DB every 5 minutes per generator
+
 
 def _on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code == 0:
@@ -122,26 +126,6 @@ async def _process_message(msg):
 
     timestamp = datetime.now(timezone.utc).isoformat()
     now_ts = time.time()
-
-    # Store raw message for debugging
-    raw_doc = {
-        "id": str(uuid.uuid4()),
-        "topic": topic,
-        "payload": payload_str,
-        "timestamp": timestamp,
-    }
-    await _db.mqtt_raw_messages.insert_one(raw_doc)
-
-    # Trim old raw messages only every 100 messages (not every time)
-    _raw_msg_counter += 1
-    if _raw_msg_counter >= 100:
-        _raw_msg_counter = 0
-        count = await _db.mqtt_raw_messages.count_documents({})
-        if count > 500:
-            oldest = await _db.mqtt_raw_messages.find({}, {"_id": 1}).sort("timestamp", 1).limit(count - 500).to_list(count - 500)
-            if oldest:
-                ids = [d["_id"] for d in oldest]
-                await _db.mqtt_raw_messages.delete_many({"_id": {"$in": ids}})
 
     # Try to parse JSON payload
     parsed = None
@@ -302,14 +286,26 @@ async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
             pass
 
 
+# Throttle for status updates (avoid DB write every 5s for unchanged status)
+_status_cache = {}  # device_id -> (last_status, last_update_time)
+_STATUS_UPDATE_INTERVAL = 30  # only write status to DB every 30s if unchanged
+
+
 async def _process_status_device(device_id, raw_payload, timestamp):
     """Process status messages for a device."""
     status = "online" if "disconnected" not in raw_payload.lower() else "offline"
+
+    # Throttle: only write if status changed or interval elapsed
+    cached = _status_cache.get(device_id)
+    now = time.time()
+    if cached and cached[0] == status and now - cached[1] < _STATUS_UPDATE_INTERVAL:
+        return  # Skip - status unchanged and recently written
+    _status_cache[device_id] = (status, now)
+
     await _db.devices.update_one(
         {"id": device_id},
         {"$set": {"last_seen": timestamp, "mqtt_status": status}}
     )
-    # Also update the virtual generator entry
     await _db.generators.update_one(
         {"id": f"dev-{device_id}"},
         {"$set": {"last_seen": timestamp, "status": status}},
@@ -321,7 +317,7 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
     """Ingest MQTT telemetry for a device (Stromerzeuger/Lichtmast)."""
     generator_id = f"dev-{device_id}"
 
-    # Auto-extract module UID and topic prefix for control routing
+    # Auto-extract module UID and topic prefix for control routing (throttled)
     await _auto_store_module_uid(generator_id, topic)
 
     telemetry = {
@@ -342,27 +338,41 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
 
     await _db.generator_telemetry.insert_one(telemetry)
 
-    # Update device last_seen
-    await _db.devices.update_one(
-        {"id": device_id},
-        {"$set": {"last_seen": timestamp, "last_telemetry": timestamp, "mqtt_status": "online"}}
-    )
+    # Build merged snapshot: only update fields that have real values
+    snapshot_fields = {}
+    _TELEMETRY_KEYS = [
+        "voltage_l1", "voltage_l2", "voltage_l3",
+        "voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1",
+        "current_l1", "current_l2", "current_l3",
+        "frequency", "power_kw", "power_kva", "power_total_w",
+        "oil_pressure", "coolant_temp", "fuel_level", "battery_voltage",
+        "rpm", "engine_running", "hours_run", "engine_starts", "energy_kwh",
+        "load_percent", "power_factor", "dse_mode",
+    ]
+    for key in _TELEMETRY_KEYS:
+        val = telemetry.get(key)
+        if val is not None:
+            snapshot_fields[f"latest_snapshot.{key}"] = val
+    snapshot_fields["latest_snapshot.timestamp"] = timestamp
 
-    # Also update virtual generator status
-    gen_status = {"last_seen": timestamp}
+    # Single combined update for device
+    device_update = {"last_seen": timestamp, "last_telemetry": timestamp, "mqtt_status": "online"}
+    device_update.update(snapshot_fields)
+    await _db.devices.update_one({"id": device_id}, {"$set": device_update})
+
+    # Single combined update for virtual generator
+    gen_update = {"last_seen": timestamp}
     if telemetry.get("engine_running") is True or telemetry.get("rpm", 0) > 0:
-        gen_status["status"] = "running"
+        gen_update["status"] = "running"
     elif telemetry.get("engine_running") is False:
-        gen_status["status"] = "standby"
+        gen_update["status"] = "standby"
     else:
-        gen_status["status"] = "online"
+        gen_update["status"] = "online"
     dse_mode = telemetry.get("dse_mode")
     if dse_mode and dse_mode not in ("unknown", ""):
-        gen_status["last_dse_mode"] = dse_mode
-    await _db.generators.update_one(
-        {"id": f"dev-{device_id}"},
-        {"$set": gen_status}
-    )
+        gen_update["last_dse_mode"] = dse_mode
+    gen_update.update(snapshot_fields)
+    await _db.generators.update_one({"id": generator_id}, {"$set": gen_update})
 
     logger.info(f"MQTT: Telemetry stored for device {device_id} from topic {topic}")
 
@@ -404,24 +414,29 @@ def _extract_module_uid_from_topic(topic):
 
 async def _auto_store_module_uid(generator_id, topic):
     """Extract module UID and full topic prefix from MQTT topic.
-    Stores on both generator (if exists) and device (always exists)."""
+    Stores on both generator (if exists) and device (always exists).
+    Throttled to only write DB every 5 minutes per generator."""
+    now = time.time()
+    last = _uid_store_cache.get(generator_id, 0)
+    if now - last < _UID_STORE_INTERVAL:
+        return  # Recently stored, skip DB write
+
     uid, prefix = _extract_module_uid_from_topic(topic)
     if uid and _db:
         update = {"last_mqtt_module_uid": uid}
         if prefix:
             update["last_mqtt_topic_prefix"] = prefix
-        # Store on generator (may not exist for virtual generators)
         await _db.generators.update_one(
             {"id": generator_id},
             {"$set": update}
         )
-        # Also store on device (always exists for dev- generators)
         if generator_id.startswith("dev-"):
             device_id = generator_id[4:]
             await _db.devices.update_one(
                 {"id": device_id},
                 {"$set": update}
             )
+        _uid_store_cache[generator_id] = now
 
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):
@@ -503,7 +518,7 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
 
     await _db.generator_telemetry.insert_one(telemetry)
 
-    # Update generator status
+    # Build merged snapshot + status in a single update
     status_update = {"last_seen": timestamp}
     if telemetry.get("engine_running") is True or telemetry.get("rpm", 0) > 0:
         status_update["status"] = "running"
@@ -516,10 +531,25 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
         status_update["latitude"] = telemetry["gps_lat"]
         status_update["longitude"] = telemetry["gps_lng"]
 
-    # Derive DSE mode from control register if available
     dse_mode = telemetry.get("dse_mode")
     if dse_mode and dse_mode not in ("unknown", ""):
         status_update["last_dse_mode"] = dse_mode
+
+    # Merge telemetry fields into latest_snapshot (dot notation = partial update)
+    _SNAPSHOT_KEYS = [
+        "voltage_l1", "voltage_l2", "voltage_l3",
+        "voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1",
+        "current_l1", "current_l2", "current_l3",
+        "frequency", "power_kw", "power_kva", "power_total_w",
+        "oil_pressure", "coolant_temp", "fuel_level", "battery_voltage",
+        "rpm", "engine_running", "hours_run", "engine_starts", "energy_kwh",
+        "load_percent", "power_factor", "dse_mode",
+    ]
+    for key in _SNAPSHOT_KEYS:
+        val = telemetry.get(key)
+        if val is not None:
+            status_update[f"latest_snapshot.{key}"] = val
+    status_update["latest_snapshot.timestamp"] = timestamp
 
     await _db.generators.update_one({"id": generator_id}, {"$set": status_update})
 
