@@ -323,15 +323,10 @@ export default function GeneratorDetailPage() {
   const sendCommand = async (command, label) => {
     setCmdLoading(command);
     try {
-      const res = await api.post(`/mqtt/control/${id}`, { command });
-      toast.success(`${label} gesendet – warte auf Bestaetigung...`, { duration: 4000 });
-
-      // Schnelles Polling: 3x in 6 Sekunden nach Befehl für sofortiges Feedback
-      for (let i = 0; i < 3; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        await fetchData();
-      }
-      toast.success(`${label} ausgefuehrt`, { duration: 3000 });
+      await api.post(`/mqtt/control/${id}`, { command });
+      toast.success(`${label} gesendet`);
+      // Single refresh after 3 seconds (not aggressive polling)
+      setTimeout(fetchData, 3000);
     } catch (err) {
       const detail = err?.response?.data?.detail || "";
       if (detail.includes("MQTT client nicht verbunden")) {

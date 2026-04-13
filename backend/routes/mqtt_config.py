@@ -372,6 +372,20 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if not topic_prefix and device:
         topic_prefix = device.get("last_mqtt_topic_prefix", "")
 
+    # Fallback: find prefix from another device on same gateway (shared gateway PIN)
+    if not topic_prefix and module_uid:
+        other = await db.devices.find_one(
+            {"last_mqtt_topic_prefix": {"$exists": True, "$ne": ""}},
+            {"_id": 0, "last_mqtt_topic_prefix": 1}
+        )
+        if other:
+            # Extract gateway PIN from other device's prefix: eventenergie/32788/OTHER_UID
+            parts = other["last_mqtt_topic_prefix"].split("/")
+            if len(parts) >= 3:
+                # Replace the UID with our module_uid
+                parts[-1] = module_uid
+                topic_prefix = "/".join(parts)
+
     if module_uid:
         # Build control topic: use stored prefix if available (includes TYPE segment)
         if topic_prefix:
