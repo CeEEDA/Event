@@ -396,8 +396,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
             control_topic = f"eventenergie/{module_uid}/control"
 
         dse_cmd = DSE_COMMANDS[cmd.command]
-        # Function 3: nur Key senden – Gateway berechnet Complement automatisch
-        payload = json.dumps({"key": dse_cmd["key"]})
+        # Function 3: {"UID": {"K": control_key}} – Gateway berechnet Complement automatisch
+        payload = json.dumps({module_uid: {"K": dse_cmd["key"]}})
 
         try:
             success = publish_command(control_topic, payload)
@@ -465,8 +465,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         raise HTTPException(status_code=400, detail="Kein aktives Gerät gefunden. Gateway muss zuerst Daten senden.")
 
     dse_cmd = DSE_COMMANDS[cmd.command]
-    # Function 3: nur Key senden – Gateway berechnet Complement automatisch
-    payload = json.dumps({"key": dse_cmd["key"]})
+    # Function 3: {"UID": {"K": control_key}} – Gateway berechnet Complement automatisch
+    payload = json.dumps({uid: {"K": dse_cmd["key"]}})
 
     try:
         publish_command(control_topic, payload)
