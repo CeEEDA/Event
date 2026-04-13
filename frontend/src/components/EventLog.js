@@ -95,8 +95,7 @@ export default function EventLog({ generatorId, deviceId, compact = false }) {
       setLoading(false);
     };
     load();
-    const iv = setInterval(load, 30000);
-    return () => clearInterval(iv);
+    // No auto-refresh - events don't change frequently. Manual refresh via page navigation.
   }, [generatorId, deviceId, showMore, compact]);
 
   if (loading) return null;

@@ -781,13 +781,21 @@ async def start_mqtt_client(db_instance, loop):
             "username": "",
             "password": "",
             "use_tls": False,
-            "subscribe_topics": ["eventenergie/#", "dse/#", "DSEGateway4G/#", "#"],
+            "subscribe_topics": ["eventenergie/#", "dse/#", "DSEGateway4G/#"],
             "connection_status": "disconnected",
             "connection_message": "",
         }
         await _db.mqtt_config.insert_one(config)
         config.pop("_id", None)
         logger.info("MQTT: Default-Config erstellt (127.0.0.1:1883)")
+
+    # Remove '#' wildcard from subscribe_topics if present (causes duplicate messages)
+    topics = config.get("subscribe_topics", [])
+    if "#" in topics:
+        topics = [t for t in topics if t != "#"]
+        await _db.mqtt_config.update_one({}, {"$set": {"subscribe_topics": topics}})
+        config["subscribe_topics"] = topics
+        logger.info("MQTT: Removed '#' wildcard from subscribe_topics (reduces duplicates)")
 
     # Start the offline-checker background task
     asyncio.ensure_future(_offline_checker_loop())
