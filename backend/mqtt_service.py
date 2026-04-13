@@ -317,6 +317,30 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
     if not parsed or not isinstance(parsed, dict):
         return
 
+    # DSE Alarm Code Descriptions
+    DSE_ALARM_TEXTS = {
+        "A001": "Notaus (Emergency Stop)",
+        "A002": "Niedriger Oeldruck (Low Oil Pressure)",
+        "A003": "Hohe Kuehlwassertemperatur (High Temp)",
+        "A004": "Start fehlgeschlagen (Overcrank)",
+        "A005": "Unterspannung (Under Voltage)",
+        "A006": "Ueberspannung (Over Voltage)",
+        "A007": "Unterfrequenz (Under Frequency)",
+        "A008": "Ueberfrequenz (Over Frequency)",
+        "A009": "Ueberstrom (Over Current)",
+        "A010": "Ueberlast (Overload)",
+        "A011": "Kurzschluss (Short Circuit)",
+        "A012": "Erdschluss (Earth Fault)",
+        "A013": "Niedriger Kraftstoff (Low Fuel)",
+        "A014": "Niedrige Batteriespannung (Low Battery)",
+        "A015": "Hohe Batteriespannung (High Battery)",
+        "A016": "Lademaschine Fehler (Charge Fail)",
+        "A017": "Wartung faellig (Maintenance Due)",
+        "A018": "Sensor offen (Sensor Open)",
+        "A019": "Sensor kurzgeschlossen (Sensor Short)",
+        "A020": "CAN Kommunikationsfehler (CAN Comms)",
+    }
+
     # DSE 890 alarm format: {"UID": {"A001": 1, "A002": 0, ...}}
     # A-codes with value > 0 = active alarm
     active_alarms = []
@@ -336,23 +360,31 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
             {"id": generator_id},
             {"$set": {"status": "alarm", "last_seen": timestamp}}
         )
-        # Store each new alarm
+        # Also update device
+        if generator_id.startswith("dev-"):
+            await _db.devices.update_one(
+                {"id": generator_id[4:]},
+                {"$set": {"mqtt_status": "alarm", "last_seen": timestamp}}
+            )
+        # Store each new alarm with description
         for alarm_code in active_alarms:
             existing = await _db.generator_alarms.find_one(
                 {"generator_id": generator_id, "alarm_code": alarm_code, "resolved_at": None}
             )
             if not existing:
+                alarm_text = DSE_ALARM_TEXTS.get(alarm_code, f"DSE Alarm {alarm_code}")
+                severity = "shutdown" if alarm_code in ("A001", "A002", "A003", "A004") else "warning"
                 await _db.generator_alarms.insert_one({
                     "id": str(uuid.uuid4()),
                     "generator_id": generator_id,
                     "alarm_code": alarm_code,
-                    "alarm_text": f"DSE Alarm {alarm_code}",
-                    "severity": "alarm",
+                    "alarm_text": alarm_text,
+                    "severity": severity,
                     "timestamp": timestamp,
                     "acknowledged": False,
                     "resolved_at": None,
                 })
-        logger.info(f"MQTT: {len(active_alarms)} active alarms for {generator_id}: {active_alarms}")
+        logger.info(f"MQTT: {len(active_alarms)} active alarms for {generator_id}: {[DSE_ALARM_TEXTS.get(a, a) for a in active_alarms]}")
     else:
         # No active alarms - resolve all open alarms
         open_alarms = await _db.generator_alarms.count_documents(
@@ -362,6 +394,11 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
             await _db.generator_alarms.update_many(
                 {"generator_id": generator_id, "resolved_at": None},
                 {"$set": {"resolved_at": timestamp}}
+            )
+            # Reset status from alarm
+            await _db.generators.update_one(
+                {"id": generator_id},
+                {"$set": {"status": "online"}}
             )
             logger.info(f"MQTT: All alarms resolved for {generator_id}")
 
