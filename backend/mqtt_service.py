@@ -404,16 +404,24 @@ def _extract_module_uid_from_topic(topic):
 
 async def _auto_store_module_uid(generator_id, topic):
     """Extract module UID and full topic prefix from MQTT topic.
-    Stores both on the generator for control routing."""
+    Stores on both generator (if exists) and device (always exists)."""
     uid, prefix = _extract_module_uid_from_topic(topic)
     if uid and _db:
         update = {"last_mqtt_module_uid": uid}
         if prefix:
             update["last_mqtt_topic_prefix"] = prefix
+        # Store on generator (may not exist for virtual generators)
         await _db.generators.update_one(
             {"id": generator_id},
             {"$set": update}
         )
+        # Also store on device (always exists for dev- generators)
+        if generator_id.startswith("dev-"):
+            device_id = generator_id[4:]
+            await _db.devices.update_one(
+                {"id": device_id},
+                {"$set": update}
+            )
 
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):

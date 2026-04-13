@@ -366,7 +366,11 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
         module_uid = gen.get("dse_module_uid", "") or gen.get("last_mqtt_module_uid", "")
 
     # Get the full topic prefix (group/type/uid) from auto-detection
-    topic_prefix = (gen or {}).get("last_mqtt_topic_prefix", "")
+    topic_prefix = ""
+    if gen:
+        topic_prefix = gen.get("last_mqtt_topic_prefix", "")
+    if not topic_prefix and device:
+        topic_prefix = device.get("last_mqtt_topic_prefix", "")
 
     if module_uid:
         # Build control topic: use stored prefix if available (includes TYPE segment)
