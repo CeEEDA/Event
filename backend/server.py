@@ -1544,7 +1544,7 @@ async def download_dsel401_module():
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,28,2,0,,,,,,Gen L1 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,3,0,2,0,,,,,,Control write P3 R0-R1
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control
 """.strip()
     from starlette.responses import Response
     return Response(content=content, media_type="text/csv",
@@ -1686,7 +1686,7 @@ async def download_controller_topics(controller_type: str):
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,28,2,0,,,,,,Gen L1 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,10,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,3,0,2,0,,,,,,Control write P3 R0-R1
+%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,,,,,,,,,Control
 """.strip()
         from starlette.responses import Response
         return Response(content=content, media_type="text/csv",

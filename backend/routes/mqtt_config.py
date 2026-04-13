@@ -405,21 +405,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
             control_topic = f"eventenergie/{module_uid}/control"
 
         dse_cmd = DSE_COMMANDS[cmd.command]
-
-        # Detect L401 controller → use Page 3 Register 0-1 (different key/complement)
-        controller = ""
-        if device:
-            controller = (device.get("controller") or "").lower()
-        if not controller and gen:
-            controller = (gen.get("model") or gen.get("controller") or "").lower()
-
-        if "l401" in controller and cmd.command in L401_COMMANDS:
-            l401_cmd = L401_COMMANDS[cmd.command]
-            payload = json.dumps({module_uid: {"P003": {"R000": l401_cmd["key"], "R001": l401_cmd["complement"]}}})
-            dse_cmd = l401_cmd
-        else:
-            # Standard DSE: Page 16 Register 8-9 (System Control Key)
-            payload = json.dumps({module_uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
+        # GenComm: Page 16, Register 8-9 (Modbus 4104/4105) = System Control Key + Complement
+        payload = json.dumps({module_uid: {"P016": {"R008": dse_cmd["key"], "R009": dse_cmd["complement"]}}})
 
         try:
             success = publish_command(control_topic, payload)
