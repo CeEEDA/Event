@@ -565,6 +565,32 @@ async def _regenerate_passwd_file():
         with open(passwd_path, 'w', newline='\n') as f:
             f.write('\n'.join(lines) + '\n' if lines else '')
         logger.info(f"Mosquitto passwd aktualisiert: {len(lines)} User in {passwd_path}")
+
+        # Signal Mosquitto to reload password file (without restart)
+        import subprocess
+        try:
+            # mosquitto_passwd --reload or kill -HUP on Linux
+            # On Windows: restart mosquitto gracefully
+            import platform
+            if platform.system() == "Windows":
+                subprocess.run(["taskkill", "/f", "/im", "mosquitto.exe"],
+                               capture_output=True, timeout=5)
+                import time
+                time.sleep(1)
+                mosquitto_exe = r"C:\eventenergie\mosquitto\mosquitto.exe"
+                mosquitto_conf = r"C:\eventenergie\mosquitto\mosquitto.conf"
+                subprocess.Popen([mosquitto_exe, "-c", mosquitto_conf],
+                                 creationflags=0x00000008)  # DETACHED_PROCESS
+                logger.info("Mosquitto neugestartet nach Passwort-Aenderung")
+            else:
+                # Linux: send SIGHUP to reload config
+                result = subprocess.run(["pkill", "-HUP", "mosquitto"],
+                                        capture_output=True, timeout=5)
+                if result.returncode == 0:
+                    logger.info("Mosquitto SIGHUP gesendet (passwd reload)")
+        except Exception as e:
+            logger.warning(f"Mosquitto Reload fehlgeschlagen: {e} – bitte manuell neustarten")
+
         return True
     except Exception as e:
         logger.error(f"passwd-Datei schreiben fehlgeschlagen: {e}")
