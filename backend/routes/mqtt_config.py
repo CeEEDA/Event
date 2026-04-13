@@ -533,15 +533,25 @@ def _mosquitto_hash(password: str, iterations: int = 101) -> str:
 
 
 async def _regenerate_passwd_file():
-    """Regenerate the Mosquitto passwd file from all stored gateway credentials (generators + devices)."""
+    """Update the Mosquitto passwd file: keep existing entries, add/update from DB."""
     passwd_path = MOSQUITTO_PASSWD_FILE
     if not passwd_path:
-        logger.info("MOSQUITTO_PASSWD_FILE nicht konfiguriert – passwd-Datei wird nicht geschrieben")
+        logger.info("MOSQUITTO_PASSWD_FILE nicht konfiguriert")
         return False
 
-    lines = []
+    # Read existing entries first (preserve manually added ones)
+    existing = {}
+    try:
+        with open(passwd_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if ':' in line:
+                    user, pw = line.split(':', 1)
+                    existing[user] = pw
+    except FileNotFoundError:
+        pass
 
-    # Generators with MQTT credentials
+    # Add/update from DB (generators)
     generators = await db.generators.find(
         {"mqtt_username": {"$exists": True, "$ne": ""}},
         {"_id": 0, "mqtt_username": 1, "mqtt_password_hash": 1}
@@ -550,9 +560,9 @@ async def _regenerate_passwd_file():
         username = gen.get("mqtt_username", "")
         pw_hash = gen.get("mqtt_password_hash", "")
         if username and pw_hash:
-            lines.append(f"{username}:{pw_hash}")
+            existing[username] = pw_hash
 
-    # Devices (Stromerzeuger/Lichtmast) with MQTT credentials
+    # Add/update from DB (devices)
     devices = await db.devices.find(
         {"mqtt_username": {"$exists": True, "$ne": ""}},
         {"_id": 0, "mqtt_username": 1, "mqtt_password_hash": 1}
@@ -561,7 +571,9 @@ async def _regenerate_passwd_file():
         username = dev.get("mqtt_username", "")
         pw_hash = dev.get("mqtt_password_hash", "")
         if username and pw_hash:
-            lines.append(f"{username}:{pw_hash}")
+            existing[username] = pw_hash
+
+    lines = [f"{user}:{pw}" for user, pw in existing.items()]
 
     try:
         with open(passwd_path, 'w', newline='\n') as f:
