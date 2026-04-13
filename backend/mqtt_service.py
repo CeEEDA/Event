@@ -320,6 +320,38 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
     logger.info(f"MQTT: Telemetry stored for device {device_id} from topic {topic}")
 
 
+def _extract_module_uid_from_topic(topic):
+    """Extract the DSE module UID from an MQTT topic.
+    Topics: eventenergie/UIDHERE/engine, /32788/UIDHERE/engine, etc.
+    The UID is typically a hex string like '6D2B5CDE5F' or 'OS2NU8TZ'."""
+    parts = topic.strip("/").split("/")
+    # Skip known prefixes: eventenergie, dse, DSEGateway4G, numeric gateway IDs
+    skip_prefixes = {"eventenergie", "dse", "dsegateway4g"}
+    # Skip known suffixes: engine, gps, status, control, instrumentation
+    skip_suffixes = {"engine", "gps", "status", "control", "instrumentation",
+                     "alarms", "config", "events"}
+    for part in parts:
+        lower = part.lower()
+        if lower in skip_prefixes or lower in skip_suffixes:
+            continue
+        # Numeric gateway IDs (like 32788) are not UIDs
+        if part.isdigit():
+            continue
+        # UID is typically 6+ alphanumeric chars
+        if len(part) >= 6 and part.replace("-", "").replace("_", "").isalnum():
+            return part
+    return None
+
+
+async def _auto_store_module_uid(generator_id, topic):
+    """Extract module UID from MQTT topic and store on generator for control routing."""
+    uid = _extract_module_uid_from_topic(topic)
+    if uid and _db:
+        await _db.generators.update_one(
+            {"id": generator_id},
+            {"$set": {"last_mqtt_module_uid": uid}}
+        )
+
 
 async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp):
     """Convert MQTT data to telemetry and store it."""
@@ -333,6 +365,10 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
     if not gen:
         logger.warning(f"MQTT: Generator {generator_id} not found for topic {topic}")
         return
+
+    # Auto-extract module UID from topic and store on generator for control routing
+    # Topics look like: eventenergie/UIDHERE/engine or /32788/UIDHERE/engine
+    await _auto_store_module_uid(generator_id, topic)
 
     telemetry = {
         "id": str(uuid.uuid4()),

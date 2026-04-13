@@ -42,6 +42,8 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] **Backend Telemetry Sanitization**: New `_sanitize_telemetry()` in generators.py filters historical data exceeding field-specific thresholds (voltage>2000V, current>50kA, etc.)
 - [x] **Frontend Sentinel Safety Net**: `sanitizeValue()` function in GeneratorDetailPage.js filters values >10M and field-specific limits, MetricBox shows "–" for invalid values
 - [x] **Control Button Routing Fix**: Backend `send_generator_command()` now ALWAYS looks up device for `dev-` generators (was only looking up when generator doc missing). This enables DSE 890 MQTT control for device-based generators
+- [x] **Auto Module UID Detection**: When MQTT data arrives, the module UID is automatically extracted from the topic and stored as `last_mqtt_module_uid` on the generator. This enables control for ALL generators (direct + device-based) without manual UID configuration
+- [x] **Generator Direct Control**: Control path now checks `gen.dse_module_uid`, `gen.last_mqtt_module_uid`, AND `device.dse_module_uid` before falling back to legacy gateway mapping
 - [x] **Frontend Command Routing**: `sendCommand()` always routes through `/api/mqtt/control/{id}` – backend decides between MQTT (DSE 890) and Pi-Queue (DSE 5510)
 - [x] **DSE Mode Parsing**: `_parse_gencomm_registers()` now reads Page 7 (hours_run, energy_kwh, engine_starts), Page 6 (power_factor), Page 16 (dse_mode)
 - [x] **Haptic Button Feedback**: Buttons derive mode from `dse_mode` OR `generator.last_dse_mode` fallback

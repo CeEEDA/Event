@@ -360,7 +360,12 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
 
     # For devices with dse_module_uid, build control topic directly
     module_uid = device.get("dse_module_uid", "") if device else ""
-    if device and module_uid:
+
+    # Also check generator's own UID (set directly or auto-detected from MQTT)
+    if not module_uid and gen:
+        module_uid = gen.get("dse_module_uid", "") or gen.get("last_mqtt_module_uid", "")
+
+    if module_uid:
         control_topic = f"eventenergie/{module_uid}/control"
         dse_cmd = DSE_COMMANDS[cmd.command]
         # DSE Gencomm: Write System Control Key + Complement to Page 16, Offset 8+9
