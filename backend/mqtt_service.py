@@ -170,6 +170,9 @@ async def _process_message(msg):
             if topic.endswith("/status"):
                 await _process_status(generator_id, payload_str, timestamp)
                 return
+            if topic.endswith("/alarm"):
+                await _process_alarm(generator_id, payload_str, parsed, timestamp)
+                return
             await _ingest_telemetry(generator_id, topic, payload_str, parsed, timestamp)
             return
 
@@ -183,6 +186,9 @@ async def _process_message(msg):
                 return
             if topic.endswith("/status"):
                 await _process_status(gen["id"], payload_str, timestamp)
+                return
+            if topic.endswith("/alarm"):
+                await _process_alarm(gen["id"], payload_str, parsed, timestamp)
                 return
             await _ingest_telemetry(gen["id"], topic, payload_str, parsed, timestamp)
             return
@@ -200,6 +206,9 @@ async def _process_message(msg):
                 return
             if topic.endswith("/status"):
                 await _process_status_device(device_id, payload_str, timestamp)
+                return
+            if topic.endswith("/alarm"):
+                await _process_alarm(f"dev-{device_id}", payload_str, parsed, timestamp)
                 return
             await _ingest_telemetry_device(device_id, topic, payload_str, parsed, timestamp)
             return
@@ -258,6 +267,60 @@ async def _process_status(generator_id, raw_payload, timestamp):
         {"$set": {"last_seen": timestamp, "status": status}}
     )
     logger.debug(f"MQTT: Status '{raw_payload.strip()}' for generator {generator_id}")
+
+
+async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
+    """Process alarm messages from DSE Function 4."""
+    if not parsed or not isinstance(parsed, dict):
+        return
+
+    # DSE 890 alarm format: {"UID": {"A001": 1, "A002": 0, ...}}
+    # A-codes with value > 0 = active alarm
+    active_alarms = []
+    for uid_key, uid_data in parsed.items():
+        if isinstance(uid_data, dict):
+            for alarm_code, alarm_val in uid_data.items():
+                if isinstance(alarm_code, str) and alarm_code.startswith("A"):
+                    try:
+                        if int(alarm_val) > 0:
+                            active_alarms.append(alarm_code)
+                    except (ValueError, TypeError):
+                        pass
+
+    if active_alarms:
+        # Set generator status to alarm
+        await _db.generators.update_one(
+            {"id": generator_id},
+            {"$set": {"status": "alarm", "last_seen": timestamp}}
+        )
+        # Store each new alarm
+        for alarm_code in active_alarms:
+            existing = await _db.generator_alarms.find_one(
+                {"generator_id": generator_id, "alarm_code": alarm_code, "resolved_at": None}
+            )
+            if not existing:
+                await _db.generator_alarms.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "generator_id": generator_id,
+                    "alarm_code": alarm_code,
+                    "alarm_text": f"DSE Alarm {alarm_code}",
+                    "severity": "alarm",
+                    "timestamp": timestamp,
+                    "acknowledged": False,
+                    "resolved_at": None,
+                })
+        logger.info(f"MQTT: {len(active_alarms)} active alarms for {generator_id}: {active_alarms}")
+    else:
+        # No active alarms - resolve all open alarms
+        open_alarms = await _db.generator_alarms.count_documents(
+            {"generator_id": generator_id, "resolved_at": None}
+        )
+        if open_alarms > 0:
+            await _db.generator_alarms.update_many(
+                {"generator_id": generator_id, "resolved_at": None},
+                {"$set": {"resolved_at": timestamp}}
+            )
+            logger.info(f"MQTT: All alarms resolved for {generator_id}")
 
 
 async def _process_gps_device(device_id, raw_payload, parsed, timestamp):

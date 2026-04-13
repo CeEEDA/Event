@@ -466,6 +466,23 @@ export default function GeneratorDashboardPage() {
                         <span className="text-[10px] text-gray-400">{lastSeen}</span>
                       </div>
 
+                      {/* GPS Pin */}
+                      {gen.latitude && gen.longitude ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${gen.latitude},${gen.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 hover:text-blue-700 transition-colors flex-shrink-0"
+                          title="Standort anzeigen"
+                          data-testid={`gps-pin-${gen.serial_number || gen.id}`}
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </a>
+                      ) : (
+                        <div className="w-7 flex-shrink-0" />
+                      )}
+
                       <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
                     </div>
                   );
