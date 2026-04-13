@@ -149,7 +149,7 @@ async def _process_message(msg):
     if _devices_cache is None or now_ts - _devices_cache_ts > _CACHE_TTL:
         _devices_cache = await _db.devices.find(
             {"dse_module_uid": {"$exists": True, "$ne": ""}},
-            {"_id": 0, "id": 1, "dse_module_uid": 1}
+            {"_id": 0, "id": 1, "dse_module_uid": 1, "device_type": 1, "controller": 1}
         ).to_list(100)
         _devices_cache_ts = now_ts
 
@@ -372,10 +372,36 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             upsert=True
         )
 
-        # Only insert telemetry history record every 60 seconds (for charts/analysis)
+        # Determine insert interval based on device type and status
+        # Lichtmasten (L401): every 60 seconds
+        # Stromerzeuger in Betrieb: every 5 minutes
+        # Stromerzeuger offline/standby: skip insert
+        device_info = next((d for d in (_devices_cache or []) if d.get("id") == device_id), None)
+        device_type = (device_info or {}).get("device_type", "")
+        controller = (device_info or {}).get("controller", "")
+        is_lichtmast = device_type == "lichtmast" or "l401" in controller.lower()
+
         now = time.time()
         last_insert = _telemetry_insert_cache.get(generator_id, 0)
-        if now - last_insert >= _TELEMETRY_INSERT_INTERVAL:
+        should_insert = False
+
+        if is_lichtmast:
+            # Lichtmasten: every 60 seconds
+            if now - last_insert >= 60:
+                should_insert = True
+        else:
+            # Stromerzeuger: check if running
+            is_running = (
+                telemetry_data.get("engine_running") is True
+                or (telemetry_data.get("rpm") or 0) > 0
+                or gen_update.get("status") == "running"
+            )
+            if is_running and now - last_insert >= 300:
+                # In Betrieb: every 5 minutes
+                should_insert = True
+            # Offline/Standby: no insert (snapshot is still updated)
+
+        if should_insert:
             telemetry = {
                 "id": str(uuid.uuid4()),
                 "generator_id": generator_id,
