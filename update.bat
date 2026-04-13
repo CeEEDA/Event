@@ -150,10 +150,10 @@ echo.
 echo  [5/6] Frontend Build pruefen...
 cd /d "%LIVE_DIR%"
 
-:: Pruefen ob Frontend-Dateien geaendert wurden
+:: Pruefen ob Frontend-Dateien geaendert wurden (letzte 5 Commits pruefen)
 set "NEED_BUILD=0"
-for /f "delims=" %%i in ('git diff --name-only HEAD~1 HEAD 2^>nul') do (
-    echo %%i | findstr /i "^frontend\\ ^package.json ^yarn.lock ^craco" >nul 2>&1
+for /f "delims=" %%i in ('git diff --name-only HEAD~5 HEAD 2^>nul') do (
+    echo %%i | findstr /i "^frontend\\ ^package.json ^yarn.lock ^craco ^Caddyfile" >nul 2>&1
     if !errorlevel! equ 0 set "NEED_BUILD=1"
 )
 :: Kein Build-Ordner vorhanden = erster Build noetig
