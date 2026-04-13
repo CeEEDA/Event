@@ -296,7 +296,7 @@ export default function GeneratorDetailPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 1200000); // 20 Minuten
     return () => clearInterval(interval);
   }, [fetchData]);
 
