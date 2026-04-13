@@ -314,6 +314,11 @@ async def _process_status_device(device_id, raw_payload, timestamp):
     logger.debug(f"MQTT: Status for device {device_id}")
 
 
+# Throttle telemetry inserts (snapshot is always updated, but history only every 60s)
+_telemetry_insert_cache = {}  # generator_id -> last_insert_time
+_TELEMETRY_INSERT_INTERVAL = 60  # seconds - only insert history record every 60s
+
+
 async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timestamp):
     """Ingest MQTT telemetry for a device (Stromerzeuger/Lichtmast)."""
     generator_id = f"dev-{device_id}"
@@ -321,25 +326,13 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         # Auto-extract module UID and topic prefix for control routing (throttled)
         await _auto_store_module_uid(generator_id, topic)
 
-        telemetry = {
-            "id": str(uuid.uuid4()),
-            "generator_id": generator_id,
-            "device_id": device_id,
-            "timestamp": timestamp,
-            "source": "mqtt",
-            "raw_topic": topic,
-        }
-
+        telemetry_data = {}
         if isinstance(parsed, dict):
             gencomm_data = _parse_gencomm_registers(parsed, topic)
             if gencomm_data:
-                telemetry.update(gencomm_data)
-            else:
-                telemetry["raw_data"] = parsed
+                telemetry_data = gencomm_data
 
-        await _db.generator_telemetry.insert_one(telemetry)
-
-        # Build merged snapshot: only update fields that have real values
+        # Always update snapshot on device + generator (fast, no new documents)
         snapshot_fields = {}
         _TELEMETRY_KEYS = [
             "voltage_l1", "voltage_l2", "voltage_l3",
@@ -351,7 +344,7 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             "load_percent", "power_factor", "dse_mode",
         ]
         for key in _TELEMETRY_KEYS:
-            val = telemetry.get(key)
+            val = telemetry_data.get(key)
             if val is not None:
                 snapshot_fields[f"latest_snapshot.{key}"] = val
         snapshot_fields["latest_snapshot.timestamp"] = timestamp
@@ -363,13 +356,13 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
 
         # Single combined update for virtual generator
         gen_update = {"last_seen": timestamp}
-        if telemetry.get("engine_running") is True or telemetry.get("rpm", 0) > 0:
+        if telemetry_data.get("engine_running") is True or telemetry_data.get("rpm", 0) > 0:
             gen_update["status"] = "running"
-        elif telemetry.get("engine_running") is False:
+        elif telemetry_data.get("engine_running") is False:
             gen_update["status"] = "standby"
         else:
             gen_update["status"] = "online"
-        dse_mode = telemetry.get("dse_mode")
+        dse_mode = telemetry_data.get("dse_mode")
         if dse_mode and dse_mode not in ("unknown", ""):
             gen_update["last_dse_mode"] = dse_mode
         gen_update.update(snapshot_fields)
@@ -378,6 +371,22 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             {"$set": gen_update, "$setOnInsert": {"name": device_id, "source": "mqtt_auto"}},
             upsert=True
         )
+
+        # Only insert telemetry history record every 60 seconds (for charts/analysis)
+        now = time.time()
+        last_insert = _telemetry_insert_cache.get(generator_id, 0)
+        if now - last_insert >= _TELEMETRY_INSERT_INTERVAL:
+            telemetry = {
+                "id": str(uuid.uuid4()),
+                "generator_id": generator_id,
+                "device_id": device_id,
+                "timestamp": timestamp,
+                "source": "mqtt",
+                "raw_topic": topic,
+            }
+            telemetry.update(telemetry_data)
+            await _db.generator_telemetry.insert_one(telemetry)
+            _telemetry_insert_cache[generator_id] = now
 
         logger.info(f"MQTT: Telemetry stored for device {device_id} from topic {topic}")
     except Exception as e:
@@ -756,6 +765,15 @@ async def start_mqtt_client(db_instance, loop):
 
     # Start the offline-checker background task
     asyncio.ensure_future(_offline_checker_loop())
+
+    # Cleanup old telemetry records (keep last 30 days)
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        result = await _db.generator_telemetry.delete_many({"timestamp": {"$lt": cutoff}})
+        if result.deleted_count > 0:
+            logger.info(f"MQTT: Cleaned up {result.deleted_count} old telemetry records (>30 days)")
+    except Exception as e:
+        logger.warning(f"MQTT: Telemetry cleanup failed: {e}")
 
     if not config.get("enabled"):
         logger.info("MQTT: Not enabled in config - skipping")
