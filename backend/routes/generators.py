@@ -226,8 +226,10 @@ async def delete_demo_data(admin: dict = Depends(require_admin_user)):
 
 
 @router.delete("/cleanup-ghost-generators")
-async def cleanup_ghost_generators(user: dict = Depends(require_admin)):
+async def cleanup_ghost_generators(user: dict = Depends(get_authenticated_user)):
     """Delete auto-created ghost generators that have no matching device."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
     result = await db.generators.delete_many({"source": "mqtt_auto"})
     return {"message": f"{result.deleted_count} Geister-Generatoren geloescht"}
 
