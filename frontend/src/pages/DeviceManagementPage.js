@@ -1317,16 +1317,14 @@ function DeviceExpandedRow({ device, colSpan }) {
                 </div>
               </div>
 
-              {/* Meter Readings */}
+              {/* Meter Readings - only show if data exists */}
+              {info.readings.length > 0 && (
               <div className="flex items-start gap-3" data-testid="quick-info-readings">
                 <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
                   <Activity className="w-4 h-4 text-emerald-600" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Zählerstände</p>
-                  {info.readings.length === 0 ? (
-                    <p className="text-xs text-gray-400">Keine Messdaten vorhanden</p>
-                  ) : (
                     <div className="space-y-1">
                       {info.readings.map((r, i) => (
                         <div key={i}
@@ -1342,9 +1340,9 @@ function DeviceExpandedRow({ device, colSpan }) {
                         </div>
                       ))}
                     </div>
-                  )}
                 </div>
               </div>
+              )}
 
               {/* GPS Position */}
               {info.gps && info.gps.lat && info.gps.lon && (
