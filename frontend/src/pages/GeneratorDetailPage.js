@@ -569,17 +569,27 @@ export default function GeneratorDetailPage() {
           </div>
         )}
 
-        {/* Electrical Details */}
-        {t && (
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3" data-testid="electrical-details">
-            <MetricBox icon={Zap} label="U L1" value={t.voltage_l1} unit="V" field="voltage_l1" />
-            <MetricBox icon={Zap} label="U L2" value={t.voltage_l2} unit="V" field="voltage_l2" />
-            <MetricBox icon={Zap} label="U L3" value={t.voltage_l3} unit="V" field="voltage_l3" />
-            <MetricBox icon={Activity} label="I L1" value={t.current_l1} unit="A" field="current_l1" />
-            <MetricBox icon={Activity} label="I L2" value={t.current_l2} unit="A" field="current_l2" />
-            <MetricBox icon={Activity} label="I L3" value={t.current_l3} unit="A" field="current_l3" />
-          </div>
-        )}
+        {/* Electrical Details - hide L2/L3 for single-phase devices (Lichtmasten) */}
+        {t && (() => {
+          const isSinglePhase = (t.voltage_l2 === null || t.voltage_l2 === undefined) &&
+                                (t.voltage_l3 === null || t.voltage_l3 === undefined) &&
+                                (t.current_l2 === null || t.current_l2 === undefined);
+          return isSinglePhase ? (
+            <div className="grid grid-cols-2 md:grid-cols-2 gap-3" data-testid="electrical-details">
+              <MetricBox icon={Zap} label="Spannung" value={t.voltage_l1} unit="V" field="voltage_l1" />
+              <MetricBox icon={Activity} label="Strom" value={t.current_l1} unit="A" field="current_l1" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3" data-testid="electrical-details">
+              <MetricBox icon={Zap} label="U L1" value={t.voltage_l1} unit="V" field="voltage_l1" />
+              <MetricBox icon={Zap} label="U L2" value={t.voltage_l2} unit="V" field="voltage_l2" />
+              <MetricBox icon={Zap} label="U L3" value={t.voltage_l3} unit="V" field="voltage_l3" />
+              <MetricBox icon={Activity} label="I L1" value={t.current_l1} unit="A" field="current_l1" />
+              <MetricBox icon={Activity} label="I L2" value={t.current_l2} unit="A" field="current_l2" />
+              <MetricBox icon={Activity} label="I L3" value={t.current_l3} unit="A" field="current_l3" />
+            </div>
+          );
+        })()}
 
         {/* Engine Details */}
         {t && (
