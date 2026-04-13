@@ -418,6 +418,11 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
 
         # Single combined update for virtual generator
         gen_update = {"last_seen": timestamp}
+        # Enrich with device info (controller, serial_number) so frontend knows the type
+        device_info = next((d for d in (_devices_cache or []) if d.get("id") == device_id), None)
+        if device_info:
+            gen_update["model"] = device_info.get("controller", "")
+            gen_update["serial_number"] = device_info.get("serial_number", "")
         if telemetry_data.get("engine_running") is True or telemetry_data.get("rpm", 0) > 0:
             gen_update["status"] = "running"
         elif telemetry_data.get("engine_running") is False:
