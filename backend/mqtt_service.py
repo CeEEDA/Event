@@ -692,13 +692,17 @@ def _parse_gencomm_registers(parsed, topic):
     if valid(registers.get((4, 34))):
         result["power_kw"] = registers[(4, 34)] / 1000.0    # W -> kW
 
-    # Page 7: Run hours, kWh, starts
+    # Page 7: Run hours, kWh, starts (DSE 8610 etc.)
     if valid(registers.get((7, 0))):
         result["hours_run"] = registers[(7, 0)] / 10.0      # 0.1h -> h
     if valid(registers.get((7, 4))):
         result["energy_kwh"] = registers[(7, 4)]             # kWh
     if valid(registers.get((7, 6))):
         result["engine_starts"] = registers[(7, 6)]
+
+    # Page 3: Run hours for L401 (Register 15, 32-bit, 0.1h)
+    if not result.get("hours_run") and valid(registers.get((3, 15))):
+        result["hours_run"] = registers[(3, 15)] / 10.0      # 0.1h -> h
 
     # Page 6: Power factor
     if valid(registers.get((6, 0))):

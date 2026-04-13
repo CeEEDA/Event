@@ -294,11 +294,14 @@ export default function GeneratorDetailPage() {
     }
   };
 
+  // Normal: 20 Min Refresh. Nach Tastendruck: 2 Min einmalig, dann zurueck auf 20 Min.
+  const [refreshMs, setRefreshMs] = useState(1200000);
+
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // 30 Sekunden
+    const interval = setInterval(fetchData, refreshMs);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, refreshMs]);
 
   const handleAcknowledge = async (alarmId) => {
     try {
@@ -325,8 +328,10 @@ export default function GeneratorDetailPage() {
     try {
       await api.post(`/mqtt/control/${id}`, { command });
       toast.success(`${label} gesendet`);
-      // Single refresh after 3 seconds (not aggressive polling)
       setTimeout(fetchData, 3000);
+      // 2 Min schneller Refresh, dann zurueck auf 20 Min
+      setRefreshMs(120000);
+      setTimeout(() => setRefreshMs(1200000), 130000);
     } catch (err) {
       const detail = err?.response?.data?.detail || "";
       if (detail.includes("MQTT client nicht verbunden")) {
@@ -585,15 +590,25 @@ export default function GeneratorDetailPage() {
           );
         })()}
 
-        {/* Engine Details */}
-        {t && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="engine-details">
-            <MetricBox icon={RotateCcw} label="Drehzahl" value={t.rpm} unit="U/min" field="rpm" />
-            <MetricBox icon={Gauge} label="Öldruck" value={t.oil_pressure} unit="bar" field="oil_pressure" />
-            <MetricBox icon={Clock} label="Betriebsstunden" value={t.hours_run} unit="h" field="hours_run" />
-            <MetricBox icon={Activity} label="cos φ" value={t.power_factor} unit="" field="power_factor" />
-          </div>
-        )}
+        {/* Engine Details – L401: kein Öldruck, kein cos φ, kein Strom */}
+        {t && (() => {
+          const model = (generator.model || generator.controller || "").toLowerCase();
+          const isL401 = model.includes("l401");
+          return isL401 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3" data-testid="engine-details">
+              <MetricBox icon={RotateCcw} label="Drehzahl" value={t.rpm} unit="U/min" field="rpm" />
+              <MetricBox icon={Clock} label="Betriebsstunden" value={t.hours_run} unit="h" field="hours_run" />
+              <MetricBox icon={Fuel} label="Tankstand" value={t.fuel_level} unit="%" color={sanitizeValue(t.fuel_level, "fuel_level") < 25 ? "text-red-500" : "text-gray-900"} field="fuel_level" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="engine-details">
+              <MetricBox icon={RotateCcw} label="Drehzahl" value={t.rpm} unit="U/min" field="rpm" />
+              <MetricBox icon={Gauge} label="Öldruck" value={t.oil_pressure} unit="bar" field="oil_pressure" />
+              <MetricBox icon={Clock} label="Betriebsstunden" value={t.hours_run} unit="h" field="hours_run" />
+              <MetricBox icon={Activity} label="cos φ" value={t.power_factor} unit="" field="power_factor" />
+            </div>
+          );
+        })()}
 
         {/* Active Alarms */}
         {alarms.length > 0 && (
