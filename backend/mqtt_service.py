@@ -309,6 +309,7 @@ async def _process_status_device(device_id, raw_payload, timestamp):
     await _db.generators.update_one(
         {"id": f"dev-{device_id}"},
         {"$set": {"last_seen": timestamp, "status": status}},
+        upsert=True
     )
     logger.debug(f"MQTT: Status for device {device_id}")
 
@@ -372,7 +373,12 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
     if dse_mode and dse_mode not in ("unknown", ""):
         gen_update["last_dse_mode"] = dse_mode
     gen_update.update(snapshot_fields)
-    await _db.generators.update_one({"id": generator_id}, {"$set": gen_update})
+    # upsert=True: create virtual generator doc if it doesn't exist yet
+    await _db.generators.update_one(
+        {"id": generator_id},
+        {"$set": gen_update, "$setOnInsert": {"id": generator_id, "name": device_id, "source": "mqtt_auto"}},
+        upsert=True
+    )
 
     logger.info(f"MQTT: Telemetry stored for device {device_id} from topic {topic}")
 
@@ -428,7 +434,8 @@ async def _auto_store_module_uid(generator_id, topic):
             update["last_mqtt_topic_prefix"] = prefix
         await _db.generators.update_one(
             {"id": generator_id},
-            {"$set": update}
+            {"$set": update},
+            upsert=True
         )
         if generator_id.startswith("dev-"):
             device_id = generator_id[4:]
