@@ -235,9 +235,16 @@ async def cleanup_ghost_generators(user: dict = Depends(require_admin)):
 async def list_generators(user: dict = Depends(get_authenticated_user)):
     if user["role"] == "admin":
         generators = await db.generators.find(
-            {"source": {"$ne": "mqtt_auto"}},
+            {},
             {"_id": 0}
         ).to_list(1000)
+        # Filter out ghost generators: auto-created without serial_number and no matching device
+        real_gens = []
+        for g in generators:
+            if g.get("source") == "mqtt_auto" and not g.get("serial_number"):
+                continue  # Skip ghost
+            real_gens.append(g)
+        generators = real_gens
     else:
         # Check generator_monitoring permissions
         apps = user.get("apps", {})

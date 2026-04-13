@@ -277,8 +277,8 @@ export default function GeneratorDashboardPage() {
   const filtered = generators.filter((g) => {
     const matchSearch =
       !search ||
-      g.name.toLowerCase().includes(search.toLowerCase()) ||
-      g.serial_number.toLowerCase().includes(search.toLowerCase()) ||
+      (g.name || "").toLowerCase().includes(search.toLowerCase()) ||
+      (g.serial_number || "").toLowerCase().includes(search.toLowerCase()) ||
       (g.location_name || "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || g.status === statusFilter || (statusFilter === "standby" && g.status === "online");
     return matchSearch && matchStatus;
