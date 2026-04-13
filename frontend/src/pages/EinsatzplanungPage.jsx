@@ -23,13 +23,16 @@ function getWeekKey(date) {
 
 function getWeekDates(weekKey) {
   const [y, w] = weekKey.split("-W").map(Number);
-  const jan4 = new Date(y, 0, 4);
+  const jan4 = new Date(y, 0, 4, 12, 0, 0); // noon to avoid timezone issues
   const monday = new Date(jan4);
   monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (w - 1) * 7);
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    return d.toISOString().split("T")[0];
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${yr}-${mo}-${da}`;
   });
 }
 
