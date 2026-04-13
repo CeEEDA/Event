@@ -289,9 +289,9 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
             # Determine status from device's mqtt_status or last_seen
-            dev_status = dev.get("mqtt_status", "standby")
-            if dev_status not in ("online", "offline", "running"):
-                dev_status = "standby"
+            dev_status = dev.get("mqtt_status", "offline")
+            if dev_status not in ("online", "offline", "running", "standby", "alarm"):
+                dev_status = "offline"
             # Create a virtual generator entry from the device
             vg = {
                 "id": f"dev-{dev['id']}",
