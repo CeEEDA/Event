@@ -389,11 +389,11 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
 
   const handleDownloadModuleTopics = () => {
     if (!controller || !topicInfo) return;
-    window.open(`${BACKEND_URL}/api/download-controller-topics/${encodeURIComponent(controller)}`, "_blank");
+    window.open(`${BACKEND_URL}/api/download-controller-topics/${encodeURIComponent(controller)}?t=${Date.now()}`, "_blank");
   };
 
   const handleDownloadGatewayTopics = () => {
-    window.open(`${BACKEND_URL}/api/download-dse890-gateway-topics`, "_blank");
+    window.open(`${BACKEND_URL}/api/download-dse890-gateway-topics?t=${Date.now()}`, "_blank");
   };
 
   return (
