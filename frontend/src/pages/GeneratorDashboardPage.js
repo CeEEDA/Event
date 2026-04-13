@@ -266,7 +266,7 @@ export default function GeneratorDashboardPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 1200000); // 20 Min
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -282,6 +282,14 @@ export default function GeneratorDashboardPage() {
       (g.location_name || "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || g.status === statusFilter || (statusFilter === "standby" && g.status === "online");
     return matchSearch && matchStatus;
+  });
+
+  // Sort: Alarm/Warning first, then running/online/standby, then offline
+  const statusPriority = { alarm: 0, warning: 1, running: 2, online: 3, standby: 4, offline: 5 };
+  const sorted = [...filtered].sort((a, b) => {
+    const pa = statusPriority[a.status] ?? 9;
+    const pb = statusPriority[b.status] ?? 9;
+    return pa - pb;
   });
 
   if (loading) {
@@ -404,10 +412,10 @@ export default function GeneratorDashboardPage() {
           </div>
         )}
 
-        {/* Grid View */}
+        {/* List View */}
         {viewMode === "grid" && (
           <>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <div className="text-center py-20">
                 <Activity className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 mb-4">
@@ -415,15 +423,53 @@ export default function GeneratorDashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="generator-grid">
-                {filtered.map((gen) => (
-                  <GeneratorCard
-                    key={gen.id}
-                    generator={gen}
-                    onClick={() => navigate(`/generators/${gen.id}`)}
-                    canControl={user?.role === "admin" || user?.role === "mitarbeiter"}
-                  />
-                ))}
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="generator-list">
+                {sorted.map((gen, idx) => {
+                  const s = statusConfig[gen.status] || statusConfig.offline;
+                  const t = gen.latest_telemetry;
+                  const lastSeen = gen.last_seen ? new Date(gen.last_seen).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "–";
+                  return (
+                    <div
+                      key={gen.id}
+                      onClick={() => navigate(`/generators/${gen.id}`)}
+                      className={`flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${idx > 0 ? "border-t border-gray-100" : ""} ${gen.status === "alarm" || gen.status === "warning" ? "bg-red-50/50" : ""}`}
+                      data-testid={`generator-row-${gen.serial_number || gen.id}`}
+                    >
+                      {/* Status Dot */}
+                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.color}`} title={s.label} />
+
+                      {/* Name + Model */}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{gen.serial_number || gen.name}</p>
+                        <p className="text-xs text-gray-400 truncate">{gen.model || gen.location_name || "–"}</p>
+                      </div>
+
+                      {/* Telemetry Values */}
+                      <div className="hidden md:flex items-center gap-6 text-xs font-mono text-gray-600 flex-shrink-0">
+                        {t?.power_kw != null && (
+                          <span className="text-fuchsia-600 font-semibold">{Math.round(t.power_kw * 10) / 10} kW</span>
+                        )}
+                        {t?.voltage_l1 != null && (
+                          <span>{Math.round(t.voltage_l1 * 10) / 10} V</span>
+                        )}
+                        {t?.frequency != null && (
+                          <span>{Math.round(t.frequency * 10) / 10} Hz</span>
+                        )}
+                        {t?.fuel_level != null && (
+                          <span className={t.fuel_level < 25 ? "text-red-500" : ""}>{Math.round(t.fuel_level)}% Tank</span>
+                        )}
+                      </div>
+
+                      {/* Status + Time */}
+                      <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                        <span className={`text-[10px] font-medium ${s.textColor}`}>{s.label}</span>
+                        <span className="text-[10px] text-gray-400">{lastSeen}</span>
+                      </div>
+
+                      <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
