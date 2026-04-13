@@ -298,16 +298,47 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
             g.pop("api_key", None)
 
     # Attach latest telemetry and service warning for each generator
-    # Latest telemetry per generator — einzelne Index-Lookups statt Aggregation
-    # (Aggregation wuerde alle Telemetrie-Docs im RAM sortieren!)
+    # Merge recent records (engine + generator come as separate MQTT messages)
     gen_ids = [g["id"] for g in generators]
     tel_map = {}
+    telemetry_fields = {
+        "voltage_l1", "voltage_l2", "voltage_l3",
+        "voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1",
+        "current_l1", "current_l2", "current_l3",
+        "frequency", "power_kw", "power_kva", "power_total_w",
+        "power_l1_w", "power_l2_w", "power_l3_w",
+        "oil_pressure", "coolant_temp", "fuel_level", "battery_voltage",
+        "rpm", "engine_running", "hours_run", "engine_starts", "energy_kwh",
+        "load_percent", "power_factor", "dse_mode",
+        "oil_pressure_kpa", "coolant_temp_c", "fuel_level_pct",
+        "engine_run_hours", "power_factor_avg",
+    }
     for gid in gen_ids:
-        doc = await db.generator_telemetry.find_one(
+        recent = await db.generator_telemetry.find(
             {"generator_id": gid}, {"_id": 0}, sort=[("timestamp", -1)]
-        )
-        if doc:
-            tel_map[gid] = doc
+        ).limit(10).to_list(10)
+        if recent:
+            latest_ts = recent[0].get("timestamp", "")
+            merged = {}
+            for doc in reversed(recent):
+                doc_ts = doc.get("timestamp", "")
+                if latest_ts and doc_ts:
+                    try:
+                        t1 = datetime.fromisoformat(latest_ts.replace("Z", "+00:00"))
+                        t2 = datetime.fromisoformat(doc_ts.replace("Z", "+00:00"))
+                        if abs((t1 - t2).total_seconds()) > 60:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                for field in telemetry_fields:
+                    val = doc.get(field)
+                    if val is not None:
+                        merged[field] = val
+            result = dict(recent[0])
+            for field, val in merged.items():
+                if result.get(field) is None:
+                    result[field] = val
+            tel_map[gid] = result
 
     # Batch-load devices by serial_number
     serial_numbers_all = list({g.get("serial_number") for g in generators if g.get("serial_number")})
@@ -453,12 +484,53 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
     if user["role"] != "admin":
         gen.pop("api_key", None)
 
-    # Attach latest telemetry
-    latest = await db.generator_telemetry.find_one(
+    # Attach latest telemetry - merge recent records (engine + generator come as separate MQTT messages)
+    recent_docs = await db.generator_telemetry.find(
         {"generator_id": generator_id},
         {"_id": 0},
         sort=[("timestamp", -1)]
-    )
+    ).limit(10).to_list(10)
+
+    latest = None
+    if recent_docs:
+        # Merge: start with oldest, overlay newer → newest fields win
+        # But we want ALL telemetry fields from recent records (within 60s of latest)
+        latest_ts = recent_docs[0].get("timestamp", "")
+        merged = {}
+        telemetry_fields = {
+            "voltage_l1", "voltage_l2", "voltage_l3",
+            "voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1",
+            "current_l1", "current_l2", "current_l3",
+            "frequency", "power_kw", "power_kva", "power_total_w",
+            "power_l1_w", "power_l2_w", "power_l3_w",
+            "oil_pressure", "coolant_temp", "fuel_level", "battery_voltage",
+            "rpm", "engine_running", "hours_run", "engine_starts", "energy_kwh",
+            "load_percent", "power_factor", "dse_mode",
+            "oil_pressure_kpa", "coolant_temp_c", "fuel_level_pct",
+            "engine_run_hours", "power_factor_avg", "power_total_w",
+        }
+        for doc in reversed(recent_docs):
+            # Only merge records within 60s of the latest
+            doc_ts = doc.get("timestamp", "")
+            if latest_ts and doc_ts:
+                try:
+                    t1 = datetime.fromisoformat(latest_ts.replace("Z", "+00:00"))
+                    t2 = datetime.fromisoformat(doc_ts.replace("Z", "+00:00"))
+                    if abs((t1 - t2).total_seconds()) > 60:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            for field in telemetry_fields:
+                val = doc.get(field)
+                if val is not None:
+                    merged[field] = val
+        # Copy metadata from the newest record
+        latest = dict(recent_docs[0])
+        # Overlay merged telemetry fields
+        for field, val in merged.items():
+            if latest.get(field) is None:
+                latest[field] = val
+
     # Sanitize telemetry: remove DSE sentinel values that may have been stored historically
     if latest:
         _sanitize_telemetry(latest)
