@@ -145,26 +145,9 @@ goto :pip_done
 :pip_done
 echo   Python-Pakete aktualisiert.
 
-:: ====== 5. Frontend Build (Smart: nur wenn Frontend-Dateien geaendert) ======
+:: ====== 5. Frontend Build ======
 echo.
-echo  [5/6] Frontend Build pruefen...
-cd /d "%LIVE_DIR%"
-
-:: Pruefen ob Frontend-Dateien geaendert wurden (letzte 5 Commits pruefen)
-set "NEED_BUILD=0"
-for /f "delims=" %%i in ('git diff --name-only HEAD~5 HEAD 2^>nul') do (
-    echo %%i | findstr /i "^frontend\\ ^package.json ^yarn.lock ^craco ^Caddyfile" >nul 2>&1
-    if !errorlevel! equ 0 set "NEED_BUILD=1"
-)
-:: Kein Build-Ordner vorhanden = erster Build noetig
-if not exist "%LIVE_DIR%\frontend\build" set "NEED_BUILD=1"
-
-if "!NEED_BUILD!"=="0" (
-    echo   Nur Backend-Aenderungen erkannt - Frontend Build uebersprungen!
-    goto :build_done
-)
-
-echo   Frontend-Aenderungen erkannt - Build wird erstellt...
+echo  [5/6] Frontend Build erstellen...
 cd /d "%LIVE_DIR%\frontend"
 
 where yarn >nul 2>&1
