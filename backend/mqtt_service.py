@@ -368,8 +368,7 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         gen_update.update(snapshot_fields)
         await _db.generators.update_one(
             {"id": generator_id},
-            {"$set": gen_update, "$setOnInsert": {"name": device_id, "source": "mqtt_auto"}},
-            upsert=True
+            {"$set": gen_update}
         )
 
         # Determine insert interval based on device type and status

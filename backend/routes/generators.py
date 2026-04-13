@@ -225,10 +225,19 @@ async def delete_demo_data(admin: dict = Depends(require_admin_user)):
     }
 
 
+@router.delete("/cleanup-ghost-generators")
+async def cleanup_ghost_generators(user: dict = Depends(require_admin)):
+    """Delete auto-created ghost generators that have no matching device."""
+    result = await db.generators.delete_many({"source": "mqtt_auto"})
+    return {"message": f"{result.deleted_count} Geister-Generatoren geloescht"}
+
 @router.get("")
 async def list_generators(user: dict = Depends(get_authenticated_user)):
     if user["role"] == "admin":
-        generators = await db.generators.find({}, {"_id": 0}).to_list(1000)
+        generators = await db.generators.find(
+            {"source": {"$ne": "mqtt_auto"}},
+            {"_id": 0}
+        ).to_list(1000)
     else:
         # Check generator_monitoring permissions
         apps = user.get("apps", {})
