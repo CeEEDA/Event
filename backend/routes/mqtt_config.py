@@ -518,7 +518,7 @@ async def get_control_log(generator_id: str, user: dict = Depends(require_operat
 
 # ============== Gateway MQTT Credentials ==============
 
-MOSQUITTO_PASSWD_FILE = r"C:\eventenergie\mosquitto_passwd"
+MOSQUITTO_PASSWD_FILE = r"C:\Program Files\Mosquitto\passwd"
 MOSQUITTO_EXE = r"C:\Program Files\Mosquitto\mosquitto.exe"
 MOSQUITTO_CONF = r"C:\Program Files\Mosquitto\mosquitto.conf"
 
