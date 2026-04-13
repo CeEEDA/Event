@@ -50,7 +50,7 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] **DSE Mode Parsing**: `_parse_gencomm_registers()` now reads Page 7 (hours_run, energy_kwh, engine_starts), Page 6 (power_factor), Page 16 (dse_mode)
 - [x] **Haptic Button Feedback**: Buttons derive mode from `dse_mode` OR `generator.last_dse_mode` fallback
 - [x] **MQTT Telemetry Enhancement**: Both `_ingest_telemetry` and `_ingest_telemetry_device` now update `last_dse_mode` on generator document
-- [x] **HTTP 503 for MQTT errors**: Control commands return 503 (Service Unavailable) when MQTT not connected
+- [x] **MQTT Performance Fix**: Added message deduplication (overlapping subscriptions caused 2x processing), cached DB lookups (mappings/generators/devices refreshed every 30s instead of per-message), reduced raw message trimming (every 100 msgs instead of every msg). This prevented event loop starvation that blocked HTTP login requests.
 
 ## Recent Changes (2026-04-12)
 - [x] GiroCode Fallback: IBAN/BIC hardcoded als Default (funktioniert auch ohne .env)

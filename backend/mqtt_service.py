@@ -4,6 +4,7 @@ import logging
 import asyncio
 import threading
 import uuid
+import time
 from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -14,6 +15,20 @@ _mqtt_client = None
 _mqtt_thread = None
 _db = None
 _loop = None
+
+# Deduplication: prevent processing same message twice (overlapping subscriptions)
+_dedup_cache = {}  # topic -> (timestamp, payload_hash)
+_dedup_ttl = 2.0   # seconds
+_raw_msg_counter = 0  # for periodic trimming
+
+# Cache for DB lookups (refreshed periodically)
+_mappings_cache = None
+_mappings_cache_ts = 0
+_generators_cache = None
+_generators_cache_ts = 0
+_devices_cache = None
+_devices_cache_ts = 0
+_CACHE_TTL = 30  # seconds
 
 
 def _on_connect(client, userdata, flags, reason_code, properties=None):
@@ -47,7 +62,21 @@ def _on_disconnect(client, userdata, flags, reason_code, properties=None):
 
 
 def _on_message(client, userdata, msg):
-    logger.info(f"MQTT: Message received on topic '{msg.topic}' ({len(msg.payload)} bytes)")
+    # Deduplicate: skip if same topic received within TTL (overlapping subscriptions)
+    now = time.time()
+    topic = msg.topic
+    payload_hash = hash(msg.payload)
+    key = (topic, payload_hash)
+    if key in _dedup_cache and now - _dedup_cache[key] < _dedup_ttl:
+        return  # Skip duplicate
+    _dedup_cache[key] = now
+    # Clean old dedup entries every ~50 messages
+    if len(_dedup_cache) > 200:
+        cutoff = now - _dedup_ttl * 2
+        expired = [k for k, ts in _dedup_cache.items() if ts < cutoff]
+        for k in expired:
+            del _dedup_cache[k]
+    logger.info(f"MQTT: Message on '{msg.topic}' ({len(msg.payload)} bytes)")
     try:
         asyncio.run_coroutine_threadsafe(_process_message(msg), _loop)
     except Exception as e:
@@ -82,6 +111,9 @@ async def _subscribe_all(client):
 
 async def _process_message(msg):
     """Process an incoming MQTT message and store it."""
+    global _raw_msg_counter, _mappings_cache, _mappings_cache_ts
+    global _generators_cache, _generators_cache_ts, _devices_cache, _devices_cache_ts
+
     topic = msg.topic
     try:
         payload_str = msg.payload.decode("utf-8")
@@ -89,8 +121,9 @@ async def _process_message(msg):
         payload_str = msg.payload.hex()
 
     timestamp = datetime.now(timezone.utc).isoformat()
+    now_ts = time.time()
 
-    # Store raw message for debugging (keep last 500)
+    # Store raw message for debugging
     raw_doc = {
         "id": str(uuid.uuid4()),
         "topic": topic,
@@ -99,13 +132,16 @@ async def _process_message(msg):
     }
     await _db.mqtt_raw_messages.insert_one(raw_doc)
 
-    # Trim old raw messages (keep last 500)
-    count = await _db.mqtt_raw_messages.count_documents({})
-    if count > 500:
-        oldest = await _db.mqtt_raw_messages.find({}, {"_id": 1}).sort("timestamp", 1).limit(count - 500).to_list(count - 500)
-        if oldest:
-            ids = [d["_id"] for d in oldest]
-            await _db.mqtt_raw_messages.delete_many({"_id": {"$in": ids}})
+    # Trim old raw messages only every 100 messages (not every time)
+    _raw_msg_counter += 1
+    if _raw_msg_counter >= 100:
+        _raw_msg_counter = 0
+        count = await _db.mqtt_raw_messages.count_documents({})
+        if count > 500:
+            oldest = await _db.mqtt_raw_messages.find({}, {"_id": 1}).sort("timestamp", 1).limit(count - 500).to_list(count - 500)
+            if oldest:
+                ids = [d["_id"] for d in oldest]
+                await _db.mqtt_raw_messages.delete_many({"_id": {"$in": ids}})
 
     # Try to parse JSON payload
     parsed = None
@@ -114,9 +150,27 @@ async def _process_message(msg):
     except (json.JSONDecodeError, ValueError):
         pass
 
+    # Cached DB lookups (refresh every CACHE_TTL seconds)
+    if _mappings_cache is None or now_ts - _mappings_cache_ts > _CACHE_TTL:
+        _mappings_cache = await _db.mqtt_gateway_mappings.find({}, {"_id": 0}).to_list(100)
+        _mappings_cache_ts = now_ts
+
+    if _generators_cache is None or now_ts - _generators_cache_ts > _CACHE_TTL:
+        _generators_cache = await _db.generators.find(
+            {"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}},
+            {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1}
+        ).to_list(100)
+        _generators_cache_ts = now_ts
+
+    if _devices_cache is None or now_ts - _devices_cache_ts > _CACHE_TTL:
+        _devices_cache = await _db.devices.find(
+            {"dse_module_uid": {"$exists": True, "$ne": ""}},
+            {"_id": 0, "id": 1, "dse_module_uid": 1}
+        ).to_list(100)
+        _devices_cache_ts = now_ts
+
     # Try to match this message to a generator via topic mappings
-    mappings = await _db.mqtt_gateway_mappings.find({}, {"_id": 0}).to_list(100)
-    for mapping in mappings:
+    for mapping in _mappings_cache:
         topic_prefix = mapping.get("topic_prefix", "").strip()
         generator_id = mapping.get("generator_id")
 
@@ -126,20 +180,17 @@ async def _process_message(msg):
         # Match by topic prefix
         if topic_prefix and topic.startswith(topic_prefix):
             logger.info(f"MQTT: Matched via gateway mapping (prefix='{topic_prefix}', gen={generator_id})")
-            # Handle GPS topic separately (DSE890 gateway GPS)
             if topic.endswith("/gps"):
                 await _process_gps(generator_id, payload_str, parsed, timestamp)
                 return
-            # Handle status topic - only update online status, don't store as telemetry
             if topic.endswith("/status"):
                 await _process_status(generator_id, payload_str, timestamp)
                 return
             await _ingest_telemetry(generator_id, topic, payload_str, parsed, timestamp)
             return
 
-    # Also check if any generator has a dse_mqtt_topic_prefix that matches
-    generators = await _db.generators.find({"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}}, {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1}).to_list(100)
-    for gen in generators:
+    # Check generators with dse_mqtt_topic_prefix
+    for gen in _generators_cache:
         prefix = gen.get("dse_mqtt_topic_prefix", "").strip()
         if prefix and topic.startswith(prefix):
             logger.info(f"MQTT: Matched via generator prefix (prefix='{prefix}', gen={gen['id']})")
@@ -155,15 +206,7 @@ async def _process_message(msg):
     # Check devices collection for dse_module_uid match (auto-mapping)
     topic_parts = topic.split("/")
     topic_parts_upper = [p.strip().upper() for p in topic_parts]
-    devices = await _db.devices.find(
-        {"dse_module_uid": {"$exists": True, "$ne": ""}},
-        {"_id": 0, "id": 1, "dse_module_uid": 1}
-    ).to_list(100)
-    if not devices:
-        logger.info(f"MQTT: Kein Geraet mit dse_module_uid gefunden. Topic: {topic}")
-    else:
-        logger.debug(f"MQTT: {len(devices)} Geraete mit dse_module_uid, pruefe topic_parts={topic_parts}")
-    for dev in devices:
+    for dev in _devices_cache:
         uid = dev.get("dse_module_uid", "").strip()
         if uid and uid.upper() in topic_parts_upper:
             device_id = dev["id"]
@@ -177,9 +220,9 @@ async def _process_message(msg):
             await _ingest_telemetry_device(device_id, topic, payload_str, parsed, timestamp)
             return
 
-    # No mapping found - log for discovery with UID details
-    stored_uids = [d.get("dse_module_uid", "") for d in devices] if devices else []
-    logger.info(f"MQTT: Unmatched topic '{topic}' | topic_parts={topic_parts} | stored_uids={stored_uids}")
+    # No mapping found - log for discovery (reduced frequency)
+    stored_uids = [d.get("dse_module_uid", "") for d in _devices_cache] if _devices_cache else []
+    logger.debug(f"MQTT: Unmatched topic '{topic}' | stored_uids={stored_uids}")
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
