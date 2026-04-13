@@ -323,15 +323,23 @@ export default function GeneratorDetailPage() {
     }
   };
 
+  // Track pending command for button blink animation
+  const [pendingCmd, setPendingCmd] = useState(null);
+
   const sendCommand = async (command, label) => {
     setCmdLoading(command);
     try {
       await api.post(`/mqtt/control/${id}`, { command });
       toast.success(`${label} gesendet`);
+      setPendingCmd(command); // Start blinking
       setTimeout(fetchData, 3000);
       // 2 Min schneller Refresh, dann zurueck auf 20 Min
       setRefreshMs(120000);
-      setTimeout(() => setRefreshMs(1200000), 130000);
+      setTimeout(() => {
+        setRefreshMs(1200000);
+        setPendingCmd(null); // Stop blinking after 2 min
+        fetchData();
+      }, 120000);
     } catch (err) {
       const detail = err?.response?.data?.detail || "";
       if (detail.includes("MQTT client nicht verbunden")) {
@@ -411,7 +419,11 @@ export default function GeneratorDetailPage() {
           const is5510 = model.includes("5510");
           const canWrite = true; // FC16 @4104 funktioniert (DSE antwortet mit FC03 Read-Back)
 
-          const DseImgBtn = ({ cmd, label, imgSrc, size = 64, disabled = false, active = false, glowColor = null }) => (
+          const DseImgBtn = ({ cmd, label, imgSrc, size = 64, disabled = false, active = false, glowColor = null }) => {
+            const isPending = pendingCmd === cmd;
+            const showActive = active || isPending;
+            const effectiveGlow = isPending ? "rgba(34,197,94,0.6)" : glowColor;
+            return (
             <button
               onClick={() => !disabled && sendCommand(cmd, label)}
               disabled={disabled || cmdLoading !== null}
@@ -420,10 +432,10 @@ export default function GeneratorDetailPage() {
               title={disabled ? "Fernsteuerung nur mit DSE 890" : label}
             >
               <div
-                className="relative rounded-full transition-all duration-200"
+                className={`relative rounded-full transition-all duration-200 ${isPending ? "animate-pulse" : ""}`}
                 style={{
                   width: size, height: size,
-                  filter: active && glowColor ? `drop-shadow(0 0 10px ${glowColor})` : disabled ? 'grayscale(80%)' : 'none',
+                  filter: showActive && effectiveGlow ? `drop-shadow(0 0 10px ${effectiveGlow})` : disabled ? 'grayscale(80%)' : 'none',
                   transform: cmdLoading === cmd ? 'scale(0.92)' : 'scale(1)',
                 }}
               >
@@ -432,20 +444,21 @@ export default function GeneratorDetailPage() {
                   alt={label}
                   className={`w-full h-full object-contain rounded-full transition-all duration-150 ${disabled ? '' : 'group-hover:brightness-110 group-active:brightness-90'}`}
                   draggable={false}
-                  style={{ opacity: active ? 1 : disabled ? 0.5 : 0.85 }}
+                  style={{ opacity: showActive ? 1 : disabled ? 0.5 : 0.85 }}
                 />
-                {active && glowColor && (
+                {showActive && effectiveGlow && (
                   <div
-                    className="absolute inset-0 rounded-full pointer-events-none"
-                    style={{ boxShadow: `0 0 16px 4px ${glowColor}` }}
+                    className={`absolute inset-0 rounded-full pointer-events-none ${isPending ? "animate-pulse" : ""}`}
+                    style={{ boxShadow: `0 0 16px 4px ${effectiveGlow}` }}
                   />
                 )}
               </div>
               <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium tracking-wide">
-                {cmdLoading === cmd ? "..." : label}
+                {cmdLoading === cmd ? "..." : isPending ? "Warte..." : label}
               </span>
             </button>
-          );
+            );
+          };
 
           const StatusIndicator = ({ on, label, imgSrc }) => (
             <div className="flex items-center gap-2.5">
