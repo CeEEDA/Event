@@ -320,6 +320,10 @@ async def _process_status_device(device_id, raw_payload, timestamp):
 async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timestamp):
     """Ingest MQTT telemetry for a device (Stromerzeuger/Lichtmast)."""
     generator_id = f"dev-{device_id}"
+
+    # Auto-extract module UID and topic prefix for control routing
+    await _auto_store_module_uid(generator_id, topic)
+
     telemetry = {
         "id": str(uuid.uuid4()),
         "generator_id": generator_id,
