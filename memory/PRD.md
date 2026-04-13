@@ -31,11 +31,34 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 
 ## Server Deployment Status (2026-04-08)
 - Windows Server 2019: FULLY OPERATIONAL
-- All services: Backend ✅, Caddy ✅, nginx ✅, Mosquitto ✅
+- All services: Backend, Caddy, nginx, Mosquitto
 - SSL Certificate: Copied from old server to C:\eventenergie\ssl\
 - NSSM EventenergieBackend service: DISABLED (start-all.bat manages services)
 - Node 20 LTS + yarn for frontend builds
 - Python 3.11 venv at C:\eventenergie\venv
+
+## Recent Changes (2026-04-13) - DSE 890 Gateway Fix
+- [x] **DSE Sentinel Value Filtering**: Enhanced `_parse_gencomm_registers()` with robust `valid()` function that catches exact DSE sentinel values (0x7FFFFFFC, 0x7FFC, etc.) via abs-comparison AND range-based filter (>1M = invalid)
+- [x] **Backend Telemetry Sanitization**: New `_sanitize_telemetry()` in generators.py filters historical data exceeding field-specific thresholds (voltage>2000V, current>50kA, etc.)
+- [x] **Frontend Sentinel Safety Net**: `sanitizeValue()` function in GeneratorDetailPage.js filters values >10M and field-specific limits, MetricBox shows "–" for invalid values
+- [x] **Control Button Routing Fix**: Backend `send_generator_command()` now ALWAYS looks up device for `dev-` generators (was only looking up when generator doc missing). This enables DSE 890 MQTT control for device-based generators
+- [x] **Frontend Command Routing**: `sendCommand()` always routes through `/api/mqtt/control/{id}` – backend decides between MQTT (DSE 890) and Pi-Queue (DSE 5510)
+- [x] **DSE Mode Parsing**: `_parse_gencomm_registers()` now reads Page 7 (hours_run, energy_kwh, engine_starts), Page 6 (power_factor), Page 16 (dse_mode)
+- [x] **Haptic Button Feedback**: Buttons derive mode from `dse_mode` OR `generator.last_dse_mode` fallback
+- [x] **MQTT Telemetry Enhancement**: Both `_ingest_telemetry` and `_ingest_telemetry_device` now update `last_dse_mode` on generator document
+- [x] **HTTP 503 for MQTT errors**: Control commands return 503 (Service Unavailable) when MQTT not connected
+
+## Recent Changes (2026-04-12)
+- [x] GiroCode Fallback: IBAN/BIC hardcoded als Default (funktioniert auch ohne .env)
+- [x] Dokumentenablage: Cloud-Storage Fallback auf lokalen Speicher (put_object optional)
+- [x] Download: Liest erst Cloud, dann lokales Dateisystem
+- [x] Flieger-Button: Speichert jetzt auch in Dokumentenablage/Rechnungsausgang/YYYY/Monat
+- [x] DSE 5510 Setup-Skript: LTE-Erweiterung (SIM7600E-H via UART)
+
+## Recent Changes (2026-04-10)
+- [x] DB-Backup in start-all.bat laeuft nun asynchron im Hintergrund (start /min)
+- [x] Backend-Startup-Timeout von 20s auf 40s erhoeht
+- [x] Backup-Log wird geschrieben nach %LOG_DIR%\backup.log
 
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung (email inbox document ingestion)
@@ -46,41 +69,23 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [ ] Chromium "Translate" Popup suppression on Raspberry Pi Kiosk
 - [ ] Admin File Size Limits for uploads
 - [ ] GPS Support for Kirmeskiste
-- [ ] DSE890 Gateway GSM Connection
 - [ ] AdminSettingsPage.js Refactoring (~1800+ lines)
-- [ ] MQTT port alignment (backend connects 1884, Mosquitto on 1883)
-
-## Recent Changes (2026-04-10)
-- [x] DB-Backup in start-all.bat läuft nun asynchron im Hintergrund (start /min)
-- [x] Backend-Startup-Timeout von 20s auf 40s erhöht
-- [x] Backup-Log wird geschrieben nach %LOG_DIR%\backup.log
-
-## Recent Changes (2026-04-12)
-- [x] GiroCode Fallback: IBAN/BIC hardcoded als Default (funktioniert auch ohne .env)
-- [x] Dokumentenablage: Cloud-Storage Fallback auf lokalen Speicher (put_object optional)
-- [x] Download: Liest erst Cloud, dann lokales Dateisystem
-- [x] Flieger-Button: Speichert jetzt auch in Dokumentenablage/Rechnungsausgang/YYYY/Monat
-- [x] DSE 5510 Setup-Skript: LTE-Erweiterung (SIM7600E-H via UART)
-  - PPP mit Fallback-Routing (metric 700, LAN bevorzugt)
-  - DNS-Fix (8.8.8.8 persistent)
-  - GPIO 6 Power Key via pinctrl (Pi 5)
-  - AT-Test Tool persistent unter /usr/local/bin/at_test.py
-  - Reboot-sicher getestet
-- [x] Mosquitto: Config Auto-Copy in start-all.bat + passwd-Datei Auto-Create
-- [x] MOSQUITTO_PASSWD_FILE Default-Pfad gesetzt
 
 ## Key Files
+- `/app/backend/mqtt_service.py` - MQTT broker connections, Gencomm register parsing
+- `/app/backend/routes/generators.py` - Generator API, telemetry sanitization
+- `/app/backend/routes/mqtt_config.py` - MQTT control commands (DSE 890 + DSE 5510)
+- `/app/frontend/src/pages/GeneratorDetailPage.js` - Generator detail UI, controls, charts
+- `/app/frontend/src/pages/DeviceManagementPage.js` - Device management, DSE gateway setup
 - `/app/update.bat` - GitHub update script
 - `/app/start-all.bat` - Service start script
 - `/app/stop-all.bat` - Service stop script
-- `/app/nginx.conf` - HTTPS reverse proxy config
-- `/app/Caddyfile` - HTTP reverse proxy config
-- `/app/backend/requirements-server.txt` - Server-optimized Python packages
 
 ## 3rd Party Integrations
 - Gemini (via Emergent LLM Key)
 - DATEV (Email parsing)
 - EpiRent API (ERP)
+- Mosquitto MQTT (DSE 890 Gateways)
 
 ## Test Credentials
 - Admin: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram

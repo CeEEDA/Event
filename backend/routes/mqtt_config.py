@@ -379,6 +379,8 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             return {"success": success, "message": dse_cmd["label"], "topic": control_topic}
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=f"Fehler: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Fehler: {str(e)}")
 
