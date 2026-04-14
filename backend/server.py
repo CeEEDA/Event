@@ -1528,6 +1528,7 @@ async def download_dse890_gateway():
 
 @api_router.get("/download-dse8610-module-topics")
 async def download_dse8610_module():
+    return FileResponse(os.path.join(STATIC_DIR, "dse8610_module_topics.csv"), media_type="text/csv", filename="dse8610_module_topics.csv")
 
 @api_router.get("/download-register-scan")
 async def download_register_scan():
@@ -1538,8 +1539,6 @@ async def download_register_scan():
     return Response(content=content, media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=dsel401_register_scan.csv",
                              "Cache-Control": "no-cache, no-store, must-revalidate"})
-
-    return FileResponse(os.path.join(STATIC_DIR, "dse8610_module_topics.csv"), media_type="text/csv", filename="dse8610_module_topics.csv")
 
 @api_router.get("/download-dsel401-module-topics")
 async def download_dsel401_module():
