@@ -491,6 +491,7 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             "oil_pressure", "coolant_temp", "fuel_level", "battery_voltage",
             "rpm", "engine_running", "hours_run", "engine_starts", "energy_kwh",
             "load_percent", "power_factor", "dse_mode",
+            "fault_code", "fault_text", "emergency_stop", "status_bits",
         ]
         for key in _TELEMETRY_KEYS:
             val = telemetry_data.get(key)
@@ -516,6 +517,40 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             gen_update["status"] = "standby"
         else:
             gen_update["status"] = "online"
+
+        # Check for L401 fault code (P3 R4) → set alarm status
+        fault_code = telemetry_data.get("fault_code")
+        fault_text = telemetry_data.get("fault_text")
+        if fault_code and fault_code > 0:
+            gen_update["status"] = "alarm"
+            device_update["mqtt_status"] = "alarm"
+            # Store alarm
+            existing = await _db.generator_alarms.find_one(
+                {"generator_id": generator_id, "alarm_code": f"F{fault_code:03d}", "resolved_at": None}
+            )
+            if not existing:
+                await _db.generator_alarms.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "generator_id": generator_id,
+                    "alarm_code": f"F{fault_code:03d}",
+                    "alarm_text": fault_text or f"Stoerung Code {fault_code}",
+                    "severity": "shutdown" if fault_code == 2 else "warning",
+                    "timestamp": timestamp,
+                    "acknowledged": False,
+                    "resolved_at": None,
+                })
+                logger.info(f"MQTT: Alarm for {device_id}: {fault_text}")
+        elif fault_code == 0:
+            # Fault cleared - resolve open alarms
+            open_count = await _db.generator_alarms.count_documents(
+                {"generator_id": generator_id, "resolved_at": None}
+            )
+            if open_count > 0:
+                await _db.generator_alarms.update_many(
+                    {"generator_id": generator_id, "resolved_at": None},
+                    {"$set": {"resolved_at": timestamp}}
+                )
+                logger.info(f"MQTT: Alarms resolved for {device_id}")
         dse_mode = telemetry_data.get("dse_mode")
         if dse_mode and dse_mode not in ("unknown", ""):
             gen_update["last_dse_mode"] = dse_mode
@@ -799,6 +834,31 @@ def _parse_gencomm_registers(parsed, topic):
         return True
 
     # Page 4 register mapping (standard DSE Gencomm instrumentation)
+    # Page 3: Controller status (L401 fault code + status bits)
+    fault_code = registers.get((3, 4))
+    status_bits = registers.get((3, 6))
+    if fault_code is not None and fault_code != 2147483647:
+        L401_FAULT_CODES = {
+            0: None,  # No fault
+            1: "Warnung (Warning)",
+            2: "Notaus (Emergency Stop)",
+            3: "Niedrige Spannung (Under Voltage)",
+            4: "Hohe Spannung (Over Voltage)",
+            5: "Ueberlast (Overload)",
+            6: "Kurzschluss (Short Circuit)",
+            7: "Uebertemperatur (Over Temperature)",
+            8: "Niedriger Oeldruck (Low Oil Pressure)",
+            9: "Start fehlgeschlagen (Overcrank)",
+            10: "Ueberdrehzahl (Over Speed)",
+        }
+        if fault_code > 0:
+            result["fault_code"] = fault_code
+            result["fault_text"] = L401_FAULT_CODES.get(fault_code, f"Stoerung Code {fault_code}")
+    if status_bits is not None and status_bits != 2147483647:
+        result["status_bits"] = status_bits
+        if status_bits & 0x1000:  # Bit 12 = Emergency Stop
+            result["emergency_stop"] = True
+
     # Engine parameters
     if valid(registers.get((4, 0))):
         result["oil_pressure"] = round(registers[(4, 0)] / 100.0, 1)   # kPa -> bar
