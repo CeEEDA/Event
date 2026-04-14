@@ -564,6 +564,12 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                     {"$set": {"resolved_at": timestamp}}
                 )
                 logger.info(f"MQTT: Alarms resolved for {device_id}")
+        else:
+            # No fault data in this message → check if device already has alarm, don't overwrite
+            current_device = await _db.devices.find_one({"id": device_id}, {"_id": 0, "mqtt_status": 1})
+            if current_device and current_device.get("mqtt_status") == "alarm":
+                gen_update["status"] = "alarm"
+                device_update["mqtt_status"] = "alarm"
         dse_mode = telemetry_data.get("dse_mode")
         if dse_mode and dse_mode not in ("unknown", ""):
             gen_update["last_dse_mode"] = dse_mode
