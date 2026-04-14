@@ -493,10 +493,23 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             "load_percent", "power_factor", "dse_mode",
             "fault_code", "fault_text", "emergency_stop", "status_bits",
         ]
+        # Determine which fields this topic SHOULD contain
+        engine_fields = {"oil_pressure", "coolant_temp", "fuel_level", "battery_voltage", "rpm"}
+        generator_fields = {"voltage_l1", "voltage_l2", "voltage_l3", "current_l1", "current_l2", "current_l3",
+                           "frequency", "power_kw", "power_total_w"}
+        raw_topic = topic.split("/")[-1] if topic else ""
+        clear_fields = set()
+        if raw_topic == "engine":
+            clear_fields = engine_fields
+        elif raw_topic == "generator":
+            clear_fields = generator_fields
+
         for key in _TELEMETRY_KEYS:
             val = telemetry_data.get(key)
             if val is not None:
                 snapshot_fields[f"latest_snapshot.{key}"] = val
+            elif key in clear_fields:
+                snapshot_fields[f"latest_snapshot.{key}"] = None
         snapshot_fields["latest_snapshot.timestamp"] = timestamp
 
         # Single combined update for device
@@ -822,7 +835,9 @@ def _parse_gencomm_registers(parsed, topic):
         # Exact DSE sentinel values (int and float comparison)
         sentinel_vals = (
             INVALID_16, INVALID_16 + 1, INVALID_16 + 2, INVALID_16 + 3,
+            INVALID_16 - 1, INVALID_16 - 2,  # 32763, 32762 also used as "not available"
             INVALID_32, INVALID_32 + 1, INVALID_32 + 2, INVALID_32 + 3,
+            INVALID_32 - 1, INVALID_32 - 2,  # 0x7FFFFFFB, 0x7FFFFFFA
             32767, 2147483647, 65535, 4294967295,
         )
         for s in sentinel_vals:
