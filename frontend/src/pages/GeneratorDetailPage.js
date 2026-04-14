@@ -411,7 +411,8 @@ export default function GeneratorDetailPage() {
           const dseMode = t?.dse_mode || generator?.last_dse_mode || null;
           const isAuto = dseMode === "auto" || dseMode === "auto_manual_restore";
           const isManual = dseMode === "manual";
-          const isStop = dseMode === "stop" || dseMode === "off";
+          // Stop leuchtet nur wenn Motor AUS UND nicht im Auto/Manual Modus
+          const isStop = !isRunning && (dseMode === "stop" || dseMode === "off" || (!isAuto && !isManual));
           const hasPower = sanitizeValue(t?.power_total_w || t?.power_kw, "power_kw") > 0;
           const genReady = t?.generator_available === true || (hasPower || isRunning);
           const switchClosed = t?.breaker_closed === true || (hasPower && isRunning);
