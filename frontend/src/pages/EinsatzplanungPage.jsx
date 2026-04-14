@@ -141,8 +141,8 @@ export default function EinsatzplanungPage() {
   useEffect(() => { if (users.length > 0) loadSchedules(); }, [users, loadSchedules]);
   useEffect(() => { if (orders.length > 0) loadCrewData(); }, [orders, loadCrewData]);
 
-  const prevWeek = () => { const d = new Date(weekDates[0]); d.setDate(d.getDate() - 7); setWeekKey(getWeekKey(d)); };
-  const nextWeek = () => { const d = new Date(weekDates[0]); d.setDate(d.getDate() + 7); setWeekKey(getWeekKey(d)); };
+  const prevWeek = () => { const d = new Date(weekDates[0] + "T12:00:00"); d.setDate(d.getDate() - 7); setWeekKey(getWeekKey(d)); };
+  const nextWeek = () => { const d = new Date(weekDates[0] + "T12:00:00"); d.setDate(d.getDate() + 7); setWeekKey(getWeekKey(d)); };
 
   const getAbsenceForUserDate = (userId, date) => absences.find(a => a.user_id === userId && a.date_from <= date && a.date_to >= date);
   const getAssignmentsForUserDate = (userId, date) => assignments.filter(a => a.user_id === userId && a.date === date);
