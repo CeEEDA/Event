@@ -417,6 +417,8 @@ export default function GeneratorDetailPage() {
           const switchClosed = t?.breaker_closed === true || (hasPower && isRunning);
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
+          const isL401 = model.includes("L401");
+          const isFullControl = !isL401; // Stromerzeuger (8610, 5510 etc.) = alle Buttons
           const canWrite = true; // FC16 @4104 funktioniert (DSE antwortet mit FC03 Read-Back)
 
           const DseImgBtn = ({ cmd, label, imgSrc, size = 64, disabled = false, active = false, glowColor = null }) => {
@@ -492,7 +494,7 @@ export default function GeneratorDetailPage() {
               {/* Header */}
               <div className="px-5 pt-4 pb-2 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">DSE Steuerung</span>
-                {!is5510 && (
+                {(
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${isRunning ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
                     <span className={`text-[10px] font-medium ${isRunning ? "text-emerald-600" : "text-gray-400"}`}>
@@ -502,8 +504,8 @@ export default function GeneratorDetailPage() {
                 )}
               </div>
 
-              {/* Status LEDs Row - nur fuer 890/8610 die den Modus lesen koennen */}
-              {!is5510 && (
+              {/* Status LEDs Row */}
+              {(
                 <div className="px-5 py-2.5 flex flex-wrap items-center gap-4 border-t border-gray-100">
                   <div className="flex items-center gap-1.5">
                     <div className={`w-8 h-3.5 rounded-sm border transition-colors duration-300 ${isRunning ? "bg-emerald-400 border-emerald-500" : "bg-gray-200 border-gray-300"}`}
@@ -519,7 +521,7 @@ export default function GeneratorDetailPage() {
               )}
 
               {/* Status Indicators: Generator bereit + Hauptschalter geschlossen */}
-              {is5510 && (
+              {isFullControl && (
                 <div className="px-5 py-4 flex flex-wrap items-center justify-center gap-8 border-t border-gray-100">
                   <StatusIndicator on={genReady} label="Generator bereit" imgSrc="/dse-buttons/geno.png" />
                   <StatusIndicator on={switchClosed} label="Hauptschalter geschlossen" imgSrc="/dse-buttons/netz.png" />
@@ -531,30 +533,31 @@ export default function GeneratorDetailPage() {
                 <div className="flex items-end justify-center gap-4 sm:gap-6 flex-wrap">
                 <DseImgBtn cmd="stop" label="Stop" imgSrc="/dse-buttons/stop.png"
                   disabled={!canWrite} size={68}
-                  active={!is5510 && isStop} glowColor="rgba(239,68,68,0.5)" />
+                  active={isStop} glowColor="rgba(239,68,68,0.5)" />
 
-                {is5510 && (
+                {isFullControl && (
                   <DseImgBtn cmd="manual" label="Manuell" imgSrc="/dse-buttons/hand.png"
-                    disabled={!canWrite} size={68} />
+                    disabled={!canWrite} size={68}
+                    active={isManual} glowColor="rgba(251,191,36,0.5)" />
                 )}
 
                 <DseImgBtn cmd="auto_on" label="Auto" imgSrc="/dse-buttons/auto.png"
                   disabled={!canWrite} size={68}
-                  active={!is5510 && isAuto} glowColor="rgba(52,211,153,0.5)" />
+                  active={isAuto} glowColor="rgba(52,211,153,0.5)" />
 
-                {is5510 && (
+                {isFullControl && (
                   <DseImgBtn cmd="mute" label="Hupe Aus" imgSrc="/dse-buttons/hupe-aus.png"
                     disabled={!canWrite} size={68} />
                 )}
 
                 <DseImgBtn cmd="start" label="Start" imgSrc="/dse-buttons/start.png"
                   disabled={!canWrite} size={68}
-                  active={!is5510 && isRunning} glowColor="rgba(34,197,94,0.5)" />
+                  active={isRunning} glowColor="rgba(34,197,94,0.5)" />
                 </div>
               </div>
 
-              {/* Transfer Switches - only 5510 */}
-              {is5510 && (
+              {/* Transfer Switches - Stromerzeuger */}
+              {isFullControl && (
                 <div className="px-5 py-4 flex items-end justify-center gap-5 border-t border-gray-100">
                   <DseImgBtn cmd="gen_switch_on" label="Gen EIN" imgSrc="/dse-buttons/geno.png"
                     disabled={!canWrite} size={52} />
