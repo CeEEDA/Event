@@ -957,6 +957,7 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
 
     virtual_online = 0
     virtual_offline = 0
+    virtual_alarm = 0
     active_devices = await db.devices.find(
         {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
         {"_id": 0, "serial_number": 1, "mqtt_status": 1, "last_seen": 1}
@@ -964,12 +965,14 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
             existing_serials.add(dev["serial_number"])
-            if dev.get("mqtt_status") == "online":
+            if dev.get("mqtt_status") == "alarm":
+                virtual_alarm += 1
+            elif dev.get("mqtt_status") == "online":
                 virtual_online += 1
             else:
                 virtual_offline += 1
 
-    total = gen_total + virtual_online + virtual_offline
+    total = gen_total + virtual_online + virtual_offline + virtual_alarm
     standby = gen_standby + virtual_online
     offline = gen_offline + virtual_offline
 
@@ -981,7 +984,7 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         "running": gen_running,
         "standby": standby,
         "online": gen_online,
-        "alarm": gen_alarm,
+        "alarm": gen_alarm + virtual_alarm,
         "offline": offline,
         "active_alarms": active_alarms,
         "active_warnings": active_warnings,

@@ -280,7 +280,7 @@ export default function GeneratorDashboardPage() {
       (g.name || "").toLowerCase().includes(search.toLowerCase()) ||
       (g.serial_number || "").toLowerCase().includes(search.toLowerCase()) ||
       (g.location_name || "").toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || g.status === statusFilter || (statusFilter === "standby" && g.status === "online");
+    const matchStatus = statusFilter === "all" || g.status === statusFilter || (statusFilter === "standby" && g.status === "online") || (statusFilter === "alarm" && (g.status === "alarm" || g.status === "warning"));
     return matchSearch && matchStatus;
   });
 
@@ -345,7 +345,7 @@ export default function GeneratorDashboardPage() {
             <StatCard icon={Activity} label="Gesamt" value={stats.total} color="bg-fuchsia-600" active={statusFilter === "all"} onClick={() => handleStatClick("all")} />
             <StatCard icon={Power} label="Läuft" value={stats.running} color="bg-emerald-600" active={statusFilter === "running"} onClick={() => handleStatClick("running")} />
             <StatCard icon={Zap} label="Online" value={(stats.standby || 0) + (stats.online || 0)} color="bg-teal-600" active={statusFilter === "standby"} onClick={() => handleStatClick("standby")} />
-            <StatCard icon={AlertTriangle} label="Warnung" value={stats.alarm} color="bg-amber-500" active={statusFilter === "warning"} onClick={() => handleStatClick("warning")} />
+            <StatCard icon={AlertTriangle} label="Warnung" value={stats.alarm} color="bg-red-500" active={statusFilter === "alarm"} onClick={() => handleStatClick("alarm")} />
             <StatCard icon={WifiOff} label="Offline" value={stats.offline} color="bg-gray-400" active={statusFilter === "offline"} onClick={() => handleStatClick("offline")} />
           </div>
         )}
@@ -438,10 +438,14 @@ export default function GeneratorDashboardPage() {
                       {/* Status Dot */}
                       <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.color}`} title={s.label} />
 
-                      {/* Name + Model */}
+                      {/* Name + Model + Alarm */}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-900 truncate">{gen.serial_number || gen.name}</p>
-                        <p className="text-xs text-gray-400 truncate">{gen.model || gen.location_name || "–"}</p>
+                        {t?.fault_text ? (
+                          <p className="text-xs text-red-600 font-medium truncate">{t.fault_text}</p>
+                        ) : (
+                          <p className="text-xs text-gray-400 truncate">{gen.model || gen.location_name || "–"}</p>
+                        )}
                       </div>
 
                       {/* Telemetry Values */}
