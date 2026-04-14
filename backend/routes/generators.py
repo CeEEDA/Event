@@ -40,7 +40,7 @@ _TELEMETRY_MAX_THRESHOLDS = {
     "power_l1_w": 100_000_000, "power_l2_w": 100_000_000, "power_l3_w": 100_000_000,
     "oil_pressure": 5000, "coolant_temp": 500, "fuel_level": 200,
     "battery_voltage": 100, "rpm": 50000, "load_percent": 200,
-    "power_factor": 10, "hours_run": 1_000_000,
+    "power_factor": 10, "hours_run": 100_000,
 }
 
 
