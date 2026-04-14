@@ -852,9 +852,15 @@ def _parse_gencomm_registers(parsed, topic):
     if valid(registers.get((7, 6))):
         result["engine_starts"] = registers[(7, 6)]
 
-    # Page 3: Run hours for L401 (Register 15, 32-bit, 0.1h)
+    # Page 3: Run hours for L401 (Register 15, 32-bit, 0.1h) - DEPRECATED, use P7 R6
     if not result.get("hours_run") and valid(registers.get((3, 15))):
-        result["hours_run"] = registers[(3, 15)] / 10.0      # 0.1h -> h
+        result["hours_run"] = registers[(3, 15)] / 10.0
+
+    # Page 7 Register 6: Run hours in SECONDS (L401 via DSE 890 Gateway)
+    if valid(registers.get((7, 6))):
+        hours_sec = registers[(7, 6)]
+        if hours_sec > 0 and hours_sec < 100000000:  # sanity: < 11415 years
+            result["hours_run"] = round(hours_sec / 3600.0, 1)      # 0.1h -> h
 
     # Page 6: Power factor
     if valid(registers.get((6, 0))):

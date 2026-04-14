@@ -1549,6 +1549,7 @@ async def download_dsel401_module():
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,3,1,0,,,,,,Fuel level percent
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,6,1,0,,,,,,Engine speed RPM
+%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
@@ -1692,6 +1693,7 @@ async def download_controller_topics(controller_type: str):
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,3,1,0,,,,,,Fuel level percent
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,6,1,0,,,,,,Engine speed RPM
+%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
@@ -1714,6 +1716,7 @@ async def download_controller_topics(controller_type: str):
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,3,1,0,,,,,,Fuel level percent
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
 %GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,6,1,0,,,,,,Engine speed RPM
+%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,10,2,0,,,,,,Gen L2-N voltage 0.1V
