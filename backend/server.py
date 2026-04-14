@@ -1728,7 +1728,7 @@ async def download_controller_topics(controller_type: str):
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,30,2,0,,,,,,Gen L2 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,32,2,0,,,,,,Gen L3 watts
 %GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,0,2,0,,,,,,Run hours 0.1h
+%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
 %GROUP%/%TYPE%/%UID%/alarm,,P,,300,1,,,4,5,0,2,0,,,,,,Alarm status
 %GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,16,8,2,0,,,,,,Control
 """.strip()

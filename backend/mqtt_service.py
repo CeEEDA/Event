@@ -801,7 +801,7 @@ def _parse_gencomm_registers(parsed, topic):
     # Page 4 register mapping (standard DSE Gencomm instrumentation)
     # Engine parameters
     if valid(registers.get((4, 0))):
-        result["oil_pressure"] = registers[(4, 0)]          # kPa
+        result["oil_pressure"] = round(registers[(4, 0)] / 100.0, 1)   # kPa -> bar
     if valid(registers.get((4, 1))):
         result["coolant_temp"] = registers[(4, 1)]           # °C
     if valid(registers.get((4, 3))):
@@ -844,13 +844,11 @@ def _parse_gencomm_registers(parsed, topic):
     if valid(registers.get((4, 34))):
         result["power_kw"] = registers[(4, 34)] / 1000.0    # W -> kW
 
-    # Page 7: Run hours, kWh, starts (DSE 8610 etc.)
-    if valid(registers.get((7, 0))):
-        result["hours_run"] = registers[(7, 0)] / 10.0      # 0.1h -> h
+    # Page 7: kWh, starts (DSE 8610 etc.) - NOT hours (P7 R0 gives garbage on L401/890)
     if valid(registers.get((7, 4))):
         result["energy_kwh"] = registers[(7, 4)]             # kWh
     if valid(registers.get((7, 6))):
-        result["engine_starts"] = registers[(7, 6)]
+        pass  # Handled below as seconds
 
     # Page 3: Run hours for L401 (Register 15, 32-bit, 0.1h) - DEPRECATED, use P7 R6
     if not result.get("hours_run") and valid(registers.get((3, 15))):
