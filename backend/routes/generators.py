@@ -1048,14 +1048,20 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
 
     # Update device status + latest_snapshot from newest record
     # Nur "online" wenn DSE tatsaechlich Daten liefert
-    # Batteriespannung > 0 = DSE Display ist an und kommuniziert
+    # Batteriespannung > 5V = DSE Display ist an und kommuniziert
     has_dse_data = False
     if payload.records:
         rec = payload.records[-1]
         batt = rec.get("battery_voltage", 0) or 0
         has_dse_data = batt > 5
 
-    device_status = "online" if has_dse_data else "verbunden"
+    if has_dse_data:
+        device_status = "online"
+    elif payload.records:
+        device_status = "verbunden"
+    else:
+        # Heartbeat ohne neue Records: vorherigen Status beibehalten
+        device_status = device.get("mqtt_status") or "verbunden"
     update_fields = {
         "last_seen": now_iso,
         "mqtt_status": device_status,
@@ -1085,8 +1091,8 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
             "power_total_w": ("power_total_w", None),
             "power_kw": ("power_total_w", lambda v: round(v / 1000.0, 2) if v else None),
             "power_factor_avg": ("power_factor_avg", None),
-            "hours_run": ("hours_run", None),
-            "engine_starts": ("engine_starts", None),
+            "hours_run": ("engine_run_hours", None),
+            "engine_starts": ("num_starts", None),
             "dse_mode": ("dse_mode", None),
         }
         for snap_key, (rec_key, transform) in snapshot_map.items():

@@ -803,12 +803,10 @@ def sync_to_portal(conf, gps_data, ser):
     """Sendet Telemetrie-Daten an das Portal und empfaengt Steuerbefehle.
     Gibt (anzahl, ser) zurueck - ser kann None sein wenn durch Steuerbefehl geschlossen."""
     unsynced = get_unsynced(conf["db_path"], conf["batch_size"])
-    if not unsynced:
-        return 0, ser
 
     records = []
     row_ids = []
-    for row in unsynced:
+    for row in (unsynced or []):
         data = json.loads(row["data_json"])
         records.append(data)
         row_ids.append(row["id"])
