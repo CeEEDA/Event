@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://dse-gateway-fix.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://dse-gateway-fix.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://dse-gateway-fix.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://dse-mqtt-gateway.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://dse-mqtt-gateway.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://dse-mqtt-gateway.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }
