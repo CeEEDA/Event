@@ -384,7 +384,23 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
                     "acknowledged": False,
                     "resolved_at": None,
                 })
-        logger.info(f"MQTT: {len(active_alarms)} active alarms for {generator_id}: {[DSE_ALARM_TEXTS.get(a, a) for a in active_alarms]}")
+        # Spezifischen Alarm-Text in Snapshot schreiben (sichtbar in Dashboard-Liste)
+        alarm_texts = [DSE_ALARM_TEXTS.get(a, a) for a in active_alarms]
+        fault_display = ", ".join(alarm_texts[:3])  # Max 3 Alarme anzeigen
+        snapshot_update = {
+            "latest_snapshot.fault_text": fault_display,
+            "latest_snapshot.fault_code": ",".join(active_alarms),
+        }
+        await _db.devices.update_one(
+            {"id": generator_id[4:]} if generator_id.startswith("dev-") else {"id": "none"},
+            {"$set": snapshot_update}
+        )
+        if generator_id.startswith("dev-"):
+            await _db.generators.update_one(
+                {"id": generator_id},
+                {"$set": snapshot_update}
+            )
+        logger.info(f"MQTT: {len(active_alarms)} active alarms for {generator_id}: {alarm_texts}")
     else:
         # No active alarms - resolve all open alarms
         open_alarms = await _db.generator_alarms.count_documents(
@@ -513,9 +529,8 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         snapshot_fields["latest_snapshot.timestamp"] = timestamp
 
         # Single combined update for device
-        device_update = {"last_seen": timestamp, "last_telemetry": timestamp, "mqtt_status": "online"}
-        device_update.update(snapshot_fields)
-        await _db.devices.update_one({"id": device_id}, {"$set": device_update})
+        # Status NICHT blind auf "online" setzen - erst pruefen ob Alarm aktiv
+        device_update = {"last_seen": timestamp, "last_telemetry": timestamp}
 
         # Single combined update for virtual generator
         gen_update = {"last_seen": timestamp}
@@ -524,19 +539,13 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         if device_info:
             gen_update["model"] = device_info.get("controller", "")
             gen_update["serial_number"] = device_info.get("serial_number", "")
-        if telemetry_data.get("engine_running") is True or telemetry_data.get("rpm", 0) > 0:
-            gen_update["status"] = "running"
-        elif telemetry_data.get("engine_running") is False:
-            gen_update["status"] = "standby"
-        else:
-            gen_update["status"] = "online"
 
         # Check for alarm conditions from P3R6 status bits (official GenComm)
         status_alarms = telemetry_data.get("status_alarms")
         fault_code = telemetry_data.get("fault_code")
 
         if status_alarms:
-            # Active alarm(s) from status bits
+            # Active alarm(s) from status bits → ALARM hat hoechste Prioritaet
             gen_update["status"] = "alarm"
             device_update["mqtt_status"] = "alarm"
             for alarm_code, alarm_text, severity in status_alarms:
@@ -556,39 +565,49 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                     })
                     logger.info(f"MQTT: Status-Alarm for {device_id}: {alarm_text}")
         elif fault_code == 0:
-            # No alarm active (status bits clear) - resolve open status-bit alarms
-            # und alten fault_text aus Snapshot entfernen
+            # No alarm active (status bits clear) - Alarm aufloesen
             snapshot_fields["latest_snapshot.fault_code"] = None
             snapshot_fields["latest_snapshot.fault_text"] = None
+            # Status basierend auf Motor-Zustand setzen (kein Alarm mehr)
+            if telemetry_data.get("engine_running") is True or telemetry_data.get("rpm", 0) > 0:
+                gen_update["status"] = "running"
+                device_update["mqtt_status"] = "running"
+            else:
+                gen_update["status"] = "online"
+                device_update["mqtt_status"] = "online"
             open_count = await _db.generator_alarms.count_documents(
-                {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_"}, "resolved_at": None}
+                {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_|^F"}, "resolved_at": None}
             )
             if open_count > 0:
                 await _db.generator_alarms.update_many(
-                    {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_"}, "resolved_at": None},
+                    {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_|^F"}, "resolved_at": None},
                     {"$set": {"resolved_at": timestamp}}
                 )
-                logger.info(f"MQTT: Status-bit alarms resolved for {device_id}")
-            # Auch alte F-code Alarme (vom alten System) aufraemen
-            old_f_count = await _db.generator_alarms.count_documents(
-                {"generator_id": generator_id, "alarm_code": {"$regex": "^F"}, "resolved_at": None}
-            )
-            if old_f_count > 0:
-                await _db.generator_alarms.update_many(
-                    {"generator_id": generator_id, "alarm_code": {"$regex": "^F"}, "resolved_at": None},
-                    {"$set": {"resolved_at": timestamp}}
-                )
-                logger.info(f"MQTT: Old F-code alarms resolved for {device_id}")
+                logger.info(f"MQTT: Alarms resolved for {device_id}")
         else:
-            # No status data in this message → preserve existing alarm state
+            # No status data in this message (z.B. /engine oder /generator Topic)
+            # → Alarm-Status aus DB beibehalten, Motor-Status nur setzen wenn KEIN Alarm
             current_device = await _db.devices.find_one({"id": device_id}, {"_id": 0, "mqtt_status": 1})
-            if current_device and current_device.get("mqtt_status") == "alarm":
+            current_status = (current_device or {}).get("mqtt_status", "online")
+            if current_status == "alarm":
                 gen_update["status"] = "alarm"
                 device_update["mqtt_status"] = "alarm"
+            elif telemetry_data.get("engine_running") is True or telemetry_data.get("rpm", 0) > 0:
+                gen_update["status"] = "running"
+                device_update["mqtt_status"] = "running"
+            elif telemetry_data.get("engine_running") is False:
+                gen_update["status"] = "standby"
+                device_update["mqtt_status"] = "standby"
+            else:
+                device_update["mqtt_status"] = current_status
         dse_mode = telemetry_data.get("dse_mode")
         if dse_mode and dse_mode not in ("unknown", ""):
             gen_update["last_dse_mode"] = dse_mode
         gen_update.update(snapshot_fields)
+
+        # Jetzt beide Updates schreiben (NACH Alarm-Status-Bestimmung)
+        device_update.update(snapshot_fields)
+        await _db.devices.update_one({"id": device_id}, {"$set": device_update})
         await _db.generators.update_one(
             {"id": generator_id},
             {"$set": gen_update}
