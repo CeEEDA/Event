@@ -1691,6 +1691,10 @@ echo "  Falls der Port nicht stimmt, anpassen in:"
 echo "    sudo nano /etc/dse5510.conf"
 echo "    sudo systemctl restart dse5510_sync"
 echo ""
+echo "  System wird in 10 Sekunden neu gestartet..."
+echo "  (Abbrechen mit Strg+C)"
+sleep 10
+sudo reboot
 """
 
     download_token = secrets.token_urlsafe(32)
