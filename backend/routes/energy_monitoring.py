@@ -1249,6 +1249,7 @@ fi
 echo "  UART aktiviert, Serial Console deaktiviert."
 
 # PPP und GPIO-Tools installieren
+wait_for_apt
 sudo apt-get install -y -qq ppp gpiod
 
 # Kleines AT-Command Helper-Skript fuer Modem-Test (nutzt pyserial statt socat)
@@ -1499,6 +1500,14 @@ echo "  Geraet: {device.get('serial_number', device_id[:12])}"
 {lte_header_echo}
 echo "========================================================"
 
+# Helper: Warte bis apt/dpkg-Lock frei ist
+wait_for_apt() {{
+    while fuser /var/lib/dpkg/lock-frontend &>/dev/null 2>&1; do
+        echo "  Warte auf apt-Lock..."
+        sleep 3
+    done
+}}
+
 # ===== SCHRITT 0: ALTE INSTALLATION AUFRAUMEN =====
 echo ""
 echo "[0/{total_steps}] Alte Installation aufraumen..."
@@ -1525,8 +1534,11 @@ echo "  Aufraumen abgeschlossen."
 # ===== SCHRITT 1: SYSTEM AKTUALISIEREN =====
 echo ""
 echo "[1/{total_steps}] System aktualisieren..."
+wait_for_apt
 sudo apt-get update -qq
+wait_for_apt
 sudo apt-get install -y -qq python3-pip python3-venv gpsd
+wait_for_apt
 sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nicht verfuegbar (optional, Debug-Tools)"
 
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
