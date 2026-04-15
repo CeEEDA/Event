@@ -227,11 +227,11 @@ async def delete_demo_data(admin: dict = Depends(require_admin_user)):
 
 @router.delete("/cleanup-ghost-generators")
 async def cleanup_ghost_generators(user: dict = Depends(get_authenticated_user)):
-    """Delete ghost generators: dev- entries without matching device or without serial_number."""
+    """Delete ghost generators: dev- entries without matching device, dse5510_pi duplicates, or entries without serial_number."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
     deleted = 0
-    # Find all dev- generators
+    # Find all dev- generators without matching device
     gens = await db.generators.find({"id": {"$regex": "^dev-"}}, {"_id": 0, "id": 1, "serial_number": 1}).to_list(500)
     for g in gens:
         device_id = g["id"][4:]
@@ -239,9 +239,13 @@ async def cleanup_ghost_generators(user: dict = Depends(get_authenticated_user))
         if not device:
             await db.generators.delete_one({"id": g["id"]})
             deleted += 1
-    # Also delete mqtt_auto without serial_number
+    # Delete mqtt_auto without serial_number
     result = await db.generators.delete_many({"source": "mqtt_auto", "serial_number": {"$exists": False}})
     deleted += result.deleted_count
+    # Delete dse5510_pi ghost generators (type=dse5510_pi without serial_number)
+    # These are duplicates of virtual dev- generators
+    result2 = await db.generators.delete_many({"type": "dse5510_pi", "serial_number": {"$in": [None, ""]}})
+    deleted += result2.deleted_count
     return {"message": f"{deleted} Geister-Generatoren geloescht"}
 
 @router.get("")
@@ -256,6 +260,8 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
         for g in generators:
             if g.get("source") == "mqtt_auto" and not g.get("serial_number"):
                 continue  # Skip ghost
+            if g.get("type") == "dse5510_pi" and not g.get("serial_number"):
+                continue  # Skip dse5510_pi ghost duplicate
             real_gens.append(g)
         generators = real_gens
     else:
@@ -1031,25 +1037,16 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     # Resolve generator_id: use "dev-{device_id}" pattern for virtual generators
     generator_id = payload.generator_id or f"dev-{payload.device_id}"
 
-    # Auto-create virtual generator if not exists
-    existing_gen = await db.generators.find_one({"generator_id": generator_id}, {"_id": 0})
-    if not existing_gen:
-        device_name = device.get("name") or device.get("device_type", "Stromerzeuger")
-        gen_doc = {
-            "id": str(uuid.uuid4()),
-            "generator_id": generator_id,
-            "device_id": payload.device_id,
-            "name": f"DSE 5510 ({device_name})",
-            "type": "dse5510_pi",
-            "status": "online",
-            "mqtt_status": "online",
-            "last_seen": now_iso,
-            "created_at": now_iso,
-        }
-        await db.generators.insert_one(gen_doc)
-        logger.info(f"Auto-created generator: {generator_id} for device {payload.device_id}")
+    # Check if a generator already exists for this device (by id OR generator_id field)
+    existing_gen = await db.generators.find_one(
+        {"$or": [{"id": generator_id}, {"generator_id": generator_id}, {"device_id": payload.device_id}]},
+        {"_id": 0}
+    )
+    if existing_gen:
+        # Use existing generator's id for consistency
+        generator_id = existing_gen.get("id", generator_id)
 
-    # Update device status
+    # Update device status + latest_snapshot from newest record
     update_fields = {
         "last_seen": now_iso,
         "mqtt_status": "online",
@@ -1058,6 +1055,40 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     if payload.latitude is not None and payload.longitude is not None:
         update_fields["latitude"] = payload.latitude
         update_fields["longitude"] = payload.longitude
+
+    # Build latest_snapshot from the most recent record
+    if payload.records:
+        rec = payload.records[-1]
+        snapshot = {"timestamp": rec.get("ts_utc", now_iso)}
+        snapshot_map = {
+            "oil_pressure": ("oil_pressure_kpa", lambda v: round(v / 100.0, 1) if v else None),
+            "coolant_temp": ("coolant_temp_c", None),
+            "fuel_level": ("fuel_level_pct", None),
+            "battery_voltage": ("battery_voltage", None),
+            "rpm": ("rpm", None),
+            "frequency": ("frequency", None),
+            "voltage_l1": ("voltage_l1", None),
+            "voltage_l2": ("voltage_l2", None),
+            "voltage_l3": ("voltage_l3", None),
+            "current_l1": ("current_l1", None),
+            "current_l2": ("current_l2", None),
+            "current_l3": ("current_l3", None),
+            "power_total_w": ("power_total_w", None),
+            "power_kw": ("power_total_w", lambda v: round(v / 1000.0, 2) if v else None),
+            "power_factor_avg": ("power_factor_avg", None),
+            "hours_run": ("hours_run", None),
+            "engine_starts": ("engine_starts", None),
+            "dse_mode": ("dse_mode", None),
+        }
+        for snap_key, (rec_key, transform) in snapshot_map.items():
+            val = rec.get(rec_key)
+            if val is not None:
+                snapshot[snap_key] = transform(val) if transform else val
+        if rec.get("engine_running") is not None:
+            snapshot["engine_running"] = rec["engine_running"]
+        for k, v in snapshot.items():
+            update_fields[f"latest_snapshot.{k}"] = v
+
     await db.devices.update_one({"id": payload.device_id}, {"$set": update_fields})
 
     # Update virtual generator status too
@@ -1065,7 +1096,10 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     if payload.latitude is not None and payload.longitude is not None:
         gen_update["latitude"] = payload.latitude
         gen_update["longitude"] = payload.longitude
-    await db.generators.update_one({"generator_id": generator_id}, {"$set": gen_update})
+    await db.generators.update_one(
+        {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
+        {"$set": gen_update}
+    )
 
     # Store telemetry records
     inserted = 0
@@ -1128,7 +1162,7 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         record_dse_mode = record.get("dse_mode")
         if record_dse_mode and record_dse_mode != "unknown":
             await db.generators.update_one(
-                {"generator_id": generator_id},
+                {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
                 {"$set": {"last_dse_mode": record_dse_mode, "last_dse_mode_at": now_iso}}
             )
             await db.devices.update_one(
@@ -1166,7 +1200,7 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     # DSE-Modus aus letztem erfolgreichen Befehl aktualisieren
     if last_mode_from_cmd:
         await db.generators.update_one(
-            {"generator_id": generator_id},
+            {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
             {"$set": {"last_dse_mode": last_mode_from_cmd, "last_dse_mode_at": now_iso}}
         )
         await db.devices.update_one(
