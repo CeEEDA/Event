@@ -1292,24 +1292,100 @@ fi
 # pyserial fuer AT-Tests installieren (in System-Python)
 sudo pip3 install --quiet --break-system-packages pyserial 2>/dev/null || sudo pip3 install --quiet pyserial 2>/dev/null || true
 
-# Warten bis Modem antwortet
-echo "  Warte auf Modem..."
-MODEM_PORT="{body.lte_port}"
-MODEM_OK=0
-for i in $(seq 1 15); do
-    if [ -e "$MODEM_PORT" ]; then
-        if sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT" 2>/dev/null; then
-            MODEM_OK=1
-            echo "  Modem antwortet auf $MODEM_PORT"
-            break
-        fi
+# Warten bis Modem antwortet - AUTO-ERKENNUNG des richtigen Ports
+echo "  Modem-Port automatisch erkennen..."
+
+# Alle verfuegbaren Ports sammeln (UART + USB)
+ALL_PORTS="{body.lte_port}"
+for p in /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyUSB5 /dev/ttyAMA0 /dev/ttyAMA10; do
+    if [ -e "$p" ] && [[ "$ALL_PORTS" != *"$p"* ]]; then
+        ALL_PORTS="$ALL_PORTS $p"
     fi
-    sleep 2
 done
 
+# AT-Port finden (fuer PPP/Steuerung)
+MODEM_PORT=""
+GPS_PORT=""
+MODEM_OK=0
+
+for attempt in $(seq 1 3); do
+    echo "  Scan-Versuch $attempt/3..."
+    for p in $ALL_PORTS; do
+        [ ! -e "$p" ] && continue
+        # Teste ob Port AT-Kommandos akzeptiert
+        RESPONSE=$(sudo timeout 3 python3 -c "
+import serial, time
+try:
+    s = serial.Serial('$p', 115200, timeout=2)
+    s.reset_input_buffer()
+    s.write(b'AT\r\n')
+    time.sleep(1)
+    r = s.read(s.in_waiting or 256).decode(errors='ignore')
+    s.close()
+    if 'OK' in r:
+        print('AT_OK')
+    elif 'GPGGA' in r or 'GPRMC' in r or 'GNSS' in r:
+        print('GPS_NMEA')
+    else:
+        print('NONE')
+except:
+    print('NONE')
+" 2>/dev/null)
+
+        if [ "$RESPONSE" = "AT_OK" ] && [ -z "$MODEM_PORT" ]; then
+            MODEM_PORT="$p"
+            MODEM_OK=1
+            echo "    AT-Port gefunden: $p"
+        elif [ "$RESPONSE" = "GPS_NMEA" ] && [ -z "$GPS_PORT" ]; then
+            GPS_PORT="$p"
+            echo "    GPS-Port gefunden: $p (NMEA)"
+        fi
+    done
+
+    if [ "$MODEM_OK" -eq 1 ]; then
+        break
+    fi
+    sleep 3
+done
+
+# GPS-Port auch ueber AT+CGPSINFO suchen falls noch nicht gefunden
+if [ -z "$GPS_PORT" ]; then
+    for p in $ALL_PORTS; do
+        [ ! -e "$p" ] && continue
+        [ "$p" = "$MODEM_PORT" ] && continue
+        GPS_RESP=$(sudo timeout 5 python3 -c "
+import serial, time
+try:
+    s = serial.Serial('$p', 115200, timeout=3)
+    s.write(b'AT+CGPSINFO\r\n')
+    time.sleep(2)
+    r = s.read(s.in_waiting or 256).decode(errors='ignore')
+    s.close()
+    if 'CGPSINFO' in r:
+        print('GPS_AT')
+except:
+    pass
+" 2>/dev/null)
+        if [ "$GPS_RESP" = "GPS_AT" ]; then
+            GPS_PORT="$p"
+            echo "    GPS-Port gefunden: $p (AT)"
+            break
+        fi
+    done
+fi
+
 if [ "$MODEM_OK" -eq 0 ]; then
-    echo "  WARNUNG: Modem antwortet noch nicht."
+    MODEM_PORT="{body.lte_port}"
+    echo "  WARNUNG: Kein AT-Port gefunden. Verwende Standard: $MODEM_PORT"
     echo "  Nach Neustart pruefen: sudo python3 /tmp/at_test.py $MODEM_PORT AT"
+else
+    echo "  Modem: $MODEM_PORT"
+    echo "  GPS:   ${{GPS_PORT:-nicht gefunden}}"
+fi
+
+# Gefundene Ports in Config speichern
+if [ -n "$GPS_PORT" ]; then
+    echo "gps_port = $GPS_PORT" >> /etc/dse5510.conf
 fi
 
 # SIM-Status pruefen (kein PIN)
@@ -1318,6 +1394,8 @@ if [ "$MODEM_OK" -eq 1 ]; then
     sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CPIN?" 2>/dev/null || true
     echo "  Signalstaerke:"
     sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CSQ" 2>/dev/null || true
+    echo "  Netzwerk-Info:"
+    sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CPSI?" 2>/dev/null || true
 fi
 
 # PPP Chatscript erstellen
@@ -1329,19 +1407,17 @@ ABORT 'NO CARRIER'
 ABORT 'NO DIALTONE'
 ABORT 'NO ANSWER'
 ABORT 'DELAYED'
-ABORT 'ERROR'
 TIMEOUT 30
 '' AT
-OK ATH
 OK ATE0
 OK 'AT+CGDCONT=1,"IP","{body.lte_apn}"'
 OK ATD*99#
 CONNECT ''
 CHATSCRIPT
 
-# PPP Peer-Konfiguration (LTE als Fallback, ueberschreibt NICHT die LAN-Route)
+# PPP Peer-Konfiguration (nutzt automatisch erkannten Port)
 sudo tee /etc/ppp/peers/sim7600 > /dev/null << PPPCONF
-{body.lte_port}
+$MODEM_PORT
 115200
 connect '/usr/sbin/chat -v -f /etc/chatscripts/sim7600'
 noauth
