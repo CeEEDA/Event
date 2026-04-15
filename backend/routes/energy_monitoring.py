@@ -1114,7 +1114,116 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
 echo ""
 echo "[3/{total_steps}] LTE-Modem konfigurieren (SIM7600E-H)..."
 
-# UART aktivieren auf Pi 5
+# --- 3a: Netzwerk-Prioritaeten konfigurieren (dhcpcd) ---
+echo "  Netzwerk-Routing konfigurieren (LAN Prio, LTE Fallback)..."
+
+# dhcpcd.conf: LAN bekommt niedrige metric (= hohe Prio), LTE hohe metric
+# Wenn kein LAN-Gateway vorhanden → LTE uebernimmt automatisch
+DHCPCD_CONF="/etc/dhcpcd.conf"
+if [ -f "$DHCPCD_CONF" ]; then
+    # Alte Eintraege entfernen falls vorhanden
+    sudo sed -i '/^# --- Eventenergie Netzwerk ---/,/^# --- Ende Eventenergie ---/d' "$DHCPCD_CONF"
+fi
+
+sudo tee -a "$DHCPCD_CONF" > /dev/null << 'DHCPCD_NET'
+
+# --- Eventenergie Netzwerk ---
+# LAN (eth0) hat hoechste Prioritaet wenn verfuegbar
+interface eth0
+metric 100
+static domain_name_servers=8.8.8.8 8.8.4.4
+
+# WLAN als zweite Wahl
+interface wlan0
+metric 200
+static domain_name_servers=8.8.8.8 8.8.4.4
+
+# DNS Fallback global
+static domain_name_servers=8.8.8.8 8.8.4.4
+# --- Ende Eventenergie ---
+DHCPCD_NET
+
+echo "  dhcpcd.conf: eth0 metric=100, wlan0 metric=200 (LTE=700)"
+
+# --- 3b: DNS dauerhaft sicherstellen ---
+echo "  DNS-Fallback konfigurieren..."
+# resolv.conf direkt setzen (sofort wirksam)
+if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
+fi
+
+# dhcpcd-Hook: nach jedem DHCP-Event DNS sicherstellen
+sudo tee /lib/dhcpcd/dhcpcd-hooks/99-dns-fallback > /dev/null << 'DNSHOOK'
+# Eventenergie: DNS-Fallback sicherstellen
+if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+fi
+DNSHOOK
+
+# --- 3c: Network-Watchdog (entfernt tote eth0-Routen) ---
+echo "  Network-Watchdog installieren..."
+sudo tee /usr/local/bin/network-watchdog.sh > /dev/null << 'WATCHDOG'
+#!/bin/bash
+# Eventenergie Network-Watchdog
+# Prueft ob die Default-Route ueber eth0 tatsaechlich Internet hat.
+# Falls nicht (eth0 DOWN oder kein Gateway), wird die Route entfernt
+# damit LTE (ppp0) uebernehmen kann.
+
+ETH_ROUTE=$(ip route show default dev eth0 2>/dev/null)
+if [ -n "$ETH_ROUTE" ]; then
+    # eth0 hat eine Default-Route - pruefe ob sie funktioniert
+    ETH_STATE=$(cat /sys/class/net/eth0/carrier 2>/dev/null || echo "0")
+    if [ "$ETH_STATE" != "1" ]; then
+        # eth0 hat keinen Link (Kabel nicht gesteckt oder kein Carrier)
+        ip route del default dev eth0 2>/dev/null
+        logger -t network-watchdog "eth0 Default-Route entfernt (kein Carrier)"
+    else
+        # eth0 hat Link - teste ob Internet erreichbar
+        if ! ping -c 1 -W 3 -I eth0 8.8.8.8 &>/dev/null; then
+            # eth0 hat zwar Link aber kein Internet (z.B. lokales Netz ohne Gateway)
+            ip route del default dev eth0 2>/dev/null
+            logger -t network-watchdog "eth0 Default-Route entfernt (kein Internet)"
+        fi
+    fi
+fi
+
+# DNS Fallback sicherstellen
+if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+fi
+WATCHDOG
+sudo chmod +x /usr/local/bin/network-watchdog.sh
+
+# Watchdog als systemd-Timer (alle 30 Sekunden)
+sudo tee /etc/systemd/system/network-watchdog.service > /dev/null << 'WDSERVICE'
+[Unit]
+Description=Eventenergie Network Watchdog
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/network-watchdog.sh
+WDSERVICE
+
+sudo tee /etc/systemd/system/network-watchdog.timer > /dev/null << 'WDTIMER'
+[Unit]
+Description=Eventenergie Network Watchdog Timer
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=30
+AccuracySec=5
+
+[Install]
+WantedBy=timers.target
+WDTIMER
+
+sudo systemctl daemon-reload
+sudo systemctl enable network-watchdog.timer
+sudo systemctl start network-watchdog.timer
+echo "  Network-Watchdog aktiv (prueft alle 30s)"
+
+# --- 3d: UART aktivieren ---
 echo "  UART aktivieren..."
 BOOT_CFG="/boot/firmware/config.txt"
 if [ ! -f "$BOOT_CFG" ]; then
@@ -1266,23 +1375,7 @@ ip route del default via $IPREMOTE dev $IFNAME metric 700 2>/dev/null || true
 LTEFALLBACKDOWN
 sudo chmod +x /etc/ppp/ip-down.d/99-lte-fallback
 
-# DNS-Fix: Google DNS hinzufuegen (Telekom-LTE DNS funktioniert nicht immer)
-if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
-    echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
-fi
-# Persistent machen (ueberlebt dhclient/NetworkManager)
-sudo tee /etc/resolv.conf.tail > /dev/null << 'DNSFIX'
-nameserver 8.8.8.8
-DNSFIX
-# dhcpcd hook fuer persistenten DNS
-sudo mkdir -p /etc/dhcpcd.exit-hook.d 2>/dev/null || true
-sudo tee /etc/dhcpcd.exit-hook.d/add-google-dns > /dev/null << 'DNSHOOK'
-#!/bin/bash
-if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
-    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-fi
-DNSHOOK
-sudo chmod +x /etc/dhcpcd.exit-hook.d/add-google-dns 2>/dev/null || true
+# DNS bereits in Schritt 3a/3b konfiguriert (dhcpcd.conf + Hook + Watchdog)
 
 # AT-Test Skript persistent ablegen (nicht in /tmp)
 sudo tee /usr/local/bin/at_test.py > /dev/null << 'ATTEST'
@@ -1350,6 +1443,28 @@ if ip link show ppp0 &>/dev/null; then
 else
     echo "    LTE: Verbindung wird aufgebaut..."
     echo "    Pruefen: sudo journalctl -u lte-connection -n 20"
+fi
+
+# Netzwerk-Routing pruefen
+echo ""
+echo "  Netzwerk-Routing:"
+ip route show default 2>/dev/null | while read line; do
+    echo "    $line"
+done
+echo "  Network-Watchdog: $(systemctl is-active network-watchdog.timer 2>/dev/null || echo 'nicht aktiv')"
+
+# Internet-Test
+echo ""
+echo "  Internet-Test:"
+if ping -c 1 -W 3 8.8.8.8 &>/dev/null; then
+    echo "    Ping 8.8.8.8: OK"
+else
+    echo "    Ping 8.8.8.8: FEHLT - Routing pruefen!"
+fi
+if ping -c 1 -W 3 google.de &>/dev/null; then
+    echo "    DNS google.de: OK"
+else
+    echo "    DNS google.de: FEHLT - DNS pruefen!"
 fi
 """
 
