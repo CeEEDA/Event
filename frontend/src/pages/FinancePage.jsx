@@ -7,8 +7,18 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, Download, FileText, Send, ChevronRight,
-  TrendingUp, Receipt, CheckCircle, Clock,
+  TrendingUp, Receipt, CheckCircle, Clock, AlertTriangle,
+  CircleDollarSign, Ban,
 } from "lucide-react";
+import { toast } from "sonner";
+
+const PAYMENT_STATUS = {
+  bezahlt: { label: "Bezahlt", color: "text-emerald-700", bg: "bg-emerald-50", icon: CheckCircle },
+  offen: { label: "Offen", color: "text-amber-700", bg: "bg-amber-50", icon: Clock },
+  mahnung: { label: "Offen > 3 Tage", color: "text-orange-700", bg: "bg-orange-50", icon: AlertTriangle },
+  ueberfaellig: { label: "Überfällig", color: "text-red-700", bg: "bg-red-50", icon: Ban },
+  erstellt: { label: "Erstellt", color: "text-gray-500", bg: "bg-gray-50", icon: FileText },
+};
 
 export default function FinancePage() {
   const { user, isAdmin } = useAuth();
@@ -17,6 +27,7 @@ export default function FinancePage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(null);
+  const [filter, setFilter] = useState("alle");
 
   const canAccess = isAdmin || user?.permissions?.can_billing;
 
@@ -61,6 +72,19 @@ export default function FinancePage() {
     }
   };
 
+  const togglePayment = async (inv) => {
+    const newStatus = inv.payment_status === "bezahlt" ? "offen" : "bezahlt";
+    const label = newStatus === "bezahlt" ? "als bezahlt markieren" : "auf offen setzen";
+    if (!window.confirm(`${inv.invoice_number} ${label}?`)) return;
+    try {
+      await api.put(`/kirmes/invoices/${inv.id}/payment-status`, { payment_status: newStatus });
+      toast.success(`${inv.invoice_number}: ${newStatus === "bezahlt" ? "Bezahlt" : "Offen"}`);
+      loadInvoices();
+    } catch {
+      toast.error("Fehler beim Aktualisieren");
+    }
+  };
+
   if (!canAccess) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -71,7 +95,17 @@ export default function FinancePage() {
 
   const totalNetto = invoices.reduce((s, i) => s + (i.netto || 0), 0);
   const totalBrutto = invoices.reduce((s, i) => s + (i.brutto || 0), 0);
-  const sentCount = invoices.filter(i => i.sent_at).length;
+  const paidCount = invoices.filter(i => i.payment_status === "bezahlt").length;
+  const paidAmount = invoices.filter(i => i.payment_status === "bezahlt").reduce((s, i) => s + (i.brutto || 0), 0);
+  const openCount = invoices.filter(i => ["offen", "mahnung", "ueberfaellig"].includes(i.payment_status)).length;
+  const openAmount = invoices.filter(i => ["offen", "mahnung", "ueberfaellig"].includes(i.payment_status)).reduce((s, i) => s + (i.brutto || 0), 0);
+  const overdueCount = invoices.filter(i => i.payment_status === "ueberfaellig" || i.payment_status === "mahnung").length;
+
+  const filtered = filter === "alle" ? invoices
+    : filter === "bezahlt" ? invoices.filter(i => i.payment_status === "bezahlt")
+    : filter === "offen" ? invoices.filter(i => ["offen", "mahnung", "ueberfaellig"].includes(i.payment_status))
+    : filter === "ueberfaellig" ? invoices.filter(i => i.payment_status === "ueberfaellig" || i.payment_status === "mahnung")
+    : invoices;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="finance-page">
@@ -91,35 +125,44 @@ export default function FinancePage() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 w-full space-y-6">
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="stat-total">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <button onClick={() => setFilter("alle")} className={`bg-white border rounded-lg p-4 text-left transition ${filter === "alle" ? "border-fuchsia-400 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`} data-testid="stat-total">
             <div className="flex items-center gap-2 mb-1">
               <FileText className="w-4 h-4 text-gray-400" />
               <span className="text-xs text-gray-500">Rechnungen</span>
             </div>
             <p className="text-2xl font-bold text-gray-900">{invoices.length}</p>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="stat-netto">
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="w-4 h-4 text-gray-400" />
-              <span className="text-xs text-gray-500">Netto gesamt</span>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{totalNetto.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</p>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="stat-brutto">
+          </button>
+          <button onClick={() => setFilter("alle")} className={`bg-white border rounded-lg p-4 text-left transition ${filter === "alle" ? "border-fuchsia-400 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`} data-testid="stat-brutto">
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="w-4 h-4 text-emerald-500" />
               <span className="text-xs text-gray-500">Brutto gesamt</span>
             </div>
             <p className="text-2xl font-bold text-emerald-600">{totalBrutto.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</p>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="stat-sent">
+          </button>
+          <button onClick={() => setFilter("bezahlt")} className={`bg-white border rounded-lg p-4 text-left transition ${filter === "bezahlt" ? "border-emerald-400 ring-1 ring-emerald-200" : "border-gray-200 hover:border-gray-300"}`} data-testid="stat-paid">
             <div className="flex items-center gap-2 mb-1">
-              <Send className="w-4 h-4 text-gray-400" />
-              <span className="text-xs text-gray-500">Versendet</span>
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs text-gray-500">Bezahlt</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{sentCount} / {invoices.length}</p>
-          </div>
+            <p className="text-2xl font-bold text-emerald-600">{paidCount}</p>
+            <p className="text-xs text-emerald-500 mt-0.5">{paidAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</p>
+          </button>
+          <button onClick={() => setFilter("offen")} className={`bg-white border rounded-lg p-4 text-left transition ${filter === "offen" ? "border-amber-400 ring-1 ring-amber-200" : "border-gray-200 hover:border-gray-300"}`} data-testid="stat-open">
+            <div className="flex items-center gap-2 mb-1">
+              <Clock className="w-4 h-4 text-amber-500" />
+              <span className="text-xs text-gray-500">Offen</span>
+            </div>
+            <p className="text-2xl font-bold text-amber-600">{openCount}</p>
+            <p className="text-xs text-amber-500 mt-0.5">{openAmount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</p>
+          </button>
+          <button onClick={() => setFilter("ueberfaellig")} className={`bg-white border rounded-lg p-4 text-left transition ${filter === "ueberfaellig" ? "border-red-400 ring-1 ring-red-200" : "border-gray-200 hover:border-gray-300"}`} data-testid="stat-overdue">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+              <span className="text-xs text-gray-500">Mahnung</span>
+            </div>
+            <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
+          </button>
         </div>
 
         {/* Search */}
@@ -147,59 +190,67 @@ export default function FinancePage() {
                   <th className="px-4 py-3 text-left hidden sm:table-cell">Datum</th>
                   <th className="px-4 py-3 text-right hidden sm:table-cell">Netto</th>
                   <th className="px-4 py-3 text-right">Brutto</th>
-                  <th className="px-4 py-3 text-center hidden md:table-cell">Status</th>
+                  <th className="px-4 py-3 text-center">Zahlung</th>
                   <th className="px-4 py-3 text-right">Aktionen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">Laden...</td></tr>
-                ) : invoices.length === 0 ? (
+                ) : filtered.length === 0 ? (
                   <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">{search ? "Keine Rechnungen gefunden" : "Noch keine Rechnungen vorhanden"}</td></tr>
-                ) : invoices.map(inv => (
-                  <tr key={inv.id} className="hover:bg-gray-50" data-testid={`inv-row-${inv.id}`}>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-sm font-semibold text-gray-900" data-testid={`inv-nr-${inv.id}`}>{inv.invoice_number}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded">{inv.schausteller_kundennummer || "–"}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{inv.schausteller_firma}</p>
-                        <p className="text-xs text-gray-500">{inv.schausteller_name}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell text-sm text-gray-600">{inv.event_name}</td>
-                    <td className="px-4 py-3 hidden sm:table-cell text-sm text-gray-500">{inv.invoice_date}</td>
-                    <td className="px-4 py-3 hidden sm:table-cell text-sm text-right font-mono text-gray-600">{inv.netto?.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</td>
-                    <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-gray-900">{inv.brutto?.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</td>
-                    <td className="px-4 py-3 hidden md:table-cell text-center">
-                      {inv.sent_at ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <CheckCircle className="w-3 h-3" /> Versendet
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                          <Clock className="w-3 h-3" /> Erstellt
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-fuchsia-600" onClick={() => downloadPdf(inv)} title="PDF herunterladen" data-testid={`dl-pdf-${inv.id}`}>
-                          <Download className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-emerald-600" onClick={() => sendInvoice(inv)} disabled={sending === inv.id} title="Per E-Mail senden" data-testid={`send-inv-${inv.id}`}>
-                          <Send className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-fuchsia-600" onClick={() => navigate(`/admin/schausteller/${inv.schausteller_id || ""}`)} title="Kunde anzeigen" data-testid={`view-sch-${inv.id}`}>
-                          <ChevronRight className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                ) : filtered.map(inv => {
+                  const ps = PAYMENT_STATUS[inv.payment_status] || PAYMENT_STATUS.erstellt;
+                  const Icon = ps.icon;
+                  return (
+                    <tr key={inv.id} className="hover:bg-gray-50" data-testid={`inv-row-${inv.id}`}>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-sm font-semibold text-gray-900" data-testid={`inv-nr-${inv.id}`}>{inv.invoice_number}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded">{inv.schausteller_kundennummer || "\u2013"}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{inv.schausteller_firma}</p>
+                          <p className="text-xs text-gray-500">{inv.schausteller_name}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell text-sm text-gray-600">{inv.event_name}</td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <span className="text-sm text-gray-500">{inv.invoice_date}</span>
+                        {inv.days_since_invoice > 3 && inv.payment_status !== "bezahlt" && (
+                          <span className="block text-[10px] text-red-500">{inv.days_since_invoice} Tage</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 hidden sm:table-cell text-sm text-right font-mono text-gray-600">{inv.netto?.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</td>
+                      <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-gray-900">{inv.brutto?.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => togglePayment(inv)}
+                          className={`inline-flex items-center gap-1 text-xs ${ps.color} ${ps.bg} px-2 py-1 rounded-full cursor-pointer hover:opacity-80 transition`}
+                          title={inv.payment_status === "bezahlt" ? "Auf offen setzen" : "Als bezahlt markieren"}
+                          data-testid={`payment-toggle-${inv.id}`}
+                        >
+                          <Icon className="w-3 h-3" /> {ps.label}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-fuchsia-600" onClick={() => downloadPdf(inv)} title="PDF herunterladen" data-testid={`dl-pdf-${inv.id}`}>
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-emerald-600" onClick={() => sendInvoice(inv)} disabled={sending === inv.id} title="Per E-Mail senden" data-testid={`send-inv-${inv.id}`}>
+                            <Send className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-fuchsia-600" onClick={() => navigate(`/admin/schausteller/${inv.schausteller_id || ""}`)} title="Kunde anzeigen" data-testid={`view-sch-${inv.id}`}>
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

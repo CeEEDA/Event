@@ -1629,7 +1629,31 @@ async def list_invoices(
         "schausteller_id": 1, "schausteller_firma": 1, "schausteller_name": 1, "schausteller_email": 1,
         "schausteller_kundennummer": 1,
         "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "created_at": 1,
+        "payment_status": 1, "paid_at": 1, "paid_amount": 1, "payment_note": 1, "due_date": 1,
     }).sort("invoice_number", 1).to_list(5000)
+
+    # Berechne Faelligkeitsstatus fuer jede Rechnung
+    now = datetime.now(timezone.utc)
+    for inv in invoices:
+        ps = inv.get("payment_status", "offen")
+        if ps == "bezahlt":
+            inv["payment_status"] = "bezahlt"
+        elif inv.get("sent_at"):
+            inv.setdefault("payment_status", "offen")
+            # Ueberfaellig: > 14 Tage nach Rechnungsdatum
+            try:
+                inv_date = datetime.strptime(inv.get("invoice_date", ""), "%d.%m.%Y").replace(tzinfo=timezone.utc)
+                days_since = (now - inv_date).days
+                inv["days_since_invoice"] = days_since
+                if ps != "bezahlt" and days_since > 14:
+                    inv["payment_status"] = "ueberfaellig"
+                elif ps != "bezahlt" and days_since > 3:
+                    inv["payment_status"] = "mahnung"
+            except (ValueError, TypeError):
+                pass
+        else:
+            inv["payment_status"] = "erstellt"
+
     return invoices
 
 
@@ -1657,6 +1681,37 @@ async def download_invoice_pdf(invoice_id: str, user: dict = Depends(_require_st
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+class PaymentStatusUpdate(BaseModel):
+    payment_status: str  # "bezahlt", "offen", "teilweise_bezahlt"
+    paid_amount: Optional[float] = None
+    payment_note: Optional[str] = None
+
+
+@router.put("/invoices/{invoice_id}/payment-status")
+async def update_payment_status(invoice_id: str, data: PaymentStatusUpdate, user: dict = Depends(_require_staff)):
+    """Update payment status of an invoice."""
+    if user.get("role") != "admin" and not user.get("permissions", {}).get("can_billing"):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+
+    update = {
+        "payment_status": data.payment_status,
+        "payment_updated_at": datetime.now(timezone.utc).isoformat(),
+        "payment_updated_by": user.get("name", ""),
+    }
+    if data.payment_status == "bezahlt":
+        update["paid_at"] = datetime.now(timezone.utc).isoformat()
+        update["paid_amount"] = data.paid_amount or inv.get("brutto", 0)
+    if data.payment_note:
+        update["payment_note"] = data.payment_note
+
+    await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update})
+    return {"message": "Zahlungsstatus aktualisiert", "payment_status": data.payment_status}
+
 
 
 @router.post("/invoices/{invoice_id}/send")
