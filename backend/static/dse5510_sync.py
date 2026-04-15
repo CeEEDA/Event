@@ -1046,8 +1046,8 @@ def main():
 
             now = time.time()
 
-            # DSE 5510 auslesen (alle 5 Minuten - Messwerte aendern sich selten)
-            if now - last_read_time >= 300:
+            # DSE 5510 auslesen (alle 20 Minuten im Normalbetrieb)
+            if now - last_read_time >= 1200:
                 data = read_dse5510(ser, int(conf["slave_id"]))
                 if data.get("online"):
                     store_telemetry(conf["db_path"], data)
@@ -1110,6 +1110,34 @@ def main():
                 if cmd_count > 0 and (ser is None or not ser.is_open):
                     log.info("Serial-Port nach Steuerbefehl geschlossen - wird automatisch neu geoeffnet")
                     ser = None
+
+                # Nach Steuerbefehl: sofort lesen + syncen fuer schnelles UI-Feedback
+                if cmd_count > 0:
+                    log.info("Sofort-Readback nach Steuerbefehl...")
+                    time.sleep(2)  # DSE braucht kurz um den Modus zu wechseln
+                    # Port neu oeffnen falls noetig
+                    if ser is None or not ser.is_open:
+                        try:
+                            ser = serial.Serial(
+                                port=conf["serial_port"],
+                                baudrate=int(conf["baud_rate"]),
+                                bytesize=8, parity=parity, stopbits=1, timeout=1,
+                            )
+                            ser.reset_input_buffer()
+                            time.sleep(0.3)
+                        except Exception as e:
+                            log.warning(f"Readback Port-Fehler: {e}")
+                    if ser and ser.is_open:
+                        data = read_dse5510(ser, int(conf["slave_id"]))
+                        if data.get("online"):
+                            store_telemetry(conf["db_path"], data)
+                            log.info("Readback OK - sofort syncen...")
+                        last_read_time = time.time()
+                    # Sofort syncen damit das Portal die neuen Daten hat
+                    synced, ser = sync_to_portal(conf, last_gps, ser)
+                    last_sync_time = time.time()
+                    if ser is None or (hasattr(ser, 'is_open') and not ser.is_open):
+                        ser = None
 
             # Periodisch zum Portal syncen (alle 30 Sekunden)
             if now - last_sync_time >= int(conf["sync_interval"]):

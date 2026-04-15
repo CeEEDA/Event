@@ -332,9 +332,13 @@ export default function GeneratorDetailPage() {
       await api.post(`/mqtt/control/${id}`, { command });
       toast.success(`${label} gesendet`);
       setPendingCmd(command); // Start blinking
-      setTimeout(fetchData, 3000);
+      // DSE 5510 Pi: Command ausfuehren + Readback dauert ~5-7s
+      // Schnelles Polling: 5s, 10s, 20s nach Befehl
+      setTimeout(fetchData, 5000);
+      setTimeout(fetchData, 10000);
+      setTimeout(fetchData, 20000);
       // 2 Min schneller Refresh, dann zurueck auf 20 Min
-      setRefreshMs(120000);
+      setRefreshMs(30000);
       setTimeout(() => {
         setRefreshMs(1200000);
         setPendingCmd(null); // Stop blinking after 2 min
