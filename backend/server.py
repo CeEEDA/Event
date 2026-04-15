@@ -1528,7 +1528,7 @@ async def download_dse890_gateway():
 
 @api_router.get("/download-dse8610-module-topics")
 async def download_dse8610_module():
-    return FileResponse(os.path.join(STATIC_DIR, "dse8610_module_topics.csv"), media_type="text/csv", filename="dse8610_module_topics.csv")
+    return FileResponse(os.path.join(STATIC_DIR, UNIVERSAL_TOPIC_FILE), media_type="text/csv", filename=UNIVERSAL_TOPIC_FILE)
 
 @api_router.get("/download-register-scan")
 async def download_register_scan():
@@ -1542,28 +1542,7 @@ async def download_register_scan():
 
 @api_router.get("/download-dsel401-module-topics")
 async def download_dsel401_module():
-    # Hardcoded correct content to bypass any file/cache issues
-    content = """Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,1,1,0,,,,,,Coolant temp degC
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,3,1,0,,,,,,Fuel level percent
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,6,1,0,,,,,,Engine speed RPM
-%GROUP%/%TYPE%/%UID%/status,,P,,120,0,,,1,3,4,1,0,,,,,,Fault code
-%GROUP%/%TYPE%/%UID%/status,,P,,120,0,,,1,3,6,1,0,,,,,,Status bits
-%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,28,2,0,,,,,,Gen L1 watts
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/alarm,,P,,300,1,,,4,5,0,2,0,,,,,,Alarm status
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,16,8,2,0,,,,,,Control
-""".strip()
-    from starlette.responses import Response
-    return Response(content=content, media_type="text/csv",
-                    headers={"Content-Disposition": "attachment; filename=dsel401_module_topics.csv",
-                             "Cache-Control": "no-cache, no-store, must-revalidate"})
+    return FileResponse(os.path.join(STATIC_DIR, UNIVERSAL_TOPIC_FILE), media_type="text/csv", filename=UNIVERSAL_TOPIC_FILE)
 
 @api_router.get("/download/desktop-app-mac")
 async def download_desktop_app_mac():
@@ -1677,78 +1656,15 @@ async def download_tankbeleg_pi_bundle():
     )
 
 
-# Dynamic topic file download based on controller type
-CONTROLLER_TOPIC_MAP = {
-    "DSE 8610 MKII": ("dse8610_module_topics.csv", "dse8610_module_topics.csv"),
-    "DSE 8610": ("dse8610_module_topics.csv", "dse8610_module_topics.csv"),
-    "DSE 7310": ("dse8610_module_topics.csv", "dse7310_module_topics.csv"),
-    "DSE L401": ("dsel401_module_topics.csv", "dsel401_module_topics.csv"),
-}
+# Universal topic file download – all DSE controllers use the same GenComm register map
+UNIVERSAL_TOPIC_FILE = "dse_universal_module_topics.csv"
 
 @api_router.get("/download-controller-topics/{controller_type}")
 async def download_controller_topics(controller_type: str):
-    # L401: return hardcoded correct content (file cache workaround)
-    if "l401" in controller_type.lower():
-        content = """Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,1,1,0,,,,,,Coolant temp degC
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,3,1,0,,,,,,Fuel level percent
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,6,1,0,,,,,,Engine speed RPM
-%GROUP%/%TYPE%/%UID%/status,,P,,120,0,,,1,3,4,1,0,,,,,,Fault code
-%GROUP%/%TYPE%/%UID%/status,,P,,120,0,,,1,3,6,1,0,,,,,,Status bits
-%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,28,2,0,,,,,,Gen L1 watts
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/alarm,,P,,300,1,,,4,5,0,2,0,,,,,,Alarm status
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,16,8,2,0,,,,,,Control
-""".strip()
-        from starlette.responses import Response
-        return Response(content=content, media_type="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=dsel401_module_topics.csv",
-                                 "Cache-Control": "no-cache, no-store, must-revalidate"})
-
-    # 8610: hardcoded correct content
-    if "8610" in controller_type:
-        content = """Topic,Topic Mask,Type,Properties,Period,QOS,Expiry,Flags,Function,Field 1,Field 2,Field 3,Field 4,Field 5,Field 6,Field 7,Field 8,Field 9,Notes
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,0,1,0,,,,,,Oil pressure kPa
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,1,1,0,,,,,,Coolant temp degC
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,2,1,0,,,,,,Oil temp degC
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,3,1,0,,,,,,Fuel level percent
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,5,1,0,,,,,,Battery voltage 0.1V
-%GROUP%/%TYPE%/%UID%/engine,,P,,120,0,,,1,4,6,1,0,,,,,,Engine speed RPM
-%GROUP%/%TYPE%/%UID%/status,,P,,120,0,,,1,3,4,1,0,,,,,,Fault code
-%GROUP%/%TYPE%/%UID%/status,,P,,120,0,,,1,3,6,1,0,,,,,,Status bits
-%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,7,1,0,,,,,,Generator frequency 0.1Hz
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,8,2,0,,,,,,Gen L1-N voltage 0.1V
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,10,2,0,,,,,,Gen L2-N voltage 0.1V
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,12,2,0,,,,,,Gen L3-N voltage 0.1V
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,20,2,0,,,,,,Gen L1 current 0.1A
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,22,2,0,,,,,,Gen L2 current 0.1A
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,24,2,0,,,,,,Gen L3 current 0.1A
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,28,2,0,,,,,,Gen L1 watts
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,30,2,0,,,,,,Gen L2 watts
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,32,2,0,,,,,,Gen L3 watts
-%GROUP%/%TYPE%/%UID%/generator,,P,,120,0,,,1,4,34,2,0,,,,,,Gen total watts
-%GROUP%/%TYPE%/%UID%/hours,,P,,1200,0,,,1,7,6,2,0,,,,,,Run hours seconds
-%GROUP%/%TYPE%/%UID%/alarm,,P,,300,1,,,4,5,0,2,0,,,,,,Alarm status
-%GROUP%/%TYPE%/%UID%/control,,S,,,1,,,3,16,8,2,0,,,,,,Control
-""".strip()
-        from starlette.responses import Response
-        return Response(content=content, media_type="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=dse8610_module_topics.csv",
-                                 "Cache-Control": "no-cache, no-store, must-revalidate"})
-
-    mapping = CONTROLLER_TOPIC_MAP.get(controller_type)
-    if not mapping:
-        raise HTTPException(status_code=404, detail=f"Keine Topic-Datei für Steuerung '{controller_type}' verfügbar")
-    file_path = os.path.join(STATIC_DIR, mapping[0])
+    """Serve the unified DSE module topic file for any controller type."""
+    file_path = os.path.join(STATIC_DIR, UNIVERSAL_TOPIC_FILE)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Topic-Datei nicht gefunden")
+        raise HTTPException(status_code=404, detail="Universelle Topic-Datei nicht gefunden")
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
     from starlette.responses import Response
@@ -1756,7 +1672,7 @@ async def download_controller_topics(controller_type: str):
         content=content,
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename={mapping[1]}",
+            "Content-Disposition": f"attachment; filename={UNIVERSAL_TOPIC_FILE}",
             "Cache-Control": "no-cache, no-store, must-revalidate",
         }
     )

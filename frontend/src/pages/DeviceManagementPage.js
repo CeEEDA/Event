@@ -322,24 +322,11 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
 }
 
 const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
-const CONTROLLER_TOPIC_INFO = {
-  "DSE 8610 MKII": { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" },
-  "DSE 8610": { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" },
-  "DSE 7310": { filename: "dse8610_module_topics.csv", label: "DSE 7310 Module Topics" },
-  "DSE L401": { filename: "dsel401_module_topics.csv", label: "DSE L401 Module Topics" },
-};
+const UNIVERSAL_TOPIC_LABEL = "DSE Universal Module Topics";
 
 function DseGatewaySetupSection({ controller, serialNumber, formData, update, deviceId }) {
-  // Flexible matching: find topic info regardless of naming variations
-  const resolveTopicInfo = (ctrl) => {
-    if (!ctrl) return null;
-    const c = ctrl.toLowerCase().replace(/\s+/g, "");
-    if (c.includes("l401")) return { filename: "dsel401_module_topics.csv", label: "DSE L401 Module Topics" };
-    if (c.includes("8610")) return { filename: "dse8610_module_topics.csv", label: "DSE 8610 Module Topics" };
-    if (c.includes("7310")) return { filename: "dse8610_module_topics.csv", label: "DSE 7310 Module Topics" };
-    return CONTROLLER_TOPIC_INFO[ctrl] || null;
-  };
-  const topicInfo = resolveTopicInfo(controller);
+  // All DSE controllers use the same universal GenComm topic file
+  const topicInfo = controller ? { filename: "dse_universal_module_topics.csv", label: UNIVERSAL_TOPIC_LABEL } : null;
   const brokerUrl = "217.86.214.29";
   const brokerPort = "1883";
   const groupName = "eventenergie";

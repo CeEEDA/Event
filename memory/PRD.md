@@ -31,9 +31,10 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Mosquitto passwd file path fixed to C:\Program Files\Mosquitto\passwd
 
 ### Topic Files
-- [x] L401: 1-phase, 120s messwerte, 1200s hours, 300s alarm, P16 R8 control
-- [x] 8610: 3-phase, 120s messwerte, 1200s hours, 300s alarm, P16 R8 control
+- [x] Universal: Alle DSE Controller (L401, 8610, 8610 MKII, 7310, 5510) nutzen dieselbe GenComm Topic-Datei (`dse_universal_module_topics.csv`)
+- [x] Enthält: Oil pressure, Coolant temp, Oil temp, Fuel level, Battery voltage, Engine speed, L1-L3 Voltage/Current/Watts, Total watts, Frequency, Fault code, Status bits, Run hours (P7 R6 seconds), Number of starts (P7 R16), Alarm, Control
 - [x] Gateway: status, GPS, topic_file subscribe
+- [x] Backend: Alle Download-Endpoints liefern die universelle Datei (kein hardcoded content mehr)
 
 ### Performance Optimizations
 - [x] MQTT deduplication (overlapping subscriptions)
@@ -63,8 +64,8 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung
 - [ ] PayPal/Kreditkarten Integration
-- [ ] Betriebsstunden Register verifizieren (Hersteller-Antwort abwarten)
 - [ ] Caddy Cache-Problem für Portal-Downloads endgültig lösen
+- [ ] Dymo Label Drucker: pywin32 auf Windows Server installieren
 
 ## Future Tasks (P2)
 - [ ] Lastdiagramm Live-Test (requires EMU meters)
