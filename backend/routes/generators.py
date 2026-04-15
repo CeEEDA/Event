@@ -1047,15 +1047,13 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         generator_id = existing_gen.get("id", generator_id)
 
     # Update device status + latest_snapshot from newest record
-    # Nur "online" wenn tatsaechlich DSE-Daten vorliegen (nicht nur Pi-Heartbeat)
+    # Nur "online" wenn DSE tatsaechlich Daten liefert
+    # Batteriespannung > 0 = DSE Display ist an und kommuniziert
     has_dse_data = False
     if payload.records:
         rec = payload.records[-1]
-        # Pruefen ob mindestens ein echter Messwert vorhanden ist
-        has_dse_data = any(rec.get(k) not in (None, 0, 0.0) for k in (
-            "battery_voltage", "rpm", "frequency", "voltage_l1", "voltage_l2", "voltage_l3",
-            "oil_pressure_kpa", "coolant_temp_c",
-        ))
+        batt = rec.get("battery_voltage", 0) or 0
+        has_dse_data = batt > 0
 
     device_status = "online" if has_dse_data else "verbunden"
     update_fields = {
