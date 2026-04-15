@@ -1487,6 +1487,12 @@ fi
 # ==============================================================
 set -e
 
+# Auto-Root: Falls nicht als root gestartet, automatisch mit sudo neu starten
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Starte als root..."
+    exec sudo bash "$0" "$@"
+fi
+
 echo "========================================================"
 echo "  DSE 5510 Auto-Setup"
 echo "  Geraet: {device.get('serial_number', device_id[:12])}"
