@@ -1016,7 +1016,8 @@ async def get_schausteller(sch_id: str, user: dict = Depends(_require_staff)):
     invoices = await _db.kirmes_invoices.find(
         {"schausteller_id": sch_id},
         {"_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "event_id": 1,
-         "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "sent_to": 1, "created_at": 1}
+         "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "sent_to": 1, "created_at": 1,
+         "payment_status": 1, "paid_at": 1}
     ).sort("created_at", -1).to_list(100)
     sch["invoices"] = invoices
     return sch

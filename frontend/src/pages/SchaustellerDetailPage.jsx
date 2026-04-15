@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import {
   ArrowLeft, Tent, MapPin, CalendarDays, Zap, Mail, Phone, Building2,
-  FileText, Receipt, ChevronRight, Download, Send,
+  FileText, Receipt, ChevronRight, Download, Send, CheckCircle, Clock,
 } from "lucide-react";
 
 const PAYMENT_LABELS = {
@@ -247,6 +247,30 @@ export default function SchaustellerDetailPage() {
                     }`}>{inv.status}</span>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={async () => {
+                        const newStatus = inv.payment_status === "bezahlt" ? "offen" : "bezahlt";
+                        const label = newStatus === "bezahlt" ? "als bezahlt markieren" : "auf offen setzen";
+                        if (!window.confirm(`${inv.invoice_number} ${label}?`)) return;
+                        try {
+                          await api.put(`/kirmes/invoices/${inv.id}/payment-status`, { payment_status: newStatus });
+                          toast.success(`${inv.invoice_number}: ${newStatus === "bezahlt" ? "Bezahlt" : "Offen"}`);
+                          load();
+                        } catch { toast.error("Fehler"); }
+                      }}
+                      className={`p-2 transition-colors ${
+                        inv.payment_status === "bezahlt"
+                          ? "text-emerald-600 hover:text-amber-600"
+                          : "text-gray-400 hover:text-emerald-600"
+                      }`}
+                      title={inv.payment_status === "bezahlt" ? "Auf offen setzen" : "Als bezahlt markieren"}
+                      data-testid={`toggle-paid-${inv.id}`}
+                    >
+                      {inv.payment_status === "bezahlt"
+                        ? <CheckCircle className="w-4 h-4" />
+                        : <Clock className="w-4 h-4" />
+                      }
+                    </button>
                     <button
                       onClick={() => handleDownloadInvoice(inv.id, inv.invoice_number)}
                       className="p-2 text-gray-400 hover:text-emerald-600 transition-colors"
