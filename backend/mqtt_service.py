@@ -557,6 +557,9 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                     logger.info(f"MQTT: Status-Alarm for {device_id}: {alarm_text}")
         elif fault_code == 0:
             # No alarm active (status bits clear) - resolve open status-bit alarms
+            # und alten fault_text aus Snapshot entfernen
+            snapshot_fields["latest_snapshot.fault_code"] = None
+            snapshot_fields["latest_snapshot.fault_text"] = None
             open_count = await _db.generator_alarms.count_documents(
                 {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_"}, "resolved_at": None}
             )
@@ -566,6 +569,16 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                     {"$set": {"resolved_at": timestamp}}
                 )
                 logger.info(f"MQTT: Status-bit alarms resolved for {device_id}")
+            # Auch alte F-code Alarme (vom alten System) aufraemen
+            old_f_count = await _db.generator_alarms.count_documents(
+                {"generator_id": generator_id, "alarm_code": {"$regex": "^F"}, "resolved_at": None}
+            )
+            if old_f_count > 0:
+                await _db.generator_alarms.update_many(
+                    {"generator_id": generator_id, "alarm_code": {"$regex": "^F"}, "resolved_at": None},
+                    {"$set": {"resolved_at": timestamp}}
+                )
+                logger.info(f"MQTT: Old F-code alarms resolved for {device_id}")
         else:
             # No status data in this message → preserve existing alarm state
             current_device = await _db.devices.find_one({"id": device_id}, {"_id": 0, "mqtt_status": 1})
