@@ -1633,6 +1633,8 @@ async def list_invoices(
     }).sort("invoice_number", 1).to_list(5000)
 
     # Berechne Faelligkeitsstatus fuer jede Rechnung
+    # Zahlungsziel: Rechnungsdatum + 14 Tage
+    # Mahnung: ab 17 Tage nach Rechnungsdatum (3 Tage nach Faelligkeit)
     now = datetime.now(timezone.utc)
     for inv in invoices:
         ps = inv.get("payment_status", "offen")
@@ -1640,15 +1642,16 @@ async def list_invoices(
             inv["payment_status"] = "bezahlt"
         elif inv.get("sent_at"):
             inv.setdefault("payment_status", "offen")
-            # Ueberfaellig: > 14 Tage nach Rechnungsdatum
             try:
                 inv_date = datetime.strptime(inv.get("invoice_date", ""), "%d.%m.%Y").replace(tzinfo=timezone.utc)
                 days_since = (now - inv_date).days
                 inv["days_since_invoice"] = days_since
-                if ps != "bezahlt" and days_since > 14:
+                if ps != "bezahlt" and days_since > 17:
                     inv["payment_status"] = "ueberfaellig"
-                elif ps != "bezahlt" and days_since > 3:
-                    inv["payment_status"] = "mahnung"
+                elif ps != "bezahlt" and days_since > 14:
+                    inv["payment_status"] = "faellig"
+                else:
+                    inv["payment_status"] = "offen"
             except (ValueError, TypeError):
                 pass
         else:

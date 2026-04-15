@@ -15,8 +15,8 @@ import { toast } from "sonner";
 const PAYMENT_STATUS = {
   bezahlt: { label: "Bezahlt", color: "text-emerald-700", bg: "bg-emerald-50", icon: CheckCircle },
   offen: { label: "Offen", color: "text-amber-700", bg: "bg-amber-50", icon: Clock },
-  mahnung: { label: "Offen > 3 Tage", color: "text-orange-700", bg: "bg-orange-50", icon: AlertTriangle },
-  ueberfaellig: { label: "Überfällig", color: "text-red-700", bg: "bg-red-50", icon: Ban },
+  faellig: { label: "Fällig", color: "text-orange-700", bg: "bg-orange-50", icon: AlertTriangle },
+  ueberfaellig: { label: "Mahnung", color: "text-red-700", bg: "bg-red-50", icon: Ban },
   erstellt: { label: "Erstellt", color: "text-gray-500", bg: "bg-gray-50", icon: FileText },
 };
 
@@ -97,14 +97,14 @@ export default function FinancePage() {
   const totalBrutto = invoices.reduce((s, i) => s + (i.brutto || 0), 0);
   const paidCount = invoices.filter(i => i.payment_status === "bezahlt").length;
   const paidAmount = invoices.filter(i => i.payment_status === "bezahlt").reduce((s, i) => s + (i.brutto || 0), 0);
-  const openCount = invoices.filter(i => ["offen", "mahnung", "ueberfaellig"].includes(i.payment_status)).length;
-  const openAmount = invoices.filter(i => ["offen", "mahnung", "ueberfaellig"].includes(i.payment_status)).reduce((s, i) => s + (i.brutto || 0), 0);
-  const overdueCount = invoices.filter(i => i.payment_status === "ueberfaellig" || i.payment_status === "mahnung").length;
+  const openCount = invoices.filter(i => ["offen", "faellig", "ueberfaellig"].includes(i.payment_status)).length;
+  const openAmount = invoices.filter(i => ["offen", "faellig", "ueberfaellig"].includes(i.payment_status)).reduce((s, i) => s + (i.brutto || 0), 0);
+  const overdueCount = invoices.filter(i => i.payment_status === "ueberfaellig").length;
 
   const filtered = filter === "alle" ? invoices
     : filter === "bezahlt" ? invoices.filter(i => i.payment_status === "bezahlt")
-    : filter === "offen" ? invoices.filter(i => ["offen", "mahnung", "ueberfaellig"].includes(i.payment_status))
-    : filter === "ueberfaellig" ? invoices.filter(i => i.payment_status === "ueberfaellig" || i.payment_status === "mahnung")
+    : filter === "offen" ? invoices.filter(i => ["offen", "faellig", "ueberfaellig"].includes(i.payment_status))
+    : filter === "ueberfaellig" ? invoices.filter(i => i.payment_status === "ueberfaellig")
     : invoices;
 
   return (
@@ -219,7 +219,7 @@ export default function FinancePage() {
                       <td className="px-4 py-3 hidden md:table-cell text-sm text-gray-600">{inv.event_name}</td>
                       <td className="px-4 py-3 hidden sm:table-cell">
                         <span className="text-sm text-gray-500">{inv.invoice_date}</span>
-                        {inv.days_since_invoice > 3 && inv.payment_status !== "bezahlt" && (
+                        {inv.days_since_invoice > 14 && inv.payment_status !== "bezahlt" && (
                           <span className="block text-[10px] text-red-500">{inv.days_since_invoice} Tage</span>
                         )}
                       </td>
