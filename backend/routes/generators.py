@@ -1053,7 +1053,7 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     if payload.records:
         rec = payload.records[-1]
         batt = rec.get("battery_voltage", 0) or 0
-        has_dse_data = batt > 0
+        has_dse_data = batt > 5
 
     device_status = "online" if has_dse_data else "verbunden"
     update_fields = {
