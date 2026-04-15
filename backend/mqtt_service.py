@@ -490,8 +490,8 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             "frequency", "power_kw", "power_kva", "power_total_w",
             "oil_pressure", "coolant_temp", "fuel_level", "battery_voltage",
             "rpm", "engine_running", "hours_run", "engine_starts", "energy_kwh",
-            "load_percent", "power_factor", "dse_mode",
-            "fault_code", "fault_text", "emergency_stop", "status_bits",
+            "load_percent", "power_factor", "power_factor_avg", "dse_mode",
+            "fault_code", "fault_text", "status_bits",
         ]
         # Determine which fields this topic SHOULD contain
         engine_fields = {"oil_pressure", "coolant_temp", "fuel_level", "battery_voltage", "rpm"}
@@ -531,41 +531,43 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         else:
             gen_update["status"] = "online"
 
-        # Check for L401 fault code (P3 R4) → set alarm status
+        # Check for alarm conditions from P3R6 status bits (official GenComm)
+        status_alarms = telemetry_data.get("status_alarms")
         fault_code = telemetry_data.get("fault_code")
-        fault_text = telemetry_data.get("fault_text")
-        if fault_code and fault_code > 0:
+
+        if status_alarms:
+            # Active alarm(s) from status bits
             gen_update["status"] = "alarm"
             device_update["mqtt_status"] = "alarm"
-            # Store alarm
-            existing = await _db.generator_alarms.find_one(
-                {"generator_id": generator_id, "alarm_code": f"F{fault_code:03d}", "resolved_at": None}
-            )
-            if not existing:
-                await _db.generator_alarms.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "generator_id": generator_id,
-                    "alarm_code": f"F{fault_code:03d}",
-                    "alarm_text": fault_text or f"Stoerung Code {fault_code}",
-                    "severity": "shutdown" if fault_code == 2 else "warning",
-                    "timestamp": timestamp,
-                    "acknowledged": False,
-                    "resolved_at": None,
-                })
-                logger.info(f"MQTT: Alarm for {device_id}: {fault_text}")
+            for alarm_code, alarm_text, severity in status_alarms:
+                existing = await _db.generator_alarms.find_one(
+                    {"generator_id": generator_id, "alarm_code": alarm_code, "resolved_at": None}
+                )
+                if not existing:
+                    await _db.generator_alarms.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "generator_id": generator_id,
+                        "alarm_code": alarm_code,
+                        "alarm_text": alarm_text,
+                        "severity": severity,
+                        "timestamp": timestamp,
+                        "acknowledged": False,
+                        "resolved_at": None,
+                    })
+                    logger.info(f"MQTT: Status-Alarm for {device_id}: {alarm_text}")
         elif fault_code == 0:
-            # Fault cleared - resolve open alarms
+            # No alarm active (status bits clear) - resolve open status-bit alarms
             open_count = await _db.generator_alarms.count_documents(
-                {"generator_id": generator_id, "resolved_at": None}
+                {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_"}, "resolved_at": None}
             )
             if open_count > 0:
                 await _db.generator_alarms.update_many(
-                    {"generator_id": generator_id, "resolved_at": None},
+                    {"generator_id": generator_id, "alarm_code": {"$regex": "^SB_"}, "resolved_at": None},
                     {"$set": {"resolved_at": timestamp}}
                 )
-                logger.info(f"MQTT: Alarms resolved for {device_id}")
+                logger.info(f"MQTT: Status-bit alarms resolved for {device_id}")
         else:
-            # No fault data in this message → check if device already has alarm, don't overwrite
+            # No status data in this message → preserve existing alarm state
             current_device = await _db.devices.find_one({"id": device_id}, {"_id": 0, "mqtt_status": 1})
             if current_device and current_device.get("mqtt_status") == "alarm":
                 gen_update["status"] = "alarm"
@@ -854,31 +856,52 @@ def _parse_gencomm_registers(parsed, topic):
             return False
         return True
 
-    # Page 4 register mapping (standard DSE Gencomm instrumentation)
-    # Page 3: Controller status (L401 fault code + status bits)
-    fault_code = registers.get((3, 4))
+    # Page 3: Controller status (official GenComm mapping)
+    # P3R4 = Control mode (NOT fault code - previously misidentified)
+    DSE_MODE_MAP = {
+        0: "stop", 1: "auto", 2: "manual", 3: "test_on_load",
+        4: "auto_manual_restore", 5: "user_config", 6: "test_off_load",
+        7: "off", 8: "stop",
+    }
+    control_mode = registers.get((3, 4))
+    if control_mode is not None and valid(control_mode):
+        result["dse_mode"] = DSE_MODE_MAP.get(int(control_mode), f"mode_{int(control_mode)}")
+
+    # P3R6 = Status bits (official GenComm P3R6 bit definitions)
+    #   Bit 15 (0x8000): Control unit not configured
+    #   Bit 13 (0x2000): Control unit failure
+    #   Bit 12 (0x1000): Shutdown alarm active
+    #   Bit 11 (0x0800): Electrical trip
+    #   Bit 10 (0x0400): Warning alarm active
+    #   Bit 9  (0x0200): Telemetry alarm flag
+    #   Bit 8  (0x0100): Satellite telemetry alarm flag
+    #   Bit 7  (0x0080): No font file
+    #   Bit 6  (0x0040): Controlled shutdown alarm active
     status_bits = registers.get((3, 6))
-    if fault_code is not None and fault_code != 2147483647:
-        L401_FAULT_CODES = {
-            0: None,  # No fault
-            1: "Warnung (Warning)",
-            2: "Notaus (Emergency Stop)",
-            3: "Niedrige Spannung (Under Voltage)",
-            4: "Hohe Spannung (Over Voltage)",
-            5: "Ueberlast (Overload)",
-            6: "Kurzschluss (Short Circuit)",
-            7: "Uebertemperatur (Over Temperature)",
-            8: "Niedriger Oeldruck (Low Oil Pressure)",
-            9: "Start fehlgeschlagen (Overcrank)",
-            10: "Ueberdrehzahl (Over Speed)",
-        }
-        if fault_code > 0:
-            result["fault_code"] = fault_code
-            result["fault_text"] = L401_FAULT_CODES.get(fault_code, f"Stoerung Code {fault_code}")
-    if status_bits is not None and status_bits != 2147483647:
-        result["status_bits"] = status_bits
-        if status_bits & 0x1000:  # Bit 12 = Emergency Stop
-            result["emergency_stop"] = True
+    if status_bits is not None and valid(status_bits):
+        sb = int(status_bits)
+        result["status_bits"] = sb
+
+        # Detect alarm conditions from status bits
+        active_faults = []
+        if sb & 0x2000:
+            active_faults.append(("SB_CTRL_FAIL", "Steuerungsfehler (Control Unit Failure)", "shutdown"))
+        if sb & 0x1000:
+            active_faults.append(("SB_SHUTDOWN", "Abschaltung aktiv (Shutdown Alarm)", "shutdown"))
+        if sb & 0x0800:
+            active_faults.append(("SB_ELEC_TRIP", "Elektrische Ausloesung (Electrical Trip)", "shutdown"))
+        if sb & 0x0400:
+            active_faults.append(("SB_WARNING", "Warnung aktiv (Warning Alarm)", "warning"))
+        if sb & 0x0040:
+            active_faults.append(("SB_CTRL_STOP", "Kontrollierte Abschaltung (Controlled Shutdown)", "warning"))
+
+        if active_faults:
+            # Use the most severe fault as the primary display text
+            result["fault_code"] = sb
+            result["fault_text"] = active_faults[0][1]  # Most severe first
+            result["status_alarms"] = active_faults
+        else:
+            result["fault_code"] = 0  # No alarm active
 
     # Engine parameters
     if valid(registers.get((4, 0))):
@@ -921,9 +944,17 @@ def _parse_gencomm_registers(parsed, topic):
         if val is not None and valid(val):
             result[field] = val
 
-    # Total power (32-bit at offset 34)
-    if valid(registers.get((4, 34))):
-        result["power_kw"] = registers[(4, 34)] / 1000.0    # W -> kW
+    # Page 6 Register 0-1: Generator total watts (32-bit signed)
+    # NOTE: Previously we read P4R34 which is actually "Generator current lag/lead" (degrees)
+    if valid(registers.get((6, 0))):
+        total_w = registers[(6, 0)]
+        result["power_total_w"] = total_w
+        result["power_kw"] = round(total_w / 1000.0, 2)
+
+    # Page 6 Register 21: Generator average power factor (scale 0.01)
+    if valid(registers.get((6, 21))):
+        result["power_factor"] = registers[(6, 21)] / 100.0
+        result["power_factor_avg"] = result["power_factor"]
 
     # Page 7: kWh, starts (DSE 8610 etc.) - NOT hours (P7 R0 gives garbage on L401/890)
     if valid(registers.get((7, 4))):
@@ -935,26 +966,16 @@ def _parse_gencomm_registers(parsed, topic):
     if not result.get("hours_run") and valid(registers.get((3, 15))):
         result["hours_run"] = registers[(3, 15)] / 10.0
 
-    # Page 7 Register 6: Run hours in SECONDS (L401 via DSE 890 Gateway)
+    # Page 7 Register 6: Run hours in SECONDS (via DSE 890 Gateway)
     # Note: bypass valid() check - seconds value can be > 1M (> 277h)
     raw_hours_sec = registers.get((7, 6))
     if raw_hours_sec is not None and isinstance(raw_hours_sec, (int, float)):
         if 0 < raw_hours_sec < 100000000:  # sanity: < 27777h
-            result["hours_run"] = round(raw_hours_sec / 3600.0, 1)      # 0.1h -> h
+            result["hours_run"] = round(raw_hours_sec / 3600.0, 1)
 
-    # Page 6: Power factor
-    if valid(registers.get((6, 0))):
-        result["power_factor"] = registers[(6, 0)] / 100.0  # 0.01 -> pf
-
-    # Page 16: Control status (DSE mode)
-    mode_val = registers.get((16, 0))
-    if mode_val is not None and valid(mode_val):
-        DSE_MODE_MAP = {
-            0: "stop", 1: "auto", 2: "manual", 3: "test_on_load",
-            4: "auto_manual_restore", 5: "user_config", 6: "test_off_load",
-            7: "off", 8: "stop",
-        }
-        result["dse_mode"] = DSE_MODE_MAP.get(mode_val, f"mode_{mode_val}")
+    # Page 7 Register 16: Number of starts (32-bit)
+    if valid(registers.get((7, 16))):
+        result["engine_starts"] = int(registers[(7, 16)])
 
     return result if result else None
 
