@@ -296,7 +296,7 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
         if dev.get("serial_number") not in existing_serials:
             # Determine status from device's mqtt_status or last_seen
             dev_status = dev.get("mqtt_status", "offline")
-            if dev_status not in ("online", "offline", "running", "standby", "alarm"):
+            if dev_status not in ("online", "offline", "running", "standby", "alarm", "verbunden"):
                 dev_status = "offline"
             # Create a virtual generator entry from the device
             vg = {
@@ -1047,9 +1047,20 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         generator_id = existing_gen.get("id", generator_id)
 
     # Update device status + latest_snapshot from newest record
+    # Nur "online" wenn tatsaechlich DSE-Daten vorliegen (nicht nur Pi-Heartbeat)
+    has_dse_data = False
+    if payload.records:
+        rec = payload.records[-1]
+        # Pruefen ob mindestens ein echter Messwert vorhanden ist
+        has_dse_data = any(rec.get(k) not in (None, 0, 0.0) for k in (
+            "battery_voltage", "rpm", "frequency", "voltage_l1", "voltage_l2", "voltage_l3",
+            "oil_pressure_kpa", "coolant_temp_c",
+        ))
+
+    device_status = "online" if has_dse_data else "verbunden"
     update_fields = {
         "last_seen": now_iso,
-        "mqtt_status": "online",
+        "mqtt_status": device_status,
         "updated_at": now_iso,
     }
     if payload.latitude is not None and payload.longitude is not None:
@@ -1092,7 +1103,7 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
     await db.devices.update_one({"id": payload.device_id}, {"$set": update_fields})
 
     # Update virtual generator status too
-    gen_update = {"last_seen": now_iso, "mqtt_status": "online", "updated_at": now_iso}
+    gen_update = {"last_seen": now_iso, "mqtt_status": device_status, "updated_at": now_iso}
     if payload.latitude is not None and payload.longitude is not None:
         gen_update["latitude"] = payload.latitude
         gen_update["longitude"] = payload.longitude
