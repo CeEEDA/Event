@@ -550,7 +550,7 @@ def execute_command(ser, slave_id, command_name):
         pass
     time.sleep(0.3)
 
-    # Subprocess-Skript: 1x FC16 senden bei 19200 Baud (bestaetigt funktionierend)
+    # Subprocess-Skript: 1x FC16 senden (bestaetigt funktionierend)
     py_cmd = f"""
 import serial, struct, time, sys
 def crc(d):
@@ -561,7 +561,7 @@ def crc(d):
             c=(c>>1)^0xA001 if c&1 else c>>1
     return struct.pack("<H",c)
 
-port=serial.Serial("{port_name}",19200,bytesize=8,parity="N",stopbits=1,timeout=2)
+port=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=2)
 time.sleep(0.3)
 port.reset_input_buffer()
 f=struct.pack(">BBHHB",{slave_id},0x10,{REG_CONTROL_KEY},2,4)
@@ -904,6 +904,64 @@ def _save_generator_id(gen_id):
         log.warning(f"Konnte Generator-ID nicht speichern: {e}")
 
 
+def check_remote_update(conf):
+    """Prueft ob ein Remote-Config-Update oder Script-Update vom Portal vorliegt."""
+    try:
+        resp = requests.get(
+            f"{conf['api_url']}/generators/remote-update/{conf['device_id']}",
+            params={"api_key": conf["device_key"]},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return
+        update = resp.json()
+        if not update.get("has_update"):
+            return
+
+        # Config-Aenderung (z.B. Baud-Rate)
+        new_conf = update.get("config")
+        if new_conf:
+            conf_path = "/etc/dse5510.conf"
+            cp = configparser.ConfigParser()
+            cp.read(conf_path)
+            changed = False
+            for key, val in new_conf.items():
+                if str(cp.get("dse5510", key, fallback="")) != str(val):
+                    cp["dse5510"][key] = str(val)
+                    changed = True
+                    log.info(f"Remote Config: {key} = {val}")
+            if changed:
+                with open(conf_path, "w") as f:
+                    cp.write(f)
+                log.info("Remote Config gespeichert. Neustart...")
+                # Bestaetigung ans Portal
+                requests.post(
+                    f"{conf['api_url']}/generators/remote-update/{conf['device_id']}/ack",
+                    params={"api_key": conf["device_key"]},
+                    timeout=10,
+                )
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        # Script-Update
+        script_url = update.get("script_url")
+        if script_url:
+            log.info(f"Remote Script-Update: {script_url}")
+            script_resp = requests.get(script_url, timeout=30)
+            if script_resp.status_code == 200:
+                script_path = os.path.abspath(__file__)
+                with open(script_path, "w") as f:
+                    f.write(script_resp.text)
+                log.info("Script aktualisiert. Neustart...")
+                requests.post(
+                    f"{conf['api_url']}/generators/remote-update/{conf['device_id']}/ack",
+                    params={"api_key": conf["device_key"]},
+                    timeout=10,
+                )
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        log.debug(f"Remote-Update Check: {e}")
+
+
 # ====== Hauptprogramm ======
 
 def main():
@@ -1061,6 +1119,9 @@ def main():
                 # Falls ser durch Steuerbefehl geschlossen wurde
                 if ser is None or (hasattr(ser, 'is_open') and not ser.is_open):
                     ser = None
+
+                # Remote-Update pruefen (bei jedem Sync)
+                check_remote_update(conf)
 
                 # Disk-Pruefung (nur alle 5 Minuten)
                 if now - last_disk_check >= 300:

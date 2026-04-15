@@ -1490,3 +1490,82 @@ async def get_device_events(
         "limit": limit,
         "offset": offset,
     }
+
+
+
+# ============== Remote Update for DSE 5510 Pi ==============
+
+@router.get("/remote-update/{device_id}")
+async def get_remote_update(device_id: str, api_key: str = Query(...)):
+    """Pi polls this endpoint to check for pending config updates or script updates."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+    if not _verify_key(api_key, device.get("device_key_hash", "")):
+        raise HTTPException(status_code=403, detail="Ungueltiger Schluessel")
+
+    pending = await db.device_remote_updates.find_one(
+        {"device_id": device_id, "status": "pending"}, {"_id": 0}
+    )
+    if not pending:
+        return {"has_update": False}
+
+    return {
+        "has_update": True,
+        "config": pending.get("config"),
+        "script_url": pending.get("script_url"),
+        "update_id": pending.get("id"),
+    }
+
+
+@router.post("/remote-update/{device_id}/ack")
+async def ack_remote_update(device_id: str, api_key: str = Query(...)):
+    """Pi acknowledges that it applied the update."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+    if not _verify_key(api_key, device.get("device_key_hash", "")):
+        raise HTTPException(status_code=403, detail="Ungueltiger Schluessel")
+
+    await db.device_remote_updates.update_many(
+        {"device_id": device_id, "status": "pending"},
+        {"$set": {"status": "applied", "applied_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": "Update bestaetigt"}
+
+
+class RemoteConfigUpdate(BaseModel):
+    baud_rate: Optional[int] = None
+    slave_id: Optional[int] = None
+    serial_port: Optional[str] = None
+    read_interval: Optional[int] = None
+    sync_interval: Optional[int] = None
+
+
+@router.post("/remote-update/{device_id}/push")
+async def push_remote_update(device_id: str, data: RemoteConfigUpdate, user: dict = Depends(get_authenticated_user)):
+    """Admin pushes a config update to a Pi device."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    config_changes = {k: v for k, v in data.dict().items() if v is not None}
+    if not config_changes:
+        raise HTTPException(status_code=400, detail="Keine Aenderungen angegeben")
+
+    # Remove any existing pending updates
+    await db.device_remote_updates.delete_many({"device_id": device_id, "status": "pending"})
+
+    update_doc = {
+        "id": str(uuid.uuid4()),
+        "device_id": device_id,
+        "config": config_changes,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.device_remote_updates.insert_one(update_doc)
+
+    return {"message": f"Config-Update fuer {device_id} geplant", "changes": config_changes}

@@ -560,9 +560,9 @@ export default function GeneratorDetailPage() {
               {/* Transfer Switches - Stromerzeuger */}
               {isFullControl && (
                 <div className="px-5 py-4 flex items-end justify-center gap-5 border-t border-gray-100">
-                  <DseImgBtn cmd="gen_switch_on" label="Gen EIN" imgSrc="/dse-buttons/geno.png"
+                  <DseImgBtn cmd="gen_switch_on" label="Hauptschalter EIN" imgSrc="/dse-buttons/geno.png"
                     disabled={!canWrite} size={52} />
-                  <DseImgBtn cmd="gen_switch_off" label="Gen AUS" imgSrc="/dse-buttons/netz.png"
+                  <DseImgBtn cmd="gen_switch_off" label="Hauptschalter AUS" imgSrc="/dse-buttons/netz.png"
                     disabled={!canWrite} size={52} />
                 </div>
               )}

@@ -180,7 +180,7 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
   const [loading, setLoading] = useState(false);
   const [wgetCommand, setWgetCommand] = useState(null);
   const [serialPort, setSerialPort] = useState("/dev/ttyUSB0");
-  const [baudRate, setBaudRate] = useState(9600);
+  const [baudRate, setBaudRate] = useState(19200);
   const [slaveId, setSlaveId] = useState(10);
   const [enableLte, setEnableLte] = useState(false);
   const [lteApn, setLteApn] = useState("internet.m2mportal.de");
