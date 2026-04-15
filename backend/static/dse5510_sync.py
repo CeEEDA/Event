@@ -475,16 +475,54 @@ def read_dse5510(ser, slave_id):
 # ====== GPS ======
 
 def read_gps():
-    """Liest GPS-Position via gpsd."""
+    """Liest GPS-Position vom SIM7600 LTE-Modem via AT-Kommando.
+    Versucht mehrere Ports (USB-Verbindung des SIM7600 bietet AT-Ports).
+    Fallback auf gpsd falls kein SIM7600 AT-Port verfuegbar."""
+
+    # SIM7600 AT-Ports (typisch ttyUSB1-ttyUSB5 wenn USB-Kabel gesteckt)
+    sim_ports = ["/dev/ttyUSB3", "/dev/ttyUSB2", "/dev/ttyUSB1", "/dev/ttyUSB4", "/dev/ttyUSB5"]
+    for port in sim_ports:
+        try:
+            if not os.path.exists(port):
+                continue
+            s = serial.Serial(port, 115200, timeout=3)
+            # GPS aktivieren (ignoriert wenn bereits aktiv)
+            s.write(b"AT+CGPS=1\r\n")
+            time.sleep(0.5)
+            s.read(s.in_waiting or 256)
+            # GPS-Position abfragen
+            s.write(b"AT+CGPSINFO\r\n")
+            time.sleep(1.5)
+            resp = s.read(s.in_waiting or 512).decode(errors="ignore")
+            s.close()
+            # Format: +CGPSINFO: DDMM.MMMM,N,DDDMM.MMMM,E,date,time,alt,speed,course
+            if "+CGPSINFO:" not in resp:
+                continue
+            line = resp.split("+CGPSINFO:")[1].strip().split("\r")[0].strip()
+            parts = line.split(",")
+            if len(parts) < 4 or not parts[0] or parts[0] == "":
+                continue  # Kein Fix
+            # DDMM.MMMM -> Dezimalgrad
+            lat_raw, lat_dir = parts[0], parts[1]
+            lon_raw, lon_dir = parts[2], parts[3]
+            lat_deg = int(lat_raw[:2]) + float(lat_raw[2:]) / 60.0
+            lon_deg = int(lon_raw[:3]) + float(lon_raw[3:]) / 60.0
+            if lat_dir == "S":
+                lat_deg = -lat_deg
+            if lon_dir == "W":
+                lon_deg = -lon_deg
+            log.info(f"GPS Fix: {lat_deg:.6f}, {lon_deg:.6f} (via {port})")
+            return {"latitude": round(lat_deg, 6), "longitude": round(lon_deg, 6)}
+        except Exception:
+            continue
+
+    # Fallback: gpsd (fuer externe USB-GPS-Maus)
     try:
         import gpsd
         gpsd.connect()
         packet = gpsd.get_current()
         if packet.mode >= 2:
-            return {
-                "latitude": round(packet.lat, 6),
-                "longitude": round(packet.lon, 6),
-            }
+            return {"latitude": round(packet.lat, 6), "longitude": round(packet.lon, 6)}
     except Exception as e:
         log.debug(f"GPS nicht verfuegbar: {e}")
     return None
