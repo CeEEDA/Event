@@ -1732,6 +1732,12 @@ async def fints_check_payments(user: dict = Depends(_require_staff)):
     try:
         from fints_banking import auto_match_and_mark
         result = await auto_match_and_mark(_db)
+        # Letzten Check-Zeitpunkt speichern
+        await _db.system_settings.update_one(
+            {"key": "fints_last_check"},
+            {"$set": {"key": "fints_last_check", "value": datetime.now(timezone.utc).isoformat(), "result": result}},
+            upsert=True
+        )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1755,11 +1761,16 @@ async def fints_save_credentials(user: dict = Depends(_require_staff)):
     """Speichert FinTS-Zugangsdaten (wird ueber Admin-UI aufgerufen)."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
-    # Zugangsdaten kommen ueber separaten sicheren Kanal (env)
     from fints_banking import get_fints_credentials
     creds = get_fints_credentials()
+    last_check = await _db.system_settings.find_one({"key": "fints_last_check"}, {"_id": 0})
     if creds:
-        return {"status": "configured", "message": "FinTS-Zugangsdaten sind konfiguriert"}
+        return {
+            "status": "configured",
+            "message": "FinTS-Zugangsdaten sind konfiguriert",
+            "last_check": last_check.get("value") if last_check else None,
+            "last_result": last_check.get("result") if last_check else None,
+        }
     return {"status": "not_configured", "message": "Bitte FINTS_USER und FINTS_PIN in .env setzen"}
 
 

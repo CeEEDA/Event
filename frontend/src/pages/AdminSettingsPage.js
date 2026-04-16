@@ -48,6 +48,7 @@ import {
   Check,
   Monitor,
   Laptop,
+  CircleDollarSign,
 } from "lucide-react";
 
 /* ───── System Status Dashboard ───── */
@@ -1306,6 +1307,138 @@ function OtaUpdateSection() {
   );
 }
 
+
+/* ───── FinTS Banking Integration ───── */
+function FinTSBankingSection() {
+  const [status, setStatus] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+  const [transactions, setTransactions] = useState(null);
+
+  const checkStatus = async () => {
+    try {
+      const res = await api.post("/kirmes/fints/save-credentials");
+      setStatus(res.data);
+      if (res.data.last_result) setLastResult(res.data.last_result);
+    } catch { setStatus({ status: "error", message: "Fehler beim Prüfen" }); }
+  };
+
+  const testConnection = async () => {
+    setTesting(true);
+    try {
+      const res = await api.get("/kirmes/fints/transactions?days=7");
+      setTransactions(res.data);
+      toast.success(`${res.data.count} Transaktionen geladen`);
+    } catch (e) {
+      toast.error("Verbindung fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+    } finally { setTesting(false); }
+  };
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      const res = await api.post("/kirmes/fints/check-payments");
+      setLastResult(res.data);
+      toast.success(`Abgleich: ${res.data.matched} Zuordnungen, ${res.data.auto_marked} automatisch bezahlt`);
+    } catch (e) {
+      toast.error("Fehler: " + (e.response?.data?.detail || e.message));
+    } finally { setChecking(false); }
+  };
+
+  useEffect(() => { checkStatus(); }, []);
+
+  const isConfigured = status?.status === "configured";
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="fints-banking-section">
+      <div className="px-5 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CircleDollarSign className="w-5 h-5 text-emerald-500" />
+          <h3 className="text-sm font-semibold text-gray-900">FinTS Banking (Sparkasse Mayen)</h3>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isConfigured ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+          {isConfigured ? "Konfiguriert" : "Nicht konfiguriert"}
+        </span>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="text-sm text-gray-600">
+          <p>Automatischer Kontoabgleich mit offenen Rechnungen (alle 6 Stunden).</p>
+          <p className="text-xs text-gray-400 mt-1">IBAN: DE28 5765 0010 0098 0667 56 · BLZ: 57650010</p>
+          {status?.last_check && (
+            <p className="text-xs text-emerald-600 mt-1">Letzter Abgleich: {new Date(status.last_check).toLocaleString("de-DE")}</p>
+          )}
+        </div>
+
+        {!isConfigured && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+            Bitte auf dem Server in der <code className="bg-amber-100 px-1 rounded">.env</code> Datei eintragen:
+            <pre className="mt-2 text-xs bg-amber-100 p-2 rounded">
+{`FINTS_USER=deine_kennung
+FINTS_PIN=dein_pin
+FINTS_IBAN=DE28576500100098066756`}
+            </pre>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={testConnection}
+            disabled={testing || !isConfigured}
+            className="text-xs"
+            data-testid="fints-test-btn"
+          >
+            {testing ? "Teste..." : "Verbindung testen"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={runCheck}
+            disabled={checking || !isConfigured}
+            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+            data-testid="fints-check-btn"
+          >
+            {checking ? "Prüfe..." : "Jetzt Rechnungen abgleichen"}
+          </Button>
+        </div>
+
+        {lastResult && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1">
+            <p className="font-medium text-gray-900">Letzter Abgleich:</p>
+            <div className="grid grid-cols-2 gap-x-4 text-xs text-gray-600">
+              <span>Transaktionen geprüft:</span><span className="font-mono">{lastResult.checked}</span>
+              <span>Zuordnungen gefunden:</span><span className="font-mono">{lastResult.matched}</span>
+              <span>Automatisch bezahlt:</span><span className="font-mono font-semibold text-emerald-600">{lastResult.auto_marked}</span>
+              <span>Vorschläge für Admin:</span><span className="font-mono">{lastResult.suggestions || 0}</span>
+            </div>
+          </div>
+        )}
+
+        {transactions && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <p className="text-sm font-medium text-gray-900 mb-2">Letzte {transactions.count} Transaktionen (7 Tage):</p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {transactions.transactions.slice(0, 15).map((tx, i) => (
+                <div key={i} className="text-xs flex justify-between border-b border-gray-100 py-1">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-gray-500">{tx.date}</span>
+                    <span className="ml-2 text-gray-700 truncate">{tx.applicant_name || tx.posting_text}</span>
+                  </div>
+                  <span className={`font-mono ml-2 ${tx.amount > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {tx.amount > 0 ? "+" : ""}{tx.amount?.toFixed(2)} EUR
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 /* ───── Backup-System Einstellungen ───── */
 function BackupSettingsSection() {
   const [settings, setSettings] = useState({
@@ -1763,6 +1896,9 @@ export default function AdminSettingsPage() {
 
           {/* Backup-System */}
           <BackupSettingsSection />
+
+          {/* FinTS Banking */}
+          <FinTSBankingSection />
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
