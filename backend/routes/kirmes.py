@@ -1637,6 +1637,7 @@ async def list_invoices(
         "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "created_at": 1,
         "payment_status": 1, "paid_at": 1, "paid_amount": 1, "payment_note": 1, "due_date": 1,
         "reminder_sent_at": 1, "reminder_sent_by": 1,
+        "reminder2_sent_at": 1, "reminder2_sent_by": 1,
     }).sort("invoice_number", 1).to_list(5000)
 
     # Berechne Faelligkeitsstatus fuer jede Rechnung
@@ -1748,9 +1749,31 @@ async def check_overdue_invoices():
         if days_since < 17:
             continue
 
-        # Pruefen ob schon eine offene Mahnung-Aufgabe existiert
+        # Mahnstufe bestimmen
+        reminder_sent_at = inv.get("reminder_sent_at")
+        reminder2_sent_at = inv.get("reminder2_sent_at")
+
+        if reminder2_sent_at:
+            # 2. Mahnung schon gesendet → nichts weiter
+            continue
+        elif reminder_sent_at:
+            # 1. Mahnung gesendet → pruefen ob 14 Tage seitdem vergangen fuer 2. Mahnung
+            try:
+                r1_date = datetime.fromisoformat(reminder_sent_at.replace("Z", "+00:00"))
+                days_since_r1 = (now - r1_date).days
+            except (ValueError, TypeError):
+                continue
+            if days_since_r1 < 14:
+                continue
+            mahnung_stufe = 2
+        else:
+            # Noch keine Mahnung → 1. Mahnung
+            mahnung_stufe = 1
+
+        # Pruefen ob schon eine offene Aufgabe fuer diese Stufe existiert
         existing_task = await _db.tasks.find_one({
             "payment_reminder_invoice_id": inv["id"],
+            "payment_reminder_stufe": mahnung_stufe,
             "completed": False,
             "is_deleted": {"$ne": True},
         })
@@ -1766,10 +1789,11 @@ async def check_overdue_invoices():
             continue
 
         brutto_str = f"{inv.get('brutto', 0):.2f}".replace(".", ",")
+        stufe_text = f"{mahnung_stufe}. Mahnung" if mahnung_stufe > 1 else "1. Mahnung"
         task = {
             "id": str(uuid.uuid4()),
-            "title": f"Mahnung: {inv.get('schausteller_firma', '')} {inv['invoice_number']} ({brutto_str} EUR) ist seit {days_since} Tagen offen",
-            "description": f"Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} an {inv.get('schausteller_firma', '')} ({inv.get('schausteller_name', '')}) ueber {brutto_str} EUR ist seit {days_since} Tagen unbezahlt. Zahlungsziel war 14 Tage.",
+            "title": f"{stufe_text}: {inv.get('schausteller_firma', '')} {inv['invoice_number']} ({brutto_str} EUR) ist seit {days_since} Tagen offen",
+            "description": f"{stufe_text} fuer Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} an {inv.get('schausteller_firma', '')} ({inv.get('schausteller_name', '')}) ueber {brutto_str} EUR.",
             "priority": "high",
             "priority_order": 0,
             "due_date": now.strftime("%Y-%m-%d"),
@@ -1786,11 +1810,11 @@ async def check_overdue_invoices():
             "is_deleted": False,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
-            # Spezielle Felder fuer Mahnung-Aufgaben
             "payment_reminder_invoice_id": inv["id"],
             "payment_reminder_invoice_number": inv["invoice_number"],
             "payment_reminder_schausteller_id": inv.get("schausteller_id"),
             "payment_reminder_email": inv.get("schausteller_email"),
+            "payment_reminder_stufe": mahnung_stufe,
             "task_type": "payment_reminder",
         }
         await _db.tasks.insert_one(task)
@@ -1828,11 +1852,19 @@ async def send_payment_reminder(invoice_id: str, user: dict = Depends(_require_s
     if not email:
         raise HTTPException(status_code=400, detail="Keine E-Mail-Adresse vorhanden")
 
+    # Mahnstufe bestimmen
+    stufe = 1
+    if inv.get("reminder_sent_at") and not inv.get("reminder2_sent_at"):
+        stufe = 2
+    elif inv.get("reminder2_sent_at"):
+        stufe = 3
+
     brutto_str = f"{inv.get('brutto', 0):.2f}".replace(".", ",")
-    subject = f"Zahlungserinnerung - Rechnung {inv['invoice_number']}"
+    stufe_text = f"{stufe}. Mahnung" if stufe > 1 else "Zahlungserinnerung"
+    subject = f"{stufe_text} - Rechnung {inv['invoice_number']}"
     body = f"""Sehr geehrte Damen und Herren,
 
-wir erlauben uns, Sie an die noch offene Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} über {brutto_str} EUR zu erinnern.
+wir erlauben uns, Sie {"erneut " if stufe > 1 else ""}an die noch offene Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} über {brutto_str} EUR zu erinnern.
 
 Bitte überweisen Sie den ausstehenden Betrag zeitnah auf unser Konto.
 
@@ -1847,11 +1879,19 @@ Eventenergie Deutschland GmbH & Co. KG"""
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"E-Mail-Versand fehlgeschlagen: {e}")
 
-    # Mark reminder sent
-    await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": {
-        "reminder_sent_at": datetime.now(timezone.utc).isoformat(),
-        "reminder_sent_by": user.get("name", ""),
-    }})
+    # Mark reminder sent (Stufe-spezifisch)
+    update_fields = {}
+    if stufe == 1:
+        update_fields = {
+            "reminder_sent_at": datetime.now(timezone.utc).isoformat(),
+            "reminder_sent_by": user.get("name", ""),
+        }
+    elif stufe == 2:
+        update_fields = {
+            "reminder2_sent_at": datetime.now(timezone.utc).isoformat(),
+            "reminder2_sent_by": user.get("name", ""),
+        }
+    await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update_fields})
 
     # Complete the task if exists
     await _db.tasks.update_many(
