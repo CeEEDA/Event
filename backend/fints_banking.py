@@ -39,7 +39,7 @@ def fetch_transactions(days_back: int = 14) -> list:
             creds["user"],
             creds["pin"],
             FINTS_URL,
-            product_id="9FA6681DEC0CF3046BFC2F8A6",
+            product_id=os.environ.get("FINTS_PRODUCT_ID", ""),
         )
 
         accounts = client.get_sepa_accounts()
