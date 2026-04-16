@@ -1841,8 +1841,9 @@ from routes.orders import router as orders_router, init_orders_routes
 init_orders_routes(db, decode_jwt_token)
 app.include_router(orders_router)
 
-from routes.kirmes import router as kirmes_router, init_kirmes_routes
+from routes.kirmes import router as kirmes_router, init_kirmes_routes, start_mahnung_scheduler
 init_kirmes_routes(db, decode_jwt_token)
+start_mahnung_scheduler()
 app.include_router(kirmes_router)
 
 from routes.payments import router as payments_router, init_payments

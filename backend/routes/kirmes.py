@@ -8,6 +8,11 @@ import uuid
 import bcrypt
 
 import re
+import asyncio
+import logging
+
+mahnung_logger = logging.getLogger("mahnung_checker")
+
 
 router = APIRouter(prefix="/api/kirmes", tags=["kirmes"])
 security = HTTPBearer()
@@ -1715,6 +1720,147 @@ async def update_payment_status(invoice_id: str, data: PaymentStatusUpdate, user
 
     await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update})
     return {"message": "Zahlungsstatus aktualisiert", "payment_status": data.payment_status}
+
+
+async def check_overdue_invoices():
+    """Prueft alle Rechnungen auf Faelligkeit und erstellt Aufgaben fuer Admins bei Mahnstufe."""
+    if _db is None:
+        return
+    now = datetime.now(timezone.utc)
+    invoices = await _db.kirmes_invoices.find(
+        {"payment_status": {"$ne": "bezahlt"}},
+        {"_id": 0, "id": 1, "invoice_number": 1, "invoice_date": 1, "brutto": 1,
+         "schausteller_firma": 1, "schausteller_name": 1, "schausteller_id": 1,
+         "schausteller_email": 1, "sent_at": 1, "payment_status": 1}
+    ).to_list(5000)
+
+    created = 0
+    for inv in invoices:
+        if not inv.get("sent_at"):
+            continue
+        try:
+            inv_date = datetime.strptime(inv.get("invoice_date", ""), "%d.%m.%Y").replace(tzinfo=timezone.utc)
+            days_since = (now - inv_date).days
+        except (ValueError, TypeError):
+            continue
+
+        if days_since < 17:
+            continue
+
+        # Pruefen ob schon eine offene Mahnung-Aufgabe existiert
+        existing_task = await _db.tasks.find_one({
+            "payment_reminder_invoice_id": inv["id"],
+            "completed": False,
+            "is_deleted": {"$ne": True},
+        })
+        if existing_task:
+            continue
+
+        # Alle Admins als Empfaenger
+        admins = await _db.users.find({"role": "admin"}, {"_id": 0, "id": 1, "name": 1}).to_list(50)
+        admin_ids = [a["id"] for a in admins]
+        admin_names = {a["id"]: a["name"] for a in admins}
+
+        if not admin_ids:
+            continue
+
+        brutto_str = f"{inv.get('brutto', 0):.2f}".replace(".", ",")
+        task = {
+            "id": str(uuid.uuid4()),
+            "title": f"Mahnung: {inv.get('schausteller_firma', '')} {inv['invoice_number']} ({brutto_str} EUR) ist seit {days_since} Tagen offen",
+            "description": f"Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} an {inv.get('schausteller_firma', '')} ({inv.get('schausteller_name', '')}) ueber {brutto_str} EUR ist seit {days_since} Tagen unbezahlt. Zahlungsziel war 14 Tage.",
+            "priority": "high",
+            "priority_order": 0,
+            "due_date": now.strftime("%Y-%m-%d"),
+            "completed": False,
+            "completed_at": None,
+            "completed_by": None,
+            "completed_by_name": None,
+            "created_by": "system",
+            "created_by_name": "System",
+            "assigned_to": admin_ids,
+            "assigned_to_names": admin_names,
+            "attachment": None,
+            "comment_count": 0,
+            "is_deleted": False,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            # Spezielle Felder fuer Mahnung-Aufgaben
+            "payment_reminder_invoice_id": inv["id"],
+            "payment_reminder_invoice_number": inv["invoice_number"],
+            "payment_reminder_schausteller_id": inv.get("schausteller_id"),
+            "payment_reminder_email": inv.get("schausteller_email"),
+            "task_type": "payment_reminder",
+        }
+        await _db.tasks.insert_one(task)
+        created += 1
+        mahnung_logger.info(f"Mahnung-Aufgabe erstellt: {inv['invoice_number']} ({days_since} Tage)")
+
+    if created:
+        mahnung_logger.info(f"Mahnung-Check: {created} neue Aufgaben erstellt")
+
+
+async def _mahnung_scheduler():
+    """Laeuft 2x taeglich (08:00 und 14:00) und prueft ueberfaellige Rechnungen."""
+    while True:
+        try:
+            await check_overdue_invoices()
+        except Exception as e:
+            mahnung_logger.error(f"Mahnung-Check Fehler: {e}")
+        await asyncio.sleep(6 * 3600)  # Alle 6 Stunden
+
+
+def start_mahnung_scheduler():
+    """Wird beim Server-Start aufgerufen."""
+    asyncio.ensure_future(_mahnung_scheduler())
+    mahnung_logger.info("Mahnung-Scheduler gestartet (alle 6h)")
+
+
+@router.post("/invoices/{invoice_id}/send-reminder")
+async def send_payment_reminder(invoice_id: str, user: dict = Depends(_require_staff)):
+    """Sends a payment reminder email for an overdue invoice."""
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+
+    email = inv.get("schausteller_email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Keine E-Mail-Adresse vorhanden")
+
+    brutto_str = f"{inv.get('brutto', 0):.2f}".replace(".", ",")
+    subject = f"Zahlungserinnerung - Rechnung {inv['invoice_number']}"
+    body = f"""Sehr geehrte Damen und Herren,
+
+wir erlauben uns, Sie an die noch offene Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} ueber {brutto_str} EUR zu erinnern.
+
+Bitte ueberweisen Sie den ausstehenden Betrag zeitnah auf unser Konto.
+
+Falls Sie die Zahlung bereits veranlasst haben, betrachten Sie diese Erinnerung bitte als gegenstandslos.
+
+Mit freundlichen Gruessen
+Eventenergie Deutschland GmbH & Co. KG"""
+
+    try:
+        from email_service import send_email
+        await send_email(to=email, subject=subject, body=body)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"E-Mail-Versand fehlgeschlagen: {e}")
+
+    # Mark reminder sent
+    await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": {
+        "reminder_sent_at": datetime.now(timezone.utc).isoformat(),
+        "reminder_sent_by": user.get("name", ""),
+    }})
+
+    # Complete the task if exists
+    await _db.tasks.update_many(
+        {"payment_reminder_invoice_id": invoice_id, "completed": False},
+        {"$set": {"completed": True, "completed_at": datetime.now(timezone.utc).isoformat(),
+                  "completed_by": user.get("id"), "completed_by_name": user.get("name", "")}}
+    )
+
+    return {"message": f"Zahlungserinnerung an {email} gesendet"}
+
 
 
 

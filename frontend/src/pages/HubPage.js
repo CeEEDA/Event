@@ -661,6 +661,23 @@ export default function HubPage() {
                                 </div>
                               )}
                             </div>
+                          ) : t.task_type === "payment_reminder" ? (
+                            <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                              <button onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!window.confirm(`Zahlungserinnerung fuer ${t.payment_reminder_invoice_number} an ${t.payment_reminder_email} senden?`)) return;
+                                try {
+                                  await api.post(`/kirmes/invoices/${t.payment_reminder_invoice_id}/send-reminder`);
+                                  toast.success("Zahlungserinnerung gesendet");
+                                  loadTasks();
+                                } catch { toast.error("Fehler beim Senden"); }
+                              }} className="px-2 py-1 text-[10px] font-semibold rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors" data-testid={`send-reminder-${t.id}`}>
+                                Mahnung senden
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="px-2 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" data-testid={`dismiss-reminder-${t.id}`}>
+                                Erledigt
+                              </button>
+                            </div>
                           ) : (
                             <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="mt-0.5 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-fuchsia-500 flex-shrink-0 flex items-center justify-center transition-colors" data-testid={`toggle-task-${t.id}`} />
                           )}
