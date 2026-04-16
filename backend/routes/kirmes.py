@@ -1843,7 +1843,7 @@ Eventenergie Deutschland GmbH & Co. KG"""
 
     try:
         from email_service import send_email
-        await send_email(to=email, subject=subject, body=body)
+        send_email(to_email=email, subject=subject, html_body=body.replace("\n", "<br>"))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"E-Mail-Versand fehlgeschlagen: {e}")
 
