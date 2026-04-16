@@ -63,7 +63,8 @@ export function Dashboard({ schausteller, myBookings, lastdiagramme, onNewBookin
         ) : (
           <div className="divide-y divide-gray-100">
             {myBookings.invoices.map(inv => {
-              const ist = STATUS_LABELS[inv.status] || { text: inv.status, cls: "bg-gray-100 text-gray-600" };
+              const payStatus = inv.payment_status || inv.status;
+              const ist = STATUS_LABELS[payStatus] || STATUS_LABELS[inv.status] || { text: inv.status, cls: "bg-gray-100 text-gray-600" };
               return (
                 <div key={inv.id} className="px-4 py-3 flex items-center justify-between" data-testid={`invoice-${inv.id}`}>
                   <div className="min-w-0 flex-1">

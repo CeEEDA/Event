@@ -34,6 +34,11 @@ export const STATUS_LABELS = {
   abgerechnet: { text: "Abgerechnet", cls: "bg-emerald-100 text-emerald-700" },
   erstellt: { text: "Erstellt", cls: "bg-gray-100 text-gray-600" },
   versendet: { text: "Versendet", cls: "bg-blue-100 text-blue-700" },
+  bezahlt: { text: "Bezahlt", cls: "bg-emerald-100 text-emerald-700" },
+  offen: { text: "Offen", cls: "bg-amber-100 text-amber-700" },
+  faellig: { text: "Fällig", cls: "bg-orange-100 text-orange-700" },
+  ueberfaellig: { text: "Überfällig", cls: "bg-red-100 text-red-700" },
+  reserviert: { text: "Reserviert", cls: "bg-purple-100 text-purple-700" },
 };
 
 export function PasswordInput({ value, onChange, placeholder, testId }) {

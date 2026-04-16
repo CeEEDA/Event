@@ -849,7 +849,7 @@ async def get_my_bookings(schausteller_id: str = Query(...)):
 
     invoices = await _db.kirmes_invoices.find(
         {"schausteller_id": schausteller_id},
-        {"_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "invoice_date": 1, "brutto": 1, "status": 1}
+        {"_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "invoice_date": 1, "brutto": 1, "status": 1, "payment_status": 1}
     ).sort("created_at", -1).to_list(100)
 
     return {"signups": signups, "invoices": invoices}
