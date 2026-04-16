@@ -668,14 +668,14 @@ export default function HubPage() {
                                 if (!window.confirm(`Zahlungserinnerung fuer ${t.payment_reminder_invoice_number} an ${t.payment_reminder_email} senden?`)) return;
                                 try {
                                   await api.post(`/kirmes/invoices/${t.payment_reminder_invoice_id}/send-reminder`);
-                                  toast.success("Zahlungserinnerung gesendet");
+                                  toast.success(`Mahnung ${t.payment_reminder_invoice_number} versendet`);
                                   loadTasks();
                                 } catch { toast.error("Fehler beim Senden"); }
-                              }} className="px-2 py-1 text-[10px] font-semibold rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors" data-testid={`send-reminder-${t.id}`}>
-                                Mahnung senden
+                              }} className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors" data-testid={`send-reminder-${t.id}`}>
+                                Versenden
                               </button>
-                              <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="px-2 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" data-testid={`dismiss-reminder-${t.id}`}>
-                                Erledigt
+                              <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" data-testid={`dismiss-reminder-${t.id}`}>
+                                Ablehnen
                               </button>
                             </div>
                           ) : (

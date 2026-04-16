@@ -1636,6 +1636,7 @@ async def list_invoices(
         "schausteller_kundennummer": 1,
         "invoice_date": 1, "netto": 1, "brutto": 1, "status": 1, "sent_at": 1, "created_at": 1,
         "payment_status": 1, "paid_at": 1, "paid_amount": 1, "payment_note": 1, "due_date": 1,
+        "reminder_sent_at": 1, "reminder_sent_by": 1,
     }).sort("invoice_number", 1).to_list(5000)
 
     # Berechne Faelligkeitsstatus fuer jede Rechnung

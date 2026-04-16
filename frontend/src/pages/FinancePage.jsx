@@ -234,6 +234,11 @@ export default function FinancePage() {
                         >
                           <Icon className="w-3 h-3" /> {ps.label}
                         </button>
+                        {inv.reminder_sent_at && (
+                          <p className="text-[10px] text-red-500 mt-0.5">
+                            1. Mahnung {new Date(inv.reminder_sent_at).toLocaleDateString("de-DE")}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
