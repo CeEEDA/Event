@@ -1832,13 +1832,13 @@ async def send_payment_reminder(invoice_id: str, user: dict = Depends(_require_s
     subject = f"Zahlungserinnerung - Rechnung {inv['invoice_number']}"
     body = f"""Sehr geehrte Damen und Herren,
 
-wir erlauben uns, Sie an die noch offene Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} ueber {brutto_str} EUR zu erinnern.
+wir erlauben uns, Sie an die noch offene Rechnung {inv['invoice_number']} vom {inv.get('invoice_date', '')} über {brutto_str} EUR zu erinnern.
 
-Bitte ueberweisen Sie den ausstehenden Betrag zeitnah auf unser Konto.
+Bitte überweisen Sie den ausstehenden Betrag zeitnah auf unser Konto.
 
 Falls Sie die Zahlung bereits veranlasst haben, betrachten Sie diese Erinnerung bitte als gegenstandslos.
 
-Mit freundlichen Gruessen
+Mit freundlichen Grüßen
 Eventenergie Deutschland GmbH & Co. KG"""
 
     try:
