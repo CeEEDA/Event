@@ -138,3 +138,6 @@ watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
+fints==5.0.0
+fints-url==0.7
+mt-940==4.30.0

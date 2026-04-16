@@ -1721,6 +1721,48 @@ async def update_payment_status(invoice_id: str, data: PaymentStatusUpdate, user
         update["payment_note"] = data.payment_note
 
     await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update})
+
+# ============== FinTS Banking Integration ==============
+
+@router.post("/fints/check-payments")
+async def fints_check_payments(user: dict = Depends(_require_staff)):
+    """Manueller Trigger: Kontobewegungen pruefen und mit Rechnungen abgleichen."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    try:
+        from fints_banking import auto_match_and_mark
+        result = await auto_match_and_mark(_db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/fints/transactions")
+async def fints_get_transactions(days: int = 14, user: dict = Depends(_require_staff)):
+    """Kontobewegungen der letzten X Tage abrufen."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    try:
+        from fints_banking import fetch_transactions
+        transactions = fetch_transactions(days_back=days)
+        return {"transactions": transactions, "count": len(transactions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/fints/save-credentials")
+async def fints_save_credentials(user: dict = Depends(_require_staff)):
+    """Speichert FinTS-Zugangsdaten (wird ueber Admin-UI aufgerufen)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    # Zugangsdaten kommen ueber separaten sicheren Kanal (env)
+    from fints_banking import get_fints_credentials
+    creds = get_fints_credentials()
+    if creds:
+        return {"status": "configured", "message": "FinTS-Zugangsdaten sind konfiguriert"}
+    return {"status": "not_configured", "message": "Bitte FINTS_USER und FINTS_PIN in .env setzen"}
+
+
     return {"message": "Zahlungsstatus aktualisiert", "payment_status": data.payment_status}
 
 
@@ -1826,12 +1868,22 @@ async def check_overdue_invoices():
 
 
 async def _mahnung_scheduler():
-    """Laeuft 2x taeglich (08:00 und 14:00) und prueft ueberfaellige Rechnungen."""
+    """Laeuft alle 6 Stunden: FinTS-Abgleich + Mahnung-Check."""
     while True:
         try:
+            # 1. FinTS: Kontobewegungen pruefen und automatisch zuordnen
+            try:
+                from fints_banking import auto_match_and_mark, get_fints_credentials
+                if get_fints_credentials():
+                    result = await auto_match_and_mark(_db)
+                    mahnung_logger.info(f"FinTS-Check: {result}")
+            except Exception as e:
+                mahnung_logger.error(f"FinTS-Check Fehler: {e}")
+
+            # 2. Mahnung: Ueberfaellige Rechnungen pruefen
             await check_overdue_invoices()
         except Exception as e:
-            mahnung_logger.error(f"Mahnung-Check Fehler: {e}")
+            mahnung_logger.error(f"Scheduler Fehler: {e}")
         await asyncio.sleep(6 * 3600)  # Alle 6 Stunden
 
 
