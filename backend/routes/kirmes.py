@@ -1764,14 +1764,53 @@ async def fints_save_credentials(user: dict = Depends(_require_staff)):
     from fints_banking import get_fints_credentials
     creds = get_fints_credentials()
     last_check = await _db.system_settings.find_one({"key": "fints_last_check"}, {"_id": 0})
+    enabled_setting = await _db.system_settings.find_one({"key": "fints_enabled"}, {"_id": 0})
+    is_enabled = enabled_setting.get("value", True) if enabled_setting else True
     if creds:
         return {
             "status": "configured",
             "message": "FinTS-Zugangsdaten sind konfiguriert",
             "last_check": last_check.get("value") if last_check else None,
             "last_result": last_check.get("result") if last_check else None,
+            "enabled": is_enabled,
         }
-    return {"status": "not_configured", "message": "Bitte FINTS_USER und FINTS_PIN in .env setzen"}
+    return {"status": "not_configured", "message": "Bitte FINTS_USER und FINTS_PIN in .env setzen", "enabled": False}
+
+
+class FintsToggle(BaseModel):
+    enabled: bool
+
+
+@router.post("/fints/toggle")
+async def fints_toggle(data: FintsToggle, user: dict = Depends(_require_staff)):
+    """Aktiviert/Deaktiviert den automatischen FinTS-Abgleich."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    await _db.system_settings.update_one(
+        {"key": "fints_enabled"},
+        {"$set": {"key": "fints_enabled", "value": data.enabled}},
+        upsert=True
+    )
+    return {"enabled": data.enabled}
+
+
+    """Speichert FinTS-Zugangsdaten (wird ueber Admin-UI aufgerufen)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    from fints_banking import get_fints_credentials
+    creds = get_fints_credentials()
+    last_check = await _db.system_settings.find_one({"key": "fints_last_check"}, {"_id": 0})
+    enabled_setting = await _db.system_settings.find_one({"key": "fints_enabled"}, {"_id": 0})
+    is_enabled = enabled_setting.get("value", True) if enabled_setting else True
+    if creds:
+        return {
+            "status": "configured",
+            "message": "FinTS-Zugangsdaten sind konfiguriert",
+            "last_check": last_check.get("value") if last_check else None,
+            "last_result": last_check.get("result") if last_check else None,
+            "enabled": is_enabled,
+        }
+    return {"status": "not_configured", "message": "Bitte FINTS_USER und FINTS_PIN in .env setzen", "enabled": False}
 
 
     return {"message": "Zahlungsstatus aktualisiert", "payment_status": data.payment_status}
@@ -1884,10 +1923,16 @@ async def _mahnung_scheduler():
         try:
             # 1. FinTS: Kontobewegungen pruefen und automatisch zuordnen
             try:
-                from fints_banking import auto_match_and_mark, get_fints_credentials
-                if get_fints_credentials():
-                    result = await auto_match_and_mark(_db)
-                    mahnung_logger.info(f"FinTS-Check: {result}")
+                # Pruefen ob FinTS aktiviert ist
+                enabled_setting = await _db.system_settings.find_one({"key": "fints_enabled"}, {"_id": 0})
+                fints_enabled = enabled_setting.get("value", True) if enabled_setting else True
+                if fints_enabled:
+                    from fints_banking import auto_match_and_mark, get_fints_credentials
+                    if get_fints_credentials():
+                        result = await auto_match_and_mark(_db)
+                        mahnung_logger.info(f"FinTS-Check: {result}")
+                else:
+                    mahnung_logger.debug("FinTS-Check deaktiviert")
             except Exception as e:
                 mahnung_logger.error(f"FinTS-Check Fehler: {e}")
 

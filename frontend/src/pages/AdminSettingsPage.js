@@ -1315,13 +1315,26 @@ function FinTSBankingSection() {
   const [checking, setChecking] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [transactions, setTransactions] = useState(null);
+  const [enabled, setEnabled] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   const checkStatus = async () => {
     try {
       const res = await api.post("/kirmes/fints/save-credentials");
       setStatus(res.data);
       if (res.data.last_result) setLastResult(res.data.last_result);
+      setEnabled(res.data.enabled !== false);
     } catch { setStatus({ status: "error", message: "Fehler beim Prüfen" }); }
+  };
+
+  const toggleEnabled = async () => {
+    setToggling(true);
+    try {
+      const res = await api.post("/kirmes/fints/toggle", { enabled: !enabled });
+      setEnabled(res.data.enabled);
+      toast.success(res.data.enabled ? "FinTS Abgleich aktiviert" : "FinTS Abgleich deaktiviert");
+    } catch { toast.error("Fehler"); }
+    finally { setToggling(false); }
   };
 
   const testConnection = async () => {
@@ -1357,9 +1370,21 @@ function FinTSBankingSection() {
           <CircleDollarSign className="w-5 h-5 text-emerald-500" />
           <h3 className="text-sm font-semibold text-gray-900">FinTS Banking (Sparkasse Mayen)</h3>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isConfigured ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-          {isConfigured ? "Konfiguriert" : "Nicht konfiguriert"}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isConfigured ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+            {isConfigured ? "Konfiguriert" : "Nicht konfiguriert"}
+          </span>
+          {isConfigured && (
+            <button
+              onClick={toggleEnabled}
+              disabled={toggling}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? "bg-emerald-500" : "bg-gray-300"}`}
+              data-testid="fints-toggle"
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="p-5 space-y-4">
         <div className="text-sm text-gray-600">
