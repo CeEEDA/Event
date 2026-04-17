@@ -140,16 +140,6 @@ export default function FuelManagementPage() {
               data-testid="fuel-search"
             />
           </div>
-          <div className="flex gap-1">
-            {["alle", "pending", "confirmed", "rejected"].map(s => (
-              <button key={s} onClick={() => setFilterStatus(s)}
-                className={`px-3 py-1.5 text-xs rounded-full border transition ${filterStatus === s ? "bg-amber-100 border-amber-400 text-amber-700" : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"}`}
-                data-testid={`filter-${s}`}
-              >
-                {s === "alle" ? "Alle" : STATUS_CONFIG[s]?.label || s}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Table */}
@@ -165,15 +155,14 @@ export default function FuelManagementPage() {
                   <th className="px-4 py-3 text-right">Liter</th>
                   <th className="px-4 py-3 text-left hidden sm:table-cell">Datum</th>
                   <th className="px-4 py-3 text-left hidden lg:table-cell">Gerät</th>
-                  <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-right">Aktionen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">Laden...</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Laden...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">Keine Tankbelege gefunden</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Keine Tankbelege gefunden</td></tr>
                 ) : filtered.map(r => {
                   const st = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
                   const Icon = st.icon;
@@ -204,11 +193,6 @@ export default function FuelManagementPage() {
                         {r.created_at ? new Date(r.created_at).toLocaleDateString("de-DE") : "-"}
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell text-xs text-gray-400">{r.device_name || r.source || "-"}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`inline-flex items-center gap-1 text-xs ${st.color} ${st.bg} px-2 py-0.5 rounded-full`}>
-                          <Icon className="w-3 h-3" /> {st.label}
-                        </span>
-                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {r.status === "pending" && (
