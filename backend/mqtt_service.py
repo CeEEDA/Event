@@ -339,6 +339,13 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
         "A018": "Sensor offen (Sensor Open)",
         "A019": "Sensor kurzgeschlossen (Sensor Short)",
         "A020": "CAN Kommunikationsfehler (CAN Comms)",
+        "A021": "Unterdrehzahl (Underspeed)",
+        "A022": "Ueberdrehzahl (Overspeed)",
+        "A023": "Stopp fehlgeschlagen (Fail to Stop)",
+        "A024": "Generator bereit (Gen Available)",
+        "A025": "Netz Fehler (Mains Failure)",
+        "A026": "Hohe Oeltemperatur (High Oil Temp)",
+        "A027": "Niedriger Kuehlmittelstand (Low Coolant Level)",
     }
 
     # DSE 890 alarm format: {"UID": {"A001": 1, "A002": 0, ...}}

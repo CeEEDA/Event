@@ -295,8 +295,14 @@ export default function GeneratorDetailPage() {
     }
   };
 
-  // Normal: 20 Min Refresh. Nach Tastendruck: 2 Min einmalig, dann zurueck auf 20 Min.
-  const [refreshMs, setRefreshMs] = useState(1200000);
+  // Refresh: Bei Alarm alle 30s, normal alle 2 Min
+  const [refreshMs, setRefreshMs] = useState(120000);
+
+  useEffect(() => {
+    if (generator?.status === "alarm" || alarms.length > 0) {
+      setRefreshMs(30000);
+    }
+  }, [generator?.status, alarms.length]);
 
   useEffect(() => {
     fetchData();
@@ -399,6 +405,25 @@ export default function GeneratorDetailPage() {
           </div>
         </div>
       </header>
+
+      {/* Alarm-Banner wenn Störung aktiv */}
+      {(generator.status === "alarm" || alarms.length > 0 || generator.latest_snapshot?.fault_text) && (
+        <div className="bg-red-600 text-white px-4 py-3" data-testid="alarm-banner">
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 animate-pulse" />
+            <div className="flex-1">
+              <p className="text-sm font-bold">
+                {alarms.length > 0
+                  ? alarms.map(a => a.alarm_text).join(", ")
+                  : generator.latest_snapshot?.fault_text || "Alarm aktiv"}
+              </p>
+              {alarms.length > 0 && alarms[0].timestamp && (
+                <p className="text-xs text-red-200">seit {new Date(alarms[0].timestamp).toLocaleString("de-DE")}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Info Bar */}
