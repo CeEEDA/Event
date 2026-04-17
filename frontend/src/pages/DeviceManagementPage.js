@@ -176,8 +176,16 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
   );
 }
 
-// Pi Setup for DSE Controllers (5510, 8610, 8610 MKII, 7310, L401) via USB/RS232 Modbus RTU
-const PI_CONTROLLERS = ["DSE 5510", "DSE 8610", "DSE 8610 MKII", "DSE 7310", "DSE L401"];
+// Pi Setup for DSE Controllers via USB/RS232 Modbus RTU
+// Match flexibel: "DSE 8610", "DSE 8610 MKII", "DSE 8610 MK2", etc.
+const PI_CONTROLLERS_EXACT = ["DSE 5510", "DSE 8610", "DSE 8610 MKII", "DSE 7310", "DSE L401"];
+function isPiController(ctrl) {
+  if (!ctrl) return false;
+  const c = ctrl.toUpperCase().trim();
+  if (PI_CONTROLLERS_EXACT.includes(ctrl)) return true;
+  // Flexible match: "DSE 8610 ...", "DSE 7310 ...", "DSE L401 ...", "DSE 5510 ..."
+  return /DSE\s*(8610|7310|L401|5510)/i.test(c);
+}
 function DSEPiSetupSection({ deviceId, deviceName, controller }) {
   const [loading, setLoading] = useState(false);
   const [wgetCommand, setWgetCommand] = useState(null);
@@ -1194,8 +1202,8 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 </div>
               </div>
 
-              {/* DSE890 Gateway Setup - for existing devices NOT 5510 (can also use Gateway) */}
-              {editing && formData.controller !== "DSE 5510" && (
+              {/* DSE890 Gateway Setup - for all controllers except pure Pi-only (DSE 5510) */}
+              {editing && !/DSE\s*5510/i.test(formData.controller || "") && (
                 <DseGatewaySetupSection
                   controller={formData.controller}
                   serialNumber={formData.serial_number}
@@ -1206,7 +1214,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               )}
 
               {/* DSE Pi Setup - USB Modbus RTU for all Pi-capable controllers */}
-              {editing && PI_CONTROLLERS.includes(formData.controller) && (
+              {editing && isPiController(formData.controller) && (
                 <DSEPiSetupSection deviceId={editing.id} deviceName={editing.serial_number} controller={formData.controller} />
               )}
             </>
