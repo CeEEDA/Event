@@ -33,6 +33,7 @@ import ProjectReportFormPage from "./pages/ProjectReportFormPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import FinancePage from "./pages/FinancePage";
 import VerwaltungPage from "./pages/VerwaltungPage";
+import FuelManagementPage from "./pages/FuelManagementPage";
 import DocumentManagementPage from "./pages/DocumentManagementPage";
 import ChatPage from "./pages/ChatPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -384,6 +385,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminZeiterfassungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/fuel"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <FuelManagementPage />
           </ProtectedRoute>
         }
       />

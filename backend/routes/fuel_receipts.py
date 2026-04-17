@@ -162,6 +162,7 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
         "notes": data.notes or "",
         "status": "pending",
         "source": "pi" if data.pi_local_id else "manual",
+        "category": "lager" if data.order_pk == "LAGER" else "kunde",
         "created_by": created_by,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "confirmed_by": None,
@@ -228,6 +229,7 @@ async def list_fuel_receipts(
     status: Optional[str] = None,
     fuel_type: Optional[str] = None,
     order_pk: Optional[str] = None,
+    category: Optional[str] = None,
     user: dict = Depends(_auth_user),
 ):
     query = {}
@@ -237,6 +239,8 @@ async def list_fuel_receipts(
         query["fuel_type"] = fuel_type
     if order_pk:
         query["order_pk"] = order_pk
+    if category:
+        query["category"] = category
     receipts = await _db.fuel_receipts.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     # Backfill missing beleg_nr
     for r in receipts:
@@ -647,7 +651,15 @@ async def pi_get_orders():
         ]
     }
     orders = await _db.orders_cache.find(query, {"_id": 0}).sort("dispo_start", -1).to_list(500)
-    return {"orders": orders, "synced_at": now.isoformat()}
+    # Lager-Eintrag fuer Testlaeufe und interne Betankungen
+    lager_entry = {
+        "pk": "LAGER",
+        "name": "Lager / Testlauf",
+        "customer_name": "Lager (intern)",
+        "category": "lager",
+        "is_lager": True,
+    }
+    return {"orders": [lager_entry] + orders, "synced_at": now.isoformat()}
 
 
 @router.get("/pi/drivers")
