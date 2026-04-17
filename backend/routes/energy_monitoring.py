@@ -1073,10 +1073,11 @@ class DSE5510SetupRequest(BaseModel):
     enable_lte: bool = False
     lte_apn: str = "internet.m2mportal.de"
     lte_port: str = "/dev/ttyAMA0"
+    controller_type: str = "DSE 5510"
 
 @router.post("/devices/{device_id}/dse5510-setup")
 async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
-    """Generate an all-in-one bash installer for DSE 5510 via RS232 + Pi."""
+    """Generate an all-in-one bash installer for DSE controllers via USB/RS232 + Pi."""
     if body is None:
         body = DSE5510SetupRequest()
 
@@ -1391,11 +1392,13 @@ echo "    ip route      # Routing-Tabelle"
                       'echo "    gps-status"\n'
                       'echo "    ip route"') if body.enable_lte else ""
 
+    controller_label = body.controller_type or "DSE"
+
     bash_script = f"""#!/bin/bash
 # ==============================================================
-#  DSE 5510 Auto-Setup - {device.get('serial_number', device_id[:12])}
+#  {controller_label} Pi Auto-Setup - {device.get('serial_number', device_id[:12])}
 #  Generiert am {datetime.now().strftime('%d.%m.%Y %H:%M')}
-#  RS232 Modbus RTU + GPS{" + LTE (SIM7600E-H)" if body.enable_lte else ""}
+#  USB Modbus RTU + GPS{" + LTE (SIM7600E-H)" if body.enable_lte else ""}
 # ==============================================================
 set -e
 
@@ -1406,7 +1409,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo "========================================================"
-echo "  DSE 5510 Auto-Setup"
+echo "  {controller_label} Pi Auto-Setup"
 echo "  Geraet: {device.get('serial_number', device_id[:12])}"
 {lte_header_echo}
 echo "========================================================"
@@ -1508,6 +1511,7 @@ sudo tee /etc/dse5510.conf > /dev/null << 'CONF'
 api_url = {api_url}
 device_key = {plain_key}
 device_id = {device_id}
+controller_type = {body.controller_type}
 generator_id =
 db_path = /var/lib/dse5510/dse5510.sqlite
 serial_port = {body.serial_port}

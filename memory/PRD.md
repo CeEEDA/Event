@@ -62,6 +62,10 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Fixed port schema: ttyUSB2=GPS, ttyUSB3=AT+PPP
 - [x] Status tools: lte-status, gps-status
 - [x] Routing: eth0 (100) → wlan0 (600) → ppp0 (700)
+- [x] Generalized for ALL DSE controllers (5510, 8610, 8610 MKII, 7310, L401)
+- [x] Controller type passed to generated script (header + config)
+- [x] 3-phase indicator (L1/L2/L3) shown for 8610/7310 controllers
+- [x] Both DSE 890 Gateway AND Pi Setup available for 8610/7310/L401
 
 ### Finance
 - [x] Invoice Payment Status (Bezahlt/Offen) & Filter UI

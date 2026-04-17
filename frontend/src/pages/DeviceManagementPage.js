@@ -176,7 +176,9 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
   );
 }
 
-function DSE5510PiSetupSection({ deviceId, deviceName }) {
+// Pi Setup for DSE Controllers (5510, 8610, 8610 MKII, 7310, L401) via USB/RS232 Modbus RTU
+const PI_CONTROLLERS = ["DSE 5510", "DSE 8610", "DSE 8610 MKII", "DSE 7310", "DSE L401"];
+function DSEPiSetupSection({ deviceId, deviceName, controller }) {
   const [loading, setLoading] = useState(false);
   const [wgetCommand, setWgetCommand] = useState(null);
   const [serialPort, setSerialPort] = useState("/dev/ttyUSB0");
@@ -185,6 +187,9 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
   const [enableLte, setEnableLte] = useState(false);
   const [lteApn, setLteApn] = useState("internet.m2mportal.de");
   const [ltePort, setLtePort] = useState("/dev/ttyAMA0");
+
+  const controllerLabel = controller || "DSE";
+  const is3Phase = controller && (controller.includes("8610") || controller.includes("7310"));
 
   const handleGenerateSetup = async () => {
     if (!window.confirm("Ein neuer Geraeteschluessel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schluessel existiert, wird er ersetzt.\n\nFortfahren?")) return;
@@ -197,9 +202,10 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
         enable_lte: enableLte,
         lte_apn: lteApn,
         lte_port: ltePort,
+        controller_type: controller,
       });
       setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
-      toast.success("DSE 5510 Setup-Skript generiert!");
+      toast.success(`${controllerLabel} Pi Setup generiert!`);
     } catch (err) {
       toast.error(`Fehler: ${err?.response?.data?.detail || err?.message}`);
     } finally {
@@ -208,13 +214,13 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
   };
 
   return (
-    <div className="border-t border-gray-100 pt-4" data-testid="dse5510-pi-setup">
+    <div className="border-t border-gray-100 pt-4" data-testid="dse-pi-setup">
       <div className="flex items-center gap-2 mb-1">
         <Server className="w-4 h-4 text-fuchsia-600" />
-        <h3 className="text-sm font-medium text-gray-900">DSE 5510 Pi Setup</h3>
+        <h3 className="text-sm font-medium text-gray-900">{controllerLabel} Pi Setup</h3>
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
-        Raspberry Pi liest den DSE 5510 via RS232 Modbus RTU. Inkl. GPS, lokaler Pufferung und Portal-Sync.
+        Raspberry Pi liest den {controllerLabel} via USB Modbus RTU. Inkl. GPS, lokaler Pufferung und Portal-Sync.
       </p>
 
       <div className="grid grid-cols-3 gap-2 mb-3">
@@ -301,7 +307,7 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
         {loading ? "Wird generiert..." : "Setup generieren"}
       </Button>
       <p className="text-[10px] text-gray-400 mt-2">
-        Enthält: RS232 Modbus RTU + GPS + Steuerung (Start/Stop/Auto) + Lokale DB + Systemd-Dienst
+        Enthält: USB Modbus RTU + GPS + Steuerung (Start/Stop/Auto) + Lokale DB + Systemd-Dienst
         {enableLte && " + LTE-Failover + gpsd (SIM7600E-H)"}
       </p>
 
@@ -313,6 +319,7 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
           <span>Page 7: Betriebsstunden, kWh, Starts</span>
           <span>Page 8: Alarm-Codes (52 Alarme)</span>
           <span>Page 16: Steuerung (Start/Stop/Auto)</span>
+          {is3Phase && <span>L1/L2/L3: Spannung, Strom, Leistung</span>}
         </div>
         <div className="mt-2 text-[11px] text-gray-600">
           <span className="font-medium">Steuerbefehle:</span> Stop, Auto, Manuell, Start, Generator Ein/Aus
@@ -1123,7 +1130,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                             data-testid="controller-select"
                           >
                             <option value="">Steuerung wählen...</option>
-                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt === "DSE 5510" ? "DSE 5510 (Pi)" : opt}</option>)}
+                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt} (Pi)</option>)}
                             <option value="__custom">Sonstige (Freitext)...</option>
                           </select>
                           {controllerCustomMode && (
@@ -1187,7 +1194,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 </div>
               </div>
 
-              {/* DSE890 Gateway Setup - only for existing devices with admin, NOT for DSE 5510 (uses Pi) */}
+              {/* DSE890 Gateway Setup - for existing devices NOT 5510 (can also use Gateway) */}
               {editing && formData.controller !== "DSE 5510" && (
                 <DseGatewaySetupSection
                   controller={formData.controller}
@@ -1198,9 +1205,9 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 />
               )}
 
-              {/* DSE 5510 Pi Setup - RS232 Modbus RTU */}
-              {editing && formData.controller === "DSE 5510" && (
-                <DSE5510PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} />
+              {/* DSE Pi Setup - USB Modbus RTU for all Pi-capable controllers */}
+              {editing && PI_CONTROLLERS.includes(formData.controller) && (
+                <DSEPiSetupSection deviceId={editing.id} deviceName={editing.serial_number} controller={formData.controller} />
               )}
             </>
           )}
