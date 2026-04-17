@@ -703,17 +703,31 @@ function UpdatePackageSection() {
   );
 }
 
-/* ───── Tankbeleg Pi Downloads ───── */
+/* ───── Tankbeleg Pi - One-Liner Setup Generator ───── */
 function TankbelegPiSection() {
-  const API = BACKEND_URL;
+  const [deviceName, setDeviceName] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [setupCmd, setSetupCmd] = useState(null);
+  const [copied, setCopied] = useState(false);
 
-  const piFiles = [
-    { name: "Komplettpaket (ZIP)", desc: "Alle Dateien als Bundle", icon: Package, url: `${API}/api/download/tankbeleg-pi-bundle`, filename: "tankbeleg_pi_bundle.zip" },
-    { name: "tankbeleg_pi.py", desc: "Hauptskript - ESC/POS Parser + Sync", icon: FileCode, url: `${API}/api/download/tankbeleg-pi-script`, filename: "tankbeleg_pi.py" },
-    { name: "tankbeleg_pi.conf", desc: "Konfigurationsdatei", icon: Settings2, url: `${API}/api/download/tankbeleg-pi-config`, filename: "tankbeleg_pi.conf" },
-    { name: "tankbeleg_pi.service", desc: "Systemd-Service", icon: FileText, url: `${API}/api/download/tankbeleg-pi-service`, filename: "tankbeleg_pi.service" },
-    { name: "setup_tankbeleg_pi.sh", desc: "Installations-Skript", icon: Terminal, url: `${API}/api/download/tankbeleg-pi-setup`, filename: "setup_tankbeleg_pi.sh" },
-  ];
+  const generateSetup = async () => {
+    if (!deviceName.trim()) { toast.error("Bitte Gerätenamen eingeben"); return; }
+    setGenerating(true);
+    try {
+      const res = await api.post("/kirmes/tankbeleg-pi/generate-setup", { device_name: deviceName.trim() });
+      setSetupCmd(res.data.setup_command);
+      toast.success("Setup-Befehl generiert");
+    } catch (e) {
+      toast.error("Fehler: " + (e.response?.data?.detail || e.message));
+    } finally { setGenerating(false); }
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(setupCmd);
+    setCopied(true);
+    toast.success("In Zwischenablage kopiert");
+    setTimeout(() => setCopied(false), 3000);
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="tankbeleg-pi-section">
@@ -723,56 +737,67 @@ function TankbelegPiSection() {
             <Cpu className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white">Tankbeleg Pi - Drucker-Emulator</h3>
-            <p className="text-[10px] text-amber-100">Raspberry Pi Script fuer Epson TM-U295 Belegerfassung</p>
+            <h3 className="text-sm font-semibold text-white">Tankbeleg Pi - Setup Generator</h3>
+            <p className="text-[10px] text-amber-100">Raspberry Pi fuer Epson TM-U295 Belegerfassung</p>
           </div>
         </div>
       </div>
 
-      <div className="p-5 space-y-3">
+      <div className="p-5 space-y-4">
         <p className="text-xs text-gray-500 leading-relaxed">
-          Der Tankbeleg Pi emuliert einen Drucker ueber die serielle Schnittstelle (USB-zu-RS232),
-          parst die ESC/POS Belegdaten des Epson TM-U295 und synchronisiert sie automatisch mit dem Portal.
-          GPS-Erfassung und Offline-Pufferung (SQLite) sind integriert.
+          Generiert einen Einzeiler-Befehl der auf dem Pi eingefügt wird.
+          Das Script installiert alles automatisch: Python, ESC/POS Parser, GPS, Sync-Service.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {piFiles.map((file) => {
-            const Icon = file.icon;
-            return (
-              <a
-                key={file.filename}
-                href={file.url}
-                download={file.filename}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all hover:shadow-sm ${
-                  file.filename.endsWith('.zip')
-                    ? 'border-amber-200 bg-amber-50 hover:border-amber-400'
-                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
-                }`}
-                data-testid={`download-${file.filename.replace(/\./g, '-')}`}
-              >
-                <Icon className={`w-4 h-4 shrink-0 ${file.filename.endsWith('.zip') ? 'text-amber-600' : 'text-gray-500'}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium text-gray-900 truncate">{file.name}</div>
-                  <div className="text-[10px] text-gray-400 truncate">{file.desc}</div>
-                </div>
-                <Download className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-              </a>
-            );
-          })}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-gray-700 mb-1 block">Gerätename (z.B. Tankwagen-01)</label>
+            <Input
+              value={deviceName}
+              onChange={e => setDeviceName(e.target.value)}
+              placeholder="Tankwagen-01"
+              className="text-sm"
+              data-testid="tankbeleg-device-name"
+            />
+          </div>
+          <Button
+            onClick={generateSetup}
+            disabled={generating}
+            className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+            data-testid="tankbeleg-generate-btn"
+          >
+            {generating ? "Generiere..." : "Setup generieren"}
+          </Button>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 mt-3">
-          <p className="text-[10px] text-gray-500 leading-relaxed">
-            <strong>Installation:</strong> Dateien auf den Raspberry Pi kopieren und <code className="bg-gray-200 px-1 rounded">sudo bash setup_tankbeleg_pi.sh</code> ausfuehren.
-            Danach <code className="bg-gray-200 px-1 rounded">/etc/tankbeleg_pi.conf</code> mit der Portal-URL konfigurieren.
-          </p>
-          <div className="flex gap-2 mt-2 flex-wrap">
-            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">ESC/POS Parser</span>
-            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">GPS (gpsd)</span>
-            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">SQLite Offline</span>
-            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">Auto-Sync</span>
+        {setupCmd && (
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-gray-700">Diesen Befehl auf dem Pi einfügen:</label>
+            <div className="relative">
+              <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap break-all select-all">
+                {setupCmd}
+              </pre>
+              <button
+                onClick={copyToClipboard}
+                className={`absolute top-2 right-2 px-2 py-1 text-[10px] rounded ${copied ? "bg-green-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}
+                data-testid="copy-setup-cmd"
+              >
+                {copied ? "Kopiert!" : "Kopieren"}
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-400">
+              Der Pi installiert automatisch alle Abhängigkeiten, erstellt die Config und startet den Service.
+              Nach ca. 2 Minuten ist der Pi bereit und erscheint im Portal.
+            </p>
           </div>
+        )}
+
+        <div className="flex gap-2 flex-wrap">
+          <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">ESC/POS Parser</span>
+          <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">GPS (gpsd)</span>
+          <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">SQLite Offline</span>
+          <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">Auto-Sync</span>
+          <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-medium">Auto API-Key</span>
         </div>
       </div>
     </div>

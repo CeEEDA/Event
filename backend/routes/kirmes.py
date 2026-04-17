@@ -8,6 +8,7 @@ import uuid
 import bcrypt
 
 import re
+import os
 import asyncio
 import logging
 
@@ -3288,4 +3289,173 @@ async def admin_download_lastdiagramm_pdf(signup_id: str, user: dict = Depends(_
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+
+# ============== Tankbeleg Pi - One-Liner Setup Generator ==============
+
+class TankbelegSetupRequest(BaseModel):
+    device_name: str
+
+
+@router.post("/tankbeleg-pi/generate-setup")
+async def generate_tankbeleg_setup(body: TankbelegSetupRequest, user: dict = Depends(_require_staff)):
+    """Generiert ein One-Liner Setup-Skript fuer einen neuen Tankbeleg Pi."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    device_name = body.device_name.strip()
+    if not device_name:
+        raise HTTPException(status_code=400, detail="Geraetename erforderlich")
+
+    # Geraet in DB anlegen
+    device_id = str(uuid.uuid4())
+    plain_key = str(uuid.uuid4()).replace("-", "") + str(uuid.uuid4()).replace("-", "")[:16]
+    import hashlib
+    key_hash = hashlib.sha256(plain_key.encode()).hexdigest()
+
+    device_doc = {
+        "id": device_id,
+        "name": device_name,
+        "device_type": "tankwagen",
+        "serial_number": device_name,
+        "device_key_hash": key_hash,
+        "device_key_prefix": plain_key[:8],
+        "device_key_created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "mqtt_status": "offline",
+    }
+    await _db.devices.insert_one(device_doc)
+
+    # Portal-URL
+    portal_url = os.environ.get("PORTAL_URL", "https://eventenergie.app")
+
+    # One-Liner generieren
+    setup_command = f'curl -sL "{portal_url}/api/kirmes/tankbeleg-pi/install-script?device_id={device_id}&key={plain_key}" | sudo bash'
+
+    return {
+        "setup_command": setup_command,
+        "device_id": device_id,
+        "device_name": device_name,
+    }
+
+
+@router.get("/tankbeleg-pi/install-script")
+async def tankbeleg_install_script(device_id: str, key: str):
+    """Liefert das komplette Install-Script das auf dem Pi ausgefuehrt wird."""
+    device = await _db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    portal_url = os.environ.get("PORTAL_URL", "https://eventenergie.app")
+    device_name = device.get("name", device_id[:12])
+
+    # Hauptskript vom Server laden (tankbeleg_pi.py)
+    script_url = f"{portal_url}/api/download/tankbeleg-pi-script"
+
+    bash_script = f"""#!/bin/bash
+# ==============================================================
+#  Tankbeleg Pi Auto-Setup - {device_name}
+#  Generiert am {datetime.now().strftime('%d.%m.%Y %H:%M')}
+# ==============================================================
+set -e
+
+# Auto-Root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Starte als root..."
+    exec sudo bash "$0" "$@"
+fi
+
+echo "========================================================"
+echo "  Tankbeleg Pi Auto-Setup"
+echo "  Geraet: {device_name}"
+echo "========================================================"
+
+# ===== 1. System aktualisieren =====
+echo ""
+echo "[1/5] System aktualisieren..."
+apt-get update -qq
+apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients 2>/dev/null || true
+
+# ===== 2. Verzeichnis anlegen =====
+echo ""
+echo "[2/5] Verzeichnisse anlegen..."
+mkdir -p /opt/tankbeleg
+mkdir -p /var/lib/tankbeleg
+
+# ===== 3. Hauptskript herunterladen =====
+echo ""
+echo "[3/5] Tankbeleg-Script herunterladen..."
+curl -sL "{script_url}" -o /opt/tankbeleg/tankbeleg_pi.py
+chmod +x /opt/tankbeleg/tankbeleg_pi.py
+echo "  tankbeleg_pi.py installiert"
+
+# ===== 4. Konfiguration erstellen =====
+echo ""
+echo "[4/5] Konfiguration erstellen..."
+tee /etc/tankbeleg_pi.conf > /dev/null << 'CONF'
+[tankbeleg]
+api_url = {portal_url}/api
+device_id = {device_id}
+device_key = {key}
+serial_port = /dev/ttyUSB0
+serial_baud = 9600
+serial_bytesize = 8
+serial_parity = N
+serial_stopbits = 1
+db_path = /var/lib/tankbeleg/tankbeleg.sqlite
+sync_interval = 60
+retry_delay = 30
+gps_enabled = true
+gps_host = 127.0.0.1
+gps_port = 2947
+fahrer_name =
+CONF
+echo "  Config: /etc/tankbeleg_pi.conf"
+echo "  Device-ID: {device_id}"
+
+# ===== 5. Systemd-Service erstellen =====
+echo ""
+echo "[5/5] Service installieren..."
+tee /etc/systemd/system/tankbeleg_pi.service > /dev/null << 'SERVICE'
+[Unit]
+Description=Tankbeleg Pi - Eventenergie Drucker-Emulator
+After=network-online.target gpsd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/tankbeleg/tankbeleg_pi.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/tankbeleg
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+systemctl daemon-reload
+systemctl enable tankbeleg_pi.service
+systemctl start tankbeleg_pi.service
+echo "  Service gestartet"
+
+# ===== Fertig =====
+echo ""
+echo "========================================================"
+echo "  Setup abgeschlossen!"
+echo "  Geraet: {device_name}"
+echo "  Status: sudo systemctl status tankbeleg_pi"
+echo "  Logs:   sudo journalctl -u tankbeleg_pi -f"
+echo "  Config: /etc/tankbeleg_pi.conf"
+echo "========================================================"
+"""
+
+    from starlette.responses import Response
+    return Response(
+        content=bash_script,
+        media_type="text/x-sh",
+        headers={"Content-Disposition": "inline"},
     )
