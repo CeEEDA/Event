@@ -1102,7 +1102,7 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
         sync_script = f.read()
 
     # Dynamic step count based on LTE
-    total_steps = 8 if body.enable_lte else 7
+    total_steps = 9 if body.enable_lte else 7
     lte_port = body.lte_port if body.enable_lte else ""
 
     # Build LTE setup block (only if enabled)
@@ -1110,321 +1110,63 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
     lte_verify_block = ""
     if body.enable_lte:
         lte_setup_block = f"""
-# ===== SCHRITT 3: LTE MODEM (SIM7600E-H) =====
+# ===== SCHRITT 3: LTE+GPS SETUP (SIM7600E-H) =====
+# Basiert auf getesteter Konfiguration: PPP + NetworkManager + gpsd
 echo ""
-echo "[3/{total_steps}] LTE-Modem konfigurieren (SIM7600E-H)..."
+echo "[3/{total_steps}] LTE+GPS konfigurieren (SIM7600E-H)..."
 
-# --- 3a: Netzwerk-Prioritaeten konfigurieren (dhcpcd) ---
-echo "  Netzwerk-Routing konfigurieren (LAN Prio, LTE Fallback)..."
-
-# dhcpcd.conf: LAN bekommt niedrige metric (= hohe Prio), LTE hohe metric
-# Wenn kein LAN-Gateway vorhanden → LTE uebernimmt automatisch
-DHCPCD_CONF="/etc/dhcpcd.conf"
-if [ -f "$DHCPCD_CONF" ]; then
-    # Alte Eintraege entfernen falls vorhanden
-    sudo sed -i '/^# --- Eventenergie Netzwerk ---/,/^# --- Ende Eventenergie ---/d' "$DHCPCD_CONF"
-fi
-
-sudo tee -a "$DHCPCD_CONF" > /dev/null << 'DHCPCD_NET'
-
-# --- Eventenergie Netzwerk ---
-# LAN (eth0) hat hoechste Prioritaet wenn verfuegbar
-interface eth0
-metric 100
-static domain_name_servers=8.8.8.8 8.8.4.4
-
-# WLAN als zweite Wahl
-interface wlan0
-metric 200
-static domain_name_servers=8.8.8.8 8.8.4.4
-
-# DNS Fallback global
-static domain_name_servers=8.8.8.8 8.8.4.4
-# --- Ende Eventenergie ---
-DHCPCD_NET
-
-echo "  dhcpcd.conf: eth0 metric=100, wlan0 metric=200 (LTE=700)"
-
-# --- 3b: DNS dauerhaft sicherstellen ---
-echo "  DNS-Fallback konfigurieren..."
-# resolv.conf direkt setzen (sofort wirksam)
-if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
-    echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
-fi
-
-# dhcpcd-Hook: nach jedem DHCP-Event DNS sicherstellen
-sudo tee /lib/dhcpcd/dhcpcd-hooks/99-dns-fallback > /dev/null << 'DNSHOOK'
-# Eventenergie: DNS-Fallback sicherstellen
-if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
-    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-fi
-DNSHOOK
-
-# --- 3c: Network-Watchdog (entfernt tote eth0-Routen) ---
-echo "  Network-Watchdog installieren..."
-sudo tee /usr/local/bin/network-watchdog.sh > /dev/null << 'WATCHDOG'
-#!/bin/bash
-# Eventenergie Network-Watchdog
-# Prueft ob die Default-Route ueber eth0 tatsaechlich Internet hat.
-# Falls nicht (eth0 DOWN oder kein Gateway), wird die Route entfernt
-# damit LTE (ppp0) uebernehmen kann.
-
-ETH_ROUTE=$(ip route show default dev eth0 2>/dev/null)
-if [ -n "$ETH_ROUTE" ]; then
-    # eth0 hat eine Default-Route - pruefe ob sie funktioniert
-    ETH_STATE=$(cat /sys/class/net/eth0/carrier 2>/dev/null || echo "0")
-    if [ "$ETH_STATE" != "1" ]; then
-        # eth0 hat keinen Link (Kabel nicht gesteckt oder kein Carrier)
-        ip route del default dev eth0 2>/dev/null
-        logger -t network-watchdog "eth0 Default-Route entfernt (kein Carrier)"
-    else
-        # eth0 hat Link - teste ob Internet erreichbar
-        if ! ping -c 1 -W 3 -I eth0 8.8.8.8 &>/dev/null; then
-            # eth0 hat zwar Link aber kein Internet (z.B. lokales Netz ohne Gateway)
-            ip route del default dev eth0 2>/dev/null
-            logger -t network-watchdog "eth0 Default-Route entfernt (kein Internet)"
-        fi
-    fi
-fi
-
-# DNS Fallback sicherstellen
-if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
-    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-fi
-WATCHDOG
-sudo chmod +x /usr/local/bin/network-watchdog.sh
-
-# Watchdog als systemd-Timer (alle 30 Sekunden)
-sudo tee /etc/systemd/system/network-watchdog.service > /dev/null << 'WDSERVICE'
-[Unit]
-Description=Eventenergie Network Watchdog
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/network-watchdog.sh
-WDSERVICE
-
-sudo tee /etc/systemd/system/network-watchdog.timer > /dev/null << 'WDTIMER'
-[Unit]
-Description=Eventenergie Network Watchdog Timer
-
-[Timer]
-OnBootSec=30
-OnUnitActiveSec=30
-AccuracySec=5
-
-[Install]
-WantedBy=timers.target
-WDTIMER
-
-sudo systemctl daemon-reload
-sudo systemctl enable network-watchdog.timer
-sudo systemctl start network-watchdog.timer
-echo "  Network-Watchdog aktiv (prueft alle 30s)"
-
-# --- 3d: UART aktivieren ---
-echo "  UART aktivieren..."
-BOOT_CFG="/boot/firmware/config.txt"
-if [ ! -f "$BOOT_CFG" ]; then
-    BOOT_CFG="/boot/config.txt"
-fi
-
-# dtoverlay fuer UART hinzufuegen falls nicht vorhanden
-if ! grep -q "enable_uart=1" "$BOOT_CFG" 2>/dev/null; then
-    echo "enable_uart=1" | sudo tee -a "$BOOT_CFG" > /dev/null
-fi
-
-# Serial Console deaktivieren (damit der Modem-Port frei ist)
-sudo raspi-config nonint do_serial_hw 0 2>/dev/null || true
-sudo raspi-config nonint do_serial_cons 1 2>/dev/null || true
-# cmdline.txt bereinigen
-if [ -f /boot/firmware/cmdline.txt ]; then
-    sudo sed -i 's/console=serial0,[0-9]* //g' /boot/firmware/cmdline.txt
-    sudo sed -i 's/console=ttyAMA0,[0-9]* //g' /boot/firmware/cmdline.txt
-elif [ -f /boot/cmdline.txt ]; then
-    sudo sed -i 's/console=serial0,[0-9]* //g' /boot/cmdline.txt
-    sudo sed -i 's/console=ttyAMA0,[0-9]* //g' /boot/cmdline.txt
-fi
-echo "  UART aktiviert, Serial Console deaktiviert."
-
-# PPP und GPIO-Tools installieren
+# --- 3a: Pakete installieren ---
+echo "  Pakete installieren..."
 wait_for_apt
-sudo apt-get install -y -qq ppp gpiod
+sudo apt-get install -y -qq ppp ifmetric dnsutils gpsd gpsd-clients lsof
 
-# Kleines AT-Command Helper-Skript fuer Modem-Test (nutzt pyserial statt socat)
-sudo tee /tmp/at_test.py > /dev/null << 'ATTEST'
-import serial, sys, time
-port, cmd = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "AT"
-try:
-    s = serial.Serial(port, 115200, timeout=3)
-    s.write((cmd + "\r\n").encode())
-    time.sleep(1.5)
-    resp = s.read(s.in_waiting or 256).decode(errors="ignore").strip()
-    s.close()
-    print(resp)
-    sys.exit(0 if "OK" in resp or "READY" in resp else 1)
-except Exception as e:
-    print(f"Fehler: {{e}}")
-    sys.exit(1)
-ATTEST
+# --- 3b: ModemManager deaktivieren (blockiert ttyUSB-Ports!) ---
+echo "  ModemManager deaktivieren..."
+sudo systemctl stop ModemManager 2>/dev/null || true
+sudo systemctl disable ModemManager 2>/dev/null || true
 
-# SIM7600E-H einschalten via GPIO 6 (Waveshare HAT Power Key)
-echo "  SIM7600E-H einschalten (GPIO 6)..."
-
-# Pi 5: pinctrl verwenden (nativ verfuegbar)
+# --- 3c: SIM7600 einschalten (PWRKEY GPIO4) ---
+echo "  SIM7600 einschalten (PWRKEY)..."
+# Pi 5: pinctrl verwenden
 if command -v pinctrl &> /dev/null; then
-    pinctrl set 6 op dh
+    if ! ls /dev/ttyUSB* &>/dev/null; then
+        pinctrl set 4 op dl
+        sleep 0.1
+        pinctrl set 4 op dh
+        sleep 2
+        pinctrl set 4 op dl
+        echo "    PWRKEY-Puls gesendet (pinctrl GPIO4), warte 15s..."
+        sleep 15
+    else
+        echo "    Modul bereits aktiv (ttyUSB-Ports vorhanden)"
+    fi
+else
+    echo "    WARNUNG: pinctrl nicht gefunden. SIM7600 ggf. manuell einschalten."
+fi
+
+# Auf USB-Ports warten
+echo "    Warte auf /dev/ttyUSB3..."
+for i in $(seq 1 30); do
+    [ -e /dev/ttyUSB3 ] && break
     sleep 1
-    pinctrl set 6 op dl
-    echo "  Power-Puls gesendet (pinctrl GPIO 6)"
-    sleep 5
-# Fallback: gpioset (libgpiod)
-elif command -v gpioset &> /dev/null; then
-    gpioset -t 1000ms gpiochip0 6=1 2>/dev/null || gpioset -t 1000ms gpiochip4 6=1 2>/dev/null || true
-    echo "  Power-Puls gesendet (gpioset GPIO 6)"
-    sleep 5
-else
-    echo "  WARNUNG: Kein GPIO-Tool gefunden. SIM7600E evtl. manuell einschalten."
-    echo "  Alternativ: PWR-Jumper auf 3V3 setzen fuer Auto-Power-On."
-fi
-
-# pyserial fuer AT-Tests installieren (in System-Python)
-sudo pip3 install --quiet --break-system-packages pyserial 2>/dev/null || sudo pip3 install --quiet pyserial 2>/dev/null || true
-
-# Warten bis Modem antwortet - AUTO-ERKENNUNG des richtigen Ports
-echo "  Modem-Port automatisch erkennen..."
-
-# Alle verfuegbaren Ports sammeln (UART + USB)
-ALL_PORTS="{body.lte_port}"
-for p in /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyUSB5 /dev/ttyAMA0 /dev/ttyAMA10; do
-    if [ -e "$p" ] && [[ "$ALL_PORTS" != *"$p"* ]]; then
-        ALL_PORTS="$ALL_PORTS $p"
-    fi
 done
 
-# AT-Port finden (fuer PPP/Steuerung)
-MODEM_PORT=""
-GPS_PORT=""
-MODEM_OK=0
-
-for attempt in $(seq 1 3); do
-    echo "  Scan-Versuch $attempt/3..."
-    for p in $ALL_PORTS; do
-        [ ! -e "$p" ] && continue
-        # Teste ob Port AT-Kommandos akzeptiert
-        RESPONSE=$(sudo timeout 3 python3 -c "
-import serial, time
-try:
-    s = serial.Serial('$p', 115200, timeout=2)
-    s.reset_input_buffer()
-    s.write(b'AT\r\n')
-    time.sleep(1)
-    r = s.read(s.in_waiting or 256).decode(errors='ignore')
-    s.close()
-    if 'OK' in r:
-        print('AT_OK')
-    elif 'GPGGA' in r or 'GPRMC' in r or 'GNSS' in r:
-        print('GPS_NMEA')
-    else:
-        print('NONE')
-except:
-    print('NONE')
-" 2>/dev/null)
-
-        if [ "$RESPONSE" = "AT_OK" ] && [ -z "$MODEM_PORT" ]; then
-            MODEM_PORT="$p"
-            MODEM_OK=1
-            echo "    AT-Port gefunden: $p"
-        elif [ "$RESPONSE" = "GPS_NMEA" ] && [ -z "$GPS_PORT" ]; then
-            GPS_PORT="$p"
-            echo "    GPS-Port gefunden: $p (NMEA)"
-        fi
-    done
-
-    if [ "$MODEM_OK" -eq 1 ]; then
-        break
-    fi
-    sleep 3
-done
-
-# GPS-Port auch ueber AT+CGPSINFO suchen falls noch nicht gefunden
-if [ -z "$GPS_PORT" ]; then
-    for p in $ALL_PORTS; do
-        [ ! -e "$p" ] && continue
-        [ "$p" = "$MODEM_PORT" ] && continue
-        GPS_RESP=$(sudo timeout 5 python3 -c "
-import serial, time
-try:
-    s = serial.Serial('$p', 115200, timeout=3)
-    s.write(b'AT+CGPSINFO\r\n')
-    time.sleep(2)
-    r = s.read(s.in_waiting or 256).decode(errors='ignore')
-    s.close()
-    if 'CGPSINFO' in r:
-        print('GPS_AT')
-except:
-    pass
-" 2>/dev/null)
-        if [ "$GPS_RESP" = "GPS_AT" ]; then
-            GPS_PORT="$p"
-            echo "    GPS-Port gefunden: $p (AT)"
-            break
-        fi
-    done
+if [ ! -e /dev/ttyUSB3 ]; then
+    echo "    WARNUNG: /dev/ttyUSB3 nicht gefunden. USB-Kabel pruefen!"
 fi
 
-if [ "$MODEM_OK" -eq 0 ]; then
-    MODEM_PORT="{body.lte_port}"
-    echo "  WARNUNG: Kein AT-Port gefunden. Verwende Standard: $MODEM_PORT"
-    echo "  Nach Neustart pruefen: sudo python3 /tmp/at_test.py $MODEM_PORT AT"
-else
-    echo "  Modem: $MODEM_PORT"
-    echo "  GPS:   ${{GPS_PORT:-nicht gefunden}}"
-fi
-
-# Gefundene Ports in Config speichern
-if [ -n "$GPS_PORT" ]; then
-    echo "gps_port = $GPS_PORT" >> /etc/dse5510.conf
-fi
-
-# SIM-Status pruefen (kein PIN)
-if [ "$MODEM_OK" -eq 1 ]; then
-    echo "  SIM-Status:"
-    sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CPIN?" 2>/dev/null || true
-    echo "  Signalstaerke:"
-    sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CSQ" 2>/dev/null || true
-    echo "  Netzwerk-Info:"
-    sudo python3 /tmp/at_test.py "$MODEM_PORT" "AT+CPSI?" 2>/dev/null || true
-fi
-
-# PPP Chatscript erstellen
+# --- 3d: PPP-Konfiguration ---
 echo "  PPP konfigurieren..."
-sudo mkdir -p /etc/chatscripts
-sudo tee /etc/chatscripts/sim7600 > /dev/null << 'CHATSCRIPT'
-ABORT 'BUSY'
-ABORT 'NO CARRIER'
-ABORT 'NO DIALTONE'
-ABORT 'NO ANSWER'
-ABORT 'DELAYED'
-TIMEOUT 30
-'' AT
-OK ATE0
-OK 'AT+CGDCONT=1,"IP","{body.lte_apn}"'
-OK ATD*99#
-CONNECT ''
-CHATSCRIPT
+sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d
 
-# PPP Peer-Konfiguration (nutzt automatisch erkannten Port)
-sudo tee /etc/ppp/peers/sim7600 > /dev/null << PPPCONF
-$MODEM_PORT
+sudo tee /etc/ppp/peers/m2m > /dev/null << 'PPPCONF'
+/dev/ttyUSB3
 115200
-connect '/usr/sbin/chat -v -f /etc/chatscripts/sim7600'
+connect "/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect"
 noauth
-nodefaultroute
-persist
-maxfail 0
-holdoff 15
+defaultroute
+replacedefaultroute
+usepeerdns
 noipdefault
 novj
 novjccomp
@@ -1433,58 +1175,133 @@ ipcp-accept-local
 ipcp-accept-remote
 local
 lock
-nodetach
+persist
+maxfail 0
+holdoff 10
+debug
 PPPCONF
 
-# Routing-Skript: LTE nur als Fallback wenn LAN ausfaellt
-sudo tee /etc/ppp/ip-up.d/99-lte-fallback > /dev/null << 'LTEFALLBACK'
+sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+ABORT 'ERROR'
+ABORT 'NO ANSWER'
+TIMEOUT 30
+'' AT
+OK ATZ
+OK 'AT+CMEE=2'
+OK-AT-OK 'AT+CPIN?'
+OK 'AT+CGDCONT=1,"IP","{body.lte_apn}"'
+OK ATD*99#
+CONNECT ''
+CHATSCRIPT
+
+sudo chmod 644 /etc/ppp/peers/m2m /etc/chatscripts/m2m-connect
+
+# --- 3e: PPP-Hooks: Metric 700 + DNS-Fallback ---
+echo "  PPP-Hooks anlegen..."
+sudo tee /etc/ppp/ip-up.d/10-set-metric > /dev/null << 'PPPHOOK1'
 #!/bin/bash
-# LTE-Route mit niedriger Prioritaet (metric 700) hinzufuegen
-# LAN bleibt bevorzugt (metric ~100)
-ip route add default via $IPREMOTE dev $IFNAME metric 700 2>/dev/null || true
-LTEFALLBACK
-sudo chmod +x /etc/ppp/ip-up.d/99-lte-fallback
+if [ "$PPP_IFACE" = "ppp0" ]; then
+    /sbin/ifmetric ppp0 700
+    logger -t lte-failover "ppp0 up - Metric 700 gesetzt"
+fi
+PPPHOOK1
 
-sudo tee /etc/ppp/ip-down.d/99-lte-fallback > /dev/null << 'LTEFALLBACKDOWN'
+sudo tee /etc/ppp/ip-up.d/20-set-dns > /dev/null << 'PPPHOOK2'
 #!/bin/bash
-# LTE-Fallback-Route entfernen wenn PPP disconnected
-ip route del default via $IPREMOTE dev $IFNAME metric 700 2>/dev/null || true
-LTEFALLBACKDOWN
-sudo chmod +x /etc/ppp/ip-down.d/99-lte-fallback
+if [ "$PPP_IFACE" = "ppp0" ]; then
+    grep -q "1.1.1.1" /etc/resolv.conf || echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+    grep -q "8.8.8.8" /etc/resolv.conf || echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+    logger -t lte-failover "DNS-Fallback gesichert"
+fi
+PPPHOOK2
 
-# DNS bereits in Schritt 3a/3b konfiguriert (dhcpcd.conf + Hook + Watchdog)
+sudo chmod +x /etc/ppp/ip-up.d/10-set-metric /etc/ppp/ip-up.d/20-set-dns
 
-# AT-Test Skript persistent ablegen (nicht in /tmp)
-sudo tee /usr/local/bin/at_test.py > /dev/null << 'ATTEST'
-import serial, sys, time
-port, cmd = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "AT"
-try:
-    s = serial.Serial(port, 115200, timeout=3)
-    s.write((cmd + "\r\n").encode())
-    time.sleep(1.5)
-    resp = s.read(s.in_waiting or 256).decode(errors="ignore").strip()
-    s.close()
-    print(resp)
-    sys.exit(0 if "OK" in resp or "READY" in resp else 1)
-except Exception as e:
-    print(f"Fehler: {{e}}")
-    sys.exit(1)
-ATTEST
-sudo chmod +x /usr/local/bin/at_test.py
+# --- 3f: NetworkManager Metriken + DNS ---
+echo "  NetworkManager-Metriken setzen..."
+nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r name type; do
+    case "$type" in
+        802-3-ethernet|ethernet)
+            nmcli connection modify "$name" ipv4.route-metric 100 ipv4.dns "1.1.1.1 8.8.8.8 1.0.0.1" 2>/dev/null || true
+            echo "    eth: $name -> Metric 100"
+            ;;
+        802-11-wireless|wifi)
+            nmcli connection modify "$name" ipv4.route-metric 600 ipv4.dns "1.1.1.1 8.8.8.8 1.0.0.1" 2>/dev/null || true
+            echo "    wifi: $name -> Metric 600"
+            ;;
+    esac
+done
+nmcli connection reload 2>/dev/null || true
 
-# Systemd-Service fuer LTE Auto-Reconnect
-sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESERVICE'
+# --- 3g: GPS aktivieren + gpsd konfigurieren ---
+echo "  GPS + gpsd konfigurieren..."
+
+sudo tee /usr/local/sbin/sim7600-gps-enable > /dev/null << 'GPSENABLE'
+#!/bin/bash
+AT_PORT="/dev/ttyUSB3"
+for i in $(seq 1 60); do
+    [ -e "$AT_PORT" ] && break
+    sleep 1
+done
+if [ ! -e "$AT_PORT" ]; then
+    logger -t gps-enable "FEHLER: $AT_PORT nicht verfuegbar"
+    exit 1
+fi
+if /usr/bin/lsof "$AT_PORT" >/dev/null 2>&1; then
+    logger -t gps-enable "$AT_PORT belegt (pppd) - GPS-Status unveraendert"
+    exit 0
+fi
+stty -F "$AT_PORT" 115200 raw -echo 2>/dev/null
+echo -e "AT+CGPS=1\r" > "$AT_PORT"
+sleep 2
+logger -t gps-enable "AT+CGPS=1 gesendet"
+GPSENABLE
+sudo chmod +x /usr/local/sbin/sim7600-gps-enable
+
+sudo tee /etc/systemd/system/sim7600-gps-enable.service > /dev/null << 'GPSSERVICE'
 [Unit]
-Description=LTE Datenverbindung (SIM7600E-H)
-After=network-online.target
-Wants=network-online.target
-Before=dse5510_sync.service
+Description=Aktiviere GPS im SIM7600 Modul
+After=systemd-udev-settle.service
+Before=gpsd.service lte-failover.service
+Wants=systemd-udev-settle.service
 
 [Service]
-Type=simple
-ExecStartPre=/bin/sleep 30
-ExecStart=/usr/sbin/pppd call sim7600
-Restart=always
+Type=oneshot
+ExecStart=/usr/local/sbin/sim7600-gps-enable
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+GPSSERVICE
+
+sudo tee /etc/default/gpsd > /dev/null << 'GPSDCONF'
+START_DAEMON="true"
+USBAUTO="false"
+DEVICES="/dev/ttyUSB2"
+GPSD_OPTIONS="-n"
+GPSDCONF
+
+sudo usermod -aG dialout gpsd 2>/dev/null || true
+sudo systemctl daemon-reload
+sudo systemctl enable sim7600-gps-enable.service gpsd.socket gpsd.service
+
+# --- 3h: LTE-Service ---
+echo "  LTE-Service anlegen..."
+sudo tee /etc/systemd/system/lte-failover.service > /dev/null << 'LTESERVICE'
+[Unit]
+Description=LTE Failover Connection (Telekom M2M)
+After=network-online.target sim7600-gps-enable.service
+Wants=network-online.target
+Requires=sim7600-gps-enable.service
+
+[Service]
+Type=forking
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/pon m2m
+ExecStop=/usr/bin/poff m2m
+Restart=on-failure
 RestartSec=30
 
 [Install]
@@ -1492,69 +1309,87 @@ WantedBy=multi-user.target
 LTESERVICE
 
 sudo systemctl daemon-reload
-sudo systemctl enable lte-connection
-sudo systemctl start lte-connection
+sudo systemctl enable lte-failover.service
 
-echo "  LTE-Verbindung wird aufgebaut..."
-echo "  APN: {body.lte_apn}"
-echo "  Port: {body.lte_port}"
+# --- 3i: Status-Tools installieren ---
+echo "  Status-Tools installieren..."
 
-# Warte kurz auf PPP-Verbindung
-sleep 10
+sudo tee /usr/local/bin/lte-status > /dev/null << 'LTESTATUS'
+#!/bin/bash
+echo "========== Network Status $(date '+%Y-%m-%d %H:%M:%S') =========="
+echo ""
+echo "--- Default-Routen ---"
+ip route | grep default
+echo ""
+echo "--- Aktiver Pfad zu 8.8.8.8 ---"
+ip route get 8.8.8.8 | head -1
+echo ""
+echo "--- LTE-Interface ---"
 if ip link show ppp0 &>/dev/null; then
-    PPP_IP=$(ip -4 addr show ppp0 2>/dev/null | grep inet | awk '{{print $2}}')
-    echo "  LTE verbunden! IP: $PPP_IP"
+    ip -4 addr show ppp0 | grep inet
+    echo "ppp0: UP"
 else
-    echo "  LTE wird noch aufgebaut (kann bis zu 30s dauern)"
-    echo "  Pruefen mit: ip addr show ppp0"
+    echo "ppp0: DOWN"
 fi
+echo ""
+echo "--- DNS ---"
+grep -v '^#' /etc/resolv.conf
+LTESTATUS
+
+sudo tee /usr/local/bin/gps-status > /dev/null << 'GPSSTATUS'
+#!/bin/bash
+echo "========== GPS Status $(date '+%Y-%m-%d %H:%M:%S') =========="
+if ! systemctl is-active --quiet gpsd; then
+    echo "gpsd laeuft nicht! -> sudo systemctl start gpsd"
+    exit 1
+fi
+RESULT=$(timeout 5 gpspipe -w -n 10 2>/dev/null | grep -m1 '"class":"TPV"' || echo "")
+if [ -z "$RESULT" ]; then
+    echo "Noch keine GPS-Daten (Cold-Start kann 1-5 Min dauern)"
+    exit 0
+fi
+LAT=$(echo "$RESULT" | grep -oP '"lat":\K[-0-9.]+' || echo "?")
+LON=$(echo "$RESULT" | grep -oP '"lon":\K[-0-9.]+' || echo "?")
+echo "Position: $LAT, $LON"
+echo "Maps: https://www.google.com/maps?q=$LAT,$LON"
+GPSSTATUS
+
+sudo chmod +x /usr/local/bin/lte-status /usr/local/bin/gps-status
+
+echo "  APN: {body.lte_apn}"
+echo "  Port-Schema: ttyUSB2=GPS, ttyUSB3=AT+PPP"
+echo "  Routing: eth0=100, wlan0=600, ppp0=700"
+echo "  Tools: lte-status, gps-status"
 """
 
         lte_verify_block = f"""
-# LTE Status pruefen
+# LTE + GPS Status pruefen
 echo ""
 echo "  LTE Status:"
 if ip link show ppp0 &>/dev/null; then
     PPP_IP=$(ip -4 addr show ppp0 2>/dev/null | grep inet | awk '{{print $2}}')
     echo "    LTE verbunden - IP: $PPP_IP"
 else
-    echo "    LTE: Verbindung wird aufgebaut..."
-    echo "    Pruefen: sudo journalctl -u lte-connection -n 20"
+    echo "    LTE wird nach Reboot aufgebaut"
 fi
-
-# Netzwerk-Routing pruefen
+echo "  GPS: $(systemctl is-enabled gpsd 2>/dev/null || echo 'nicht konfiguriert')"
 echo ""
-echo "  Netzwerk-Routing:"
-ip route show default 2>/dev/null | while read line; do
-    echo "    $line"
-done
-echo "  Network-Watchdog: $(systemctl is-active network-watchdog.timer 2>/dev/null || echo 'nicht aktiv')"
-
-# Internet-Test
-echo ""
-echo "  Internet-Test:"
-if ping -c 1 -W 3 8.8.8.8 &>/dev/null; then
-    echo "    Ping 8.8.8.8: OK"
-else
-    echo "    Ping 8.8.8.8: FEHLT - Routing pruefen!"
-fi
-if ping -c 1 -W 3 google.de &>/dev/null; then
-    echo "    DNS google.de: OK"
-else
-    echo "    DNS google.de: FEHLT - DNS pruefen!"
-fi
+echo "  Nach Reboot pruefen:"
+echo "    lte-status    # Netzwerk + LTE"
+echo "    gps-status    # GPS-Position"
+echo "    ip route      # Routing-Tabelle"
 """
 
-    lte_after_line = "\nAfter=lte-connection.service" if body.enable_lte else ""
+    lte_after_line = "\nAfter=lte-failover.service" if body.enable_lte else ""
 
     # Pre-build conditional echo lines (backslashes not allowed in f-string expressions)
     lte_header_echo = f'echo "  LTE: SIM7600E-H ({body.lte_apn})"' if body.enable_lte else ""
     lte_apn_echo = f'echo "  LTE APN:      {body.lte_apn}"' if body.enable_lte else ""
-    lte_port_echo = f'echo "  LTE Port:     {body.lte_port}"' if body.enable_lte else ""
+    lte_port_echo = f'echo "  LTE Port:     ttyUSB3 (PPP), ttyUSB2 (GPS)"' if body.enable_lte else ""
     lte_check_echo = ('echo ""\necho "  LTE pruefen:"\n'
-                      'echo "    sudo systemctl status lte-connection"\n'
-                      'echo "    ip addr show ppp0"\n'
-                      'echo "    sudo journalctl -u lte-connection -f"') if body.enable_lte else ""
+                      'echo "    lte-status"\n'
+                      'echo "    gps-status"\n'
+                      'echo "    ip route"') if body.enable_lte else ""
 
     bash_script = f"""#!/bin/bash
 # ==============================================================

@@ -302,20 +302,30 @@ function DSE5510PiSetupSection({ deviceId, deviceName }) {
       </Button>
       <p className="text-[10px] text-gray-400 mt-2">
         Enthält: RS232 Modbus RTU + GPS + Steuerung (Start/Stop/Auto) + Lokale DB + Systemd-Dienst
-        {enableLte && " + LTE (SIM7600E-H PPP)"}
+        {enableLte && " + LTE-Failover + gpsd (SIM7600E-H)"}
       </p>
 
       <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-3">
         <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Modbus Register (GenComm)</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] text-gray-600">
           <span>Page 4: Grundwerte (V, A, W, Hz, RPM)</span>
-          <span>Page 6: Leistungsfaktor, kW, kVA</span>
+          <span>Page 6: Leistungsfaktor, kW</span>
           <span>Page 7: Betriebsstunden, kWh, Starts</span>
+          <span>Page 8: Alarm-Codes (52 Alarme)</span>
           <span>Page 16: Steuerung (Start/Stop/Auto)</span>
         </div>
         <div className="mt-2 text-[11px] text-gray-600">
           <span className="font-medium">Steuerbefehle:</span> Stop, Auto, Manuell, Start, Generator Ein/Aus
         </div>
+        {enableLte && (
+          <div className="mt-2 pt-2 border-t border-gray-200 text-[11px] text-gray-600">
+            <span className="font-medium">LTE Port-Schema:</span> ttyUSB2=GPS (gpsd), ttyUSB3=AT+PPP
+            <br />
+            <span className="font-medium">Routing:</span> eth0 (Metric 100) → wlan0 (600) → ppp0 (700)
+            <br />
+            <span className="font-medium">Tools:</span> lte-status, gps-status
+          </div>
+        )}
       </div>
     </div>
   );
