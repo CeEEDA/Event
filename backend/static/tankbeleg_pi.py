@@ -107,7 +107,7 @@ RE_START = re.compile(r"Ab[sg]abe-Start\s*[:=]\s*(\d{2}:\d{2}:\d{2})", re.IGNORE
 RE_ENDE = re.compile(r"Ab[sg]abe-Ende\s*[:=]\s*(\d{2}:\d{2}:\d{2})", re.IGNORECASE)
 RE_ZAEHLER_VOR = re.compile(r"\*?\s*Zaehler\s+vor\s+Start\s*[:=]?\s*(\d+)\s*L?\s*\*?", re.IGNORECASE)
 RE_MENGE = re.compile(r"Menge\s+bei\s+15\s*.?C\s+(\d+)\s*L", re.IGNORECASE)
-RE_FUEL_TYPE = re.compile(r"\*\s*(HEL\s+schwefelarm|Diesel|HVO)\s*$", re.IGNORECASE | re.MULTILINE)
+RE_FUEL_TYPE = re.compile(r"\*\s*(HEL\s+schwefelarm|Diesel|HVO)\s*\*?\s*$", re.IGNORECASE | re.MULTILINE)
 
 # ESC/POS Steuerzeichen entfernen
 ESCPOS_PATTERN = re.compile(
