@@ -313,53 +313,128 @@ async def _process_status(generator_id, raw_payload, timestamp):
 
 
 async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
-    """Process alarm messages from DSE Function 4."""
+    """Process alarm messages from DSE Function 4 or GenComm Page 8."""
     if not parsed or not isinstance(parsed, dict):
         return
 
-    # DSE Alarm Code Descriptions
-    DSE_ALARM_TEXTS = {
-        "A001": "Notaus (Emergency Stop)",
-        "A002": "Niedriger Oeldruck (Low Oil Pressure)",
-        "A003": "Hohe Kuehlwassertemperatur (High Temp)",
-        "A004": "Start fehlgeschlagen (Overcrank)",
-        "A005": "Unterspannung (Under Voltage)",
-        "A006": "Ueberspannung (Over Voltage)",
-        "A007": "Unterfrequenz (Under Frequency)",
-        "A008": "Ueberfrequenz (Over Frequency)",
-        "A009": "Ueberstrom (Over Current)",
-        "A010": "Ueberlast (Overload)",
-        "A011": "Kurzschluss (Short Circuit)",
-        "A012": "Erdschluss (Earth Fault)",
-        "A013": "Niedriger Kraftstoff (Low Fuel)",
-        "A014": "Niedrige Batteriespannung (Low Battery)",
-        "A015": "Hohe Batteriespannung (High Battery)",
-        "A016": "Lademaschine Fehler (Charge Fail)",
-        "A017": "Wartung faellig (Maintenance Due)",
-        "A018": "Sensor offen (Sensor Open)",
-        "A019": "Sensor kurzgeschlossen (Sensor Short)",
-        "A020": "CAN Kommunikationsfehler (CAN Comms)",
-        "A021": "Unterdrehzahl (Underspeed)",
-        "A022": "Ueberdrehzahl (Overspeed)",
-        "A023": "Stopp fehlgeschlagen (Fail to Stop)",
-        "A024": "Generator bereit (Gen Available)",
-        "A025": "Netz Fehler (Mains Failure)",
-        "A026": "Hohe Oeltemperatur (High Oil Temp)",
-        "A027": "Niedriger Kuehlmittelstand (Low Coolant Level)",
+    # GenComm Page 8 alarm name map (sequential position in register layout)
+    # Register 1: pos 1-4, Register 2: pos 5-8, etc.
+    # Each register holds 4 alarms in 4-bit nibbles (bits 13-16, 9-12, 5-8, 1-4)
+    PAGE8_ALARM_NAMES = {
+        1: "Notaus (Emergency Stop)",
+        2: "Niedriger Oeldruck (Low Oil Pressure)",
+        3: "Hohe Kuehlwassertemperatur (High Coolant Temp)",
+        4: "Hohe Oeltemperatur (High Oil Temp)",
+        5: "Unterdrehzahl (Under Speed)",
+        6: "Ueberdrehzahl (Over Speed)",
+        7: "Start fehlgeschlagen (Fail to Start)",
+        8: "Stopp fehlgeschlagen (Fail to Come to Rest)",
+        9: "Drehzahlsignal verloren (Loss of Speed Sensing)",
+        10: "Generator Unterspannung (Gen Low Voltage)",
+        11: "Generator Ueberspannung (Gen High Voltage)",
+        12: "Generator Unterfrequenz (Gen Low Frequency)",
+        13: "Generator Ueberfrequenz (Gen High Frequency)",
+        14: "Generator Ueberstrom (Gen High Current)",
+        15: "Erdschluss (Gen Earth Fault)",
+        16: "Rueckleistung (Gen Reverse Power)",
+        17: "Luftklappe (Air Flap)",
+        18: "Oeldrucksensor Fehler (Oil Pressure Sender Fault)",
+        19: "Kuehlmitteltemperatursensor Fehler (Coolant Temp Sender Fault)",
+        20: "Oeltemperatursensor Fehler (Oil Temp Sender Fault)",
+        21: "Kraftstoffsensor Fehler (Fuel Level Sender Fault)",
+        22: "Drehzahlgeber Fehler (Magnetic Pickup Fault)",
+        23: "AC Drehzahlsignal verloren (Loss of AC Speed Signal)",
+        24: "Lademaschine Fehler (Charge Alternator Failure)",
+        25: "Niedrige Batteriespannung (Low Battery Voltage)",
+        26: "Hohe Batteriespannung (High Battery Voltage)",
+        27: "Niedriger Kraftstoffstand (Low Fuel Level)",
+        28: "Hoher Kraftstoffstand (High Fuel Level)",
+        29: "Generator Schliessen fehlgeschlagen (Gen Failed to Close)",
+        30: "Netz Schliessen fehlgeschlagen (Mains Failed to Close)",
+        31: "Generator Oeffnen fehlgeschlagen (Gen Failed to Open)",
+        32: "Netz Oeffnen fehlgeschlagen (Mains Failed to Open)",
+        33: "Netz Unterspannung (Mains Low Voltage)",
+        34: "Netz Ueberspannung (Mains High Voltage)",
+        35: "Bus Schliessen fehlgeschlagen (Bus Failed to Close)",
+        36: "Bus Oeffnen fehlgeschlagen (Bus Failed to Open)",
+        37: "Netz Unterfrequenz (Mains Low Frequency)",
+        38: "Netz Ueberfrequenz (Mains High Frequency)",
+        39: "Netzausfall (Mains Failed)",
+        40: "Netz Phasendrehung falsch (Mains Phase Rotation Wrong)",
+        41: "Generator Phasendrehung falsch (Gen Phase Rotation Wrong)",
+        42: "Wartung faellig (Maintenance Due)",
+        43: "Uhr nicht gestellt (Clock Not Set)",
+        44: "LCD Konfiguration verloren (LCD Config Lost)",
+        45: "Telemetrie Konfiguration verloren (Telemetry Config Lost)",
+        46: "Steuerung nicht kalibriert (Control Unit Not Calibrated)",
+        47: "Modem Stromfehler (Modem Power Fault)",
+        48: "Kurzschluss (Gen Short Circuit)",
+        49: "Synchronisation fehlgeschlagen (Failure to Synchronise)",
+        50: "Bus unter Spannung (Bus Live)",
+        51: "Geplanter Lauf (Scheduled Run)",
+        52: "Bus Phasendrehung falsch (Bus Phase Rotation Wrong)",
     }
 
-    # DSE 890 alarm format: {"UID": {"A001": 1, "A002": 0, ...}}
-    # A-codes with value > 0 = active alarm
-    active_alarms = []
+    # Alarm condition codes (GenComm Page 8)
+    # 0=disabled, 1=not active, 2=warning, 3=shutdown, 4=e-trip, 5=controlled shutdown, 10=active indication
+    ACTIVE_CONDITIONS = {2, 3, 4, 5, 10}
+    CONDITION_SEVERITY = {2: "warning", 3: "shutdown", 4: "shutdown", 5: "warning", 10: "warning"}
+
+    active_alarms = []  # list of (alarm_code_str, alarm_text, severity)
+
+    # Check for GenComm Page 8 format: {"UID": {"P008": {"R000": count, "R001": val, ...}}}
     for uid_key, uid_data in parsed.items():
-        if isinstance(uid_data, dict):
-            for alarm_code, alarm_val in uid_data.items():
-                if isinstance(alarm_code, str) and alarm_code.startswith("A"):
-                    try:
-                        if int(alarm_val) > 0:
-                            active_alarms.append(alarm_code)
-                    except (ValueError, TypeError):
-                        pass
+        if not isinstance(uid_data, dict):
+            continue
+
+        # GenComm Page 8 register format
+        page8_data = uid_data.get("P008") or uid_data.get("P154")
+        if page8_data and isinstance(page8_data, dict):
+            logger.info(f"MQTT Alarm: GenComm Page 8/154 empfangen fuer {generator_id}")
+            alarm_pos = 0
+            for reg_idx in range(1, 33):  # Registers 1-32
+                reg_key = f"R{reg_idx:03d}"
+                reg_val = page8_data.get(reg_key)
+                if reg_val is None:
+                    alarm_pos += 4
+                    continue
+                try:
+                    reg_val = int(reg_val)
+                except (TypeError, ValueError):
+                    alarm_pos += 4
+                    continue
+
+                # Extract 4 alarm conditions from 16-bit register (4 bits each)
+                nibbles = [
+                    (reg_val >> 12) & 0xF,  # Bits 13-16 (high nibble)
+                    (reg_val >> 8) & 0xF,   # Bits 9-12
+                    (reg_val >> 4) & 0xF,   # Bits 5-8
+                    reg_val & 0xF,           # Bits 1-4 (low nibble)
+                ]
+                for nibble_idx, condition in enumerate(nibbles):
+                    alarm_pos += 1
+                    if condition in ACTIVE_CONDITIONS:
+                        alarm_code = f"A{alarm_pos:03d}"
+                        alarm_name = PAGE8_ALARM_NAMES.get(alarm_pos, f"Alarm #{alarm_pos}")
+                        severity = CONDITION_SEVERITY.get(condition, "warning")
+                        active_alarms.append((alarm_code, alarm_name, severity))
+                        logger.info(f"MQTT Alarm: {alarm_code} = {alarm_name} (condition={condition}, severity={severity})")
+            # Skip A-code format check if we found GenComm data
+            if active_alarms or page8_data:
+                break
+
+        # DSE 890 Function 4 A-code format: {"UID": {"A001": condition_code, ...}}
+        for alarm_key, alarm_val in uid_data.items():
+            if isinstance(alarm_key, str) and alarm_key.startswith("A") and len(alarm_key) >= 4:
+                try:
+                    condition = int(alarm_val)
+                    if condition in ACTIVE_CONDITIONS:
+                        alarm_num = int(alarm_key[1:])
+                        alarm_name = PAGE8_ALARM_NAMES.get(alarm_num, f"DSE Alarm {alarm_key}")
+                        severity = CONDITION_SEVERITY.get(condition, "warning")
+                        active_alarms.append((alarm_key, alarm_name, severity))
+                except (ValueError, TypeError):
+                    pass
 
     if active_alarms:
         # Set generator status to alarm
@@ -367,20 +442,17 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
             {"id": generator_id},
             {"$set": {"status": "alarm", "last_seen": timestamp}}
         )
-        # Also update device
         if generator_id.startswith("dev-"):
             await _db.devices.update_one(
                 {"id": generator_id[4:]},
                 {"$set": {"mqtt_status": "alarm", "last_seen": timestamp}}
             )
-        # Store each new alarm with description
-        for alarm_code in active_alarms:
+        # Store each new alarm
+        for alarm_code, alarm_text, severity in active_alarms:
             existing = await _db.generator_alarms.find_one(
                 {"generator_id": generator_id, "alarm_code": alarm_code, "resolved_at": None}
             )
             if not existing:
-                alarm_text = DSE_ALARM_TEXTS.get(alarm_code, f"DSE Alarm {alarm_code}")
-                severity = "shutdown" if alarm_code in ("A001", "A002", "A003", "A004") else "warning"
                 await _db.generator_alarms.insert_one({
                     "id": str(uuid.uuid4()),
                     "generator_id": generator_id,
@@ -391,39 +463,38 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
                     "acknowledged": False,
                     "resolved_at": None,
                 })
-        # Spezifischen Alarm-Text in Snapshot schreiben (sichtbar in Dashboard-Liste)
-        alarm_texts = [DSE_ALARM_TEXTS.get(a, a) for a in active_alarms]
-        fault_display = ", ".join(alarm_texts[:3])  # Max 3 Alarme anzeigen
+        # Write alarm text to snapshot (visible in dashboard)
+        alarm_texts = [text for _, text, _ in active_alarms]
+        fault_display = ", ".join(alarm_texts[:3])
+        alarm_codes_str = ",".join([code for code, _, _ in active_alarms])
         snapshot_update = {
             "latest_snapshot.fault_text": fault_display,
-            "latest_snapshot.fault_code": ",".join(active_alarms),
+            "latest_snapshot.fault_code": alarm_codes_str,
         }
-        await _db.devices.update_one(
-            {"id": generator_id[4:]} if generator_id.startswith("dev-") else {"id": "none"},
-            {"$set": snapshot_update}
-        )
         if generator_id.startswith("dev-"):
-            await _db.generators.update_one(
-                {"id": generator_id},
-                {"$set": snapshot_update}
-            )
+            await _db.devices.update_one(
+                {"id": generator_id[4:]}, {"$set": snapshot_update})
+        await _db.generators.update_one(
+            {"id": generator_id}, {"$set": snapshot_update})
         logger.info(f"MQTT: {len(active_alarms)} active alarms for {generator_id}: {alarm_texts}")
     else:
-        # No active alarms - resolve all open alarms
+        # No active alarms - resolve all open Function-4 alarms (A-codes)
         open_alarms = await _db.generator_alarms.count_documents(
-            {"generator_id": generator_id, "resolved_at": None}
+            {"generator_id": generator_id, "alarm_code": {"$regex": "^A"}, "resolved_at": None}
         )
         if open_alarms > 0:
             await _db.generator_alarms.update_many(
-                {"generator_id": generator_id, "resolved_at": None},
+                {"generator_id": generator_id, "alarm_code": {"$regex": "^A"}, "resolved_at": None},
                 {"$set": {"resolved_at": timestamp}}
             )
-            # Reset status from alarm
-            await _db.generators.update_one(
-                {"id": generator_id},
-                {"$set": {"status": "online"}}
+            # Check if there are still status-bit alarms (SB_) active
+            remaining = await _db.generator_alarms.count_documents(
+                {"generator_id": generator_id, "resolved_at": None}
             )
-            logger.info(f"MQTT: All alarms resolved for {generator_id}")
+            if remaining == 0:
+                await _db.generators.update_one(
+                    {"id": generator_id}, {"$set": {"status": "online"}})
+            logger.info(f"MQTT: Function-4 alarms resolved for {generator_id}")
 
 
 async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
