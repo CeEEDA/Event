@@ -1130,7 +1130,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                             data-testid="controller-select"
                           >
                             <option value="">Steuerung wählen...</option>
-                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt} (Pi)</option>)}
+                            {CONTROLLER_OPTIONS.map(opt => <option key={opt} value={opt}>{opt === "DSE 5510" ? "DSE 5510 (Pi)" : opt}</option>)}
                             <option value="__custom">Sonstige (Freitext)...</option>
                           </select>
                           {controllerCustomMode && (
