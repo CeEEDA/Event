@@ -3,150 +3,157 @@ The user is building a comprehensive Kirmes (Fairground) billing and HR manageme
 *PRODUCT REQUIREMENTS:*
 - **Desktop Apps (Mac/Windows):** Native Desktop Applications (Electron).
 - **Mobile Apps:** Android and iOS apps wrapped via Capacitor.
-- **Server Infrastructure:** Windows Server 2019. Automated deployment, DB migration scripts, robust service management.
-- **Recent Requirement:** Deep Sea Electronics (DSE) 890 Gateway integration via MQTT. Specifically, correct interpretation of sentinel values (not available), control of generator states (Start/Stop/Auto), telemetry parsing (engine run hours, alarms), and displaying this data cleanly in a React dashboard. 
+- **Server Infrastructure:** Windows Server 2019.
+- **Hardware Integrations:** Deep Sea Electronics (DSE) 890 Gateways via MQTT (DSE 5510, 8610, 7310, L401), Dymo Label Printers, and Epson TM-U295 Serial Printers (for Fuel/Tankwagen receipts) running on Raspberry Pis.
+- **Finance:** Complete invoice lifecycle with payment tracking (Bezahlt/Offen), dunning process (Mahnwesen), and automated bank account reconciliation via FinTS/HBCI.
 
 **User's preferred language**: German (Deutsch) - **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.**
 
 **what currently exists?** 
-A full-stack React (Frontend) and FastAPI (Backend) application deployed on a Windows Server using Caddy and Mosquitto MQTT. The system now includes robust MQTT telemetry ingestion that handles DSE 890 Gateway data. It filters out GenComm sentinel values (e.g., ), maps generator control commands to GenComm Page 16 (or relevant) registers via MQTT, and calculates operating hours based on Page 7 Register 6 (in seconds). The dashboard features a real-time list view of generators sorted by Alarm -> Online -> Offline status, with a single-phase specific view for L401 Light Masts.
+A full-stack React + FastAPI application. In this session, the DSE Modbus telemetry parsing was completely overhauled to strictly follow the official DSE GenComm documentation. A robust Raspberry Pi setup generator was created for DSE 5510 and Tankwagen endpoints, featuring automatic serial port detection, LTE/LAN failover watchdogs, and AT-command GPS integration. The Finance module was heavily expanded with invoice payment statuses, an automated 2-stage dunning workflow (Mahnwesen) integrated with the Admin Tasks system, and a FinTS/HBCI bank reconciliation module (currently disabled pending bank registration). A dedicated Fuel management UI was also implemented. 
 
 **Last working item**:
-    - Last item agent was working: Unifying the MQTT Topic files. The user provided official DSE documentation confirming that DSE L401, 8610, and 8610 MKII all use the exact same GenComm Modbus register mapping. The agent just created a single unified topic file () to replace the separate controller-specific files.
+    - Last item agent was working: Debugging why one specific Light Mast (Lichtmast) is not transmitting operating hours, despite the new universal CSV topic files being loaded into the DSE 890 Gateway. The agent just called  and  on the uploaded  and  to find discrepancies.
     - Status: IN PROGRESS
     - Agent Testing Done: N
-    - Which testing method agent to use? Both (Backend testing via curl to ensure the new file is served; Frontend testing via screenshot tool to verify the download button works).
+    - Which testing method agent to use? backend testing agent / manual testing by python -c (Parse the CSVs and check if the hours register is mapped correctly for this specific gateway).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Hook up unified  (P0)
-     - Attempted fixes: The agent created  but the session ended before it could be integrated into the application.
-     - Next debug checklist: 
-       1. Update  to serve this unified file for all DSE controller types, replacing the separate endpoints/files.
-       2. Update  so the download button fetches the unified file regardless of whether the controller is a 5510, 8610, or L401.
-     - Why fix this issue and what will be achieved with the fix? Reduces maintenance overhead. The user only needs to load one identical CSV topic file into any DSE 890 Gateway, guaranteeing consistent telemetry and control across all generator models.
+  Issue 1: Missing Operating Hours on one Light Mast (P0)
+     - Attempted fixes: Agent verified the universal CSV has the correct Page 7 / Register 16 mapping for hours. The user uploaded the active CSVs for analysis just before the session ended.
+     - Next debug checklist: Check the  and  differences. Verify if the UID/Group/Type mask matches the specific Light Mast.
+     - Why fix this issue and what will be achieved with the fix? Ensures all light masts accurately report their runtime for billing/maintenance.
      - Status: IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Both
-     - Blocked on other issue: None
-
-  Issue 2: Dymo Label Printer Error - Missing  (P1)
-     - Attempted fixes: Agent investigated an issue where printing labels failed. Discovered that the  module is missing because  is not installed on the Windows server. The user got distracted by MQTT issues and didn't confirm the fix.
-     - Next debug checklist: 
-       1. Add  to  or execute Looking in indexes: https://pypi.org/simple, https://d33sy5i8bnduwe.cloudfront.net/simple/ on the target machine.
-       2. Check  (around line 2070) to ensure the printer logic correctly handles the payload.
-     - Why fix this issue and what will be achieved with the fix? Allows the user to print hardware labels directly from the web portal to their local Windows-connected Dymo printer.
-     - Status: NOT STARTED
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Backend (python -c or manual verification with user)
-     - Blocked on other issue: None
-
-  Issue 3: Timezone Bug in Einsatzplanung Week Navigation (P2)
-     - Attempted fixes: Agent fixed the  function in  to prevent date shifting, but noticed that  and  still parse UTC midnight strings causing week navigation to behave inconsistently.
-     - Next debug checklist: Ensure  is parsed safely in the local timezone when navigating weeks in .
-     - Why fix this issue and what will be achieved with the fix? Ensures HR scheduling aligns with the correct local calendar days.
-     - Status: NOT STARTED
      - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? Frontend
+     - Should Test frontend/backend/both after fix? Backend
+     - Blocked on other issue: None
+
+  Issue 2: Fuel Sensor reading > 100% (P2)
+     - Attempted fixes: The agent noticed in a screenshot that a tank level was reading  and mentioned it should be filtered, but did not implement the filter.
+     - Next debug checklist: Modify  or  in  to clamp fuel percentage to 100%.
+     - Why fix this issue and what will be achieved with the fix? Prevents UI overflow and confusing data presentation.
+     - Status: NOT STARTED
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Backend
      - Blocked on other issue: None
 
 **In progress Task List**:
-  None
+  Task 1: FinTS/HBCI Bank Reconciliation Activation
+     - Where to resume: The logic is fully built in . The  library was manually installed on the live server. The user is waiting 1-3 days for the Sparkasse to register their FinTS Product ID. 
+     - What will be achieved with this? Automated mapping of bank transfers to unpaid invoices.
+     - Status: BLOCKED
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on something: Waiting for Bank Product ID registration. User will input  into  and enable the toggle in Admin Settings when ready.
+
+  Task 2: Persistent Installation of  library
+     - Where to resume: Ensure  is added to  (or ). The agent installed it manually via cmd during the session, which will be lost on the next clean deployment.
+     - What will be achieved with this? Prevents ModuleNotFoundError on future server reboots/deployments.
+     - Status: NOT STARTED
+     - Should Test frontend/backend/both after fix? Backend
+     - Blocked on something: None
 
 **Upcoming and Future Tasks**:
     Upcoming Tasks:
-    - (P1) Microsoft 365 Postfach-Anbindung: Automatic document ingestion from an email inbox into the Document Management system.
-    - (P1) PayPal/Kreditkarten Integration: Implement actual payment processing for Kirmes signups.
+    - (P1) Test Tankwagen-Pi one-liner setup script on the actual Pi hardware.
+    - (P1) Microsoft 365 Postfach-Anbindung: Automatic document ingestion from an email inbox.
     
     Future Tasks:
-    - (P2) Lastdiagramm Live-Test (requires EMU meters).
+    - (P2) Eingangsrechnungen (Incoming invoices) überwachen.
+    - (P2) PayPal/Kreditkarten Integration.
+    - (P2) Lastdiagramm Live-Test.
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk.
-    - (P2) Implement Admin File Size Limits for uploads.
     - (P2) Add GPS Support to Kirmeskiste.
-    - (P2) Refactor .
 
 **Completed work in this session**:
-- Filtered out GenComm sentinel values (e.g., , ) so they don't break the UI. (DONE)
-- Massively optimized MQTT performance: Switched to a latest_snapshot approach on the Device document, throttled historical telemetry inserts to 1/min, and removed event-loop-blocking queries. (DONE)
-- Fixed MQTT Control Topic pathing (4 segments: ) and logic (sending  instead of full register maps). (DONE)
-- Fixed Mosquitto password file generation to *merge* credentials rather than overwrite, preventing connection loss for existing gateways. Auto-restart Mosquitto upon password generation. (DONE)
-- Updated Generator Dashboard UI to a sorted List View (Alarms -> Online -> Offline) with GPS Map Pins. (DONE)
-- Fixed L401 Light Mast UI to dynamically hide unused 3-phase data (L2/L3, cos phi). (DONE)
-- Implemented GenComm Alarm decoding (Function 4) evaluating Page 3 Register 4 (Fault Code) and Register 6 (Status Bits). (DONE)
-- Extracted and correctly scaled DSE Operating Hours from Page 7 Register 6 (Seconds -> Hours). (DONE)
-- Improved Frontend Build times by disabling sourcemaps and modifying  to force builds safely. (DONE)
-- Fixed HTTP caching issues for  topic file downloads by bypassing Caddy's cache via HTTP Headers and reading the file directly from disk in Python. (DONE)
+- GenComm Registers mapped strictly to official documentation (Control Mode, Generator Total Watts, Power Factor) (DONE)
+- Universal DSE 890 Topic File integration in Backend/Frontend (DONE)
+- Timezone Bug in Einsatzplanung Week Navigation fixed (DONE)
+- DSE 5510 Pi Setup Script rebuilt (Auto-Root, Network Watchdog for LTE/LAN, Auto-detect AT/GPS USB Ports) (DONE)
+- Ghost generator duplication bug on Pi ingest fixed (DONE)
+- Finance: Invoice Payment Status (Bezahlt/Offen) & Filter UI (DONE)
+- Finance: 2-Stage Dunning Workflow (Mahnwesen) with Admin Task integration and email sending (DONE)
+- FinTS/HBCI Bank integration code + Invoice Matching algorithm built (DONE)
+- Tankwagen Pi One-Liner Setup Generator created (DONE)
+- Fuel Management (Tankbelege) UI built with Lager/Customer categorization (DONE)
+- Generator UI: Alarm Banner added, specific A-Code alarm texts implemented, Auto-Refresh boosted to 30s during active alarms (DONE)
 
 **Earlier issues found/mentioned but not fixed**:
-  - Issue 1: E-Invoice (Factur-X) Validation Doubt. 
-    - Debug checklist: The user uploaded a generated PDF complaining it wasn't an E-Invoice. The agent verified via Python () that the  *is* actually embedded in the PDF  correctly. No code changes were made, but if the user brings it up again, instruct them to open the PDF in Acrobat Reader -> Attachments to view the embedded XML.
+  - Issue 1:  library not in requirements file.
+    - Debug checklist: Add to backend requirements.
+    - Why to solve this issue and what will be achieved with this? Deployment stability.
+    - Should Test frontend/backend/both after fix: Backend
+    - Is recurring issue? N
 
 **Known issue recurrence from previous fork**:
-  - Issue recurrence in previous fork: None
-  - Recurrence count: 0
+  - Issue recurrence in previous fork: Timezone bug in Einsatzplanung (was mentioned in previous handoff, verified fixed in this session). Ghost generators (re-appeared due to ingest logic, fixed). 
+  - Recurrence count: 1
   - Status: RESOLVED
 
 **Code Architecture**:
 
 
 **Key Technical Concepts**:
-FastAPI, React, Mosquitto MQTT, Modbus/GenComm via DSE 890 Gateway, Windows Server 2019 Administration, Python  integration (pending).
+FastAPI, React, Mosquitto MQTT, Modbus/GenComm, Raspberry Pi (Kiosk, , AT Commands for SIM7600 LTE,  port binding), FinTS/HBCI API (), Epson ESC/POS parsing.
 
 **key DB schema**:
-  - : Now holds  with telemetry data for quick read access.
-  - : Automatically created (upserted) for legacy compatibility, linked to devices.
-  - : Handles gateway configuration.
+  - : Added  (ausstehend, offen, bezahlt, abgerechnet, ueberfaellig, mahnung).
+  - : Used for the new Admin Dunning (Mahnwesen) workflow.
 
 **changes in tech stack**:
-- Consolidated DSE telemetry parsing: Operating hours now explicitly parsed from GenComm Page 7 Register 6 (Seconds). Alarms parsed from Page 3 Register 4 & 6. 
+- **Added  (python-fints)** for PSD2/HBCI bank account access.
 
 **All files of reference**:
--  (Created, pending integration)
--  (Needs endpoint update for unified CSV)
--  (Needs UI update to download unified CSV)
--  (Contains the failing printer logic)
--  (Contains the P2 timezone bug)
+-  (Created)
+-  (Rebuilt)
+-  (Created)
+-  (Updated with Mahnung Scheduler)
+-  (Updated GenComm parsing)
+-  (Updated Pi setup logic)
+-  (Updated with AT GPS & Remote Config)
+-  (Updated ESC/POS Regex)
 
 **Areas that need refactoring**: 
--  currently forces a frontend build every time due to issues with  on Windows. Once stable, smart-build logic should be restored.
-- The  table will grow indefinitely despite the 1/min throttle. The startup cleanup function deletes data > 30 days old, but a scheduled cron/background task might be safer.
+- The  loop in  uses  on startup. If scaling up, consider a dedicated task queue (Celery/RQ) for scheduled finance jobs.
 
 **key api endpoints**:
--  (Sends Start/Stop/Auto keys to gateway)
--  (Downloads CSVs - needs refactoring to point to universal file)
--  (Dymo print endpoint)
+-  & 
+- 
+- 
+- 
 
 **Critical Info for New Agent**: 
 - **YOU MUST RESPOND IN GERMAN ONLY.**
-- The system processes thousands of MQTT messages. Do NOT re-introduce heavy database operations inside the  loop in . The current architecture updates a lightweight  on the device and only inserts a historical record once per minute.
-- The DSE 890 Gateway requires control commands to be sent to  with a JSON payload like . Do not send raw Modbus register maps for control.
-- If you touch the Windows  files or Mosquitto configs, keep in mind paths must be absolute and use Windows slashes where necessary (e.g., ).
+- The  library was installed manually on the live Windows Server. **You MUST add  to the  file.**
+- The Pi LTE failover relies on metric priorities in  (eth0=100, ppp0=700). Do not alter this routing paradigm.
+- The  logic relies on the user providing , , , and  via the  file. A UI toggle in  controls the 6-hour cron job.
 
 **documents and test reports created in this job**:
-  -  (Updated with MQTT UI fixes and performance improvements)
+  -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages**:
- 1. (Agent): Tests  in , notes  bug, states it's a timezone issue to fix next session.
- 2. (User): siehst du den promt mit den Topic files für die 8610
- 3. (Agent): Explains that the 8610 topic file is built and hardcoded. Asks to verify the run hours register when the manufacturer replies.
- 4. (User): States the hours register is definitely wrong, all 4 light masts show 2701h.
- 5. (Agent): Removes  topic from the L401 file to stop the bad data until official docs arrive.
- 6. (User): Asks if the correct register is in now.
- 7. (Agent): Clarifies that L401 hours are removed temporarily, 8610 remains on P7 R0. Says goodnight.
- 8. (User): wieso gute nacht? wir sind seit heute nacht 8 Stunden weiter? Und warum kostet mich das hier jetzt Token?
- 9. (Agent): Explains token usage. Encourages the user to keep going.
- 10. (User): Uploads 2 screenshots of official DSE documentation from the manufacturer. the attached Gencomm.doc is used for all DSE products. therefore you can use the same for DSEL401 MKII / DSE8610 / DSE8610 MKII. Passe alle Topic files entsprechend an. Alle Topic files sind gleich.
- **PENDING HUMAN MESSAGE:** The user wants all DSE 890 Topic Files consolidated into one universal file based on the newly confirmed GenComm documentation. The previous agent created  but did not integrate it into the application endpoints or frontend UI yet.
+ 1. (Agent): Asks user to use Save to Github and run the updated setup script on the Pi.
+ 2. (User): bei dem Lastfenster kommen ja keine daten. Daher kannst du das entfernen bei allen Lichtmasten und Stromerzeugern
+ 3. (Agent): Removes the load percent UI box for non-telemetry units.
+ 4. (User): such den fehler. In der Geräteverwaltung ist die Offline. Die ist auch aus. In der Power Monitor seite steht die aber noch auf Standby.
+ 5. (Agent): Fixes Offline Checker to sync device  to generator .
+ 6. (User): Asks about the gateway send interval.
+ 7. (Agent): Explains interval is 2mins for engine/status, 20mins for hours.
+ 8. (User): Notes that simulated Underspeed alarm isn't showing in UI, and detail page requires manual refresh.
+ 9. (Agent): Adds Alarm Banner, 30s auto-refresh during alarms, and specific A-Code translations (A021 for Underspeed).
+ 10. (User): check auch hier noch mal die Route. Ich hab gerade noch einmal frisch die topic fiels reingeladen. Aber es kommen keine Stunden an. Es ist aber kurios. Es ist nur ein Lichtmast. die anderen kommen die Daten. Uploads  and .
+ **PENDING HUMAN MESSAGE:** Investigate why one specific Light Mast is not sending operating hours by analyzing the recently uploaded CSV mapping files.
 
 **Project Health Check:**
-- Broken: Dymo Label Printer ( missing dependency).
+- Broken: None. (FinTS is intentionally disabled via Admin UI toggle until bank registration completes).
 - Mocked: None.
 
 **3rd Party Integrations** 
 - Mosquitto MQTT
 - EpiRent API
 - DATEV (Email)
-- Stripe (Pending)
+- GoCardless/Nordigen (Rejected by user)
+- FinTS / HBCI () via Kreissparkasse Mayen (Added)
 
 **Testing status**:
   - Testing agent used after significant changes: NO (Heavy reliance on manual execution and user server logs).
@@ -157,10 +164,7 @@ FastAPI, React, Mosquitto MQTT, Modbus/GenComm via DSE 890 Gateway, Windows Serv
 **Credentials to test flow:**
 - Admin:  / 
 - Admin Preview:  / 
-- Employee:  / 
 
 **What agent forgot to execute**:
-The agent created  but forgot to:
-1. Update  to expose this new universal file as an endpoint (replacing the separate L401 and 8610 logic).
-2. Update  to change the download button to pull this single unified file regardless of the selected controller. 
-3. The agent also forgot to resolve the missing  dependency for the Dymo printer issue brought up earlier in the chat.</analysis>
+- The agent forgot to add  to the  file after manually running  on the server.
+- The agent noticed a tank level sensor reading  and mentioned it should be filtered to max 100%, but did not write the code to clamp it.</analysis>

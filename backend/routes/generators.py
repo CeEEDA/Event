@@ -472,6 +472,40 @@ async def download_full_scanner():
 
 
 
+@router.get("/diagnose-hours")
+async def diagnose_hours(user: dict = Depends(get_authenticated_user)):
+    """Diagnose: Zeigt Stunden-Status aller Geräte (welche haben hours_run, welche nicht)."""
+    devices = await db.devices.find(
+        {"dse_module_uid": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "id": 1, "name": 1, "device_type": 1, "controller": 1,
+         "dse_module_uid": 1, "mqtt_status": 1, "last_seen": 1,
+         "latest_snapshot.hours_run": 1, "latest_snapshot.engine_starts": 1,
+         "latest_snapshot.timestamp": 1}
+    ).to_list(200)
+
+    result = []
+    for d in devices:
+        snap = d.get("latest_snapshot", {})
+        result.append({
+            "device_id": d.get("id"),
+            "name": d.get("name", "?"),
+            "device_type": d.get("device_type"),
+            "controller": d.get("controller"),
+            "dse_module_uid": d.get("dse_module_uid"),
+            "mqtt_status": d.get("mqtt_status"),
+            "last_seen": d.get("last_seen"),
+            "hours_run": snap.get("hours_run"),
+            "engine_starts": snap.get("engine_starts"),
+            "snapshot_ts": snap.get("timestamp"),
+            "has_hours": snap.get("hours_run") is not None,
+        })
+
+    # Sort: devices WITHOUT hours first (problem devices)
+    result.sort(key=lambda x: (x["has_hours"], x.get("name", "")))
+    return {"devices": result, "total": len(result),
+            "missing_hours": sum(1 for r in result if not r["has_hours"])}
+
+
 @router.get("/{generator_id}")
 async def get_generator(generator_id: str, user: dict = Depends(get_authenticated_user)):
     gen = await _resolve_generator(generator_id)

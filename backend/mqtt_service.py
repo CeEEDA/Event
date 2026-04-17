@@ -504,6 +504,14 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                 if gencomm_data:
                     telemetry_data = gencomm_data
 
+        # Diagnose-Logging für /hours Topic
+        raw_topic = topic.split("/")[-1] if topic else ""
+        if raw_topic == "hours":
+            if telemetry_data.get("hours_run") is not None:
+                logger.info(f"MQTT hours OK: device={device_id}, hours_run={telemetry_data['hours_run']}, starts={telemetry_data.get('engine_starts')}")
+            else:
+                logger.warning(f"MQTT hours FEHLEND: device={device_id}, topic={topic}, raw_payload={raw_payload[:200] if raw_payload else 'None'}")
+
         # Always update snapshot on device + generator (fast, no new documents)
         snapshot_fields = {}
         _TELEMETRY_KEYS = [
@@ -948,7 +956,7 @@ def _parse_gencomm_registers(parsed, topic):
     if valid(registers.get((4, 1))):
         result["coolant_temp"] = registers[(4, 1)]           # °C
     if valid(registers.get((4, 3))):
-        result["fuel_level"] = registers[(4, 3)]             # %
+        result["fuel_level"] = min(registers[(4, 3)], 100)   # % clamped to max 100
     if valid(registers.get((4, 5))):
         result["battery_voltage"] = registers[(4, 5)] / 10.0  # 0.1V -> V
     if valid(registers.get((4, 6))):
@@ -998,8 +1006,6 @@ def _parse_gencomm_registers(parsed, topic):
     # Page 7: kWh, starts (DSE 8610 etc.) - NOT hours (P7 R0 gives garbage on L401/890)
     if valid(registers.get((7, 4))):
         result["energy_kwh"] = registers[(7, 4)]             # kWh
-    if valid(registers.get((7, 6))):
-        pass  # Handled below as seconds
 
     # Page 3: Run hours for L401 (Register 15, 32-bit, 0.1h) - DEPRECATED, use P7 R6
     if not result.get("hours_run") and valid(registers.get((3, 15))):
@@ -1008,13 +1014,28 @@ def _parse_gencomm_registers(parsed, topic):
     # Page 7 Register 6: Run hours in SECONDS (via DSE 890 Gateway)
     # Note: bypass valid() check - seconds value can be > 1M (> 277h)
     raw_hours_sec = registers.get((7, 6))
-    if raw_hours_sec is not None and isinstance(raw_hours_sec, (int, float)):
-        if 0 < raw_hours_sec < 100000000:  # sanity: < 27777h
+    if raw_hours_sec is not None:
+        # Robust: handle string values from gateway
+        try:
+            raw_hours_sec = float(raw_hours_sec)
+        except (TypeError, ValueError):
+            logger.warning(f"GenComm P7R6 hours: ungültiger Wert '{raw_hours_sec}' (type={type(raw_hours_sec).__name__})")
+            raw_hours_sec = None
+    if raw_hours_sec is not None:
+        if 0 <= raw_hours_sec < 100000000:  # sanity: <= 27777h, 0 = never run
             result["hours_run"] = round(raw_hours_sec / 3600.0, 1)
+        else:
+            logger.warning(f"GenComm P7R6 hours: Wert {raw_hours_sec} ausserhalb Bereich (0..100M), topic={topic}")
 
     # Page 7 Register 16: Number of starts (32-bit)
-    if valid(registers.get((7, 16))):
-        result["engine_starts"] = int(registers[(7, 16)])
+    raw_starts = registers.get((7, 16))
+    if raw_starts is not None:
+        try:
+            raw_starts = float(raw_starts)
+        except (TypeError, ValueError):
+            raw_starts = None
+    if raw_starts is not None and valid(raw_starts):
+        result["engine_starts"] = int(raw_starts)
 
     return result if result else None
 

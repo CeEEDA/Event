@@ -192,7 +192,7 @@ class TestQrCodeUrlParsing:
         test_cases = [
             ("https://domain.com/kirmes/meter-zuordnung/82ae1943-bed4-48b8-9375-0b79a34e49a4", "82ae1943-bed4-48b8-9375-0b79a34e49a4"),
             ("/kirmes/meter-zuordnung/abc123", "abc123"),
-            ("https://dse-mqtt-gateway.preview.emergentagent.com/kirmes/meter-zuordnung/meter_001", "meter_001"),
+            ("https://event-invoice-5.preview.emergentagent.com/kirmes/meter-zuordnung/meter_001", "meter_001"),
             ("http://localhost:3000/kirmes/meter-zuordnung/test-meter-id-123", "test-meter-id-123"),
             # With trailing slash
             ("https://domain.com/kirmes/meter-zuordnung/abc123/", "abc123"),
