@@ -579,7 +579,6 @@ export default function GeneratorDetailPage() {
         {t ? (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="live-metrics">
             <MetricBox icon={Zap} label="Leistung" value={t.power_kw} unit="kW" color="text-fuchsia-600" field="power_kw" />
-            <MetricBox icon={Gauge} label="Last" value={t.load_percent} unit="%" color={sanitizeValue(t.load_percent, "load_percent") > 85 ? "text-red-500" : "text-gray-900"} field="load_percent" />
             <MetricBox icon={Activity} label="Frequenz" value={t.frequency} unit="Hz" field="frequency" />
             <MetricBox icon={Thermometer} label="Kühlmittel" value={t.coolant_temp} unit="°C" color={sanitizeValue(t.coolant_temp, "coolant_temp") > 90 ? "text-amber-600" : "text-gray-900"} field="coolant_temp" />
             <MetricBox icon={Fuel} label="Tankstand" value={t.fuel_level} unit="%" color={sanitizeValue(t.fuel_level, "fuel_level") < 25 ? "text-red-500" : "text-gray-900"} field="fuel_level" />
