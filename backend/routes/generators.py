@@ -63,9 +63,9 @@ async def _resolve_generator(generator_id: str):
         device_id = generator_id[4:]
         device = await db.devices.find_one({"id": device_id}, {"_id": 0})
         if device:
-            dev_status = device.get("mqtt_status", "standby")
-            if dev_status not in ("online", "offline", "running"):
-                dev_status = "standby"
+            dev_status = device.get("mqtt_status", "offline")
+            if dev_status not in ("online", "offline", "running", "standby", "alarm", "verbunden"):
+                dev_status = "offline"
             return {
                 "id": generator_id,
                 "name": device.get("user_field") or device.get("model") or device["serial_number"],

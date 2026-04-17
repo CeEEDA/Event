@@ -1038,7 +1038,7 @@ async def _check_stale_devices():
     # Mark devices as offline if last_seen is older than cutoff
     device_result = await _db.devices.update_many(
         {
-            "mqtt_status": {"$in": ["online", "running"]},
+            "mqtt_status": {"$in": ["online", "running", "standby", "verbunden"]},
             "last_seen": {"$lt": cutoff}
         },
         {"$set": {"mqtt_status": "offline"}}
@@ -1047,10 +1047,10 @@ async def _check_stale_devices():
     # Mark generators as offline if last_seen is older than cutoff
     gen_result = await _db.generators.update_many(
         {
-            "status": {"$in": ["online", "running", "standby"]},
+            "status": {"$in": ["online", "running", "standby", "verbunden"]},
             "last_seen": {"$ne": None, "$lt": cutoff}
         },
-        {"$set": {"status": "offline"}}
+        {"$set": {"status": "offline", "mqtt_status": "offline"}}
     )
 
     total = (device_result.modified_count or 0) + (gen_result.modified_count or 0)
