@@ -1074,6 +1074,7 @@ class DSE5510SetupRequest(BaseModel):
     lte_apn: str = "internet.m2mportal.de"
     lte_port: str = "/dev/ttyAMA0"
     controller_type: str = "DSE 5510"
+    connection_type: str = ""  # "pi_usb", "pi_rs232", or ""
 
 @router.post("/devices/{device_id}/dse5510-setup")
 async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
@@ -1101,7 +1102,7 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
     static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
     # Check if this is a USB-direct DSE device (L401, 8610 etc. without RS232 adapter)
-    is_usb_direct = body.serial_port.lower() in ("usb", "auto", "/dev/dse-usb") or "usb" in (body.controller_type or "").lower()
+    is_usb_direct = body.connection_type == "pi_usb" or body.serial_port.lower() in ("usb", "auto", "/dev/dse-usb")
 
     if is_usb_direct:
         script_path = os.path.join(static_dir, "dse_usb_sync.py")

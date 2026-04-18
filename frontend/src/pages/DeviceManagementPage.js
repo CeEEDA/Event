@@ -186,12 +186,13 @@ function isPiController(ctrl) {
   // Flexible match: "DSE 8610 ...", "DSE 7310 ...", "DSE L401 ...", "DSE 5510 ..."
   return /DSE\s*(8610|7310|L401|5510)/i.test(c);
 }
-function DSEPiSetupSection({ deviceId, deviceName, controller }) {
+function DSEPiSetupSection({ deviceId, deviceName, controller, connectionType }) {
   const [loading, setLoading] = useState(false);
   const [wgetCommand, setWgetCommand] = useState(null);
-  const [serialPort, setSerialPort] = useState("/dev/ttyUSB0");
+  const isUsbDirect = connectionType === "pi_usb";
+  const [serialPort, setSerialPort] = useState(isUsbDirect ? "usb" : "/dev/ttyUSB0");
   const [baudRate, setBaudRate] = useState(19200);
-  const [slaveId, setSlaveId] = useState(10);
+  const [slaveId, setSlaveId] = useState(isUsbDirect ? 1 : 10);
   const [enableLte, setEnableLte] = useState(false);
   const [lteApn, setLteApn] = useState("internet.m2mportal.de");
   const [ltePort, setLtePort] = useState("/dev/ttyAMA0");
@@ -204,13 +205,14 @@ function DSEPiSetupSection({ deviceId, deviceName, controller }) {
     setLoading(true);
     try {
       const res = await api.post(`/energy-monitoring/devices/${deviceId}/dse5510-setup`, {
-        serial_port: serialPort,
+        serial_port: isUsbDirect ? "usb" : serialPort,
         baud_rate: baudRate,
         slave_id: slaveId,
         enable_lte: enableLte,
         lte_apn: lteApn,
         lte_port: ltePort,
         controller_type: controller,
+        connection_type: connectionType,
       });
       setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
       toast.success(`${controllerLabel} Pi Setup generiert!`);
@@ -225,43 +227,63 @@ function DSEPiSetupSection({ deviceId, deviceName, controller }) {
     <div className="border-t border-gray-100 pt-4" data-testid="dse-pi-setup">
       <div className="flex items-center gap-2 mb-1">
         <Server className="w-4 h-4 text-fuchsia-600" />
-        <h3 className="text-sm font-medium text-gray-900">{controllerLabel} Pi Setup</h3>
+        <h3 className="text-sm font-medium text-gray-900">{controllerLabel} Pi Setup {isUsbDirect ? "(USB direkt)" : "(RS232)"}</h3>
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
-        Raspberry Pi liest den {controllerLabel} via USB Modbus RTU. Inkl. GPS, lokaler Pufferung und Portal-Sync.
+        {isUsbDirect
+          ? `Raspberry Pi liest den ${controllerLabel} direkt ueber USB (pyusb). Kein RS232-Adapter noetig.`
+          : `Raspberry Pi liest den ${controllerLabel} ueber RS232 Modbus RTU mit USB/LAN Adapter.`
+        }
       </p>
 
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        <div>
-          <Label className="text-gray-600 text-[11px]">Serieller Port</Label>
-          <select value={serialPort} onChange={e => setSerialPort(e.target.value)}
-            className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
-            data-testid="dse5510-serial-port">
-            <option value="/dev/ttyUSB0">/dev/ttyUSB0</option>
-            <option value="/dev/ttyUSB1">/dev/ttyUSB1</option>
-            <option value="/dev/ttyAMA0">/dev/ttyAMA0</option>
-            <option value="/dev/ttyS0">/dev/ttyS0</option>
-          </select>
+      {/* Konfigurationsfelder - bei USB direkt nur Slave ID, bei RS232 alles */}
+      {isUsbDirect ? (
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="p-2 bg-gray-50 rounded border border-gray-200">
+            <Label className="text-gray-500 text-[10px]">Verbindung</Label>
+            <p className="text-xs font-medium text-gray-800">USB direkt (pyusb)</p>
+          </div>
+          <div>
+            <Label className="text-gray-600 text-[11px]">Slave ID</Label>
+            <Input type="number" value={slaveId} onChange={e => setSlaveId(parseInt(e.target.value) || 1)}
+              min={1} max={247}
+              className="mt-0.5 text-xs h-[30px]"
+              data-testid="dse5510-slave-id" />
+          </div>
         </div>
-        <div>
-          <Label className="text-gray-600 text-[11px]">Baud Rate</Label>
-          <select value={baudRate} onChange={e => setBaudRate(parseInt(e.target.value))}
-            className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
-            data-testid="dse5510-baud-rate">
-            <option value={9600}>9600</option>
-            <option value={19200}>19200</option>
-            <option value={38400}>38400</option>
-            <option value={115200}>115200</option>
-          </select>
+      ) : (
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div>
+            <Label className="text-gray-600 text-[11px]">Serieller Port</Label>
+            <select value={serialPort} onChange={e => setSerialPort(e.target.value)}
+              className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
+              data-testid="dse5510-serial-port">
+              <option value="/dev/ttyUSB0">/dev/ttyUSB0</option>
+              <option value="/dev/ttyUSB1">/dev/ttyUSB1</option>
+              <option value="/dev/ttyAMA0">/dev/ttyAMA0</option>
+              <option value="/dev/ttyS0">/dev/ttyS0</option>
+            </select>
+          </div>
+          <div>
+            <Label className="text-gray-600 text-[11px]">Baud Rate</Label>
+            <select value={baudRate} onChange={e => setBaudRate(parseInt(e.target.value))}
+              className="w-full mt-0.5 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
+              data-testid="dse5510-baud-rate">
+              <option value={9600}>9600</option>
+              <option value={19200}>19200</option>
+              <option value={38400}>38400</option>
+              <option value={115200}>115200</option>
+            </select>
+          </div>
+          <div>
+            <Label className="text-gray-600 text-[11px]">Slave ID</Label>
+            <Input type="number" value={slaveId} onChange={e => setSlaveId(parseInt(e.target.value) || 10)}
+              min={1} max={247}
+              className="mt-0.5 text-xs h-[30px]"
+              data-testid="dse5510-slave-id" />
+          </div>
         </div>
-        <div>
-          <Label className="text-gray-600 text-[11px]">Slave ID</Label>
-          <Input type="number" value={slaveId} onChange={e => setSlaveId(parseInt(e.target.value) || 10)}
-            min={1} max={247}
-            className="mt-0.5 text-xs h-[30px]"
-            data-testid="dse5510-slave-id" />
-        </div>
-      </div>
+      )}
 
       {/* LTE Konfiguration (SIM7600E-H) */}
       <div className="mt-3 border-t border-gray-100 pt-3">
@@ -1202,8 +1224,45 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 </div>
               </div>
 
-              {/* DSE890 Gateway Setup - for all controllers except pure Pi-only (DSE 5510) */}
-              {editing && !/DSE\s*5510/i.test(formData.controller || "") && (
+              {/* ===== Anbindung (Connection Type) ===== */}
+              {editing && formData.controller && (
+                <div className="border-t border-gray-100 pt-4" data-testid="connection-type-section">
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">Anbindung</h3>
+                  <p className="text-[10px] text-gray-400 mb-3">Wie ist die Steuerung mit dem Portal verbunden?</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {!/DSE\s*5510/i.test(formData.controller || "") && (
+                      <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.connection_type === "gateway" ? "border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`}>
+                        <input type="radio" name="connection_type" value="gateway" checked={formData.connection_type === "gateway" || !formData.connection_type} onChange={() => update("connection_type", "gateway")} className="mt-0.5" />
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">DSE 890 Gateway (MQTT)</span>
+                          <p className="text-[10px] text-gray-500">Steuerung verbunden über DSE 890 Gateway. Daten kommen via MQTT.</p>
+                        </div>
+                      </label>
+                    )}
+                    {isPiController(formData.controller) && (
+                      <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.connection_type === "pi_usb" ? "border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`}>
+                        <input type="radio" name="connection_type" value="pi_usb" checked={formData.connection_type === "pi_usb"} onChange={() => update("connection_type", "pi_usb")} className="mt-0.5" />
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">Pi + USB direkt</span>
+                          <p className="text-[10px] text-gray-500">Steuerung direkt per USB am Raspberry Pi. Kein RS232-Adapter noetig.</p>
+                        </div>
+                      </label>
+                    )}
+                    {/DSE\s*5510/i.test(formData.controller || "") && (
+                      <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.connection_type === "pi_rs232" || (formData.connection_type !== "gateway" && /DSE\s*5510/i.test(formData.controller || "")) ? "border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`}>
+                        <input type="radio" name="connection_type" value="pi_rs232" checked={formData.connection_type === "pi_rs232" || (/DSE\s*5510/i.test(formData.controller || "") && !formData.connection_type)} onChange={() => update("connection_type", "pi_rs232")} className="mt-0.5" />
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">Pi + RS232 (USB/LAN Converter)</span>
+                          <p className="text-[10px] text-gray-500">DSE 5510 ueber RS232 Modbus RTU mit DSE USB/LAN Adapter am Pi.</p>
+                        </div>
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* DSE890 Gateway Setup - only when "gateway" connection selected */}
+              {editing && (formData.connection_type === "gateway" || (!formData.connection_type && !/DSE\s*5510/i.test(formData.controller || ""))) && !/DSE\s*5510/i.test(formData.controller || "") && (
                 <DseGatewaySetupSection
                   controller={formData.controller}
                   serialNumber={formData.serial_number}
@@ -1213,9 +1272,9 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 />
               )}
 
-              {/* DSE Pi Setup - USB Modbus RTU for all Pi-capable controllers */}
-              {editing && isPiController(formData.controller) && (
-                <DSEPiSetupSection deviceId={editing.id} deviceName={editing.serial_number} controller={formData.controller} />
+              {/* DSE Pi Setup - when "pi_usb" or "pi_rs232" connection selected */}
+              {editing && (formData.connection_type === "pi_usb" || formData.connection_type === "pi_rs232" || (/DSE\s*5510/i.test(formData.controller || "") && !formData.connection_type)) && (
+                <DSEPiSetupSection deviceId={editing.id} deviceName={editing.serial_number} controller={formData.controller} connectionType={formData.connection_type || (/DSE\s*5510/i.test(formData.controller || "") ? "pi_rs232" : "pi_usb")} />
               )}
             </>
           )}
