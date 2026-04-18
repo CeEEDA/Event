@@ -953,7 +953,7 @@ INSTALL_DIR="/opt/kirmeskiste"
 sudo rm -rf "$INSTALL_DIR"
 sudo mkdir -p "$INSTALL_DIR"
 sudo python3 -m venv "$INSTALL_DIR/venv"
-sudo "$INSTALL_DIR/venv/bin/pip" install --quiet "pymodbus>=3.7" requests gpsd-py3
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet "pymodbus>=3.7" requests gpsd-py3 pyusb pyserial
 
 # ===== SCHRITT 3: SYNC-SKRIPT =====
 echo "[3/6] Sync-Skript installieren..."
