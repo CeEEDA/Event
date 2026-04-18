@@ -53,7 +53,17 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Diagnostic logging for /hours topic (MQTT hours OK / MQTT hours FEHLEND)
 - [x] Diagnostic endpoint: GET /api/generators/diagnose-hours
 
-### Pi Setup Generator (2026-04-18 overhaul)
+### DSE USB-Treiber für Raspberry Pi (2026-04-18 NEW)
+- [x] Custom Linux USB driver for DSE controllers (VID 1b90:0001) via pyusb BULK
+- [x] Modbus RTU over USB BULK (Function 3 Read + Function 16 Write)
+- [x] GenComm register reading: Pages 3,4,6,7,8 (Status, Engine, Power, Hours, Alarms)
+- [x] 3-phase support: L1/L2/L3 voltage, current, watts (for 8610/7310)
+- [x] Control commands via KEY+COMPLEMENT (Page 16 Register 8) - verified on real L401
+- [x] GPS integration via gpsd
+- [x] Alarm processing: Pi alarms → generator_alarms → Dashboard alarm banner
+- [x] Pi-command endpoint for remote control from portal
+- [x] udev rule for persistent USB binding after reboot
+- [x] Connection type selection in UI: "DSE 890 Gateway (MQTT)" vs "Pi + USB direkt" vs "Pi + DSE USB/LAN Adapter"
 - [x] LTE setup completely rebuilt based on user-tested working script
 - [x] Uses PPP with defaultroute+replacedefaultroute+ifmetric (was: nodefaultroute)
 - [x] NetworkManager metrics instead of dhcpcd (Pi 5 Bookworm compatible)
