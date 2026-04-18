@@ -1235,25 +1235,25 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                         <input type="radio" name="connection_type" value="gateway" checked={formData.connection_type === "gateway" || !formData.connection_type} onChange={() => update("connection_type", "gateway")} className="mt-0.5" />
                         <div>
                           <span className="text-sm font-medium text-gray-900">DSE 890 Gateway (MQTT)</span>
-                          <p className="text-[10px] text-gray-500">Steuerung verbunden über DSE 890 Gateway. Daten kommen via MQTT.</p>
+                          <p className="text-[10px] text-gray-500">Steuerung verbunden ueber DSE 890 Gateway. Daten kommen via MQTT.</p>
                         </div>
                       </label>
                     )}
-                    {isPiController(formData.controller) && (
+                    {isPiController(formData.controller) && !/DSE\s*5510/i.test(formData.controller || "") && (
                       <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.connection_type === "pi_usb" ? "border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`}>
                         <input type="radio" name="connection_type" value="pi_usb" checked={formData.connection_type === "pi_usb"} onChange={() => update("connection_type", "pi_usb")} className="mt-0.5" />
                         <div>
-                          <span className="text-sm font-medium text-gray-900">Pi + USB direkt</span>
-                          <p className="text-[10px] text-gray-500">Steuerung direkt per USB am Raspberry Pi. Kein RS232-Adapter noetig.</p>
+                          <span className="text-sm font-medium text-gray-900">Raspberry Pi + USB direkt</span>
+                          <p className="text-[10px] text-gray-500">Steuerung per USB-Kabel direkt am Raspberry Pi. Kein Adapter noetig.</p>
                         </div>
                       </label>
                     )}
                     {/DSE\s*5510/i.test(formData.controller || "") && (
-                      <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${formData.connection_type === "pi_rs232" || (formData.connection_type !== "gateway" && /DSE\s*5510/i.test(formData.controller || "")) ? "border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`}>
-                        <input type="radio" name="connection_type" value="pi_rs232" checked={formData.connection_type === "pi_rs232" || (/DSE\s*5510/i.test(formData.controller || "") && !formData.connection_type)} onChange={() => update("connection_type", "pi_rs232")} className="mt-0.5" />
+                      <label className={`flex items-start gap-3 p-3 rounded-lg border border-fuchsia-400 bg-fuchsia-50 ring-1 ring-fuchsia-200 cursor-pointer`}>
+                        <input type="radio" name="connection_type" value="pi_rs232" checked={true} onChange={() => update("connection_type", "pi_rs232")} className="mt-0.5" />
                         <div>
-                          <span className="text-sm font-medium text-gray-900">Pi + RS232 (USB/LAN Converter)</span>
-                          <p className="text-[10px] text-gray-500">DSE 5510 ueber RS232 Modbus RTU mit DSE USB/LAN Adapter am Pi.</p>
+                          <span className="text-sm font-medium text-gray-900">Raspberry Pi + DSE USB/LAN Adapter</span>
+                          <p className="text-[10px] text-gray-500">DSE 5510 ueber den DSE USB/LAN Adapter am Raspberry Pi (Modbus RTU).</p>
                         </div>
                       </label>
                     )}
