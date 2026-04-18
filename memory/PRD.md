@@ -98,18 +98,38 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Fix: Korrekte Lightweight-URL `/generators/poll-commands/{id}?key=<device_key>` (wie in `dse5510_sync.py`), Logging für Poll-Antworten aktiviert.
 - [ ] User-Verifikation am physischen DSE L401 ausstehend.
 
+## 2026-02-18 – Stripe Checkout Return Flow Fix (P0)
+- [x] **Root-Cause**: Stripe success_url zeigte auf `/schausteller-anmeldung` statt auf React-Route `/kirmes/anmeldung` → User landete auf White Page
+- [x] Alle Stripe URLs in `payments.py` auf `/kirmes/anmeldung` umgestellt (success + cancel)
+- [x] `_confirm_deposit_and_send_email` setzt `signup.payment_status="bezahlt"` (vorher: "ausstehend") → in Kirmesverwaltung grün sichtbar
+- [x] Frontend `api`-Wrapper (`constants.js`) liefert jetzt `response.status` im Error → saubere 404-Erkennung
+- [x] Neue `PaymentSuccessStep` Komponente für Fresh-Load nach Stripe-Return (ohne Schausteller-Login)
+- [x] `PaymentCheckStep` mit Timeout- und Error-State + "Erneut prüfen" / "Zum Portal"-Buttons
+- [x] URL wird nach Auswertung automatisch bereinigt (kein stuck session_id)
+- [x] Backend-Logging aller Status-Polls und Webhook-Events
+
+## 2026-02-18 – Auto-Refund auf Kreditkarte bei Rechnungsstellung (P0)
+- [x] Pre-Auth verworfen (7-Tage-Limit zu kurz für typische 3+ Wochen Event-Laufzeit)
+- [x] Stattdessen: volle Kaution (Anschluss + kWh-Puffer + MwSt) wird eingezogen, Differenz nach Rechnung automatisch per Stripe Refund API zurück auf Kreditkarte
+- [x] Neue Funktion `refund_deposit_difference()` in `payments.py` – automatisch aufgerufen in `/signups/{id}/invoice` und `/events/{id}/generate-invoices`
+- [x] Speichert `payment_intent_id` + `charge_id` beim Bezahlvorgang via `_fetch_and_store_payment_intent()`
+- [x] Admin-Endpoints: `POST /api/payments/refund/manual`, `GET /api/payments/refund/status/{signup_id}`, `POST /api/payments/refund/sync-payment-intent/{session_id}` (Legacy-Support)
+- [x] Rechnungs-Dokument erhält `deposit_applied`, `deposit_refunded`, `deposit_open_balance`, `refunds[]`
+- [x] UI: Kaution-Badge und Refund-Badge in KirmesEventDetailPage (Mobile + Desktop)
+- [x] Proportionale Refund-Verteilung bei Sammelrechnungen (mehrere Signups eines Schaustellers → Refund pro PaymentIntent anteilig)
+
 ## Upcoming Tasks (P1)
-- [ ] Microsoft 365 Postfach-Anbindung
+- [ ] Microsoft 365 Postfach-Anbindung (IMAP "Mailbridge" Windows Service)
+- [ ] DSE 890 Gateway CSV-Upload (User-Task)
 - [ ] Test Tankwagen-Pi setup script on real hardware
 - [ ] FinTS/HBCI activation when bank registers Product ID
 
 ## Future Tasks (P2)
 - [ ] Eingangsrechnungen überwachen
-- [ ] PayPal/Kreditkarten Integration
 - [ ] Lastdiagramm Live-Test
 - [ ] Chromium "Translate" Popup on RPi Kiosk
 - [ ] GPS Support for Kirmeskiste
 
 ## Test Credentials
-- Admin: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+- Admin Live: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
 - Admin Preview: admin@test.com / password

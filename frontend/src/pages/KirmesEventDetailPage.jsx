@@ -630,6 +630,16 @@ export default function KirmesEventDetailPage() {
                             <span className={`text-[10px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
                               {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
                             </span>
+                            {signup.deposit_paid && (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded-full whitespace-nowrap" title="Kaution wurde per Kreditkarte bezahlt">
+                                Kaution {(signup.deposit_amount || 0).toFixed(2)}€
+                              </span>
+                            )}
+                            {signup.deposit_refund_amount > 0 && (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] bg-blue-50 text-blue-700 px-1 py-0.5 rounded-full whitespace-nowrap" title={`Refund ausgeführt am ${signup.deposit_refund_at || ""}`}>
+                                Refund {(signup.deposit_refund_amount || 0).toFixed(2)}€
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 mt-0.5 truncate">
                             {sch?.firma ? `${sch.name} · ` : ""}{signup.fahrgeschaeft || "–"} · Platz <strong>{signup.platznummer}</strong>
@@ -931,9 +941,21 @@ export default function KirmesEventDetailPage() {
                       </td>
                       <td className="px-1.5 py-2 text-right font-mono text-xs">{(signup.price || 0).toFixed(2)} €</td>
                       <td className="px-1.5 py-2">
-                        <span className={`text-[11px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
-                          {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`text-[11px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
+                            {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
+                          </span>
+                          {signup.deposit_paid && (
+                            <span className="text-[9px] text-emerald-700" title="Kaution per Kreditkarte bezahlt">
+                              Kaution {(signup.deposit_amount || 0).toFixed(2)}€
+                            </span>
+                          )}
+                          {signup.deposit_refund_amount > 0 && (
+                            <span className="text-[9px] text-blue-700" title={`Refund am ${signup.deposit_refund_at || ""}`}>
+                              Refund {(signup.deposit_refund_amount || 0).toFixed(2)}€
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-1.5 py-2 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">

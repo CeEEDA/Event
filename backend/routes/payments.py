@@ -29,9 +29,132 @@ def init_payments(db, decode_jwt_token):
 
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY")
 
+# Initialize raw stripe SDK for refunds (checkout lib doesn't expose refunds)
+import stripe as _stripe_sdk
+if STRIPE_API_KEY:
+    _stripe_sdk.api_key = STRIPE_API_KEY
 
-async def _confirm_deposit_and_send_email(signup_id, amount):
-    """After successful deposit payment: activate booking and send confirmation email."""
+
+async def _fetch_and_store_payment_intent(session_id: str):
+    """After successful payment, fetch the Stripe session to get payment_intent & charge for future refunds."""
+    if not STRIPE_API_KEY:
+        return None, None
+    try:
+        sess = _stripe_sdk.checkout.Session.retrieve(session_id, expand=["payment_intent.latest_charge"])
+        pi = sess.get("payment_intent") if isinstance(sess, dict) else sess.payment_intent
+        pi_id = pi if isinstance(pi, str) else (pi.get("id") if pi else None)
+        charge_id = None
+        if pi and not isinstance(pi, str):
+            latest_charge = pi.get("latest_charge")
+            if latest_charge:
+                charge_id = latest_charge if isinstance(latest_charge, str) else latest_charge.get("id")
+        await _db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"payment_intent_id": pi_id, "charge_id": charge_id}},
+        )
+        logger.info(f"[payments] Stored payment_intent={pi_id} charge={charge_id} for session={session_id}")
+        return pi_id, charge_id
+    except Exception as e:
+        logger.exception(f"[payments] Could not fetch session details for {session_id}: {e}")
+        return None, None
+
+
+async def refund_deposit_difference(signup_id: str, invoice_brutto: float, invoice_id: str, invoice_number: str):
+    """
+    After invoice creation: refund the difference between paid deposit and actual invoice amount.
+    Only refunds if deposit > invoice (positive difference).
+    Returns dict with status info.
+    """
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup or not signup.get("deposit_paid"):
+        return {"ok": False, "reason": "no_deposit_paid"}
+
+    deposit_amount = float(signup.get("deposit_amount", 0.0))
+    refundable = round(deposit_amount - float(invoice_brutto), 2)
+
+    # Update signup: record that invoice was settled against deposit
+    await _db.kirmes_signups.update_one(
+        {"id": signup_id},
+        {"$set": {
+            "deposit_applied_to_invoice": invoice_id,
+            "deposit_applied_amount": min(deposit_amount, float(invoice_brutto)),
+        }},
+    )
+
+    if refundable <= 0.01:
+        logger.info(f"[payments] No refund needed signup={signup_id} deposit={deposit_amount} invoice={invoice_brutto}")
+        return {"ok": True, "refunded": False, "amount": 0.0, "reason": "no_excess", "open_balance": round(-refundable, 2)}
+
+    # Find the deposit transaction
+    tx = await _db.payment_transactions.find_one(
+        {"signup_id": signup_id, "type": "deposit", "payment_status": "paid"},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if not tx:
+        logger.warning(f"[payments] No paid deposit tx found for signup={signup_id}")
+        return {"ok": False, "reason": "no_transaction"}
+
+    if tx.get("refund_id"):
+        logger.info(f"[payments] Refund already exists for session={tx.get('session_id')} refund={tx.get('refund_id')}")
+        return {"ok": True, "refunded": True, "amount": tx.get("refund_amount", 0.0), "reason": "already_refunded", "refund_id": tx.get("refund_id")}
+
+    # Ensure we have payment_intent_id
+    pi_id = tx.get("payment_intent_id")
+    if not pi_id:
+        pi_id, _ = await _fetch_and_store_payment_intent(tx["session_id"])
+    if not pi_id:
+        return {"ok": False, "reason": "no_payment_intent"}
+
+    if not STRIPE_API_KEY:
+        return {"ok": False, "reason": "no_stripe_key"}
+
+    try:
+        amount_cents = int(round(refundable * 100))
+        refund = _stripe_sdk.Refund.create(
+            payment_intent=pi_id,
+            amount=amount_cents,
+            reason="requested_by_customer",
+            metadata={
+                "signup_id": signup_id,
+                "invoice_id": invoice_id,
+                "invoice_number": invoice_number,
+                "reason": "deposit_excess_refund",
+            },
+        )
+        logger.info(f"[payments] Refund created: {refund.id} amount={refundable} signup={signup_id}")
+        await _db.payment_transactions.update_one(
+            {"session_id": tx["session_id"]},
+            {"$set": {
+                "refund_id": refund.id,
+                "refund_amount": refundable,
+                "refund_status": refund.status,
+                "refund_created_at": datetime.now(timezone.utc).isoformat(),
+                "refund_invoice_id": invoice_id,
+                "refund_invoice_number": invoice_number,
+            }},
+        )
+        await _db.kirmes_signups.update_one(
+            {"id": signup_id},
+            {"$set": {
+                "deposit_refund_id": refund.id,
+                "deposit_refund_amount": refundable,
+                "deposit_refund_status": refund.status,
+                "deposit_refund_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        return {"ok": True, "refunded": True, "amount": refundable, "refund_id": refund.id, "status": refund.status}
+    except Exception as e:
+        logger.exception(f"[payments] Refund creation failed signup={signup_id}: {e}")
+        await _db.payment_transactions.update_one(
+            {"session_id": tx["session_id"]},
+            {"$set": {"refund_error": str(e)[:200], "refund_attempted_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        return {"ok": False, "reason": "stripe_error", "error": str(e)[:200]}
+
+
+async def _confirm_deposit_and_send_email(signup_id, amount, session_id=None):
+    """After successful deposit payment: activate booking, store payment_intent for refunds, send confirmation email."""
     signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
     if not signup:
         return
@@ -44,6 +167,12 @@ async def _confirm_deposit_and_send_email(signup_id, amount):
             "payment_status": "bezahlt",
         }},
     )
+    # Fetch payment_intent details for future refunds
+    if session_id:
+        try:
+            await _fetch_and_store_payment_intent(session_id)
+        except Exception as e:
+            logger.warning(f"[payments] Could not fetch payment intent for session={session_id}: {e}")
     try:
         sch = await _db.kirmes_schausteller.find_one({"id": signup["schausteller_id"]}, {"_id": 0})
         event = await _db.kirmes_events.find_one({"id": signup["event_id"]}, {"_id": 0})
@@ -303,7 +432,7 @@ async def check_payment_status(session_id: str):
     if new_status == "paid" and tx.get("payment_status") != "paid":
         logger.info(f"[payments] Marking session={session_id} as paid (type={tx.get('type')})")
         if tx.get("type") == "deposit":
-            await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"])
+            await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"], session_id=session_id)
         elif tx.get("type") == "invoice":
             await _db.invoices.update_one(
                 {"id": tx["invoice_id"]},
@@ -340,7 +469,7 @@ async def stripe_webhook(request: Request):
                     {"$set": {"payment_status": "paid", "updated_at": datetime.now(timezone.utc).isoformat()}},
                 )
                 if tx.get("type") == "deposit":
-                    await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"])
+                    await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"], session_id=event.session_id)
                 elif tx.get("type") == "invoice":
                     await _db.invoices.update_one(
                         {"id": tx["invoice_id"]},
@@ -362,6 +491,109 @@ async def list_transactions(event_id: Optional[str] = None, user: dict = Depends
         query["event_id"] = event_id
     txs = await _db.payment_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     return txs
+
+
+# ============== Admin: Manual refund / refund status ==============
+
+class ManualRefundRequest(BaseModel):
+    signup_id: str
+    amount: Optional[float] = None  # If None: refund full remaining deposit
+    reason: Optional[str] = "manual_admin_refund"
+
+
+@router.post("/refund/manual")
+async def manual_refund(req: ManualRefundRequest, user: dict = Depends(_require_admin)):
+    """Manually trigger a refund for a signup's paid deposit. If amount omitted, refunds full remaining deposit."""
+    signup = await _db.kirmes_signups.find_one({"id": req.signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+    if not signup.get("deposit_paid"):
+        raise HTTPException(status_code=400, detail="Keine bezahlte Kaution vorhanden")
+
+    tx = await _db.payment_transactions.find_one(
+        {"signup_id": req.signup_id, "type": "deposit", "payment_status": "paid"},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Keine Zahlungstransaktion gefunden")
+
+    pi_id = tx.get("payment_intent_id")
+    if not pi_id:
+        pi_id, _ = await _fetch_and_store_payment_intent(tx["session_id"])
+    if not pi_id:
+        raise HTTPException(status_code=400, detail="PaymentIntent nicht verfügbar – Refund nicht möglich")
+
+    deposit_amount = float(signup.get("deposit_amount", 0.0))
+    already_refunded = float(tx.get("refund_amount", 0.0) or 0.0)
+    max_refundable = round(deposit_amount - already_refunded, 2)
+    amount_to_refund = round(float(req.amount), 2) if req.amount is not None else max_refundable
+
+    if amount_to_refund <= 0:
+        raise HTTPException(status_code=400, detail="Betrag muss größer 0 sein")
+    if amount_to_refund > max_refundable + 0.01:
+        raise HTTPException(status_code=400, detail=f"Maximal {max_refundable:.2f} EUR erstattbar")
+
+    try:
+        refund = _stripe_sdk.Refund.create(
+            payment_intent=pi_id,
+            amount=int(round(amount_to_refund * 100)),
+            reason="requested_by_customer",
+            metadata={"signup_id": req.signup_id, "reason": req.reason or "manual_admin_refund", "admin": user.get("email", "")},
+        )
+        logger.info(f"[payments] Manual refund: {refund.id} amount={amount_to_refund} signup={req.signup_id} by={user.get('email')}")
+        new_total = round(already_refunded + amount_to_refund, 2)
+        await _db.payment_transactions.update_one(
+            {"session_id": tx["session_id"]},
+            {"$set": {
+                "refund_id": refund.id,
+                "refund_amount": new_total,
+                "refund_status": refund.status,
+                "refund_created_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        await _db.kirmes_signups.update_one(
+            {"id": req.signup_id},
+            {"$set": {
+                "deposit_refund_id": refund.id,
+                "deposit_refund_amount": new_total,
+                "deposit_refund_status": refund.status,
+                "deposit_refund_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        return {"ok": True, "refund_id": refund.id, "amount": amount_to_refund, "total_refunded": new_total, "status": refund.status}
+    except Exception as e:
+        logger.exception(f"[payments] Manual refund failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Stripe-Refund fehlgeschlagen: {str(e)[:160]}")
+
+
+@router.get("/refund/status/{signup_id}")
+async def refund_status(signup_id: str, user: dict = Depends(_require_admin)):
+    """Get refund status for a signup."""
+    signup = await _db.kirmes_signups.find_one(
+        {"id": signup_id},
+        {"_id": 0, "id": 1, "deposit_paid": 1, "deposit_amount": 1, "deposit_refund_id": 1,
+         "deposit_refund_amount": 1, "deposit_refund_status": 1, "deposit_refund_at": 1,
+         "deposit_applied_to_invoice": 1, "deposit_applied_amount": 1}
+    )
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+    tx = await _db.payment_transactions.find_one(
+        {"signup_id": signup_id, "type": "deposit"},
+        {"_id": 0, "session_id": 1, "amount": 1, "payment_status": 1, "payment_intent_id": 1,
+         "refund_id": 1, "refund_amount": 1, "refund_status": 1, "refund_error": 1},
+        sort=[("created_at", -1)],
+    )
+    return {"signup": signup, "transaction": tx}
+
+
+@router.post("/refund/sync-payment-intent/{session_id}")
+async def sync_payment_intent(session_id: str, user: dict = Depends(_require_admin)):
+    """Fetch and store the payment_intent_id for an existing session. Useful to enable refund for legacy paid sessions."""
+    pi_id, charge_id = await _fetch_and_store_payment_intent(session_id)
+    if not pi_id:
+        raise HTTPException(status_code=404, detail="PaymentIntent konnte nicht ermittelt werden")
+    return {"ok": True, "payment_intent_id": pi_id, "charge_id": charge_id}
 
 
 # ============== Public: Get deposit info for signup ==============

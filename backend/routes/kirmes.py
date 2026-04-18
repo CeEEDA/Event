@@ -1380,6 +1380,44 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
             {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
         )
 
+    # Auto-Refund: Return deposit excess to credit card (per signup, proportional to deposit share)
+    invoice_doc["refunds"] = []
+    try:
+        from routes.payments import refund_deposit_difference
+        paid_signups = await _db.kirmes_signups.find(
+            {"id": {"$in": signup_ids}, "deposit_paid": True},
+            {"_id": 0, "id": 1, "deposit_amount": 1}
+        ).to_list(100)
+        if paid_signups:
+            total_deposits = sum(float(s.get("deposit_amount", 0) or 0) for s in paid_signups)
+            total_invoice = float(calc["brutto"])
+            refund_results = []
+            for ps in paid_signups:
+                dep = float(ps.get("deposit_amount", 0) or 0)
+                # Proportional share of invoice this signup should cover
+                share = (dep / total_deposits) * total_invoice if total_deposits > 0 else 0.0
+                # refund this signup's excess (dep - share), only if dep > share
+                res = await refund_deposit_difference(ps["id"], share, invoice_doc["id"], inv_number)
+                refund_results.append({"signup_id": ps["id"], **res})
+            total_refunded = sum((r.get("amount") or 0) for r in refund_results if r.get("refunded"))
+            open_balance = round(max(0.0, total_invoice - total_deposits), 2)
+            await _db.kirmes_invoices.update_one(
+                {"id": invoice_doc["id"]},
+                {"$set": {
+                    "deposit_applied": round(min(total_deposits, total_invoice), 2),
+                    "deposit_refunded": round(total_refunded, 2),
+                    "deposit_open_balance": open_balance,
+                    "refunds": refund_results,
+                }},
+            )
+            invoice_doc["deposit_applied"] = round(min(total_deposits, total_invoice), 2)
+            invoice_doc["deposit_refunded"] = round(total_refunded, 2)
+            invoice_doc["deposit_open_balance"] = open_balance
+            invoice_doc["refunds"] = refund_results
+    except Exception as e:
+        import logging as _l
+        _l.getLogger(__name__).warning(f"Auto-refund processing failed for invoice {inv_number}: {e}")
+
     # Auto-save invoice PDF to Dokumentenverwaltung (Rechnungsausgang)
     try:
         from services.invoice_pdf import generate_invoice_pdf
@@ -1510,6 +1548,41 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
                 {"id": sid},
                 {"$set": {"invoice_id": invoice_doc["id"], "invoice_number": inv_number, "payment_status": "abgerechnet"}}
             )
+
+        # Auto-Refund: deposit excess back to credit card
+        try:
+            from routes.payments import refund_deposit_difference
+            paid_signups_b = await _db.kirmes_signups.find(
+                {"id": {"$in": sch_signup_ids}, "deposit_paid": True},
+                {"_id": 0, "id": 1, "deposit_amount": 1}
+            ).to_list(100)
+            if paid_signups_b:
+                tot_dep_b = sum(float(s.get("deposit_amount", 0) or 0) for s in paid_signups_b)
+                tot_inv_b = float(calc["brutto"])
+                refund_results_b = []
+                for ps in paid_signups_b:
+                    dep = float(ps.get("deposit_amount", 0) or 0)
+                    share = (dep / tot_dep_b) * tot_inv_b if tot_dep_b > 0 else 0.0
+                    res = await refund_deposit_difference(ps["id"], share, invoice_doc["id"], inv_number)
+                    refund_results_b.append({"signup_id": ps["id"], **res})
+                total_refunded_b = sum((r.get("amount") or 0) for r in refund_results_b if r.get("refunded"))
+                open_b = round(max(0.0, tot_inv_b - tot_dep_b), 2)
+                await _db.kirmes_invoices.update_one(
+                    {"id": invoice_doc["id"]},
+                    {"$set": {
+                        "deposit_applied": round(min(tot_dep_b, tot_inv_b), 2),
+                        "deposit_refunded": round(total_refunded_b, 2),
+                        "deposit_open_balance": open_b,
+                        "refunds": refund_results_b,
+                    }},
+                )
+                invoice_doc["deposit_applied"] = round(min(tot_dep_b, tot_inv_b), 2)
+                invoice_doc["deposit_refunded"] = round(total_refunded_b, 2)
+                invoice_doc["deposit_open_balance"] = open_b
+                invoice_doc["refunds"] = refund_results_b
+        except Exception as e:
+            import logging as _l
+            _l.getLogger(__name__).warning(f"Auto-refund (bulk) failed for invoice {inv_number}: {e}")
 
         # Auto-send invoice via email
         try:

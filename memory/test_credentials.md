@@ -1,11 +1,12 @@
-# Test Credentials
+# Test Credentials (Preview + Live)
 
 ## Admin Accounts
-- **Admin (Test):** admin@test.com / password
-- **Admin (Live):** christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+- **Live (Production)**: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
+- **Preview (Testing)**: admin@test.com / password
 
-## Employee Accounts
-- **Anna Weber (Finance):** ma1@test.com / password
-- **test1:** test1@test.de / Test1234!
-- **Christine Ecker:** christine.ecker@eventenergie-deutschland.de / password
-- **No Perm:** test-noperm@test.com / password
+## Schausteller Portal (Public)
+Registrierung über `/kirmes/anmeldung` (E-Mail-Verifikation per 6-stelligem Code)
+
+## Stripe
+- LIVE KEYS bereits in `.env` konfiguriert (STRIPE_API_KEY + STRIPE_WEBHOOK_SECRET)
+- Preview-Umgebung hat Test-Key-Platzhalter → Refund-Tests schlagen dort fehl, in Live funktionieren sie
