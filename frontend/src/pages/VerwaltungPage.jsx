@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Fuel } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Fuel, Wrench } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -52,6 +52,15 @@ export default function VerwaltungPage() {
       icon: Fuel,
       color: "amber",
       path: "/verwaltung/fuel",
+      adminOnly: true,
+    },
+    {
+      key: "maschinen-auswertung",
+      label: "Maschinen-Auswertung",
+      description: "Störmeldungen, Ausfallstatistik pro Maschine und Zeitraum",
+      icon: Wrench,
+      color: "red",
+      path: "/verwaltung/maschinen-auswertung",
       adminOnly: true,
     },
   ];

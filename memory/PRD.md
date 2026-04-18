@@ -73,6 +73,16 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] FinTS/HBCI Bank integration code (disabled pending bank registration)
 - [x] Fuel Management (Tankbelege) UI
 
+### Störmeldungs- & Reparatur-System (2026-04-18 NEW)
+- [x] Störmeldung anlegen: Erfasser (auto), Auftrag (aus Liste), Maschine (Suche), Beschreibung, "Gerät sperren"
+- [x] Reparatur-Tab: Offene Störmeldungen mit Status (Offen → In Arbeit → Erledigt)
+- [x] Reparatur eintragen: Was wurde gemacht, Gerät entsperren
+- [x] Status-Farben: Rot=Offen, Amber=In Arbeit, Grün=Erledigt
+- [x] Service-Log: Störmeldung + Reparatur werden in maintenance_entries geloggt
+- [x] Maschinen-Auswertung: Eigene Seite unter /verwaltung/maschinen-auswertung
+- [x] Zeitraum-Filter (Von/Bis), Übersichtskarten, Tabelle pro Maschine, aufklappbar mit Details
+- [ ] Einsatzplanung: Gesperrte Geräte rot markiert (noch zu implementieren)
+
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung
 - [ ] Test Tankwagen-Pi setup script on real hardware

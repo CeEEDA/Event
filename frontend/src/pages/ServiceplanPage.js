@@ -910,6 +910,7 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
 // ============== Main Page ==============
 export default function ServiceplanPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [devices, setDevices] = useState([]);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -919,17 +920,34 @@ export default function ServiceplanPage() {
   const [categoryFilter, setCategoryFilter] = useState(null);
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [creatingPlan, setCreatingPlan] = useState(false);
+  const [activeTab, setActiveTab] = useState("wartung"); // wartung | reparatur
+  const [faultReports, setFaultReports] = useState([]);
+  const [showFaultModal, setShowFaultModal] = useState(false);
+  const [showRepairModal, setShowRepairModal] = useState(null); // fault report to repair
+  const [orders, setOrders] = useState([]);
 
   const loadData = useCallback(async () => {
     try {
-      const [devRes, planRes] = await Promise.all([api.get("/devices"), api.get("/serviceplan")]);
+      const [devRes, planRes, faultRes] = await Promise.all([
+        api.get("/devices"),
+        api.get("/serviceplan"),
+        api.get("/serviceplan/fault-reports"),
+      ]);
       setDevices(devRes.data.filter(d => d.status !== "ausser_betrieb"));
       setPlans(planRes.data);
+      setFaultReports(faultRes.data);
     } catch { toast.error("Fehler beim Laden"); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadOrders = useCallback(async () => {
+    try {
+      const res = await api.get("/orders");
+      setOrders(Array.isArray(res.data) ? res.data : res.data.orders || []);
+    } catch { /* orders optional */ }
+  }, []);
+
+  useEffect(() => { loadData(); loadOrders(); }, [loadData, loadOrders]);
 
   const devicesWithPlans = devices.map(d => ({ ...d, plan: plans.find(p => p.device_id === d.id) }));
   const filtered = devicesWithPlans.filter(d => {
@@ -997,14 +1015,72 @@ export default function ServiceplanPage() {
             <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn"><ArrowLeft className="w-4 h-4 mr-1" /> Zurück</Button>
             <div className="h-5 w-px bg-gray-200" />
             <h1 className="text-base font-semibold text-gray-900">Serviceplan</h1>
+            {/* Tabs */}
+            <div className="flex gap-1 ml-4 bg-gray-100 rounded-lg p-0.5">
+              <button onClick={() => setActiveTab("wartung")} className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${activeTab === "wartung" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`} data-testid="tab-wartung">Wartung</button>
+              <button onClick={() => setActiveTab("reparatur")} className={`px-3 py-1 rounded-md text-xs font-medium transition-all relative ${activeTab === "reparatur" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`} data-testid="tab-reparatur">
+                Reparatur
+                {faultReports.filter(f => f.status !== "erledigt").length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{faultReports.filter(f => f.status !== "erledigt").length}</span>
+                )}
+              </button>
+            </div>
           </div>
-          <Logo size="small" />
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => { setShowFaultModal(true); }} className="bg-red-500 hover:bg-red-600 text-white text-xs" data-testid="create-fault-btn">
+              <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Störmeldung
+            </Button>
+            <Logo size="small" />
+          </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6">
         {selectedPlan ? (
           <ServicePlanDetail plan={selectedPlan} onBack={() => { setSelectedPlan(null); loadData(); }} onUpdate={loadData} />
+        ) : activeTab === "reparatur" ? (
+          /* ============== REPARATUR TAB ============== */
+          <div data-testid="reparatur-tab">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Störmeldungen & Reparaturen</h2>
+            {faultReports.length === 0 ? (
+              <div className="text-center py-16"><AlertTriangle className="w-12 h-12 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">Keine Störmeldungen vorhanden</p></div>
+            ) : (
+              <div className="space-y-3">
+                {faultReports.map(fr => {
+                  const statusColors = { offen: "bg-red-100 text-red-700", in_arbeit: "bg-amber-100 text-amber-700", erledigt: "bg-emerald-100 text-emerald-700" };
+                  const statusLabels = { offen: "Offen", in_arbeit: "In Arbeit", erledigt: "Erledigt" };
+                  return (
+                    <div key={fr.id} className={`bg-white border rounded-lg p-4 ${fr.status === "offen" ? "border-red-300" : fr.status === "in_arbeit" ? "border-amber-300" : "border-gray-200"}`} data-testid={`fault-${fr.id}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${statusColors[fr.status]}`}>{statusLabels[fr.status]}</span>
+                            {fr.lock_device && <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-800 text-white">Gesperrt</span>}
+                          </div>
+                          <p className="text-sm font-medium text-gray-900">{fr.device_serial} <span className="text-gray-400 font-normal">({fr.device_type})</span></p>
+                          {fr.order_name && <p className="text-xs text-gray-500">Auftrag: {fr.order_name}</p>}
+                          <p className="text-sm text-gray-700 mt-1">{fr.description}</p>
+                          <p className="text-[10px] text-gray-400 mt-1">Gemeldet von {fr.reported_by_name} am {new Date(fr.reported_at).toLocaleString("de-DE")}</p>
+                          {fr.repair_description && (
+                            <div className="mt-2 p-2 bg-emerald-50 rounded border border-emerald-200">
+                              <p className="text-xs font-medium text-emerald-700">Reparatur:</p>
+                              <p className="text-sm text-emerald-800">{fr.repair_description}</p>
+                              <p className="text-[10px] text-emerald-600">Von {fr.repaired_by_name} am {new Date(fr.repaired_at).toLocaleString("de-DE")}</p>
+                            </div>
+                          )}
+                        </div>
+                        {fr.status !== "erledigt" && (
+                          <Button size="sm" variant="outline" onClick={() => setShowRepairModal(fr)} className="ml-4 text-xs flex-shrink-0" data-testid={`repair-btn-${fr.id}`}>
+                            <Wrench className="w-3.5 h-3.5 mr-1" /> Reparatur eintragen
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         ) : (
           <>
             {/* Search + QR Scanner */}
@@ -1141,6 +1217,211 @@ export default function ServiceplanPage() {
           </>
         )}
       </main>
+
+      {/* ============== STÖRMELDUNG MODAL ============== */}
+      {showFaultModal && (
+        <FaultReportModal
+          devices={devices}
+          orders={orders}
+          user={user}
+          onClose={() => setShowFaultModal(false)}
+          onSaved={() => { setShowFaultModal(false); loadData(); setActiveTab("reparatur"); }}
+        />
+      )}
+
+      {/* ============== REPARATUR MODAL ============== */}
+      {showRepairModal && (
+        <RepairModal
+          report={showRepairModal}
+          onClose={() => setShowRepairModal(null)}
+          onSaved={() => { setShowRepairModal(null); loadData(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ============== Störmeldung Modal ==============
+function FaultReportModal({ devices, orders, user, onClose, onSaved }) {
+  const [deviceId, setDeviceId] = useState("");
+  const [orderId, setOrderId] = useState("");
+  const [orderName, setOrderName] = useState("");
+  const [description, setDescription] = useState("");
+  const [lockDevice, setLockDevice] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deviceSearch, setDeviceSearch] = useState("");
+
+  const generators = devices.filter(d => ["stromerzeuger", "lichtmast"].includes(d.device_type));
+  const filteredDevices = deviceSearch
+    ? generators.filter(d => (d.serial_number || "").toLowerCase().includes(deviceSearch.toLowerCase()) || (d.model || "").toLowerCase().includes(deviceSearch.toLowerCase()))
+    : generators;
+
+  const handleSave = async () => {
+    if (!deviceId) { toast.error("Bitte Maschine auswählen"); return; }
+    if (!description.trim()) { toast.error("Bitte Fehlerbeschreibung eingeben"); return; }
+    setSaving(true);
+    try {
+      await api.post("/serviceplan/fault-reports", {
+        device_id: deviceId,
+        order_id: orderId || null,
+        order_name: orderName,
+        description: description.trim(),
+        lock_device: lockDevice,
+      });
+      toast.success("Störmeldung angelegt");
+      onSaved();
+    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="fault-modal">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Störmeldung anlegen</h2>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Erfasser */}
+          <div>
+            <Label className="text-gray-700 text-sm">Erfasst von</Label>
+            <div className="mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 flex items-center gap-2">
+              <User className="w-4 h-4 text-gray-400" />
+              {user?.name || user?.email || "Unbekannt"}
+            </div>
+          </div>
+
+          {/* Auftrag */}
+          <div>
+            <Label className="text-gray-700 text-sm">Auftrag / Veranstaltung</Label>
+            <select value={orderId} onChange={e => {
+              setOrderId(e.target.value);
+              const o = orders.find(o => String(o.pk || o.id) === e.target.value);
+              setOrderName(o ? (o.title || o.name || `Auftrag ${o.pk}`) : "");
+            }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" data-testid="fault-order-select">
+              <option value="">Kein Auftrag zugeordnet</option>
+              {orders.slice(0, 50).map(o => (
+                <option key={o.pk || o.id} value={o.pk || o.id}>{o.title || o.name || `Auftrag ${o.pk}`}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Maschine */}
+          <div>
+            <Label className="text-gray-700 text-sm">Maschine *</Label>
+            <Input placeholder="Suchen..." value={deviceSearch} onChange={e => setDeviceSearch(e.target.value)} className="mt-1 mb-1" data-testid="fault-device-search" />
+            <select value={deviceId} onChange={e => setDeviceId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" size={Math.min(filteredDevices.length + 1, 6)} data-testid="fault-device-select">
+              <option value="">Maschine wählen...</option>
+              {filteredDevices.map(d => (
+                <option key={d.id} value={d.id}>{d.serial_number} - {d.model || d.device_type}{d.status === "gesperrt" ? " [GESPERRT]" : ""}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Beschreibung */}
+          <div>
+            <Label className="text-gray-700 text-sm">Fehlerbeschreibung *</Label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Was ist passiert? Welcher Fehler liegt vor?" className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none" data-testid="fault-description" />
+          </div>
+
+          {/* Gerät sperren */}
+          <label className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg cursor-pointer" data-testid="fault-lock-toggle">
+            <input type="checkbox" checked={lockDevice} onChange={e => setLockDevice(e.target.checked)} className="w-4 h-4 rounded border-red-300 text-red-600 focus:ring-red-500" />
+            <div>
+              <span className="text-sm font-medium text-red-700">Gerät sperren</span>
+              <p className="text-[10px] text-red-500">Maschine wird als "gesperrt" markiert und ist nicht mehr einsatzbereit</p>
+            </div>
+          </label>
+        </div>
+        <div className="p-5 border-t border-gray-200 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Abbrechen</Button>
+          <Button onClick={handleSave} disabled={saving} className="bg-red-500 hover:bg-red-600 text-white" data-testid="fault-save-btn">
+            {saving ? "Wird gespeichert..." : "Störmeldung anlegen"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== Reparatur Modal ==============
+function RepairModal({ report, onClose, onSaved }) {
+  const [repairDesc, setRepairDesc] = useState("");
+  const [newStatus, setNewStatus] = useState(report.status === "offen" ? "in_arbeit" : "erledigt");
+  const [unlockDevice, setUnlockDevice] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!repairDesc.trim() && newStatus === "erledigt") { toast.error("Bitte Reparatur-Beschreibung eingeben"); return; }
+    setSaving(true);
+    try {
+      await api.put(`/serviceplan/fault-reports/${report.id}`, {
+        status: newStatus,
+        repair_description: repairDesc.trim() || null,
+        lock_device: unlockDevice ? false : null,
+      });
+      toast.success(newStatus === "erledigt" ? "Reparatur abgeschlossen" : "Status aktualisiert");
+      onSaved();
+    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="repair-modal">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+        <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Reparatur eintragen</h2>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Störmeldung Info */}
+          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-sm font-medium text-gray-900">{report.device_serial}</p>
+            <p className="text-xs text-gray-500">{report.description}</p>
+            <p className="text-[10px] text-gray-400 mt-1">Gemeldet von {report.reported_by_name} am {new Date(report.reported_at).toLocaleString("de-DE")}</p>
+          </div>
+
+          {/* Status */}
+          <div>
+            <Label className="text-gray-700 text-sm">Status</Label>
+            <div className="flex gap-2 mt-1">
+              {[
+                { value: "in_arbeit", label: "In Arbeit", cls: "border-amber-400 bg-amber-50 text-amber-700" },
+                { value: "erledigt", label: "Erledigt", cls: "border-emerald-400 bg-emerald-50 text-emerald-700" },
+              ].map(s => (
+                <button key={s.value} onClick={() => setNewStatus(s.value)}
+                  className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${newStatus === s.value ? s.cls + " ring-2 ring-offset-1" : "border-gray-200 text-gray-500"}`}
+                  data-testid={`status-${s.value}`}
+                >{s.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Reparatur-Beschreibung */}
+          <div>
+            <Label className="text-gray-700 text-sm">Was wurde gemacht?</Label>
+            <textarea value={repairDesc} onChange={e => setRepairDesc(e.target.value)} rows={3} placeholder="Reparatur beschreiben..." className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none" data-testid="repair-description" />
+          </div>
+
+          {/* Gerät entsperren */}
+          {report.lock_device && (
+            <label className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg cursor-pointer" data-testid="repair-unlock-toggle">
+              <input type="checkbox" checked={unlockDevice} onChange={e => setUnlockDevice(e.target.checked)} className="w-4 h-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500" />
+              <div>
+                <span className="text-sm font-medium text-emerald-700">Gerät entsperren</span>
+                <p className="text-[10px] text-emerald-500">Maschine wird wieder als "aktiv" markiert</p>
+              </div>
+            </label>
+          )}
+        </div>
+        <div className="p-5 border-t border-gray-200 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Abbrechen</Button>
+          <Button onClick={handleSave} disabled={saving} className="bg-emerald-500 hover:bg-emerald-600 text-white" data-testid="repair-save-btn">
+            {saving ? "Wird gespeichert..." : "Speichern"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

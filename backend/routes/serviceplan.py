@@ -364,3 +364,196 @@ async def list_entry_images(plan_id: str, entry_id: str, user: dict = Depends(re
         if "gridfs_id" in img:
             img["gridfs_id"] = str(img["gridfs_id"])
     return images
+
+
+
+# ============== Störmeldungen (Fault Reports) ==============
+
+class FaultReportCreate(BaseModel):
+    device_id: str
+    order_id: Optional[str] = None
+    order_name: Optional[str] = ""
+    description: str
+    lock_device: bool = False
+
+
+class FaultReportUpdate(BaseModel):
+    status: Optional[str] = None  # offen, in_arbeit, erledigt
+    repair_description: Optional[str] = None
+    lock_device: Optional[bool] = None
+
+
+@router.get("/fault-reports")
+async def list_fault_reports(status: Optional[str] = None, device_id: Optional[str] = None, user: dict = Depends(require_staff)):
+    query = {}
+    if status:
+        query["status"] = status
+    if device_id:
+        query["device_id"] = device_id
+    reports = await db.fault_reports.find(query, {"_id": 0}).sort("reported_at", -1).to_list(500)
+    return reports
+
+
+@router.post("/fault-reports")
+async def create_fault_report(data: FaultReportCreate, user: dict = Depends(require_staff)):
+    device = await db.devices.find_one({"id": data.device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+
+    report = {
+        "id": str(uuid.uuid4()),
+        "device_id": data.device_id,
+        "device_serial": device.get("serial_number", ""),
+        "device_type": device.get("device_type", ""),
+        "device_model": device.get("model", ""),
+        "order_id": data.order_id,
+        "order_name": data.order_name or "",
+        "reported_by": user["id"],
+        "reported_by_name": user.get("name") or user.get("email", ""),
+        "reported_at": datetime.now(timezone.utc).isoformat(),
+        "description": data.description,
+        "lock_device": data.lock_device,
+        "status": "offen",
+        "repair_description": None,
+        "repaired_by": None,
+        "repaired_by_name": None,
+        "repaired_at": None,
+    }
+
+    await db.fault_reports.insert_one(report)
+    report.pop("_id", None)
+
+    # Lock device if requested
+    if data.lock_device:
+        await db.devices.update_one(
+            {"id": data.device_id},
+            {"$set": {"status": "gesperrt", "locked_reason": "Störmeldung", "locked_fault_id": report["id"]}}
+        )
+
+    # Log in service history
+    await db.maintenance_entries.insert_one({
+        "id": str(uuid.uuid4()),
+        "service_plan_id": None,
+        "device_id": data.device_id,
+        "type": "fault_report",
+        "fault_report_id": report["id"],
+        "performed_by": report["reported_by_name"],
+        "performed_at": report["reported_at"],
+        "notes": f"Störmeldung: {data.description}",
+        "created_at": report["reported_at"],
+    })
+
+    logger.info(f"Störmeldung erstellt: {report['id']} für Gerät {device.get('serial_number')}")
+    return report
+
+
+@router.get("/fault-reports/stats")
+async def fault_report_stats(date_from: Optional[str] = None, date_to: Optional[str] = None, user: dict = Depends(require_staff)):
+    """Machine fault statistics with time range filter."""
+    query = {}
+    if date_from or date_to:
+        date_q = {}
+        if date_from:
+            date_q["$gte"] = date_from + "T00:00:00" if "T" not in date_from else date_from
+        if date_to:
+            date_q["$lte"] = date_to + "T23:59:59" if "T" not in date_to else date_to
+        query["reported_at"] = date_q
+
+    reports = await db.fault_reports.find(query, {"_id": 0}).to_list(5000)
+
+    # Group by device
+    device_stats = {}
+    for r in reports:
+        did = r["device_id"]
+        if did not in device_stats:
+            device_stats[did] = {
+                "device_id": did,
+                "device_serial": r.get("device_serial", ""),
+                "device_type": r.get("device_type", ""),
+                "device_model": r.get("device_model", ""),
+                "total_faults": 0,
+                "open": 0,
+                "in_arbeit": 0,
+                "erledigt": 0,
+                "faults": [],
+            }
+        ds = device_stats[did]
+        ds["total_faults"] += 1
+        st = r.get("status", "offen")
+        if st in ds:
+            ds[st] += 1
+        ds["faults"].append({
+            "id": r["id"],
+            "description": r.get("description", ""),
+            "status": r.get("status", "offen"),
+            "reported_at": r.get("reported_at"),
+            "repaired_at": r.get("repaired_at"),
+        })
+
+    stats_list = sorted(device_stats.values(), key=lambda x: x["total_faults"], reverse=True)
+
+    return {
+        "total_reports": len(reports),
+        "open": sum(1 for r in reports if r.get("status") == "offen"),
+        "in_arbeit": sum(1 for r in reports if r.get("status") == "in_arbeit"),
+        "erledigt": sum(1 for r in reports if r.get("status") == "erledigt"),
+        "devices": stats_list,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
+@router.get("/fault-reports/{report_id}")
+async def get_fault_report(report_id: str, user: dict = Depends(require_staff)):
+    report = await db.fault_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Störmeldung nicht gefunden")
+    return report
+
+
+@router.put("/fault-reports/{report_id}")
+async def update_fault_report(report_id: str, data: FaultReportUpdate, user: dict = Depends(require_staff)):
+    report = await db.fault_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Störmeldung nicht gefunden")
+
+    update = {}
+    if data.status:
+        update["status"] = data.status
+    if data.repair_description is not None:
+        update["repair_description"] = data.repair_description
+        update["repaired_by"] = user["id"]
+        update["repaired_by_name"] = user.get("name") or user.get("email", "")
+        update["repaired_at"] = datetime.now(timezone.utc).isoformat()
+
+    if data.lock_device is not None:
+        update["lock_device"] = data.lock_device
+        new_status = "gesperrt" if data.lock_device else "aktiv"
+        await db.devices.update_one(
+            {"id": report["device_id"]},
+            {"$set": {"status": new_status}}
+        )
+        if not data.lock_device:
+            await db.devices.update_one(
+                {"id": report["device_id"]},
+                {"$unset": {"locked_reason": "", "locked_fault_id": ""}}
+            )
+
+    if update:
+        await db.fault_reports.update_one({"id": report_id}, {"$set": update})
+
+    # Log repair in service history
+    if data.repair_description:
+        await db.maintenance_entries.insert_one({
+            "id": str(uuid.uuid4()),
+            "service_plan_id": None,
+            "device_id": report["device_id"],
+            "type": "repair",
+            "fault_report_id": report_id,
+            "performed_by": user.get("name") or user.get("email", ""),
+            "performed_at": datetime.now(timezone.utc).isoformat(),
+            "notes": f"Reparatur: {data.repair_description}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    return await db.fault_reports.find_one({"id": report_id}, {"_id": 0})

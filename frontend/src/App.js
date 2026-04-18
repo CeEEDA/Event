@@ -46,6 +46,7 @@ import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
 import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
 import AbrechnungPage from "./pages/AbrechnungPage";
 import EinsatzplanungPage from "./pages/EinsatzplanungPage";
+import MaschinenAuswertungPage from "./pages/MaschinenAuswertungPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
@@ -393,6 +394,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <FuelManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/maschinen-auswertung"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <MaschinenAuswertungPage />
           </ProtectedRoute>
         }
       />
