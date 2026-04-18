@@ -7,7 +7,7 @@ import {
   ArrowLeft, Search, Upload, FolderOpen, FileText, Receipt, Car, Shield,
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
-  FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2
+  FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2, HelpCircle
 } from "lucide-react";
 import axios from "axios";
 
@@ -16,7 +16,7 @@ const api = axios.create({ baseURL: `${API}/api` });
 
 const FOLDER_ICONS = {
   receipt: Receipt, car: Car, shield: Shield, "file-text": FileText,
-  truck: Truck, landmark: Landmark, folder: Folder,
+  truck: Truck, landmark: Landmark, folder: Folder, "help-circle": HelpCircle,
 };
 const FOLDER_COLORS = {
   emerald: { bg: "bg-emerald-100", text: "text-emerald-600", border: "border-emerald-300", active: "bg-emerald-50 border-emerald-400" },
@@ -41,7 +41,10 @@ function formatDate(iso) {
 
 function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggleExpand, setActiveFolder,
   editingFolder, editFolderName, setEditFolderName, setEditingFolder, handleRenameFolder, handleDeleteFolder,
-  addSubfolderTo, setAddSubfolderTo, subfolderName, setSubfolderName, handleCreateSubfolder }) {
+  addSubfolderTo, setAddSubfolderTo, subfolderName, setSubfolderName, handleCreateSubfolder,
+  onDropDoc }) {
+
+  const [hoverFolderId, setHoverFolderId] = useState(null);
 
   // Build tree: root folders (no parent_id) with children
   const rootFolders = folders.filter(f => !f.parent_id);
@@ -57,6 +60,8 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
     const expanded = expandedFolders[f.id];
     const hasKids = hasChildren(f.id);
     const pl = 8 + depth * 16;
+    const isHighlight = hoverFolderId === f.id;
+    const isUnbekannt = f.id === "unbekannt";
 
     return (
       <div key={f.id}>
@@ -69,7 +74,18 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
             <button onClick={() => setEditingFolder(null)} className="p-0.5 text-gray-400 hover:bg-gray-100 rounded"><X className="w-3 h-3" /></button>
           </div>
         ) : (
-          <div className="group/folder flex items-center" style={{ paddingLeft: pl }}>
+          <div
+            className={`group/folder flex items-center transition-all ${isHighlight ? "bg-emerald-50 ring-2 ring-emerald-400 rounded-md" : ""}`}
+            style={{ paddingLeft: pl }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; setHoverFolderId(f.id); }}
+            onDragLeave={(e) => { e.stopPropagation(); setHoverFolderId(null); }}
+            onDrop={(e) => {
+              e.preventDefault(); e.stopPropagation();
+              setHoverFolderId(null);
+              const docId = e.dataTransfer.getData("application/x-doc-id");
+              if (docId && onDropDoc) onDropDoc(docId, f.id);
+            }}
+          >
             {/* Expand toggle */}
             <button
               onClick={(e) => { e.stopPropagation(); if (hasKids) toggleExpand(f.id); }}
@@ -81,7 +97,7 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
             <button
               onClick={() => setActiveFolder(f.id)}
               className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors min-w-0 ${
-                isActive ? `${c.active} font-medium border` : "text-gray-700 hover:bg-gray-50 border border-transparent"
+                isActive ? `${c.active} font-medium border` : isUnbekannt ? "text-amber-700 hover:bg-amber-50 border border-transparent font-medium" : "text-gray-700 hover:bg-gray-50 border border-transparent"
               }`}
               data-testid={`folder-${f.id}`}
             >
@@ -89,7 +105,7 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
                 <Icon className={`w-2.5 h-2.5 ${c.text}`} />
               </div>
               <span className="flex-1 text-left truncate">{f.name}</span>
-              {f.count > 0 && <span className="text-[10px] text-gray-400 flex-shrink-0">{f.count}</span>}
+              {f.count > 0 && <span className={`text-[10px] flex-shrink-0 ${isUnbekannt ? "text-amber-600 font-semibold" : "text-gray-400"}`}>{f.count}</span>}
             </button>
             {/* Actions */}
             <div className="hidden group-hover/folder:flex items-center flex-shrink-0 mr-1" onClick={e => e.stopPropagation()}>
@@ -119,7 +135,14 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
     );
   };
 
-  return <div className="space-y-0.5">{rootFolders.map(f => renderFolder(f, 0))}</div>;
+  // Sort: 'unbekannt' immer ganz oben, dann Rest
+  const sortedRoots = [...rootFolders].sort((a, b) => {
+    if (a.id === "unbekannt") return -1;
+    if (b.id === "unbekannt") return 1;
+    return 0;
+  });
+
+  return <div className="space-y-0.5">{sortedRoots.map(f => renderFolder(f, 0))}</div>;
 }
 
 
@@ -183,7 +206,7 @@ export default function DocumentManagementPage() {
       setUploadProgress(`${i + 1}/${files.length}: ${file.name}`);
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("folder_id", activeFolder || "sonstiges");
+      formData.append("folder_id", activeFolder || "unbekannt");
       try {
         const r = await api.post("/documents/upload", formData, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -236,8 +259,12 @@ export default function DocumentManagementPage() {
 
   const handleMove = async (docId, folderId) => {
     try {
-      await api.put(`/documents/${docId}/move?folder_id=${folderId}`);
-      toast.success("Verschoben");
+      const r = await api.put(`/documents/${docId}/move?folder_id=${folderId}`);
+      if (r.data.trained) {
+        toast.success("Verschoben - KI hat gelernt 🧠");
+      } else {
+        toast.success("Verschoben");
+      }
       setMoveTarget(null);
       loadFolders();
       loadDocuments(activeFolder);
@@ -395,6 +422,7 @@ export default function DocumentManagementPage() {
             subfolderName={subfolderName}
             setSubfolderName={setSubfolderName}
             handleCreateSubfolder={handleCreateSubfolder}
+            onDropDoc={handleMove}
           />
 
           <div className="h-px bg-gray-200 my-2" />
@@ -480,9 +508,15 @@ export default function DocumentManagementPage() {
                 return (
                   <div
                     key={doc.id}
-                    className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition-all group cursor-pointer"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/x-doc-id", doc.id);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition-all group cursor-pointer active:cursor-grabbing"
                     onClick={() => handleViewDoc(doc.id)}
                     data-testid={`doc-${doc.id}`}
+                    title="Ziehe diese Datei auf einen Ordner in der Seitenleiste, um sie zu verschieben"
                   >
                     <div className="flex items-start gap-3">
                       <div className={`w-10 h-10 rounded-lg ${fc.bg} flex items-center justify-center flex-shrink-0`}>

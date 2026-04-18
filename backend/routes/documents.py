@@ -30,6 +30,8 @@ client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
 PREDEFINED_FOLDERS = [
+    # Unbekannt - fuer noch nicht zugeordnete Dokumente (immer ganz oben)
+    {"id": "unbekannt", "name": "Unbekannt", "icon": "help-circle", "color": "amber"},
     # Finanzen & Buchhaltung
     {"id": "rechnungseingang", "name": "Rechnungseingang", "icon": "receipt", "color": "emerald"},
     {"id": "rechnungsausgang", "name": "Rechnungsausgang", "icon": "receipt", "color": "emerald"},
@@ -445,7 +447,8 @@ MONTH_NAMES = {
     1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
     7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember"
 }
-AUTO_YEAR_MONTH_FOLDERS = ["rechnungseingang", "rechnungsausgang", "lieferscheine_eingehend", "lieferscheine_ausgehend", "lohnabrechnung"]
+AUTO_YEAR_MONTH_FOLDERS = "*"  # "*" = alle Kategorien bekommen Jahr/Monat-Unterordner (ausser 'unbekannt')
+SKIP_YEAR_MONTH_FOLDERS = {"unbekannt", "sonstiges", "temporaerer_ordner", "vorlagen"}
 
 
 async def _ensure_year_month_subfolder(parent_folder_id: str, doc_date_str: str) -> str:
@@ -721,16 +724,21 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
 
         ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
+
+        # Bestimme finale Ablage: Wenn KI sicher ist -> vorgeschlagener Ordner, sonst 'unbekannt'
         final_folder = folder_id
-        if folder_id == "sonstiges" and suggested_folder in all_valid_ids:
-            final_folder = suggested_folder
-        elif folder_id == "sonstiges" and suggested_folder not in all_valid_ids:
-            # AI might suggest a year/month subfolder ID (e.g. rechnungseingang_2026_02)
-            # that doesn't exist yet. Fall back to the base auto-year-month folder.
-            for base_folder in AUTO_YEAR_MONTH_FOLDERS:
-                if suggested_folder.startswith(base_folder + "_"):
-                    final_folder = base_folder
-                    break
+        uncertain = suggested_folder in (None, "", "sonstiges", "unbekannt") or suggested_folder not in all_valid_ids
+        if folder_id in ("sonstiges", "unbekannt"):
+            if uncertain:
+                # AI war unsicher - versuche Base-Folder aus year/month-ID zu extrahieren
+                matched_base = None
+                for base_folder in all_valid_ids:
+                    if suggested_folder and suggested_folder.startswith(base_folder + "_"):
+                        matched_base = base_folder
+                        break
+                final_folder = matched_base or "unbekannt"
+            else:
+                final_folder = suggested_folder
 
         await db.documents.update_one({"id": doc_id}, {"$set": {
             "folder_id": final_folder,
@@ -738,11 +746,12 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             "ai_metadata": {k: v for k, v in ai_result.items() if k not in ("full_text", "keywords")},
             "full_text": ai_result.get("full_text", ""),
             "keywords": ai_result.get("keywords", []),
+            "ai_suggested_folder": suggested_folder,  # fuer spaeteres Training behalten
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
 
-        # Auto-create year/month subfolders for invoice folders
-        if final_folder in AUTO_YEAR_MONTH_FOLDERS:
+        # Jahr/Monat-Unterordner fuer ALLE Kategorien (ausser 'unbekannt' & Co.)
+        if final_folder not in SKIP_YEAR_MONTH_FOLDERS:
             doc_date = ai_result.get("date", "")
             subfolder_id = await _ensure_year_month_subfolder(final_folder, doc_date)
             await db.documents.update_one({"id": doc_id}, {"$set": {"folder_id": subfolder_id}})
@@ -781,8 +790,8 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
 
 
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...), folder_id: str = Form("sonstiges")):
-    """Upload a document, store it, and start AI analysis in background."""
+async def upload_document(file: UploadFile = File(...), folder_id: str = Form("unbekannt")):
+    """Upload a document, store it, and start AI analysis in background. Default landet in 'unbekannt' bis KI zuordnen konnte."""
     allowed_types = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/tiff"]
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"Dateityp {file.content_type} nicht unterstützt. Erlaubt: PDF, JPEG, PNG, WebP, TIFF")
@@ -889,21 +898,57 @@ async def get_document(doc_id: str):
 
 @router.put("/{doc_id}/move")
 async def move_document(doc_id: str, folder_id: str = Query(...)):
-    """Move a document to a different folder."""
+    """Move a document to a different folder. Wird das Dokument aus 'unbekannt' verschoben, wird ein KI-Trainingsbeispiel gespeichert, damit die KI beim naechsten Mal besser zuordnet."""
     valid_ids = [f["id"] for f in PREDEFINED_FOLDERS]
-    # Also accept custom folders
     async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
         valid_ids.append(cf["id"])
     if folder_id not in valid_ids:
-        raise HTTPException(status_code=400, detail="Ungültiger Ordner")
+        raise HTTPException(status_code=400, detail="Ungueltiger Ordner")
 
-    result = await db.documents.update_one(
-        {"id": doc_id, "is_deleted": False},
-        {"$set": {"folder_id": folder_id, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
-    if result.matched_count == 0:
+    doc = await db.documents.find_one({"id": doc_id, "is_deleted": False}, {"_id": 0})
+    if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
-    return {"status": "moved", "folder_id": folder_id}
+
+    current_folder = doc.get("folder_id", "")
+    target_folder_id = folder_id
+
+    # Jahr/Monat-Unterordner automatisch anlegen (ausser fuer Skip-Liste)
+    base_target = folder_id
+    # Wenn Ziel selbst schon ein Jahr- oder Monats-Unterordner ist, nutze es direkt
+    is_sub = await db.document_folders.find_one({"id": folder_id, "parent_id": {"$exists": True, "$ne": None}})
+    if not is_sub and folder_id not in SKIP_YEAR_MONTH_FOLDERS:
+        doc_date = (doc.get("ai_metadata") or {}).get("date", "") or doc.get("created_at", "")
+        target_folder_id = await _ensure_year_month_subfolder(folder_id, doc_date)
+        base_target = folder_id
+
+    await db.documents.update_one(
+        {"id": doc_id, "is_deleted": False},
+        {"$set": {"folder_id": target_folder_id, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    # KI-Training: Dokument wurde manuell korrigiert (z.B. aus 'unbekannt' in richtigen Ordner)
+    came_from_unknown = current_folder == "unbekannt" or current_folder.startswith("unbekannt_")
+    ai_suggested = doc.get("ai_suggested_folder", "")
+    ai_was_wrong = ai_suggested and ai_suggested != base_target and not ai_suggested.startswith(base_target + "_")
+
+    if came_from_unknown or ai_was_wrong:
+        sample = {
+            "id": str(uuid.uuid4()),
+            "filename": doc.get("original_filename", ""),
+            "doc_id": doc_id,
+            "ai_suggested": ai_suggested or "unbekannt",
+            "correct_folder": base_target,
+            "error_description": f"KI ordnete '{ai_suggested or 'unbekannt'}' zu, richtig ist '{base_target}'",
+            "correction": f"Dokumente wie dieses ('{doc.get('original_filename', '')}', Typ: {(doc.get('ai_metadata') or {}).get('document_type', '?')}, Absender: {(doc.get('ai_metadata') or {}).get('sender', '?')}) gehoeren in den Ordner '{base_target}'.",
+            "keywords": doc.get("keywords", []),
+            "metadata_snapshot": doc.get("ai_metadata", {}),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source": "user_move",
+        }
+        await db.ai_training_samples.insert_one(sample)
+        logger.info(f"KI-Training-Sample gespeichert: {doc.get('original_filename')} -> {base_target}")
+
+    return {"status": "moved", "folder_id": target_folder_id, "trained": came_from_unknown or ai_was_wrong}
 
 
 @router.delete("/{doc_id}")
