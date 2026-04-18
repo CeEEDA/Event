@@ -1589,7 +1589,7 @@ INSTALL_DIR="/opt/dse5510"
 sudo rm -rf "$INSTALL_DIR"
 sudo mkdir -p "$INSTALL_DIR"
 sudo python3 -m venv "$INSTALL_DIR/venv"
-sudo "$INSTALL_DIR/venv/bin/pip" install --quiet pyserial requests gpsd-py3
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet pyserial requests gpsd-py3 pyusb
 
 # ===== SCHRITT {"5" if body.enable_lte else "4"}: SYNC-SKRIPT =====
 echo "[{"5" if body.enable_lte else "4"}/{total_steps}] Sync-Skript installieren..."
