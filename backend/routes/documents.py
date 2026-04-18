@@ -544,17 +544,22 @@ async def get_folders():
             cf["parent_id"] = None
         all_folders.append(cf)
 
-    # Calculate recursive counts for parent folders
+    # Recursive Bottom-Up Rollup: Jeder Parent zeigt Summe seiner eigenen Docs + aller Nachkommen
     folder_map = {f["id"]: f for f in all_folders}
+    children_map = {}
     for f in all_folders:
-        if f["parent_id"] and f["parent_id"] in folder_map:
-            folder_map[f["parent_id"]]["count"] = folder_map[f["parent_id"]].get("count", 0) + f["count"]
-    # Second pass for grandparent (year -> root)
+        children_map.setdefault(f.get("parent_id"), []).append(f["id"])
+
+    direct_counts = {fid: f["count"] for fid, f in folder_map.items()}
+
+    def compute_total(fid):
+        total_c = direct_counts.get(fid, 0)
+        for child_id in children_map.get(fid, []):
+            total_c += compute_total(child_id)
+        return total_c
+
     for f in all_folders:
-        if f["parent_id"] and f["parent_id"] in folder_map:
-            parent = folder_map[f["parent_id"]]
-            if parent.get("parent_id") and parent["parent_id"] in folder_map:
-                folder_map[parent["parent_id"]]["count"] = folder_map[parent["parent_id"]].get("count", 0) + f["count"]
+        f["count"] = compute_total(f["id"])
 
     return {"folders": all_folders, "total": total}
 
