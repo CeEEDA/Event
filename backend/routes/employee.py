@@ -1298,9 +1298,12 @@ def _get_holidays(year):
     for offset, name in [
         (-2, "Karfreitag"), (1, "Ostermontag"),
         (39, "Christi Himmelfahrt"), (50, "Pfingstmontag"),
+        (60, "Fronleichnam"),  # RLP (beweglich, Ostern + 60)
     ]:
         d2 = easter + timedelta(days=offset)
         holidays[d2.isoformat()] = name
+    # RLP-Landesfeiertag (fest)
+    holidays[date(year, 11, 1).isoformat()] = "Allerheiligen"
     return holidays
 
 SPECIAL_HOLIDAY_DATES = ["12-24", "12-25", "12-26", "05-01"]  # 150% dates
