@@ -353,7 +353,7 @@ export default function AdminZeitDetailPage() {
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 space-y-3">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Stammdaten bearbeiten</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Überstunden (Std.)</label>
                   <Input type="number" step="0.5" value={overtimeHours} onChange={e => setOvertimeHours(e.target.value)} data-testid="input-overtime" />
@@ -362,7 +362,7 @@ export default function AdminZeitDetailPage() {
                   <label className="text-xs text-gray-500 mb-1 block">Urlaubstage (Gesamt/Jahr)</label>
                   <Input type="number" value={vacationTotal} onChange={e => setVacationTotal(e.target.value)} data-testid="input-vacation-total" />
                 </div>
-                <div>
+                <div className="sm:col-span-2 max-w-xs">
                   <label className="text-xs text-gray-500 mb-1 block">Geburtstag</label>
                   <Input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} data-testid="input-date-of-birth" />
                 </div>
