@@ -9,7 +9,7 @@ import os
 import uuid
 import io
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://fair-ops-1.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://schausteller-pay.preview.emergentagent.com')
 
 
 class TestNewFeatures:
