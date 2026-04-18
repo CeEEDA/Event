@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Logo } from "../components/Logo";
 import { toast } from "sonner";
 import {
-  FolderOpen, Users, LogOut, Activity, Settings, Wrench, Zap,
+  FolderOpen, Users, LogOut, Activity, Settings, Wrench, Zap, Cpu,
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
@@ -376,7 +376,7 @@ export default function HubPage() {
     hasBilling && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
     hasMonitoring && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
     hasEnergyMonitoring && { key: "energy", icon: Zap, label: "Energy Monitoring", path: "/energy-monitoring", color: "bg-yellow-100 text-yellow-700" },
-    isStaff && { key: "devices", icon: Settings, label: "Geräte", path: "/devices", color: "bg-slate-100 text-slate-600" },
+    isStaff && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-slate-100 text-slate-600" },
     hasFilesharing && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
     isStaff && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
     { key: "faq", icon: HelpCircle, label: "FAQ", path: "/faq", color: "bg-indigo-100 text-indigo-600" },
