@@ -19,6 +19,29 @@ from datetime import datetime, timezone
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("dse_usb_sync")
 
+
+# ============== GPS via gpsd ==============
+
+def read_gps():
+    """Read GPS position from gpsd (if running)."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["gpspipe", "-w", "-n", "5"],
+            capture_output=True, text=True, timeout=8
+        )
+        for line in result.stdout.splitlines():
+            if '"class":"TPV"' in line:
+                import json as _json
+                tpv = _json.loads(line)
+                lat = tpv.get("lat")
+                lon = tpv.get("lon")
+                if lat is not None and lon is not None:
+                    return round(lat, 6), round(lon, 6)
+    except Exception:
+        pass
+    return None, None
+
 # ============== Modbus RTU over USB BULK ==============
 
 def modbus_crc(data):
@@ -168,7 +191,7 @@ def read_all_gencomm(conn):
         if len(p3) > 6:
             data["status_bits"] = p3[6]
 
-    # Page 4: Engine + Generator
+    # Page 4: Engine + Generator (all 3 phases)
     p4 = conn.read_registers(4, 0, 20)
     if p4:
         if len(p4) > 0 and valid(p4[0]):
@@ -187,12 +210,27 @@ def read_all_gencomm(conn):
             data["engine_speed"] = p4[6]
         if len(p4) > 7 and valid(p4[7]):
             data["frequency"] = p4[7] / 10.0
+        # L1 Voltage/Current/Watts
         if len(p4) > 8 and valid(p4[8]):
             data["gen_l1_voltage"] = p4[8] / 10.0
         if len(p4) > 12 and valid(p4[12]):
             data["gen_l1_current"] = p4[12] / 10.0
         if len(p4) > 16 and valid(p4[16]):
             data["gen_l1_watts"] = p4[16]
+        # L2 Voltage/Current/Watts (3-phase: 8610, 7310)
+        if len(p4) > 9 and valid(p4[9]):
+            data["gen_l2_voltage"] = p4[9] / 10.0
+        if len(p4) > 13 and valid(p4[13]):
+            data["gen_l2_current"] = p4[13] / 10.0
+        if len(p4) > 17 and valid(p4[17]):
+            data["gen_l2_watts"] = p4[17]
+        # L3 Voltage/Current/Watts (3-phase: 8610, 7310)
+        if len(p4) > 10 and valid(p4[10]):
+            data["gen_l3_voltage"] = p4[10] / 10.0
+        if len(p4) > 14 and valid(p4[14]):
+            data["gen_l3_current"] = p4[14] / 10.0
+        if len(p4) > 18 and valid(p4[18]):
+            data["gen_l3_watts"] = p4[18]
 
     # Page 6: Power factor, total watts
     p6 = conn.read_registers(6, 0, 22)
@@ -264,6 +302,7 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
     records = []
     ids = []
     all_alarms = []
+    lat, lon = read_gps()  # GPS from gpsd
     for row_id, data_json in rows:
         raw = json.loads(data_json)
         # Map to Pi ingest field names
@@ -280,6 +319,12 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
             "gen_l1_voltage": "voltage_l1",
             "gen_l1_current": "current_l1",
             "gen_l1_watts": "power_l1_w",
+            "gen_l2_voltage": "voltage_l2",
+            "gen_l2_current": "current_l2",
+            "gen_l2_watts": "power_l2_w",
+            "gen_l3_voltage": "voltage_l3",
+            "gen_l3_current": "current_l3",
+            "gen_l3_watts": "power_l3_w",
             "gen_total_watts": "power_total_w",
             "power_factor": "power_factor_avg",
             "hours_run": "engine_run_hours",
@@ -314,6 +359,8 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
         "records": records,
         "alarms": all_alarms,
         "command_results": [],
+        "latitude": lat,
+        "longitude": lon,
     }
 
     try:
