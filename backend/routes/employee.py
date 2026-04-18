@@ -718,7 +718,7 @@ async def get_time_report(token: str = Query(...),
 
 @router.get("/hr-data/{user_id}")
 async def get_hr_data(user_id: str, token: str = Query(...)):
-    """Get HR data (overtime, vacation) for a user. Admins get full data, employees only their own."""
+    """Get HR data (overtime, vacation, birthday) for a user. Admins get full data, employees only their own."""
     caller = await _get_user(token)
     if caller.get("role") != "admin" and caller["id"] != user_id:
         raise HTTPException(status_code=403, detail="Kein Zugriff")
@@ -730,6 +730,10 @@ async def get_hr_data(user_id: str, token: str = Query(...)):
 
     remaining = (doc.get("vacation_days_total") or 0) - (doc.get("vacation_days_used") or 0)
     doc["vacation_days_remaining"] = remaining
+
+    # Geburtstag aus User-Dokument
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "date_of_birth": 1})
+    doc["date_of_birth"] = (user or {}).get("date_of_birth") or ""
     return doc
 
 
@@ -758,10 +762,55 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
             upsert=True,
         )
 
+    # Geburtstag direkt am User-Dokument speichern (YYYY-MM-DD oder leer)
+    if "date_of_birth" in data:
+        dob = (data.get("date_of_birth") or "").strip()
+        await db.users.update_one({"id": user_id}, {"$set": {"date_of_birth": dob}})
+
     doc = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0})
+    if not doc:
+        doc = {"user_id": user_id, "year": year, "overtime_hours": 0, "vacation_days_total": 0, "vacation_days_used": 0}
     remaining = (doc.get("vacation_days_total") or 0) - (doc.get("vacation_days_used") or 0)
     doc["vacation_days_remaining"] = remaining
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "date_of_birth": 1})
+    doc["date_of_birth"] = (user or {}).get("date_of_birth") or ""
     return doc
+
+
+@router.get("/birthdays/today")
+async def get_birthdays_today(token: str = Query(...)):
+    """Liste aller Mitarbeiter, die heute Geburtstag haben."""
+    await _get_user(token)  # Authentifizierung
+    today = datetime.now(timezone.utc).date()
+    today_mmdd = today.strftime("%m-%d")
+
+    users = await db.users.find(
+        {"date_of_birth": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "id": 1, "name": 1, "date_of_birth": 1}
+    ).to_list(1000)
+
+    result = []
+    for u in users:
+        dob = (u.get("date_of_birth") or "").strip()
+        if len(dob) < 10:
+            continue
+        try:
+            dob_date = datetime.strptime(dob[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if dob_date.strftime("%m-%d") != today_mmdd:
+            continue
+        age = today.year - dob_date.year
+        # Falls Geburtstag in der Zukunft des aktuellen Jahres waere (Edge-Fall bei Zeitzone), korrigieren
+        if (today.month, today.day) < (dob_date.month, dob_date.day):
+            age -= 1
+        result.append({
+            "user_id": u.get("id"),
+            "name": u.get("name", ""),
+            "date_of_birth": dob,
+            "age": age,
+        })
+    return result
 
 
 

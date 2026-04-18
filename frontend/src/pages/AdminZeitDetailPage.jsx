@@ -25,6 +25,7 @@ export default function AdminZeitDetailPage() {
   // HR Data
   const [overtimeHours, setOvertimeHours] = useState("");
   const [vacationTotal, setVacationTotal] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [hrData, setHrData] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -150,6 +151,7 @@ export default function AdminZeitDetailPage() {
       setHrData(res.data);
       setOvertimeHours(String(res.data.overtime_hours || 0));
       setVacationTotal(String(res.data.vacation_days_total || 0));
+      setDateOfBirth(res.data.date_of_birth || "");
     } catch {}
   }, [token, userId]);
 
@@ -262,6 +264,7 @@ export default function AdminZeitDetailPage() {
       const res = await api.put(`/employee/hr-data/${userId}?token=${token}`, {
         overtime_hours: parseFloat(overtimeHours) || 0,
         vacation_days_total: parseInt(vacationTotal) || 0,
+        date_of_birth: dateOfBirth || "",
       });
       setHrData(res.data);
       toast.success("Gespeichert");
@@ -350,7 +353,7 @@ export default function AdminZeitDetailPage() {
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 space-y-3">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Stammdaten bearbeiten</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Überstunden (Std.)</label>
                   <Input type="number" step="0.5" value={overtimeHours} onChange={e => setOvertimeHours(e.target.value)} data-testid="input-overtime" />
@@ -358,6 +361,10 @@ export default function AdminZeitDetailPage() {
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Urlaubstage (Gesamt/Jahr)</label>
                   <Input type="number" value={vacationTotal} onChange={e => setVacationTotal(e.target.value)} data-testid="input-vacation-total" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Geburtstag</label>
+                  <Input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} data-testid="input-date-of-birth" />
                 </div>
               </div>
               <Button onClick={saveHrData} disabled={saving} size="sm" className="bg-green-600 hover:bg-green-700" data-testid="save-hr-btn">

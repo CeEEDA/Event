@@ -11,7 +11,7 @@ import {
   ClipboardList, Receipt, Tent, Briefcase, MessageSquare,
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
-  Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays,
+  Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import {
@@ -41,6 +41,7 @@ export default function HubPage() {
   const [elapsedTime, setElapsedTime] = useState("");
   const [recentEntries, setRecentEntries] = useState([]);
   const [hrData, setHrData] = useState(null);
+  const [birthdays, setBirthdays] = useState([]);
 
   // Time-off request dialog
   const [showTimeOff, setShowTimeOff] = useState(false);
@@ -96,6 +97,8 @@ export default function HubPage() {
     loadRecentEntries();
     // Load HR data
     api.get(`/employee/hr-data/${user.id}?token=${token}`).then(r => setHrData(r.data)).catch(() => {});
+    // Geburtstage heute
+    api.get(`/employee/birthdays/today?token=${token}`).then(r => setBirthdays(r.data || [])).catch(() => {});
     // Load own avatar
     api.get(`/employee/profile?token=${token}`).then(r => {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
@@ -447,6 +450,30 @@ export default function HubPage() {
               </div>
             </div>
           </div>
+
+          {/* Info-Karte: Geburtstage heute */}
+          {birthdays.length > 0 && (
+            <div className="mb-5 bg-gradient-to-r from-fuchsia-50 via-pink-50 to-amber-50 rounded-xl border border-pink-200 p-4" data-testid="birthday-info-card">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
+                  <Cake className="w-5 h-5 text-pink-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold text-pink-600 uppercase tracking-wider mb-1">Info · Geburtstag</p>
+                  <div className="space-y-1">
+                    {birthdays.map(b => {
+                      const first = (b.name || "").split(" ")[0] || b.name;
+                      return (
+                        <p key={b.user_id} className="text-sm text-gray-800" data-testid={`birthday-${b.user_id}`}>
+                          <span className="font-semibold">{b.name}</span> wird heute <span className="font-semibold">{b.age} Jahre</span> alt. Wir gratulieren {first} zum Geburtstag! 🎉
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* My Shift Plan (Employee) */}
           {!isAdmin && (
