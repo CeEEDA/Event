@@ -1000,14 +1000,13 @@ export default function ServiceplanPage() {
       const res = await api.get("/orders/epirent");
       const arr = Array.isArray(res.data) ? res.data : (res.data.orders || []);
       const today = new Date().toISOString().slice(0, 10);
-      // Gleiche Filterlogik wie Einsatzplanung: bestätigt + gültiger Dispo-Zeitraum
-      // Zusätzlich: nur Aufträge, die heute noch aktuell sind (dispo_end >= heute)
+      // Nur Auftraege, deren Dispo-Zeitraum AKTUELL laeuft (dispo_start <= heute <= dispo_end)
       const active = arr.filter(o => {
         if (!o.is_confirmed || o.is_archived || o.is_canceled) return false;
         const ds = o.dispo_start;
         const de = o.dispo_end;
         if (!ds || !de || ds === "0000-00-00" || de === "0000-00-00") return false;
-        return de >= today;
+        return ds <= today && de >= today;
       });
       active.sort((a, b) => String(a.dispo_start || "").localeCompare(String(b.dispo_start || "")));
       setOrders(active);
