@@ -1338,15 +1338,6 @@ function FaultReportModal({ devices, orders, user, onClose, onSaved }) {
           <button onClick={onClose}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
         </div>
         <div className="p-5 space-y-4">
-          {/* Erfasser */}
-          <div>
-            <Label className="text-gray-700 text-sm">Erfasst von</Label>
-            <div className="mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 flex items-center gap-2">
-              <User className="w-4 h-4 text-gray-400" />
-              {user?.name || user?.email || "Unbekannt"}
-            </div>
-          </div>
-
           {/* Auftrag */}
           <div>
             <Label className="text-gray-700 text-sm">Auftrag / Veranstaltung</Label>
