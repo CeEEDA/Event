@@ -390,7 +390,8 @@ export default function ChatPage() {
                             <div className="mb-1">
                               {isImage ? (
                                 <img
-                                  src={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`}
+                                  loading="lazy"
+                                  src={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}&thumbnail=1&size=400`}
                                   alt={m.attachment.filename}
                                   className="rounded-lg max-w-full max-h-48 cursor-pointer"
                                   onClick={() => window.open(`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`, "_blank")}
@@ -667,7 +668,8 @@ export default function ChatPage() {
                           data-testid={`image-${img.attachment_id}`}
                         >
                           <img
-                            src={`${API}/api/chat/conversations/${activeConvo.id}/file/${img.attachment_id}?token=${token}`}
+                            loading="lazy"
+                            src={`${API}/api/chat/conversations/${activeConvo.id}/file/${img.attachment_id}?token=${token}&thumbnail=1&size=240`}
                             alt={img.filename}
                             className="w-full h-full object-cover"
                           />

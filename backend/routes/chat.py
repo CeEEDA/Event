@@ -173,7 +173,7 @@ async def send_message(conv_id: str, token: str = Query(...), text: str = Form("
 
 
 @router.get("/conversations/{conv_id}/file/{attachment_id}")
-async def download_attachment(conv_id: str, attachment_id: str, token: str = Query(...)):
+async def download_attachment(conv_id: str, attachment_id: str, token: str = Query(...), thumbnail: int = 0, size: int = 200):
     user = await _get_user(token)
     convo = await db.chat_conversations.find_one({"id": conv_id, "members": user["id"]})
     if not convo:
@@ -192,6 +192,12 @@ async def download_attachment(conv_id: str, attachment_id: str, token: str = Que
         result = get_obj(att["storage_path"])
         data = result[0] if isinstance(result, tuple) else result
         from fastapi.responses import Response
+        if thumbnail and (att.get("content_type") or "").startswith("image/"):
+            from utils.thumbnails import make_thumbnail_from_bytes
+            tdata = make_thumbnail_from_bytes(data, size=min(max(int(size), 16), 1024))
+            if tdata is not None:
+                return Response(content=tdata, media_type="image/jpeg",
+                                headers={"Cache-Control": "public, max-age=86400"})
         return Response(content=data, media_type=att["content_type"],
                         headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
     except Exception as e:
@@ -446,7 +452,7 @@ async def create_task(token: str = Query(...), title: str = Form(""), priority: 
 
 
 @router.get("/tasks/{task_id}/file")
-async def download_task_file(task_id: str, token: str = Query(...)):
+async def download_task_file(task_id: str, token: str = Query(...), thumbnail: int = 0, size: int = 200):
     user = await _get_user(token)
     task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not task or not task.get("attachment"):
@@ -457,6 +463,12 @@ async def download_task_file(task_id: str, token: str = Query(...)):
         result = get_obj(att["storage_path"])
         data = result[0] if isinstance(result, tuple) else result
         from fastapi.responses import Response
+        if thumbnail and (att.get("content_type") or "").startswith("image/"):
+            from utils.thumbnails import make_thumbnail_from_bytes
+            tdata = make_thumbnail_from_bytes(data, size=min(max(int(size), 16), 1024))
+            if tdata is not None:
+                return Response(content=tdata, media_type="image/jpeg",
+                                headers={"Cache-Control": "public, max-age=86400"})
         return Response(content=data, media_type=att["content_type"],
                         headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
     except Exception:
@@ -522,7 +534,7 @@ async def add_task_comment(task_id: str, token: str = Query(...), text: str = Fo
 
 
 @router.get("/tasks/{task_id}/comments/{comment_id}/file")
-async def download_comment_file(task_id: str, comment_id: str, token: str = Query(...)):
+async def download_comment_file(task_id: str, comment_id: str, token: str = Query(...), thumbnail: int = 0, size: int = 200):
     await _get_user(token)
     comment = await db.task_comments.find_one({"id": comment_id, "task_id": task_id}, {"_id": 0})
     if not comment or not comment.get("attachment"):
@@ -533,6 +545,12 @@ async def download_comment_file(task_id: str, comment_id: str, token: str = Quer
         result = get_obj(att["storage_path"])
         data = result[0] if isinstance(result, tuple) else result
         from fastapi.responses import Response
+        if thumbnail and (att.get("content_type") or "").startswith("image/"):
+            from utils.thumbnails import make_thumbnail_from_bytes
+            tdata = make_thumbnail_from_bytes(data, size=min(max(int(size), 16), 1024))
+            if tdata is not None:
+                return Response(content=tdata, media_type="image/jpeg",
+                                headers={"Cache-Control": "public, max-age=86400"})
         return Response(content=data, media_type=att["content_type"],
                         headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
     except Exception:

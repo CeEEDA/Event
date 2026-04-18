@@ -923,7 +923,7 @@ async def mark_info_post_read(post_id: str, token: str = Query(...)):
 
 
 @router.get("/info-posts/{post_id}/attachment")
-async def download_info_post_attachment(post_id: str, token: str = Query(...)):
+async def download_info_post_attachment(post_id: str, token: str = Query(...), thumbnail: int = 0, size: int = 200):
     """Anhang eines Info-Posts herunterladen (alle authentifizierten User)."""
     await _get_user(token)
     post = await db.info_posts.find_one({"id": post_id, "deleted": {"$ne": True}}, {"_id": 0})
@@ -935,6 +935,12 @@ async def download_info_post_attachment(post_id: str, token: str = Query(...)):
     if not result:
         raise HTTPException(status_code=404, detail="Datei nicht im Storage")
     data, ct = result
+    if thumbnail and (ct or att.get("content_type", "")).startswith("image/"):
+        from utils.thumbnails import make_thumbnail_from_bytes
+        tdata = make_thumbnail_from_bytes(data, size=min(max(int(size), 16), 1024))
+        if tdata is not None:
+            return Response(content=tdata, media_type="image/jpeg",
+                            headers={"Cache-Control": "public, max-age=86400"})
     return Response(
         content=data,
         media_type=ct or att.get("content_type", "application/octet-stream"),

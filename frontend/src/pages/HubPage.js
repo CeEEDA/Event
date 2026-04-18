@@ -582,7 +582,7 @@ export default function HubPage() {
                             const url = `${API}/api/employee/info-posts/${p.id}/attachment?token=${token}`;
                             return isImg ? (
                               <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="block mt-2">
-                                <img src={url} alt={p.attachment.filename} className="max-h-60 rounded-lg border border-gray-200 object-contain" />
+                                <img loading="lazy" src={`${url}&thumbnail=1&size=400`} alt={p.attachment.filename} className="max-h-60 rounded-lg border border-gray-200 object-contain" />
                               </a>
                             ) : (
                               <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-2 mt-2 text-xs text-fuchsia-700 hover:text-fuchsia-900 bg-fuchsia-50 border border-fuchsia-200 rounded-md px-2.5 py-1.5" data-testid={`info-attachment-${p.id}`}>
@@ -1089,7 +1089,7 @@ export default function HubPage() {
                         {c.attachment && (
                           <div className="mb-1">
                             {isImage ? (
-                              <img src={`${API}/api/chat/tasks/${selectedTask.id}/comments/${c.id}/file?token=${token}`} alt={c.attachment.filename} className="rounded-lg max-w-full max-h-32" />
+                              <img loading="lazy" src={`${API}/api/chat/tasks/${selectedTask.id}/comments/${c.id}/file?token=${token}&thumbnail=1&size=280`} alt={c.attachment.filename} className="rounded-lg max-w-full max-h-32" />
                             ) : (
                               <a href={`${API}/api/chat/tasks/${selectedTask.id}/comments/${c.id}/file?token=${token}`} target="_blank" rel="noreferrer"
                                 className={`text-xs underline flex items-center gap-1 ${isMine ? "text-white/90" : "text-fuchsia-600"}`}>
