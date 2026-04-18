@@ -1097,8 +1097,17 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
 
     api_url = _get_api_base(request)
 
-    # Read the dse5510_sync.py template
-    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "dse5510_sync.py")
+    # Read the sync script template - USB or Serial depending on connection
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+
+    # Check if this is a USB-direct DSE device (L401, 8610 etc. without RS232 adapter)
+    is_usb_direct = body.serial_port.lower() in ("usb", "auto", "/dev/dse-usb") or "usb" in (body.controller_type or "").lower()
+
+    if is_usb_direct:
+        script_path = os.path.join(static_dir, "dse_usb_sync.py")
+    else:
+        script_path = os.path.join(static_dir, "dse5510_sync.py")
+
     with open(script_path, "r") as f:
         sync_script = f.read()
 
@@ -1496,7 +1505,7 @@ for SVC in dse5510_sync dse5510 lte-connection; do
     sudo rm -f "/etc/systemd/system/$SVC.service"
 done
 
-sudo pkill -f "dse5510_sync" 2>/dev/null || true
+sudo pkill -f "dse5510_sync\|dse_usb_sync" 2>/dev/null || true
 sleep 2
 sudo rm -f /etc/dse5510.conf
 sudo rm -f /var/lib/dse5510/dse5510.sqlite
@@ -1511,9 +1520,28 @@ echo "[1/{total_steps}] System aktualisieren..."
 wait_for_apt
 sudo apt-get update -qq
 wait_for_apt
-sudo apt-get install -y -qq python3-pip python3-venv gpsd
+sudo apt-get install -y -qq python3-pip python3-venv gpsd libusb-1.0-0
 wait_for_apt
-sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nicht verfuegbar (optional, Debug-Tools)"
+sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nicht verfuegbar (optional)"
+
+# Python-Pakete
+sudo pip3 install --break-system-packages --quiet pymodbus pyserial pyusb requests 2>/dev/null || \
+sudo pip3 install --quiet pymodbus pyserial pyusb requests 2>/dev/null || true
+
+# DSE USB-Geraet binden (falls vorhanden)
+if lsusb | grep -q "1b90:0001"; then
+    echo "  DSE USB-Geraet erkannt - Treiber binden..."
+    sudo modprobe usbserial vendor=0x1b90 product=0x0001 2>/dev/null || true
+    sudo sh -c 'echo "1b90 0001" > /sys/bus/usb-serial/drivers/generic/new_id' 2>/dev/null || true
+
+    # Persistent: udev-Regel fuer automatische Bindung nach Reboot
+    sudo tee /etc/udev/rules.d/99-dse-usb.rules > /dev/null << 'UDEVRULE'
+# DSE plc. USB Controller - automatisch generischen Serial-Treiber binden
+ACTION=="add", ATTRS{{idVendor}}=="1b90", ATTRS{{idProduct}}=="0001", RUN+="/sbin/modprobe usbserial vendor=0x1b90 product=0x0001"
+UDEVRULE
+    sudo udevadm control --reload-rules
+    echo "  udev-Regel angelegt (persistent nach Reboot)"
+fi
 
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
 echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
