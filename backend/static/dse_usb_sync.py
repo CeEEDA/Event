@@ -521,7 +521,12 @@ def main():
                             logger.info(f"Fast-Poll: {len(pending_cmds)} Befehl(e) erhalten")
                             cmd_results = execute_commands(dse, pending_cmds)
                             logger.info(f"Command-Ergebnisse: {cmd_results}")
-                            # Sofort sync nach Befehl (Status-Update ans Portal)
+                            # DSE braucht 1-2s um Mode umzuschalten -> kurz warten, dann fresh read
+                            time.sleep(2)
+                            fresh_data = read_all_gencomm(dse)
+                            if fresh_data and len(fresh_data) > 1:
+                                buffer_telemetry(db_conn, fresh_data)
+                            # Sofort sync mit frischem Mode ans Portal
                             sync_to_portal(db_conn, api_url, device_id, device_key)
                             last_sync = time.time()
                     else:

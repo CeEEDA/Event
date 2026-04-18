@@ -333,6 +333,25 @@ export default function GeneratorDetailPage() {
   // Track pending command for button blink animation
   const [pendingCmd, setPendingCmd] = useState(null);
 
+  // Auto-clear pendingCmd wenn erwarteter dse_mode in Telemetrie angekommen ist
+  useEffect(() => {
+    if (!pendingCmd) return;
+    const t = generator?.latest_telemetry;
+    const mode = t?.dse_mode || generator?.last_dse_mode;
+    const running = t?.engine_running === true || (t?.rpm || 0) > 100;
+    const cmdMatchMap = {
+      stop: () => mode === "stop" || mode === "off" || (!running && mode !== "auto" && mode !== "manual"),
+      auto_on: () => mode === "auto" || mode === "auto_manual_restore",
+      manual: () => mode === "manual",
+      start: () => running,
+      test_on_load: () => mode === "test_on_load" || running,
+    };
+    const matcher = cmdMatchMap[pendingCmd];
+    if (matcher && matcher()) {
+      setPendingCmd(null);
+    }
+  }, [generator, pendingCmd]);
+
   const sendCommand = async (command, label) => {
     setCmdLoading(command);
     try {
@@ -347,10 +366,13 @@ export default function GeneratorDetailPage() {
       }
       toast.success(`${label} gesendet`);
       setPendingCmd(command);
-      setTimeout(fetchData, 5000);
-      setTimeout(fetchData, 10000);
+      // Dichte Refreshes direkt nach Command, damit neuer dse_mode schnell sichtbar wird
+      setTimeout(fetchData, 2000);
+      setTimeout(fetchData, 4000);
+      setTimeout(fetchData, 7000);
+      setTimeout(fetchData, 12000);
       setTimeout(fetchData, 20000);
-      setRefreshMs(30000);
+      setRefreshMs(10000);
       setTimeout(() => {
         setRefreshMs(1200000);
         setPendingCmd(null);
