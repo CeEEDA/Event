@@ -93,6 +93,11 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Zeitraum-Filter (Von/Bis), Übersichtskarten, Tabelle pro Maschine, aufklappbar mit Details
 - [ ] Einsatzplanung: Gesperrte Geräte rot markiert (noch zu implementieren)
 
+## 2026-02-XX – DSE USB Fast-Command-Polling Bugfix
+- [x] Kritischer Bug in `dse_usb_sync.py`: Poll-URL zeigte auf nicht existenten Endpoint `/generators/remote-update/{id}/poll` (gab lautlos 404 wegen `except: pass`). Dadurch wurden Befehle nur im 30s-Sync-Zyklus abgeholt → ~20s Latenz.
+- [x] Fix: Korrekte Lightweight-URL `/generators/poll-commands/{id}?key=<device_key>` (wie in `dse5510_sync.py`), Logging für Poll-Antworten aktiviert.
+- [ ] User-Verifikation am physischen DSE L401 ausstehend.
+
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung
 - [ ] Test Tankwagen-Pi setup script on real hardware

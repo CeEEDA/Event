@@ -482,6 +482,8 @@ def main():
     db_conn = init_db(db_path)
     dse = DseUsbConnection(slave_id=slave_id)
     last_sync = 0
+    last_cmd_check = 0
+    cmd_check_interval = 5  # Befehle alle 5s pruefen (schnelle Reaktion)
     connected = False
 
     while True:
@@ -500,23 +502,45 @@ def main():
             data = read_all_gencomm(dse)
             if data and len(data) > 1:
                 buffer_telemetry(db_conn, data)
-                bat = data.get("battery_voltage", "?")
-                rpm = data.get("engine_speed", "?")
-                logger.debug(f"Gelesen: Bat={bat}V RPM={rpm}")
 
-            # Sync to portal
             now = time.time()
+
+            # Fast command check (alle 5s) - prueft nur ob Befehle anstehen
+            if now - last_cmd_check >= cmd_check_interval:
+                last_cmd_check = now
+                try:
+                    resp = requests.get(
+                        f"{api_url}/generators/poll-commands/{device_id}",
+                        params={"key": device_key},
+                        timeout=5,
+                    )
+                    if resp.status_code == 200:
+                        poll_data = resp.json()
+                        pending_cmds = poll_data.get("pending_commands", [])
+                        if pending_cmds:
+                            logger.info(f"Fast-Poll: {len(pending_cmds)} Befehl(e) erhalten")
+                            cmd_results = execute_commands(dse, pending_cmds)
+                            logger.info(f"Command-Ergebnisse: {cmd_results}")
+                            # Sofort sync nach Befehl (Status-Update ans Portal)
+                            sync_to_portal(db_conn, api_url, device_id, device_key)
+                            last_sync = time.time()
+                    else:
+                        logger.warning(f"Fast-Poll HTTP {resp.status_code}: {resp.text[:150]}")
+                except Exception as e:
+                    logger.debug(f"Fast-Poll Fehler: {e}")
+
+            # Regular data sync (alle sync_interval Sekunden)
             if now - last_sync >= sync_interval:
                 synced, pending_cmds = sync_to_portal(db_conn, api_url, device_id, device_key)
                 last_sync = now
                 if synced > 0:
                     cleanup_db(db_conn)
-                # Execute pending commands
                 if pending_cmds:
                     cmd_results = execute_commands(dse, pending_cmds)
-                    # Report results back on next sync
                     if cmd_results:
                         logger.info(f"Command-Ergebnisse: {cmd_results}")
+                        sync_to_portal(db_conn, api_url, device_id, device_key)
+                        last_sync = time.time()
 
             time.sleep(read_interval)
 
