@@ -1462,6 +1462,20 @@ async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depe
     }
     await db.generator_pending_commands.insert_one(cmd_doc)
 
+    # Optimistic Update: commanded Mode sofort auf Device+Generator setzen,
+    # damit das Frontend den "Warte..."-State sofort aufheben kann (gleiches Muster wie MQTT)
+    mode_map = {"stop": "stop", "auto_on": "auto", "manual": "manual", "start": "manual",
+                "test_on_load": "test_on_load", "auto_manual_restore": "auto_manual_restore"}
+    commanded_mode = mode_map.get(command)
+    if commanded_mode:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        mode_update = {"last_dse_mode": commanded_mode, "last_dse_mode_at": now_iso}
+        await db.devices.update_one({"id": device_id}, {"$set": mode_update})
+        await db.generators.update_one(
+            {"$or": [{"id": f"dev-{device_id}"}, {"device_id": device_id}]},
+            {"$set": mode_update}
+        )
+
     # Also log in control log for history
     await db.generator_control_log.insert_one({
         "id": str(uuid.uuid4()),
