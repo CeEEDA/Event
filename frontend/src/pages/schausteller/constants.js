@@ -17,8 +17,8 @@ export function isPasswordValid(pw) {
 }
 
 export const api = {
-  post: (path, data) => fetch(`${BACKEND_URL}/api${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(async r => { const d = await r.json(); if (!r.ok) throw { response: { data: d } }; return { data: d }; }),
-  get: (path) => fetch(`${BACKEND_URL}/api${path}`).then(async r => { const d = await r.json(); if (!r.ok) throw { response: { data: d } }; return { data: d }; }),
+  post: (path, data) => fetch(`${BACKEND_URL}/api${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw { response: { status: r.status, data: d } }; return { data: d }; }),
+  get: (path) => fetch(`${BACKEND_URL}/api${path}`).then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw { response: { status: r.status, data: d } }; return { data: d }; }),
 };
 
 export const PAYMENT_METHODS = [

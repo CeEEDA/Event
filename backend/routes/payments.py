@@ -5,11 +5,14 @@ from typing import Optional, Dict, List
 from datetime import datetime, timezone
 import os
 import uuid
+import logging
 
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout,
     CheckoutSessionRequest,
 )
+
+logger = logging.getLogger("payments")
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 security = HTTPBearer()
@@ -38,7 +41,7 @@ async def _confirm_deposit_and_send_email(signup_id, amount):
             "deposit_paid": True,
             "deposit_amount": amount,
             "deposit_paid_at": datetime.now(timezone.utc).isoformat(),
-            "payment_status": "ausstehend",
+            "payment_status": "bezahlt",
         }},
     )
     try:
@@ -151,8 +154,8 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
     connection_type = signup.get("connection_type", "16A")
     amount = await _get_deposit_amount(connection_type)
 
-    success_url = f"{req.origin_url}/schausteller-anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{req.origin_url}/schausteller-anmeldung?payment=cancelled"
+    success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
 
     metadata = {
         "type": "deposit",
@@ -212,8 +215,8 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Ungültiger Rechnungsbetrag")
 
-    success_url = f"{req.origin_url}/schausteller-anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{req.origin_url}/schausteller-anmeldung?payment=cancelled"
+    success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
 
     metadata = {
         "type": "invoice",
@@ -255,12 +258,15 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
 @router.get("/checkout/status/{session_id}")
 async def check_payment_status(session_id: str):
     """Poll Stripe for payment status and update DB."""
+    logger.info(f"[payments] check_payment_status called session_id={session_id}")
     tx = await _db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
     if not tx:
+        logger.warning(f"[payments] Transaction not found for session_id={session_id}")
         raise HTTPException(status_code=404, detail="Transaktion nicht gefunden")
 
     # If already processed, return cached status
     if tx.get("payment_status") in ("paid", "expired"):
+        logger.info(f"[payments] Cached status returned: {tx.get('payment_status')} for session_id={session_id}")
         return {
             "status": tx.get("payment_status"),
             "payment_status": tx.get("payment_status"),
@@ -269,9 +275,17 @@ async def check_payment_status(session_id: str):
         }
 
     # Poll Stripe
-    webhook_url = "https://placeholder/api/payments/webhook/stripe"
-    stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    checkout_status = await stripe.get_checkout_status(session_id)
+    try:
+        webhook_url = "https://placeholder/api/payments/webhook/stripe"
+        stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+        checkout_status = await stripe.get_checkout_status(session_id)
+        logger.info(
+            f"[payments] Stripe status for session={session_id}: "
+            f"payment_status={checkout_status.payment_status} status={checkout_status.status}"
+        )
+    except Exception as e:
+        logger.exception(f"[payments] Stripe get_checkout_status failed for session={session_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"Stripe-Abfrage fehlgeschlagen: {str(e)[:120]}")
 
     new_status = "pending"
     if checkout_status.payment_status == "paid":
@@ -287,6 +301,7 @@ async def check_payment_status(session_id: str):
 
     # If paid, update related records (only once)
     if new_status == "paid" and tx.get("payment_status") != "paid":
+        logger.info(f"[payments] Marking session={session_id} as paid (type={tx.get('type')})")
         if tx.get("type") == "deposit":
             await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"])
         elif tx.get("type") == "invoice":
@@ -315,6 +330,7 @@ async def stripe_webhook(request: Request):
         webhook_url = str(request.base_url) + "payments/webhook/stripe"
         stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
         event = await stripe.handle_webhook(body, signature)
+        logger.info(f"[payments] Webhook received: session={event.session_id} payment_status={event.payment_status}")
 
         if event.payment_status == "paid" and event.session_id:
             tx = await _db.payment_transactions.find_one({"session_id": event.session_id}, {"_id": 0})
@@ -330,8 +346,8 @@ async def stripe_webhook(request: Request):
                         {"id": tx["invoice_id"]},
                         {"$set": {"payment_status": "paid", "paid_at": datetime.now(timezone.utc).isoformat()}},
                     )
-    except Exception:
-        pass  # Webhook verification may fail in test mode
+    except Exception as e:
+        logger.exception(f"[payments] Webhook processing failed: {e}")
 
     return {"status": "ok"}
 
@@ -449,8 +465,8 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
         amount = await _get_deposit_amount(connection_type)
         subject = f"Kaution für {event.get('name', 'Veranstaltung')} - Zahlungslink"
 
-        success_url = f"{req.origin_url}/schausteller-anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{req.origin_url}/schausteller-anmeldung?payment=cancelled"
+        success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
         metadata = {"type": "deposit", "signup_id": req.signup_id, "event_id": signup.get("event_id", ""), "schausteller_id": signup.get("schausteller_id", ""), "connection_type": connection_type}
 
         webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
@@ -477,8 +493,8 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
         amount = float(invoice.get("total_gross", invoice.get("total_amount", 0)))
         subject = f"Rechnung {invoice.get('invoice_number', '')} - Zahlungslink"
 
-        success_url = f"{req.origin_url}/schausteller-anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{req.origin_url}/schausteller-anmeldung?payment=cancelled"
+        success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
         metadata = {"type": "invoice", "invoice_id": req.invoice_id, "invoice_number": invoice.get("invoice_number", "")}
 
         webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"

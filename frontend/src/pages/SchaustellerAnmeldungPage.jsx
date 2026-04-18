@@ -13,6 +13,7 @@ import { EventSelector } from "./schausteller/EventSelector";
 import { SignupForm } from "./schausteller/SignupForm";
 import { PaymentStep } from "./schausteller/PaymentStep";
 import { PaymentCheckStep } from "./schausteller/PaymentCheckStep";
+import { PaymentSuccessStep } from "./schausteller/PaymentSuccessStep";
 import { DoneStep } from "./schausteller/DoneStep";
 import { AgbModal } from "./schausteller/AgbModal";
 import { DatenschutzModal } from "./schausteller/DatenschutzModal";
@@ -45,6 +46,10 @@ export default function SchaustellerAnmeldungPage() {
   const [completedBookings, setCompletedBookings] = useState([]);
   const [depositAmounts, setDepositAmounts] = useState({});
   const [paymentChecking, setPaymentChecking] = useState(false);
+  const [paymentCheckTimedOut, setPaymentCheckTimedOut] = useState(false);
+  const [paymentCheckError, setPaymentCheckError] = useState("");
+  const [paidAmount, setPaidAmount] = useState(null);
+  const [pendingSessionId, setPendingSessionId] = useState(null);
 
   const loadBookings = useCallback(async (schId) => {
     try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch { /* ignore */ }
@@ -95,35 +100,77 @@ export default function SchaustellerAnmeldungPage() {
 
   // Stripe return
   const pollPaymentStatus = useCallback(async (sessionId, attempts = 0) => {
-    if (attempts >= 10) { setPaymentChecking(false); return; }
+    if (attempts >= 15) {
+      setPaymentChecking(false);
+      setPaymentCheckTimedOut(true);
+      return;
+    }
     try {
       const r = await api.get(`/payments/checkout/status/${sessionId}`);
       if (r.data?.payment_status === "paid") {
         toast.success("Kaution erfolgreich bezahlt!");
         setPaymentChecking(false);
-        setStep("done");
-        if (schausteller) { loadBookings(schausteller.id); loadLastdiagramme(schausteller.id); }
+        setPaidAmount(typeof r.data?.amount === "number" ? r.data.amount : null);
+        try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch { /* ignore */ }
+        if (schausteller) {
+          loadBookings(schausteller.id);
+          loadLastdiagramme(schausteller.id);
+          setStep("dashboard");
+        } else {
+          setStep("payment_success");
+        }
         return;
       }
       if (r.data?.status === "expired") {
-        toast.error("Zahlungssitzung abgelaufen");
         setPaymentChecking(false);
-        setStep("done");
+        setPaymentCheckError("Zahlungssitzung abgelaufen. Die Zahlung wurde nicht abgeschlossen.");
         return;
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 404) {
+        setPaymentChecking(false);
+        setPaymentCheckError("Transaktion nicht gefunden. Bitte prüfen Sie Ihre Stripe-Bestätigung.");
+        return;
+      }
+      // transient errors -> retry
+    }
     setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
   }, [schausteller, loadBookings, loadLastdiagramme]);
+
+  const handleContinueAfterPayment = useCallback(() => {
+    try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch { /* ignore */ }
+    setPaymentCheckTimedOut(false);
+    setPaymentCheckError("");
+    setPendingSessionId(null);
+    setPaidAmount(null);
+    if (schausteller) {
+      loadBookings(schausteller.id);
+      setStep("dashboard");
+    } else {
+      setStep("auth");
+    }
+  }, [schausteller, loadBookings]);
+
+  const handleRetryPaymentCheck = useCallback(() => {
+    if (!pendingSessionId) return;
+    setPaymentCheckTimedOut(false);
+    setPaymentCheckError("");
+    setPaymentChecking(true);
+    pollPaymentStatus(pendingSessionId);
+  }, [pendingSessionId, pollPaymentStatus]);
 
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
     const paymentResult = searchParams.get("payment");
     if (sessionId && paymentResult === "success") {
+      setPendingSessionId(sessionId);
       setPaymentChecking(true);
       setStep("payment_check");
       pollPaymentStatus(sessionId);
     } else if (paymentResult === "cancelled") {
       toast.error("Zahlung abgebrochen");
+      try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch { /* ignore */ }
     }
   }, [searchParams, pollPaymentStatus]);
 
@@ -413,7 +460,16 @@ export default function SchaustellerAnmeldungPage() {
             />
           )}
           {step === "payment_check" && (
-            <PaymentCheckStep paymentChecking={paymentChecking} />
+            <PaymentCheckStep
+              paymentChecking={paymentChecking}
+              timedOut={paymentCheckTimedOut}
+              errorMsg={paymentCheckError}
+              onContinue={handleContinueAfterPayment}
+              onRetry={pendingSessionId ? handleRetryPaymentCheck : null}
+            />
+          )}
+          {step === "payment_success" && (
+            <PaymentSuccessStep amount={paidAmount} onContinue={handleContinueAfterPayment} />
           )}
           {step === "done" && (
             <DoneStep
