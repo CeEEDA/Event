@@ -345,10 +345,18 @@ export default function GeneratorDetailPage() {
       manual: () => mode === "manual",
       start: () => running,
       test_on_load: () => mode === "test_on_load" || running,
+      auto_manual_restore: () => mode === "auto_manual_restore" || mode === "auto",
     };
     const matcher = cmdMatchMap[pendingCmd];
     if (matcher && matcher()) {
       setPendingCmd(null);
+      return;
+    }
+    // Commands ohne Mode-Wechsel: kurzer Timer (Quittung nach 3s)
+    const noModeChangeCommands = ["reset", "reset_mains", "mute", "gen_switch_on", "gen_switch_off"];
+    if (noModeChangeCommands.includes(pendingCmd)) {
+      const timer = setTimeout(() => setPendingCmd(null), 3000);
+      return () => clearTimeout(timer);
     }
   }, [generator, pendingCmd]);
 
@@ -476,6 +484,8 @@ export default function GeneratorDetailPage() {
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
           const isL401 = model.includes("L401");
+          // Erweiterte Bedientasten: 7310, 8610, 8610 MKII (gleiche Bedienphilosophie)
+          const isAdvancedControl = model.includes("8610") || model.includes("7310");
           const isFullControl = !isL401; // Stromerzeuger (8610, 5510 etc.) = alle Buttons
           const canWrite = true; // FC16 @4104 funktioniert (DSE antwortet mit FC03 Read-Back)
 
@@ -623,6 +633,44 @@ export default function GeneratorDetailPage() {
                     disabled={!canWrite} size={52} />
                 </div>
               )}
+
+              {/* Erweiterte Steuerung - nur 7310 / 8610 / 8610 MKII */}
+              {isAdvancedControl && (() => {
+                const DseIconBtn = ({ cmd, label, Icon, disabled = false, color = "text-gray-700" }) => {
+                  const isPending = pendingCmd === cmd;
+                  return (
+                    <button
+                      onClick={() => !disabled && sendCommand(cmd, label)}
+                      disabled={disabled || cmdLoading !== null}
+                      className={`group focus:outline-none flex flex-col items-center ${disabled ? "opacity-30 cursor-not-allowed" : ""}`}
+                      data-testid={`cmd-${cmd}-btn`}
+                      title={label}
+                    >
+                      <div
+                        className={`relative rounded-full flex items-center justify-center border border-gray-300 bg-gradient-to-b from-white to-gray-100 shadow-sm transition-all duration-200 ${isPending ? "animate-pulse" : "group-hover:shadow-md group-hover:border-gray-400"}`}
+                        style={{
+                          width: 52, height: 52,
+                          filter: isPending ? 'drop-shadow(0 0 10px rgba(34,197,94,0.6))' : 'none',
+                          transform: cmdLoading === cmd ? 'scale(0.92)' : 'scale(1)',
+                        }}
+                      >
+                        <Icon className={`w-6 h-6 ${color}`} />
+                      </div>
+                      <span className="block text-[10px] text-gray-500 text-center mt-1.5 font-medium tracking-wide">
+                        {cmdLoading === cmd ? "..." : isPending ? "Warte..." : label}
+                      </span>
+                    </button>
+                  );
+                };
+                return (
+                  <div className="px-5 py-4 flex items-end justify-center gap-5 border-t border-gray-100 flex-wrap">
+                    <DseIconBtn cmd="reset" label="Alarm Reset" Icon={RotateCcw} color="text-amber-600" />
+                    <DseIconBtn cmd="test_on_load" label="Testlauf" Icon={Activity} color="text-blue-600" />
+                    <DseIconBtn cmd="auto_manual_restore" label="Auto + Rückk." Icon={ToggleRight} color="text-emerald-600" />
+                    <DseIconBtn cmd="reset_mains" label="Netz Reset" Icon={Zap} color="text-fuchsia-600" />
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
