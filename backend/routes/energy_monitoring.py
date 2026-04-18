@@ -1116,10 +1116,10 @@ async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510
 echo ""
 echo "[3/{total_steps}] LTE+GPS konfigurieren (SIM7600E-H)..."
 
-# --- 3a: Pakete installieren ---
+# --- 3a: Zusaetzliche Pakete (ppp, ifmetric, dnsutils - gpsd bereits in Schritt 1) ---
 echo "  Pakete installieren..."
 wait_for_apt
-sudo apt-get install -y -qq ppp ifmetric dnsutils gpsd gpsd-clients lsof
+sudo apt-get install -y -qq ppp ifmetric dnsutils lsof
 
 # --- 3b: ModemManager deaktivieren (blockiert ttyUSB-Ports!) ---
 echo "  ModemManager deaktivieren..."
@@ -1236,28 +1236,39 @@ nmcli -t -f NAME,TYPE connection show 2>/dev/null | while IFS=: read -r name typ
 done
 nmcli connection reload 2>/dev/null || true
 
-# --- 3g: GPS aktivieren + gpsd konfigurieren ---
-echo "  GPS + gpsd konfigurieren..."
+# --- 3g: GPS aktivieren + gpsd neu konfigurieren mit LTE-GPS ---
+echo "  GPS + gpsd fuer SIM7600 konfigurieren..."
+
+# GPS-Port per NMEA-Verifikation erneut suchen (SIM7600 USB-Ports jetzt aktiv)
+LTE_GPS_PORT=""
+for port in /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4; do
+    [ -e "$port" ] || continue
+    if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
+        LTE_GPS_PORT="$port"
+        break
+    fi
+done
+[ -z "$LTE_GPS_PORT" ] && LTE_GPS_PORT="$GPS_DEV"  # Fallback auf Schritt-2-Ergebnis
+echo "  GPS-NMEA verifiziert auf: $LTE_GPS_PORT"
 
 sudo tee /usr/local/sbin/sim7600-gps-enable > /dev/null << 'GPSENABLE'
 #!/bin/bash
-AT_PORT="/dev/ttyUSB3"
-for i in $(seq 1 60); do
-    [ -e "$AT_PORT" ] && break
+# AT-Port suchen (der erste der AT OK antwortet)
+for AT_PORT in /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyUSB2; do
+    [ -e "$AT_PORT" ] || continue
+    /usr/bin/lsof "$AT_PORT" >/dev/null 2>&1 && continue
+    stty -F "$AT_PORT" 115200 raw -echo 2>/dev/null
+    echo -e "AT\r" > "$AT_PORT"
     sleep 1
+    if timeout 2 cat "$AT_PORT" 2>/dev/null | grep -q "OK"; then
+        echo -e "AT+CGPS=1\r" > "$AT_PORT"
+        sleep 2
+        logger -t gps-enable "AT+CGPS=1 gesendet via $AT_PORT"
+        exit 0
+    fi
 done
-if [ ! -e "$AT_PORT" ]; then
-    logger -t gps-enable "FEHLER: $AT_PORT nicht verfuegbar"
-    exit 1
-fi
-if /usr/bin/lsof "$AT_PORT" >/dev/null 2>&1; then
-    logger -t gps-enable "$AT_PORT belegt (pppd) - GPS-Status unveraendert"
-    exit 0
-fi
-stty -F "$AT_PORT" 115200 raw -echo 2>/dev/null
-echo -e "AT+CGPS=1\r" > "$AT_PORT"
-sleep 2
-logger -t gps-enable "AT+CGPS=1 gesendet"
+logger -t gps-enable "Kein freier AT-Port gefunden"
+exit 1
 GPSENABLE
 sudo chmod +x /usr/local/sbin/sim7600-gps-enable
 
@@ -1277,10 +1288,10 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 GPSSERVICE
 
-sudo tee /etc/default/gpsd > /dev/null << 'GPSDCONF'
+sudo tee /etc/default/gpsd > /dev/null << GPSDCONF
 START_DAEMON="true"
 USBAUTO="false"
-DEVICES="/dev/ttyUSB2"
+DEVICES="$LTE_GPS_PORT"
 GPSD_OPTIONS="-n"
 GPSDCONF
 
@@ -1358,22 +1369,47 @@ GPSSTATUS
 sudo chmod +x /usr/local/bin/lte-status /usr/local/bin/gps-status
 
 echo "  APN: {body.lte_apn}"
-echo "  Port-Schema: ttyUSB2=GPS, ttyUSB3=AT+PPP"
+echo "  GPS-Port: $LTE_GPS_PORT"
 echo "  Routing: eth0=100, wlan0=600, ppp0=700"
 echo "  Tools: lte-status, gps-status"
 """
 
         lte_verify_block = f"""
-# LTE + GPS Status pruefen
+# LTE + GPS Vorab-Test
 echo ""
-echo "  LTE Status:"
+echo "  LTE Vorab-Test (vor Reboot)..."
+sudo pon m2m &>/dev/null
+sleep 20
 if ip link show ppp0 &>/dev/null; then
     PPP_IP=$(ip -4 addr show ppp0 2>/dev/null | grep inet | awk '{{print $2}}')
-    echo "    LTE verbunden - IP: $PPP_IP"
+    echo "    ppp0 UP - IP: $PPP_IP"
+    if sudo ping -c 2 -W 3 -I ppp0 8.8.8.8 &>/dev/null; then
+        echo "    LTE-Internet: OK"
+    else
+        echo "    LTE-Internet: KEIN Ping ueber ppp0"
+    fi
+    sudo poff m2m 2>/dev/null
+    sleep 3
 else
-    echo "    LTE wird nach Reboot aufgebaut"
+    echo "    ppp0 nicht hochgekommen - nach Reboot syslog pruefen"
+    sudo poff m2m 2>/dev/null || true
 fi
-echo "  GPS: $(systemctl is-enabled gpsd 2>/dev/null || echo 'nicht konfiguriert')"
+
+# GPS pruefen
+echo ""
+echo "  GPS Status:"
+if systemctl is-active --quiet gpsd; then
+    GPS_DATA=$(timeout 5 gpspipe -w -n 5 2>/dev/null | grep -m1 '"class":"TPV"' || echo "")
+    if [ -n "$GPS_DATA" ]; then
+        LAT=$(echo "$GPS_DATA" | grep -oP '"lat":\K[-0-9.]+' || echo "?")
+        LON=$(echo "$GPS_DATA" | grep -oP '"lon":\K[-0-9.]+' || echo "?")
+        echo "    GPS Fix: $LAT, $LON"
+    else
+        echo "    GPS: Noch kein Fix (Cold-Start kann 1-5 Min dauern)"
+    fi
+else
+    echo "    gpsd laeuft nicht"
+fi
 echo ""
 echo "  Nach Reboot pruefen:"
 echo "    lte-status    # Netzwerk + LTE"
@@ -1386,7 +1422,7 @@ echo "    ip route      # Routing-Tabelle"
     # Pre-build conditional echo lines (backslashes not allowed in f-string expressions)
     lte_header_echo = f'echo "  LTE: SIM7600E-H ({body.lte_apn})"' if body.enable_lte else ""
     lte_apn_echo = f'echo "  LTE APN:      {body.lte_apn}"' if body.enable_lte else ""
-    lte_port_echo = f'echo "  LTE Port:     ttyUSB3 (PPP), ttyUSB2 (GPS)"' if body.enable_lte else ""
+    lte_port_echo = f'echo "  LTE Port:     PPP auto-detect, GPS auto-detect (NMEA)"' if body.enable_lte else ""
     lte_check_echo = ('echo ""\necho "  LTE pruefen:"\n'
                       'echo "    lte-status"\n'
                       'echo "    gps-status"\n'
@@ -1458,29 +1494,36 @@ sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nic
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
 echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
 
-GPS_DEV=""
-for dev in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyAMA0; do
-    if [ -e "$dev" ]; then
-        if [ "$dev" != "{body.serial_port}" ] && [ "$dev" != "{lte_port}" ]; then
-            GPS_DEV="$dev"
-            echo "  GPS-Geraet gefunden: $GPS_DEV"
-            break
+# Auto-Detect: NMEA-Verifikation statt nur Port-Existenz pruefen
+detect_gps_port() {{
+    for port in /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyACM0 /dev/ttyACM1; do
+        [ -e "$port" ] || continue
+        # Nicht den Modbus-Port oder LTE-Port nehmen
+        [ "$port" = "{body.serial_port}" ] && continue
+        [ "$port" = "{lte_port}" ] && continue
+        # 3 Sekunden lauschen, nach echtem NMEA-Pattern suchen
+        if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
+            echo "$port"
+            return 0
         fi
-    fi
-done
+    done
+    return 1
+}}
 
-if [ -z "$GPS_DEV" ]; then
-    echo "  WARNUNG: Kein GPS-Geraet erkannt."
+GPS_DEV=$(detect_gps_port)
+if [ -n "$GPS_DEV" ]; then
+    echo "  GPS-NMEA-Stream verifiziert auf: $GPS_DEV"
+else
+    echo "  WARNUNG: Kein NMEA-Stream gefunden. Fallback: /dev/ttyUSB2"
     echo "  Nach Anschluss: sudo dpkg-reconfigure gpsd"
-    GPS_DEV="/dev/ttyACM0"
+    GPS_DEV="/dev/ttyUSB2"
 fi
 
 sudo tee /etc/default/gpsd > /dev/null << GPSD_CONF
 START_DAEMON="true"
-USBAUTO="true"
+USBAUTO="false"
 DEVICES="$GPS_DEV"
 GPSD_OPTIONS="-n"
-GPSD_SOCKET="/var/run/gpsd.sock"
 GPSD_CONF
 
 sudo systemctl enable gpsd
