@@ -18,10 +18,10 @@ export function PaymentStep({ selectedEvent, signupForm, depositAmounts, onPayDe
       </div>
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
         <div className="flex justify-between items-center">
-          <span className="text-sm text-amber-700 font-medium">Kaution</span>
+          <span className="text-sm text-amber-700 font-medium">Kaution für Energieverbrauch</span>
           <span className="text-2xl font-bold text-amber-800">{(depositAmounts[signupForm.connection_type] || 0).toFixed(2)} EUR</span>
         </div>
-        <p className="text-[10px] text-amber-600 mt-1">Wird nach der Veranstaltung erstattet</p>
+        <p className="text-[10px] text-amber-600 mt-1">Wird nach der Veranstaltung mit dem tatsächlichen Verbrauch verrechnet und der Restbetrag erstattet</p>
       </div>
       <div className="text-xs text-gray-500 mb-3">
         Zahlung per <strong className="text-gray-700">{signupForm.payment_method === "paypal" ? "PayPal" : "Kreditkarte"}</strong> · Sichere Abwicklung über Stripe
