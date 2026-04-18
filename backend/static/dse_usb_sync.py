@@ -299,7 +299,7 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
 
     try:
         resp = requests.post(
-            f"{api_url}/api/generators/ingest",
+            f"{api_url}/generators/ingest",
             json=payload,
             timeout=30,
         )
