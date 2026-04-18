@@ -199,6 +199,7 @@ function DSEPiSetupSection({ deviceId, deviceName, controller, connectionType })
 
   const controllerLabel = controller || "DSE";
   const is3Phase = controller && (controller.includes("8610") || controller.includes("7310"));
+  const connLabel = isUsbDirect ? "USB direkt" : "DSE USB/LAN Adapter";
 
   const handleGenerateSetup = async () => {
     if (!window.confirm("Ein neuer Geraeteschluessel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schluessel existiert, wird er ersetzt.\n\nFortfahren?")) return;
@@ -227,12 +228,12 @@ function DSEPiSetupSection({ deviceId, deviceName, controller, connectionType })
     <div className="border-t border-gray-100 pt-4" data-testid="dse-pi-setup">
       <div className="flex items-center gap-2 mb-1">
         <Server className="w-4 h-4 text-fuchsia-600" />
-        <h3 className="text-sm font-medium text-gray-900">{controllerLabel} Pi Setup {isUsbDirect ? "(USB direkt)" : "(RS232)"}</h3>
+        <h3 className="text-sm font-medium text-gray-900">{controllerLabel} Pi Setup ({connLabel})</h3>
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
         {isUsbDirect
-          ? `Raspberry Pi liest den ${controllerLabel} direkt ueber USB (pyusb). Kein RS232-Adapter noetig.`
-          : `Raspberry Pi liest den ${controllerLabel} ueber RS232 Modbus RTU mit USB/LAN Adapter.`
+          ? `Raspberry Pi liest den ${controllerLabel} direkt ueber USB (pyusb). Kein Adapter noetig.`
+          : `Raspberry Pi liest den ${controllerLabel} ueber den DSE USB/LAN Adapter (Modbus RTU).`
         }
       </p>
 
@@ -1274,7 +1275,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
 
               {/* DSE Pi Setup - when "pi_usb" or "pi_rs232" connection selected */}
               {editing && (formData.connection_type === "pi_usb" || formData.connection_type === "pi_rs232" || (/DSE\s*5510/i.test(formData.controller || "") && !formData.connection_type)) && (
-                <DSEPiSetupSection deviceId={editing.id} deviceName={editing.serial_number} controller={formData.controller} connectionType={formData.connection_type || (/DSE\s*5510/i.test(formData.controller || "") ? "pi_rs232" : "pi_usb")} />
+                <DSEPiSetupSection deviceId={editing.id} deviceName={editing.serial_number} controller={formData.controller} connectionType={/DSE\s*5510/i.test(formData.controller || "") ? "pi_rs232" : (formData.connection_type || "pi_usb")} />
               )}
             </>
           )}
