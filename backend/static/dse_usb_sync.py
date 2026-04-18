@@ -125,7 +125,7 @@ class DseUsbConnection:
         return None
 
     def write_register(self, page, register, value):
-        """Write a single GenComm register. Used for control commands (Page 16)."""
+        """Write a single GenComm register (Function 0x06)."""
         addr = (page << 8) | register
         pdu = struct.pack('>BBHH', self.slave_id, 0x06, addr, value)
         pkt = pdu + modbus_crc(pdu)
@@ -141,6 +141,29 @@ class DseUsbConnection:
         except usb.core.USBError as e:
             if "timed out" not in str(e).lower():
                 raise
+        return False
+
+    def write_control_key(self, key, complement):
+        """Write DSE control command: Function 0x10, Page 16 Register 8, KEY + COMPLEMENT."""
+        addr = (16 << 8) | 8  # Page 16 Register 8
+        # Function 0x10: Slave, FC, StartAddr(2), RegCount(2), ByteCount(1), Data(4)
+        pdu = struct.pack('>BBHHB', self.slave_id, 0x10, addr, 2, 4)
+        pdu += struct.pack('>HH', key, complement)
+        pkt = pdu + modbus_crc(pdu)
+        try:
+            self.ep_out.write(pkt)
+            time.sleep(1.5)
+            resp = self.ep_in.read(64, timeout=3000)
+            data = resp.tobytes()
+            if len(data) >= 4 and data[1] == 0x10:
+                logger.info(f"Write OK: Key={key} Complement={complement}")
+                return True
+            elif len(data) >= 2 and data[1] == 0x90:
+                logger.warning(f"Write Exception: code={data[2]}")
+        except usb.core.USBError as e:
+            if "timed out" not in str(e).lower():
+                raise
+            logger.warning("Write Timeout (keine Antwort)")
         return False
 
 
@@ -384,38 +407,39 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
     return 0, []
 
 
-# DSE GenComm Page 16 Register 8: Control register
-# Write values for commands
+# DSE GenComm Control Commands: KEY + COMPLEMENT written via Function 0x10 to Page 16 Register 8
 DSE_COMMAND_MAP = {
-    "stop": 0x01,
-    "auto_on": 0x03,
-    "manual": 0x04,
-    "start": 0x07,
-    "mute": 0x08,
-    "reset": 0x15,
-    "gen_switch_on": 0x09,
-    "gen_switch_off": 0x0A,
-    "test_on_load": 0x05,
-    "auto_manual_restore": 0x06,
-    "reset_mains": 0x17,
+    "stop":                {"key": 35700, "complement": 29835, "label": "Stop-Modus"},
+    "auto_on":             {"key": 35701, "complement": 29834, "label": "Automatikmodus"},
+    "manual":              {"key": 35702, "complement": 29833, "label": "Manueller Modus"},
+    "test_on_load":        {"key": 35703, "complement": 29832, "label": "Testlauf unter Last"},
+    "auto_manual_restore": {"key": 35704, "complement": 29831, "label": "Auto mit manueller Rueckkehr"},
+    "start":               {"key": 35705, "complement": 29830, "label": "Motor starten"},
+    "mute":                {"key": 35706, "complement": 29829, "label": "Alarm stumm"},
+    "reset":               {"key": 35707, "complement": 29828, "label": "Alarme zuruecksetzen"},
+    "gen_switch_on":       {"key": 35708, "complement": 29827, "label": "Generator zuschalten"},
+    "gen_switch_off":      {"key": 35709, "complement": 29826, "label": "Generator abschalten"},
+    "reset_mains":         {"key": 35710, "complement": 29825, "label": "Netzausfall zuruecksetzen"},
 }
 
 
 def execute_commands(dse_conn, commands):
-    """Execute pending control commands from portal via GenComm Page 16."""
+    """Execute pending control commands via GenComm Page 16 (KEY + COMPLEMENT)."""
     results = []
     for cmd in commands:
         cmd_name = cmd.get("command", "")
         cmd_id = cmd.get("id", "")
-        value = DSE_COMMAND_MAP.get(cmd_name)
-        if value is None:
+        cmd_def = DSE_COMMAND_MAP.get(cmd_name)
+        if cmd_def is None:
             logger.warning(f"Unbekannter Befehl: {cmd_name}")
             results.append({"id": cmd_id, "status": "error", "detail": f"Unbekannt: {cmd_name}"})
             continue
-        logger.info(f"Fuehre Befehl aus: {cmd_name} (Page16 R8 = {hex(value)})")
-        ok = dse_conn.write_register(16, 8, value)
+        key = cmd_def["key"]
+        complement = cmd_def["complement"]
+        logger.info(f"Fuehre Befehl aus: {cmd_def['label']} (Key={key}, Complement={complement})")
+        ok = dse_conn.write_control_key(key, complement)
         if ok:
-            logger.info(f"Befehl {cmd_name} erfolgreich")
+            logger.info(f"Befehl {cmd_name} erfolgreich gesendet")
             results.append({"id": cmd_id, "status": "done"})
         else:
             logger.error(f"Befehl {cmd_name} fehlgeschlagen")
