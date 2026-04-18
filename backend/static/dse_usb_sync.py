@@ -106,6 +106,20 @@ class DseUsbConnection:
 
 SENTINEL_VALUES = {0xFFFF, 0xFFFE, 0xFFFD, 0xFFFC, 0x7FFF, 0x7FFE, 0x7FFD, 0x7FFC, 0x8000}
 
+ALARM_NAMES = {
+    1: "Notaus (Emergency Stop)", 2: "Niedriger Oeldruck", 3: "Hohe Kuehlwassertemperatur",
+    4: "Hohe Oeltemperatur", 5: "Unterdrehzahl", 6: "Ueberdrehzahl",
+    7: "Start fehlgeschlagen", 8: "Stopp fehlgeschlagen", 9: "Drehzahlsignal verloren",
+    10: "Generator Unterspannung", 11: "Generator Ueberspannung", 12: "Generator Unterfrequenz",
+    13: "Generator Ueberfrequenz", 14: "Generator Ueberstrom", 15: "Erdschluss",
+    16: "Rueckleistung", 17: "Luftklappe", 18: "Oeldrucksensor Fehler",
+    19: "Kuehlmitteltemp. Sensor Fehler", 20: "Oeltemp. Sensor Fehler",
+    21: "Kraftstoffsensor Fehler", 22: "Drehzahlgeber Fehler",
+    23: "AC Drehzahlsignal verloren", 24: "Lademaschine Fehler",
+    25: "Niedrige Batteriespannung", 26: "Hohe Batteriespannung",
+    27: "Niedriger Kraftstoff", 28: "Hoher Kraftstoff",
+}
+
 def valid(val):
     if val is None:
         return False
@@ -223,31 +237,78 @@ def buffer_telemetry(db_conn, data):
 
 
 def sync_to_portal(db_conn, api_url, device_id, device_key):
-    """Send buffered telemetry to portal."""
+    """Send buffered telemetry to portal via /api/generators/ingest."""
     rows = db_conn.execute(
         "SELECT id, data FROM telemetry_buffer WHERE synced=0 ORDER BY id LIMIT 100"
     ).fetchall()
-    if not rows:
+
+    records = []
+    ids = []
+    all_alarms = []
+    for row_id, data_json in rows:
+        raw = json.loads(data_json)
+        # Map to Pi ingest field names
+        rec = {"ts_utc": raw.get("timestamp", ""), "source": "dse_usb_pi"}
+        field_map = {
+            "oil_pressure": "oil_pressure_kpa",
+            "coolant_temp": "coolant_temp_c",
+            "oil_temp": "oil_temp_c",
+            "fuel_level": "fuel_level_pct",
+            "charge_alt_voltage": "charge_alt_voltage",
+            "battery_voltage": "battery_voltage",
+            "engine_speed": "rpm",
+            "frequency": "frequency",
+            "gen_l1_voltage": "voltage_l1",
+            "gen_l1_current": "current_l1",
+            "gen_l1_watts": "power_l1_w",
+            "gen_total_watts": "power_total_w",
+            "power_factor": "power_factor_avg",
+            "hours_run": "engine_run_hours",
+            "engine_starts": "num_starts",
+            "energy_kwh": "energy_kwh",
+            "dse_mode": "dse_mode",
+        }
+        for src_key, dst_key in field_map.items():
+            if src_key in raw and raw[src_key] is not None:
+                rec[dst_key] = raw[src_key]
+        rec["engine_running"] = (raw.get("engine_speed", 0) or 0) > 100
+        records.append(rec)
+        ids.append(row_id)
+
+        # Collect alarms
+        for alarm in raw.get("active_alarms", []):
+            all_alarms.append({
+                "ts_utc": raw.get("timestamp", ""),
+                "alarm_type": "shutdown" if alarm.get("condition") in (3, 4) else "warning",
+                "alarm_code": alarm.get("pos", 0),
+                "description": ALARM_NAMES.get(alarm.get("pos", 0), f"Alarm #{alarm.get('pos')}"),
+                "active": True,
+            })
+
+    if not records and not all_alarms:
         return 0
 
-    batch = []
-    ids = []
-    for row_id, data_json in rows:
-        batch.append(json.loads(data_json))
-        ids.append(row_id)
+    payload = {
+        "api_key": device_key,
+        "device_id": device_id,
+        "generator_id": "",
+        "records": records,
+        "alarms": all_alarms,
+        "command_results": [],
+    }
 
     try:
         resp = requests.post(
-            f"{api_url}/api/energy-monitoring/devices/{device_id}/telemetry",
-            json={"readings": batch},
-            headers={"Authorization": f"Bearer {device_key}"},
-            timeout=15,
+            f"{api_url}/api/generators/ingest",
+            json=payload,
+            timeout=30,
         )
         if resp.status_code in (200, 201):
             placeholders = ",".join("?" * len(ids))
             db_conn.execute(f"UPDATE telemetry_buffer SET synced=1 WHERE id IN ({placeholders})", ids)
             db_conn.commit()
-            logger.info(f"Portal-Sync: {len(ids)} Datensaetze gesendet")
+            result = resp.json()
+            logger.info(f"Portal-Sync: {result.get('inserted', 0)} Datensaetze, {len(all_alarms)} Alarme")
             return len(ids)
         else:
             logger.warning(f"Portal-Sync Fehler: {resp.status_code} {resp.text[:200]}")

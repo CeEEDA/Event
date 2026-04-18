@@ -1258,7 +1258,21 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         )
         logger.info(f"DSE-Modus aktualisiert: {last_mode_from_cmd} (aus Befehl)")
 
-    # Process alarms from Pi into generator_events log
+    # Process alarms from Pi into generator_events log AND generator_alarms
+    ALARM_NAMES_P8 = {
+        1: "Notaus (Emergency Stop)", 2: "Niedriger Oeldruck", 3: "Hohe Kuehlwassertemperatur",
+        4: "Hohe Oeltemperatur", 5: "Unterdrehzahl", 6: "Ueberdrehzahl",
+        7: "Start fehlgeschlagen", 8: "Stopp fehlgeschlagen", 9: "Drehzahlsignal verloren",
+        10: "Generator Unterspannung", 11: "Generator Ueberspannung", 12: "Generator Unterfrequenz",
+        13: "Generator Ueberfrequenz", 14: "Generator Ueberstrom", 15: "Erdschluss",
+        16: "Rueckleistung", 17: "Luftklappe", 18: "Oeldrucksensor Fehler",
+        19: "Kuehlmitteltemp. Sensor Fehler", 20: "Oeltemp. Sensor Fehler",
+        21: "Kraftstoffsensor Fehler", 22: "Drehzahlgeber Fehler",
+        23: "AC Drehzahlsignal verloren", 24: "Lademaschine Fehler",
+        25: "Niedrige Batteriespannung", 26: "Hohe Batteriespannung",
+        27: "Niedriger Kraftstoff", 28: "Hoher Kraftstoff",
+    }
+    active_alarm_codes = set()
     for alarm in (payload.alarms or []):
         event_doc = {
             "id": str(uuid.uuid4()),
@@ -1270,11 +1284,60 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
             "description": alarm.get("description", ""),
             "active": alarm.get("active", True),
             "cleared_at": alarm.get("cleared_at"),
-            "source": "dse5510_pi",
+            "source": "pi_usb",
             "latitude": payload.latitude,
             "longitude": payload.longitude,
         }
         await db.generator_events.insert_one(event_doc)
+
+        # Also create/update generator_alarms entry for active alarms
+        if alarm.get("active", True):
+            alarm_code = f"A{alarm.get('alarm_code', 0):03d}"
+            active_alarm_codes.add(alarm_code)
+            existing = await db.generator_alarms.find_one(
+                {"generator_id": generator_id, "alarm_code": alarm_code, "resolved_at": None}
+            )
+            if not existing:
+                alarm_text = alarm.get("description") or ALARM_NAMES_P8.get(alarm.get("alarm_code", 0), f"Alarm {alarm_code}")
+                severity = "shutdown" if alarm.get("alarm_type") == "shutdown" else "warning"
+                await db.generator_alarms.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "generator_id": generator_id,
+                    "alarm_code": alarm_code,
+                    "alarm_text": alarm_text,
+                    "severity": severity,
+                    "timestamp": alarm.get("ts_utc", now_iso),
+                    "acknowledged": False,
+                    "resolved_at": None,
+                })
+
+    # Resolve alarms that are no longer active
+    if payload.alarms is not None:
+        open_alarms = await db.generator_alarms.find(
+            {"generator_id": generator_id, "alarm_code": {"$regex": "^A"}, "resolved_at": None},
+            {"_id": 0, "alarm_code": 1}
+        ).to_list(200)
+        for oa in open_alarms:
+            if oa["alarm_code"] not in active_alarm_codes:
+                await db.generator_alarms.update_one(
+                    {"generator_id": generator_id, "alarm_code": oa["alarm_code"], "resolved_at": None},
+                    {"$set": {"resolved_at": now_iso}}
+                )
+
+    # Update generator status based on alarms
+    if active_alarm_codes:
+        await db.generators.update_one(
+            {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
+            {"$set": {"status": "alarm"}}
+        )
+        await db.devices.update_one({"id": payload.device_id}, {"$set": {"mqtt_status": "alarm"}})
+        # Store alarm text in snapshot
+        alarm_texts = [a.get("description", "") for a in payload.alarms if a.get("active")]
+        if alarm_texts:
+            await db.devices.update_one({"id": payload.device_id}, {"$set": {
+                "latest_snapshot.fault_text": ", ".join(alarm_texts[:3]),
+                "latest_snapshot.fault_code": ",".join(sorted(active_alarm_codes)),
+            }})
 
     # Auto-detect state changes from telemetry and log events
     if payload.records:
