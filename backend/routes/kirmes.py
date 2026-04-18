@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi import APIRouter, HTTPException, Query, Depends, Request, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, field_validator
@@ -391,6 +391,67 @@ async def release_event(event_id: str, user: dict = Depends(_require_staff)):
         {"$set": {"status": "freigegeben", "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     return {"message": "Veranstaltung freigegeben", "status": "freigegeben"}
+
+
+class CloseEventRequest(BaseModel):
+    force: bool = False  # If true, close even with unbilled signups
+    target_status: str = "abgerechnet"  # "abgerechnet" or "abgeschlossen"
+
+
+@router.post("/events/{event_id}/close")
+async def close_event(event_id: str, data: CloseEventRequest = Body(default=None), user: dict = Depends(_require_staff)):
+    """Manually close an event (set status to 'abgerechnet' or 'abgeschlossen'). Validates that all signups are billed unless force=true."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+
+    force = bool(data.force) if data else False
+    target = (data.target_status if data and data.target_status else "abgerechnet").lower()
+    if target not in ("abgerechnet", "abgeschlossen"):
+        raise HTTPException(status_code=400, detail="Ungültiger Ziel-Status")
+
+    # Check signup invoicing state
+    signups = await _db.kirmes_signups.find({"event_id": event_id}, {"_id": 0, "id": 1, "invoice_id": 1, "payment_status": 1}).to_list(1000)
+    total = len(signups)
+    billed = sum(1 for s in signups if s.get("invoice_id") or s.get("payment_status") == "abgerechnet")
+    unbilled = total - billed
+
+    if unbilled > 0 and not force:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Noch {unbilled} von {total} Anmeldungen nicht abgerechnet. Mit force=true erzwingen oder zuerst alle Rechnungen erstellen."
+        )
+
+    await _db.kirmes_events.update_one(
+        {"id": event_id},
+        {"$set": {"status": target, "closed_at": datetime.now(timezone.utc).isoformat(), "closed_by": user.get("name", user.get("email", ""))}}
+    )
+    return {"message": f"Veranstaltung auf '{target}' gesetzt", "status": target, "signups_total": total, "signups_billed": billed, "signups_unbilled": unbilled}
+
+
+async def _maybe_auto_close_event(event_id: str):
+    """If all signups of the event have an invoice, automatically set event status to 'abgerechnet'."""
+    try:
+        evt = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0, "status": 1})
+        if not evt:
+            return
+        # Skip if already closed
+        if evt.get("status") in ("abgerechnet", "abgeschlossen"):
+            return
+        signups = await _db.kirmes_signups.find({"event_id": event_id}, {"_id": 0, "invoice_id": 1, "payment_status": 1}).to_list(1000)
+        if not signups:
+            return
+        all_billed = all((s.get("invoice_id") or s.get("payment_status") == "abgerechnet") for s in signups)
+        if all_billed:
+            await _db.kirmes_events.update_one(
+                {"id": event_id},
+                {"$set": {"status": "abgerechnet", "closed_at": datetime.now(timezone.utc).isoformat(), "closed_auto": True}}
+            )
+            import logging as _l
+            _l.getLogger(__name__).info(f"Event {event_id} auto-closed (all {len(signups)} signups billed)")
+    except Exception as e:
+        import logging as _l
+        _l.getLogger(__name__).warning(f"Auto-close check failed for event {event_id}: {e}")
 
 
 
@@ -1465,6 +1526,9 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
     except Exception as doc_err:
         import logging as _log
         _log.getLogger(__name__).warning(f"Document storage for invoice {inv_number} failed: {doc_err}")
+
+    # Auto-close event if all signups now have invoices
+    await _maybe_auto_close_event(signup["event_id"])
 
     return invoice_doc
 

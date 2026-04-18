@@ -345,6 +345,31 @@ export default function KirmesEventDetailPage() {
     }
   };
 
+  const handleCloseEvent = async () => {
+    // Count unbilled signups
+    const total = (event.signups || []).length;
+    const billed = (event.signups || []).filter(s => s.invoice_id || s.payment_status === "abgerechnet").length;
+    const unbilled = total - billed;
+    let force = false;
+    if (unbilled > 0) {
+      if (!window.confirm(`Achtung: ${unbilled} von ${total} Anmeldungen sind noch nicht abgerechnet.\n\nWirklich trotzdem schließen?`)) {
+        return;
+      }
+      force = true;
+    } else {
+      if (!window.confirm(`Veranstaltung "${event.name}" schließen und als abgerechnet markieren?`)) {
+        return;
+      }
+    }
+    try {
+      const r = await api.post(`/kirmes/events/${event.id}/close`, { force, target_status: "abgerechnet" });
+      toast.success(r.data.message || "Veranstaltung geschlossen");
+      loadEvent();
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler beim Schließen"));
+    }
+  };
+
   const handleDownloadInvoice = async (invoiceId) => {
     try {
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/kirmes/invoices/${invoiceId}/pdf`, {
@@ -475,6 +500,11 @@ export default function KirmesEventDetailPage() {
                 {canBilling && eventInvoices.length > 0 && <Button size="sm" variant="outline" onClick={handleResetInvoices} className="text-red-600 border-red-200 px-2 sm:px-3" data-testid="reset-invoices-btn" title="Rechnungen zurücksetzen">
                   <RotateCcw className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Neu berechnen</span>
                 </Button>}
+                {canBilling && !["abgerechnet", "abgeschlossen"].includes(event.status) && (
+                  <Button size="sm" variant="outline" onClick={handleCloseEvent} className="text-fuchsia-600 border-fuchsia-200 px-2 sm:px-3" data-testid="close-event-btn" title="Veranstaltung schließen">
+                    <Check className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Schließen</span>
+                  </Button>
+                )}
               </>
             )}
             {event.status === "entwurf" && (
