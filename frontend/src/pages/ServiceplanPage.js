@@ -739,21 +739,24 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
   const [showAddEntry, setShowAddEntry] = useState(false);
   const [deviceParts, setDeviceParts] = useState([]);
   const [deviceDocs, setDeviceDocs] = useState([]);
+  const [deviceFaults, setDeviceFaults] = useState([]);
+  const [expandedFault, setExpandedFault] = useState(null);
 
   const loadDetail = useCallback(async () => {
     try {
       const res = await api.get(`/serviceplan/${plan.id}`);
       setPlanDetail(res.data);
       setEntries(res.data.entries || []);
-      // Load device parts and documents
       const deviceId = res.data.device_id;
       if (deviceId) {
-        const [partsRes, docsRes] = await Promise.all([
+        const [partsRes, docsRes, faultsRes] = await Promise.all([
           api.get(`/devices/${deviceId}/parts`).catch(() => ({ data: [] })),
           api.get(`/devices/${deviceId}/documents`).catch(() => ({ data: [] })),
+          api.get(`/serviceplan/fault-reports?device_id=${deviceId}`).catch(() => ({ data: [] })),
         ]);
         setDeviceParts(partsRes.data);
         setDeviceDocs(docsRes.data);
+        setDeviceFaults(faultsRes.data);
       }
     } catch { toast.error("Fehler beim Laden"); }
     finally { setLoading(false); }
@@ -877,6 +880,58 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
       {planDetail.device_id && (
         <div className="mb-6" data-testid="serviceplan-event-log">
           <EventLog deviceId={planDetail.device_id} compact />
+        </div>
+      )}
+
+      {/* Störmeldungen für dieses Gerät */}
+      {deviceFaults.length > 0 && (
+        <div className="mb-6" data-testid="device-fault-reports">
+          <h3 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+            Störmeldungen ({deviceFaults.length})
+          </h3>
+          <div className="space-y-2">
+            {deviceFaults.map(fr => {
+              const isExpanded = expandedFault === fr.id;
+              const statusColors = { offen: "bg-red-100 text-red-700 border-red-200", in_arbeit: "bg-amber-100 text-amber-700 border-amber-200", erledigt: "bg-emerald-100 text-emerald-700 border-emerald-200" };
+              const statusLabels = { offen: "Offen", in_arbeit: "In Arbeit", erledigt: "Erledigt" };
+              return (
+                <div key={fr.id} className={`bg-white border rounded-lg overflow-hidden ${fr.status === "offen" ? "border-red-300" : fr.status === "in_arbeit" ? "border-amber-300" : "border-gray-200"}`}>
+                  <button onClick={() => setExpandedFault(isExpanded ? null : fr.id)} className="w-full p-3 flex items-center justify-between text-left hover:bg-gray-50 transition-all" data-testid={`fault-detail-${fr.id}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${statusColors[fr.status]}`}>{statusLabels[fr.status]}</span>
+                      <div>
+                        <p className="text-sm text-gray-900">{fr.description.length > 60 ? fr.description.slice(0, 60) + "..." : fr.description}</p>
+                        <p className="text-[10px] text-gray-400">{new Date(fr.reported_at).toLocaleDateString("de-DE")} · {fr.reported_by_name}</p>
+                      </div>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                  </button>
+                  {isExpanded && (
+                    <div className="px-3 pb-3 border-t border-gray-100 pt-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div><span className="text-gray-400">Gemeldet von:</span> <span className="text-gray-700 font-medium">{fr.reported_by_name}</span></div>
+                        <div><span className="text-gray-400">Datum:</span> <span className="text-gray-700">{new Date(fr.reported_at).toLocaleString("de-DE")}</span></div>
+                        {fr.order_name && <div><span className="text-gray-400">Auftrag:</span> <span className="text-gray-700">{fr.order_name}</span></div>}
+                        {fr.lock_device && <div><span className="text-gray-400">Gerät:</span> <span className="text-red-600 font-semibold">Gesperrt</span></div>}
+                      </div>
+                      <div className="bg-gray-50 rounded p-2">
+                        <p className="text-xs text-gray-400 mb-0.5">Fehlerbeschreibung:</p>
+                        <p className="text-sm text-gray-800">{fr.description}</p>
+                      </div>
+                      {fr.repair_description && (
+                        <div className="bg-emerald-50 rounded p-2 border border-emerald-200">
+                          <p className="text-xs text-emerald-600 mb-0.5">Reparatur:</p>
+                          <p className="text-sm text-emerald-800">{fr.repair_description}</p>
+                          <p className="text-[10px] text-emerald-500 mt-1">Von {fr.repaired_by_name} am {new Date(fr.repaired_at).toLocaleString("de-DE")}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
