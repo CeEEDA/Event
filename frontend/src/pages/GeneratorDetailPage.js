@@ -336,19 +336,24 @@ export default function GeneratorDetailPage() {
   const sendCommand = async (command, label) => {
     setCmdLoading(command);
     try {
-      await api.post(`/mqtt/control/${id}`, { command });
+      // Pi-connected devices use pi-command endpoint, MQTT devices use mqtt/control
+      const isPiDevice = generator?.is_pi_device || generator?.device_key_hash || generator?.connection_type === "pi_usb" || generator?.connection_type === "pi_rs232";
+      const deviceId = generator?.device_id || (id.startsWith("dev-") ? id.slice(4) : id);
+      
+      if (isPiDevice) {
+        await api.post(`/generators/pi-command/${deviceId}`, { command });
+      } else {
+        await api.post(`/mqtt/control/${id}`, { command });
+      }
       toast.success(`${label} gesendet`);
-      setPendingCmd(command); // Start blinking
-      // DSE 5510 Pi: Command ausfuehren + Readback dauert ~5-7s
-      // Schnelles Polling: 5s, 10s, 20s nach Befehl
+      setPendingCmd(command);
       setTimeout(fetchData, 5000);
       setTimeout(fetchData, 10000);
       setTimeout(fetchData, 20000);
-      // 2 Min schneller Refresh, dann zurueck auf 20 Min
       setRefreshMs(30000);
       setTimeout(() => {
         setRefreshMs(1200000);
-        setPendingCmd(null); // Stop blinking after 2 min
+        setPendingCmd(null);
         fetchData();
       }, 120000);
     } catch (err) {
@@ -356,7 +361,7 @@ export default function GeneratorDetailPage() {
       if (detail.includes("MQTT client nicht verbunden")) {
         toast.error("MQTT-Broker nicht verbunden. Bitte Verbindung pruefen.");
       } else if (detail.includes("Kein MQTT-Gateway")) {
-        toast.error("Bitte zuerst die DSE-Modul USB ID im Geraet hinterlegen.");
+        toast.error("Kein Gateway konfiguriert. Bitte Geraeteverwaltung pruefen.");
       } else {
         toast.error(detail || "Befehl konnte nicht gesendet werden");
       }

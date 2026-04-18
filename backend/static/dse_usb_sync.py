@@ -101,6 +101,25 @@ class DseUsbConnection:
             return (regs[0] << 16) | regs[1]
         return None
 
+    def write_register(self, page, register, value):
+        """Write a single GenComm register. Used for control commands (Page 16)."""
+        addr = (page << 8) | register
+        pdu = struct.pack('>BBHH', self.slave_id, 0x06, addr, value)
+        pkt = pdu + modbus_crc(pdu)
+        try:
+            self.ep_out.write(pkt)
+            time.sleep(0.3)
+            resp = self.ep_in.read(64, timeout=2000)
+            data = resp.tobytes()
+            if len(data) >= 4 and data[1] == 0x06:
+                return True
+            elif len(data) >= 2 and data[1] == 0x86:
+                logger.warning(f"Write Exception P{page}R{register}: code={data[2]}")
+        except usb.core.USBError as e:
+            if "timed out" not in str(e).lower():
+                raise
+        return False
+
 
 # ============== Sentinel Filter ==============
 
@@ -309,12 +328,52 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
             db_conn.commit()
             result = resp.json()
             logger.info(f"Portal-Sync: {result.get('inserted', 0)} Datensaetze, {len(all_alarms)} Alarme")
-            return len(ids)
+            # Return pending commands from portal
+            return len(ids), result.get("pending_commands", [])
         else:
             logger.warning(f"Portal-Sync Fehler: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         logger.warning(f"Portal-Sync Fehler: {e}")
-    return 0
+    return 0, []
+
+
+# DSE GenComm Page 16 Register 8: Control register
+# Write values for commands
+DSE_COMMAND_MAP = {
+    "stop": 0x01,
+    "auto_on": 0x03,
+    "manual": 0x04,
+    "start": 0x07,
+    "mute": 0x08,
+    "reset": 0x15,
+    "gen_switch_on": 0x09,
+    "gen_switch_off": 0x0A,
+    "test_on_load": 0x05,
+    "auto_manual_restore": 0x06,
+    "reset_mains": 0x17,
+}
+
+
+def execute_commands(dse_conn, commands):
+    """Execute pending control commands from portal via GenComm Page 16."""
+    results = []
+    for cmd in commands:
+        cmd_name = cmd.get("command", "")
+        cmd_id = cmd.get("id", "")
+        value = DSE_COMMAND_MAP.get(cmd_name)
+        if value is None:
+            logger.warning(f"Unbekannter Befehl: {cmd_name}")
+            results.append({"id": cmd_id, "status": "error", "detail": f"Unbekannt: {cmd_name}"})
+            continue
+        logger.info(f"Fuehre Befehl aus: {cmd_name} (Page16 R8 = {hex(value)})")
+        ok = dse_conn.write_register(16, 8, value)
+        if ok:
+            logger.info(f"Befehl {cmd_name} erfolgreich")
+            results.append({"id": cmd_id, "status": "done"})
+        else:
+            logger.error(f"Befehl {cmd_name} fehlgeschlagen")
+            results.append({"id": cmd_id, "status": "error", "detail": "Write fehlgeschlagen"})
+    return results
 
 
 def cleanup_db(db_conn, max_rows=50000):
@@ -377,10 +436,16 @@ def main():
             # Sync to portal
             now = time.time()
             if now - last_sync >= sync_interval:
-                synced = sync_to_portal(db_conn, api_url, device_id, device_key)
+                synced, pending_cmds = sync_to_portal(db_conn, api_url, device_id, device_key)
                 last_sync = now
                 if synced > 0:
                     cleanup_db(db_conn)
+                # Execute pending commands
+                if pending_cmds:
+                    cmd_results = execute_commands(dse, pending_cmds)
+                    # Report results back on next sync
+                    if cmd_results:
+                        logger.info(f"Command-Ergebnisse: {cmd_results}")
 
             time.sleep(read_interval)
 

@@ -571,6 +571,15 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
     ).sort("timestamp", -1).to_list(50)
     gen["active_alarms"] = alarms
 
+    # Flag for Pi-connected devices (has device_key_hash = setup was generated)
+    if generator_id.startswith("dev-"):
+        dev_id = generator_id[4:]
+        dev_check = await db.devices.find_one({"id": dev_id}, {"_id": 0, "device_key_hash": 1, "connection_type": 1})
+        if dev_check and dev_check.get("device_key_hash"):
+            gen["is_pi_device"] = True
+            gen["device_id"] = dev_id
+            gen["connection_type"] = dev_check.get("connection_type", "")
+
     return gen
 
 
