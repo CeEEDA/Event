@@ -997,8 +997,12 @@ export default function ServiceplanPage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      const res = await api.get("/orders");
-      setOrders(Array.isArray(res.data) ? res.data : res.data.orders || []);
+      const res = await api.get("/orders/epirent");
+      const arr = Array.isArray(res.data) ? res.data : (res.data.orders || []);
+      // Nur aktive Auftraege, nicht archiviert/storniert; neueste zuerst
+      const active = arr.filter(o => !o.is_archived && !o.is_canceled);
+      active.sort((a, b) => String(b.dispo_start || "").localeCompare(String(a.dispo_start || "")));
+      setOrders(active);
     } catch { /* orders optional */ }
   }, []);
 
@@ -1343,13 +1347,16 @@ function FaultReportModal({ devices, orders, user, onClose, onSaved }) {
             <Label className="text-gray-700 text-sm">Auftrag / Veranstaltung</Label>
             <select value={orderId} onChange={e => {
               setOrderId(e.target.value);
-              const o = orders.find(o => String(o.pk || o.id) === e.target.value);
-              setOrderName(o ? (o.title || o.name || `Auftrag ${o.pk}`) : "");
+              const o = orders.find(o => String(o.primary_key || o.pk || o.id) === e.target.value);
+              const label = o ? `${o.order_no || o.pk || ""} · ${o.event || o.contact_name || "Auftrag"}` : "";
+              setOrderName(label);
             }} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" data-testid="fault-order-select">
               <option value="">Kein Auftrag zugeordnet</option>
-              {orders.slice(0, 50).map(o => (
-                <option key={o.pk || o.id} value={o.pk || o.id}>{o.title || o.name || `Auftrag ${o.pk}`}</option>
-              ))}
+              {orders.slice(0, 200).map(o => {
+                const key = o.primary_key || o.pk || o.id;
+                const label = `${o.order_no || o.pk || key} · ${o.event || o.contact_name || "Auftrag"}`;
+                return <option key={key} value={key}>{label}</option>;
+              })}
             </select>
           </div>
 
