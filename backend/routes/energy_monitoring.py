@@ -1562,7 +1562,7 @@ detect_gps_port() {{
     return 1
 }}
 
-GPS_DEV=$(detect_gps_port)
+GPS_DEV=$(detect_gps_port) || true
 if [ -n "$GPS_DEV" ]; then
     echo "  GPS-NMEA-Stream verifiziert auf: $GPS_DEV"
 else
