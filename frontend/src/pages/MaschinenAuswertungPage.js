@@ -14,6 +14,7 @@ export default function MaschinenAuswertungPage() {
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [searchText, setSearchText] = useState("");
 
   const loadStats = useCallback(async () => {
     setLoading(true);
@@ -21,11 +22,12 @@ export default function MaschinenAuswertungPage() {
       const params = new URLSearchParams();
       if (dateFrom) params.set("date_from", dateFrom);
       if (dateTo) params.set("date_to", dateTo);
+      if (searchText.trim()) params.set("search", searchText.trim());
       const res = await api.get(`/serviceplan/fault-reports/stats?${params}`);
       setStats(res.data);
     } catch { toast.error("Fehler beim Laden der Statistiken"); }
     finally { setLoading(false); }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, searchText]);
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
@@ -49,6 +51,10 @@ export default function MaschinenAuswertungPage() {
         {/* Zeitraum-Filter */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
           <div className="flex items-end gap-4 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
+              <Label className="text-gray-600 text-xs">Fehler suchen</Label>
+              <Input placeholder="z.B. Kraftstofffilter, Motorschaden..." value={searchText} onChange={e => setSearchText(e.target.value)} className="mt-1 text-sm" data-testid="search-text" />
+            </div>
             <div>
               <Label className="text-gray-600 text-xs">Von</Label>
               <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="mt-1 text-sm" data-testid="date-from" />
@@ -57,7 +63,7 @@ export default function MaschinenAuswertungPage() {
               <Label className="text-gray-600 text-xs">Bis</Label>
               <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="mt-1 text-sm" data-testid="date-to" />
             </div>
-            <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }} className="text-xs">Zurücksetzen</Button>
+            <Button variant="outline" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setSearchText(""); }} className="text-xs">Zurücksetzen</Button>
           </div>
         </div>
 

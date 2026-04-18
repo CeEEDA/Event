@@ -232,8 +232,8 @@ async def create_fault_report(data: FaultReportCreate, user: dict = Depends(requ
 
 
 @router.get("/fault-reports/stats")
-async def fault_report_stats(date_from: Optional[str] = None, date_to: Optional[str] = None, user: dict = Depends(require_staff)):
-    """Machine fault statistics with time range filter."""
+async def fault_report_stats(date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None, user: dict = Depends(require_staff)):
+    """Machine fault statistics with time range and text search filter."""
     query = {}
     if date_from or date_to:
         date_q = {}
@@ -242,6 +242,13 @@ async def fault_report_stats(date_from: Optional[str] = None, date_to: Optional[
         if date_to:
             date_q["$lte"] = date_to + "T23:59:59" if "T" not in date_to else date_to
         query["reported_at"] = date_q
+
+    if search:
+        query["$or"] = [
+            {"description": {"$regex": search, "$options": "i"}},
+            {"repair_description": {"$regex": search, "$options": "i"}},
+            {"device_serial": {"$regex": search, "$options": "i"}},
+        ]
 
     reports = await db.fault_reports.find(query, {"_id": 0}).to_list(5000)
 
