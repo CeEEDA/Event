@@ -1388,7 +1388,7 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
         pdf_bytes = generate_invoice_pdf(invoice_doc)
         filename = f"{inv_number}.pdf"
         inv_date = invoice_doc.get("created_at", datetime.now(timezone.utc).isoformat())
-        subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
+        subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang_eventenergie_deutschland", inv_date)
         storage_path = f"eventenergie-docs/uploads/{uuid.uuid4()}.pdf"
         put_object(storage_path, pdf_bytes, "application/pdf")
 
@@ -1402,7 +1402,7 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
             "ai_status": "completed",
             "ai_metadata": {
                 "document_type": "rechnung",
-                "suggested_folder": "rechnungsausgang",
+                "suggested_folder": "rechnungsausgang_eventenergie_deutschland",
                 "sender": "Eventenergie Deutschland GmbH & Co. KG",
                 "recipient": sch.get("firma", sch.get("name", "")),
                 "date": inv_date[:10] if len(inv_date) >= 10 else inv_date,
@@ -1541,7 +1541,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
             import uuid as _uuid
 
             inv_date = invoice_doc.get("created_at", datetime.now(timezone.utc).isoformat())
-            subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
+            subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang_eventenergie_deutschland", inv_date)
             storage_path = f"eventenergie-docs/uploads/{_uuid.uuid4()}.pdf"
             cloud_path = None
             try:
@@ -1561,7 +1561,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
                 "ai_status": "completed",
                 "ai_metadata": {
                     "document_type": "rechnung",
-                    "suggested_folder": "rechnungsausgang",
+                    "suggested_folder": "rechnungsausgang_eventenergie_deutschland",
                     "sender": "Eventenergie Deutschland GmbH & Co. KG",
                     "recipient": sch.get("firma", sch.get("name", "")),
                     "date": inv_date[:10] if len(inv_date) >= 10 else inv_date,
@@ -2059,7 +2059,8 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
         )
         if not existing_doc:
             inv_date = inv.get("created_at", datetime.now(timezone.utc).isoformat())
-            subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang", inv_date)
+            # Kirmes-Rechnungen sind immer Ausgangsrechnungen von Eventenergie Deutschland
+            subfolder_id = await _ensure_year_month_subfolder("rechnungsausgang_eventenergie_deutschland", inv_date)
             storage_path = f"eventenergie-docs/uploads/{uuid.uuid4()}.pdf"
             cloud_path = None
             try:
@@ -2080,7 +2081,7 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
                 "ai_status": "completed",
                 "ai_metadata": {
                     "document_type": "rechnung",
-                    "suggested_folder": "rechnungsausgang",
+                    "suggested_folder": "rechnungsausgang_eventenergie_deutschland",
                     "sender": "Eventenergie Deutschland GmbH & Co. KG",
                     "recipient": sch_data.get("firma", sch_data.get("name", "")),
                     "date": inv_date[:10] if len(inv_date) >= 10 else inv_date,
