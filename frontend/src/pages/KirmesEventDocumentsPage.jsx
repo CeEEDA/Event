@@ -316,7 +316,7 @@ function DocRow({ doc, onDelete, onPreview, onChangeKat, getFileUrl, isImage: ch
     <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors" data-testid={`doc-${doc.id}`}>
       <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => onPreview(doc)}>
         {img ? (
-          <img src={getFileUrl(doc)} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+          <img src={`${getFileUrl(doc)}${getFileUrl(doc).includes("?") ? "&" : "?"}thumbnail=1&size=120`} loading="lazy" alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
         ) : (
           <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
             <FileText className="w-5 h-5 text-red-500" />

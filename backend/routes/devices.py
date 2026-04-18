@@ -549,8 +549,8 @@ async def upload_device_image(device_id: str, file: UploadFile = File(...), user
 
 
 @router.get("/{device_id}/image")
-async def get_device_image(device_id: str):
-    from fastapi.responses import StreamingResponse
+async def get_device_image(device_id: str, thumbnail: int = 0, size: int = 200):
+    from fastapi.responses import StreamingResponse, Response
     import io
     device = await db.devices.find_one({"id": device_id})
     if not device or not device.get("image_gridfs_id"):
@@ -558,6 +558,18 @@ async def get_device_image(device_id: str):
 
     grid_out = await fs.open_download_stream(device["image_gridfs_id"])
     content = await grid_out.read()
+
+    # Thumbnail for list views
+    if thumbnail:
+        from utils.thumbnails import make_thumbnail_from_bytes
+        tdata = make_thumbnail_from_bytes(content, size=min(max(int(size), 16), 1024))
+        if tdata is not None:
+            return Response(
+                content=tdata,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=86400", "Content-Disposition": 'inline; filename="thumb.jpg"'},
+            )
+
     return StreamingResponse(
         io.BytesIO(content),
         media_type=device.get("image_content_type", "image/jpeg"),

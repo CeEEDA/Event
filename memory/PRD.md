@@ -127,6 +127,29 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Frontend: PaymentStep zeigt die gewählte Zahlungsart an ("Jetzt per PayPal bezahlen" / "Jetzt per Kreditkarte bezahlen")
 - **User-Action erforderlich**: PayPal muss einmalig im Stripe-Dashboard unter Settings → Payment Methods aktiviert werden (https://dashboard.stripe.com/settings/payment_methods)
 
+## 2026-02-18 – Session-Persistierung über Stripe-Redirect (P0)
+- [x] Schausteller-Session wird in `sessionStorage` persistiert via Lazy-Init `useState(() => JSON.parse(...))`
+- [x] Nach Stripe-Return wird Session automatisch wiederhergestellt → User landet im Dashboard, nicht mehr auf Login-Maske
+- [x] `handleLogout` bereinigt sessionStorage
+- [x] Tests bestanden (session injection + reload → Dashboard)
+
+## 2026-02-18 – Event Schließen (Auto + manuell) (P1)
+- [x] `POST /api/kirmes/events/{event_id}/close` mit `{force, target_status}`
+- [x] Auto-Close in `/signups/{id}/invoice` via `_maybe_auto_close_event()` (setzt Status `abgerechnet` wenn alle Signups abgerechnet)
+- [x] Admin-UI Button "Schließen" in `KirmesEventDetailPage` mit Confirm-Dialog
+- [x] Tests: Close ohne force + unbilled → 400, Close mit force → Status `abgerechnet` + Audit-Info
+
+## 2026-02-18 – Thumbnail-Support für Bildvorschauen (P1)
+- [x] **Problem**: Bild-Listen in Dokumentenverwaltung (Event, Order) und Geräteverwaltung luden die vollständigen 2-3 MB Originalbilder pro Eintrag → 30+ MB pro Listen-Ansicht, lange Ladezeiten
+- [x] Neuer Helper `/app/backend/utils/thumbnails.py` mit On-The-Fly JPEG-Generierung (PIL/Pillow, EXIF-korrekt, Cache auf Disk)
+- [x] Backend-Endpoints erweitert um `?thumbnail=1&size=120` Query-Parameter:
+  - `/api/kirmes/events/{event_id}/documents/{doc_id}/file`
+  - `/api/orders/order-documents/{order_pk}/{doc_id}/file`
+  - `/api/devices/{device_id}/image`
+- [x] Frontend nutzt Thumbnail-URLs für Listen (`<img loading="lazy" src=...?thumbnail=1&size=120>`) → ~200-500x kleinere Transfergröße
+- [x] Cache-Control Header für aggressive Browser-Caches (1 Jahr für Datei-basierte, 1 Tag für GridFS)
+- [x] Verifiziert: 7,4 MB Foto → 0,5-15 KB Thumbnail (je nach Motiv)
+
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung (IMAP "Mailbridge" Windows Service)
 - [ ] DSE 890 Gateway CSV-Upload (User-Task)

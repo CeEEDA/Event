@@ -1228,7 +1228,7 @@ async def update_order_document(order_pk: str, doc_id: str, body: dict, credenti
 
 
 @router.get("/order-documents/{order_pk}/{doc_id}/file")
-async def get_order_document_file(order_pk: str, doc_id: str, token: str = None, request: Request = None):
+async def get_order_document_file(order_pk: str, doc_id: str, token: str = None, thumbnail: int = 0, size: int = 200, request: Request = None):
     user = await _auth_user_from_token(token, request)
     if not user:
         raise HTTPException(status_code=401, detail="Nicht autorisiert")
@@ -1240,6 +1240,17 @@ async def get_order_document_file(order_pk: str, doc_id: str, token: str = None,
     file_path = _os.path.join(_ORDER_DOC_STORAGE, order_pk, doc["filename"])
     if not _os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+
+    # Thumbnail for list views (images only)
+    if thumbnail and doc.get("content_type", "").startswith("image/"):
+        from utils.thumbnails import make_thumbnail
+        tdata = make_thumbnail(file_path, size=min(max(int(size), 16), 1024))
+        if tdata is not None:
+            return Response(
+                content=tdata,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=31536000", "Content-Disposition": 'inline; filename="thumb.jpg"'},
+            )
 
     with open(file_path, "rb") as f:
         data = f.read()

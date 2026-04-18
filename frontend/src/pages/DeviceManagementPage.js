@@ -1736,7 +1736,7 @@ export default function DeviceManagementPage() {
                               <ChevronDown className="w-4 h-4" />
                             </span>
                             {device.image_gridfs_id ? (
-                              <img src={`${BACKEND_URL}/api/devices/${device.id}/image`} alt="" className="w-8 h-8 rounded object-cover border border-gray-200" />
+                              <img src={`${BACKEND_URL}/api/devices/${device.id}/image?thumbnail=1&size=64`} loading="lazy" alt="" className="w-8 h-8 rounded object-cover border border-gray-200" />
                             ) : (
                               <TypeIcon className="w-4 h-4 text-fuchsia-500" />
                             )}

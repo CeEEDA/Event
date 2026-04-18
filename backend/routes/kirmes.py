@@ -3042,8 +3042,9 @@ async def update_event_document(event_id: str, doc_id: str, body: dict, user: di
 
 
 @router.get("/events/{event_id}/documents/{doc_id}/file")
-async def get_event_document_file(event_id: str, doc_id: str, token: str = None, request: Request = None):
-    """Download or preview a document file. Accepts token via query param."""
+async def get_event_document_file(event_id: str, doc_id: str, token: str = None, thumbnail: int = 0, size: int = 200, request: Request = None):
+    """Download or preview a document file. Accepts token via query param.
+    With ?thumbnail=1 returns a JPEG thumbnail (max edge = size, default 200px) for fast list views."""
     from server import get_user_from_token_param
     user = None
     if token:
@@ -3062,6 +3063,17 @@ async def get_event_document_file(event_id: str, doc_id: str, token: str = None,
     file_path = _os.path.join(DOC_STORAGE, event_id, doc["filename"])
     if not _os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+
+    # Thumbnail for list views (images only)
+    if thumbnail and doc.get("content_type", "").startswith("image/"):
+        from utils.thumbnails import make_thumbnail
+        tdata = make_thumbnail(file_path, size=min(max(int(size), 16), 1024))
+        if tdata is not None:
+            return Response(
+                content=tdata,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=31536000", "Content-Disposition": 'inline; filename="thumb.jpg"'},
+            )
 
     with open(file_path, "rb") as f:
         data = f.read()
