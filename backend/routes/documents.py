@@ -634,37 +634,74 @@ async def delete_folder(folder_id: str):
     return {"status": "deleted"}
 
 
-DATEV_EMAIL = "d5aa2eb6-6bae-417a-8894-664a6eb160c8@uploadmail.datev.de"
-DATEV_FORWARD_FOLDERS = ["rechnungseingang"]
+# DATEV Upload-E-Mails (aus .env, pro Firma + Richtung)
+# Falls nicht gesetzt, wird Weiterleitung fuer diese Kombination uebersprungen.
+DATEV_EMAIL_RECH_EIN_EED = os.environ.get("DATEV_EMAIL_RECHNUNGSEINGANG_EED", "").strip()
+DATEV_EMAIL_RECH_AUS_EED = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_EED", "").strip()
+DATEV_EMAIL_RECH_EIN_ESBV = os.environ.get("DATEV_EMAIL_RECHNUNGSEINGANG_ESBV", "").strip()
+DATEV_EMAIL_RECH_AUS_ESBV = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_ESBV", "").strip()
+
+# Mapping Folder-Prefix -> (DATEV-E-Mail, Richtungs-Label, Firmen-Label)
+DATEV_ROUTING = {
+    "rechnungseingang_eventenergie_deutschland": (DATEV_EMAIL_RECH_EIN_EED, "Eingangsrechnung", "Eventenergie Deutschland"),
+    "rechnungsausgang_eventenergie_deutschland": (DATEV_EMAIL_RECH_AUS_EED, "Ausgangsrechnung", "Eventenergie Deutschland"),
+    "rechnungseingang_es_besitz_verwaltung": (DATEV_EMAIL_RECH_EIN_ESBV, "Eingangsrechnung", "ES Besitz und Verwaltung"),
+    "rechnungsausgang_es_besitz_verwaltung": (DATEV_EMAIL_RECH_AUS_ESBV, "Ausgangsrechnung", "ES Besitz und Verwaltung"),
+}
 
 
-async def _forward_to_datev(doc_id: str, storage_path: str, original_filename: str, content_type: str, ai_metadata: dict):
-    """Forward incoming invoices to DATEV Unternehmen Online via email."""
+def _resolve_datev_target(folder_id: str):
+    """Liefert (email, richtung, firma) fuer einen folder_id oder None wenn nicht weiterleitbar."""
+    for prefix, (email, richtung, firma) in DATEV_ROUTING.items():
+        if folder_id == prefix or folder_id.startswith(prefix + "_"):
+            if email:
+                return email, richtung, firma
+            logger.warning(f"Fuer Ordner {folder_id} ist keine DATEV-E-Mail in .env konfiguriert")
+            return None
+    return None
+
+
+async def _forward_to_datev(doc_id: str, storage_path: str, original_filename: str, content_type: str, ai_metadata: dict, folder_id: str):
+    """Forward invoices to the correct DATEV mailbox based on company + direction (folder_id)."""
     try:
+        target = _resolve_datev_target(folder_id)
+        if not target:
+            await db.documents.update_one({"id": doc_id}, {"$set": {"datev_forwarded": False, "datev_skip_reason": "Keine DATEV-E-Mail fuer diesen Ordner konfiguriert"}})
+            return
+        datev_email, richtung, firma = target
+
         from email_service import send_email_with_attachment
 
-        file_data, _ = await _get_file_data_fallback(storage_path, original_filename, "rechnungseingang")
+        file_data, _ = await _get_file_data_fallback(storage_path, original_filename, folder_id)
         sender = ai_metadata.get("sender", "Unbekannt")
         inv_nr = ai_metadata.get("invoice_number", "")
         amount = ai_metadata.get("amount")
         subject_line = ai_metadata.get("subject", original_filename)
 
-        subject = f"Eingangsrechnung: {subject_line}"
+        subject = f"{richtung} {firma}: {subject_line}"
         if inv_nr:
             subject += f" (Nr. {inv_nr})"
 
         html = f"""<p>Automatische Weiterleitung aus dem Eventenergie Dokumentenportal.</p>
-<p><b>Datei:</b> {original_filename}<br/>
-<b>Absender:</b> {sender}<br/>
+<p><b>Firma:</b> {firma}<br/>
+<b>Typ:</b> {richtung}<br/>
+<b>Datei:</b> {original_filename}<br/>
+<b>{('Absender' if richtung == 'Eingangsrechnung' else 'Empfaenger')}:</b> {sender}<br/>
 {'<b>Rechnungsnummer:</b> ' + inv_nr + '<br/>' if inv_nr else ''}
 {'<b>Betrag:</b> ' + f'{amount:.2f} EUR<br/>' if amount else ''}
-<b>Erkannt als:</b> Eingangsrechnung</p>"""
+</p>"""
 
-        send_email_with_attachment(DATEV_EMAIL, subject, html, file_data, original_filename)
-        await db.documents.update_one({"id": doc_id}, {"$set": {"datev_forwarded": True, "datev_forwarded_at": datetime.now(timezone.utc).isoformat()}})
-        logger.info(f"Document {doc_id} forwarded to DATEV: {original_filename}")
+        send_email_with_attachment(datev_email, subject, html, file_data, original_filename)
+        await db.documents.update_one({"id": doc_id}, {"$set": {
+            "datev_forwarded": True,
+            "datev_forwarded_at": datetime.now(timezone.utc).isoformat(),
+            "datev_target_email": datev_email,
+            "datev_company": firma,
+            "datev_direction": richtung,
+        }})
+        logger.info(f"Dokument {doc_id} ({richtung} {firma}) an DATEV weitergeleitet: {datev_email}")
     except Exception as e:
-        logger.error(f"DATEV forwarding failed for doc {doc_id}: {e}")
+        logger.error(f"DATEV-Weiterleitung fehlgeschlagen fuer {doc_id}: {e}")
         await db.documents.update_one({"id": doc_id}, {"$set": {"datev_forwarded": False, "datev_forward_error": str(e)}})
 
 
@@ -806,11 +843,11 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             except Exception as e:
                 logger.warning(f"Local storage save failed for doc {doc_id}: {e}")
 
-        # Auto-forward incoming invoices to DATEV
+        # Auto-forward: Rechnungseingang UND Rechnungsausgang an DATEV (Ziel-Mail je nach Firma)
         if not doc:
             doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
-        if doc and (final_folder.startswith("rechnungseingang") or final_folder in DATEV_FORWARD_FOLDERS):
-            await _forward_to_datev(doc_id, doc["storage_path"], doc["original_filename"], content_type, ai_result)
+        if doc and _resolve_datev_target(final_folder):
+            await _forward_to_datev(doc_id, doc["storage_path"], doc["original_filename"], content_type, ai_result, final_folder)
 
         # Auto-assign payroll documents to employees
         if final_folder.startswith("lohnabrechnung"):
