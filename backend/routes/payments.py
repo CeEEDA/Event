@@ -35,6 +35,25 @@ if STRIPE_API_KEY:
     _stripe_sdk.api_key = STRIPE_API_KEY
 
 
+async def _create_stripe_session_with_error_handling(stripe_client, checkout_req, pm_pref: str):
+    """Helper: wraps stripe.create_checkout_session with friendly error handling (e.g. PayPal not activated)."""
+    try:
+        return await stripe_client.create_checkout_session(checkout_req)
+    except Exception as e:
+        err_str = str(e)
+        logger.exception(f"[payments] Stripe checkout creation failed (pm={pm_pref}): {err_str}")
+        if "paypal" in err_str.lower() and pm_pref == "paypal":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "PayPal ist im Stripe-Dashboard noch nicht aktiviert. "
+                    "Bitte im Stripe-Dashboard unter 'Zahlungsmethoden' PayPal aktivieren, "
+                    "oder vorerst Kreditkarte wählen."
+                ),
+            )
+        raise HTTPException(status_code=502, detail=f"Checkout konnte nicht erstellt werden: {err_str[:200]}")
+
+
 async def _fetch_and_store_payment_intent(session_id: str):
     """After successful payment, fetch the Stripe session to get payment_intent & charge for future refunds."""
     if not STRIPE_API_KEY:
@@ -211,6 +230,7 @@ class DepositCheckoutRequest(BaseModel):
 class InvoiceCheckoutRequest(BaseModel):
     invoice_id: str
     origin_url: str
+    payment_method: Optional[str] = "kreditkarte"  # "kreditkarte" | "paypal"
 
 
 # ============== Kaution (deposit) configuration ==============
@@ -269,7 +289,7 @@ async def update_deposit_config(deposits: List[dict] = Body(...), user: dict = D
 
 @router.post("/checkout/deposit")
 async def create_deposit_checkout(req: DepositCheckoutRequest):
-    """Create a Stripe checkout session for a deposit payment after signup."""
+    """Create a Stripe checkout session for a deposit payment after signup. Supports card and PayPal."""
     signup = await _db.kirmes_signups.find_one({"id": req.signup_id}, {"_id": 0})
     if not signup:
         raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
@@ -283,6 +303,13 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
     connection_type = signup.get("connection_type", "16A")
     amount = await _get_deposit_amount(connection_type)
 
+    # Determine payment methods based on signup preference
+    pm_pref = (signup.get("payment_method") or "kreditkarte").lower()
+    if pm_pref == "paypal":
+        payment_methods = ["paypal"]
+    else:
+        payment_methods = ["card"]
+
     success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
 
@@ -292,6 +319,7 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
         "event_id": req.event_id,
         "schausteller_id": signup.get("schausteller_id", ""),
         "connection_type": connection_type,
+        "payment_method_pref": pm_pref,
     }
 
     webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
@@ -303,8 +331,14 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
         success_url=success_url,
         cancel_url=cancel_url,
         metadata=metadata,
+        payment_methods=payment_methods,
     )
-    session = await stripe.create_checkout_session(checkout_req)
+    try:
+        session = await _create_stripe_session_with_error_handling(stripe, checkout_req, pm_pref)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Checkout konnte nicht erstellt werden: {str(e)[:200]}")
 
     # Create payment transaction record
     tx = {
@@ -320,19 +354,20 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
         "amount": amount,
         "currency": "eur",
         "payment_status": "pending",
+        "payment_method_pref": pm_pref,
         "metadata": metadata,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await _db.payment_transactions.insert_one(tx)
 
-    return {"url": session.url, "session_id": session.session_id, "amount": amount}
+    return {"url": session.url, "session_id": session.session_id, "amount": amount, "payment_method": pm_pref}
 
 
 # ============== Invoice Checkout ==============
 
 @router.post("/checkout/invoice")
 async def create_invoice_checkout(req: InvoiceCheckoutRequest):
-    """Create a Stripe checkout session for an invoice payment."""
+    """Create a Stripe checkout session for an invoice payment. Supports card and PayPal."""
     invoice = await _db.invoices.find_one({"id": req.invoice_id}, {"_id": 0})
     if not invoice:
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
@@ -344,6 +379,9 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Ungültiger Rechnungsbetrag")
 
+    pm_pref = (req.payment_method or "kreditkarte").lower()
+    payment_methods = ["paypal"] if pm_pref == "paypal" else ["card"]
+
     success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
 
@@ -351,6 +389,7 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
         "type": "invoice",
         "invoice_id": req.invoice_id,
         "invoice_number": invoice.get("invoice_number", ""),
+        "payment_method_pref": pm_pref,
     }
 
     webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
@@ -362,8 +401,9 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
         success_url=success_url,
         cancel_url=cancel_url,
         metadata=metadata,
+        payment_methods=payment_methods,
     )
-    session = await stripe.create_checkout_session(checkout_req)
+    session = await _create_stripe_session_with_error_handling(stripe, checkout_req, pm_pref)
 
     tx = {
         "id": str(uuid.uuid4()),
@@ -374,12 +414,13 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
         "amount": amount,
         "currency": "eur",
         "payment_status": "pending",
+        "payment_method_pref": pm_pref,
         "metadata": metadata,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await _db.payment_transactions.insert_one(tx)
 
-    return {"url": session.url, "session_id": session.session_id, "amount": amount}
+    return {"url": session.url, "session_id": session.session_id, "amount": amount, "payment_method": pm_pref}
 
 
 # ============== Payment status polling ==============
@@ -671,6 +712,7 @@ class SendPaymentLinkRequest(BaseModel):
     signup_id: Optional[str] = None
     invoice_id: Optional[str] = None
     origin_url: str
+    payment_method: Optional[str] = None  # "kreditkarte" | "paypal" | None (auto from signup)
 
 
 @router.post("/send-payment-link")
@@ -697,14 +739,17 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
         amount = await _get_deposit_amount(connection_type)
         subject = f"Kaution für {event.get('name', 'Veranstaltung')} - Zahlungslink"
 
+        pm_pref = (req.payment_method or signup.get("payment_method") or "kreditkarte").lower()
+        payment_methods = ["paypal"] if pm_pref == "paypal" else ["card"]
+
         success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
-        metadata = {"type": "deposit", "signup_id": req.signup_id, "event_id": signup.get("event_id", ""), "schausteller_id": signup.get("schausteller_id", ""), "connection_type": connection_type}
+        metadata = {"type": "deposit", "signup_id": req.signup_id, "event_id": signup.get("event_id", ""), "schausteller_id": signup.get("schausteller_id", ""), "connection_type": connection_type, "payment_method_pref": pm_pref}
 
         webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
         stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-        checkout_req = CheckoutSessionRequest(amount=amount, currency="eur", success_url=success_url, cancel_url=cancel_url, metadata=metadata)
-        session = await stripe.create_checkout_session(checkout_req)
+        checkout_req = CheckoutSessionRequest(amount=amount, currency="eur", success_url=success_url, cancel_url=cancel_url, metadata=metadata, payment_methods=payment_methods)
+        session = await _create_stripe_session_with_error_handling(stripe, checkout_req, pm_pref)
         checkout_url = session.url
 
         tx = {
@@ -712,7 +757,8 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
             "signup_id": req.signup_id, "event_id": signup.get("event_id", ""),
             "schausteller_id": signup.get("schausteller_id", ""), "schausteller_name": sch.get("name", ""),
             "connection_type": connection_type, "amount": amount, "currency": "eur",
-            "payment_status": "pending", "metadata": metadata, "created_at": datetime.now(timezone.utc).isoformat(),
+            "payment_status": "pending", "payment_method_pref": pm_pref,
+            "metadata": metadata, "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await _db.payment_transactions.insert_one(tx)
 
@@ -725,20 +771,23 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
         amount = float(invoice.get("total_gross", invoice.get("total_amount", 0)))
         subject = f"Rechnung {invoice.get('invoice_number', '')} - Zahlungslink"
 
+        pm_pref = (req.payment_method or "kreditkarte").lower()
+        payment_methods = ["paypal"] if pm_pref == "paypal" else ["card"]
+
         success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
-        metadata = {"type": "invoice", "invoice_id": req.invoice_id, "invoice_number": invoice.get("invoice_number", "")}
+        metadata = {"type": "invoice", "invoice_id": req.invoice_id, "invoice_number": invoice.get("invoice_number", ""), "payment_method_pref": pm_pref}
 
         webhook_url = f"{req.origin_url}/api/payments/webhook/stripe"
         stripe = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-        checkout_req = CheckoutSessionRequest(amount=amount, currency="eur", success_url=success_url, cancel_url=cancel_url, metadata=metadata)
-        session = await stripe.create_checkout_session(checkout_req)
+        checkout_req = CheckoutSessionRequest(amount=amount, currency="eur", success_url=success_url, cancel_url=cancel_url, metadata=metadata, payment_methods=payment_methods)
+        session = await _create_stripe_session_with_error_handling(stripe, checkout_req, pm_pref)
         checkout_url = session.url
 
         tx = {
             "id": str(uuid.uuid4()), "session_id": session.session_id, "type": "invoice",
             "invoice_id": req.invoice_id, "invoice_number": invoice.get("invoice_number", ""),
-            "amount": amount, "currency": "eur", "payment_status": "pending",
+            "amount": amount, "currency": "eur", "payment_status": "pending", "payment_method_pref": pm_pref,
             "metadata": metadata, "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await _db.payment_transactions.insert_one(tx)

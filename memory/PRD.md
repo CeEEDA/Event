@@ -118,6 +118,15 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] UI: Kaution-Badge und Refund-Badge in KirmesEventDetailPage (Mobile + Desktop)
 - [x] Proportionale Refund-Verteilung bei Sammelrechnungen (mehrere Signups eines Schaustellers → Refund pro PaymentIntent anteilig)
 
+## 2026-02-18 – PayPal Payment + Auto-Refund Integration (P0)
+- [x] `payment_method="paypal"` im Signup wird im Checkout berücksichtigt: `payment_methods=["paypal"]` an Stripe übergeben
+- [x] `payment_method="kreditkarte"` → `["card"]` (default)
+- [x] Alle 4 Checkout-Entrypoints unterstützen jetzt PayPal: `/checkout/deposit`, `/checkout/invoice`, `/send-payment-link` (für signup + invoice)
+- [x] Helper `_create_stripe_session_with_error_handling()` mit freundlicher Fehlermeldung wenn PayPal im Stripe-Dashboard nicht aktiviert ist
+- [x] Refund-Flow funktioniert identisch: `stripe.Refund.create(payment_intent=...)` — Stripe erstattet automatisch zurück auf das PayPal-Konto des Kunden
+- [x] Frontend: PaymentStep zeigt die gewählte Zahlungsart an ("Jetzt per PayPal bezahlen" / "Jetzt per Kreditkarte bezahlen")
+- **User-Action erforderlich**: PayPal muss einmalig im Stripe-Dashboard unter Settings → Payment Methods aktiviert werden (https://dashboard.stripe.com/settings/payment_methods)
+
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung (IMAP "Mailbridge" Windows Service)
 - [ ] DSE 890 Gateway CSV-Upload (User-Task)
