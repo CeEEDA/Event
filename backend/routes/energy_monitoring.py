@@ -1165,9 +1165,7 @@ sudo tee /etc/ppp/peers/m2m > /dev/null << 'PPPCONF'
 115200
 connect "/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect"
 noauth
-defaultroute
-replacedefaultroute
-usepeerdns
+nodefaultroute
 noipdefault
 novj
 novjccomp
@@ -1199,26 +1197,40 @@ CHATSCRIPT
 
 sudo chmod 644 /etc/ppp/peers/m2m /etc/chatscripts/m2m-connect
 
-# --- 3e: PPP-Hooks: Metric 700 + DNS-Fallback ---
+# --- 3e: PPP-Hooks: Route HINZUFUEGEN mit Metric 700 (eth0 bleibt intakt!) ---
 echo "  PPP-Hooks anlegen..."
-sudo tee /etc/ppp/ip-up.d/10-set-metric > /dev/null << 'PPPHOOK1'
+
+sudo mkdir -p /etc/ppp/ip-up.d /etc/ppp/ip-down.d
+
+sudo tee /etc/ppp/ip-up.d/10-add-lte-route > /dev/null << 'PPPHOOK1'
 #!/bin/bash
-if [ "$PPP_IFACE" = "ppp0" ]; then
-    /sbin/ifmetric ppp0 700
-    logger -t lte-failover "ppp0 up - Metric 700 gesetzt"
+# LTE-Route mit Metric 700 HINZUFUEGEN - eth0 Route wird NICHT angefasst!
+# $PPP_IFACE = ppp0, $IPREMOTE = Gateway-IP vom Provider
+if [ -n "$PPP_IFACE" ] && [ -n "$IPREMOTE" ]; then
+    ip route add default via "$IPREMOTE" dev "$PPP_IFACE" metric 700 2>/dev/null || true
+    logger -t lte-failover "$PPP_IFACE up - Default-Route Metric 700 hinzugefuegt (via $IPREMOTE)"
 fi
 PPPHOOK1
 
+sudo tee /etc/ppp/ip-down.d/10-remove-lte-route > /dev/null << 'PPPHOOK1D'
+#!/bin/bash
+# LTE-Route wieder entfernen wenn PPP disconnected
+if [ -n "$PPP_IFACE" ]; then
+    ip route del default dev "$PPP_IFACE" 2>/dev/null || true
+    logger -t lte-failover "$PPP_IFACE down - Default-Route entfernt"
+fi
+PPPHOOK1D
+
 sudo tee /etc/ppp/ip-up.d/20-set-dns > /dev/null << 'PPPHOOK2'
 #!/bin/bash
-if [ "$PPP_IFACE" = "ppp0" ]; then
+if [ -n "$PPP_IFACE" ]; then
     grep -q "1.1.1.1" /etc/resolv.conf || echo "nameserver 1.1.1.1" >> /etc/resolv.conf
     grep -q "8.8.8.8" /etc/resolv.conf || echo "nameserver 8.8.8.8" >> /etc/resolv.conf
     logger -t lte-failover "DNS-Fallback gesichert"
 fi
 PPPHOOK2
 
-sudo chmod +x /etc/ppp/ip-up.d/10-set-metric /etc/ppp/ip-up.d/20-set-dns
+sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route /etc/ppp/ip-up.d/20-set-dns
 
 # --- 3f: NetworkManager Metriken + DNS ---
 echo "  NetworkManager-Metriken setzen..."
@@ -1375,9 +1387,13 @@ echo "  Tools: lte-status, gps-status"
 """
 
         lte_verify_block = f"""
-# LTE + GPS Vorab-Test
+# LTE + GPS Vorab-Test (SICHER: eth0-Route bleibt intakt)
 echo ""
 echo "  LTE Vorab-Test (vor Reboot)..."
+
+# Aktuelle eth0 Default-Route merken (Sicherheit)
+ETH0_GW=$(ip route show default dev eth0 2>/dev/null | awk '{{print $3}}' | head -1)
+
 sudo pon m2m &>/dev/null
 sleep 20
 if ip link show ppp0 &>/dev/null; then
@@ -1393,6 +1409,14 @@ if ip link show ppp0 &>/dev/null; then
 else
     echo "    ppp0 nicht hochgekommen - nach Reboot syslog pruefen"
     sudo poff m2m 2>/dev/null || true
+fi
+
+# eth0-Route wiederherstellen falls verschwunden (Sicherheitsnetz)
+if [ -n "$ETH0_GW" ]; then
+    if ! ip route show default dev eth0 &>/dev/null; then
+        ip route add default via "$ETH0_GW" dev eth0 metric 100 2>/dev/null || true
+        echo "    eth0-Route wiederhergestellt: via $ETH0_GW metric 100"
+    fi
 fi
 
 # GPS pruefen
