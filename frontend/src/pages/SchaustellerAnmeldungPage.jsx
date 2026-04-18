@@ -25,12 +25,23 @@ export default function SchaustellerAnmeldungPage() {
   const verifiedParam = searchParams.get("verified");
   const verifiedEmail = searchParams.get("email");
 
-  const [step, setStep] = useState("auth");
+  const [step, setStep] = useState(() => {
+    try {
+      if (sessionStorage.getItem("schausteller_session")) return "dashboard";
+    } catch { /* ignore */ }
+    return "auth";
+  });
   const [showImpressum, setShowImpressum] = useState(false);
   const [showDatenschutz, setShowDatenschutz] = useState(false);
   const [showAgb, setShowAgb] = useState(false);
   const [agbAccepted, setAgbAccepted] = useState(false);
-  const [schausteller, setSchausteller] = useState(null);
+  const [schausteller, setSchausteller] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("schausteller_session");
+      if (saved) return JSON.parse(saved);
+    } catch { /* ignore */ }
+    return null;
+  });
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -72,8 +83,18 @@ export default function SchaustellerAnmeldungPage() {
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
+  // On mount: if session was restored from sessionStorage, load bookings + lastdiagramme
+  useEffect(() => {
+    if (schausteller) {
+      loadBookings(schausteller.id);
+      loadLastdiagramme(schausteller.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const goToDashboard = useCallback((sch) => {
     setSchausteller(sch);
+    try { sessionStorage.setItem("schausteller_session", JSON.stringify(sch)); } catch { /* ignore */ }
     loadBookings(sch.id);
     loadLastdiagramme(sch.id);
     if (preselectedEvent && selectedEvent) { setStep("signup"); }
@@ -374,7 +395,12 @@ export default function SchaustellerAnmeldungPage() {
     }
   };
 
-  const handleLogout = () => { setSchausteller(null); setMyBookings({ signups: [], invoices: [] }); setStep("auth"); };
+  const handleLogout = () => {
+    try { sessionStorage.removeItem("schausteller_session"); } catch { /* ignore */ }
+    setSchausteller(null);
+    setMyBookings({ signups: [], invoices: [] });
+    setStep("auth");
+  };
 
   const resetSignupForm = () => { setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); setAdditionalSignups([]); setCompletedBookings([]); };
 
