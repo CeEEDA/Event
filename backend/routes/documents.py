@@ -34,7 +34,13 @@ PREDEFINED_FOLDERS = [
     {"id": "unbekannt", "name": "Unbekannt", "icon": "help-circle", "color": "amber"},
     # Finanzen & Buchhaltung
     {"id": "rechnungseingang", "name": "Rechnungseingang", "icon": "receipt", "color": "emerald"},
+    # Rechnungseingang pro Firma (Unterordner, Jahr/Monat wird automatisch darunter angelegt)
+    {"id": "rechnungseingang_eventenergie_deutschland", "name": "Eventenergie Deutschland GmbH & Co. KG", "icon": "receipt", "color": "emerald", "parent_id": "rechnungseingang"},
+    {"id": "rechnungseingang_es_besitz_verwaltung", "name": "ES Besitz und Verwaltungs GmbH & Co. KG", "icon": "receipt", "color": "emerald", "parent_id": "rechnungseingang"},
     {"id": "rechnungsausgang", "name": "Rechnungsausgang", "icon": "receipt", "color": "emerald"},
+    # Rechnungsausgang pro Firma
+    {"id": "rechnungsausgang_eventenergie_deutschland", "name": "Eventenergie Deutschland GmbH & Co. KG", "icon": "receipt", "color": "emerald", "parent_id": "rechnungsausgang"},
+    {"id": "rechnungsausgang_es_besitz_verwaltung", "name": "ES Besitz und Verwaltungs GmbH & Co. KG", "icon": "receipt", "color": "emerald", "parent_id": "rechnungsausgang"},
     {"id": "banken", "name": "Banken", "icon": "landmark", "color": "emerald"},
     {"id": "datev", "name": "DATEV", "icon": "receipt", "color": "emerald"},
     {"id": "finanzierungen", "name": "Finanzierungen", "icon": "receipt", "color": "emerald"},
@@ -268,9 +274,33 @@ PRÜFBERICHTE → pruefberichte:
 - CE-Konformitätserklärungen
 
 RECHNUNGEN:
-- Eingangsrechnungen (von Lieferanten/Dienstleistern an Eventenergie) → rechnungseingang
-- Ausgangsrechnungen (von Eventenergie an Kunden) → rechnungsausgang
+- Eingangsrechnungen (von Lieferanten/Dienstleistern an uns) → rechnungseingang_eventenergie_deutschland ODER rechnungseingang_es_besitz_verwaltung (siehe FIRMEN-ZUORDNUNG unten)
+- Ausgangsrechnungen (von uns an Kunden) → rechnungsausgang_eventenergie_deutschland ODER rechnungsausgang_es_besitz_verwaltung
 - Erkennbar an: Rechnungsnummer, Nettobetrag, MwSt, Zahlungsziel, IBAN
+
+=== FIRMEN-ZUORDNUNG (WICHTIG fuer Rechnungen!) ===
+Wir haben ZWEI Firmen mit unterschiedlicher Buchhaltung:
+
+1. "Eventenergie Deutschland GmbH & Co. KG" (kurz: EED)
+   - Kerngeschaeft: Elektrotechnik, temporaere Stromversorgung, PV-Anlagen, Netzanschluesse
+   - Bei Eingangsrechnungen: Empfaenger ist Eventenergie Deutschland GmbH, Eventenergie Deutschland GmbH & Co. KG, EED, oder eine dieser Schreibweisen
+   - Bei Ausgangsrechnungen: Absender ist Eventenergie Deutschland
+   - USt-IdNr./Steuernummer der EED erkennst Du am Briefkopf
+   - Suggested_folder: "rechnungseingang_eventenergie_deutschland" bzw. "rechnungsausgang_eventenergie_deutschland"
+
+2. "ES Besitz und Verwaltungs GmbH & Co. KG" (kurz: ES Besitz oder ESBV)
+   - Zweck: Besitz- und Verwaltungsgesellschaft (Immobilien, Fuhrpark, Geraetevermoegen)
+   - Bei Eingangsrechnungen: Empfaenger ist "ES Besitz und Verwaltungs GmbH & Co. KG", "ES Besitz GmbH", "ESBV" oder Varianten davon
+   - Bei Ausgangsrechnungen: Absender ist ES Besitz und Verwaltungs GmbH
+   - Typische Inhalte: KFZ-Leasing, Mieten, Kauf von Maschinen, Immobilien-bezogene Rechnungen
+   - Suggested_folder: "rechnungseingang_es_besitz_verwaltung" bzw. "rechnungsausgang_es_besitz_verwaltung"
+
+ENTSCHEIDUNGSREGEL fuer die Firmen-Zuordnung:
+1. Schau dir IMMER zuerst den "Empfaenger" der Rechnung an (bei Eingang) bzw. den "Absender" (bei Ausgang)
+2. Die Firma ist meistens im Briefkopf oder in der Adresszeile mit "An: ..." zu finden
+3. Wenn eindeutig "Eventenergie Deutschland" -> EED
+4. Wenn eindeutig "ES Besitz" / "ESBV" -> ES Besitz
+5. Wenn du UNSICHER bist (z.B. nur "Eventenergie" ohne Zusatz, oder kein Empfaenger erkennbar): suggested_folder = "unbekannt" - NICHT raten!
 
 VERSICHERUNGEN:
 - KFZ-Versicherung, Fahrzeugschein, Grüne Karte → kfz_versicherung
@@ -505,7 +535,7 @@ async def get_folders():
     # Build all folders: predefined (root) + custom/subfolders from DB
     all_folders = []
     for f in PREDEFINED_FOLDERS:
-        all_folders.append({**f, "count": counts.get(f["id"], 0), "is_custom": False, "parent_id": None})
+        all_folders.append({**f, "count": counts.get(f["id"], 0), "is_custom": False, "parent_id": f.get("parent_id")})
 
     async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}).sort("created_at", 1):
         cf["count"] = counts.get(cf["id"], 0)
@@ -724,6 +754,12 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
 
         ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
+
+        # Safety: Rechnungs-Root-Folder (ohne Firma) zaehlen als "unsicher" -> 'unbekannt'
+        RECHNUNGS_ROOTS_WITHOUT_COMPANY = {"rechnungseingang", "rechnungsausgang"}
+        if suggested_folder in RECHNUNGS_ROOTS_WITHOUT_COMPANY:
+            logger.info(f"KI gab {suggested_folder} ohne Firmen-Zuordnung zurueck -> 'unbekannt'")
+            suggested_folder = "unbekannt"
 
         # Bestimme finale Ablage: Wenn KI sicher ist -> vorgeschlagener Ordner, sonst 'unbekannt'
         final_folder = folder_id
