@@ -999,9 +999,17 @@ export default function ServiceplanPage() {
     try {
       const res = await api.get("/orders/epirent");
       const arr = Array.isArray(res.data) ? res.data : (res.data.orders || []);
-      // Nur aktive Auftraege, nicht archiviert/storniert; neueste zuerst
-      const active = arr.filter(o => !o.is_archived && !o.is_canceled);
-      active.sort((a, b) => String(b.dispo_start || "").localeCompare(String(a.dispo_start || "")));
+      const today = new Date().toISOString().slice(0, 10);
+      // Gleiche Filterlogik wie Einsatzplanung: bestätigt + gültiger Dispo-Zeitraum
+      // Zusätzlich: nur Aufträge, die heute noch aktuell sind (dispo_end >= heute)
+      const active = arr.filter(o => {
+        if (!o.is_confirmed || o.is_archived || o.is_canceled) return false;
+        const ds = o.dispo_start;
+        const de = o.dispo_end;
+        if (!ds || !de || ds === "0000-00-00" || de === "0000-00-00") return false;
+        return de >= today;
+      });
+      active.sort((a, b) => String(a.dispo_start || "").localeCompare(String(b.dispo_start || "")));
       setOrders(active);
     } catch { /* orders optional */ }
   }, []);
@@ -1354,7 +1362,9 @@ function FaultReportModal({ devices, orders, user, onClose, onSaved }) {
               <option value="">Kein Auftrag zugeordnet</option>
               {orders.slice(0, 200).map(o => {
                 const key = o.primary_key || o.pk || o.id;
-                const label = `${o.order_no || o.pk || key} · ${o.event || o.contact_name || "Auftrag"}`;
+                const fmt = (d) => d ? d.slice(8, 10) + "." + d.slice(5, 7) : "";
+                const dispo = o.dispo_start && o.dispo_end ? ` (${fmt(o.dispo_start)}–${fmt(o.dispo_end)})` : "";
+                const label = `${o.order_no || key} · ${o.event || o.contact_name || "Auftrag"}${dispo}`;
                 return <option key={key} value={key}>{label}</option>;
               })}
             </select>
