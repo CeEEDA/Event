@@ -6,6 +6,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import HubPage from "./pages/HubPage";
+import FAQPage from "./pages/FAQPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage from "./pages/AdminPage";
 import SharedFilePage from "./pages/SharedFilePage";
@@ -139,6 +140,14 @@ function AppRoutes() {
             <HubPage />
           </ProtectedRoute>
         } 
+      />
+      <Route
+        path="/faq"
+        element={
+          <ProtectedRoute>
+            <FAQPage />
+          </ProtectedRoute>
+        }
       />
       <Route 
         path="/fileshare" 

@@ -12,7 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
-  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle,
+  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import {
@@ -379,6 +379,7 @@ export default function HubPage() {
     isStaff && { key: "devices", icon: Settings, label: "Geräte", path: "/devices", color: "bg-slate-100 text-slate-600" },
     hasFilesharing && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
     isStaff && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
+    { key: "faq", icon: HelpCircle, label: "FAQ", path: "/faq", color: "bg-indigo-100 text-indigo-600" },
     isAdmin && { key: "admin", icon: Users, label: "Benutzer", path: "/admin", color: "bg-gray-100 text-gray-600" },
     isAdmin && { key: "settings", icon: Settings, label: "Einstellungen", path: "/admin/settings", color: "bg-gray-100 text-gray-600" },
   ].filter(Boolean);

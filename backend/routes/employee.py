@@ -1713,6 +1713,96 @@ async def delete_note_file(note_id: str, file_id: str, token: str = Query(...)):
 
 
 
+# ── FAQ ─────────────────
+
+DEFAULT_FAQ_CATEGORIES = ["Allgemein", "Arbeitszeit", "Urlaub & Krankheit", "Abrechnung", "Technik", "Sicherheit"]
+
+
+@router.get("/faq")
+async def list_faqs(token: str = Query(...), q: str = Query("")):
+    """Alle FAQs (alle authentifizierten User). Optional Volltextsuche via q."""
+    await _get_user(token)
+    query = {"deleted": {"$ne": True}}
+    if q:
+        import re
+        rx = {"$regex": re.escape(q), "$options": "i"}
+        query["$or"] = [{"question": rx}, {"answer": rx}, {"category": rx}]
+    faqs = await db.faqs.find(query, {"_id": 0}).sort([("category", 1), ("order", 1), ("created_at", 1)]).to_list(500)
+    return {"faqs": faqs, "categories": DEFAULT_FAQ_CATEGORIES}
+
+
+@router.post("/faq")
+async def create_faq(token: str = Query(...), data: dict = Body(...)):
+    """Admin: Neue FAQ anlegen."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    question = (data.get("question") or "").strip()
+    answer = (data.get("answer") or "").strip()
+    category = (data.get("category") or "Allgemein").strip() or "Allgemein"
+    if not question or not answer:
+        raise HTTPException(status_code=400, detail="Frage und Antwort erforderlich")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    last = await db.faqs.find({"category": category, "deleted": {"$ne": True}}, {"_id": 0, "order": 1}).sort("order", -1).limit(1).to_list(1)
+    next_order = (last[0].get("order", 0) + 1) if last else 1
+    doc = {
+        "id": str(uuid.uuid4()),
+        "question": question,
+        "answer": answer,
+        "category": category,
+        "order": next_order,
+        "author_id": caller["id"],
+        "author_name": caller.get("name", caller.get("email", "")),
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "deleted": False,
+    }
+    await db.faqs.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/faq/{faq_id}")
+async def update_faq(faq_id: str, token: str = Query(...), data: dict = Body(...)):
+    """Admin: FAQ aktualisieren (Frage, Antwort, Kategorie, Reihenfolge)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    update = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    for k in ("question", "answer", "category"):
+        if k in data:
+            v = (data.get(k) or "").strip()
+            if not v:
+                raise HTTPException(status_code=400, detail=f"{k} darf nicht leer sein")
+            update[k] = v
+    if "order" in data:
+        try:
+            update["order"] = int(data["order"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="order muss eine Zahl sein")
+    res = await db.faqs.update_one({"id": faq_id, "deleted": {"$ne": True}}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="FAQ nicht gefunden")
+    doc = await db.faqs.find_one({"id": faq_id}, {"_id": 0})
+    return doc
+
+
+@router.delete("/faq/{faq_id}")
+async def delete_faq(faq_id: str, token: str = Query(...)):
+    """Admin: FAQ loeschen (Soft-Delete)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    res = await db.faqs.update_one(
+        {"id": faq_id},
+        {"$set": {"deleted": True, "deleted_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="FAQ nicht gefunden")
+    return {"ok": True}
+
+
+
 # ── Einsatzplanung (Shift Planning) ─────────────────
 
 @router.get("/shift-plan")
