@@ -564,6 +564,95 @@ async def get_folders():
     return {"folders": all_folders, "total": total}
 
 
+@router.post("/migrate/rechnungen-firma-struktur")
+async def migrate_rechnungen_firma_struktur(dry_run: bool = Query(False)):
+    """
+    Einmalige Migration: verschiebt Dokumente aus den alten 'rechnungsausgang'-Wurzeln
+    (ohne Firmen-Unterteilung) in die neue Struktur 'rechnungsausgang_eventenergie_deutschland'.
+    Alte leere Jahres-/Monats-Ordner werden soft-geloescht.
+
+    Nur Rechnungsausgang wird migriert (Kirmes-Rechnungen = immer EED). Rechnungseingang
+    bleibt unangetastet und muss manuell per Drag&Drop einer Firma zugeordnet werden,
+    damit die KI aus den Entscheidungen lernt.
+
+    Mit dry_run=true werden nur die geplanten Aenderungen zurueckgegeben, ohne zu schreiben.
+    """
+    # 1. Alle Dokumente direkt in rechnungsausgang-Root oder in alten Jahr/Monat-Subs (ohne Firma)
+    old_root_ids = ["rechnungsausgang"]
+    old_subs = await db.document_folders.find(
+        {"parent_id": "rechnungsausgang", "is_deleted": False}, {"_id": 0, "id": 1}
+    ).to_list(100)
+    old_root_ids += [f["id"] for f in old_subs]
+
+    month_subs = await db.document_folders.find(
+        {"parent_id": {"$in": [f["id"] for f in old_subs]}, "is_deleted": False},
+        {"_id": 0, "id": 1}
+    ).to_list(200)
+    old_root_ids += [f["id"] for f in month_subs]
+
+    # Firmen-Unterordner ausschliessen
+    old_root_ids = [fid for fid in old_root_ids
+                    if fid in ("rechnungsausgang",)
+                    or (fid.startswith("rechnungsausgang_") and "eventenergie_deutschland" not in fid and "es_besitz_verwaltung" not in fid)]
+
+    docs_to_move = await db.documents.find(
+        {"folder_id": {"$in": old_root_ids}, "is_deleted": False},
+        {"_id": 0, "id": 1, "original_filename": 1, "folder_id": 1, "ai_metadata": 1, "created_at": 1}
+    ).to_list(5000)
+
+    planned_moves = []
+    for d in docs_to_move:
+        date = (d.get("ai_metadata") or {}).get("date") or d.get("created_at", "")
+        planned_moves.append({
+            "doc_id": d["id"],
+            "filename": d.get("original_filename", ""),
+            "from_folder": d.get("folder_id"),
+            "to_parent": "rechnungsausgang_eventenergie_deutschland",
+            "date_hint": date[:10],
+        })
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "docs_to_move": len(planned_moves),
+            "old_folders_to_cleanup": [f for f in old_root_ids if f != "rechnungsausgang"],
+            "moves": planned_moves[:50],  # erste 50 zeigen
+        }
+
+    # Tatsaechlich verschieben
+    from datetime import datetime, timezone as _tz
+    moved = 0
+    for d in docs_to_move:
+        date = (d.get("ai_metadata") or {}).get("date") or d.get("created_at", "")
+        new_sub = await _ensure_year_month_subfolder("rechnungsausgang_eventenergie_deutschland", date)
+        await db.documents.update_one(
+            {"id": d["id"]},
+            {"$set": {
+                "folder_id": new_sub,
+                "ai_metadata.suggested_folder": "rechnungsausgang_eventenergie_deutschland",
+                "updated_at": datetime.now(_tz.utc).isoformat(),
+            }}
+        )
+        moved += 1
+
+    # Alte leere Ordner aufraeumen
+    cleaned = 0
+    for fid in old_root_ids:
+        if fid == "rechnungsausgang":
+            continue  # Root nicht loeschen
+        remaining = await db.documents.count_documents({"folder_id": fid, "is_deleted": False})
+        if remaining == 0:
+            r = await db.document_folders.update_one(
+                {"id": fid, "is_deleted": False},
+                {"$set": {"is_deleted": True, "deleted_at": datetime.now(_tz.utc).isoformat()}}
+            )
+            if r.matched_count:
+                cleaned += 1
+
+    return {"dry_run": False, "docs_moved": moved, "folders_cleaned": cleaned}
+
+
+
 @router.post("/folders")
 async def create_folder(body: dict):
     """Create a custom folder or subfolder."""
