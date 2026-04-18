@@ -12,7 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
-  Megaphone, FileText, Image as ImageIcon,
+  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import {
@@ -47,7 +47,11 @@ export default function HubPage() {
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [infoText, setInfoText] = useState("");
   const [infoFile, setInfoFile] = useState(null);
+  const [infoExpiresAt, setInfoExpiresAt] = useState("");
+  const [infoDeadline, setInfoDeadline] = useState("");
+  const [infoPermanent, setInfoPermanent] = useState(true);
   const [infoPosting, setInfoPosting] = useState(false);
+  const [readsDialogPost, setReadsDialogPost] = useState(null);
 
   // Time-off request dialog
   const [showTimeOff, setShowTimeOff] = useState(false);
@@ -111,6 +115,8 @@ export default function HubPage() {
     try {
       const fd = new FormData();
       fd.append("text", infoText.trim());
+      if (!infoPermanent && infoExpiresAt) fd.append("expires_at", infoExpiresAt);
+      if (infoDeadline) fd.append("response_deadline", infoDeadline);
       if (infoFile) fd.append("file", infoFile);
       await api.post(`/employee/info-posts?token=${token}`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -118,12 +124,23 @@ export default function HubPage() {
       toast.success("Info gepostet");
       setInfoText("");
       setInfoFile(null);
+      setInfoExpiresAt("");
+      setInfoDeadline("");
+      setInfoPermanent(true);
       setShowInfoDialog(false);
       loadInfoPosts();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Fehler beim Posten");
     }
     setInfoPosting(false);
+  };
+
+  const markInfoRead = async (postId) => {
+    try {
+      await api.post(`/employee/info-posts/${postId}/read?token=${token}`);
+      // Optimistisch im State aktualisieren
+      setInfoPosts(prev => prev.map(p => p.id === postId ? { ...p, is_read_by_me: true, read_count: (p.read_count || 0) + 1 } : p));
+    } catch {}
   };
 
   const deleteInfoPost = async (postId) => {
@@ -517,36 +534,85 @@ export default function HubPage() {
               </div>
               <div className="divide-y divide-gray-100">
                 {/* Admin-Info-Posts */}
-                {infoPosts.map(p => (
-                  <div key={p.id} className="px-4 py-3 hover:bg-gray-50" data-testid={`info-post-${p.id}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        {p.text && <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{p.text}</p>}
-                        {p.attachment && (() => {
-                          const isImg = (p.attachment.content_type || "").startsWith("image/");
-                          const url = `${API}/api/employee/info-posts/${p.id}/attachment?token=${token}`;
-                          return isImg ? (
-                            <a href={url} target="_blank" rel="noreferrer" className="block mt-2">
-                              <img src={url} alt={p.attachment.filename} className="max-h-60 rounded-lg border border-gray-200 object-contain" />
-                            </a>
-                          ) : (
-                            <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-2 text-xs text-fuchsia-700 hover:text-fuchsia-900 bg-fuchsia-50 border border-fuchsia-200 rounded-md px-2.5 py-1.5" data-testid={`info-attachment-${p.id}`}>
-                              <FileText className="w-3.5 h-3.5" /> {p.attachment.filename}
-                            </a>
-                          );
-                        })()}
-                        <p className="text-[10px] text-gray-400 mt-2">
-                          {p.author_name} · {new Date(p.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                        </p>
+                {infoPosts.map(p => {
+                  const unread = !p.is_read_by_me && !isAdmin;
+                  const deadlinePast = p.response_deadline && new Date(p.response_deadline) < new Date();
+                  const expiresAt = p.expires_at ? new Date(p.expires_at) : null;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`px-4 py-3 transition-colors ${unread ? "bg-fuchsia-50/40 hover:bg-fuchsia-50" : "hover:bg-gray-50"}`}
+                      onClick={() => unread && markInfoRead(p.id)}
+                      data-testid={`info-post-${p.id}`}
+                      role={unread ? "button" : undefined}
+                      style={unread ? { cursor: "pointer" } : undefined}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            {unread && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-fuchsia-600 text-white px-1.5 py-0.5 rounded-full" data-testid={`info-unread-${p.id}`}>
+                                NEU
+                              </span>
+                            )}
+                            {p.is_read_by_me && !isAdmin && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+                                <CheckCircle2 className="w-3 h-3" /> Gelesen
+                              </span>
+                            )}
+                            {p.response_deadline && (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${deadlinePast ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                                <AlertCircle className="w-3 h-3" />
+                                Antwort bis {new Date(p.response_deadline).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                              </span>
+                            )}
+                            {expiresAt && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
+                                <Timer className="w-3 h-3" /> bis {expiresAt.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                              </span>
+                            )}
+                            {!expiresAt && (
+                              <span className="text-[10px] text-gray-400">dauerhaft</span>
+                            )}
+                          </div>
+                          {p.text && <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{p.text}</p>}
+                          {p.attachment && (() => {
+                            const isImg = (p.attachment.content_type || "").startsWith("image/");
+                            const url = `${API}/api/employee/info-posts/${p.id}/attachment?token=${token}`;
+                            return isImg ? (
+                              <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="block mt-2">
+                                <img src={url} alt={p.attachment.filename} className="max-h-60 rounded-lg border border-gray-200 object-contain" />
+                              </a>
+                            ) : (
+                              <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-2 mt-2 text-xs text-fuchsia-700 hover:text-fuchsia-900 bg-fuchsia-50 border border-fuchsia-200 rounded-md px-2.5 py-1.5" data-testid={`info-attachment-${p.id}`}>
+                                <FileText className="w-3.5 h-3.5" /> {p.attachment.filename}
+                              </a>
+                            );
+                          })()}
+                          <div className="flex items-center gap-3 mt-2 flex-wrap">
+                            <p className="text-[10px] text-gray-400">
+                              {p.author_name} · {new Date(p.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                            {isAdmin && (
+                              <button
+                                onClick={e => { e.stopPropagation(); setReadsDialogPost(p); }}
+                                className="inline-flex items-center gap-1 text-[10px] text-sky-700 hover:text-sky-900 bg-sky-50 border border-sky-200 rounded px-1.5 py-0.5"
+                                data-testid={`info-reads-${p.id}`}
+                              >
+                                <Eye className="w-3 h-3" /> {p.read_count || 0} gelesen
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {isAdmin && (
+                          <button onClick={e => { e.stopPropagation(); deleteInfoPost(p.id); }} className="text-gray-300 hover:text-red-500 flex-shrink-0" title="Löschen" data-testid={`info-delete-${p.id}`}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
-                      {isAdmin && (
-                        <button onClick={() => deleteInfoPost(p.id)} className="text-gray-300 hover:text-red-500 flex-shrink-0" title="Löschen" data-testid={`info-delete-${p.id}`}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {/* Geburtstage */}
                 {birthdays.map(b => {
                   const first = (b.name || "").split(" ")[0] || b.name;
@@ -1101,6 +1167,42 @@ export default function HubPage() {
               </p>
             )}
           </div>
+
+          {/* Anzeigedauer */}
+          <div className="border-t border-gray-100 pt-3">
+            <label className="text-xs text-gray-500 mb-2 block font-medium">Anzeigedauer</label>
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" checked={infoPermanent} onChange={() => setInfoPermanent(true)} className="accent-fuchsia-600" data-testid="info-permanent-radio" />
+                <span>Dauerhaft</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" checked={!infoPermanent} onChange={() => setInfoPermanent(false)} className="accent-fuchsia-600" data-testid="info-timed-radio" />
+                <span>Befristet bis</span>
+              </label>
+              <input
+                type="date"
+                value={infoExpiresAt}
+                onChange={e => { setInfoExpiresAt(e.target.value); setInfoPermanent(false); }}
+                disabled={infoPermanent}
+                className={`border border-gray-200 rounded-md px-2 py-1 text-sm ${infoPermanent ? "opacity-40" : ""}`}
+                data-testid="info-expires-input"
+              />
+            </div>
+          </div>
+
+          {/* Antwort-Deadline */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Antwort benötigt bis <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input
+              type="date"
+              value={infoDeadline}
+              onChange={e => setInfoDeadline(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400"
+              data-testid="info-deadline-input"
+            />
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => setShowInfoDialog(false)} disabled={infoPosting}>Abbrechen</Button>
             <Button size="sm" onClick={postInfo} disabled={infoPosting} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="info-post-submit">
@@ -1110,6 +1212,32 @@ export default function HubPage() {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Admin: Leseliste anzeigen */}
+    <Dialog open={!!readsDialogPost} onOpenChange={(o) => !o && setReadsDialogPost(null)}>
+      <DialogContent className="sm:max-w-md" data-testid="info-reads-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-sky-600" /> Gelesen von ({readsDialogPost?.reads?.length || 0})
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-1 pt-1 max-h-80 overflow-y-auto">
+          {(readsDialogPost?.reads || []).length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Noch niemand hat diesen Post gelesen.</p>
+          ) : (
+            (readsDialogPost?.reads || []).map(r => (
+              <div key={r.user_id} className="flex items-center justify-between text-sm py-1.5 border-b border-gray-100 last:border-0">
+                <span className="text-gray-800">{r.user_name}</span>
+                <span className="text-xs text-gray-400">
+                  {new Date(r.read_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+
 
 
     {/* Time Off Request Dialog */}

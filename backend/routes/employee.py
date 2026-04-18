@@ -817,12 +817,28 @@ async def get_birthdays_today(token: str = Query(...)):
 
 @router.get("/info-posts")
 async def list_info_posts(token: str = Query(...)):
-    """Alle aktiven Info-Posts (neueste zuerst). Alle authentifizierten User."""
-    await _get_user(token)
+    """Alle aktiven Info-Posts (neueste zuerst, abgelaufene ausgeblendet)."""
+    user = await _get_user(token)
+    now_iso = datetime.now(timezone.utc).isoformat()
     posts = await db.info_posts.find(
-        {"deleted": {"$ne": True}},
+        {
+            "deleted": {"$ne": True},
+            "$or": [
+                {"expires_at": {"$in": [None, ""]}},
+                {"expires_at": {"$exists": False}},
+                {"expires_at": {"$gte": now_iso}},
+            ],
+        },
         {"_id": 0}
     ).sort("created_at", -1).limit(50).to_list(50)
+    # is_read_by_me Flag + Leser-Liste (fuer Admins alles sichtbar)
+    is_admin = user.get("role") == "admin"
+    for p in posts:
+        reads = p.get("reads", []) or []
+        p["is_read_by_me"] = any(r.get("user_id") == user["id"] for r in reads)
+        p["read_count"] = len(reads)
+        if not is_admin:
+            p.pop("reads", None)
     return posts
 
 
@@ -830,9 +846,11 @@ async def list_info_posts(token: str = Query(...)):
 async def create_info_post(
     token: str = Query(...),
     text: str = Form(""),
+    expires_at: str = Form(""),
+    response_deadline: str = Form(""),
     file: Optional[UploadFile] = File(None),
 ):
-    """Admin: neuen Info-Post erstellen (Text und/oder Anhang)."""
+    """Admin: neuen Info-Post erstellen (Text und/oder Anhang, optional Ablauf & Deadline)."""
     caller = await _get_user(token)
     if caller.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins duerfen Info-Posts erstellen")
@@ -842,12 +860,27 @@ async def create_info_post(
 
     post_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    def _parse_date_to_iso_end_of_day(s: str) -> str:
+        s = (s or "").strip()
+        if not s:
+            return ""
+        # YYYY-MM-DD -> end of day UTC
+        try:
+            d = datetime.strptime(s[:10], "%Y-%m-%d")
+            return d.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            return ""
+
     doc = {
         "id": post_id,
         "text": text,
         "author_id": caller["id"],
         "author_name": caller.get("name", caller.get("email", "")),
         "created_at": now_iso,
+        "expires_at": _parse_date_to_iso_end_of_day(expires_at),
+        "response_deadline": _parse_date_to_iso_end_of_day(response_deadline),
+        "reads": [],
         "deleted": False,
     }
 
@@ -868,6 +901,25 @@ async def create_info_post(
     await db.info_posts.insert_one(doc)
     doc.pop("_id", None)
     return doc
+
+
+@router.post("/info-posts/{post_id}/read")
+async def mark_info_post_read(post_id: str, token: str = Query(...)):
+    """Markiert Info-Post als gelesen fuer den aktuellen User (idempotent)."""
+    caller = await _get_user(token)
+    post = await db.info_posts.find_one({"id": post_id, "deleted": {"$ne": True}}, {"_id": 0, "reads": 1})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post nicht gefunden")
+    reads = post.get("reads", []) or []
+    if any(r.get("user_id") == caller["id"] for r in reads):
+        return {"ok": True, "already_read": True}
+    read_entry = {
+        "user_id": caller["id"],
+        "user_name": caller.get("name", caller.get("email", "")),
+        "read_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.info_posts.update_one({"id": post_id}, {"$push": {"reads": read_entry}})
+    return {"ok": True, "already_read": False}
 
 
 @router.get("/info-posts/{post_id}/attachment")
