@@ -12,6 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
+  Megaphone, FileText, Image as ImageIcon,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import {
@@ -42,6 +43,11 @@ export default function HubPage() {
   const [recentEntries, setRecentEntries] = useState([]);
   const [hrData, setHrData] = useState(null);
   const [birthdays, setBirthdays] = useState([]);
+  const [infoPosts, setInfoPosts] = useState([]);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [infoText, setInfoText] = useState("");
+  const [infoFile, setInfoFile] = useState(null);
+  const [infoPosting, setInfoPosting] = useState(false);
 
   // Time-off request dialog
   const [showTimeOff, setShowTimeOff] = useState(false);
@@ -89,6 +95,48 @@ export default function HubPage() {
     } catch {}
   }, [token, isAdmin]);
 
+  const loadInfoPosts = useCallback(async () => {
+    try {
+      const res = await api.get(`/employee/info-posts?token=${token}`);
+      setInfoPosts(res.data || []);
+    } catch {}
+  }, [token]);
+
+  const postInfo = async () => {
+    if (!infoText.trim() && !infoFile) {
+      toast.error("Bitte Text eingeben oder Datei anhängen");
+      return;
+    }
+    setInfoPosting(true);
+    try {
+      const fd = new FormData();
+      fd.append("text", infoText.trim());
+      if (infoFile) fd.append("file", infoFile);
+      await api.post(`/employee/info-posts?token=${token}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success("Info gepostet");
+      setInfoText("");
+      setInfoFile(null);
+      setShowInfoDialog(false);
+      loadInfoPosts();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler beim Posten");
+    }
+    setInfoPosting(false);
+  };
+
+  const deleteInfoPost = async (postId) => {
+    if (!window.confirm("Info-Post wirklich löschen?")) return;
+    try {
+      await api.delete(`/employee/info-posts/${postId}?token=${token}`);
+      toast.success("Gelöscht");
+      loadInfoPosts();
+    } catch {
+      toast.error("Fehler beim Löschen");
+    }
+  };
+
   useEffect(() => {
     loadTasks();
     api.get(`/chat/users?token=${token}`).then(r => setAllUsers(r.data)).catch(() => {});
@@ -99,6 +147,8 @@ export default function HubPage() {
     api.get(`/employee/hr-data/${user.id}?token=${token}`).then(r => setHrData(r.data)).catch(() => {});
     // Geburtstage heute
     api.get(`/employee/birthdays/today?token=${token}`).then(r => setBirthdays(r.data || [])).catch(() => {});
+    // Info-Posts der Admins
+    loadInfoPosts();
     // Load own avatar
     api.get(`/employee/profile?token=${token}`).then(r => {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
@@ -451,26 +501,72 @@ export default function HubPage() {
             </div>
           </div>
 
-          {/* Info-Karte: Geburtstage heute */}
-          {birthdays.length > 0 && (
-            <div className="mb-5 bg-gradient-to-r from-fuchsia-50 via-pink-50 to-amber-50 rounded-xl border border-pink-200 p-4" data-testid="birthday-info-card">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
-                  <Cake className="w-5 h-5 text-pink-600" />
+          {/* Info-Karte: Admin-Posts + Geburtstage */}
+          {(isAdmin || birthdays.length > 0 || infoPosts.length > 0) && (
+            <div className="mb-5 bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="info-card">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-fuchsia-50 to-pink-50 border-b border-pink-100">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-fuchsia-600" />
+                  <p className="text-[11px] font-semibold text-fuchsia-700 uppercase tracking-wider">Info</p>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-semibold text-pink-600 uppercase tracking-wider mb-1">Info · Geburtstag</p>
-                  <div className="space-y-1">
-                    {birthdays.map(b => {
-                      const first = (b.name || "").split(" ")[0] || b.name;
-                      return (
-                        <p key={b.user_id} className="text-sm text-gray-800" data-testid={`birthday-${b.user_id}`}>
-                          <span className="font-semibold">{b.name}</span> wird heute <span className="font-semibold">{b.age} Jahre</span> alt. Wir gratulieren {first} zum Geburtstag! 🎉
+                {isAdmin && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50" onClick={() => setShowInfoDialog(true)} data-testid="new-info-btn">
+                    <Plus className="w-3 h-3 mr-1" /> Neue Info
+                  </Button>
+                )}
+              </div>
+              <div className="divide-y divide-gray-100">
+                {/* Admin-Info-Posts */}
+                {infoPosts.map(p => (
+                  <div key={p.id} className="px-4 py-3 hover:bg-gray-50" data-testid={`info-post-${p.id}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        {p.text && <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{p.text}</p>}
+                        {p.attachment && (() => {
+                          const isImg = (p.attachment.content_type || "").startsWith("image/");
+                          const url = `${API}/api/employee/info-posts/${p.id}/attachment?token=${token}`;
+                          return isImg ? (
+                            <a href={url} target="_blank" rel="noreferrer" className="block mt-2">
+                              <img src={url} alt={p.attachment.filename} className="max-h-60 rounded-lg border border-gray-200 object-contain" />
+                            </a>
+                          ) : (
+                            <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-2 text-xs text-fuchsia-700 hover:text-fuchsia-900 bg-fuchsia-50 border border-fuchsia-200 rounded-md px-2.5 py-1.5" data-testid={`info-attachment-${p.id}`}>
+                              <FileText className="w-3.5 h-3.5" /> {p.attachment.filename}
+                            </a>
+                          );
+                        })()}
+                        <p className="text-[10px] text-gray-400 mt-2">
+                          {p.author_name} · {new Date(p.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </p>
-                      );
-                    })}
+                      </div>
+                      {isAdmin && (
+                        <button onClick={() => deleteInfoPost(p.id)} className="text-gray-300 hover:text-red-500 flex-shrink-0" title="Löschen" data-testid={`info-delete-${p.id}`}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ))}
+                {/* Geburtstage */}
+                {birthdays.map(b => {
+                  const first = (b.name || "").split(" ")[0] || b.name;
+                  return (
+                    <div key={b.user_id} className="px-4 py-3 bg-gradient-to-r from-pink-50/60 to-amber-50/60 flex items-start gap-3" data-testid={`birthday-${b.user_id}`}>
+                      <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
+                        <Cake className="w-4 h-4 text-pink-600" />
+                      </div>
+                      <p className="text-sm text-gray-800 pt-1">
+                        <span className="font-semibold">{b.name}</span> wird heute <span className="font-semibold">{b.age} Jahre</span> alt. Wir gratulieren {first} zum Geburtstag! 🎉
+                      </p>
+                    </div>
+                  );
+                })}
+                {/* Empty state für Admin ohne Inhalte */}
+                {isAdmin && infoPosts.length === 0 && birthdays.length === 0 && (
+                  <div className="px-4 py-6 text-center text-xs text-gray-400">
+                    Noch keine Infos. Klick oben auf "Neue Info" um etwas zu posten.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -968,6 +1064,53 @@ export default function HubPage() {
         </>
       )}
     </div>
+
+    {/* Admin: Neue Info posten */}
+    <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
+      <DialogContent className="sm:max-w-md" data-testid="info-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Megaphone className="w-5 h-5 text-fuchsia-600" /> Info an alle Mitarbeiter posten
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Nachricht</label>
+            <textarea
+              value={infoText}
+              onChange={e => setInfoText(e.target.value)}
+              rows={5}
+              placeholder="Was möchtest Du dem Team mitteilen?"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400 resize-none"
+              data-testid="info-text-input"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Anhang (Bild/Dokument, optional, max 20 MB)</label>
+            <input
+              type="file"
+              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+              onChange={e => setInfoFile(e.target.files[0] || null)}
+              className="w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-fuchsia-300 file:text-xs file:bg-fuchsia-50 file:text-fuchsia-700 hover:file:bg-fuchsia-100"
+              data-testid="info-file-input"
+            />
+            {infoFile && (
+              <p className="text-[10px] text-gray-500 mt-1 flex items-center gap-1">
+                {infoFile.type.startsWith("image/") ? <ImageIcon className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                {infoFile.name} ({Math.round(infoFile.size / 1024)} KB)
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setShowInfoDialog(false)} disabled={infoPosting}>Abbrechen</Button>
+            <Button size="sm" onClick={postInfo} disabled={infoPosting} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="info-post-submit">
+              <Send className="w-3.5 h-3.5 mr-1.5" /> {infoPosting ? "Posten..." : "Posten"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
 
     {/* Time Off Request Dialog */}
     <Dialog open={showTimeOff} onOpenChange={setShowTimeOff}>

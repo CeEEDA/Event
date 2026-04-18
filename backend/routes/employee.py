@@ -813,6 +813,98 @@ async def get_birthdays_today(token: str = Query(...)):
     return result
 
 
+# ─── Info Posts (Admin → Alle Mitarbeiter) ─────────────────
+
+@router.get("/info-posts")
+async def list_info_posts(token: str = Query(...)):
+    """Alle aktiven Info-Posts (neueste zuerst). Alle authentifizierten User."""
+    await _get_user(token)
+    posts = await db.info_posts.find(
+        {"deleted": {"$ne": True}},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(50).to_list(50)
+    return posts
+
+
+@router.post("/info-posts")
+async def create_info_post(
+    token: str = Query(...),
+    text: str = Form(""),
+    file: Optional[UploadFile] = File(None),
+):
+    """Admin: neuen Info-Post erstellen (Text und/oder Anhang)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins duerfen Info-Posts erstellen")
+    text = (text or "").strip()
+    if not text and not file:
+        raise HTTPException(status_code=400, detail="Text oder Anhang erforderlich")
+
+    post_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": post_id,
+        "text": text,
+        "author_id": caller["id"],
+        "author_name": caller.get("name", caller.get("email", "")),
+        "created_at": now_iso,
+        "deleted": False,
+    }
+
+    if file is not None:
+        file_bytes = await file.read()
+        if len(file_bytes) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Datei zu gross (max 20 MB)")
+        storage_path = f"info-posts/{post_id}/{file.filename}"
+        put_obj, _ = _get_storage_fns()
+        put_obj(storage_path, file_bytes, file.content_type or "application/octet-stream")
+        doc["attachment"] = {
+            "filename": file.filename,
+            "content_type": file.content_type or "application/octet-stream",
+            "size": len(file_bytes),
+            "storage_path": storage_path,
+        }
+
+    await db.info_posts.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.get("/info-posts/{post_id}/attachment")
+async def download_info_post_attachment(post_id: str, token: str = Query(...)):
+    """Anhang eines Info-Posts herunterladen (alle authentifizierten User)."""
+    await _get_user(token)
+    post = await db.info_posts.find_one({"id": post_id, "deleted": {"$ne": True}}, {"_id": 0})
+    if not post or not post.get("attachment"):
+        raise HTTPException(status_code=404, detail="Anhang nicht gefunden")
+    att = post["attachment"]
+    _, get_obj = _get_storage_fns()
+    result = get_obj(att["storage_path"])
+    if not result:
+        raise HTTPException(status_code=404, detail="Datei nicht im Storage")
+    data, ct = result
+    return Response(
+        content=data,
+        media_type=ct or att.get("content_type", "application/octet-stream"),
+        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'}
+    )
+
+
+@router.delete("/info-posts/{post_id}")
+async def delete_info_post(post_id: str, token: str = Query(...)):
+    """Admin: Info-Post loeschen (Soft-Delete)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    res = await db.info_posts.update_one(
+        {"id": post_id},
+        {"$set": {"deleted": True, "deleted_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Post nicht gefunden")
+    return {"ok": True}
+
+
 
 # ─── Vacation Entries ──────────────────────────────
 
