@@ -171,6 +171,17 @@ class DseUsbConnection:
 
 SENTINEL_VALUES = {0xFFFF, 0xFFFE, 0xFFFD, 0xFFFC, 0x7FFF, 0x7FFE, 0x7FFD, 0x7FFC, 0x8000}
 
+# DSE Mode Mapping (Page 3 Register 4 oder Page 1 Register 14, 0..6)
+DSE_MODE_MAP = {
+    0: "stop",
+    1: "auto",
+    2: "manual",
+    3: "test_on_load",
+    4: "auto_manual_restore",
+    5: "user_config",
+    6: "off",
+}
+
 ALARM_NAMES = {
     1: "Notaus (Emergency Stop)", 2: "Niedriger Oeldruck", 3: "Hohe Kuehlwassertemperatur",
     4: "Hohe Oeltemperatur", 5: "Unterdrehzahl", 6: "Ueberdrehzahl",
@@ -210,7 +221,9 @@ def read_all_gencomm(conn):
     p3 = conn.read_registers(3, 0, 10)
     if p3:
         if len(p3) > 4 and valid(p3[4]):
-            data["dse_mode"] = p3[4]
+            raw_mode = p3[4]
+            data["dse_mode_raw"] = raw_mode
+            data["dse_mode"] = DSE_MODE_MAP.get(raw_mode, f"mode_{raw_mode}")
         if len(p3) > 6:
             data["status_bits"] = p3[6]
 
@@ -354,6 +367,7 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
             "engine_starts": "num_starts",
             "energy_kwh": "energy_kwh",
             "dse_mode": "dse_mode",
+            "dse_mode_raw": "dse_mode_raw",
         }
         for src_key, dst_key in field_map.items():
             if src_key in raw and raw[src_key] is not None:
