@@ -1726,6 +1726,73 @@ async def delete_note_file(note_id: str, file_id: str, token: str = Query(...)):
 
 DEFAULT_FAQ_CATEGORIES = ["Allgemein", "Arbeitszeit", "Urlaub & Krankheit", "Abrechnung", "Technik", "Sicherheit"]
 
+FAQ_SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "faqs_seed.json")
+
+
+async def seed_faqs_from_file(force: bool = False) -> dict:
+    """Seed FAQs from /app/backend/data/faqs_seed.json. Idempotent (by id).
+    - force=False: only inserts FAQs whose id doesn't exist yet
+    - force=True: deletes all non-deleted FAQs first, then inserts seed set
+    Returns counts {inserted, skipped, deleted}."""
+    import json as _json
+    if not os.path.exists(FAQ_SEED_FILE):
+        return {"inserted": 0, "skipped": 0, "deleted": 0, "error": "seed_file_missing"}
+    try:
+        with open(FAQ_SEED_FILE, "r", encoding="utf-8") as f:
+            seed = _json.load(f)
+    except Exception as e:
+        return {"inserted": 0, "skipped": 0, "deleted": 0, "error": f"parse_error: {e}"}
+
+    deleted = 0
+    if force:
+        res = await db.faqs.delete_many({})
+        deleted = res.deleted_count
+
+    inserted = 0
+    skipped = 0
+    for doc in seed:
+        if not isinstance(doc, dict) or not doc.get("id") or not doc.get("question"):
+            skipped += 1
+            continue
+        existing = await db.faqs.find_one({"id": doc["id"]}, {"_id": 0, "id": 1})
+        if existing and not force:
+            skipped += 1
+            continue
+        # Ensure required fields
+        doc.setdefault("deleted", False)
+        doc.setdefault("order", 0)
+        doc.setdefault("category", "Allgemein")
+        await db.faqs.insert_one(doc)
+        inserted += 1
+    return {"inserted": inserted, "skipped": skipped, "deleted": deleted}
+
+
+async def auto_seed_faqs_if_empty():
+    """Called on server startup: if faqs collection is empty, seed from file."""
+    try:
+        count = await db.faqs.count_documents({})
+        if count == 0:
+            res = await seed_faqs_from_file(force=False)
+            import logging as _l
+            _l.getLogger(__name__).info(f"[FAQ] Auto-seeded on startup: {res}")
+    except Exception as e:
+        import logging as _l
+        _l.getLogger(__name__).warning(f"[FAQ] Auto-seed failed: {e}")
+
+
+@router.post("/faq/seed-defaults")
+async def trigger_faq_seed(token: str = Query(...), force: int = 0):
+    """Admin: Seed FAQs aus /app/backend/data/faqs_seed.json.
+    - force=0: nur fehlende hinzufuegen (idempotent)
+    - force=1: alle loeschen und neu seeden"""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    res = await seed_faqs_from_file(force=bool(force))
+    if res.get("error"):
+        raise HTTPException(status_code=500, detail=res["error"])
+    return res
+
 
 @router.get("/faq")
 async def list_faqs(token: str = Query(...), q: str = Query("")):

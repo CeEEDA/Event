@@ -2082,3 +2082,10 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Document storage init deferred: {e}")
 
+    # Auto-seed FAQs if empty (first deploy on new server)
+    try:
+        from routes.employee import auto_seed_faqs_if_empty
+        asyncio.create_task(auto_seed_faqs_if_empty())
+    except Exception as e:
+        logger.warning(f"FAQ auto-seed scheduler failed: {e}")
+
