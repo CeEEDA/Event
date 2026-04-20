@@ -410,6 +410,8 @@ async def _get_custom_ai_instructions() -> str:
 async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
     """Analyze a document using Gemini AI."""
     try:
+        if not EMERGENT_KEY:
+            raise RuntimeError("EMERGENT_LLM_KEY nicht gesetzt – bitte in backend/.env ergänzen (sk-emergent-...)")
         from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
 
         # Build dynamic folder list for AI prompt
