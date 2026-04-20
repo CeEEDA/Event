@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ArrowLeft, BarChart3, FileText, ChevronRight } from "lucide-react";
+import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench } from "lucide-react";
 
 const subPages = [
   {
@@ -11,6 +11,22 @@ const subPages = [
     color: "fuchsia",
     path: "/verwaltung/auswertung/dokumente",
   },
+  {
+    key: "fuel",
+    label: "Fuel",
+    description: "Tankbelege, Verbrauch nach Kunde und Lager",
+    icon: Fuel,
+    color: "amber",
+    path: "/verwaltung/fuel",
+  },
+  {
+    key: "maschinen-auswertung",
+    label: "Maschinen-Auswertung",
+    description: "Störmeldungen, Ausfallstatistik pro Maschine und Zeitraum",
+    icon: Wrench,
+    color: "red",
+    path: "/verwaltung/maschinen-auswertung",
+  },
 ];
 
 const colorClasses = {
@@ -18,6 +34,7 @@ const colorClasses = {
   blue: { bg: "bg-blue-100", text: "text-blue-600", hoverBorder: "hover:border-blue-400", hoverIcon: "group-hover:bg-blue-600" },
   green: { bg: "bg-green-100", text: "text-green-600", hoverBorder: "hover:border-green-400", hoverIcon: "group-hover:bg-green-600" },
   amber: { bg: "bg-amber-100", text: "text-amber-600", hoverBorder: "hover:border-amber-400", hoverIcon: "group-hover:bg-amber-600" },
+  red: { bg: "bg-red-100", text: "text-red-600", hoverBorder: "hover:border-red-400", hoverIcon: "group-hover:bg-red-600" },
 };
 
 export default function AuswertungIndexPage() {
