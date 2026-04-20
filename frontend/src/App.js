@@ -46,6 +46,7 @@ import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
 import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
 import AbrechnungPage from "./pages/AbrechnungPage";
+import MitarbeiterDatenPage from "./pages/MitarbeiterDatenPage";
 import EinsatzplanungPage from "./pages/EinsatzplanungPage";
 import MaschinenAuswertungPage from "./pages/MaschinenAuswertungPage";
 import "./App.css";
@@ -444,6 +445,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AbrechnungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mitarbeiter-daten"
+        element={
+          <ProtectedRoute>
+            <MitarbeiterDatenPage />
           </ProtectedRoute>
         }
       />
