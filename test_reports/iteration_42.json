@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://schausteller-pay.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://schausteller-pay.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://schausteller-pay.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://schaustellersystem.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://schaustellersystem.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://schaustellersystem.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }
