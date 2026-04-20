@@ -7,11 +7,25 @@ Datenschutz: Nur Admins dürfen alle Einträge lesen. Mitarbeiter dürfen eigene
 anlegen (als Betroffener ODER Meldender).
 """
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timezone
+from io import BytesIO
 import uuid
+import logging
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.enums import TA_LEFT
+
+from email_service import send_email_with_attachment
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/verbandsbuch", tags=["verbandsbuch"])
 security = HTTPBearer()
@@ -144,4 +158,147 @@ async def delete_entry(entry_id: str, user=Depends(_require_admin)):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    return {"success": True}
+
+
+# ── PDF Generation ──────────────────────────────────────────────────────────
+def _format_date(d: str) -> str:
+    if not d:
+        return "—"
+    try:
+        return datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except Exception:
+        return d
+
+
+def _generate_pdf(entry: dict) -> bytes:
+    """Generate DGUV-compliant single-entry PDF for a Verbandsbuch record."""
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=20 * mm, rightMargin=20 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+        title=f"Verbandsbuch Lfd. Nr. {entry.get('lfd_nr', '?')}",
+        author="Eventenergie Deutschland GmbH & Co. KG",
+    )
+    styles = getSampleStyleSheet()
+    h_style = ParagraphStyle("h", parent=styles["Heading1"], fontSize=16, spaceAfter=4, textColor=colors.HexColor("#166534"))
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.grey, spaceAfter=12)
+    label_style = ParagraphStyle("lbl", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#6b7280"))
+    val_style = ParagraphStyle("val", parent=styles["Normal"], fontSize=10, leading=13, alignment=TA_LEFT)
+
+    story = []
+    story.append(Paragraph("Verbandsbuch – Eintragung Erste-Hilfe-Leistung", h_style))
+    story.append(Paragraph(
+        f"Lfd. Nr. <b>{entry.get('lfd_nr', '?')}</b> · Dokumentation gem. DGUV Vorschrift 1 und § 24 Abs. 6 SGB VII",
+        sub_style,
+    ))
+
+    def row(label, value):
+        return [
+            Paragraph(label, label_style),
+            Paragraph((value or "—").replace("\n", "<br/>"), val_style),
+        ]
+
+    data = [
+        row("Vorname, Name der/des Verletzten bzw. Erkrankten", entry.get("injured_name")),
+        row("Anschrift", entry.get("injured_address")),
+        row("Datum des Ereignisses", _format_date(entry.get("event_date"))),
+        row("Uhrzeit", entry.get("event_time")),
+        row("Ort (innerhalb der Einrichtung, z. B. Raum)", entry.get("location")),
+        row("Hergang des Unfalls bzw. des Gesundheitsschadens", entry.get("hergang")),
+        row("Art und Umfang der Verletzung bzw. Erkrankung", entry.get("injury_type")),
+        row("Name der/des Ersthelfer(s)", entry.get("first_aider")),
+        row("Zeugen", entry.get("witnesses")),
+        row("Bemerkungen / Notizen", entry.get("notes")),
+    ]
+
+    tbl = Table(data, colWidths=[60 * mm, 110 * mm])
+    tbl.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f9fafb")),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 14))
+
+    footer = (
+        f"Gemeldet durch: <b>{entry.get('reporter_name', '—')}</b> · "
+        f"Eingetragen am {datetime.fromisoformat(entry['created_at']).strftime('%d.%m.%Y um %H:%M Uhr') if entry.get('created_at') else '—'}"
+    )
+    story.append(Paragraph(footer, ParagraphStyle("foot", parent=styles["Normal"], fontSize=8, textColor=colors.grey)))
+    story.append(Spacer(1, 30))
+    story.append(Paragraph(
+        "______________________________________<br/>Unterschrift Ersthelfer / Vorgesetzter",
+        ParagraphStyle("sig", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#4b5563")),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+@router.get("/{entry_id}/pdf")
+async def download_pdf(entry_id: str, user=Depends(_require_admin)):
+    entry = await _db.verbandsbuch.find_one({"id": entry_id, "is_deleted": False}, {"_id": 0})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    pdf = _generate_pdf(entry)
+    filename = f"Verbandsbuch_Nr{entry['lfd_nr']:04d}_{entry['event_date']}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class VerbandsbuchEmailRequest(BaseModel):
+    to_email: EmailStr
+    message: Optional[str] = ""
+
+
+@router.post("/{entry_id}/email")
+async def email_entry(entry_id: str, payload: VerbandsbuchEmailRequest, user=Depends(_require_admin)):
+    """Send the PDF version of an entry via email."""
+    entry = await _db.verbandsbuch.find_one({"id": entry_id, "is_deleted": False}, {"_id": 0})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    pdf = _generate_pdf(entry)
+    filename = f"Verbandsbuch_Nr{entry['lfd_nr']:04d}_{entry['event_date']}.pdf"
+
+    custom = (payload.message or "").strip()
+    html = f"""
+    <p>Sehr geehrte Damen und Herren,</p>
+    <p>anbei übersenden wir den Verbandsbuch-Eintrag <b>Lfd. Nr. {entry['lfd_nr']}</b>
+    vom {_format_date(entry['event_date'])} um {entry.get('event_time', '')} Uhr
+    (Verletzte/r: <b>{entry['injured_name']}</b>).</p>
+    {f'<p><i>{custom}</i></p>' if custom else ''}
+    <p>Mit freundlichen Grüßen<br/>Eventenergie Deutschland GmbH &amp; Co. KG</p>
+    """
+    try:
+        send_email_with_attachment(
+            to_email=payload.to_email,
+            subject=f"Verbandsbuch-Eintrag Nr. {entry['lfd_nr']} – {entry['injured_name']}",
+            html_body=html,
+            attachment_bytes=pdf,
+            attachment_filename=filename,
+        )
+    except Exception as e:
+        logger.error(f"Verbandsbuch-Mail an {payload.to_email} fehlgeschlagen: {e}")
+        raise HTTPException(status_code=500, detail=f"E-Mail-Versand fehlgeschlagen: {e}")
+
+    # Audit log
+    await _db.verbandsbuch.update_one(
+        {"id": entry_id},
+        {"$push": {"email_log": {
+            "to": payload.to_email,
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "sent_by": user["id"],
+            "sent_by_name": user.get("name") or user.get("email"),
+        }}},
+    )
     return {"success": True}

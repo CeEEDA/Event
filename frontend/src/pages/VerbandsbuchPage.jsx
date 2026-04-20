@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import api from "../lib/api";
+import api, { BACKEND_URL } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, Heart, Trash2, Calendar, MapPin, User as UserIcon, Eye, Pencil } from "lucide-react";
+import { ArrowLeft, Heart, Trash2, Calendar, MapPin, User as UserIcon, Eye, Pencil, FileDown, Mail } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+const API = BACKEND_URL;
 
 export default function VerbandsbuchPage() {
   const navigate = useNavigate();
@@ -19,6 +20,12 @@ export default function VerbandsbuchPage() {
   const [selected, setSelected] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Email share dialog
+  const [showMail, setShowMail] = useState(false);
+  const [mailTo, setMailTo] = useState("");
+  const [mailMsg, setMailMsg] = useState("");
+  const [mailSending, setMailSending] = useState(false);
 
   useEffect(() => {
     if (user?.role !== "admin") { navigate("/hub"); return; }
@@ -80,6 +87,47 @@ export default function VerbandsbuchPage() {
     try { return new Date(d + "T00:00:00").toLocaleDateString("de-DE"); } catch { return d; }
   };
 
+  const handleDownloadPdf = async (entry) => {
+    try {
+      const token = localStorage.getItem("token");
+      const resp = await fetch(`${API}/verbandsbuch/${entry.id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Verbandsbuch_Nr${String(entry.lfd_nr).padStart(4, "0")}_${entry.event_date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("PDF heruntergeladen");
+    } catch (e) {
+      toast.error("PDF-Download fehlgeschlagen");
+    }
+  };
+
+  const handleSendMail = async () => {
+    if (!selected) return;
+    if (!mailTo.trim() || !/.+@.+\..+/.test(mailTo)) {
+      toast.error("Bitte gültige E-Mail-Adresse eingeben");
+      return;
+    }
+    setMailSending(true);
+    try {
+      await api.post(`/verbandsbuch/${selected.id}/email`, { to_email: mailTo.trim(), message: mailMsg });
+      toast.success(`E-Mail an ${mailTo} versendet`);
+      setShowMail(false);
+      setMailTo("");
+      setMailMsg("");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "E-Mail-Versand fehlgeschlagen");
+    }
+    setMailSending(false);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50" data-testid="verbandsbuch-page">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
@@ -138,6 +186,9 @@ export default function VerbandsbuchPage() {
                       <td className="px-3 py-2 text-right">
                         <button onClick={() => { setSelected(e); setEditMode(false); }} className="text-gray-500 hover:text-fuchsia-600 p-1" title="Details" data-testid={`verb-view-${e.lfd_nr}`}>
                           <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleDownloadPdf(e)} className="text-gray-500 hover:text-emerald-600 p-1 ml-1" title="PDF herunterladen" data-testid={`verb-pdf-${e.lfd_nr}`}>
+                          <FileDown className="w-4 h-4" />
                         </button>
                         <button onClick={() => handleDelete(e)} className="text-gray-500 hover:text-red-600 p-1 ml-1" title="Löschen" data-testid={`verb-del-${e.lfd_nr}`}>
                           <Trash2 className="w-4 h-4" />
@@ -221,7 +272,7 @@ export default function VerbandsbuchPage() {
                 </div>
               </div>
 
-              <DialogFooter className="gap-2">
+              <DialogFooter className="gap-2 flex-wrap">
                 {editMode ? (
                   <>
                     <Button variant="outline" onClick={() => setEditMode(false)} data-testid="cancel-edit">Abbrechen</Button>
@@ -230,13 +281,51 @@ export default function VerbandsbuchPage() {
                     </Button>
                   </>
                 ) : (
-                  <Button onClick={() => setEditMode(true)} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="enable-edit">
-                    <Pencil className="w-4 h-4 mr-1" /> Bearbeiten
-                  </Button>
+                  <>
+                    <Button variant="outline" onClick={() => handleDownloadPdf(selected)} data-testid="detail-pdf">
+                      <FileDown className="w-4 h-4 mr-1" /> PDF
+                    </Button>
+                    <Button variant="outline" onClick={() => { setMailTo(""); setMailMsg(""); setShowMail(true); }} data-testid="detail-mail">
+                      <Mail className="w-4 h-4 mr-1" /> Per E-Mail
+                    </Button>
+                    <Button onClick={() => setEditMode(true)} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="enable-edit">
+                      <Pencil className="w-4 h-4 mr-1" /> Bearbeiten
+                    </Button>
+                  </>
                 )}
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Email share dialog */}
+      <Dialog open={showMail} onOpenChange={setShowMail}>
+        <DialogContent className="sm:max-w-md" data-testid="verb-mail-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-fuchsia-600" /> Verbandsbuch-Eintrag per E-Mail teilen
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            {selected && (
+              <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                Eintrag <b>Lfd. Nr. {selected.lfd_nr}</b> · {selected.injured_name} · {formatDate(selected.event_date)}
+              </div>
+            )}
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Empfänger E-Mail *</label>
+              <Input type="email" value={mailTo} onChange={e => setMailTo(e.target.value)} placeholder="z.B. bg@bgetem.de" data-testid="mail-to" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Nachricht (optional)</label>
+              <Textarea rows={3} value={mailMsg} onChange={e => setMailMsg(e.target.value)} placeholder="Persönliche Nachricht an den Empfänger..." data-testid="mail-msg" />
+            </div>
+            <Button onClick={handleSendMail} disabled={mailSending} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="mail-send-btn">
+              {mailSending ? "Wird gesendet..." : "PDF versenden"}
+            </Button>
+            <p className="text-[11px] text-gray-400">Der PDF-Anhang wird über das konfigurierte SMTP-Postfach versendet. Der Versand wird im Eintrag protokolliert.</p>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
