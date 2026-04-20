@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench } from "lucide-react";
+import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench, Heart } from "lucide-react";
 
 const subPages = [
   {
@@ -10,6 +10,14 @@ const subPages = [
     icon: FileText,
     color: "fuchsia",
     path: "/verwaltung/auswertung/dokumente",
+  },
+  {
+    key: "verbandsbuch",
+    label: "Verbandsbuch",
+    description: "Alle gemeldeten Unfälle und Verletzungen gem. DGUV",
+    icon: Heart,
+    color: "red",
+    path: "/verwaltung/auswertung/verbandsbuch",
   },
   {
     key: "fuel",

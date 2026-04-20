@@ -47,6 +47,7 @@ import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
 import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
 import AbrechnungPage from "./pages/AbrechnungPage";
 import MitarbeiterDatenPage from "./pages/MitarbeiterDatenPage";
+import VerbandsbuchPage from "./pages/VerbandsbuchPage";
 import EinsatzplanungPage from "./pages/EinsatzplanungPage";
 import MaschinenAuswertungPage from "./pages/MaschinenAuswertungPage";
 import "./App.css";
@@ -453,6 +454,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MitarbeiterDatenPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/auswertung/verbandsbuch"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <VerbandsbuchPage />
           </ProtectedRoute>
         }
       />

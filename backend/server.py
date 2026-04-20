@@ -1861,6 +1861,10 @@ from routes.fuel_receipts import router as fuel_receipts_router, init_fuel_recei
 init_fuel_receipt_routes(db, decode_jwt_token)
 app.include_router(fuel_receipts_router)
 
+from routes.verbandsbuch import router as verbandsbuch_router, init_verbandsbuch_routes
+init_verbandsbuch_routes(db, decode_jwt_token)
+app.include_router(verbandsbuch_router)
+
 from routes.project_reports import router as project_reports_router, init_project_report_routes
 init_project_report_routes(db, decode_jwt_token)
 app.include_router(project_reports_router)

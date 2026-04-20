@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronRight, Clock, CalendarOff, Receipt, User as UserIcon } from "lucide-react";
+import { ArrowLeft, ChevronRight, Clock, CalendarOff, Receipt, User as UserIcon, Heart } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "../components/ui/dialog";
@@ -12,6 +12,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
+import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
 
 export default function MitarbeiterDatenPage() {
   const navigate = useNavigate();
@@ -27,6 +29,43 @@ export default function MitarbeiterDatenPage() {
   const [toStartTime, setToStartTime] = useState("");
   const [toEndTime, setToEndTime] = useState("");
   const [toSubmitting, setToSubmitting] = useState(false);
+
+  // Verbandsbuch (first-aid log) dialog
+  const today = new Date().toISOString().slice(0, 10);
+  const nowHM = new Date().toTimeString().slice(0, 5);
+  const emptyVerb = {
+    injured_name: user?.name || "",
+    injured_address: "",
+    event_date: today,
+    event_time: nowHM,
+    location: "",
+    hergang: "",
+    injury_type: "",
+    first_aider: "",
+    witnesses: "",
+    notes: "",
+  };
+  const [showVerb, setShowVerb] = useState(false);
+  const [verb, setVerb] = useState(emptyVerb);
+  const [verbSubmitting, setVerbSubmitting] = useState(false);
+
+  const submitVerbandsbuch = async () => {
+    if (!verb.injured_name.trim()) { toast.error("Bitte Vor- und Nachname angeben"); return; }
+    if (!verb.event_date || !verb.event_time) { toast.error("Bitte Datum und Uhrzeit angeben"); return; }
+    if (!verb.location.trim()) { toast.error("Bitte Ort (Raum/Bereich) angeben"); return; }
+    if (!verb.hergang.trim()) { toast.error("Bitte Hergang beschreiben"); return; }
+    if (!verb.injury_type.trim()) { toast.error("Bitte Art/Umfang der Verletzung angeben"); return; }
+    setVerbSubmitting(true);
+    try {
+      await api.post("/verbandsbuch", verb);
+      toast.success("Verbandseintrag gespeichert");
+      setShowVerb(false);
+      setVerb({ ...emptyVerb, event_date: new Date().toISOString().slice(0, 10), event_time: new Date().toTimeString().slice(0, 5) });
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler beim Speichern");
+    }
+    setVerbSubmitting(false);
+  };
 
   const submitTimeOff = async () => {
     if (!toType) { toast.error("Bitte Art auswählen"); return; }
@@ -76,12 +115,21 @@ export default function MitarbeiterDatenPage() {
       color: "emerald",
       onClick: () => navigate("/abrechnung"),
     },
+    {
+      key: "verbandsbuch",
+      label: "Verbandseintrag melden",
+      description: "Unfall, Verletzung oder Erkrankung gem. DGUV dokumentieren",
+      icon: Heart,
+      color: "red",
+      onClick: () => setShowVerb(true),
+    },
   ];
 
   const colorClasses = {
     green: { bg: "bg-green-100", text: "text-green-600", hoverBorder: "hover:border-green-400", hoverIcon: "group-hover:bg-green-600" },
     orange: { bg: "bg-orange-100", text: "text-orange-600", hoverBorder: "hover:border-orange-400", hoverIcon: "group-hover:bg-orange-600" },
     emerald: { bg: "bg-emerald-100", text: "text-emerald-600", hoverBorder: "hover:border-emerald-400", hoverIcon: "group-hover:bg-emerald-600" },
+    red: { bg: "bg-red-100", text: "text-red-600", hoverBorder: "hover:border-red-400", hoverIcon: "group-hover:bg-red-600" },
   };
 
   return (
@@ -173,6 +221,69 @@ export default function MitarbeiterDatenPage() {
             <Button onClick={submitTimeOff} disabled={toSubmitting} className="w-full bg-orange-600 hover:bg-orange-700" data-testid="to-submit-btn">
               {toSubmitting ? "Wird eingereicht..." : "Absenden"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Verbandseintrag (First-aid log) Dialog */}
+      <Dialog open={showVerb} onOpenChange={setShowVerb}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" data-testid="verb-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Heart className="w-5 h-5 text-red-600" /> Verbandseintrag melden
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Vorname, Name der/des Verletzten *</label>
+              <Input value={verb.injured_name} onChange={e => setVerb({...verb, injured_name: e.target.value})} placeholder="Max Mustermann" data-testid="verb-name" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Anschrift (optional)</label>
+              <Input value={verb.injured_address} onChange={e => setVerb({...verb, injured_address: e.target.value})} placeholder="Straße, PLZ Ort" data-testid="verb-address" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Datum *</label>
+                <Input type="date" value={verb.event_date} onChange={e => setVerb({...verb, event_date: e.target.value})} data-testid="verb-date" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Uhrzeit *</label>
+                <Input type="time" value={verb.event_time} onChange={e => setVerb({...verb, event_time: e.target.value})} data-testid="verb-time" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Ort (Raum/Bereich) *</label>
+              <Input value={verb.location} onChange={e => setVerb({...verb, location: e.target.value})} placeholder="z.B. Werkstatt, Lagerhalle Regal 3" data-testid="verb-location" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Hergang des Unfalls *</label>
+              <Textarea rows={3} value={verb.hergang} onChange={e => setVerb({...verb, hergang: e.target.value})} placeholder="Was ist passiert? Wie kam es zur Verletzung?" data-testid="verb-hergang" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Art und Umfang der Verletzung/Erkrankung *</label>
+              <Textarea rows={2} value={verb.injury_type} onChange={e => setVerb({...verb, injury_type: e.target.value})} placeholder="z.B. Schnittwunde 2 cm am linken Zeigefinger" data-testid="verb-injury" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Ersthelfer</label>
+                <Input value={verb.first_aider} onChange={e => setVerb({...verb, first_aider: e.target.value})} placeholder="Name" data-testid="verb-firstaider" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Zeugen</label>
+                <Input value={verb.witnesses} onChange={e => setVerb({...verb, witnesses: e.target.value})} placeholder="Name(n)" data-testid="verb-witnesses" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Notizen (optional)</label>
+              <Textarea rows={2} value={verb.notes} onChange={e => setVerb({...verb, notes: e.target.value})} placeholder="Sonstige Hinweise" data-testid="verb-notes" />
+            </div>
+            <Button onClick={submitVerbandsbuch} disabled={verbSubmitting} className="w-full bg-red-600 hover:bg-red-700" data-testid="verb-submit-btn">
+              {verbSubmitting ? "Wird gespeichert..." : "Verbandseintrag speichern"}
+            </Button>
+            <p className="text-[11px] text-gray-400 pt-1">
+              Gemäß DGUV Vorschrift 1 und §24 Abs. 6 SGB VII. Der Eintrag wird vom Admin im Verbandsbuch verwaltet und mind. 5 Jahre aufbewahrt.
+            </p>
           </div>
         </DialogContent>
       </Dialog>
