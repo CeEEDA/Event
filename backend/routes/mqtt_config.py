@@ -518,9 +518,11 @@ async def get_control_log(generator_id: str, user: dict = Depends(require_operat
 
 # ============== Gateway MQTT Credentials ==============
 
-MOSQUITTO_PASSWD_FILE = r"C:\Program Files\Mosquitto\passwd"
-MOSQUITTO_EXE = r"C:\Program Files\Mosquitto\mosquitto.exe"
-MOSQUITTO_CONF = r"C:\Program Files\Mosquitto\mosquitto.conf"
+# Configurable via .env (see MOSQUITTO_PASSWD_FILE etc.). Defaults reflect the
+# installation path used on the Event-Energie Windows Server.
+MOSQUITTO_PASSWD_FILE = os.environ.get("MOSQUITTO_PASSWD_FILE", "").strip() or r"C:/eventenergie/mosquitto_passwd"
+MOSQUITTO_EXE = os.environ.get("MOSQUITTO_EXE", "").strip() or r"C:\Program Files\Mosquitto\mosquitto.exe"
+MOSQUITTO_CONF = os.environ.get("MOSQUITTO_CONF", "").strip() or r"C:/eventenergie/mosquitto.conf"
 
 
 def _mosquitto_hash(password: str, iterations: int = 101) -> str:
@@ -736,3 +738,66 @@ async def revoke_device_mqtt_credentials(device_id: str, user: dict = Depends(re
     )
     await _regenerate_passwd_file()
     return {"message": "MQTT-Zugangsdaten widerrufen"}
+
+
+@router.get("/passwd-file-status")
+async def passwd_file_status(user: dict = Depends(require_operator)):
+    """Diagnostic: show configured passwd file path, counts and which DB users would be written.
+    Helpful when new gateways aren't authenticating - reveals path mismatches between mosquitto.conf and backend."""
+    import platform
+    status = {
+        "mosquitto_passwd_file": MOSQUITTO_PASSWD_FILE,
+        "mosquitto_exe": MOSQUITTO_EXE,
+        "mosquitto_conf": MOSQUITTO_CONF,
+        "platform": platform.system(),
+        "file_exists": False,
+        "file_entries": [],
+        "file_last_modified": None,
+        "db_generators_with_mqtt": 0,
+        "db_devices_with_mqtt": 0,
+        "db_users": [],
+    }
+    try:
+        import os as _os
+        if _os.path.exists(MOSQUITTO_PASSWD_FILE):
+            status["file_exists"] = True
+            st = _os.stat(MOSQUITTO_PASSWD_FILE)
+            status["file_last_modified"] = datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()
+            with open(MOSQUITTO_PASSWD_FILE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if ":" in line:
+                        user_part = line.split(":", 1)[0]
+                        status["file_entries"].append(user_part)
+    except Exception as e:
+        status["file_error"] = str(e)
+
+    gens = await db.generators.find(
+        {"mqtt_username": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "mqtt_username": 1, "name": 1, "serial_number": 1}
+    ).to_list(1000)
+    status["db_generators_with_mqtt"] = len(gens)
+    for g in gens:
+        status["db_users"].append({"source": "generator", "username": g.get("mqtt_username"), "name": g.get("name"), "serial": g.get("serial_number")})
+
+    devs = await db.devices.find(
+        {"mqtt_username": {"$exists": True, "$ne": ""}},
+        {"_id": 0, "mqtt_username": 1, "serial_number": 1, "user_field": 1}
+    ).to_list(1000)
+    status["db_devices_with_mqtt"] = len(devs)
+    for d in devs:
+        status["db_users"].append({"source": "device", "username": d.get("mqtt_username"), "name": d.get("user_field"), "serial": d.get("serial_number")})
+
+    # Diagnose: which DB users are NOT in the file?
+    file_set = set(status["file_entries"])
+    db_set = set(u["username"] for u in status["db_users"] if u.get("username"))
+    status["missing_in_file"] = sorted(db_set - file_set)
+    status["file_only"] = sorted(file_set - db_set)
+    return status
+
+
+@router.post("/passwd-file/sync")
+async def passwd_file_sync(user: dict = Depends(require_operator)):
+    """Force regeneration of the Mosquitto passwd file from DB credentials. Useful after path/config changes."""
+    ok = await _regenerate_passwd_file()
+    return {"ok": ok, "path": MOSQUITTO_PASSWD_FILE}

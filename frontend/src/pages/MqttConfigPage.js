@@ -235,6 +235,9 @@ export default function MqttConfigPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
+        {/* Passwd-Datei Diagnose */}
+        <PasswdFileDiagnostics />
+
         {/* Raw Messages (Debug) */}
         <section className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="mqtt-raw-section">
           <button
@@ -290,5 +293,123 @@ export default function MqttConfigPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+
+function PasswdFileDiagnostics() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/mqtt/passwd-file-status");
+      setData(res.data);
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Status konnte nicht geladen werden"));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post("/mqtt/passwd-file/sync");
+      if (res.data?.ok) {
+        toast.success("Passwd-Datei synchronisiert");
+      } else {
+        toast.error("Sync fehlgeschlagen - prüfe Backend-Log");
+      }
+      await load();
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Sync fehlgeschlagen"));
+    }
+    setSyncing(false);
+  };
+
+  if (loading || !data) return null;
+
+  const missing = data.missing_in_file || [];
+  const hasProblem = !data.file_exists || missing.length > 0;
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="mqtt-passwd-diagnostics">
+      <div className={`px-6 py-4 border-b ${hasProblem ? "bg-amber-50/50 border-amber-200" : "bg-emerald-50/50 border-emerald-200"}`}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${hasProblem ? "bg-amber-100" : "bg-emerald-100"}`}>
+              {hasProblem ? <AlertTriangle className="w-5 h-5 text-amber-600" /> : <CheckCircle className="w-5 h-5 text-emerald-600" />}
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">Mosquitto Passwd-Datei</h2>
+              <p className="text-xs text-gray-500">
+                {data.file_entries.length} Einträge in Datei · {data.db_users.length} Einträge in DB
+                {missing.length > 0 && <span className="text-amber-700 font-semibold"> · {missing.length} fehlen!</span>}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={load} data-testid="passwd-refresh-btn">
+              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Status neu laden
+            </Button>
+            <Button size="sm" onClick={handleSync} disabled={syncing} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="passwd-sync-btn">
+              {syncing ? "Sync..." : "Datei neu schreiben"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-6 py-4 space-y-3 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Konfigurierter Pfad</p>
+            <code className="text-xs bg-gray-100 px-2 py-1 rounded block break-all">{data.mosquitto_passwd_file}</code>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Datei existiert: {data.file_exists ? <span className="text-emerald-600 font-medium">Ja</span> : <span className="text-red-600 font-medium">Nein</span>}
+              {data.file_last_modified && <span> · zuletzt: {new Date(data.file_last_modified).toLocaleString("de-DE")}</span>}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">System</p>
+            <p className="text-xs text-gray-700">Platform: {data.platform}</p>
+            <p className="text-xs text-gray-700">Mosquitto Exe: <code className="text-[10px] bg-gray-100 px-1 rounded">{data.mosquitto_exe}</code></p>
+          </div>
+        </div>
+
+        {missing.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid="passwd-missing-list">
+            <p className="text-xs font-semibold text-amber-800 mb-2">
+              Diese Credentials sind in der Datenbank, fehlen aber in der Passwd-Datei:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {missing.map(u => (
+                <code key={u} className="text-[11px] bg-white border border-amber-300 text-amber-800 px-2 py-0.5 rounded">{u}</code>
+              ))}
+            </div>
+            <p className="text-[10px] text-amber-700 mt-2">
+              → Klicke "Datei neu schreiben", damit die fehlenden Einträge übertragen werden.
+            </p>
+          </div>
+        )}
+
+        {data.file_only && data.file_only.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs font-semibold text-blue-800 mb-2">
+              Nur in Datei vorhanden (nicht in DB — evtl. manuell hinzugefügt):
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {data.file_only.map(u => (
+                <code key={u} className="text-[11px] bg-white border border-blue-300 text-blue-800 px-2 py-0.5 rounded">{u}</code>
+              ))}
+            </div>
+            <p className="text-[10px] text-blue-700 mt-2">Diese Einträge bleiben erhalten (werden nicht gelöscht).</p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
