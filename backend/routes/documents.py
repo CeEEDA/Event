@@ -3,6 +3,7 @@ import uuid
 import json
 import logging
 import asyncio
+import tempfile
 import requests
 from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
@@ -1002,7 +1003,7 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("u
     await _save_to_local_storage(file_data, file.filename, folder_id)
 
     # Save temp file and start background AI analysis
-    temp_path = f"/tmp/{uuid.uuid4()}.{ext}"
+    temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.{ext}")
     with open(temp_path, "wb") as f:
         f.write(file_data)
 

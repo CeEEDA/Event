@@ -150,6 +150,13 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - [x] Cache-Control Header für aggressive Browser-Caches (1 Jahr für Datei-basierte, 1 Tag für GridFS)
 - [x] Verifiziert: 7,4 MB Foto → 0,5-15 KB Thumbnail (je nach Motiv)
 
+## 2026-04-20 – Windows-Pfad Bugfix: Dokument-Upload Crash (P0)
+- [x] **Problem**: `POST /api/documents/upload` lieferte auf Live-Windows-Server 500 Internal Server Error
+- [x] **Root Cause**: `temp_path = f"/tmp/{uuid}.{ext}"` war hartkodiert auf Linux-Pfad – `/tmp/` existiert auf Windows nicht → `FileNotFoundError: [Errno 2] No such file or directory`
+- [x] Fix: `temp_path = os.path.join(tempfile.gettempdir(), f"{uuid}.{ext}")` (plattform-unabhängig, nutzt `%TEMP%` auf Windows, `/tmp/` auf Linux)
+- [x] `import tempfile` ergänzt in `/app/backend/routes/documents.py`
+- [x] Lint passed, Preview-Upload (PNG) verifiziert: HTTP 200
+
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung (IMAP "Mailbridge" Windows Service)
 - [x] ~~DSE 890 Gateway CSV-Upload (User-Task)~~ — **erledigt 2026-04-20**
