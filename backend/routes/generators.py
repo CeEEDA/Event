@@ -1602,6 +1602,30 @@ async def get_generator_events(
     }
 
 
+@router.get("/alarms-by-device/{device_id}")
+async def get_alarms_by_device(
+    device_id: str,
+    active_only: bool = Query(default=False),
+    limit: int = Query(200, ge=1, le=1000),
+    user: dict = Depends(get_authenticated_user),
+):
+    """Get alarms for a device (by finding its generator via direct id or dev-{device_id} mapping).
+    Used by the Serviceplan diagnostics panel to show fault history for any device with a generator link."""
+    # Device-derived generators use id pattern "dev-{device_id}"; also check direct mapping
+    gen = await db.generators.find_one(
+        {"$or": [{"id": f"dev-{device_id}"}, {"device_id": device_id}]},
+        {"_id": 0, "id": 1}
+    )
+    gen_id = gen["id"] if gen else f"dev-{device_id}"
+    query = {"generator_id": gen_id}
+    if active_only:
+        query["resolved_at"] = None
+    alarms = await db.generator_alarms.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    total = await db.generator_alarms.count_documents({"generator_id": gen_id})
+    active_count = await db.generator_alarms.count_documents({"generator_id": gen_id, "resolved_at": None})
+    return {"alarms": alarms, "total": total, "active": active_count, "generator_id": gen_id}
+
+
 @router.get("/events-by-device/{device_id}")
 async def get_device_events(
     device_id: str,

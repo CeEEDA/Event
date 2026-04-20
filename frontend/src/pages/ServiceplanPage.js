@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import QrScanner from "../components/QrScanner";
 import EventLog from "../components/EventLog";
+import FaultDiagnosticsPanel from "../components/FaultDiagnosticsPanel";
 
 const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste", verteiler: "Verteiler" };
 
@@ -873,6 +874,13 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Fehlerdiagnose (Alarm-Historie) */}
+      {planDetail.device_id && (
+        <div className="mb-6" data-testid="serviceplan-fault-diagnostics">
+          <FaultDiagnosticsPanel deviceId={planDetail.device_id} compact />
         </div>
       )}
 
