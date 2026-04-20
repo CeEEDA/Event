@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
-  DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText, Check,
+  DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText, Check, Heart, FileDown,
 } from "lucide-react";
 
 export default function AdminZeitDetailPage() {
@@ -23,6 +23,34 @@ export default function AdminZeitDetailPage() {
   const currentMonth = new Date().getMonth();
 
   // HR Data
+  const [verbEntries, setVerbEntries] = useState([]);
+
+  const loadVerbEntries = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const res = await api.get(`/verbandsbuch/by-user/${userId}`);
+      setVerbEntries(res.data.entries || []);
+    } catch { /* silent */ }
+  }, [userId]);
+
+  useEffect(() => { loadVerbEntries(); }, [loadVerbEntries]);
+
+  const handleVerbPdf = async (entryId, lfdNr, eventDate) => {
+    try {
+      const t = localStorage.getItem("token");
+      const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/verbandsbuch/${entryId}/pdf`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Verbandsbuch_Nr${String(lfdNr).padStart(4, "0")}_${eventDate}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { toast.error("PDF-Download fehlgeschlagen"); }
+  };
   const [overtimeHours, setOvertimeHours] = useState("");
   const [vacationTotal, setVacationTotal] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -467,6 +495,58 @@ export default function AdminZeitDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Verbandsbuch-Einträge */}
+        {verbEntries.length > 0 && (
+          <div className="bg-white rounded-xl border border-red-200 p-4" data-testid="verbandsbuch-section">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Heart className="w-4 h-4 text-red-600" />
+                <p className="text-[10px] font-semibold text-red-600 uppercase tracking-wider">
+                  Verbandsbuch · {verbEntries.length} Eintr{verbEntries.length === 1 ? "ag" : "äge"}
+                </p>
+              </div>
+              <button onClick={() => navigate("/verwaltung/auswertung/verbandsbuch")} className="text-xs text-fuchsia-600 hover:underline" data-testid="verb-open-all">
+                Alle anzeigen →
+              </button>
+            </div>
+            <div className="space-y-2">
+              {verbEntries.map(e => (
+                <div
+                  key={e.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border ${e.role === "injured" ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"}`}
+                  data-testid={`verb-entry-${e.lfd_nr}`}
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${e.role === "injured" ? "bg-red-600 text-white" : "bg-gray-400 text-white"}`}>
+                    <Heart className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-900 text-sm">Lfd. Nr. {e.lfd_nr}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${e.role === "injured" ? "bg-red-600 text-white" : "bg-gray-500 text-white"}`}>
+                        {e.role === "injured" ? "Geschädigte/r" : "Meldende/r"}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(e.event_date + "T00:00:00").toLocaleDateString("de-DE")} um {e.event_time}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-800 mt-0.5"><b>Ort:</b> {e.location}</div>
+                    <div className="text-sm text-gray-700"><b>Hergang:</b> {e.hergang}</div>
+                    <div className="text-sm text-gray-700"><b>Verletzung:</b> {e.injury_type}</div>
+                  </div>
+                  <button
+                    onClick={() => handleVerbPdf(e.id, e.lfd_nr, e.event_date)}
+                    className="text-gray-500 hover:text-emerald-600 p-1 flex-shrink-0"
+                    title="PDF herunterladen"
+                    data-testid={`verb-pdf-${e.lfd_nr}`}
+                  >
+                    <FileDown className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Regelarbeitszeit */}
         <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="work-schedule-section">

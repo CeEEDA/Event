@@ -128,6 +128,31 @@ async def list_entries(user=Depends(_require_admin)):
     return {"entries": items, "total": len(items)}
 
 
+@router.get("/by-user/{user_id}")
+async def list_by_user(user_id: str, user=Depends(_require_admin)):
+    """Return entries where the given user_id was either the injured person OR the reporter.
+    Matching for 'injured_name' uses the user's stored name (case-insensitive substring).
+    """
+    target = await _db.users.find_one({"id": user_id}, {"_id": 0, "name": 1, "email": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="Mitarbeiter nicht gefunden")
+
+    name = (target.get("name") or "").strip()
+    query = {"is_deleted": False, "$or": [{"reporter_user_id": user_id}]}
+    if name:
+        # Escape regex special chars in name for safety
+        import re as _re
+        query["$or"].append({"injured_name": {"$regex": _re.escape(name), "$options": "i"}})
+
+    items = []
+    async for doc in _db.verbandsbuch.find(query, {"_id": 0}).sort("lfd_nr", -1):
+        # annotate role: is this user the injured party or just the reporter?
+        is_injured = bool(name) and name.lower() in (doc.get("injured_name", "").lower())
+        doc["role"] = "injured" if is_injured else "reporter"
+        items.append(doc)
+    return {"entries": items, "total": len(items)}
+
+
 @router.get("/{entry_id}")
 async def get_entry(entry_id: str, user=Depends(_require_admin)):
     entry = await _db.verbandsbuch.find_one({"id": entry_id, "is_deleted": False}, {"_id": 0})
