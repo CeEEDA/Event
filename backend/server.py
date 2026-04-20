@@ -1,6 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File as FastAPIFile, Form, Query, Request, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
@@ -1276,12 +1276,13 @@ async def download_shared_file(token: str, data: ShareAccessRequest = None):
     try:
         grid_out = await fs.open_download_stream_by_name(file_doc["id"])
         content = await grid_out.read()
-        
-        return StreamingResponse(
-            io.BytesIO(content),
+
+        return Response(
+            content=content,
             media_type=file_doc["content_type"],
             headers={
-                "Content-Disposition": f'attachment; filename="{file_doc["original_filename"]}"'
+                "Content-Disposition": f'attachment; filename="{file_doc["original_filename"]}"',
+                "Content-Length": str(len(content)),
             }
         )
     except Exception as e:

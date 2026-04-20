@@ -19,6 +19,12 @@ import {
   HardDrive
 } from "lucide-react";
 
+function formatMB(bytes) {
+  if (!bytes) return "0 MB";
+  const mb = bytes / 1024 / 1024;
+  return mb >= 1 ? `${mb.toFixed(2)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+}
+
 export default function SharedFilePage() {
   const { token } = useParams();
   const [shareInfo, setShareInfo] = useState(null);
@@ -26,6 +32,7 @@ export default function SharedFilePage() {
   const [error, setError] = useState(null);
   const [password, setPassword] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ loaded: 0, total: 0, percent: null });
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -58,10 +65,12 @@ export default function SharedFilePage() {
     }
 
     setDownloading(true);
+    setDownloadProgress({ loaded: 0, total: 0, percent: null });
     try {
       const response = await downloadSharedFile(
-        token, 
-        shareInfo.password_protected ? password : null
+        token,
+        shareInfo.password_protected ? password : null,
+        (p) => setDownloadProgress(p)
       );
       
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -82,6 +91,7 @@ export default function SharedFilePage() {
       }
     } finally {
       setDownloading(false);
+      setDownloadProgress({ loaded: 0, total: 0, percent: null });
     }
   };
 
@@ -255,21 +265,42 @@ export default function SharedFilePage() {
 
           {/* Download Button - only for files */}
           {!isFolder && shareInfo.allow_download && (
-            <Button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="w-full h-12 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold"
-              data-testid="download-shared-btn"
-            >
-              {downloading ? (
-                "Wird heruntergeladen..."
-              ) : (
-                <>
-                  <Download className="w-5 h-5 mr-2" />
-                  Herunterladen
-                </>
+            <div className="space-y-2">
+              <Button
+                onClick={handleDownload}
+                disabled={downloading}
+                className="w-full h-12 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold"
+                data-testid="download-shared-btn"
+              >
+                {downloading ? (
+                  downloadProgress.percent !== null
+                    ? `Wird heruntergeladen... ${downloadProgress.percent}%`
+                    : `Wird heruntergeladen... ${formatMB(downloadProgress.loaded)}`
+                ) : (
+                  <>
+                    <Download className="w-5 h-5 mr-2" />
+                    Herunterladen
+                  </>
+                )}
+              </Button>
+              {downloading && (
+                <div data-testid="download-progress">
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-fuchsia-600 h-2 rounded-full transition-all duration-150"
+                      style={{ width: downloadProgress.percent !== null ? `${downloadProgress.percent}%` : "30%" }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>
+                      {formatMB(downloadProgress.loaded)}
+                      {downloadProgress.total > 0 && ` / ${formatMB(downloadProgress.total)}`}
+                    </span>
+                    <span>{downloadProgress.percent !== null ? `${downloadProgress.percent}%` : "…"}</span>
+                  </div>
+                </div>
               )}
-            </Button>
+            </div>
           )}
 
           {/* Folder info */}

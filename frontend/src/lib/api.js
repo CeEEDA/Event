@@ -124,12 +124,22 @@ export const uploadFile = async (file, folderPath = "/") => {
   });
 };
 
-// Public download helper
-export const downloadSharedFile = async (token, password = null) => {
+// Public download helper - supports onDownloadProgress callback
+export const downloadSharedFile = async (token, password = null, onProgress = null) => {
   return axios.post(
     `${BACKEND_URL}/api/public/share/${token}/download`,
     { password },
-    { responseType: "blob" }
+    {
+      responseType: "blob",
+      onDownloadProgress: onProgress ? (e) => {
+        // e.loaded, e.total (total may be 0 on some servers without Content-Length)
+        onProgress({
+          loaded: e.loaded,
+          total: e.total || 0,
+          percent: e.total ? Math.round((e.loaded / e.total) * 100) : null,
+        });
+      } : undefined,
+    }
   );
 };
 
