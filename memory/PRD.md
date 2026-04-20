@@ -152,7 +152,8 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 
 ## Upcoming Tasks (P1)
 - [ ] Microsoft 365 Postfach-Anbindung (IMAP "Mailbridge" Windows Service)
-- [ ] DSE 890 Gateway CSV-Upload (User-Task)
+- [x] ~~DSE 890 Gateway CSV-Upload (User-Task)~~ — **erledigt 2026-04-20**
+- [ ] PayPal im Stripe-Dashboard aktivieren (User-Task)
 - [ ] Test Tankwagen-Pi setup script on real hardware
 - [ ] FinTS/HBCI activation when bank registers Product ID
 
