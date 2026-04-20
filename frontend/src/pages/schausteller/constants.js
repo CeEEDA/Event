@@ -22,8 +22,7 @@ export const api = {
 };
 
 export const PAYMENT_METHODS = [
-  { value: "kreditkarte", label: "Kreditkarte" },
-  { value: "paypal", label: "PayPal" },
+  { value: "kreditkarte", label: "Kreditkarte / PayPal" },
   { value: "rechnung", label: "Auf Rechnung" },
 ];
 
