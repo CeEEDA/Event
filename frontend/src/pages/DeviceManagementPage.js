@@ -489,6 +489,21 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
         </p>
       </div>
 
+      {/* LTE / GSM Settings */}
+      <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 mb-3" data-testid="dse-lte-info">
+        <p className="text-xs text-sky-700 font-medium mb-2 flex items-center gap-1.5">
+          <Wifi className="w-3.5 h-3.5" /> LTE / GSM-Einstellungen im DSE890
+        </p>
+        <div className="space-y-1.5 text-xs font-mono">
+          <MqttCopyRow label="Anbieter" value="Telekom" />
+          <MqttCopyRow label="PIN" value="0000" />
+          <MqttCopyRow label="APN" value="internet.m2mportal.de" />
+        </div>
+        <p className="text-[10px] text-sky-700 mt-2 leading-snug">
+          Einstellungen unter DSE890 &gt; <b>GSM/LTE</b> (bzw. "Mobile Network") eintragen. Die SIM-Karte muss vorher in das Gateway eingesetzt sein.
+        </p>
+      </div>
+
       {/* MQTT Credentials */}
       {deviceId && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3" data-testid="dse-module-uid-section">
