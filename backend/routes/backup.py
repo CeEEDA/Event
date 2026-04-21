@@ -182,7 +182,9 @@ async def _run_db_backup() -> dict:
                 f"--archive={archive_path}",
                 "--gzip",
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = await asyncio.to_thread(
+                subprocess.run, cmd, capture_output=True, text=True, timeout=300
+            )
             if result.returncode == 0:
                 file_size = os.path.getsize(archive_path) if os.path.exists(archive_path) else 0
                 backup_doc = {
@@ -210,24 +212,37 @@ async def _run_db_backup() -> dict:
     MAX_DOCS_FOR_RAM_EXPORT = 10000
     try:
         collections = await db.list_collection_names()
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for coll_name in collections:
-                count = await db[coll_name].estimated_document_count()
-                if count > MAX_DOCS_FOR_RAM_EXPORT:
-                    zf.writestr(f"{coll_name}_SKIPPED.txt",
-                        f"Collection '{coll_name}' hat {count} Dokumente und wurde uebersprungen.\n"
-                        f"Verwende mongodump fuer vollstaendige Backups.")
-                    logger.info(f"Backup: {coll_name} uebersprungen ({count} Docs > {MAX_DOCS_FOR_RAM_EXPORT})")
-                    continue
-                docs = await db[coll_name].find({}).to_list(MAX_DOCS_FOR_RAM_EXPORT)
-                for doc in docs:
-                    if "_id" in doc:
-                        doc["_id"] = str(doc["_id"])
-                    for key, val in doc.items():
-                        if isinstance(val, datetime):
-                            doc[key] = val.isoformat()
-                json_str = json_mod.dumps(docs, ensure_ascii=False, indent=2, default=str)
-                zf.writestr(f"{coll_name}.json", json_str)
+        # Pre-fetch all docs per collection (async), then compress synchronously in a thread
+        coll_data = {}
+        for coll_name in collections:
+            count = await db[coll_name].estimated_document_count()
+            if count > MAX_DOCS_FOR_RAM_EXPORT:
+                coll_data[coll_name] = {"skipped": True, "count": count}
+                logger.info(f"Backup: {coll_name} uebersprungen ({count} Docs > {MAX_DOCS_FOR_RAM_EXPORT})")
+                continue
+            docs = await db[coll_name].find({}).to_list(MAX_DOCS_FOR_RAM_EXPORT)
+            for doc in docs:
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
+                for key, val in doc.items():
+                    if isinstance(val, datetime):
+                        doc[key] = val.isoformat()
+            coll_data[coll_name] = {"skipped": False, "docs": docs}
+
+        def _write_zip():
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for cname, cdata in coll_data.items():
+                    if cdata.get("skipped"):
+                        zf.writestr(
+                            f"{cname}_SKIPPED.txt",
+                            f"Collection '{cname}' hat {cdata['count']} Dokumente und wurde uebersprungen.\n"
+                            f"Verwende mongodump fuer vollstaendige Backups.",
+                        )
+                    else:
+                        json_str = json_mod.dumps(cdata["docs"], ensure_ascii=False, indent=2, default=str)
+                        zf.writestr(f"{cname}.json", json_str)
+
+        await asyncio.to_thread(_write_zip)
 
         file_size = os.path.getsize(archive_path) if os.path.exists(archive_path) else 0
         backup_doc = {
@@ -278,30 +293,33 @@ async def _run_files_backup() -> dict:
     }
 
     try:
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for item_name in sorted(INCLUDE_TOPLEVEL):
-                item_path = PROJECT_ROOT / item_name
-                if not item_path.exists():
-                    continue
+        def _build_files_zip():
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for item_name in sorted(INCLUDE_TOPLEVEL):
+                    item_path = PROJECT_ROOT / item_name
+                    if not item_path.exists():
+                        continue
 
-                if item_path.is_file():
-                    zf.write(str(item_path), item_name)
-                elif item_path.is_dir():
-                    for root, dirs, files in os.walk(str(item_path)):
-                        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
-                        for fname in sorted(files):
-                            if fname in EXCLUDE_FILES:
-                                continue
-                            if any(fname.endswith(ext) for ext in EXCLUDE_EXTENSIONS):
-                                continue
-                            file_path = os.path.join(root, fname)
-                            try:
-                                if os.path.getsize(file_path) > MAX_FILE_SIZE:
+                    if item_path.is_file():
+                        zf.write(str(item_path), item_name)
+                    elif item_path.is_dir():
+                        for root, dirs, files in os.walk(str(item_path)):
+                            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                            for fname in sorted(files):
+                                if fname in EXCLUDE_FILES:
                                     continue
-                            except OSError:
-                                continue
-                            rel_path = os.path.relpath(file_path, str(PROJECT_ROOT))
-                            zf.write(file_path, rel_path)
+                                if any(fname.endswith(ext) for ext in EXCLUDE_EXTENSIONS):
+                                    continue
+                                file_path = os.path.join(root, fname)
+                                try:
+                                    if os.path.getsize(file_path) > MAX_FILE_SIZE:
+                                        continue
+                                except OSError:
+                                    continue
+                                rel_path = os.path.relpath(file_path, str(PROJECT_ROOT))
+                                zf.write(file_path, rel_path)
+
+        await asyncio.to_thread(_build_files_zip)
 
         file_size = os.path.getsize(archive_path) if os.path.exists(archive_path) else 0
 
