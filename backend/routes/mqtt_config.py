@@ -841,3 +841,36 @@ async def passwd_file_sync(user: dict = Depends(require_operator)):
     """Force regeneration of the Mosquitto passwd file from DB credentials. Useful after path/config changes."""
     ok = await _regenerate_passwd_file()
     return {"ok": ok, "path": MOSQUITTO_PASSWD_FILE}
+
+
+@router.post("/broker/restart")
+async def broker_restart(user: dict = Depends(require_operator)):
+    """Force-restart the Mosquitto broker service. Windows: uses Restart-Service. Linux: sends SIGHUP.
+
+    Use this when password changes don't take effect (broker keeps the old passwd in memory).
+    Requires that the backend process has permission to manage the service.
+    """
+    import subprocess
+    import platform
+    try:
+        if platform.system() == "Windows":
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Restart-Service mosquitto -Force"],
+                capture_output=True, timeout=20, text=True,
+            )
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Mosquitto-Neustart fehlgeschlagen (evtl. fehlende Rechte): {result.stderr.strip() or 'unbekannter Fehler'}. Bitte manuell in PowerShell ausfuehren: Restart-Service mosquitto -Force",
+                )
+            return {"ok": True, "message": "Mosquitto-Service neu gestartet"}
+        else:
+            result = subprocess.run(["pkill", "-HUP", "mosquitto"], capture_output=True, timeout=5)
+            return {"ok": result.returncode == 0, "message": "SIGHUP gesendet"}
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Timeout beim Mosquitto-Neustart")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Broker restart fehlgeschlagen: {e}")
+        raise HTTPException(status_code=500, detail=f"Broker-Neustart fehlgeschlagen: {e}")

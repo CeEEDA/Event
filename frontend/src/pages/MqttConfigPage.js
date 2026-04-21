@@ -315,6 +315,8 @@ function PasswdFileDiagnostics() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [restarting, setRestarting] = useState(false);
+
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -329,6 +331,22 @@ function PasswdFileDiagnostics() {
       toast.error(getErrorMsg(err, "Sync fehlgeschlagen"));
     }
     setSyncing(false);
+  };
+
+  const handleRestart = async () => {
+    if (!window.confirm("Mosquitto-Broker neu starten? Alle Gateways verbinden sich danach kurz neu.")) return;
+    setRestarting(true);
+    try {
+      const res = await api.post("/mqtt/broker/restart");
+      if (res.data?.ok) {
+        toast.success("Mosquitto neu gestartet – Gateways verbinden sich jetzt neu");
+      } else {
+        toast.error("Neustart teilweise fehlgeschlagen – prüfe Backend-Log");
+      }
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Broker-Neustart fehlgeschlagen"));
+    }
+    setRestarting(false);
   };
 
   if (loading || !data) return null;
@@ -352,12 +370,15 @@ function PasswdFileDiagnostics() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button size="sm" variant="outline" onClick={load} data-testid="passwd-refresh-btn">
               <RefreshCw className="w-3.5 h-3.5 mr-1" /> Status neu laden
             </Button>
             <Button size="sm" onClick={handleSync} disabled={syncing} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="passwd-sync-btn">
               {syncing ? "Sync..." : "Datei neu schreiben"}
+            </Button>
+            <Button size="sm" onClick={handleRestart} disabled={restarting} variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-50" data-testid="broker-restart-btn">
+              {restarting ? "Neustart..." : "Broker neu starten"}
             </Button>
           </div>
         </div>
