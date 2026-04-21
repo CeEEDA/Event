@@ -372,6 +372,36 @@ function DSEPiSetupSection({ deviceId, deviceName, controller, connectionType })
 const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
 const UNIVERSAL_TOPIC_LABEL = "DSE Universal Module Topics";
 
+function MqttCopyRow({ label, value, copyValue, highlight = false }) {
+  const toCopy = copyValue !== undefined ? copyValue : value;
+  const handleCopy = () => {
+    navigator.clipboard.writeText(toCopy);
+    toast.success(`${label} kopiert`);
+  };
+  const wrap = highlight
+    ? "flex justify-between items-center bg-amber-50 px-2 py-1.5 rounded border border-amber-200"
+    : "flex justify-between items-center bg-white px-2 py-1.5 rounded border border-gray-100";
+  const labelCls = highlight ? "text-amber-600" : "text-gray-400";
+  const valCls = highlight ? "text-amber-800 font-semibold select-all" : "text-gray-900 select-all";
+  return (
+    <div className={wrap}>
+      <span className={labelCls}>{label}</span>
+      <div className="flex items-center gap-2">
+        <span className={valCls}>{value}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="text-gray-400 hover:text-fuchsia-600 transition-colors"
+          title={`${label} kopieren`}
+          data-testid={`copy-mqtt-${label.replace(/\s+/g, "-").toLowerCase()}`}
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DseGatewaySetupSection({ controller, serialNumber, formData, update, deviceId }) {
   // All DSE controllers use the same universal GenComm topic file
   const topicInfo = controller ? { filename: "dse_universal_module_topics.csv", label: UNIVERSAL_TOPIC_LABEL } : null;
@@ -445,38 +475,14 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3" data-testid="dse-mqtt-info">
         <p className="text-xs text-gray-700 font-medium mb-2">MQTT-Einstellungen im DSE890:</p>
         <div className="space-y-1.5 text-xs font-mono">
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Broker URL</span>
-            <span className="text-gray-900 select-all">{brokerUrl}</span>
-          </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Port</span>
-            <span className="text-gray-900 select-all">{brokerPort}</span>
-          </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Connection Method</span>
-            <span className="text-gray-900">GSM</span>
-          </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Clean Session</span>
-            <span className="text-gray-900">Ja (Haken setzen)</span>
-          </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Keep Alive</span>
-            <span className="text-gray-900">60</span>
-          </div>
-          <div className="flex justify-between items-center bg-amber-50 px-2 py-1.5 rounded border border-amber-200">
-            <span className="text-amber-600">Group Name</span>
-            <span className="text-amber-800 font-semibold select-all">{groupName}</span>
-          </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Use Login Credentials</span>
-            <span className="text-gray-900">Ja (Haken setzen)</span>
-          </div>
-          <div className="flex justify-between bg-white px-2 py-1.5 rounded border border-gray-100">
-            <span className="text-gray-400">Use Secure MQTT</span>
-            <span className="text-gray-900">Nein</span>
-          </div>
+          <MqttCopyRow label="Broker URL" value={brokerUrl} />
+          <MqttCopyRow label="Port" value={String(brokerPort)} />
+          <MqttCopyRow label="Connection Method" value="GSM" />
+          <MqttCopyRow label="Clean Session" value="Ja (Haken setzen)" copyValue="true" />
+          <MqttCopyRow label="Keep Alive" value="60" />
+          <MqttCopyRow label="Group Name" value={groupName} highlight />
+          <MqttCopyRow label="Use Login Credentials" value="Ja (Haken setzen)" copyValue="true" />
+          <MqttCopyRow label="Use Secure MQTT" value="Nein" copyValue="false" />
         </div>
         <p className="text-[10px] text-amber-600 mt-2 font-medium">
           Alle Einstellungen unter DSE890 &gt; MQTT-Tab eintragen. Username und Password unten generieren und dort einfuegen.
