@@ -413,6 +413,7 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
   const [generating, setGenerating] = useState(false);
   const [newCreds, setNewCreds] = useState(null);
   const [showPw, setShowPw] = useState(false);
+  const [usernameOverride, setUsernameOverride] = useState("");
 
   useEffect(() => {
     if (!deviceId) return;
@@ -428,10 +429,12 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
     if (credInfo?.has_credentials && !window.confirm("Vorhandene Zugangsdaten werden ersetzt. Fortfahren?")) return;
     setGenerating(true);
     try {
-      const res = await api.post(`/mqtt/device-credentials/${deviceId}/generate`);
+      const payload = usernameOverride.trim() ? { username: usernameOverride.trim() } : {};
+      const res = await api.post(`/mqtt/device-credentials/${deviceId}/generate`, payload);
       setNewCreds(res.data);
       setShowPw(true);
       setCredInfo({ has_credentials: true, mqtt_username: res.data.username, created_at: new Date().toISOString() });
+      setUsernameOverride("");
       toast.success("MQTT-Zugangsdaten generiert");
     } catch (err) {
       toast.error(getErrorMsg(err, "Fehler beim Generieren"));
@@ -569,6 +572,22 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
                 </Button>
               )}
             </div>
+          </div>
+
+          <div className="mb-2">
+            <label className="text-[10px] text-violet-700 font-medium mb-0.5 block">
+              MQTT-Username (optional überschreiben — z.B. beim Kopieren eines Lichtmasts)
+            </label>
+            <Input
+              value={usernameOverride}
+              onChange={e => setUsernameOverride(e.target.value.trim())}
+              placeholder={credInfo?.mqtt_username ? `Aktuell: ${credInfo.mqtt_username} · Leer lassen = Auto aus Seriennummer` : "z.B. gw_ml_260 (leer lassen = Auto)"}
+              className="font-mono text-sm h-8"
+              data-testid="mqtt-username-override-input"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              Ohne Eintrag wird der Username automatisch aus der Seriennummer generiert.
+            </p>
           </div>
 
           {newCreds ? (

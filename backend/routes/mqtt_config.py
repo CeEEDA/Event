@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
@@ -682,14 +682,45 @@ async def revoke_mqtt_credentials(generator_id: str, user: dict = Depends(requir
 # ============== Device MQTT Credentials (Stromerzeuger/Lichtmast) ==============
 
 @router.post("/device-credentials/{device_id}/generate")
-async def generate_device_mqtt_credentials(device_id: str, user: dict = Depends(require_operator)):
-    """Generate unique MQTT credentials for a device (Stromerzeuger/Lichtmast). Password shown only once."""
+async def generate_device_mqtt_credentials(
+    device_id: str,
+    payload: dict = Body(default={}),
+    user: dict = Depends(require_operator),
+):
+    """Generate unique MQTT credentials for a device (Stromerzeuger/Lichtmast). Password shown only once.
+
+    Optional JSON body: `{"username": "gw_ml_260"}` to override the auto-derived MQTT username
+    (useful when copying a device — two devices must not share the same username).
+    """
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
 
-    serial = device.get("serial_number", device_id[:12])
-    username = "gw_" + serial.lower().replace(" ", "_").replace("-", "_")
+    override = (payload.get("username") or "").strip() if isinstance(payload, dict) else ""
+    if override:
+        # Sanitize: only lowercase alnum + underscore, max 32 chars
+        import re as _re
+        username = _re.sub(r"[^a-z0-9_]", "_", override.lower())[:32]
+        if not username or len(username) < 3:
+            raise HTTPException(status_code=400, detail="Ungueltiger Username (min. 3 Zeichen, a-z 0-9 _)")
+    else:
+        serial = device.get("serial_number", device_id[:12])
+        username = "gw_" + serial.lower().replace(" ", "_").replace("-", "_")
+
+    # Prevent collision with other devices/generators
+    conflict_dev = await db.devices.find_one({"mqtt_username": username, "id": {"$ne": device_id}}, {"_id": 0, "id": 1, "serial_number": 1})
+    conflict_gen = await db.generators.find_one({"mqtt_username": username}, {"_id": 0, "id": 1, "name": 1})
+    if conflict_dev:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Username '{username}' ist bereits vergeben an Geraet '{conflict_dev.get('serial_number') or conflict_dev.get('id')}'. Bitte anderen Username eintragen.",
+        )
+    if conflict_gen:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Username '{username}' ist bereits vergeben an Generator '{conflict_gen.get('name') or conflict_gen.get('id')}'. Bitte anderen Username eintragen.",
+        )
+
     password = secrets.token_urlsafe(16)
     pw_hash = _mosquitto_hash(password)
 
