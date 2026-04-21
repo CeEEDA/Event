@@ -178,7 +178,7 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
 
 // Pi Setup for DSE Controllers via USB/RS232 Modbus RTU
 // Match flexibel: "DSE 8610", "DSE 8610 MKII", "DSE 8610 MK2", etc.
-const PI_CONTROLLERS_EXACT = ["DSE 5510", "DSE 8610", "DSE 8610 MKII", "DSE 7310", "DSE L401"];
+const PI_CONTROLLERS_EXACT = ["DSE 5510", "DSE 8610", "DSE 8610 MKII", "DSE 7310", "DSE L401", "DSE 4520 MKII"];
 function isPiController(ctrl) {
   if (!ctrl) return false;
   const c = ctrl.toUpperCase().trim();
@@ -369,7 +369,7 @@ function DSEPiSetupSection({ deviceId, deviceName, controller, connectionType })
   );
 }
 
-const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
+const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 4520 MKII", "DSE 7310", "DSE L401", "DSE 5510"];
 const UNIVERSAL_TOPIC_LABEL = "DSE Universal Module Topics";
 
 function MqttCopyRow({ label, value, copyValue, highlight = false }) {
@@ -760,7 +760,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       } else {
         setDeviceImageUrl(null);
       }
-      const KNOWN = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
+      const KNOWN = ["DSE 8610 MKII", "DSE 8610", "DSE 4520 MKII", "DSE 7310", "DSE L401", "DSE 5510"];
       setControllerCustomMode(!!editing.controller && !KNOWN.includes(editing.controller));
     } else {
       setDocuments([]);
@@ -1202,7 +1202,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                   <div>
                     <Label className="text-gray-700 text-sm">Steuerung</Label>
                     {(() => {
-                      const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 7310", "DSE L401", "DSE 5510"];
+                      const CONTROLLER_OPTIONS = ["DSE 8610 MKII", "DSE 8610", "DSE 4520 MKII", "DSE 7310", "DSE L401", "DSE 5510"];
                       const isKnown = CONTROLLER_OPTIONS.includes(formData.controller);
                       const selectValue = isKnown ? formData.controller : (controllerCustomMode ? "__custom" : "");
                       return (

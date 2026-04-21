@@ -484,7 +484,8 @@ export default function GeneratorDetailPage() {
           const model = (generator.model || "").toUpperCase();
           const is5510 = model.includes("5510");
           const isL401 = model.includes("L401");
-          const isFullControl = !isL401; // Stromerzeuger (8610, 5510 etc.) = alle Buttons
+          const is4520 = model.includes("4520");
+          const isFullControl = !isL401 && !is4520; // L401 (Lichtmast) + 4520 MKII = nur Start/Auto/Stop
           const canWrite = true; // FC16 @4104 funktioniert (DSE antwortet mit FC03 Read-Back)
 
           const DseImgBtn = ({ cmd, label, imgSrc, size = 64, disabled = false, active = false, glowColor = null }) => {
