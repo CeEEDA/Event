@@ -499,6 +499,34 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
           <p className="text-[10px] text-gray-400 mt-1">
             Die USB ID finden Sie im DSE890 Web-Interface unter "Modules Connection" in der Spalte "USB ID". Nicht die Gateway USBID aus dem Status-Tab verwenden!
           </p>
+
+          {formData.dse_module_uid && (
+            <div className="mt-3 pt-3 border-t border-blue-200" data-testid="mqtt-clientid-hint">
+              <p className="text-xs text-blue-700 font-medium mb-1.5 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" /> MQTT Client Identifier (Pflichtfeld im DSE890 Gateway!)
+              </p>
+              <div className="flex items-center gap-2 bg-white px-2 py-1.5 rounded border border-blue-200">
+                <span className="text-gray-900 font-mono text-sm select-all flex-1" data-testid="mqtt-client-id-value">
+                  {`gw_${String(formData.dse_module_uid).trim()}`.slice(0, 23)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = `gw_${String(formData.dse_module_uid).trim()}`.slice(0, 23);
+                    navigator.clipboard.writeText(v);
+                    toast.success("Client-ID kopiert");
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                  data-testid="copy-client-id-btn"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-[10px] text-amber-700 mt-1.5 leading-snug">
+                ⚠️ Diesen Wert im DSE890 Web-Interface unter <b>MQTT Settings → Client Identifier</b> (bzw. "Client ID") eintragen. Ohne eindeutige Client-ID verweigert der Broker die Verbindung (MQTT-3.1.1-Spec).
+              </p>
+            </div>
+          )}
         </div>
       )}
 
