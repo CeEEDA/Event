@@ -1047,6 +1047,10 @@ async def delete_vacation_entry(user_id: str, entry_id: str, token: str = Query(
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
 
+    year = entry.get("year", datetime.now(timezone.utc).year)
+    await db.vacation_entries.delete_one({"id": entry_id, "user_id": user_id})
+    await _recalc_vacation_used(user_id, year)
+    return {"ok": True}
 
 
 # ─── Time Off Requests ──────────────────────────────
@@ -1221,11 +1225,6 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
         )
 
     return {"ok": True, "status": status}
-
-    year = entry.get("year", datetime.now(timezone.utc).year)
-    await db.vacation_entries.delete_one({"id": entry_id})
-    await _recalc_vacation_used(user_id, year)
-    return {"ok": True}
 
 
 # ── Work Schedule (Regelarbeitszeit) ──────────────────────
