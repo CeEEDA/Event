@@ -466,11 +466,12 @@ class SerialReceiptReader:
             rtscts=False,
             dsrdtr=True,
         )
-        # DTR und DSR Signale setzen (Drucker erwartet diese)
+        # DTR und RTS dauerhaft auf HIGH (MultiFlow erwartet beide Handshake-Leitungen)
         try:
             self.ser.dtr = True
+            self.ser.rts = True
         except (OSError, IOError):
-            log.debug("DTR nicht unterstuetzt (z.B. virtuelle Ports)")
+            log.debug("DTR/RTS nicht unterstuetzt (z.B. virtuelle Ports)")
         log.info(f"Serielle Verbindung geoeffnet: {self.port} @ {self.baud}")
 
     def close(self):
@@ -486,9 +487,13 @@ class SerialReceiptReader:
         if not self.ser or not self.ser.is_open:
             return None, None
 
+        # Handshake-Leitungen periodisch loggen (alle 5 Sek)
+        self._dump_handshake_state()
+
         while True:
             data = self.ser.read(256)
             if data:
+                log.info(f"SERIAL RX ({len(data)} bytes): {data.hex(' ')}")
                 # Status-Queries INLINE beantworten, aus dem Print-Stream entfernen
                 data = self._handle_status_queries(data)
                 if data:
@@ -506,6 +511,24 @@ class SerialReceiptReader:
             else:
                 # Buffer vorhanden, noch kein Timeout
                 time.sleep(0.05)
+
+    def _dump_handshake_state(self):
+        """Log current RS232 control line state (DSR/CTS/DTR/RTS) once every 5 seconds."""
+        now = time.time()
+        if not hasattr(self, "_last_handshake_log") or (now - self._last_handshake_log) > 5:
+            self._last_handshake_log = now
+            try:
+                log.info(
+                    "HANDSHAKE DTR=%s RTS=%s | DSR=%s CTS=%s CD=%s RI=%s",
+                    getattr(self.ser, "dtr", "?"),
+                    getattr(self.ser, "rts", "?"),
+                    self.ser.dsr if hasattr(self.ser, "dsr") else "?",
+                    self.ser.cts if hasattr(self.ser, "cts") else "?",
+                    self.ser.cd if hasattr(self.ser, "cd") else "?",
+                    self.ser.ri if hasattr(self.ser, "ri") else "?",
+                )
+            except Exception as e:
+                log.debug(f"Handshake-Status nicht lesbar: {e}")
 
     def _handle_status_queries(self, data: bytes) -> bytes:
         """Parse incoming bytes for Epson DLE EOT status queries and respond to them.
