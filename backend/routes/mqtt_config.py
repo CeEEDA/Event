@@ -585,17 +585,26 @@ async def _regenerate_passwd_file():
         # Signal Mosquitto to reload password file (without restart)
         import subprocess
         try:
-            # mosquitto_passwd --reload or kill -HUP on Linux
-            # On Windows: restart mosquitto gracefully
             import platform
             if platform.system() == "Windows":
-                subprocess.run(["taskkill", "/f", "/im", "mosquitto.exe"],
-                               capture_output=True, timeout=5)
-                import time
-                time.sleep(1)
-                subprocess.Popen([MOSQUITTO_EXE, "-c", MOSQUITTO_CONF],
-                                 creationflags=0x00000008)  # DETACHED_PROCESS
-                logger.info("Mosquitto neugestartet nach Passwort-Aenderung")
+                # Use Windows Service Controller to cleanly restart Mosquitto.
+                # Never kill the process directly – that breaks the Windows service state.
+                try:
+                    result = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command", "Restart-Service mosquitto -Force"],
+                        capture_output=True, timeout=15, text=True,
+                    )
+                    if result.returncode == 0:
+                        logger.info("Mosquitto Service neugestartet (passwd reload)")
+                    else:
+                        logger.warning(f"Restart-Service mosquitto fehlgeschlagen: {result.stderr}")
+                except Exception as svc_e:
+                    # Fallback: try sc.exe if powershell not available
+                    logger.warning(f"PowerShell Restart-Service fehlgeschlagen: {svc_e} – Fallback auf sc.exe")
+                    subprocess.run(["sc.exe", "stop", "mosquitto"], capture_output=True, timeout=10)
+                    import time
+                    time.sleep(2)
+                    subprocess.run(["sc.exe", "start", "mosquitto"], capture_output=True, timeout=10)
             else:
                 # Linux: send SIGHUP to reload config
                 result = subprocess.run(["pkill", "-HUP", "mosquitto"],
