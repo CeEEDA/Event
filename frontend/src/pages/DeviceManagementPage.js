@@ -521,7 +521,7 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
             Die USB ID finden Sie im DSE890 Web-Interface unter "Modules Connection" in der Spalte "USB ID". Nicht die Gateway USBID aus dem Status-Tab verwenden!
           </p>
 
-          {formData.dse_module_uid && (
+          {formData.dse_module_uid ? (
             <div className="mt-3 pt-3 border-t border-blue-200" data-testid="mqtt-clientid-hint">
               <p className="text-xs text-blue-700 font-medium mb-1.5 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5" /> MQTT Client Identifier (Pflichtfeld im DSE890 Gateway!)
@@ -545,6 +545,15 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
               </div>
               <p className="text-[10px] text-amber-700 mt-1.5 leading-snug">
                 ⚠️ Diesen Wert im DSE890 Web-Interface unter <b>MQTT Settings → Client Identifier</b> (bzw. "Client ID") eintragen. Ohne eindeutige Client-ID verweigert der Broker die Verbindung (MQTT-3.1.1-Spec).
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3 pt-3 border-t border-blue-200 bg-amber-50 -mx-3 -mb-3 px-3 py-2 rounded-b-lg" data-testid="mqtt-clientid-missing">
+              <p className="text-xs text-amber-700 font-medium flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5" /> MQTT Client Identifier noch nicht verfügbar
+              </p>
+              <p className="text-[11px] text-amber-800 mt-1 leading-snug">
+                Bitte zuerst oben die <b>USB-ID des DSE-Moduls</b> eintragen. Sobald die USB-ID gesetzt ist, erscheint hier die Client-ID (z.B. <span className="font-mono">gw_6D2CCDC779</span>), die Sie im DSE890-Gateway einfügen müssen.
               </p>
             </div>
           )}
