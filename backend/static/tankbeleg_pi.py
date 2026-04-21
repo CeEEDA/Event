@@ -479,6 +479,9 @@ class SerialReceiptReader:
 
     def read_receipt(self):
         """Liest Daten bis ein vollstaendiger Beleg erkannt wird.
+        Beantwortet dabei Epson TM-U295 Status-Queries inline, damit die
+        FMC MultiFlow den Pi als 'Drucker online' erkennt.
+
         Gibt (raw_bytes, parsed_text) zurueck oder (None, None) wenn kein Beleg."""
         if not self.ser or not self.ser.is_open:
             return None, None
@@ -486,8 +489,11 @@ class SerialReceiptReader:
         while True:
             data = self.ser.read(256)
             if data:
-                self.buffer.extend(data)
-                self.last_data_time = time.time()
+                # Status-Queries INLINE beantworten, aus dem Print-Stream entfernen
+                data = self._handle_status_queries(data)
+                if data:
+                    self.buffer.extend(data)
+                    self.last_data_time = time.time()
             elif self.buffer and (time.time() - self.last_data_time) > self.receipt_timeout:
                 # Timeout - Buffer verarbeiten
                 raw = bytes(self.buffer)
@@ -500,6 +506,51 @@ class SerialReceiptReader:
             else:
                 # Buffer vorhanden, noch kein Timeout
                 time.sleep(0.05)
+
+    def _handle_status_queries(self, data: bytes) -> bytes:
+        """Parse incoming bytes for Epson DLE EOT status queries and respond to them.
+        Returns the bytes WITHOUT the status queries (so they don't land in the receipt).
+
+        Epson TM-U295 status bytes (respond 'online, no errors, paper OK'):
+          DLE EOT n  (0x10 0x04 n)  n = 1..4
+            n=1: printer status   -> 0x12  (online, drawer OK, cover closed, no feed)
+            n=2: offline status   -> 0x12  (no offline conditions)
+            n=3: error status     -> 0x12  (no errors, no auto-recoverable error)
+            n=4: paper sensor     -> 0x12  (paper OK / slip inserted)
+
+        Also handles ESC/POS Real-time status requests.
+        """
+        STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 4: 0x12}
+        out = bytearray()
+        i = 0
+        while i < len(data):
+            b = data[i]
+            # Check for DLE (0x10)  EOT (0x04)  n (1..4)  -> status query
+            if b == 0x10 and i + 2 < len(data) and data[i + 1] == 0x04:
+                n = data[i + 2]
+                if n in STATUS_OK:
+                    try:
+                        self.ser.write(bytes([STATUS_OK[n]]))
+                        self.ser.flush()
+                        log.debug(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X}")
+                    except (OSError, IOError) as e:
+                        log.warning(f"Status-Antwort fehlgeschlagen: {e}")
+                    i += 3
+                    continue
+            # Check for DLE ENQ n (real-time status request, 0x10 0x05 n)
+            if b == 0x10 and i + 2 < len(data) and data[i + 1] == 0x05:
+                # Respond with 'no error' status byte
+                try:
+                    self.ser.write(bytes([0x00]))
+                    self.ser.flush()
+                    log.debug("Realtime ENQ -> 0x00 (ok)")
+                except (OSError, IOError):
+                    pass
+                i += 3
+                continue
+            out.append(b)
+            i += 1
+        return bytes(out)
 
 
 # ====== Hauptprogramm ======
