@@ -413,7 +413,6 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
   const [generating, setGenerating] = useState(false);
   const [newCreds, setNewCreds] = useState(null);
   const [showPw, setShowPw] = useState(false);
-  const [usernameOverride, setUsernameOverride] = useState("");
 
   useEffect(() => {
     if (!deviceId) return;
@@ -429,12 +428,10 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
     if (credInfo?.has_credentials && !window.confirm("Vorhandene Zugangsdaten werden ersetzt. Fortfahren?")) return;
     setGenerating(true);
     try {
-      const payload = usernameOverride.trim() ? { username: usernameOverride.trim() } : {};
-      const res = await api.post(`/mqtt/device-credentials/${deviceId}/generate`, payload);
+      const res = await api.post(`/mqtt/device-credentials/${deviceId}/generate`, {});
       setNewCreds(res.data);
       setShowPw(true);
       setCredInfo({ has_credentials: true, mqtt_username: res.data.username, created_at: new Date().toISOString() });
-      setUsernameOverride("");
       toast.success("MQTT-Zugangsdaten generiert");
     } catch (err) {
       toast.error(getErrorMsg(err, "Fehler beim Generieren"));
@@ -573,22 +570,9 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
               )}
             </div>
           </div>
-
-          <div className="mb-2">
-            <label className="text-[10px] text-violet-700 font-medium mb-0.5 block">
-              MQTT-Username (optional überschreiben — z.B. beim Kopieren eines Lichtmasts)
-            </label>
-            <Input
-              value={usernameOverride}
-              onChange={e => setUsernameOverride(e.target.value.trim())}
-              placeholder={credInfo?.mqtt_username ? `Aktuell: ${credInfo.mqtt_username} · Leer lassen = Auto aus Seriennummer` : "z.B. gw_ml_260 (leer lassen = Auto)"}
-              className="font-mono text-sm h-8"
-              data-testid="mqtt-username-override-input"
-            />
-            <p className="text-[10px] text-gray-400 mt-0.5">
-              Ohne Eintrag wird der Username automatisch aus der Seriennummer generiert.
-            </p>
-          </div>
+          <p className="text-[10px] text-gray-500 mb-2">
+            Username wird automatisch aus der Seriennummer abgeleitet (z.B. <b>ml_254</b> → <b>gw_ml_254</b>). Beim Kopieren zuerst die Seriennummer oben ändern, dann Zugangsdaten generieren.
+          </p>
 
           {newCreds ? (
             <div className="space-y-1.5 text-xs font-mono">
@@ -1595,6 +1579,7 @@ export default function DeviceManagementPage() {
       year_of_manufacture: device.year_of_manufacture ?? "",
       power_output: device.power_output || "",
       controller: device.controller || "",
+      acquired_date: device.acquired_date || "",
       last_maintenance: device.last_maintenance || "",
       next_maintenance: device.next_maintenance || "",
       notes: device.notes || "",
