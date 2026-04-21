@@ -89,11 +89,36 @@ echo "[7/8] Kiosk-Modus einrichten..."
 AUTOSTART_DIR="/home/$REAL_USER/.config/autostart"
 mkdir -p "$AUTOSTART_DIR"
 
-cat > "$AUTOSTART_DIR/tankbeleg-kiosk.desktop" << 'KIOSK_EOF'
+# Wait-Wrapper: startet Chromium erst, wenn die lokale Tankbeleg-UI (Port 8080)
+# tatsaechlich erreichbar ist. Vorher hatten wir einen starren `sleep 5`, der
+# zu ERR_CONNECTION_REFUSED fuehrte, wenn der Flask-Server beim Boot noch nicht
+# bereit war (LTE kommt erst spaeter hoch → die UI blockiert waehrend init).
+WAIT_SCRIPT="/home/$REAL_USER/tankbeleg-kiosk-start.sh"
+cat > "$WAIT_SCRIPT" << 'WAIT_EOF'
+#!/bin/bash
+# Warte bis Tankbeleg-UI erreichbar (max. 120 Sek.) bevor Chromium startet
+for i in $(seq 1 60); do
+  if curl -s --max-time 1 http://localhost:8080/ > /dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+# Auch wenn Timeout: trotzdem starten, Chromium zeigt dann Retry-Reload
+exec chromium-browser \
+  --kiosk --start-fullscreen --noerrdialogs \
+  --disable-infobars --disable-session-crashed-bubble \
+  --disable-translate --disable-features=Translate --lang=de \
+  --incognito --check-for-update-interval=31536000 \
+  http://localhost:8080
+WAIT_EOF
+chmod +x "$WAIT_SCRIPT"
+chown "$REAL_USER:$REAL_GROUP" "$WAIT_SCRIPT"
+
+cat > "$AUTOSTART_DIR/tankbeleg-kiosk.desktop" << KIOSK_EOF
 [Desktop Entry]
 Type=Application
 Name=Tankbeleg Kiosk
-Exec=bash -c "sleep 5 && chromium-browser --kiosk --start-fullscreen --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-translate --disable-features=Translate --lang=de --incognito --check-for-update-interval=31536000 http://localhost:8080"
+Exec=$WAIT_SCRIPT
 X-GNOME-Autostart-enabled=true
 KIOSK_EOF
 
