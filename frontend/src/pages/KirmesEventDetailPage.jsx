@@ -628,11 +628,18 @@ export default function KirmesEventDetailPage() {
               {(event.signups || []).map(signup => {
                 const sch = signup.schausteller;
                 const isExpanded = expandedSignup === signup.id;
-                const hasNoMeter = !signup.emu_device_id || !signup.emu_meter_id;
+                const isQrLinked = !!(signup.emu_device_id && signup.emu_meter_id);
+                const md = meterDataMap[signup.id];
+                const liveKwh = md?.latest?.E_imp_kWh;
+                const isBilled = signup.kwh_ausbau != null;
+                const aktuellValue = isBilled ? signup.kwh_ausbau : (isQrLinked && liveKwh != null ? liveKwh : null);
+                const aktuellIsLive = !isBilled && isQrLinked && liveKwh != null;
+                const verbrauchValue = isBilled ? signup.kwh_used
+                  : (aktuellIsLive && signup.kwh_einbau != null ? Math.max(0, liveKwh - signup.kwh_einbau) : null);
                 return (
                   <div key={signup.id} data-testid={`signup-card-${signup.id}`}>
                     <div
-                      className={`p-4 cursor-pointer active:bg-gray-50 transition-colors ${isExpanded ? "bg-fuchsia-50/50" : hasNoMeter ? "bg-amber-50/60" : ""}`}
+                      className={`p-4 cursor-pointer active:bg-gray-50 transition-colors ${isExpanded ? "bg-fuchsia-50/50" : isQrLinked ? "bg-amber-50/60" : ""}`}
                       onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -667,8 +674,15 @@ export default function KirmesEventDetailPage() {
                         <span className="text-gray-400">kWh:</span>
                         <span className="font-mono">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</span>
                         <span className="text-gray-300">&rarr;</span>
-                        <span className="font-mono">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</span>
-                        {signup.kwh_used != null && <span className="font-mono font-medium text-fuchsia-700">= {signup.kwh_used.toFixed(2)}</span>}
+                        {aktuellValue != null ? (
+                          <span className={`font-mono inline-flex items-center gap-1 ${aktuellIsLive ? "text-emerald-700 font-semibold" : ""}`}>
+                            {aktuellIsLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                            {aktuellValue.toFixed(2)}
+                          </span>
+                        ) : <span className="font-mono">–</span>}
+                        {verbrauchValue != null ? (
+                          <span className={`font-mono font-medium ${aktuellIsLive ? "text-emerald-700" : "text-fuchsia-700"}`}>= {verbrauchValue.toFixed(2)}</span>
+                        ) : (signup.kwh_used != null && <span className="font-mono font-medium text-fuchsia-700">= {signup.kwh_used.toFixed(2)}</span>)}
                         <span className="ml-auto font-mono text-gray-700 font-medium">{(signup.price || 0).toFixed(2)} EUR</span>
                       </div>
                     </div>
@@ -682,16 +696,16 @@ export default function KirmesEventDetailPage() {
                             <div className="w-full space-y-2">
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                  <label className="text-[10px] text-amber-700 font-medium flex items-center gap-1">
+                                  <label className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
                                     <Pencil className="w-2.5 h-2.5" /> kWh Einbau (manuell)
                                   </label>
-                                  <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 text-sm bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
+                                  <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 text-sm border-gray-300 focus:border-fuchsia-500" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] text-amber-700 font-medium flex items-center gap-1">
+                                  <label className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
                                     <Pencil className="w-2.5 h-2.5" /> kWh Ausbau (manuell)
                                   </label>
-                                  <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 text-sm bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
+                                  <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 text-sm border-gray-300 focus:border-fuchsia-500" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
                                 </div>
                               </div>
                               <div className="flex gap-2">
@@ -925,7 +939,7 @@ export default function KirmesEventDetailPage() {
                     <th className="px-1.5 py-2 text-left">Platz</th>
                     <th className="px-1.5 py-2 text-left">Anschl.</th>
                     <th className="px-1.5 py-2 text-right">Einbau</th>
-                    <th className="px-1.5 py-2 text-right">Ausbau</th>
+                    <th className="px-1.5 py-2 text-right">Aktuell</th>
                     <th className="px-1.5 py-2 text-right">Verbr.</th>
                     <th className="px-1.5 py-2 text-right">Preis</th>
                     <th className="px-1.5 py-2 text-left">Status</th>
@@ -936,11 +950,20 @@ export default function KirmesEventDetailPage() {
                   {(event.signups || []).map(signup => {
                     const sch = signup.schausteller;
                     const isExpanded = expandedSignup === signup.id;
-                    const hasNoMeter = !signup.emu_device_id || !signup.emu_meter_id;
+                    const isQrLinked = !!(signup.emu_device_id && signup.emu_meter_id);
+                    const md = meterDataMap[signup.id];
+                    const liveKwh = md?.latest?.E_imp_kWh;
+                    const isBilled = signup.kwh_ausbau != null;
+                    // "Aktuell" = entweder der fixierte Ausbau-Stand (nach Abrechnung) oder Live-Zählerstand
+                    const aktuellValue = isBilled ? signup.kwh_ausbau : (isQrLinked && liveKwh != null ? liveKwh : null);
+                    const aktuellIsLive = !isBilled && isQrLinked && liveKwh != null;
+                    // Verbrauch: bei Live-Preview rechnen wir live, sonst den fixierten kwh_used
+                    const verbrauchValue = isBilled ? signup.kwh_used
+                      : (aktuellIsLive && signup.kwh_einbau != null ? Math.max(0, liveKwh - signup.kwh_einbau) : null);
                     return (
                     <React.Fragment key={signup.id}>
                     <tr
-                      className={`border-b border-gray-100 cursor-pointer transition-colors whitespace-nowrap ${isExpanded ? "bg-fuchsia-50" : hasNoMeter ? "bg-amber-50/60 hover:bg-amber-100/60" : "hover:bg-gray-50"}`}
+                      className={`border-b border-gray-100 cursor-pointer transition-colors whitespace-nowrap ${isExpanded ? "bg-fuchsia-50" : isQrLinked ? "bg-amber-50/60 hover:bg-amber-100/60" : "hover:bg-gray-50"}`}
                       onClick={() => setExpandedSignup(isExpanded ? null : signup.id)}
                       data-testid={`signup-${signup.id}`}
                     >
@@ -955,21 +978,28 @@ export default function KirmesEventDetailPage() {
                       </td>
                       {editingKwh === signup.id ? (
                         <>
-                          <td className="px-1.5 py-1 bg-amber-50" onClick={e => e.stopPropagation()} title="Manueller Zählerstand">
-                            <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-7 w-20 text-right text-xs bg-white border-amber-400 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
+                          <td className="px-1.5 py-1 bg-white" onClick={e => e.stopPropagation()} title="Manueller Zählerstand">
+                            <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-7 w-20 text-right text-xs border-gray-300 focus:border-fuchsia-500" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
                           </td>
-                          <td className="px-1.5 py-1 bg-amber-50" onClick={e => e.stopPropagation()} title="Manueller Zählerstand">
-                            <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-7 w-20 text-right text-xs bg-white border-amber-400 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
+                          <td className="px-1.5 py-1 bg-white" onClick={e => e.stopPropagation()} title="Manueller Zählerstand">
+                            <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-7 w-20 text-right text-xs border-gray-300 focus:border-fuchsia-500" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
                           </td>
                         </>
                       ) : (
                         <>
                           <td className="px-1.5 py-2 text-right font-mono text-xs text-gray-600">{signup.kwh_einbau != null ? signup.kwh_einbau.toFixed(2) : "–"}</td>
-                          <td className="px-1.5 py-2 text-right font-mono text-xs text-gray-600">{signup.kwh_ausbau != null ? signup.kwh_ausbau.toFixed(2) : "–"}</td>
+                          <td className={`px-1.5 py-2 text-right font-mono text-xs ${aktuellIsLive ? "text-emerald-700 font-semibold" : "text-gray-600"}`} title={aktuellIsLive ? "Live-Zählerstand vom EMU-Zähler" : (isBilled ? "Abgerechneter Ausbau-Stand" : "Noch kein Wert")}>
+                            {aktuellValue != null ? (
+                              <span className="inline-flex items-center gap-1 justify-end">
+                                {aktuellIsLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                                {aktuellValue.toFixed(2)}
+                              </span>
+                            ) : "–"}
+                          </td>
                         </>
                       )}
-                      <td className="px-1.5 py-2 text-right font-mono text-xs font-medium text-gray-900">
-                        {signup.kwh_used != null ? `${signup.kwh_used.toFixed(2)}` : "–"}
+                      <td className={`px-1.5 py-2 text-right font-mono text-xs font-medium ${aktuellIsLive && verbrauchValue != null ? "text-emerald-700" : "text-gray-900"}`}>
+                        {verbrauchValue != null ? verbrauchValue.toFixed(2) : (signup.kwh_used != null ? signup.kwh_used.toFixed(2) : "–")}
                       </td>
                       <td className="px-1.5 py-2 text-right font-mono text-xs">{(signup.price || 0).toFixed(2)} €</td>
                       <td className="px-1.5 py-2">
