@@ -7,7 +7,8 @@ import {
   ArrowLeft, Search, Upload, FolderOpen, FileText, Receipt, Car, Shield,
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
-  FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2, HelpCircle
+  FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2, HelpCircle,
+  Mail, AlertCircle
 } from "lucide-react";
 import axios from "axios";
 
@@ -167,7 +168,6 @@ export default function DocumentManagementPage() {
   const [expandedFolders, setExpandedFolders] = useState({});
   const [addSubfolderTo, setAddSubfolderTo] = useState(null);
   const [subfolderName, setSubfolderName] = useState("");
-
   const loadFolders = useCallback(async () => {
     try {
       const r = await api.get("/documents/folders");
@@ -186,6 +186,55 @@ export default function DocumentManagementPage() {
 
   useEffect(() => { loadFolders(); }, [loadFolders]);
   useEffect(() => { if (!isSearching) loadDocuments(activeFolder); }, [activeFolder, isSearching, loadDocuments]);
+
+  // ── Mailbridge: Status + Refresh-Trigger ──────────────────────────
+  const [mailbridge, setMailbridge] = useState(null);
+  const [mailbridgeLoading, setMailbridgeLoading] = useState(false);
+
+  const loadMailbridgeStatus = useCallback(async () => {
+    try {
+      const r = await api.get("/mailbridge/status");
+      setMailbridge(r.data);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { loadMailbridgeStatus(); }, [loadMailbridgeStatus]);
+
+  const handleMailbridgeRefresh = async () => {
+    if (mailbridgeLoading) return;
+    if (!mailbridge?.password_set) {
+      toast.error("IMAP-Passwort fehlt in der backend/.env");
+      return;
+    }
+    setMailbridgeLoading(true);
+    try {
+      const r = await api.post("/mailbridge/run-now");
+      const s = r.data?.stats || {};
+      const msg = s.attachments_uploaded > 0
+        ? `${s.attachments_uploaded} Anhang/Anhänge aus ${s.fetched} Mail(s) importiert`
+        : s.fetched > 0
+          ? `${s.fetched} Mail(s) gelesen – keine unterstützten Anhänge`
+          : "Keine neuen Mails";
+      toast.success(msg);
+      await loadMailbridgeStatus();
+      await loadFolders();
+      await loadDocuments(activeFolder);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Mailbridge-Abruf fehlgeschlagen");
+    } finally {
+      setMailbridgeLoading(false);
+    }
+  };
+
+  const mailbridgeLastRunText = (() => {
+    if (!mailbridge?.last_run_at) return null;
+    const d = new Date(mailbridge.last_run_at);
+    const today = new Date();
+    const isToday = d.toDateString() === today.toDateString();
+    return isToday
+      ? d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr"
+      : d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
+  })();
 
   const handleSearch = async (q) => {
     setSearchQuery(q);
@@ -383,6 +432,35 @@ export default function DocumentManagementPage() {
             {uploading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />}
             {uploading ? uploadProgress : "Hochladen"}
           </Button>
+          {/* Mailbridge-Refresh: holt neue Mails aus post@eventenergie.app */}
+          {mailbridge?.configured && (
+            <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-gray-200" data-testid="mailbridge-section">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleMailbridgeRefresh}
+                disabled={mailbridgeLoading}
+                className={`text-xs ${mailbridge.password_set ? "text-fuchsia-600 border-fuchsia-200 hover:bg-fuchsia-50" : "text-amber-600 border-amber-200"}`}
+                title={mailbridge.password_set
+                  ? `Postfach ${mailbridge.user} jetzt prüfen`
+                  : "IMAP-Passwort fehlt in backend/.env"}
+                data-testid="mailbridge-refresh-btn"
+              >
+                {mailbridgeLoading
+                  ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  : mailbridge.password_set
+                    ? <Mail className="w-4 h-4 mr-1" />
+                    : <AlertCircle className="w-4 h-4 mr-1" />}
+                {mailbridgeLoading ? "Prüfe..." : "Postfach prüfen"}
+              </Button>
+              {mailbridgeLastRunText && (
+                <div className="hidden xl:flex items-center gap-1 text-[10px] text-gray-400" title="Letzter IMAP-Abruf">
+                  <Clock className="w-3 h-3" />
+                  <span>{mailbridgeLastRunText}</span>
+                </div>
+              )}
+            </div>
+          )}
           <input ref={fileInput} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff" className="hidden" onChange={e => handleUpload(Array.from(e.target.files))} />
         </div>
       </header>
