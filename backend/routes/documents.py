@@ -970,25 +970,30 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("u
     if len(file_data) > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Datei zu groß (max. 50 MB)")
 
-    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    return await create_document_from_bytes(file_data, file.filename, file.content_type, folder_id)
+
+
+async def create_document_from_bytes(file_data: bytes, filename: str, content_type: str, folder_id: str = "unbekannt", source: str = "upload"):
+    """Internal helper: persist a document from raw bytes and kick off AI analysis.
+    Used by the REST upload endpoint AND the Mailbridge service for IMAP attachments."""
+    ext = filename.split(".")[-1] if "." in filename else "bin"
     storage_path = f"{APP_NAME}/uploads/{uuid.uuid4()}.{ext}"
 
     cloud_storage_path = None
     try:
-        result = put_object(storage_path, file_data, file.content_type)
+        result = put_object(storage_path, file_data, content_type)
         cloud_storage_path = result["path"]
     except Exception as e:
         logger.warning(f"Cloud storage upload failed (using local fallback): {e}")
 
-    # If cloud storage failed, use local path as storage_path
     final_storage_path = cloud_storage_path or f"local://{storage_path}"
 
     doc_id = str(uuid.uuid4())
     doc = {
         "id": doc_id,
         "storage_path": final_storage_path,
-        "original_filename": file.filename,
-        "content_type": file.content_type,
+        "original_filename": filename,
+        "content_type": content_type,
         "size": len(file_data),
         "folder_id": folder_id,
         "ai_status": "pending",
@@ -996,20 +1001,21 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("u
         "full_text": "",
         "keywords": [],
         "is_deleted": False,
+        "source": source,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.documents.insert_one(doc)
 
     # Always save locally as well
-    await _save_to_local_storage(file_data, file.filename, folder_id)
+    await _save_to_local_storage(file_data, filename, folder_id)
 
     # Save temp file and start background AI analysis
     temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.{ext}")
     with open(temp_path, "wb") as f:
         f.write(file_data)
 
-    asyncio.create_task(_run_ai_analysis(doc_id, temp_path, file.content_type, folder_id))
+    asyncio.create_task(_run_ai_analysis(doc_id, temp_path, content_type, folder_id))
 
     clean = {k: v for k, v in doc.items() if k != "_id"}
     return clean

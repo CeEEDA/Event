@@ -1882,6 +1882,9 @@ import routes.employee as employee_module
 employee_module.db = db
 app.include_router(employee_router)
 
+from routes.mailbridge import router as mailbridge_router
+app.include_router(mailbridge_router)
+
 
 
 
@@ -2093,4 +2096,11 @@ async def startup_event():
         asyncio.create_task(auto_seed_faqs_if_empty())
     except Exception as e:
         logger.warning(f"FAQ auto-seed scheduler failed: {e}")
+
+    # Start Mailbridge IMAP poller (post@eventenergie.app)
+    try:
+        from services.mailbridge import start_mailbridge
+        start_mailbridge()
+    except Exception as e:
+        logger.warning(f"Mailbridge start failed: {e}")
 
