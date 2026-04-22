@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
   Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard, ChevronDown,
-  Menu, RotateCcw,
+  Menu,
 } from "lucide-react";
 
 import { Input } from "../components/ui/input";
@@ -396,18 +396,6 @@ export default function KirmesEventDetailPage() {
     }
   };
 
-  const handleResetInvoices = async () => {
-    if (!window.confirm("Alle Rechnungen für diese Veranstaltung löschen und zurücksetzen?\n\nAnmeldungen werden auf 'offen' gesetzt.\nDanach können neue Rechnungen erstellt werden.")) return;
-    try {
-      const r = await api.post(`/kirmes/events/${event.id}/reset-invoices`);
-      toast.success(r.data.message);
-      loadEvent();
-      loadInvoices();
-    } catch (err) {
-      toast.error(getErrorMsg(err, "Fehler beim Zurücksetzen"));
-    }
-  };
-
   const handleLinkMeter = async (signupId) => {
     if (!selectedMeterCombo) return;
     const [deviceId, meterId] = selectedMeterCombo.split("|");
@@ -496,9 +484,6 @@ export default function KirmesEventDetailPage() {
                 </Button>
                 {canBilling && <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
                   <Receipt className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
-                </Button>}
-                {canBilling && eventInvoices.length > 0 && <Button size="sm" variant="outline" onClick={handleResetInvoices} className="text-red-600 border-red-200 px-2 sm:px-3" data-testid="reset-invoices-btn" title="Rechnungen zurücksetzen">
-                  <RotateCcw className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Neu berechnen</span>
                 </Button>}
                 {canBilling && !["abgerechnet", "abgeschlossen"].includes(event.status) && (
                   <Button size="sm" variant="outline" onClick={handleCloseEvent} className="text-fuchsia-600 border-fuchsia-200 px-2 sm:px-3" data-testid="close-event-btn" title="Veranstaltung schließen">
@@ -697,12 +682,16 @@ export default function KirmesEventDetailPage() {
                             <div className="w-full space-y-2">
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                  <label className="text-[10px] text-gray-400">kWh Einbau</label>
-                                  <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 text-sm" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
+                                  <label className="text-[10px] text-amber-700 font-medium flex items-center gap-1">
+                                    <Pencil className="w-2.5 h-2.5" /> kWh Einbau (manuell)
+                                  </label>
+                                  <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-8 text-sm bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] text-gray-400">kWh Ausbau</label>
-                                  <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 text-sm" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
+                                  <label className="text-[10px] text-amber-700 font-medium flex items-center gap-1">
+                                    <Pencil className="w-2.5 h-2.5" /> kWh Ausbau (manuell)
+                                  </label>
+                                  <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-8 text-sm bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
                                 </div>
                               </div>
                               <div className="flex gap-2">
@@ -869,6 +858,19 @@ export default function KirmesEventDetailPage() {
                                       <span className="flex items-center gap-1 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
                                     )}
                                   </div>
+                                  {/* Aktueller Zählerstand – Live-Vorschau vor Rechnungserstellung */}
+                                  {md?.latest?.E_imp_kWh != null && (
+                                    <div className="bg-gradient-to-r from-fuchsia-50 to-emerald-50 border border-fuchsia-200 rounded-lg p-2.5 mb-2" data-testid={`live-meter-preview-${signup.id}`}>
+                                      <p className="text-[10px] text-fuchsia-600 font-semibold uppercase tracking-wider mb-1">Aktueller Zählerstand (Live)</p>
+                                      <p className="text-lg font-bold font-mono text-fuchsia-700">{md.latest.E_imp_kWh.toFixed(2)} <span className="text-xs font-normal text-fuchsia-500">kWh</span></p>
+                                      {signup.kwh_einbau != null && signup.kwh_ausbau == null && (
+                                        <p className="text-[10px] text-emerald-700 mt-1">
+                                          Vorschau Verbrauch: <span className="font-mono font-bold">{(md.latest.E_imp_kWh - signup.kwh_einbau).toFixed(2)} kWh</span>
+                                          <span className="text-gray-400"> (Aktuell − Einbau {signup.kwh_einbau.toFixed(2)})</span>
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
                                   {md?.latest ? (
                                     <div className="grid grid-cols-2 gap-2">
                                       <div className="text-center p-1.5 bg-gray-50 rounded">
@@ -953,11 +955,11 @@ export default function KirmesEventDetailPage() {
                       </td>
                       {editingKwh === signup.id ? (
                         <>
-                          <td className="px-1.5 py-1" onClick={e => e.stopPropagation()}>
-                            <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-7 w-20 text-right text-xs" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
+                          <td className="px-1.5 py-1 bg-amber-50" onClick={e => e.stopPropagation()} title="Manueller Zählerstand">
+                            <Input type="number" step="0.01" value={kwhForm.kwh_einbau} onChange={e => setKwhForm(f => ({ ...f, kwh_einbau: e.target.value }))} className="h-7 w-20 text-right text-xs bg-white border-amber-400 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-einbau-input-${signup.id}`} />
                           </td>
-                          <td className="px-1.5 py-1" onClick={e => e.stopPropagation()}>
-                            <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-7 w-20 text-right text-xs" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
+                          <td className="px-1.5 py-1 bg-amber-50" onClick={e => e.stopPropagation()} title="Manueller Zählerstand">
+                            <Input type="number" step="0.01" value={kwhForm.kwh_ausbau} onChange={e => setKwhForm(f => ({ ...f, kwh_ausbau: e.target.value }))} className="h-7 w-20 text-right text-xs bg-white border-amber-400 focus:border-amber-500 focus:ring-amber-200" placeholder="0.00" data-testid={`kwh-ausbau-input-${signup.id}`} />
                           </td>
                         </>
                       ) : (
@@ -1182,6 +1184,18 @@ export default function KirmesEventDetailPage() {
                                             <span className="flex items-center gap-0.5 text-[10px] text-gray-400"><WifiOff className="w-3 h-3" /> Offline</span>
                                           )}
                                         </div>
+                                        {/* Aktueller Zählerstand – Live-Vorschau */}
+                                        {md?.latest?.E_imp_kWh != null && (
+                                          <div className="bg-gradient-to-r from-fuchsia-50 to-emerald-50 border border-fuchsia-200 rounded px-2 py-1.5 mb-1.5" data-testid={`live-meter-preview-${signup.id}`}>
+                                            <p className="text-[9px] text-fuchsia-600 font-semibold uppercase tracking-wider">Aktueller Zählerstand (Live)</p>
+                                            <p className="text-sm font-bold font-mono text-fuchsia-700">{md.latest.E_imp_kWh.toFixed(2)} <span className="text-[9px] font-normal text-fuchsia-500">kWh</span></p>
+                                            {signup.kwh_einbau != null && signup.kwh_ausbau == null && (
+                                              <p className="text-[9px] text-emerald-700">
+                                                Vorschau Verbrauch: <span className="font-mono font-bold">{(md.latest.E_imp_kWh - signup.kwh_einbau).toFixed(2)} kWh</span>
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
                                         {md?.latest ? (
                                           <div className="grid grid-cols-2 gap-1">
                                             <div className="text-center p-1 bg-gray-50 rounded">

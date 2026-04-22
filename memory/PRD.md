@@ -13,6 +13,15 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system with:
 - **MQTT**: Mosquitto broker on Windows Server
 - **DSE Gateways**: DSE 890 MK1 with L401 and 8610 controllers
 
+
+## What's Been Implemented (2026-04-22)
+### KirmesEventDetailPage UI – COMPLETE
+- [x] Removed "Neu berechnen" button from event header (unused handler + RotateCcw import cleaned up)
+- [x] Manual kWh input cells highlighted: amber background (`bg-amber-50`), amber border (`border-amber-400`), labels with pencil icon + "manuell" hint
+- [x] Live meter preview for linked EMU meters: shows current `E_imp_kWh` as "Aktueller Zählerstand (Live)" in fuchsia/emerald gradient card, plus Vorschau Verbrauch = (Aktuell − Einbau) when only kwh_einbau is set
+- [x] Added to both mobile card view and desktop expanded detail panel
+
+
 ## What's Been Implemented (2026-04-18)
 
 ### DSE 890 Gateway – COMPLETE
