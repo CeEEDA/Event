@@ -10,9 +10,11 @@ from difflib import SequenceMatcher
 
 logger = logging.getLogger("fints_banking")
 
-# Sparkasse Mayen FinTS Konfiguration
-FINTS_URL = "https://banking-rp1.s-fints-pt-rp.de/fints30"
-FINTS_BLZ = "57650010"
+# FinTS-Konfiguration (konfigurierbar via .env)
+# Defaults: Kreissparkasse Mayen (fuer Eventenergie Deutschland).
+# Ueber die Umgebungsvariablen FINTS_URL und FINTS_BLZ ueberschreibbar.
+FINTS_URL = os.environ.get("FINTS_URL", "https://banking-rp1.s-fints-pt-rp.de/fints30")
+FINTS_BLZ = os.environ.get("FINTS_BLZ", "57650010")
 
 
 def get_fints_credentials():
