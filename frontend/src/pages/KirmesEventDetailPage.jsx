@@ -922,11 +922,20 @@ export default function KirmesEventDetailPage() {
                                     <p className="text-xs text-gray-400 text-center py-2">Keine Messdaten</p>
                                   )}
                                 </div>
-                                {md?.latest?.ts_utc && (
-                                  <p className="text-[10px] text-gray-400 text-right">
-                                    Letzte Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}
-                                  </p>
-                                )}
+                                {md?.latest?.ts_utc && (() => {
+                                  const d = new Date(md.latest.ts_utc);
+                                  const today = new Date();
+                                  const isToday = d.toDateString() === today.toDateString();
+                                  const txt = isToday
+                                    ? d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr"
+                                    : d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
+                                  return (
+                                    <div className="flex items-center justify-end gap-1 text-[10px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                                      <Clock className="w-3 h-3 text-gray-400" />
+                                      <span>Letzte Aktualisierung um <span className="font-semibold text-gray-700">{txt}</span></span>
+                                    </div>
+                                  );
+                                })()}
                                 <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
                                   className="w-full text-xs text-fuchsia-600 border-fuchsia-200" data-testid={`zaehler-detail-btn-${signup.id}`}>
                                   <Gauge className="w-3 h-3 mr-1" /> Zählerdaten & Export
@@ -1263,9 +1272,20 @@ export default function KirmesEventDetailPage() {
                                           <p className="text-[10px] text-gray-400 text-center py-1">Keine Messdaten</p>
                                         )}
                                       </div>
-                                      {md?.latest?.ts_utc && (
-                                        <p className="text-[9px] text-gray-400 text-right mt-0.5">Messung: {new Date(md.latest.ts_utc).toLocaleString("de-DE")}</p>
-                                      )}
+                                      {md?.latest?.ts_utc && (() => {
+                                        const d = new Date(md.latest.ts_utc);
+                                        const today = new Date();
+                                        const isToday = d.toDateString() === today.toDateString();
+                                        const txt = isToday
+                                          ? d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr"
+                                          : d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
+                                        return (
+                                          <div className="flex items-center justify-end gap-1 text-[9px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 mt-1">
+                                            <Clock className="w-2.5 h-2.5 text-gray-400" />
+                                            <span>Letzte Aktualisierung um <span className="font-semibold text-gray-700">{txt}</span></span>
+                                          </div>
+                                        );
+                                      })()}
                                       <div className="flex items-center gap-2 mt-1.5">
                                         <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/kirmes/${id}/zaehler/${signup.id}`); }}
                                           className="flex-1 h-6 text-[10px] text-fuchsia-600 border-fuchsia-200 hover:bg-fuchsia-50" data-testid={`zaehler-detail-btn-${signup.id}`}>
