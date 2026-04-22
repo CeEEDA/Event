@@ -124,6 +124,20 @@ export default function KirmesEventDetailPage() {
     }
   }, [expandedSignup, event, loadMeterData]);
 
+  // Load meter data for ALL linked signups (for live "Aktuell" column)
+  // Refresh every 20 minutes (same cadence as the Pi gateways publish)
+  useEffect(() => {
+    if (!event?.signups) return;
+    const linkedSignups = event.signups.filter(s => s.emu_device_id && s.emu_meter_id);
+    if (linkedSignups.length === 0) return;
+    const loadAll = () => {
+      linkedSignups.forEach(s => loadMeterData(s.id));
+    };
+    loadAll(); // initial
+    const iv = setInterval(loadAll, 20 * 60 * 1000); // 20 min
+    return () => clearInterval(iv);
+  }, [event, loadMeterData]);
+
   const handleRelease = async () => {
     if (!window.confirm(`"${event.name}" freigeben?`)) return;
     try {
