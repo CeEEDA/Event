@@ -62,6 +62,14 @@ DEFAULT_CONF = {
     # Wenn der Parser nur ein Praefix erkennt (z.B. '1146'), wird die hier
     # hinterlegte vollstaendige Nummer genommen (z.B. '11461').
     "fixed_zaehler_nr": "",
+    # Beleg-Nr laeuft in der MultiFlow hoch, wird aber als Bitmap gedruckt
+    # (letzte 3 Ziffern unlesbar). Wir fuehren einen eigenen Counter ab dem
+    # hier hinterlegten Startwert. Bei jedem Beleg +1.
+    "beleg_nr_start": "",
+    # Abgabezeit-Heuristik (da Minuten aus Bitmap unlesbar):
+    # Ende = Pi-Uhrzeit bei Empfang, Start = Ende - (Liter * 12 s + 240 s).
+    "abgabe_zeit_pro_liter_sek": 12,
+    "abgabe_zeit_einrichtung_sek": 240,
 }
 
 
@@ -162,6 +170,22 @@ def strip_escpos(data: bytes) -> str:
         except (UnicodeDecodeError, ValueError):
             continue
     return bytes(result).decode('latin-1', errors='replace')
+
+
+# ====== Beleg-Nr Counter (persistent in SQLite) ======
+
+def get_next_beleg_nr(db_path: str, start_value: int) -> int:
+    """Liefert die naechste Beleg-Nr. Nimmt Maximum aus DB+1 oder Startwert."""
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.execute("SELECT MAX(CAST(beleg_nr AS INTEGER)) FROM receipts WHERE beleg_nr GLOB '[0-9]*'")
+        row = cur.fetchone()
+        max_in_db = row[0] if row and row[0] else 0
+    except sqlite3.OperationalError:
+        max_in_db = 0
+    finally:
+        conn.close()
+    return max(max_in_db + 1, start_value)
 
 
 # ====== Sening MultiFlow Grafik-Parser ======
@@ -364,20 +388,61 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
             # Parser hat nichts gefunden -> nimm trotzdem den festen Wert
             result["zaehler_nr"] = fixed_zaehler_nr
 
-    # Review-Flag wenn Pflichtfelder fehlen/unsicher
-    missing = []
-    if not result["menge_liter"]:
-        missing.append("Menge")
-    if not result["datum"]:
-        missing.append("Datum")
-        # Datum ist bei Sening oft nicht lesbar -> heute als Fallback
-        result["datum"] = datetime.now().strftime("%d.%m.%Y")
-    if not result["beleg_nr"]:
-        missing.append("Beleg-Nr")
-    if missing:
-        result["needs_review"] = True
-        result["review_reason"] = ", ".join(missing) + " aus Bitmap nicht lesbar"
+    # Review-Flag wird jetzt ausserhalb gesetzt (nach Counter/Zeit-Heuristik)
     return result
+
+
+def enrich_receipt_with_heuristics(receipt: dict, conf: dict) -> dict:
+    """Ergaenzt fehlende Felder durch feste Werte + Pi-Uhrzeit/Zeitberechnung:
+    - datum = Pi-NTP Datum heute
+    - abgabe_ende = aktuelle Pi-Uhrzeit
+    - abgabe_start = Ende minus (Liter*Sek/L + Einrichtung)
+    - beleg_nr = Auto-Counter ab Startwert
+    """
+    now = datetime.now()
+    # 1) Datum immer = heute (Pi-NTP)
+    receipt["datum"] = now.strftime("%d.%m.%Y")
+
+    # 2) Abgabe-Ende = jetzt (falls nicht oder nur partial aus Bitmap)
+    receipt["abgabe_ende"] = now.strftime("%H:%M:%S")
+
+    # 3) Abgabe-Start berechnen aus Menge + Einrichtung
+    try:
+        sek_pro_l = int(conf.get("abgabe_zeit_pro_liter_sek", 12))
+        einrichtung = int(conf.get("abgabe_zeit_einrichtung_sek", 240))
+    except (ValueError, TypeError):
+        sek_pro_l = 12
+        einrichtung = 240
+    menge = receipt.get("menge_liter") or 0
+    try:
+        menge_f = float(menge)
+    except (TypeError, ValueError):
+        menge_f = 0
+    duration_sek = int(menge_f * sek_pro_l + einrichtung)
+    start_dt = now.timestamp() - duration_sek
+    from datetime import datetime as _dt
+    receipt["abgabe_start"] = _dt.fromtimestamp(start_dt).strftime("%H:%M:%S")
+
+    # 4) Beleg-Nr als Counter (aus DB ableiten)
+    try:
+        start_val = int(str(conf.get("beleg_nr_start", "")).strip() or "0")
+    except (ValueError, TypeError):
+        start_val = 0
+    if start_val > 0:
+        try:
+            next_nr = get_next_beleg_nr(conf["db_path"], start_val)
+            receipt["beleg_nr"] = str(next_nr)
+        except Exception as e:
+            log.warning(f"Beleg-Nr-Counter fehlgeschlagen: {e}")
+
+    # 5) Review-Flag bereinigen: Datum ist via NTP gesichert, Zeiten berechnet,
+    #    Beleg-Nr per Counter. Nur noch Menge ist Pflicht.
+    missing = []
+    if not receipt.get("menge_liter"):
+        missing.append("Menge")
+    receipt["needs_review"] = bool(missing)
+    receipt["review_reason"] = (", ".join(missing) + " aus Bitmap nicht lesbar") if missing else None
+    return receipt
 
 
 # ====== Bitmap-Rendering: Roh-Beleg als PNG ======
@@ -1012,6 +1077,8 @@ def main():
                     if recognized < 2:
                         log.info("Standard-Parser lieferte wenig Daten -> Sening-Grafik-Parser")
                         receipt = parse_receipt_sening(raw, fixed_zaehler_nr=conf.get("fixed_zaehler_nr", ""))
+                        # Heuristik: Datum/Zeiten/Beleg-Nr aus Pi + Counter ergaenzen
+                        receipt = enrich_receipt_with_heuristics(receipt, conf)
 
                     if is_complete_receipt(receipt):
                         # GPS Position erfassen
