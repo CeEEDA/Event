@@ -303,12 +303,11 @@ async def create_deposit_checkout(req: DepositCheckoutRequest):
     connection_type = signup.get("connection_type", "16A")
     amount = await _get_deposit_amount(connection_type)
 
-    # Determine payment methods based on signup preference
+    # Payment-Methoden: Wir bieten immer beides an (Karte + PayPal), damit der
+    # Kunde in der Stripe-Checkout-Oberflaeche waehlen kann. Die im Anmelde-
+    # formular gewaehlte Praeferenz wird nur fuer Statistik/Reporting erhalten.
     pm_pref = (signup.get("payment_method") or "kreditkarte").lower()
-    if pm_pref == "paypal":
-        payment_methods = ["paypal"]
-    else:
-        payment_methods = ["card"]
+    payment_methods = ["card", "paypal"]
 
     success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
@@ -380,7 +379,7 @@ async def create_invoice_checkout(req: InvoiceCheckoutRequest):
         raise HTTPException(status_code=400, detail="Ungültiger Rechnungsbetrag")
 
     pm_pref = (req.payment_method or "kreditkarte").lower()
-    payment_methods = ["paypal"] if pm_pref == "paypal" else ["card", "paypal"]
+    payment_methods = ["card", "paypal"]
 
     success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
@@ -740,7 +739,7 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
         subject = f"Kaution für {event.get('name', 'Veranstaltung')} - Zahlungslink"
 
         pm_pref = (req.payment_method or signup.get("payment_method") or "kreditkarte").lower()
-        payment_methods = ["paypal"] if pm_pref == "paypal" else ["card", "paypal"]
+        payment_methods = ["card", "paypal"]
 
         success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
@@ -772,7 +771,7 @@ async def send_payment_link(req: SendPaymentLinkRequest, user: dict = Depends(_r
         subject = f"Rechnung {invoice.get('invoice_number', '')} - Zahlungslink"
 
         pm_pref = (req.payment_method or "kreditkarte").lower()
-        payment_methods = ["paypal"] if pm_pref == "paypal" else ["card", "paypal"]
+        payment_methods = ["card", "paypal"]
 
         success_url = f"{req.origin_url}/kirmes/anmeldung?payment=success&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{req.origin_url}/kirmes/anmeldung?payment=cancelled"
