@@ -274,10 +274,18 @@ PRÜFBERICHTE → pruefberichte:
 - Sachverständigengutachten
 - CE-Konformitätserklärungen
 
-RECHNUNGEN:
+RECHNUNGEN (auch international):
 - Eingangsrechnungen (von Lieferanten/Dienstleistern an uns) → rechnungseingang_eventenergie_deutschland ODER rechnungseingang_es_besitz_verwaltung (siehe FIRMEN-ZUORDNUNG unten)
 - Ausgangsrechnungen (von uns an Kunden) → rechnungsausgang_eventenergie_deutschland ODER rechnungsausgang_es_besitz_verwaltung
 - Erkennbar an: Rechnungsnummer, Nettobetrag, MwSt, Zahlungsziel, IBAN
+- WICHTIG: Folgende Begriffe bedeuten ebenfalls RECHNUNG (egal in welcher Sprache) und sind IMMER als document_type="rechnung" zu behandeln:
+  * Englisch: "Invoice", "Proforma Invoice", "Pro Forma Invoice", "Bill", "Tax Invoice", "Commercial Invoice"
+  * Franzoesisch: "Facture", "Facture Pro Forma"
+  * Italienisch: "Fattura"
+  * Spanisch: "Factura"
+  * Niederlaendisch: "Factuur"
+- Auch eine PROFORMA-RECHNUNG (Vorab-Rechnung, meist fuer Anzahlungen/Vorauszahlungen) ist eine Rechnung und gehoert in denselben Rechnungseingang-Ordner. Erkennungsmerkmale: Rechnungsnummer, Betrag, IBAN/Bankverbindung, Zahlungshinweis - auch ohne MwSt-Ausweis (typisch bei Auslands-Proforma).
+- Bei auslaendischen Absendern (UK, Frankreich, etc.) ist der Empfaenger dennoch typischerweise "Eventenergie Deutschland" oder eine der beiden Firmen - pruefe die Empfaenger-Anschrift sorgfaeltig.
 
 === FIRMEN-ZUORDNUNG (WICHTIG fuer Rechnungen!) ===
 Wir haben ZWEI Firmen mit unterschiedlicher Buchhaltung:
@@ -901,12 +909,18 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         uncertain = suggested_folder in (None, "", "sonstiges", "unbekannt") or suggested_folder not in all_valid_ids
         if folder_id in ("sonstiges", "unbekannt"):
             if uncertain:
-                # AI war unsicher - versuche Base-Folder aus year/month-ID zu extrahieren
+                # AI war unsicher ODER hat year/month-Suffix drangehaengt - versuche Base-Folder
+                # zu extrahieren. WICHTIG: sortiere nach Laenge DESC, damit
+                # "rechnungseingang_eventenergie_deutschland" vor "rechnungseingang" gewinnt.
                 matched_base = None
-                for base_folder in all_valid_ids:
+                for base_folder in sorted(all_valid_ids, key=len, reverse=True):
                     if suggested_folder and suggested_folder.startswith(base_folder + "_"):
                         matched_base = base_folder
                         break
+                # Falls der matched_base ein "Root ohne Firma" ist -> unbekannt (Firma nicht erkannt)
+                if matched_base in RECHNUNGS_ROOTS_WITHOUT_COMPANY:
+                    logger.info(f"KI-Praefix {matched_base} ohne Firmen-Zuordnung -> 'unbekannt'")
+                    matched_base = None
                 final_folder = matched_base or "unbekannt"
             else:
                 final_folder = suggested_folder
