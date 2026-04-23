@@ -58,6 +58,10 @@ DEFAULT_CONF = {
     # If MultiFlow still reports 'paper out', try 0x01, 0x10, 0x12, 0x7F.
     # Override via /etc/tankbeleg_pi.conf key 'sening_reply_byte' (hex, e.g. 0x00).
     "sening_reply_byte": "0x00",
+    # Zaehler-Nr. ist fest und koennte nicht 100% aus Bitmap gelesen werden.
+    # Wenn der Parser nur ein Praefix erkennt (z.B. '1146'), wird die hier
+    # hinterlegte vollstaendige Nummer genommen (z.B. '11461').
+    "fixed_zaehler_nr": "",
 }
 
 
@@ -225,9 +229,13 @@ SENING_MARKERS = {
 }
 
 
-def parse_receipt_sening(raw: bytes) -> dict:
+def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
     """Parser fuer Sening MultiFlow mit Bit-Image Mischdruck.
-    Extrahiert so viel wie moeglich, markiert fehlende Felder."""
+    Extrahiert so viel wie moeglich, markiert fehlende Felder.
+
+    fixed_zaehler_nr: Falls gesetzt und der Parser erkennt nur ein Praefix,
+    wird dieser volle Wert verwendet (z.B. '11461' wenn Parser '1146' liefert).
+    """
     stripped = strip_sening_escapes(raw)
     try:
         text = stripped.decode("cp437", errors="replace")
@@ -346,6 +354,15 @@ def parse_receipt_sening(raw: bytes) -> dict:
     else:
         # Default zum haeufigsten
         result["fuel_type"] = "heizoel_leicht"
+
+    # Feste Zaehler-Nr aus Config anwenden (falls Parser nur Praefix hatte)
+    if fixed_zaehler_nr:
+        if result["zaehler_nr"] and fixed_zaehler_nr.startswith(result["zaehler_nr"]):
+            # Parser-Praefix matcht -> nimm den vollen Wert
+            result["zaehler_nr"] = fixed_zaehler_nr
+        elif not result["zaehler_nr"]:
+            # Parser hat nichts gefunden -> nimm trotzdem den festen Wert
+            result["zaehler_nr"] = fixed_zaehler_nr
 
     # Review-Flag wenn Pflichtfelder fehlen/unsicher
     missing = []
@@ -994,7 +1011,7 @@ def main():
                     recognized = sum(1 for k in ("zaehler_nr", "beleg_nr", "menge_liter", "abgabe_start") if receipt.get(k))
                     if recognized < 2:
                         log.info("Standard-Parser lieferte wenig Daten -> Sening-Grafik-Parser")
-                        receipt = parse_receipt_sening(raw)
+                        receipt = parse_receipt_sening(raw, fixed_zaehler_nr=conf.get("fixed_zaehler_nr", ""))
 
                     if is_complete_receipt(receipt):
                         # GPS Position erfassen
