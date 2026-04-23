@@ -1572,6 +1572,12 @@ async def download_tankbeleg_capture():
     content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
     return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_capture.py"'})
 
+@api_router.get("/download/tankbeleg-analyze")
+async def download_tankbeleg_analyze():
+    path = os.path.join(STATIC_DIR, "tankbeleg_analyze.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_analyze.py"'})
+
 @api_router.get("/download/tankbeleg-ui-script")
 async def download_tankbeleg_ui_script():
     path = os.path.join(STATIC_DIR, "tankbeleg_ui.py")
