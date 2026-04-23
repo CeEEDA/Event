@@ -22,8 +22,8 @@ import os
 PORT = "/dev/ttyUSB0"
 BAUD = 9600
 REPLY = b"\x00"
-SILENCE_EXIT = 10.0   # Sekunden Stille -> beenden
-MAX_RUNTIME = 300.0   # Hard-Limit 5 Minuten
+SILENCE_EXIT = 30.0   # Sekunden Stille NACH erstem Byte -> beenden
+MAX_RUNTIME = 900.0   # Hard-Limit 15 Minuten
 
 OUT_FILE = f"/tmp/tankbeleg_capture_{int(time.time())}.bin"
 LOG_FILE = OUT_FILE.replace(".bin", ".log")
