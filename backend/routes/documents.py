@@ -149,8 +149,30 @@ PREDEFINED_FOLDERS = [
 
 storage_key = None
 
+# LOCAL_ONLY_STORAGE: Wenn True, werden ALLE Cloud-Calls uebersprungen und
+# Dateien ausschliesslich lokal gespeichert. Standard: True (lokal-first),
+# kann per Env-Variable STORAGE_CLOUD_ENABLED=true wieder aktiviert werden.
+LOCAL_ONLY_STORAGE = os.environ.get("STORAGE_CLOUD_ENABLED", "false").strip().lower() not in ("true", "1", "yes")
+
+# Wurzelverzeichnis fuer alle lokalen Uploads. Unter dieser Wurzel wird der
+# gleiche Pfad erzeugt, den die Cloud-API erwartet. So kann Download sowohl
+# lokal als auch aus der Cloud identisch ueber den storage_path zugreifen.
+LOCAL_STORAGE_ROOT = os.environ.get(
+    "LOCAL_STORAGE_PATH",
+    r"C:\eventenergie\Dokumentenablage" if os.name == "nt" else "/app/storage",
+)
+
+
+def _local_path_for(storage_path: str) -> str:
+    """Ermittelt den lokalen Dateipfad fuer einen logischen storage_path."""
+    rel = storage_path.replace("/", os.sep).lstrip(os.sep)
+    return os.path.join(LOCAL_STORAGE_ROOT, rel)
+
+
 def init_storage():
     global storage_key
+    if LOCAL_ONLY_STORAGE:
+        return None
     if storage_key:
         return storage_key
     resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30, verify=_ssl_verify_param())
@@ -159,6 +181,16 @@ def init_storage():
     return storage_key
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
+    """Speichert eine Datei. Im LOCAL_ONLY-Modus nur lokal, sonst Cloud.
+
+    Aufrufer koennen das Ergebnis ignorieren - wichtig ist nur, dass keine
+    Exception fliegt. Der `storage_path` bleibt identisch (logischer Pfad)."""
+    if LOCAL_ONLY_STORAGE:
+        local_file = _local_path_for(path)
+        os.makedirs(os.path.dirname(local_file), exist_ok=True)
+        with open(local_file, "wb") as f:
+            f.write(data)
+        return {"ok": True, "path": path, "local": True}
     key = init_storage()
     resp = requests.put(
         f"{STORAGE_URL}/objects/{path}",
@@ -169,6 +201,18 @@ def put_object(path: str, data: bytes, content_type: str) -> dict:
     return resp.json()
 
 def get_object(path: str):
+    """Laedt eine Datei. Im LOCAL_ONLY-Modus nur lokal, sonst Cloud (mit lokalem Cache)."""
+    if LOCAL_ONLY_STORAGE:
+        local_file = _local_path_for(path)
+        if not os.path.exists(local_file):
+            raise FileNotFoundError(f"Datei nicht lokal vorhanden: {local_file}")
+        with open(local_file, "rb") as f:
+            data = f.read()
+        # Content-Type anhand Dateiendung raten
+        ext = os.path.splitext(local_file)[1].lower()
+        ct_map = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                  ".png": "image/png", ".webp": "image/webp", ".heic": "image/heic"}
+        return data, ct_map.get(ext, "application/octet-stream")
     key = init_storage()
     resp = requests.get(
         f"{STORAGE_URL}/objects/{path}",
@@ -446,20 +490,22 @@ async def _get_custom_ai_instructions() -> str:
 
 
 async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
-    """Analyze a document using Gemini AI."""
-    try:
-        if not EMERGENT_KEY:
-            raise RuntimeError("EMERGENT_LLM_KEY nicht gesetzt – bitte in backend/.env ergänzen (sk-emergent-...)")
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+    """Analysiert ein Dokument mit lokalem Gemma 3 via Ollama (kein Cloud-Call).
 
+    PDFs werden seitenweise in Bilder konvertiert, Bilder direkt gesendet.
+    Gibt ein dict mit suggested_folder, document_type, metadata, full_text, keywords zurueck."""
+    from services.ollama_client import ollama_chat_vision, parse_json_response
+
+    response_text = ""
+    try:
         # Build dynamic folder list for AI prompt
         all_folder_ids = [f["id"] for f in PREDEFINED_FOLDERS]
         extra_hint = ""
         if custom_folders:
             for cf in custom_folders:
                 all_folder_ids.append(cf["id"])
-            folder_names = ", ".join(f'{cf["name"]}→{cf["id"]}' for cf in custom_folders)
-            extra_hint = f"\n- Zusätzliche benutzerdefinierte Ordner: {folder_names}"
+            folder_names = ", ".join(f'{cf["name"]}->{cf["id"]}' for cf in custom_folders)
+            extra_hint = f"\n- Zusaetzliche benutzerdefinierte Ordner: {folder_names}"
 
         system = AI_SYSTEM_PROMPT.replace(
             "rechnungseingang|kfz_versicherung|betriebshaftpflicht|vertraege|lieferscheine|behoerden|sonstiges",
@@ -469,46 +515,19 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
         # Inject custom admin instructions
         custom_instructions = await _get_custom_ai_instructions()
         if custom_instructions:
-            system += f"\n\n=== ZUSÄTZLICHE ADMIN-ANWEISUNGEN ===\n{custom_instructions}"
+            system += f"\n\n=== ZUSAETZLICHE ADMIN-ANWEISUNGEN ===\n{custom_instructions}"
 
-        chat = LlmChat(
-            api_key=EMERGENT_KEY,
-            session_id=f"doc-analysis-{uuid.uuid4()}",
-            system_message=system
-        ).with_model("gemini", "gemini-2.5-flash")
-
-        file_content = FileContentWithMimeType(
+        response_text = await ollama_chat_vision(
+            system_prompt=system,
+            user_text="Analysiere dieses Dokument und extrahiere alle Informationen als JSON.",
             file_path=file_path,
-            mime_type=mime_type
+            mime_type=mime_type,
+            want_json=True,
         )
 
-        user_message = UserMessage(
-            text="Analysiere dieses Dokument und extrahiere alle Informationen als JSON.",
-            file_contents=[file_content]
-        )
-
-        response = await chat.send_message(user_message)
-
-        # Parse JSON from response
-        response_text = response.strip()
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            json_lines = []
-            in_block = False
-            for line in lines:
-                if line.startswith("```") and not in_block:
-                    in_block = True
-                    continue
-                elif line.startswith("```") and in_block:
-                    break
-                elif in_block:
-                    json_lines.append(line)
-            response_text = "\n".join(json_lines)
-
-        return json.loads(response_text)
+        return parse_json_response(response_text)
     except json.JSONDecodeError as e:
         logger.error(f"AI response not valid JSON: {e}, response: {response_text[:500]}")
-        # Kein Dummy-Subject - Frontend nutzt dann den Dateinamen als Fallback
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
     except Exception as e:
         logger.error(f"AI analysis failed: {e}")
@@ -852,7 +871,7 @@ async def _forward_to_datev(doc_id: str, storage_path: str, original_filename: s
 async def _assign_payroll_to_employee(doc_id: str, ai_result: dict, temp_path: str, content_type: str):
     """Use AI to extract employee name from payroll PDF and assign it to the matching user."""
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+        from services.ollama_client import ollama_chat_vision, parse_json_response
 
         # Get all users from DB
         users = []
@@ -860,9 +879,9 @@ async def _assign_payroll_to_employee(doc_id: str, ai_result: dict, temp_path: s
             users.append(u)
         user_list = ", ".join(f'{u["name"]} (ID: {u["id"]})' for u in users)
 
-        system = f"""Du bist ein Spezialist für die Erkennung von Lohnabrechnungen.
+        system = f"""Du bist ein Spezialist fuer die Erkennung von Lohnabrechnungen.
 Extrahiere aus dem Dokument:
-1. Den vollständigen Namen des Mitarbeiters
+1. Den vollstaendigen Namen des Mitarbeiters
 2. Die Personalnummer
 3. Den Abrechnungsmonat (YYYY-MM Format)
 4. Den Netto-Auszahlungsbetrag
@@ -870,43 +889,26 @@ Extrahiere aus dem Dokument:
 Hier sind die bekannten Mitarbeiter im System:
 {user_list}
 
-Ordne den erkannten Namen dem passenden Mitarbeiter zu. Beachte: Kleine Abweichungen (Vorname/Nachname vertauscht, Umlaute) sind möglich.
+Ordne den erkannten Namen dem passenden Mitarbeiter zu. Beachte: Kleine Abweichungen (Vorname/Nachname vertauscht, Umlaute) sind moeglich.
 
 Antworte NUR mit JSON:
 {{"employee_name": "...", "personnel_number": "...", "month": "YYYY-MM", "net_amount": 0.00, "matched_user_id": "..." oder null falls kein Match, "matched_user_name": "..."}}"""
 
-        chat = LlmChat(
-            api_key=EMERGENT_KEY,
-            session_id=f"payroll-assign-{uuid.uuid4()}",
-            system_message=system
-        ).with_model("gemini", "gemini-2.5-flash")
-
-        # Re-read the file if temp_path still exists
-        if os.path.exists(temp_path):
-            file_content = FileContentWithMimeType(file_path=temp_path, mime_type=content_type)
-            msg = UserMessage(text="Analysiere diese Lohnabrechnung und ordne sie einem Mitarbeiter zu.", file_contents=[file_content])
-        else:
-            # Fall back to text from first AI analysis
+        user_text = "Analysiere diese Lohnabrechnung und ordne sie einem Mitarbeiter zu."
+        file_arg = temp_path if os.path.exists(temp_path) else None
+        if file_arg is None:
+            # Fallback auf Text aus erster Analyse
             full_text = ai_result.get("full_text", "")
-            msg = UserMessage(text=f"Analysiere diese Lohnabrechnung und ordne sie einem Mitarbeiter zu:\n\n{full_text}")
+            user_text = f"Analysiere diese Lohnabrechnung und ordne sie einem Mitarbeiter zu:\n\n{full_text}"
 
-        response = await chat.send_message(msg)
-        response_text = response.strip()
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            json_lines = []
-            in_block = False
-            for line in lines:
-                if line.startswith("```") and not in_block:
-                    in_block = True
-                    continue
-                elif line.startswith("```") and in_block:
-                    break
-                elif in_block:
-                    json_lines.append(line)
-            response_text = "\n".join(json_lines)
-
-        payroll_info = json.loads(response_text)
+        response_text = await ollama_chat_vision(
+            system_prompt=system,
+            user_text=user_text,
+            file_path=file_arg,
+            mime_type=content_type if file_arg else None,
+            want_json=True,
+        )
+        payroll_info = parse_json_response(response_text)
         matched_user_id = payroll_info.get("matched_user_id")
 
         update = {
