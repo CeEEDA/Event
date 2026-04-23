@@ -27,7 +27,7 @@ export function PaymentStep({ selectedEvent, signupForm, depositAmounts, onPayDe
         Zahlung per <strong className="text-gray-700">{signupForm.payment_method === "paypal" ? "PayPal" : "Kreditkarte"}</strong> · Sichere Abwicklung über Stripe
       </div>
       <Button onClick={onPayDeposit} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mb-3" data-testid="pay-deposit-btn">
-        {saving ? "Weiterleitung..." : `Jetzt per ${signupForm.payment_method === "paypal" ? "PayPal" : "Kreditkarte"} bezahlen`} <ArrowRight className="w-4 h-4 ml-1" />
+        {saving ? "Weiterleitung..." : "Jetzt Betrag bezahlen"} <ArrowRight className="w-4 h-4 ml-1" />
       </Button>
       <button onClick={onSkip} className="text-xs text-gray-400 hover:text-gray-600 underline" data-testid="skip-payment-btn">
         Später bezahlen (Buchung bleibt unbestätigt)
