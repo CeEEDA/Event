@@ -1885,6 +1885,9 @@ app.include_router(employee_router)
 from routes.mailbridge import router as mailbridge_router
 app.include_router(mailbridge_router)
 
+from routes.datev import router as datev_router
+app.include_router(datev_router)
+
 
 
 
@@ -2103,4 +2106,11 @@ async def startup_event():
         start_mailbridge()
     except Exception as e:
         logger.warning(f"Mailbridge start failed: {e}")
+
+    # Start DATEV Daily Batch Scheduler (default 20:00 Europe/Berlin)
+    try:
+        from services.datev_scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        logger.warning(f"DATEV-Scheduler start failed: {e}")
 

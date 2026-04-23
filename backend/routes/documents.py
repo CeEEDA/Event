@@ -956,10 +956,17 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
                 logger.warning(f"Local storage save failed for doc {doc_id}: {e}")
 
         # Auto-forward: Rechnungseingang UND Rechnungsausgang an DATEV (Ziel-Mail je nach Firma)
+        # BATCH-MODE: Dokument wird jetzt nur als "datev_pending" markiert.
+        # Der taegliche Scheduler (services/datev_scheduler.py) verschickt alle
+        # pending Rechnungen gesammelt um DATEV_SEND_TIME (Standard: 20:00 Uhr Europe/Berlin).
         if not doc:
             doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
         if doc and _resolve_datev_target(final_folder):
-            await _forward_to_datev(doc_id, doc["storage_path"], doc["original_filename"], content_type, ai_result, final_folder)
+            await db.documents.update_one({"id": doc_id}, {"$set": {
+                "datev_pending": True,
+                "datev_pending_since": datetime.now(timezone.utc).isoformat(),
+            }})
+            logger.info(f"Dokument {doc_id} als datev_pending markiert - Versand beim naechsten 20:00-Batch")
 
         # Auto-assign payroll documents to employees
         if final_folder.startswith("lohnabrechnung"):
