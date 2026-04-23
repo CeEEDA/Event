@@ -24,6 +24,21 @@ OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "180"))
 OLLAMA_MAX_PDF_PAGES = int(os.environ.get("OLLAMA_MAX_PDF_PAGES", "3"))
 OLLAMA_IMAGE_MAX_DIM = int(os.environ.get("OLLAMA_IMAGE_MAX_DIM", "1400"))
 
+# Semaphore: Nur EINE Analyse zur Zeit laufen lassen, damit bei vielen parallelen
+# Uploads nicht der ganze Rechner hängt. Ollama selbst kann zwar parallel, aber auf
+# CPU-only Systemen ist das kontraproduktiv.
+_OLLAMA_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "1"))
+_ollama_semaphore = None
+
+
+def _get_semaphore():
+    """Lazy-init des Semaphors an den laufenden Event-Loop gebunden."""
+    import asyncio
+    global _ollama_semaphore
+    if _ollama_semaphore is None:
+        _ollama_semaphore = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
+    return _ollama_semaphore
+
 
 def _image_to_base64(pil_image: Image.Image) -> str:
     """Downscale + JPEG-encode ein PIL-Bild und gibt base64 zurueck."""
@@ -102,20 +117,22 @@ async def ollama_chat_vision(
     if want_json:
         payload["format"] = "json"
 
-    async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-        try:
-            r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
-        except Exception as e:
-            logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
-            raise
-        if r.status_code != 200:
-            logger.error(f"[ollama] HTTP {r.status_code}: {r.text[:500]}")
-            r.raise_for_status()
-        try:
-            data = r.json()
-        except Exception as e:
-            logger.error(f"[ollama] Antwort kein JSON: {r.text[:500]}")
-            raise
+    sem = _get_semaphore()
+    async with sem:
+        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
+            try:
+                r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+            except Exception as e:
+                logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
+                raise
+            if r.status_code != 200:
+                logger.error(f"[ollama] HTTP {r.status_code}: {r.text[:500]}")
+                r.raise_for_status()
+            try:
+                data = r.json()
+            except Exception as e:
+                logger.error(f"[ollama] Antwort kein JSON: {r.text[:500]}")
+                raise
     return (data.get("message") or {}).get("content", "")
 
 
