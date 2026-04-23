@@ -199,11 +199,33 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
     """Bulk sync from Pi - creates multiple receipts with dedup. No auth required for Pi."""
     await _touch_tankwagen_last_seen()
     created = []
+    updated = 0
     skipped = 0
     for r in receipts:
         if r.pi_local_id:
             existing = await _db.fuel_receipts.find_one({"pi_local_id": r.pi_local_id}, {"_id": 0})
             if existing:
+                # Update mit neuen Zuordnungsdaten (Auftrag, Fahrer, Bemerkung)
+                # falls diese vom Pi nachtraeglich gesetzt wurden.
+                # Nur unbestaetigte Belege werden aktualisiert.
+                if existing.get("status") == "pending":
+                    update_fields = {}
+                    if r.order_pk and r.order_pk != existing.get("order_pk"):
+                        update_fields["order_pk"] = r.order_pk
+                        update_fields["order_name"] = r.order_name or ""
+                        update_fields["category"] = "lager" if r.order_pk == "LAGER" else "kunde"
+                    if r.fahrer and r.fahrer != existing.get("fahrer"):
+                        update_fields["fahrer"] = r.fahrer
+                    if r.notes and r.notes != existing.get("notes"):
+                        update_fields["notes"] = r.notes
+                    if update_fields:
+                        update_fields["synced_at"] = datetime.now(timezone.utc).isoformat()
+                        await _db.fuel_receipts.update_one(
+                            {"pi_local_id": r.pi_local_id},
+                            {"$set": update_fields},
+                        )
+                        updated += 1
+                        continue
                 skipped += 1
                 continue
 
@@ -248,7 +270,7 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
         doc.pop("bitmap_png_base64", None)
         created.append(doc)
 
-    return {"created": len(created), "skipped": skipped, "receipts": created}
+    return {"created": len(created), "updated": updated, "skipped": skipped, "receipts": created}
 
 
 @router.get("")

@@ -742,13 +742,24 @@ def store_receipt(db_path, receipt, gps_lat, gps_lon, fahrer, raw_bytes=None, bi
 
 
 def get_unsynced(db_path, limit=50):
-    """Holt ungesyncte Belege aus der lokalen DB."""
+    """Holt ungesyncte Belege aus der lokalen DB.
+    Nur Belege mit einer Zuordnung (assigned=1) werden uebertragen, damit im
+    Portal keine leeren Belege ohne Auftrag/Fahrer landen. Belege ohne
+    Zuordnung bleiben lokal gepuffert, bis der Bediener sie auf dem
+    Touchscreen einem Auftrag zuweist."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT * FROM receipts WHERE synced=0 ORDER BY id ASC LIMIT ?",
-        (limit,)
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM receipts WHERE synced=0 AND COALESCE(assigned,0)=1 ORDER BY id ASC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # Fallback falls Spalte 'assigned' (noch) nicht existiert
+        rows = conn.execute(
+            "SELECT * FROM receipts WHERE synced=0 ORDER BY id ASC LIMIT ?",
+            (limit,)
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -831,10 +842,11 @@ def sync_to_portal(conf):
         if resp.status_code == 200:
             result = resp.json()
             created = result.get("created", 0)
+            updated = result.get("updated", 0)
             skipped = result.get("skipped", 0)
             mark_synced(conf["db_path"], local_ids)
-            log.info(f"Sync OK: {created} neu, {skipped} uebersprungen")
-            return created
+            log.info(f"Sync OK: {created} neu, {updated} aktualisiert, {skipped} uebersprungen")
+            return created + updated
         else:
             log.warning(f"Sync Fehler {resp.status_code} (URL={sync_url}): {resp.text[:200]}")
     except requests.ConnectionError:
