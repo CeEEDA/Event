@@ -337,7 +337,7 @@ ENTSCHEIDUNGSREGEL fuer die Firmen-Zuordnung:
 3. Wenn der Name "Eventenergie Deutschland", "Eventenergie", "EED" enthaelt (mit oder ohne Rechtsform-Zusatz wie GmbH, GmbH & Co. KG) -> IMMER EED
 4. Wenn der Name "ES Besitz", "Besitz und Verwaltung", "ESBV", oder aehnliche Variante enthaelt -> IMMER ES Besitz
 5. WICHTIG: Der Rechtsform-Zusatz (GmbH & Co. KG, GmbH etc.) ist NICHT erforderlich fuer die Zuordnung - der Firmenname allein reicht aus.
-6. Bei Adressen in Andernach/Eifel/Nordrhein-Westfalen -> typischerweise EED
+6. Beide Firmen haben die GLEICHE Adresse (Andernach). Die Adresse ist KEIN Unterscheidungsmerkmal - schau dir ausschliesslich den Firmennamen im Empfaenger/Absender-Feld an.
 7. Nur wenn WIRKLICH kein Empfaenger erkennbar ist ODER der Empfaenger eine voellig andere Firma ist: suggested_folder = "unbekannt"
 8. Proforma-Rechnungen aus dem Ausland (UK, Frankreich, etc.) an "Eventenergie Deutschland" sind IMMER Eingangsrechnungen der EED - auch wenn keine deutsche USt-IdNr. aufgefuehrt ist.
 
