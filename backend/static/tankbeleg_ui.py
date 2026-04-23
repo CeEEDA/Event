@@ -231,10 +231,14 @@ def get_dashboard_html():
 :root{{--bg:#f8f9fb;--card:#fff;--border:#e5e7eb;--text:#1a1d27;--muted:#6b7280;--accent:#c026d3;--accent-light:#f3e8ff;--accent-dark:#a21caf;--green:#16a34a;--green-bg:#dcfce7;--amber:#d97706;--amber-bg:#fef3c7;--red:#dc2626;--red-bg:#fee2e2}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh;user-select:none}}
 
-.header{{background:var(--card);border-bottom:2px solid var(--border);padding:8px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,0.04)}}
+.header{{background:var(--card);border-bottom:2px solid var(--border);padding:8px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,0.04);cursor:pointer;transition:background 0.15s}}
+.header:active{{background:var(--accent-light)}}
+.header.refreshing{{background:var(--accent-light)}}
 .header-left{{display:flex;align-items:center;gap:12px}}
 .header-left img{{height:28px}}
 .header-left h1{{font-size:16px;font-weight:700}}
+.refresh-hint{{font-size:12px;color:var(--accent-dark);font-weight:600;background:var(--accent-light);padding:5px 10px;border-radius:14px;margin-left:8px}}
+.header.refreshing .refresh-hint{{background:var(--accent);color:white}}
 .header-right{{display:flex;align-items:center;gap:14px}}
 .conn-badge{{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600}}
 .conn-badge.online{{background:var(--green-bg);color:var(--green)}}
@@ -334,10 +338,11 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 </style></head>
 <body>
 
-<div class="header">
+<div class="header" onclick="refreshAll()" id="headerBar" title="Antippen zum Aktualisieren">
   <div class="header-left">
     <img src="{LOGO_URL}" alt="Logo" onerror="this.style.display='none'">
     <h1>Tankbeleg</h1>
+    <span class="refresh-hint" id="refreshHint">&#x21bb; Antippen zum Aktualisieren</span>
   </div>
   <div class="header-right">
     <div class="conn-badge" id="connBadge"><span class="conn-dot"></span><span id="connLabel">...</span></div>
@@ -510,6 +515,22 @@ async function checkConn(){{
     b.className='conn-badge '+(d.backend_reachable?'online':'offline');
     document.getElementById('connLabel').textContent=d.backend_reachable?'Portal verbunden':'Offline';
   }}catch(e){{}}
+}}
+
+async function refreshAll(){{
+  const header=document.getElementById('headerBar');
+  const hint=document.getElementById('refreshHint');
+  header.classList.add('refreshing');
+  if(hint) hint.innerHTML='&#x21bb; Aktualisiere...';
+  try{{
+    // Backend sofort pollen (Auftraege, Fahrer ziehen)
+    await fetch('/api/sync',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:'{{}}'}});
+  }}catch(e){{}}
+  await Promise.all([loadOrders(),loadDrivers(),loadReceipts(),checkConn()]);
+  setTimeout(()=>{{
+    header.classList.remove('refreshing');
+    if(hint) hint.innerHTML='&#x21bb; Antippen zum Aktualisieren';
+  }},700);
 }}
 
 function renderReceipts(){{
