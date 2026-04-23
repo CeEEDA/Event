@@ -69,17 +69,24 @@ def _guess_content_type(filename: str, fallback: str | None) -> str:
 
 
 def _extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes, str]]:
-    """Return list of (filename, raw_bytes, content_type) for supported attachments."""
+    """Return list of (filename, raw_bytes, content_type) for supported REAL attachments.
+    Signature images, logos etc. (Content-Disposition: inline, or Content-ID referenced)
+    are explicitly ignored to prevent spam in the document folder."""
     out = []
     for part in msg.walk():
         if part.is_multipart():
             continue
         disposition = (part.get("Content-Disposition") or "").lower()
+        # Only accept EXPLICIT attachments. Inline images (signatures, logos, icons)
+        # are skipped - they are never what the user wants to archive.
+        if "attachment" not in disposition:
+            continue
+        # Additional guard: parts with Content-ID are typically inline references
+        # even if Disposition sloppily says "attachment" (some mail clients do this)
+        if part.get("Content-ID") and "inline" in disposition:
+            continue
         filename = _decode_mime_header(part.get_filename())
         if not filename:
-            continue
-        # Skip inline images without explicit attachment disposition
-        if "attachment" not in disposition and "inline" not in disposition:
             continue
         content_type = _guess_content_type(filename, part.get_content_type())
         if not content_type:
@@ -93,6 +100,11 @@ def _extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes, s
             continue
         if len(payload) > 50 * 1024 * 1024:  # 50 MB cap, matches REST upload
             logger.warning(f"Skipping oversize attachment {filename} ({len(payload)} bytes)")
+            continue
+        # Filter out tiny attachments that are almost certainly decorative
+        # (logos, signature icons, tracking pixels). Real docs are >= 15 KB.
+        if len(payload) < 15 * 1024:
+            logger.info(f"Mailbridge: Anhang '{filename}' nur {len(payload)} B - uebersprungen (zu klein, wahrscheinlich Logo/Signatur)")
             continue
         out.append((filename, payload, content_type))
     return out

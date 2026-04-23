@@ -950,8 +950,13 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         if final_folder.startswith("lohnabrechnung"):
             await _assign_payroll_to_employee(doc_id, ai_result, temp_path, content_type)
     except Exception as e:
-        logger.error(f"AI analysis error for doc {doc_id}: {e}")
-        await db.documents.update_one({"id": doc_id}, {"$set": {"ai_status": "failed"}})
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"AI analysis error for doc {doc_id}: {e}\n{tb}")
+        await db.documents.update_one({"id": doc_id}, {"$set": {
+            "ai_status": "failed",
+            "ai_error": str(e)[:500],
+        }})
     finally:
         try:
             os.remove(temp_path)
