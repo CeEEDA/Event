@@ -22,6 +22,33 @@ EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = "eventenergie-docs"
 
+# SSL-Konfiguration fuer Object-Storage Requests.
+# Auf Windows-Servern ohne System-CA-Bundle schlaegt die Verifikation gegen
+# integrations.emergentagent.com oft mit "unable to get local issuer certificate"
+# fehl. Drei Abstufungen:
+#  1) STORAGE_SSL_CA_BUNDLE=/pfad/zu/bundle.pem  -> explizites Bundle nutzen
+#  2) STORAGE_SSL_VERIFY=false                   -> Verify komplett aus (Notfall)
+#  3) Standard: versuche `truststore` (Windows-Zertifikatsstore), sonst certifi
+_STORAGE_CA_BUNDLE = os.environ.get("STORAGE_SSL_CA_BUNDLE", "").strip()
+_STORAGE_SSL_VERIFY = os.environ.get("STORAGE_SSL_VERIFY", "true").strip().lower() not in ("false", "0", "no")
+
+def _ssl_verify_param():
+    """Liefert das passende `verify`-Argument fuer requests.* Calls."""
+    if not _STORAGE_SSL_VERIFY:
+        return False
+    if _STORAGE_CA_BUNDLE and os.path.exists(_STORAGE_CA_BUNDLE):
+        return _STORAGE_CA_BUNDLE
+    return True
+
+# Optional: truststore aktiviert den OS-Zertifikatsstore (Windows, macOS)
+# damit Corporate-CAs & System-Roots automatisch gefunden werden.
+try:
+    import truststore  # type: ignore
+    truststore.inject_into_ssl()
+    logger.info("[documents] truststore aktiviert (OS-Zertifikatsstore wird verwendet)")
+except Exception:
+    pass
+
 # Lokale Dateiablage auf dem Produktionsserver
 # Auf Windows: C:\eventenergie\Dokumentenablage
 # Auf Linux/Dev: /app/data/Dokumentenablage (Fallback)
@@ -126,7 +153,7 @@ def init_storage():
     global storage_key
     if storage_key:
         return storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30, verify=_ssl_verify_param())
     resp.raise_for_status()
     storage_key = resp.json()["storage_key"]
     return storage_key
@@ -136,7 +163,7 @@ def put_object(path: str, data: bytes, content_type: str) -> dict:
     resp = requests.put(
         f"{STORAGE_URL}/objects/{path}",
         headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120
+        data=data, timeout=120, verify=_ssl_verify_param()
     )
     resp.raise_for_status()
     return resp.json()
@@ -145,7 +172,7 @@ def get_object(path: str):
     key = init_storage()
     resp = requests.get(
         f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
+        headers={"X-Storage-Key": key}, timeout=60, verify=_ssl_verify_param()
     )
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
