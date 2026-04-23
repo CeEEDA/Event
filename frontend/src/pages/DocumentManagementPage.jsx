@@ -8,7 +8,7 @@ import {
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
   FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2, HelpCircle,
-  Mail, AlertCircle
+  Mail, AlertCircle, Sparkles
 } from "lucide-react";
 import axios from "axios";
 
@@ -349,6 +349,20 @@ export default function DocumentManagementPage() {
     } catch { toast.error("Fehler beim Verschieben"); }
   };
 
+  const handleReanalyze = async (docId) => {
+    try {
+      await api.post(`/documents/${docId}/reanalyze`);
+      toast.success("KI analysiert neu…");
+      // Status in der Liste sofort aktualisieren
+      setDocuments(docs => docs.map(d => d.id === docId ? { ...d, ai_status: "pending" } : d));
+      if (selectedDoc?.id === docId) setSelectedDoc({ ...selectedDoc, ai_status: "pending" });
+      // Nach 3 s einmal refreshen
+      setTimeout(() => { loadFolders(); loadDocuments(activeFolder); }, 3500);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Neuanalyse fehlgeschlagen");
+    }
+  };
+
   const handleViewDoc = async (docId) => {
     try {
       const r = await api.get(`/documents/${docId}`);
@@ -666,6 +680,9 @@ export default function DocumentManagementPage() {
                         <button onClick={() => handleViewDoc(doc.id)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600" title="Ansehen" data-testid={`view-${doc.id}`}>
                           <Eye className="w-4 h-4" />
                         </button>
+                        <button onClick={() => handleReanalyze(doc.id)} className="p-1.5 rounded-md hover:bg-violet-50 text-gray-400 hover:text-violet-600" title="KI neu analysieren" data-testid={`reanalyze-${doc.id}`}>
+                          <Sparkles className="w-4 h-4" />
+                        </button>
                         <button onClick={() => setMoveTarget(doc)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600" title="Verschieben" data-testid={`move-${doc.id}`}>
                           <MoveRight className="w-4 h-4" />
                         </button>
@@ -810,6 +827,9 @@ export default function DocumentManagementPage() {
                     <Eye className="w-4 h-4 mr-1" /> Datei öffnen
                   </Button>
                 </a>
+                <Button variant="outline" size="sm" className="w-full text-violet-600 hover:text-violet-700 hover:bg-violet-50" onClick={() => handleReanalyze(selectedDoc.id)} data-testid="detail-reanalyze-btn">
+                  <Sparkles className="w-4 h-4 mr-1" /> KI neu analysieren
+                </Button>
                 <Button variant="outline" size="sm" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(selectedDoc.id)} data-testid="detail-delete-btn">
                   <Trash2 className="w-4 h-4 mr-1" /> Löschen
                 </Button>

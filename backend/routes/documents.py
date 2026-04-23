@@ -334,9 +334,12 @@ Wir haben ZWEI Firmen mit unterschiedlicher Buchhaltung:
 ENTSCHEIDUNGSREGEL fuer die Firmen-Zuordnung:
 1. Schau dir IMMER zuerst den "Empfaenger" der Rechnung an (bei Eingang) bzw. den "Absender" (bei Ausgang)
 2. Die Firma ist meistens im Briefkopf oder in der Adresszeile mit "An: ..." zu finden
-3. Wenn eindeutig "Eventenergie Deutschland" -> EED
-4. Wenn eindeutig "ES Besitz" / "ESBV" -> ES Besitz
-5. Wenn du UNSICHER bist (z.B. nur "Eventenergie" ohne Zusatz, oder kein Empfaenger erkennbar): suggested_folder = "unbekannt" - NICHT raten!
+3. Wenn der Name "Eventenergie Deutschland", "Eventenergie", "EED" enthaelt (mit oder ohne Rechtsform-Zusatz wie GmbH, GmbH & Co. KG) -> IMMER EED
+4. Wenn der Name "ES Besitz", "Besitz und Verwaltung", "ESBV", oder aehnliche Variante enthaelt -> IMMER ES Besitz
+5. WICHTIG: Der Rechtsform-Zusatz (GmbH & Co. KG, GmbH etc.) ist NICHT erforderlich fuer die Zuordnung - der Firmenname allein reicht aus.
+6. Bei Adressen in Andernach/Eifel/Nordrhein-Westfalen -> typischerweise EED
+7. Nur wenn WIRKLICH kein Empfaenger erkennbar ist ODER der Empfaenger eine voellig andere Firma ist: suggested_folder = "unbekannt"
+8. Proforma-Rechnungen aus dem Ausland (UK, Frankreich, etc.) an "Eventenergie Deutschland" sind IMMER Eingangsrechnungen der EED - auch wenn keine deutsche USt-IdNr. aufgefuehrt ist.
 
 VERSICHERUNGEN:
 - KFZ-Versicherung, Fahrzeugschein, Grüne Karte → kfz_versicherung
@@ -925,11 +928,29 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
 
-        # Safety: Rechnungs-Root-Folder (ohne Firma) zaehlen als "unsicher" -> 'unbekannt'
+        # Safety: Wenn KI den Rechnungs-Root ohne Firma zurueckgibt, versuchen wir
+        # die Firma anhand des AI-Metadaten-Empfaengers/Senders zu ermitteln
         RECHNUNGS_ROOTS_WITHOUT_COMPANY = {"rechnungseingang", "rechnungsausgang"}
         if suggested_folder in RECHNUNGS_ROOTS_WITHOUT_COMPANY:
-            logger.info(f"KI gab {suggested_folder} ohne Firmen-Zuordnung zurueck -> 'unbekannt'")
-            suggested_folder = "unbekannt"
+            direction = "rechnungseingang" if suggested_folder == "rechnungseingang" else "rechnungsausgang"
+            meta = ai_result.get("metadata") or {}
+            # Bei Eingangsrechnung -> Empfaenger pruefen, bei Ausgang -> Absender
+            candidate_text = " ".join([
+                str(meta.get("recipient") or ""),
+                str(meta.get("empfaenger") or ""),
+                str(meta.get("sender") or ""),
+                str(meta.get("absender") or ""),
+                str(meta.get("firma") or ""),
+            ]).lower()
+            if any(k in candidate_text for k in ["es besitz", "esbv", "besitz und verwalt"]):
+                suggested_folder = f"{direction}_es_besitz_verwaltung"
+                logger.info(f"KI gab {direction} zurueck, Metadaten deuten auf ES Besitz -> {suggested_folder}")
+            elif any(k in candidate_text for k in ["eventenergie", "eed"]):
+                suggested_folder = f"{direction}_eventenergie_deutschland"
+                logger.info(f"KI gab {direction} zurueck, Metadaten deuten auf EED -> {suggested_folder}")
+            else:
+                logger.info(f"KI gab {direction} ohne erkennbare Firma zurueck -> 'unbekannt'")
+                suggested_folder = "unbekannt"
 
         # Bestimme finale Ablage: Wenn KI sicher ist -> vorgeschlagener Ordner, sonst 'unbekannt'
         final_folder = folder_id
@@ -1073,6 +1094,52 @@ async def create_document_from_bytes(file_data: bytes, filename: str, content_ty
 
     clean = {k: v for k, v in doc.items() if k != "_id"}
     return clean
+
+
+@router.post("/{doc_id}/reanalyze")
+async def reanalyze_document(doc_id: str):
+    """Triggert die KI-Kategorisierung fuer ein bereits hochgeladenes Dokument
+    erneut. Laedt die Datei aus Cloud-Storage oder lokaler Ablage und startet
+    die Analyse im Hintergrund."""
+    doc = await db.documents.find_one({"id": doc_id, "is_deleted": False}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    storage_path = doc.get("storage_path") or ""
+    content_type = doc.get("content_type") or "application/octet-stream"
+    ext = (doc.get("original_filename") or "file.bin").split(".")[-1]
+
+    # Datei beschaffen: zuerst lokal, dann Cloud
+    file_data = None
+    if storage_path.startswith("local://"):
+        try:
+            local_rel = storage_path.replace("local://", "", 1)
+            with open(local_rel, "rb") as f:
+                file_data = f.read()
+        except Exception:
+            file_data = None
+    if file_data is None:
+        try:
+            cloud_path = storage_path.replace("local://", "", 1) if storage_path.startswith("local://") else storage_path
+            file_data, _ = get_object(cloud_path)
+        except Exception as e:
+            logger.warning(f"Reanalyze: Cloud-Download fehlgeschlagen {storage_path}: {e}")
+
+    if not file_data:
+        raise HTTPException(status_code=404, detail="Datei nicht auffindbar - Neuanalyse nicht moeglich")
+
+    # In temp speichern und Analyse starten
+    temp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.{ext}")
+    with open(temp_path, "wb") as f:
+        f.write(file_data)
+
+    # Status zuruecksetzen, damit UI "Analysiere..." anzeigt
+    await db.documents.update_one(
+        {"id": doc_id},
+        {"$set": {"ai_status": "pending", "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    asyncio.create_task(_run_ai_analysis(doc_id, temp_path, content_type, doc.get("folder_id", "unbekannt")))
+    return {"ok": True, "status": "analysis_started"}
 
 
 @router.get("/list")
