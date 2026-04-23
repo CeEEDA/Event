@@ -160,6 +160,262 @@ def strip_escpos(data: bytes) -> str:
     return bytes(result).decode('latin-1', errors='replace')
 
 
+# ====== Sening MultiFlow Grafik-Parser ======
+# Die Sening MultiFlow druckt fett-markierte Zeichen als Bit-Image,
+# normale Zeichen als ASCII-Text. Dadurch sind z.B. "Abgabe-Datum" als
+# "bgabek?d?t" und die letzte Ziffer jeder Zahl unleserlich.
+
+def strip_sening_escapes(data: bytes) -> bytes:
+    """Aggressives Stripping von ESC-Kommandos inkl. Sening-Grafik-Blöcke."""
+    out = bytearray()
+    i = 0
+    n = len(data)
+    while i < n:
+        b = data[i]
+        if b == 0x1B and i + 1 < n:
+            nxt = data[i + 1]
+            # Sening-Poll Rest
+            if nxt == 0xB3 and i + 2 < n:
+                i += 3
+                continue
+            # ESC + <density> <param> [image bytes]
+            if nxt == 0x2B:
+                # Alles bis zum nächsten ESC als Grafik verwerfen
+                j = i + 2
+                while j < n and data[j] != 0x1B:
+                    j += 1
+                i = j
+                continue
+            # ESC @ / ESC 03 / ESC 0B etc.
+            if nxt in (0x40, 0x03):
+                i += 2
+                continue
+            if nxt == 0x0B:
+                # ESC 0B  0c  60  c3  21  00   (line init)
+                i += min(7, n - i)
+                continue
+            # ESC X n (3 bytes default) - feed/bold/font/align/graphics
+            if nxt in (0x4A, 0x45, 0x4D, 0x61, 0x56, 0x74, 0x21):
+                i += 3
+                continue
+            # Unknown ESC - skip ESC + 1
+            i += 2
+            continue
+        # Niedrige Steuerzeichen ausser CR/LF/TAB
+        if b < 0x20 and b not in (0x09, 0x0A, 0x0D):
+            i += 1
+            continue
+        # Hohe Grafik-Bytes (0x80-0xFF) ausser 0xF8 (°) verwerfen
+        if b >= 0x80 and b != 0xF8:
+            i += 1
+            continue
+        out.append(b)
+        i += 1
+    return bytes(out)
+
+
+# Marker-basierte Erkennung (robuster als Regex bei Grafik-Korruption)
+SENING_MARKERS = {
+    "zaehler_nr": [re.compile(r"Z[aä]ehler", re.IGNORECASE), re.compile(r"W3[^0-9]*le")],
+    "beleg_nr":   [re.compile(r"Beleg", re.IGNORECASE), re.compile(r"fv[^0-9]*N")],
+    "datum":      [re.compile(r"Datum", re.IGNORECASE), re.compile(r"abek[^a-z]*d[^a-z]*t")],
+    "start":      [re.compile(r"Start", re.IGNORECASE), re.compile(r"abekle")],
+    "ende":       [re.compile(r"Ende", re.IGNORECASE), re.compile(r"abek[^a-z]*t;")],
+    "menge":      [re.compile(r"Menge", re.IGNORECASE), re.compile(r"M\+"), re.compile(r"bei.{0,10}15")],
+}
+
+
+def parse_receipt_sening(raw: bytes) -> dict:
+    """Parser fuer Sening MultiFlow mit Bit-Image Mischdruck.
+    Extrahiert so viel wie moeglich, markiert fehlende Felder."""
+    stripped = strip_sening_escapes(raw)
+    try:
+        text = stripped.decode("cp437", errors="replace")
+    except Exception:
+        text = stripped.decode("latin-1", errors="replace")
+
+    # Text in "Zeilen" zerhacken (an Whitespace-Häufungen splitten)
+    # Jede Label-Zeile hat typischerweise:  <marker text>  <spaces>  <zahl>
+    segments = re.split(r"m1\??|\n", text)
+
+    result = {
+        "zaehler_nr": None,
+        "beleg_nr": None,
+        "datum": None,
+        "abgabe_start": None,
+        "abgabe_ende": None,
+        "zaehler_vor_start": None,
+        "fuel_type": None,
+        "menge_liter": None,
+        "raw_text": text,
+        "needs_review": False,
+        "review_reason": [],
+    }
+
+    def find_number_after(segment: str, pattern, max_after: int = 100):
+        m = pattern.search(segment)
+        if not m:
+            return None
+        tail = segment[m.end(): m.end() + max_after]
+        nums = re.findall(r"\d+", tail)
+        return nums[0] if nums else None
+
+    def find_time_after(segment: str, pattern, max_after: int = 100):
+        m = pattern.search(segment)
+        if not m:
+            return None
+        tail = segment[m.end(): m.end() + max_after]
+        t = re.search(r"(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?", tail)
+        if t:
+            hh = int(t.group(1))
+            mm = int(t.group(2))
+            ss = int(t.group(3) or 0)
+            return f"{hh:02d}:{mm:02d}:{ss:02d}"
+        return None
+
+    for seg in segments:
+        if not seg.strip():
+            continue
+        # Zaehler-Nr
+        if result["zaehler_nr"] is None:
+            for pat in SENING_MARKERS["zaehler_nr"]:
+                v = find_number_after(seg, pat)
+                if v and len(v) >= 3:
+                    result["zaehler_nr"] = v
+                    break
+        # Beleg-Nr
+        if result["beleg_nr"] is None:
+            for pat in SENING_MARKERS["beleg_nr"]:
+                v = find_number_after(seg, pat)
+                if v:
+                    result["beleg_nr"] = v
+                    break
+        # Datum (vollstaendig unwahrscheinlich, aber wenn Glueck)
+        if result["datum"] is None:
+            m = re.search(r"(\d{2}\.\d{2}\.\d{2,4})", seg)
+            if m:
+                result["datum"] = m.group(1)
+        # Start / Ende: beide erkennen, Reihenfolge nach Position
+        if result["abgabe_start"] is None:
+            for pat in SENING_MARKERS["start"]:
+                t = find_time_after(seg, pat)
+                if t:
+                    result["abgabe_start"] = t
+                    break
+        if result["abgabe_ende"] is None:
+            for pat in SENING_MARKERS["ende"]:
+                t = find_time_after(seg, pat)
+                if t:
+                    result["abgabe_ende"] = t
+                    break
+        # Menge (Zahl nach "Menge" oder "M+" oder "bei 15")
+        if result["menge_liter"] is None:
+            for pat in SENING_MARKERS["menge"]:
+                v = find_number_after(seg, pat, max_after=60)
+                if v:
+                    try:
+                        result["menge_liter"] = float(v)
+                    except ValueError:
+                        pass
+                    break
+
+    # Fuel-Type Heuristik (HEL ist der haeufigste)
+    if "HEL" in text or "hel" in text.lower():
+        result["fuel_type"] = "heizoel_leicht"
+    elif "Diesel" in text or "diesel" in text.lower():
+        result["fuel_type"] = "diesel"
+    elif "HVO" in text.upper():
+        result["fuel_type"] = "hvo"
+    else:
+        # Default zum haeufigsten
+        result["fuel_type"] = "heizoel_leicht"
+
+    # Review-Flag wenn Pflichtfelder fehlen/unsicher
+    missing = []
+    if not result["menge_liter"]:
+        missing.append("Menge")
+    if not result["datum"]:
+        missing.append("Datum")
+        # Datum ist bei Sening oft nicht lesbar -> heute als Fallback
+        result["datum"] = datetime.now().strftime("%d.%m.%Y")
+    if not result["beleg_nr"]:
+        missing.append("Beleg-Nr")
+    if missing:
+        result["needs_review"] = True
+        result["review_reason"] = ", ".join(missing) + " aus Bitmap nicht lesbar"
+    return result
+
+
+# ====== Bitmap-Rendering: Roh-Beleg als PNG ======
+
+def render_receipt_png(raw: bytes, parsed: dict) -> bytes:
+    """Rendert den empfangenen Beleg als PNG-Bild.
+    Nutzt Pillow falls verfuegbar, sonst minimalen PNG-Writer mit Text."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        log.warning("Pillow nicht installiert - keine PNG-Generierung")
+        return b""
+
+    # Strukturiere Inhalt
+    lines = [
+        "Tankbeleg (Sening MultiFlow Capture)",
+        "=" * 40,
+        f"Zaehler-Nr.  : {parsed.get('zaehler_nr') or '???'}",
+        f"Beleg-Nr.    : {parsed.get('beleg_nr') or '???'}",
+        f"Datum        : {parsed.get('datum') or '???'}",
+        f"Abgabe-Start : {parsed.get('abgabe_start') or '???'}",
+        f"Abgabe-Ende  : {parsed.get('abgabe_ende') or '???'}",
+        f"Kraftstoff   : {parsed.get('fuel_type') or '???'}",
+        f"Menge Liter  : {parsed.get('menge_liter') or '???'} L",
+        "=" * 40,
+    ]
+    if parsed.get("needs_review"):
+        lines.append(f"! Review: {parsed.get('review_reason','')}")
+        lines.append("")
+    lines.append("Original-Rohdaten (Hex):")
+
+    # 48 Byte pro Zeile => 144 Zeichen (mit Leerz.) => wir bauen 16 Byte/Zeile
+    for i in range(0, len(raw), 16):
+        chunk = raw[i:i + 16]
+        hex_part = " ".join(f"{b:02x}" for b in chunk)
+        asc_part = "".join(chr(b) if 0x20 <= b < 0x7f else "." for b in chunk)
+        lines.append(f"{i:04x}  {hex_part:<48}  {asc_part}")
+
+    # Bild-Größe berechnen
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 11)
+    except (OSError, IOError):
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+
+    char_w, char_h = 7, 14
+    if font:
+        try:
+            bbox = font.getbbox("M")
+            char_w = bbox[2] - bbox[0] + 1
+            char_h = bbox[3] - bbox[1] + 4
+        except Exception:
+            pass
+
+    width = max(len(line) for line in lines) * char_w + 30
+    height = len(lines) * char_h + 30
+
+    img = Image.new("L", (width, height), color=255)
+    draw = ImageDraw.Draw(img)
+    y = 15
+    for line in lines:
+        draw.text((15, y), line, fill=0, font=font)
+        y += char_h
+
+    import io
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def parse_receipt(text: str) -> dict:
     """Parst einen Tankbeleg-Text und extrahiert die Felder."""
     receipt = {
@@ -217,9 +473,14 @@ def parse_receipt(text: str) -> dict:
 
 
 def is_complete_receipt(receipt: dict) -> bool:
-    """Prueft ob alle Pflichtfelder eines Belegs vorhanden sind."""
-    required = ["beleg_nr", "datum", "menge_liter"]
-    return all(receipt.get(f) is not None for f in required)
+    """Prueft ob GENUG Pflichtfelder da sind um den Beleg zu sichern.
+    Bei Sening-Grafik-Druck koennen einzelne Felder fehlen -> needs_review=True,
+    aber der Beleg wird trotzdem gespeichert + manuell komplettiert."""
+    # Menge ist Pflicht - ohne geht gar nichts
+    if not receipt.get("menge_liter"):
+        return False
+    # Datum wird ggf. auf heute gesetzt im parse_receipt_sening
+    return receipt.get("datum") is not None
 
 
 # ====== GPS ======
@@ -298,24 +559,41 @@ def init_db(db_path):
         conn.execute("ALTER TABLE receipts ADD COLUMN assigned INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    # Neue Spalten fuer Sening Bitmap-Capture
+    for col_ddl in (
+        "ADD COLUMN raw_receipt_hex TEXT",
+        "ADD COLUMN bitmap_png_base64 TEXT",
+        "ADD COLUMN needs_review INTEGER DEFAULT 0",
+        "ADD COLUMN review_reason TEXT",
+    ):
+        try:
+            conn.execute(f"ALTER TABLE receipts {col_ddl}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     log.info(f"Datenbank initialisiert: {db_path}")
 
 
-def store_receipt(db_path, receipt, gps_lat, gps_lon, fahrer):
-    """Speichert einen geparsten Beleg in der lokalen DB."""
+def store_receipt(db_path, receipt, gps_lat, gps_lon, fahrer, raw_bytes=None, bitmap_png=None):
+    """Speichert einen geparsten Beleg in der lokalen DB.
+    raw_bytes: Die Original-Bytes vom Drucker (fuer Beweiskraft)
+    bitmap_png: Gerendertes PNG als bytes (optional, wird base64-kodiert gespeichert)"""
+    import base64 as _b64
     local_id = str(uuid.uuid4())
     # Zeit aus abgabe_start oder aktueller Zeit
     zeit = receipt.get("abgabe_start", datetime.now().strftime("%H:%M:%S"))
+    raw_hex = raw_bytes.hex() if raw_bytes else None
+    png_b64 = _b64.b64encode(bitmap_png).decode("ascii") if bitmap_png else None
 
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("""
             INSERT INTO receipts (local_id, zaehler_nr, beleg_nr, datum, zeit,
                 abgabe_start, abgabe_ende, zaehler_vor_start,
-                fuel_type, menge_liter, gps_lat, gps_lon, fahrer, raw_text)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fuel_type, menge_liter, gps_lat, gps_lon, fahrer, raw_text,
+                raw_receipt_hex, bitmap_png_base64, needs_review, review_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             local_id,
             receipt.get("zaehler_nr"),
@@ -331,9 +609,16 @@ def store_receipt(db_path, receipt, gps_lat, gps_lon, fahrer):
             gps_lon,
             fahrer,
             receipt.get("raw_text", ""),
+            raw_hex,
+            png_b64,
+            1 if receipt.get("needs_review") else 0,
+            receipt.get("review_reason") or None,
         ))
         conn.commit()
-        log.info(f"Beleg gespeichert: Nr. {receipt.get('beleg_nr')}, {receipt.get('menge_liter')} L {receipt.get('fuel_type')}")
+        review_flag = " [REVIEW]" if receipt.get("needs_review") else ""
+        log.info(f"Beleg gespeichert{review_flag}: Nr. {receipt.get('beleg_nr')}, "
+                 f"{receipt.get('menge_liter')} L {receipt.get('fuel_type')}, "
+                 f"PNG={'ja' if png_b64 else 'nein'}")
     except sqlite3.IntegrityError:
         log.warning(f"Beleg bereits vorhanden: {local_id}")
     finally:
@@ -407,6 +692,10 @@ def sync_to_portal(conf):
             "gps_lng": row.get("gps_lon"),
             "pi_local_id": row.get("local_id"),
             "raw_receipt_data": row.get("raw_text") or "",
+            "raw_receipt_hex": row.get("raw_receipt_hex") or None,
+            "bitmap_png_base64": row.get("bitmap_png_base64") or None,
+            "needs_review": bool(row.get("needs_review")),
+            "review_reason": row.get("review_reason") or None,
             "order_pk": row.get("order_pk") or None,
             "order_name": row.get("order_name") or "",
             "notes": row.get("notes") or f"Pi-Sync {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
@@ -681,7 +970,14 @@ def main():
                     log.info(f"Empfangene Daten ({len(raw)} Bytes)")
                     log.debug(f"Text:\n{text}")
 
+                    # Zuerst Standard-Parser (saubere ESC/POS-Texte)
                     receipt = parse_receipt(text)
+
+                    # Falls wenig Felder erkannt: Sening-Grafik-Parser auf Rohdaten
+                    recognized = sum(1 for k in ("zaehler_nr", "beleg_nr", "menge_liter", "abgabe_start") if receipt.get(k))
+                    if recognized < 2:
+                        log.info("Standard-Parser lieferte wenig Daten -> Sening-Grafik-Parser")
+                        receipt = parse_receipt_sening(raw)
 
                     if is_complete_receipt(receipt):
                         # GPS Position erfassen
@@ -693,13 +989,24 @@ def main():
                             if gps_lat:
                                 log.info(f"GPS: {gps_lat:.6f}, {gps_lon:.6f}")
 
-                        # Lokal speichern
+                        # PNG rendern (Best-Effort, falls Pillow da ist)
+                        png_bytes = b""
+                        try:
+                            png_bytes = render_receipt_png(raw, receipt)
+                            if png_bytes:
+                                log.info(f"PNG gerendert: {len(png_bytes)} Bytes")
+                        except Exception as e:
+                            log.warning(f"PNG-Rendering fehlgeschlagen: {e}")
+
+                        # Lokal speichern (inkl. Roh-Hex + PNG)
                         store_receipt(
                             conf["db_path"],
                             receipt,
                             gps_lat,
                             gps_lon,
                             conf["fahrer_name"],
+                            raw_bytes=raw,
+                            bitmap_png=png_bytes or None,
                         )
                         consecutive_errors = 0
                     else:

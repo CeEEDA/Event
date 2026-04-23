@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, Download, Fuel, Filter,
   Warehouse, Truck, CheckCircle, Clock, XCircle,
+  Image as ImageIcon, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,6 +27,7 @@ export default function FuelManagementPage() {
   const [filterStatus, setFilterStatus] = useState("alle");
   const [filterCategory, setFilterCategory] = useState("alle");
   const [loading, setLoading] = useState(true);
+  const [bitmapReceipt, setBitmapReceipt] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -170,7 +172,14 @@ export default function FuelManagementPage() {
                   return (
                     <tr key={r.id} className={`hover:bg-gray-50 ${isLager ? "bg-violet-50/30" : ""}`} data-testid={`fuel-row-${r.id}`}>
                       <td className="px-4 py-3">
-                        <span className="font-mono text-sm font-semibold text-gray-900">{r.beleg_nr || "-"}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-semibold text-gray-900">{r.beleg_nr || "-"}</span>
+                          {r.needs_review && (
+                            <span title={r.review_reason || "Manuelle Prüfung erforderlich"} className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded" data-testid={`review-flag-${r.id}`}>
+                              <AlertTriangle className="w-3 h-3" /> Review
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         {isLager ? (
@@ -200,6 +209,11 @@ export default function FuelManagementPage() {
                               <CheckCircle className="w-4 h-4" />
                             </Button>
                           )}
+                          {r.source === "pi" && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-fuchsia-600" onClick={() => setBitmapReceipt(r)} title="Original-Druck anzeigen" data-testid={`bitmap-fuel-${r.id}`}>
+                              <ImageIcon className="w-4 h-4" />
+                            </Button>
+                          )}
                           {r.id && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-amber-600" onClick={() => {
                               const token = localStorage.getItem("token");
@@ -223,6 +237,36 @@ export default function FuelManagementPage() {
       <footer className="bg-white border-t border-gray-200 p-4 text-center text-sm text-gray-500">
         &copy; {new Date().getFullYear()} Eventenergie Deutschland GmbH & Co. KG
       </footer>
+
+      {bitmapReceipt && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setBitmapReceipt(null)} data-testid="bitmap-modal">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-auto p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Original-Druck (Sening MultiFlow)</h3>
+              <button onClick={() => setBitmapReceipt(null)} className="text-gray-400 hover:text-gray-700" data-testid="bitmap-close">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="text-sm text-gray-600 mb-3">
+              Beleg {bitmapReceipt.beleg_nr || "-"} · {bitmapReceipt.quantity_liters?.toFixed?.(1) || "-"} L · {bitmapReceipt.date || "-"}
+            </div>
+            {bitmapReceipt.needs_review && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-start gap-2 text-sm text-amber-900">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <strong>Manuelle Prüfung erforderlich:</strong> {bitmapReceipt.review_reason || "Einige Felder konnten nicht automatisch erkannt werden"}
+                </div>
+              </div>
+            )}
+            <img
+              src={`${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/${bitmapReceipt.id}/bitmap.png?token=${localStorage.getItem("token")}`}
+              alt="Original-Beleg"
+              className="w-full border border-gray-200 rounded-lg bg-gray-50"
+              data-testid="bitmap-image"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 import math
+import base64
 import httpx
 
 router = APIRouter(prefix="/api/fuel-receipts", tags=["fuel-receipts"])
@@ -98,6 +99,10 @@ class FuelReceiptCreate(BaseModel):
     notes: Optional[str] = ""
     pi_local_id: Optional[str] = None
     raw_receipt_data: Optional[str] = None
+    raw_receipt_hex: Optional[str] = None
+    bitmap_png_base64: Optional[str] = None
+    needs_review: Optional[bool] = False
+    review_reason: Optional[str] = None
 
 
 class FuelReceiptUpdate(BaseModel):
@@ -207,6 +212,10 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
             "gps_lat": r.gps_lat,
             "gps_lng": r.gps_lng,
             "raw_receipt_data": r.raw_receipt_data,
+            "raw_receipt_hex": r.raw_receipt_hex,
+            "bitmap_png_base64": r.bitmap_png_base64,
+            "needs_review": bool(r.needs_review),
+            "review_reason": r.review_reason,
             "notes": r.notes or "",
             "status": "pending",
             "source": "pi",
@@ -219,6 +228,8 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
         }
         await _db.fuel_receipts.insert_one(doc)
         doc.pop("_id", None)
+        # Strip large bitmap from response payload
+        doc.pop("bitmap_png_base64", None)
         created.append(doc)
 
     return {"created": len(created), "skipped": skipped, "receipts": created}
@@ -241,7 +252,7 @@ async def list_fuel_receipts(
         query["order_pk"] = order_pk
     if category:
         query["category"] = category
-    receipts = await _db.fuel_receipts.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    receipts = await _db.fuel_receipts.find(query, {"_id": 0, "bitmap_png_base64": 0}).sort("created_at", -1).to_list(500)
     # Backfill missing beleg_nr
     for r in receipts:
         if not r.get("beleg_nr"):
@@ -272,11 +283,38 @@ async def fuel_receipt_stats(user: dict = Depends(_auth_user)):
     }
 
 
+@router.get("/{receipt_id}/bitmap.png")
+async def get_fuel_receipt_bitmap(
+    receipt_id: str,
+    token: Optional[str] = None,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+):
+    """Return the captured Sening/Epson receipt as PNG (rendered by the Pi)."""
+    if token:
+        _decode_jwt_token(token)
+    elif credentials:
+        _decode_jwt_token(credentials.credentials)
+    else:
+        raise HTTPException(status_code=401, detail="Nicht authentifiziert")
+
+    r = await _db.fuel_receipts.find_one({"id": receipt_id}, {"_id": 0, "bitmap_png_base64": 1})
+    if not r or not r.get("bitmap_png_base64"):
+        raise HTTPException(status_code=404, detail="Kein Beleg-Bild vorhanden")
+    try:
+        png_bytes = base64.b64decode(r["bitmap_png_base64"])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Bild konnte nicht dekodiert werden")
+    return Response(content=png_bytes, media_type="image/png", headers={
+        "Cache-Control": "public, max-age=86400",
+        "Content-Disposition": f'inline; filename="tankbeleg_{receipt_id}.png"',
+    })
+
+
 @router.get("/by-order/{order_pk}")
 async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user)):
     """Get all fuel receipts for a specific order with adjustment applied."""
     receipts = await _db.fuel_receipts.find(
-        {"order_pk": str(order_pk)}, {"_id": 0}
+        {"order_pk": str(order_pk)}, {"_id": 0, "bitmap_png_base64": 0}
     ).sort("date", -1).to_list(100)
 
     # Backfill missing beleg_nr
