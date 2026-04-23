@@ -54,6 +54,10 @@ DEFAULT_CONF = {
     "gps_host": "127.0.0.1",
     "gps_port": 2947,
     "fahrer_name": "",
+    # Sening MultiFlow poll response. 0x00 = "all flags OK / paper present".
+    # If MultiFlow still reports 'paper out', try 0x01, 0x10, 0x12, 0x7F.
+    # Override via /etc/tankbeleg_pi.conf key 'sening_reply_byte' (hex, e.g. 0x00).
+    "sening_reply_byte": "0x00",
 }
 
 
@@ -438,12 +442,13 @@ def sync_to_portal(conf):
 class SerialReceiptReader:
     """Liest serielle Daten und erkennt vollstaendige Belege."""
 
-    def __init__(self, port, baud=9600, bytesize=8, parity='N', stopbits=1):
+    def __init__(self, port, baud=9600, bytesize=8, parity='N', stopbits=1, sening_reply_byte=0x00):
         self.port = port
         self.baud = baud
         self.bytesize = bytesize
         self.parity = parity
         self.stopbits = stopbits
+        self.sening_reply_byte = sening_reply_byte
         self.ser = None
         self.buffer = bytearray()
         # Holds incomplete status-query prefixes across chunked serial reads
@@ -594,16 +599,18 @@ class SerialReceiptReader:
                 i += 3
                 continue
             # Sening MultiFlow proprietary poll:  ESC (0x1B) 0xB3 <n>
-            # Observed every ~550ms as '1b b3 ff'. MultiFlow waits for an ACK (0x06)
-            # before it will transmit the slip print job. Any non-ACK keeps it polling.
+            # Observed every ~550ms as '1b b3 ff'. MultiFlow waits for a status reply
+            # before it will transmit the slip print job. The reply byte controls whether
+            # MultiFlow thinks the printer is ready (paper present) or reports an error.
+            # Configurable via /etc/tankbeleg_pi.conf key 'sening_reply_byte'.
             if b == 0x1B and remaining >= 3 and data[i + 1] == 0xB3:
                 zone = data[i + 2]
                 try:
-                    self.ser.write(bytes([0x06]))
+                    self.ser.write(bytes([self.sening_reply_byte]))
                     self.ser.flush()
-                    log.info(f"Sening-Poll ESC B3 {zone:02X} -> ACK (0x06)")
+                    log.info(f"Sening-Poll ESC B3 {zone:02X} -> 0x{self.sening_reply_byte:02X}")
                 except (OSError, IOError) as e:
-                    log.warning(f"Sening-ACK fehlgeschlagen: {e}")
+                    log.warning(f"Sening-Reply fehlgeschlagen: {e}")
                 i += 3
                 continue
             out.append(b)
@@ -639,12 +646,18 @@ def main():
     init_db(conf["db_path"])
 
     # Serielle Verbindung
+    try:
+        reply_byte = int(str(conf.get("sening_reply_byte", "0x00")), 0)
+    except (ValueError, TypeError):
+        reply_byte = 0x00
+    log.info(f"  Sening-Reply: 0x{reply_byte:02X}")
     reader = SerialReceiptReader(
         port=conf["serial_port"],
         baud=conf["serial_baud"],
         bytesize=conf["serial_bytesize"],
         parity=conf["serial_parity"],
         stopbits=conf["serial_stopbits"],
+        sening_reply_byte=reply_byte,
     )
 
     try:
