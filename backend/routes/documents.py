@@ -1230,7 +1230,13 @@ async def download_file(doc_id: str):
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'}
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            # IMPORTANT: do NOT set Cache-Control no-store here - Chrome's PDF viewer
+            # needs to be able to cache the response internally, otherwise the iframe
+            # preview fails silently (ERR_ABORTED). Keep private to avoid CDN caching.
+            "Cache-Control": "private, max-age=60",
+        },
     )
 
 

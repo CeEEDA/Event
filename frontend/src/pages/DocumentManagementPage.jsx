@@ -236,6 +236,35 @@ export default function DocumentManagementPage() {
       : d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
   })();
 
+  // ── PDF/Image Preview als Blob laden (umgeht Cloudflare iframe-Block) ──
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+
+  useEffect(() => {
+    if (!selectedDoc?.id) {
+      setPreviewBlobUrl(null);
+      return;
+    }
+    const isPdf = selectedDoc.content_type === "application/pdf";
+    const isImg = selectedDoc.content_type?.startsWith("image/");
+    if (!isPdf && !isImg) {
+      setPreviewBlobUrl(null);
+      return;
+    }
+    let objectUrl = null;
+    let cancelled = false;
+    api.get(`/documents/${selectedDoc.id}/file`, { responseType: "blob" })
+      .then(resp => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(resp.data);
+        setPreviewBlobUrl(objectUrl);
+      })
+      .catch(() => { if (!cancelled) setPreviewBlobUrl(null); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [selectedDoc?.id, selectedDoc?.content_type]);
+
   const handleSearch = async (q) => {
     setSearchQuery(q);
     if (!q || q.length < 2) { setIsSearching(false); return; }
@@ -663,23 +692,41 @@ export default function DocumentManagementPage() {
             </div>
             <div className="p-4 space-y-4">
               {/* Preview */}
-              {selectedDoc.content_type?.startsWith("image/") && (
+              {selectedDoc.content_type?.startsWith("image/") && previewBlobUrl && (
                 <div className="rounded-lg overflow-hidden border border-gray-200">
-                  <img src={`${API}/api/documents/${selectedDoc.id}/file`} alt="" className="w-full" />
+                  <img src={previewBlobUrl} alt="" className="w-full" />
                 </div>
               )}
               {selectedDoc.content_type === "application/pdf" && (
                 <div className="rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-                  <iframe
-                    src={`${API}/api/documents/${selectedDoc.id}/file#toolbar=0&navpanes=0`}
-                    title="PDF Vorschau"
-                    className="w-full bg-white"
-                    style={{ height: "360px" }}
-                    data-testid="pdf-preview-iframe"
-                  />
-                  <div className="border-t border-gray-200 px-3 py-1.5 flex justify-end">
-                    <a href={`${API}/api/documents/${selectedDoc.id}/file`} target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:underline text-xs flex items-center gap-1" data-testid="pdf-open-new-tab">
-                      <Maximize2 className="w-3 h-3" /> Vollbild
+                  {previewBlobUrl ? (
+                    <object
+                      data={previewBlobUrl}
+                      type="application/pdf"
+                      className="w-full bg-white block"
+                      style={{ height: "360px" }}
+                      data-testid="pdf-preview-iframe"
+                    >
+                      <iframe
+                        src={previewBlobUrl}
+                        title="PDF Vorschau"
+                        className="w-full bg-white"
+                        style={{ height: "360px", border: 0 }}
+                      />
+                    </object>
+                  ) : (
+                    <div className="flex items-center justify-center h-[360px] text-xs text-gray-400">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Vorschau wird geladen...
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 px-3 py-1.5 flex justify-end gap-3">
+                    {previewBlobUrl && (
+                      <a href={previewBlobUrl} target="_blank" rel="noreferrer" className="text-fuchsia-600 hover:underline text-xs flex items-center gap-1">
+                        <Maximize2 className="w-3 h-3" /> In neuem Tab
+                      </a>
+                    )}
+                    <a href={`${API}/api/documents/${selectedDoc.id}/file`} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-fuchsia-600 hover:underline text-xs flex items-center gap-1" data-testid="pdf-open-new-tab">
+                      Direkt-Download
                     </a>
                   </div>
                 </div>
