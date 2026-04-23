@@ -14,140 +14,140 @@ The user is building a comprehensive Kirmes (Fairground) billing and HR manageme
 **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A full-stack React + FastAPI application handling hardware telemetry, invoicing, banking, and HR. In this session, significant fixes were applied to the Windows Server environment (Document uploads crashing on  paths, Mosquitto service restarting automation). Features added include a DGUV-compliant Verbandsbuch with PDF export and Email support, merged Stripe/PayPal checkout logic, HubPage UI consolidations, auto-generation of unique MQTT Client-IDs to prevent gateway connection errors, and a fix for background MongoDB backups freezing the FastAPI async loop. Bank integration (FinTS) was configured but is waiting on the bank's ZKA registry propagation. 
+A full-stack React + FastAPI application handling hardware telemetry, invoicing, banking, HR, and document management. In this session, major UI improvements were made to the  (live previews for linked meters, visual highlights for manual inputs, and a 20-minute polling interval). A new IMAP Mailbridge service was built to automatically ingest invoices from  and run them through the AI categorization pipeline. The AI document pipeline was heavily hardened (ignoring email signatures, translating international invoices, and fixing a bug in folder assignment). Document downloads were updated to use a robust 3-tier local fallback cache to prevent File not found errors on the Windows Server. DATEV forwarding was refactored from immediate execution to a daily batch scheduler running at 20:00. The PDF Preview iframe was refactored to use Blob URLs to bypass Cloudflare  issues.
 
 **Last working item**:
-    - Last item agent was working: Adjusting the  UI based on user feedback. The user wants to: 1) Remove the Neu berechnen button, 2) Visually highlight manual meter reading inputs (Zählerstände), 3) Show a preview field for the *current* meter reading for linked meters so they can see the calculation *before* clicking Rechnung erstellen.
-    - Status: NOT STARTED (Context gathered, execution pending)
-    - Agent Testing Done: N
-    - Which testing method agent to use? Frontend screenshot tool
-    - User Testing Done: N
+    - Last item agent was working: Debugging a white screen/SSL error the user encountered on the Emergent preview environment. The agent correctly diagnosed this as a platform-level Cloudflare/SSL routing issue for  on Safari/Firefox, unrelated to the app code. The app code itself is fully functional and was thoroughly tested via bash/curl.
+    - Status: BLOCKED (Platform infrastructure issue on preview URL, but code implementation is complete)
+    - Agent Testing Done: Y (Backend curl tests passed, frontend screenshots captured until platform block)
+    - Which testing method agent to use? Screenshot tool / manual verification by user
+    - User Testing Done: N (User could not verify the final PDF preview fix due to the preview URL being down)
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Kirmes Zähler UI/UX Adjustments (P0)
-     - Attempted fixes: None yet.
-     - Next debug checklist: Edit . Remove the Neu berechnen button. Add distinct CSS (e.g., background color or border) to inputs where the user types manual values. Ensure linked meters display their live/current reading so the user doesn't have to guess if data is missing before clicking 'Abrechnen'.
-     - Why fix this issue and what will be achieved with the fix? Improves user experience and prevents billing errors.
-     - Status: NOT STARTED
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Frontend
-     - Blocked on other issue: None
-
-  Issue 2: Tankwagen Pi Printer Emulator Hardware Switch (P1)
-     - Attempted fixes: Agent updated  to send  in response to status queries () from the FMC MultiFlow. However, it was discovered from a user photo that the connection port is **Parallel (Centronics IEEE 1284)**, not Serial. The user ordered a USB-to-Parallel adapter.
-     - Next debug checklist: Wait for the user to confirm the adapter arrived. Check if it mounts as . If so,  will need to be refactored to read from the parallel port instead of .
-     - Why fix this issue and what will be achieved with the fix? Allows the Raspberry Pi to intercept fuel receipts from the MultiFlow system.
+  Issue 1: Tankwagen Pi Printer Emulator Hardware Switch (P1)
+     - Attempted fixes: Agent updated  previously, but the hardware port is Parallel, not Serial.
+     - Next debug checklist: Wait for user to confirm the USB-to-Parallel adapter arrived. Check if it mounts as . If so, refactor  to read from the parallel port.
+     - Why fix this issue and what will be achieved with the fix? Intercepts fuel receipts from the MultiFlow system.
      - Status: BLOCKED (Waiting on hardware delivery)
      - Is recurring issue? N
      - Should Test frontend/backend/both after fix? Manual User Verification
+     - Blocked on other issue: None
 
-  Issue 3: FinTS Banking Connection (Error 9078) (P2)
-     - Attempted fixes: Agent configured  with the correct  and URL (). Ran a debug script which revealed Bank Error 9078 (Product ID not yet registered/propagated by ZKA) and 3079. 
-     - Next debug checklist: User must ensure  in  is their numeric Legitimations-ID (not their name). User must wait 1-2 business days for the ZKA to propagate the Product ID, or contact Sparkasse support.
-     - Why fix this issue and what will be achieved with the fix? Enables automated bank transaction matching.
+  Issue 2: FinTS Banking Connection (Error 9078) (P2)
+     - Attempted fixes: Configured  with correct . Bank returned Error 9078.
+     - Next debug checklist: User must wait for the ZKA to propagate the Product ID, or contact Sparkasse support.
+     - Why fix this issue and what will be achieved with the fix? Automated bank transaction matching.
      - Status: USER VERIFICATION PENDING
      - Is recurring issue? N
      - Should Test frontend/backend/both after fix? Backend
-     - Blocked on other issue: Bank/ZKA internal processing.
+     - Blocked on other issue: Bank/ZKA internal processing
 
 **In progress Task List**:
-  None (Focus is on KirmesZaehler UI).
+  None
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - (P1) Build the Microsoft 365 IMAP Python Windows Service (Mailbridge) for automated email invoice ingestion (Waiting on user to provide IMAP credentials).
+    - (P2) Admin-Button KI neu analysieren: Build a button for documents stuck in the Unbekannt folder to re-trigger the AI categorization (useful for old documents imported before the AI prompt improvements).
+    - (P2) Admin-Button Alle Mitarbeiter-Dateien lokal sichern: Build a button to pull all old employee documents from the cloud storage to the local Windows filesystem cache to ensure offline availability.
     
     Future Tasks:
     - (P2) Lastdiagramm Live-Test.
     - (P2) Add GPS Support to Kirmeskiste.
-    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk (Check if the fix applied to Tankwagen needs to be applied globally).
+    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
 
 **Completed work in this session**
-- Fixed Document Upload Crash by changing hardcoded Linux  to  for Windows (DONE).
-- Fixed AI Analysis NoneType crash by adding  validation and defensive checks (DONE).
-- Reorganized HubPage UI (moved Fuel/Maschinen-Auswertung to Auswertung, replaced individual HR tiles with Mitarbeiter-Daten) (DONE).
-- Implemented Verbandsbuch (DGUV-compliant injury log) with Reportlab PDF generation and SMTP Email distribution (DONE).
-- Linked Verbandsbuch entries to the Employee Detail page (distinguishing Geschädigter and Meldender) (DONE).
-- Simplified Payment Checkout UI by merging Credit Card and PayPal into one Stripe option (DONE).
-- Fixed Vacation Delete Bug (Orphaned code wasn't executing DB delete) (DONE).
-- Fixed MQTT configuration file parser (removed BOM, added  into specific listener blocks) (DONE).
-- Added auto-generation of unique MQTT Client-IDs () in DeviceManagement to fix DSE Gateway Protocol Errors (DONE).
-- Added DSE 4520 MKII controller profile with specific Start/Auto/Stop remote buttons (DONE).
-- Fixed FastAPI async event loop freeze during MongoDB backups by moving  and  operations to background threads (DONE).
-- Updated Tankwagen Pi Kiosk autostart to wait for localhost:8080 before launching Chromium (DONE).
+- Kirmes Zähler UI Adjustments (removed Neu berechnen, highlighted manual inputs) (DONE)
+- Kirmes Zähler Live Preview and 20-minute Polling (DONE)
+- Mailbridge IMAP Service for automated document ingestion (DONE)
+- Mailbridge UI manual refresh button in Document Management (DONE)
+- Document pipeline fixes: excluded inline email signatures, fixed AI error logging (DONE)
+- Improved AI Prompt to recognize international invoices (Proforma Invoice, Facture, etc.) (DONE)
+- Fixed folder assignment logic (longest-prefix match) to route invoices to specific companies instead of root (DONE)
+- 3-tier fallback caching for Document/Employee downloads to fix Windows File not found network drops (DONE)
+- DATEV Batch Scheduler (runs daily at 20:00 instead of immediately) (DONE)
+- PDF Preview iframe fix using Blob URLs to bypass Cloudflare (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-  None.
+  None
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: None.
+  - Issue recurrence in previous fork: None
   - Recurrence count: 0
+  - Status: RESOLVED
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-React, FastAPI, Mosquitto MQTT, PowerShell Windows Service Management (), FinTS (), Reportlab (PDF generation), DSE 890 Gateway configurations (MQTT Clean Session & Client ID specs), Centronics IEEE 1284 Parallel Port (Hardware).
+React, FastAPI, IMAP (, ), MongoDB, Reportlab/PyPDF, FinTS, JavaScript Blob URLs, Background Schedulers ().
 
 **key DB schema**
   - : 
-  - : 
-  - : 
 
 **changes in tech stack**
-- Added  and  for backend PDF generation.
-- Added  and  for banking integration.
+  - Added native Python  and  handling for the IMAP Mailbridge integration.
 
-**All files of reference**
--  (Needs immediate editing)
--  (Referenced for banking errors)
--  (Referenced for RPi Printer emulator)
--  (Modified to use PS Restart-Service)
+**All files of reference** 
+  -  (Zähler UI adjustments and polling)
+  -  (Mailbridge UI and PDF Blob Preview)
+  -  (AI logic, folder routing, 3-tier caching)
+  -  (3-tier caching)
+  -  (New IMAP service)
+  -  (New DATEV service)
 
 **Areas that need refactoring**: 
-- Hardware integration for the Tankwagen Pi will likely require shifting from  to raw file reading () once the parallel adapter arrives.
+  - None identified. Code is highly modularized with dedicated service files.
 
 **key api endpoints**
-- 
-- 
--  (Executes PS )
+  - , 
+  - , 
+  -  (Updated to handle Blob requests robustly)
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- The application runs on a **Live Windows Server 2019**. Modifying services (like Mosquitto) requires PowerShell commands (e.g., ). 
-- When changing , you must advise the user to run .
-- Do NOT use  for backend processes; always use the Windows Service manager.
-- If the user asks about the FinTS Error 9078, remind them it takes 1-2 days for the ZKA to propagate the product ID.
+- The application runs on a **Live Windows Server 2019**. The user pulls changes via Git. 
+- **Platform Issue:** The Emergent preview environment is currently experiencing a Cloudflare/SSL routing issue (specifically on Firefox/Safari), showing white screens or ERR_ABORTED for . The user is aware this is an Emergent platform issue, not an app bug. Instruct the user to run  on their Windows server to test the latest fixes locally.
+- **Environment Variables:** The  file now requires  (which the user must set manually) and uses . Always remind the user to run  in PowerShell after editing  or pulling code.
+- **Document Storage:** Always maintain the 3-tier fallback caching (Flat-Cache -> Folder -> Cloud) for file downloads. The Windows server occasionally drops connections to the Emergent cloud, so local redundancy is strictly required.
 
 **documents and test reports created in this job**
-  - 
+  -  (Updated with Mailbridge, DATEV, and Zähler features)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User): Asked why Tankwagen Pi Chromium fails on boot.
- 2. (Agent): Updated setup script with a wait-for-localhost loop.
- 3. (User): Sent photo showing Drucker antwortet nicht on the MultiFlow.
- 4. (Agent): Added verbose hex logging to . Realized from a photo that the port is a Parallel Centronics port, not Serial. Advised user to buy a USB-to-Parallel adapter.
- 5. (User): Confirmed adapter ordered. Provided FinTS Product Registration Number.
- 6. (Agent): Added Product ID to .
- 7. (User): Provided FinTS URL (). Agent fixed the typo to  and ran a test script, revealing Bank Error 9078 (Product ID not registered yet).
- 8. (User): Uploaded screenshot of KirmesZaehlerPage.
- **PENDING HUMAN MESSAGE**: User requested UI changes to : Remove Neu berechnen button, add visual distinction for manual inputs, and display current reading fields for linked meters so they can be previewed before clicking Rechnung erstellen.
+ 1. (User): Provided IMAP details (IONOS) for the Mailbridge integration.
+ 2. (Agent): Built the backend IMAP service and  config.
+ 3. (User): Asked for a manual refresh button in the UI.
+ 4. (Agent): Implemented the button in .
+ 5. (User): Reported the button wasn't showing after a git pull.
+ 6. (Agent): Guided user to add  to  manually, which fixed it.
+ 7. (User): Reported that the AI failed to recognize a Proforma Invoice and routed it incorrectly.
+ 8. (Agent): Fixed the AI prompt to recognize international invoices and fixed a bug in the folder matching logic.
+ 9. (User): Requested DATEV forwarding to run as a daily batch at 20:00.
+ 10. (Agent): Built the DATEV scheduler. 
+ 11. (User): Reported the PDF preview was broken in the test environment.
+ 12. (Agent): Fixed the preview using Blob URLs. 
+ 13. (User): Reported the entire preview environment was showing a white screen / SSL error.
+ 14. (Agent): Diagnosed the issue as an Emergent platform/Cloudflare bug, advised the user to test locally via  and contact support.
+ **PENDING HUMAN MESSAGE**: None. The user is waiting to verify the final PDF preview fix locally on their Windows server since the Emergent preview URL is currently experiencing infrastructure issues.
 
 **Project Health Check:**
-Healthy.
+- Codebase: Healthy
+- Preview Environment: Broken (Platform-level Cloudflare/SSL issue. User advised to test locally).
 
 **3rd Party Integrations** 
+- OpenAI GPT-4o — uses Emergent LLM Key (AI Document Categorization)
+- IMAP (IONOS) — requires User Credentials (Mailbridge)
 - Stripe (Payments) — requires User API Key
-- Mosquitto MQTT — Hardware Telemetry
 - FinTS (Banking) — requires User Credentials + Product ID
-- OpenAI GPT-4o — uses Emergent LLM Key
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Heavy reliance on self curl/screenshots).
-  - Troubleshoot agent used after agent stuck in loop: NO
+  - Testing agent used after significant changes: NO (relied on curl, manual endpoint testing, and screenshots)
+  - Troubleshoot agent used after agent stuck in loop: YES (Support Agent used to diagnose the Preview Environment SSL/Cloudflare issue)
+  - Test files created: None
+  - Known regressions: None in codebase.
 
 **Credentials to test flow:**
 - Admin:  / 
 
 **What agent forgot to execute**
-- The agent gathered the file context for  but hit the context limit before making the requested modifications to the UI. Implement this immediately.</analysis>
+- The agent implemented everything requested successfully. No missed task executions.</analysis>
