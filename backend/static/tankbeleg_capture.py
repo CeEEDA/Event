@@ -37,7 +37,8 @@ def main():
     print(f"  Reply:      0x{REPLY[0]:02X}")
     print(f"  Output:     {OUT_FILE}")
     print(f"  Log:        {LOG_FILE}")
-    print(f"  Silence:    {SILENCE_EXIT}s -> Auto-Exit")
+    print(f"  Pre-Data:   {PRE_DATA_TIMEOUT:.0f}s warten auf ersten Beleg-Byte")
+    print(f"  Silence:    {SILENCE_EXIT:.0f}s Stille nach Daten -> Auto-Exit")
     print("=" * 60)
 
     # Service stoppen
@@ -74,11 +75,17 @@ def main():
     try:
         while True:
             now = time.time()
-            if now - last_data > SILENCE_EXIT and total_bytes > 0:
-                print(f"\n[INFO] {SILENCE_EXIT}s Stille - Capture beendet.")
+            # Nach ersten echten Daten: 2 Min Stille -> Exit
+            if total_bytes > 0 and now - last_data > SILENCE_EXIT:
+                print(f"\n[INFO] {SILENCE_EXIT:.0f}s Stille nach Daten - Capture beendet.")
                 break
+            # Kein Byte bisher: 3 Min Wartezeit
+            if total_bytes == 0 and now - start > PRE_DATA_TIMEOUT:
+                print(f"\n[INFO] {PRE_DATA_TIMEOUT:.0f}s ohne Beleg-Daten - Abbruch.")
+                break
+            # Hard-Safety
             if now - start > MAX_RUNTIME:
-                print(f"\n[INFO] Max-Laufzeit {MAX_RUNTIME}s erreicht.")
+                print(f"\n[INFO] Max-Laufzeit {MAX_RUNTIME:.0f}s erreicht.")
                 break
 
             data = ser.read(256)
