@@ -103,9 +103,19 @@ async def ollama_chat_vision(
         payload["format"] = "json"
 
     async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-        r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
-        r.raise_for_status()
-        data = r.json()
+        try:
+            r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+        except Exception as e:
+            logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
+            raise
+        if r.status_code != 200:
+            logger.error(f"[ollama] HTTP {r.status_code}: {r.text[:500]}")
+            r.raise_for_status()
+        try:
+            data = r.json()
+        except Exception as e:
+            logger.error(f"[ollama] Antwort kein JSON: {r.text[:500]}")
+            raise
     return (data.get("message") or {}).get("content", "")
 
 

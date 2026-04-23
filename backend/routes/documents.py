@@ -527,10 +527,10 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
 
         return parse_json_response(response_text)
     except json.JSONDecodeError as e:
-        logger.error(f"AI response not valid JSON: {e}, response: {response_text[:500]}")
+        logger.error(f"AI response not valid JSON: {e}, response: {response_text[:500]}", exc_info=True)
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
     except Exception as e:
-        logger.error(f"AI analysis failed: {e}")
+        logger.error(f"AI analysis failed: {type(e).__name__}: {e}", exc_info=True)
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
 
 
@@ -923,7 +923,7 @@ Antworte NUR mit JSON:
         else:
             logger.warning(f"Payroll doc {doc_id}: No matching user found for '{payroll_info.get('employee_name')}'")
     except Exception as e:
-        logger.error(f"Payroll assignment failed for doc {doc_id}: {e}")
+        logger.error(f"Payroll assignment failed for doc {doc_id}: {type(e).__name__}: {e}", exc_info=True)
         await db.documents.update_one({"id": doc_id}, {"$set": {"payroll_info": {"error": str(e)}}})
 
 
