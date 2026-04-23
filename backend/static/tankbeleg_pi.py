@@ -252,41 +252,58 @@ def parse_receipt_sening(raw: bytes) -> dict:
         "review_reason": [],
     }
 
-    def find_number_after(segment: str, pattern, max_after: int = 100):
+    def find_number_after(segment: str, pattern, max_after: int = 100, min_digits: int = 2):
+        """Nimmt die LÄNGSTE Zahl nach dem Marker (nicht die erste kleine)."""
         m = pattern.search(segment)
         if not m:
             return None
         tail = segment[m.end(): m.end() + max_after]
         nums = re.findall(r"\d+", tail)
-        return nums[0] if nums else None
+        if not nums:
+            return None
+        # Priorisiere längste Zahl mit min_digits Ziffern
+        candidates = [n for n in nums if len(n) >= min_digits]
+        if candidates:
+            candidates.sort(key=len, reverse=True)
+            return candidates[0]
+        # Fallback: letzte Zahl (meist der echte Wert, nicht Line-ID)
+        return nums[-1]
 
     def find_time_after(segment: str, pattern, max_after: int = 100):
+        """Findet Zeiten HH:MM:SS, auch bei fehlenden Minuten (Sening-Bitmap)."""
         m = pattern.search(segment)
         if not m:
             return None
         tail = segment[m.end(): m.end() + max_after]
-        t = re.search(r"(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?", tail)
+        # Volltreffer HH:MM:SS oder HH:MM
+        t = re.search(r"(\d{2}):(\d{2})(?::(\d{2}))?", tail)
         if t:
-            hh = int(t.group(1))
-            mm = int(t.group(2))
-            ss = int(t.group(3) or 0)
-            return f"{hh:02d}:{mm:02d}:{ss:02d}"
+            ss = t.group(3) or "00"
+            return f"{t.group(1)}:{t.group(2)}:{ss}"
+        # Teiltreffer: HH: <Grafik/Trenner> SS  -> "14:??:05"
+        t = re.search(r"(\d{2}):[^0-9\n]{0,6}(\d{2})\b", tail)
+        if t:
+            return f"{t.group(1)}:??:{t.group(2)}"
+        # Minimal: nur HH:
+        t = re.search(r"(\d{2}):", tail)
+        if t:
+            return f"{t.group(1)}:??:??"
         return None
 
     for seg in segments:
         if not seg.strip():
             continue
-        # Zaehler-Nr
+        # Zaehler-Nr (4-6 Ziffern erwartet)
         if result["zaehler_nr"] is None:
             for pat in SENING_MARKERS["zaehler_nr"]:
-                v = find_number_after(seg, pat)
+                v = find_number_after(seg, pat, min_digits=3)
                 if v and len(v) >= 3:
                     result["zaehler_nr"] = v
                     break
-        # Beleg-Nr
+        # Beleg-Nr (mindestens 2 Ziffern - meist 4-5)
         if result["beleg_nr"] is None:
             for pat in SENING_MARKERS["beleg_nr"]:
-                v = find_number_after(seg, pat)
+                v = find_number_after(seg, pat, min_digits=2)
                 if v:
                     result["beleg_nr"] = v
                     break
