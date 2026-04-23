@@ -455,6 +455,8 @@ class SerialReceiptReader:
         parity_map = {'N': serial.PARITY_NONE, 'E': serial.PARITY_EVEN, 'O': serial.PARITY_ODD}
         stopbits_map = {1: serial.STOPBITS_ONE, 2: serial.STOPBITS_TWO}
 
+        # dsrdtr=False: Sening MultiFlow uses 3-wire null-modem cable (no DSR/DTR handshake).
+        # With dsrdtr=True pyserial blocks writes while DSR is low, which prevents status replies.
         self.ser = serial.Serial(
             port=self.port,
             baudrate=self.baud,
@@ -464,7 +466,7 @@ class SerialReceiptReader:
             timeout=0.1,
             xonxoff=False,
             rtscts=False,
-            dsrdtr=True,
+            dsrdtr=False,
         )
         # DTR und RTS dauerhaft auf HIGH (MultiFlow erwartet beide Handshake-Leitungen)
         try:
@@ -569,6 +571,19 @@ class SerialReceiptReader:
                     log.debug("Realtime ENQ -> 0x00 (ok)")
                 except (OSError, IOError):
                     pass
+                i += 3
+                continue
+            # Sening MultiFlow proprietary poll:  ESC (0x1B) 0xB3 <n>
+            # Observed every ~550ms as '1b b3 ff'. MultiFlow waits for an ACK (0x06)
+            # before it will transmit the slip print job. Any non-ACK keeps it polling.
+            if b == 0x1B and i + 2 < len(data) and data[i + 1] == 0xB3:
+                zone = data[i + 2]
+                try:
+                    self.ser.write(bytes([0x06]))
+                    self.ser.flush()
+                    log.info(f"Sening-Poll ESC B3 {zone:02X} -> ACK (0x06)")
+                except (OSError, IOError) as e:
+                    log.warning(f"Sening-ACK fehlgeschlagen: {e}")
                 i += 3
                 continue
             out.append(b)
