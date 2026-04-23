@@ -48,6 +48,20 @@ async def _next_manual_beleg_nr():
     return f"{MANUAL_BELEG_PREFIX}{MANUAL_BELEG_START}"
 
 
+async def _touch_tankwagen_last_seen():
+    """Aktualisiert last_seen fuer aktive Tankwagen-Geraete, damit sie im Portal
+    als Online angezeigt werden. Wird bei jeder Pi-Kommunikation aufgerufen.
+    Aktualisiert alle tankwagen-Devices, die nicht 'gesperrt' sind."""
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await _db.devices.update_many(
+            {"device_type": "tankwagen", "status": {"$ne": "gesperrt"}},
+            {"$set": {"last_seen": now_iso}},
+        )
+    except Exception:
+        pass
+
+
 def _calc_abgabe_times(quantity_liters, time_str):
     """Calculate Abgabe-Start and Abgabe-Ende for manual receipts.
     Rule: 3 min per 100L + 4 min base per refueling."""
@@ -183,6 +197,7 @@ async def create_fuel_receipt(data: FuelReceiptCreate, user: dict = Depends(_req
 @router.post("/sync")
 async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
     """Bulk sync from Pi - creates multiple receipts with dedup. No auth required for Pi."""
+    await _touch_tankwagen_last_seen()
     created = []
     skipped = 0
     for r in receipts:
@@ -219,6 +234,7 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
             "notes": r.notes or "",
             "status": "pending",
             "source": "pi",
+            "category": "lager" if (r.order_pk == "LAGER") else "kunde",
             "created_by": "Tankwagen-Pi",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "confirmed_by": None,
@@ -674,6 +690,7 @@ def _draw_receipt_page(c, doc, display_qty, logo_img=None):
 @router.get("/pi/orders")
 async def pi_get_orders():
     """Returns orders within -10 to +10 days for Pi offline cache. No auth for Pi access."""
+    await _touch_tankwagen_last_seen()
     from datetime import timedelta
     now = datetime.now(timezone.utc)
     date_from = (now - timedelta(days=10)).isoformat()
@@ -709,8 +726,17 @@ async def pi_get_orders():
 @router.get("/pi/drivers")
 async def pi_get_drivers():
     """Returns user list with password hashes for Pi offline login."""
+    await _touch_tankwagen_last_seen()
     users = await _db.users.find(
         {},
         {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "password_hash": 1}
     ).to_list(200)
     return {"drivers": users}
+
+
+@router.post("/pi/heartbeat")
+async def pi_heartbeat():
+    """Leichtgewichtiger Heartbeat vom Pi. Aktualisiert last_seen fuer alle
+    aktiven Tankwagen-Geraete, damit der Portal-Status 'Online' bleibt."""
+    await _touch_tankwagen_last_seen()
+    return {"ok": True, "timestamp": datetime.now(timezone.utc).isoformat()}
