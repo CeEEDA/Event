@@ -540,23 +540,31 @@ async def _ensure_year_month_subfolder(parent_folder_id: str, doc_date_str: str)
     year_id = f"{parent_folder_id}_{year}"
     month_id = f"{year_id}_{month:02d}"
 
-    # Ensure year subfolder
-    existing_year = await db.document_folders.find_one({"id": year_id, "is_deleted": False})
-    if not existing_year:
-        await db.document_folders.insert_one({
-            "id": year_id, "name": str(year), "icon": "folder", "color": "gray",
-            "parent_id": parent_folder_id, "is_deleted": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-
-    # Ensure month subfolder
-    existing_month = await db.document_folders.find_one({"id": month_id, "is_deleted": False})
-    if not existing_month:
-        await db.document_folders.insert_one({
-            "id": month_id, "name": MONTH_NAMES.get(month, str(month)), "icon": "folder", "color": "gray",
-            "parent_id": year_id, "is_deleted": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+    # Idempotente Anlage via upsert - verhindert Duplikate bei parallelen Uploads
+    await db.document_folders.update_one(
+        {"id": year_id},
+        {
+            "$setOnInsert": {
+                "id": year_id, "name": str(year), "icon": "folder", "color": "gray",
+                "parent_id": parent_folder_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "$set": {"is_deleted": False},
+        },
+        upsert=True,
+    )
+    await db.document_folders.update_one(
+        {"id": month_id},
+        {
+            "$setOnInsert": {
+                "id": month_id, "name": MONTH_NAMES.get(month, str(month)), "icon": "folder", "color": "gray",
+                "parent_id": year_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "$set": {"is_deleted": False},
+        },
+        upsert=True,
+    )
 
     return month_id
 
@@ -1158,61 +1166,104 @@ async def cleanup_nested_year_month():
     """Bereinigt fehlerhaft mehrfach verschachtelte Jahr/Monat-Ordner, die durch
     den Reanalyze-Bug entstanden sind (z.B. ...eed_2026_04_2026_04).
     Verschiebt alle Dokumente in die korrekte einfache Year/Month-Struktur und
-    loescht die ueberzaehligen Ordner."""
+    loescht die ueberzaehligen Ordner.
+
+    Ausserdem: Dedupliziert doppelte folder-Eintraege (gleiche id, mehrfach in
+    der Collection) und legt einen Unique-Index auf der id an."""
     import re
 
+    # 1) Duplikate mit gleichem id bereinigen (behalte den "lebenden" Eintrag)
+    dedup_removed = 0
+    pipeline = [
+        {"$group": {"_id": "$id", "docs": {"$push": "$$ROOT"}, "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+    ]
+    async for group in db.document_folders.aggregate(pipeline):
+        docs = group["docs"]
+        # Behalte einen mit is_deleted=False, loesche die anderen
+        alive = [d for d in docs if not d.get("is_deleted")]
+        keep = alive[0] if alive else docs[0]
+        for d in docs:
+            if d.get("_id") == keep.get("_id"):
+                continue
+            await db.document_folders.delete_one({"_id": d["_id"]})
+            dedup_removed += 1
+
+    # 2) Unique-Index auf id anlegen
+    try:
+        await db.document_folders.create_index("id", unique=True)
+    except Exception as e:
+        logger.warning(f"Unique-Index auf document_folders.id nicht moeglich: {e}")
+
+    # 3) Verschachtelte Year/Month-Ordner bereinigen (mehrere Passes bis stabil)
     pattern = re.compile(r"^(.+?)_(\d{4})_(\d{2})(?:_\d{4}_\d{2})+$")
     fixed_docs = 0
     deleted_folders = 0
+    for _ in range(5):  # max 5 Passes, um tief verschachtelte Ebenen aufzuloesen
+        found_any = False
+        async for folder in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+            fid = folder.get("id", "")
+            m = pattern.match(fid)
+            if not m:
+                continue
+            found_any = True
+            base, year, month = m.group(1), m.group(2), m.group(3)
+            # base selbst koennte noch verschachtelt sein -> auf ersten nicht-year/month stripen
+            while True:
+                mb = re.match(r"^(.+?)_(\d{4})_(\d{2})$", base)
+                if not mb:
+                    break
+                base = mb.group(1)
+            canonical = f"{base}_{year}_{month}"
+            # Sicherstellen, dass der korrekte Ordner existiert
+            canonical_folder = await db.document_folders.find_one({"id": canonical, "is_deleted": False})
+            if not canonical_folder:
+                year_id = f"{base}_{year}"
+                await db.document_folders.update_one(
+                    {"id": year_id},
+                    {"$setOnInsert": {
+                        "id": year_id, "name": str(year), "icon": "folder", "color": "gray",
+                        "parent_id": base,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }, "$set": {"is_deleted": False}},
+                    upsert=True,
+                )
+                await db.document_folders.update_one(
+                    {"id": canonical},
+                    {"$setOnInsert": {
+                        "id": canonical, "name": MONTH_NAMES.get(int(month), str(int(month))),
+                        "icon": "folder", "color": "gray", "parent_id": year_id,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }, "$set": {"is_deleted": False}},
+                    upsert=True,
+                )
+            # Dokumente umziehen
+            res = await db.documents.update_many(
+                {"folder_id": fid, "is_deleted": False},
+                {"$set": {"folder_id": canonical, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+            fixed_docs += res.modified_count
+            # Alle Instanzen des kaputten Ordners als geloescht markieren
+            res_del = await db.document_folders.update_many(
+                {"id": fid}, {"$set": {"is_deleted": True}},
+            )
+            deleted_folders += res_del.modified_count
+        if not found_any:
+            break
 
+    # 4) Leere Zwischenordner (reine Jahr/Monat-Struktur) aufraeumen
+    year_month_pat = re.compile(r"^.+_\d{4}(_\d{2})?$")
     async for folder in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
         fid = folder.get("id", "")
-        m = pattern.match(fid)
-        if not m:
-            continue
-        base, year, month = m.group(1), m.group(2), m.group(3)
-        canonical = f"{base}_{year}_{month}"
-        # Sicherstellen, dass der korrekte Ordner existiert
-        canonical_folder = await db.document_folders.find_one({"id": canonical, "is_deleted": False})
-        if not canonical_folder:
-            # Year + Month neu anlegen
-            year_id = f"{base}_{year}"
-            if not await db.document_folders.find_one({"id": year_id, "is_deleted": False}):
-                await db.document_folders.insert_one({
-                    "id": year_id, "name": str(year), "icon": "folder", "color": "gray",
-                    "parent_id": base, "is_deleted": False,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                })
-            await db.document_folders.insert_one({
-                "id": canonical, "name": MONTH_NAMES.get(int(month), str(int(month))),
-                "icon": "folder", "color": "gray",
-                "parent_id": year_id, "is_deleted": False,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
-        # Alle Dokumente aus dem kaputten Ordner in den korrekten verschieben
-        res = await db.documents.update_many(
-            {"folder_id": fid, "is_deleted": False},
-            {"$set": {"folder_id": canonical, "updated_at": datetime.now(timezone.utc).isoformat()}},
-        )
-        fixed_docs += res.modified_count
-        # Ueberzaehligen Ordner loeschen
-        await db.document_folders.update_one(
-            {"id": fid}, {"$set": {"is_deleted": True}},
-        )
-        deleted_folders += 1
-
-    # Zweiter Pass: Leere Ordner aufraeumen, die noch uebrig sind
-    async for folder in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
-        fid = folder.get("id", "")
-        if not pattern.match(fid):
+        if not year_month_pat.match(fid):
             continue
         has_docs = await db.documents.count_documents({"folder_id": fid, "is_deleted": False})
         has_children = await db.document_folders.count_documents({"parent_id": fid, "is_deleted": False})
         if has_docs == 0 and has_children == 0:
-            await db.document_folders.update_one({"id": fid}, {"$set": {"is_deleted": True}})
+            await db.document_folders.update_many({"id": fid}, {"$set": {"is_deleted": True}})
             deleted_folders += 1
 
-    return {"ok": True, "fixed_docs": fixed_docs, "deleted_folders": deleted_folders}
+    return {"ok": True, "fixed_docs": fixed_docs, "deleted_folders": deleted_folders, "duplicates_removed": dedup_removed}
 
 
 @router.get("/list")
