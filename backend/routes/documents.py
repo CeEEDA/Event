@@ -525,7 +525,10 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
             want_json=True,
         )
 
-        return parse_json_response(response_text)
+        logger.info(f"[AI-DEBUG] Raw response ({len(response_text)} chars): {response_text[:800]}")
+        result = parse_json_response(response_text)
+        logger.info(f"[AI-DEBUG] Parsed suggested_folder={result.get('suggested_folder')!r}, document_type={result.get('document_type')!r}")
+        return result
     except json.JSONDecodeError as e:
         logger.error(f"AI response not valid JSON: {e}, response: {response_text[:500]}", exc_info=True)
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
