@@ -2,6 +2,16 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from dotenv import load_dotenv
+
+# Truststore so frueh wie moeglich aktivieren, damit der Windows-System-Zertifikatsstore
+# fuer alle SSL-Verbindungen (requests, httpx, urllib3, aiohttp) verwendet wird.
+# Das muss VOR jedem Import passieren, der SSL-Kontexte anlegt.
+try:
+    import truststore  # type: ignore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
