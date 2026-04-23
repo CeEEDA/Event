@@ -1070,45 +1070,73 @@ def main():
                     log.debug(f"Text:\n{text}")
 
                     # Zuerst Standard-Parser (saubere ESC/POS-Texte)
+                    log.info("PARSE1: Standard-Parser...")
                     receipt = parse_receipt(text)
 
                     # Falls wenig Felder erkannt: Sening-Grafik-Parser auf Rohdaten
                     recognized = sum(1 for k in ("zaehler_nr", "beleg_nr", "menge_liter", "abgabe_start") if receipt.get(k))
                     if recognized < 2:
-                        log.info("Standard-Parser lieferte wenig Daten -> Sening-Grafik-Parser")
-                        receipt = parse_receipt_sening(raw, fixed_zaehler_nr=conf.get("fixed_zaehler_nr", ""))
+                        log.info("PARSE2: Sening-Grafik-Parser...")
+                        try:
+                            receipt = parse_receipt_sening(raw, fixed_zaehler_nr=conf.get("fixed_zaehler_nr", ""))
+                            log.info(f"PARSE2 OK: menge={receipt.get('menge_liter')} zaehler={receipt.get('zaehler_nr')}")
+                        except Exception as e:
+                            log.error(f"PARSE2 Fehler: {e}", exc_info=True)
+                            raise
                         # Heuristik: Datum/Zeiten/Beleg-Nr aus Pi + Counter ergaenzen
-                        receipt = enrich_receipt_with_heuristics(receipt, conf)
+                        log.info("PARSE3: Heuristik...")
+                        try:
+                            receipt = enrich_receipt_with_heuristics(receipt, conf)
+                            log.info(f"PARSE3 OK: beleg={receipt.get('beleg_nr')} datum={receipt.get('datum')} start={receipt.get('abgabe_start')}")
+                        except Exception as e:
+                            log.error(f"PARSE3 Fehler: {e}", exc_info=True)
+                            raise
 
                     if is_complete_receipt(receipt):
+                        log.info("STEP1: is_complete=True, hole GPS...")
                         # GPS Position erfassen
                         gps_lat, gps_lon = None, None
                         if conf["gps_enabled"].lower() == "true":
-                            gps_lat, gps_lon = get_gps_position(
-                                conf["gps_host"], int(conf["gps_port"])
-                            )
-                            if gps_lat:
-                                log.info(f"GPS: {gps_lat:.6f}, {gps_lon:.6f}")
+                            try:
+                                gps_lat, gps_lon = get_gps_position(
+                                    conf["gps_host"], int(conf["gps_port"])
+                                )
+                                if gps_lat:
+                                    log.info(f"STEP2: GPS OK: {gps_lat:.6f}, {gps_lon:.6f}")
+                                else:
+                                    log.info("STEP2: GPS kein Fix")
+                            except Exception as e:
+                                log.warning(f"STEP2: GPS Fehler: {e}")
+                        else:
+                            log.info("STEP2: GPS deaktiviert")
 
                         # PNG rendern (Best-Effort, falls Pillow da ist)
+                        log.info("STEP3: Rendere PNG...")
                         png_bytes = b""
                         try:
                             png_bytes = render_receipt_png(raw, receipt)
                             if png_bytes:
-                                log.info(f"PNG gerendert: {len(png_bytes)} Bytes")
+                                log.info(f"STEP3: PNG OK: {len(png_bytes)} Bytes")
+                            else:
+                                log.info("STEP3: PNG leer")
                         except Exception as e:
-                            log.warning(f"PNG-Rendering fehlgeschlagen: {e}")
+                            log.warning(f"STEP3: PNG-Rendering fehlgeschlagen: {e}")
 
                         # Lokal speichern (inkl. Roh-Hex + PNG)
-                        store_receipt(
-                            conf["db_path"],
-                            receipt,
-                            gps_lat,
-                            gps_lon,
-                            conf["fahrer_name"],
-                            raw_bytes=raw,
-                            bitmap_png=png_bytes or None,
-                        )
+                        log.info("STEP4: Speichere Beleg in SQLite...")
+                        try:
+                            store_receipt(
+                                conf["db_path"],
+                                receipt,
+                                gps_lat,
+                                gps_lon,
+                                conf["fahrer_name"],
+                                raw_bytes=raw,
+                                bitmap_png=png_bytes or None,
+                            )
+                            log.info("STEP5: Store OK")
+                        except Exception as e:
+                            log.error(f"STEP4: Store Fehler: {e}", exc_info=True)
                         consecutive_errors = 0
                     else:
                         missing = [f for f in ["beleg_nr", "datum", "menge_liter"]
