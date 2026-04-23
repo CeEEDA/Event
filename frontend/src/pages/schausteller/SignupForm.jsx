@@ -1,7 +1,7 @@
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { CalendarDays, MapPin, Zap, ArrowLeft, ArrowRight, Plus, Home } from "lucide-react";
+import { CalendarDays, MapPin, Zap, ArrowLeft, ArrowRight, Plus, Home, UserCircle2 } from "lucide-react";
 import { PAYMENT_METHODS } from "./constants";
 
 export function SignupForm({ selectedEvent, signupForm, setSignupForm, additionalSignups, setAdditionalSignups, depositAmounts, schausteller, agbAccepted, setAgbAccepted, setShowAgb, onSubmit, onBack, saving }) {
@@ -37,6 +37,15 @@ export function SignupForm({ selectedEvent, signupForm, setSignupForm, additiona
       <button onClick={onBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-fuchsia-600 mb-4" data-testid="back-events-btn">
         <ArrowLeft className="w-4 h-4" /> Zurück zur Auswahl
       </button>
+      {schausteller && (schausteller.name || schausteller.firma) && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-fuchsia-50 border border-fuchsia-200 text-sm" data-testid="signup-angemeldet-als">
+          <UserCircle2 className="w-4 h-4 text-fuchsia-600 flex-shrink-0" />
+          <span className="text-gray-500">Angemeldet als:</span>
+          <span className="font-semibold text-fuchsia-800 truncate">
+            {[schausteller.name, schausteller.firma].filter(Boolean).join(" · ")}
+          </span>
+        </div>
+      )}
       <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
         <div>
           <h2 className="text-lg font-bold text-gray-900 mb-1">{selectedEvent.name}</h2>
