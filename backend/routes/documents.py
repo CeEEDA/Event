@@ -470,10 +470,11 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
         return json.loads(response_text)
     except json.JSONDecodeError as e:
         logger.error(f"AI response not valid JSON: {e}, response: {response_text[:500]}")
-        return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "subject": "Nicht erkannt", "full_text": "", "keywords": []}
+        # Kein Dummy-Subject - Frontend nutzt dann den Dateinamen als Fallback
+        return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
     except Exception as e:
         logger.error(f"AI analysis failed: {e}")
-        return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "subject": "Analyse fehlgeschlagen", "full_text": "", "keywords": []}
+        return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
 
 
 MONTH_NAMES = {
@@ -1146,49 +1147,70 @@ async def delete_document(doc_id: str):
 
 @router.get("/{doc_id}/file")
 async def download_file(doc_id: str):
-    """Download the actual file."""
+    """Download the actual file. Tries cloud storage, then folder-based local path,
+    then the flat storage_path cache - and caches cloud successes locally."""
     doc = await db.documents.find_one({"id": doc_id, "is_deleted": False}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
 
     sp = doc.get("storage_path", "")
+    filename = doc["original_filename"]
+    content_type = doc.get("content_type", "application/octet-stream")
+    data = None
 
-    # Try cloud storage first, then local fallback
-    try:
-        if sp.startswith("local://"):
-            raise Exception("Local-only document")
-        data, ct = get_object(sp)
-        return Response(
-            content=data,
-            media_type=doc.get("content_type", ct),
-            headers={"Content-Disposition": f'inline; filename="{doc["original_filename"]}"'}
-        )
-    except Exception:
-        pass
+    # Flat cache path (uuid-based, cannot collide, always reachable even if folder changed)
+    flat_cache = os.path.join(LOCAL_STORAGE_ROOT, "_cache", sp.replace("local://", "").replace("/", os.sep))
 
-    # Fallback: try to read from local storage
-    try:
-        all_folders = []
-        async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
-            all_folders.append(cf)
-        for pf in PREDEFINED_FOLDERS:
-            all_folders.append({"id": pf["id"], "name": pf["name"], "parent_id": None})
-
-        folder_path = _build_folder_path(doc.get("folder_id", "sonstiges"), all_folders)
-        local_file = os.path.join(LOCAL_STORAGE_ROOT, folder_path, doc["original_filename"])
-
-        if os.path.exists(local_file):
-            with open(local_file, "rb") as f:
+    # 1) Flat cache (fastest)
+    if os.path.exists(flat_cache):
+        try:
+            with open(flat_cache, "rb") as f:
                 data = f.read()
-            return Response(
-                content=data,
-                media_type=doc.get("content_type", "application/octet-stream"),
-                headers={"Content-Disposition": f'inline; filename="{doc["original_filename"]}"'}
-            )
-    except Exception as e:
-        logger.error(f"Local file read failed: {e}")
+        except Exception as e:
+            logger.debug(f"Doc {doc_id}: flat cache read failed: {e}")
 
-    raise HTTPException(status_code=500, detail="Fehler beim Herunterladen")
+    # 2) Folder-based local (how the user sees it in Explorer)
+    if not data:
+        try:
+            all_folders = []
+            async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+                all_folders.append(cf)
+            for pf in PREDEFINED_FOLDERS:
+                all_folders.append({"id": pf["id"], "name": pf["name"], "parent_id": None})
+            folder_path = _build_folder_path(doc.get("folder_id", "sonstiges"), all_folders)
+            local_file = os.path.join(LOCAL_STORAGE_ROOT, folder_path, filename)
+            if os.path.exists(local_file):
+                with open(local_file, "rb") as f:
+                    data = f.read()
+        except Exception as e:
+            logger.debug(f"Doc {doc_id}: folder-based local read failed: {e}")
+
+    # 3) Cloud storage (+ opportunistic cache)
+    if not data and not sp.startswith("local://"):
+        try:
+            fetched, ct = get_object(sp)
+            data = fetched
+            if not content_type or content_type == "application/octet-stream":
+                content_type = ct
+            try:
+                os.makedirs(os.path.dirname(flat_cache), exist_ok=True)
+                with open(flat_cache, "wb") as f:
+                    f.write(data)
+                logger.info(f"Doc {doc_id}: cached cloud file to {flat_cache}")
+            except Exception as e:
+                logger.debug(f"Doc {doc_id}: local cache write failed: {e}")
+        except Exception as e:
+            logger.warning(f"Doc {doc_id}: cloud storage fetch failed: {e}")
+
+    if not data:
+        logger.error(f"Doc {doc_id}: could not be fetched (all fallbacks failed); storage_path={sp}")
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'}
+    )
 
 
 # ─── AI Training Samples ───

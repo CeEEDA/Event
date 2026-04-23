@@ -602,7 +602,7 @@ export default function DocumentManagementPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <h3 className="text-sm font-semibold text-gray-900 truncate">{meta.subject || doc.original_filename}</h3>
+                          <h3 className="text-sm font-semibold text-gray-900 truncate">{(meta.subject && !["Analyse fehlgeschlagen", "Nicht erkannt"].includes(meta.subject)) ? meta.subject : doc.original_filename}</h3>
                           {doc.ai_status === "completed" && (
                             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-medium flex-shrink-0">
                               <Brain className="w-3 h-3" /> KI erkannt
@@ -703,7 +703,7 @@ export default function DocumentManagementPage() {
                       {selectedDoc.datev_forwarded_at && <span className="text-gray-400 ml-1">({formatDate(selectedDoc.datev_forwarded_at)})</span>}
                     </div>
                   )}
-                  {selectedDoc.ai_metadata.subject && (
+                  {selectedDoc.ai_metadata.subject && !["Analyse fehlgeschlagen", "Nicht erkannt"].includes(selectedDoc.ai_metadata.subject) && (
                     <div><p className="text-[11px] text-gray-400 mb-0.5">Betreff</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.subject}</p></div>
                   )}
                   {selectedDoc.ai_metadata.document_type && (
