@@ -278,6 +278,8 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 .btn{{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:12px 20px;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;width:100%;transition:all 0.12s}}
 .btn:active{{transform:scale(0.97)}}
 .btn-primary{{background:var(--accent);color:white;box-shadow:0 2px 6px rgba(192,38,211,0.3)}}
+.btn-lager{{background:#f59e0b;color:white;margin-bottom:14px;box-shadow:0 2px 6px rgba(245,158,11,0.3)}}
+.btn-lager:hover{{background:#d97706}}
 .btn:disabled{{opacity:0.4;cursor:not-allowed;transform:none}}
 .btn-cancel{{background:var(--border);color:var(--muted);border:none;border-radius:10px;padding:12px 18px;font-size:16px;font-weight:700;cursor:pointer}}
 
@@ -356,6 +358,7 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
     <div class="panel-body">
       <div id="noSelection" class="empty" style="padding-top:40px"><p>Beleg links antippen</p></div>
       <div id="assignForm" class="form-section" style="display:none">
+        <button type="button" class="btn btn-lager" id="lagerBtn" onclick="assignLager()">Lager / Testlauf</button>
         <div class="form-group">
           <label>Auftrag</label>
           <select id="orderSelect"><option value="">-- Auftrag waehlen --</option></select>
@@ -364,11 +367,6 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
           <label>Bemerkung (optional)</label>
           <div class="notes-input" id="notesDisplay" onclick="openKeyboard('notes')">Antippen zum Schreiben...</div>
           <input type="hidden" id="notesValue">
-        </div>
-        <div class="form-group">
-          <label>Standort (optional)</label>
-          <div class="notes-input" id="locationDisplay" onclick="openKeyboard('location')">Antippen zum Schreiben...</div>
-          <input type="hidden" id="locationValue">
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" id="saveBtn" onclick="saveAssignment()">Speichern</button>
@@ -538,8 +536,6 @@ function selectReceipt(id){{
   if(selectedReceipt.order_pk) document.getElementById('orderSelect').value=selectedReceipt.order_pk;
   document.getElementById('notesValue').value=selectedReceipt.notes||'';
   document.getElementById('notesDisplay').textContent=selectedReceipt.notes||'Antippen zum Schreiben...';
-  document.getElementById('locationValue').value='';
-  document.getElementById('locationDisplay').textContent='Antippen zum Schreiben...';
   renderReceipts();
 }}
 
@@ -559,16 +555,31 @@ async function saveAssignment(){{
   const orderPk=oSel.value;
   const orderName=oSel.selectedOptions[0]?.dataset?.name||'';
   if(!orderPk){{showToast('Bitte Auftrag waehlen',true);return}}
-  const notes=document.getElementById('notesValue').value;
-  const location=document.getElementById('locationValue').value;
-  const fullNotes=(notes?notes:'')+(location?' | Standort: '+location:'');
+  const notes=document.getElementById('notesValue').value||'';
   document.getElementById('saveBtn').disabled=true;
   try{{
-    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:orderPk,order_name:orderName,fahrer:fahrer,notes:fullNotes}})}});
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:orderPk,order_name:orderName,fahrer:fahrer,notes:notes}})}});
     const d=await r.json();
     if(d.ok){{showToast('Beleg zugeordnet!');clearSelection();loadReceipts()}}
     else showToast('Fehler: '+(d.error||'?'),true);
   }}catch(e){{showToast('Speichern fehlgeschlagen',true)}}
+  document.getElementById('saveBtn').disabled=false;
+}}
+
+async function assignLager(){{
+  if(!selectedReceipt) return;
+  const fahrer=document.getElementById('driverSelect').value;
+  if(!fahrer){{showToast('Bitte Mitarbeiter oben waehlen',true);return}}
+  const notes=document.getElementById('notesValue').value||'';
+  document.getElementById('lagerBtn').disabled=true;
+  document.getElementById('saveBtn').disabled=true;
+  try{{
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:'LAGER',order_name:'Lager / Testlauf',fahrer:fahrer,notes:notes}})}});
+    const d=await r.json();
+    if(d.ok){{showToast('Beleg auf Lager gebucht!');clearSelection();loadReceipts()}}
+    else showToast('Fehler: '+(d.error||'?'),true);
+  }}catch(e){{showToast('Speichern fehlgeschlagen',true)}}
+  document.getElementById('lagerBtn').disabled=false;
   document.getElementById('saveBtn').disabled=false;
 }}
 

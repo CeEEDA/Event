@@ -691,10 +691,16 @@ async def pi_get_orders():
     orders = await _db.orders_cache.find(query, {"_id": 0}).sort("dispo_start", -1).to_list(500)
     # Lager-Eintrag fuer Testlaeufe und interne Betankungen
     lager_entry = {
-        "pk": "LAGER",
-        "name": "Lager / Testlauf",
-        "customer_name": "Lager (intern)",
-        "category": "lager",
+        "primary_key": "LAGER",
+        "order_no": "LAGER",
+        "event": "Lager / Testlauf",
+        "contact_name": "Lager (intern)",
+        "address": "",
+        "dispo_start": "",
+        "dispo_end": "",
+        "event_start": "",
+        "event_end": "",
+        "status": "lager",
         "is_lager": True,
     }
     return {"orders": [lager_entry] + orders, "synced_at": now.isoformat()}

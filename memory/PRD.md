@@ -7,6 +7,7 @@ Comprehensive "Kirmes" (Fairground) billing and HR management system. Core focus
 - Desktop Apps (Mac/Windows), Mobile Apps (Capacitor), Windows Server 2019.
 - Hardware: DSE Gateways, EPSON Printer emulation via Raspberry Pi.
 - Finance/HR: Invoices, FinTS, AI document categorization, Time tracking.
+- **Offline-first**: Pi must work fully offline (no LTE). Orders, drivers, receipts are cached in local SQLite and synced when connectivity returns.
 
 ## Product Language
 German (UI + all user communication).
@@ -14,19 +15,20 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
-- **2026-02 — P0 Fix: Pi Sync 404.** `tankbeleg_pi.py` now uses a `_api_base()` helper that appends `/api` exactly once, so both `api_url=https://eventenergie.app` and `api_url=https://eventenergie.app/api` work. Verified via curl against `/api/fuel-receipts/sync` (HTTP 200).
+- **2026-02 — P1 UI Fix (Pi Touchscreen):**
+  - Removed "Standort (optional)" field from Beleg-Zuordnung — only "Bemerkung" remains.
+  - Added prominent **"Lager / Testlauf"** quick-action button above the Auftrag dropdown (orange, single-tap booking to Lager).
+  - Fixed backend `lager_entry` key naming (`pk` → `primary_key`, `name`/`customer_name` → `event`/`contact_name`) so the entry is correctly cached in Pi SQLite and appears in the orders dropdown.
+- **2026-02 — P0 Fix: Pi Sync 404.** `tankbeleg_pi.py` now uses `_api_base()` helper that appends `/api` exactly once. Verified via curl (HTTP 200).
 - Heuristic Sening receipt parser + ESC/POS bitmap → PNG rendering on Pi.
 - Null-Modem serial handshake (`dsrdtr=False`), Sening Poll reply `0x00`.
 - Frontend fuel management displays PNG receipts.
 - "Angemeldet als" multi-company display in Schausteller login.
 
 ## In Progress
-- User verification of Pi sync fix (requires `git pull` + script re-download on Pi).
+- User verification of UI changes (requires Pi script re-download + UI service restart).
 
 ## Backlog (prioritized)
-### P1
-- "Lager" quick-action button on Pi Touchscreen UI + backend `lager_entry` key fix (`pk` → `primary_key`).
-
 ### P2
 - GPS polling timeout hardening in `tankbeleg_pi.py` (currently disabled via config).
 - Beleg-Counter Jahreswechsel-Logik (reset Jan 1st).
@@ -48,6 +50,13 @@ German (UI + all user communication).
 - `GET /api/fuel-receipts/{id}/pdf`, `/bitmap.png`.
 - `GET /api/fuel-receipts/pi/orders`, `/pi/drivers`.
 - `GET /api/download/tankbeleg-pi-script` — Serves the current Pi script.
+- `GET /api/download/tankbeleg-ui-script` — Serves the current UI script.
+
+## Offline Behavior (confirmed)
+- Pi caches orders + drivers in local SQLite (`orders_cache`, `drivers_cache`).
+- Receipts are written to local SQLite immediately upon serial capture.
+- Assignment (including Lager) works offline — changes mark `synced=0` and are flushed when backend is reachable.
+- Sync runs periodically (`sync_interval`, default 60 s) and only sends unsynced receipts.
 
 ## 3rd Party Integrations
 - OpenAI GPT-4o via Emergent LLM Key (AI document categorization).
@@ -57,5 +66,10 @@ German (UI + all user communication).
 ## Hardware Deployment Loop
 Every change to `tankbeleg_pi.py` or `tankbeleg_ui.py`:
 1. Agent pushes to repo.
-2. User `git pull` on Windows Server + restarts backend.
-3. On Pi: `sudo curl -sL -o /opt/tankbeleg/tankbeleg_pi.py "https://eventenergie.app/api/download/tankbeleg-pi-script?v=$(date +%s)" && sudo systemctl restart tankbeleg_pi`.
+2. User `git pull` on Windows Server + `sudo supervisorctl restart backend`.
+3. On Pi:
+   ```
+   sudo curl -sL -o /opt/tankbeleg/tankbeleg_pi.py "https://eventenergie.app/api/download/tankbeleg-pi-script?v=$(date +%s)"
+   sudo curl -sL -o /opt/tankbeleg/tankbeleg_ui.py "https://eventenergie.app/api/download/tankbeleg-ui-script?v=$(date +%s)"
+   sudo systemctl restart tankbeleg_pi tankbeleg_ui
+   ```
