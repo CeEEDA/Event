@@ -291,9 +291,27 @@ async def upload_document(token: str = Query(...),
     doc_id = str(uuid.uuid4())
     storage_path = f"eventenergie-employee-docs/{target_id}/{doc_type}/{doc_id}_{file.filename}"
 
-    # Store file
+    # Store file in cloud (primary)
     put_obj, _ = _get_storage_fns()
-    put_obj(storage_path, file_bytes, file.content_type or "application/pdf")
+    cloud_ok = True
+    try:
+        put_obj(storage_path, file_bytes, file.content_type or "application/pdf")
+    except Exception as e:
+        cloud_ok = False
+        logger.error(f"Employee doc cloud upload failed (will use local only): {e}")
+
+    # Always also save locally (fallback + redundancy, matches Dokumentenverwaltung)
+    try:
+        import os as _os
+        local_root = _os.environ.get("LOCAL_STORAGE_PATH", r"C:\eventenergie\Dokumentenablage")
+        local_file = _os.path.join(local_root, "_mitarbeiter", storage_path.replace("/", _os.sep))
+        _os.makedirs(_os.path.dirname(local_file), exist_ok=True)
+        with open(local_file, "wb") as f:
+            f.write(file_bytes)
+    except Exception as e:
+        logger.warning(f"Employee doc local save failed: {e}")
+        if not cloud_ok:
+            raise HTTPException(status_code=500, detail=f"Upload fehlgeschlagen (weder Cloud noch lokal): {e}")
 
     # Mark old documents of same type as "alt"
     await db.employee_documents.update_many(
@@ -446,7 +464,7 @@ async def update_document(doc_id: str, token: str = Query(...), body: dict = {})
 
 @router.get("/documents/{doc_id}/file")
 async def download_document(doc_id: str, token: str = Query(...)):
-    """Download a document file."""
+    """Download a document file. Tries cloud storage first, then local fallback."""
     caller = await _get_user(token)
     doc = await db.employee_documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
@@ -454,17 +472,46 @@ async def download_document(doc_id: str, token: str = Query(...)):
     if caller.get("role") != "admin" and caller["id"] != doc["user_id"]:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
-    try:
-        _, get_obj = _get_storage_fns()
-        result = get_obj(doc["storage_path"])
-        data = result[0] if isinstance(result, tuple) else result
-        return Response(
-            content=data,
-            media_type=doc.get("content_type", "application/pdf"),
-            headers={"Content-Disposition": f'inline; filename="{doc["filename"]}"'}
-        )
-    except Exception:
+    storage_path = doc.get("storage_path", "")
+    data = None
+    import os as _os
+    local_root = _os.environ.get("LOCAL_STORAGE_PATH", r"C:\eventenergie\Dokumentenablage")
+    local_file = _os.path.join(local_root, "_mitarbeiter", storage_path.replace("/", _os.sep))
+
+    # 1) Try local filesystem first (fastest, no network)
+    if _os.path.exists(local_file):
+        try:
+            with open(local_file, "rb") as f:
+                data = f.read()
+        except Exception as e:
+            logger.warning(f"Employee doc {doc_id}: Local read failed: {e}")
+
+    # 2) Fall back to cloud storage (and cache locally for next time)
+    if not data:
+        try:
+            _, get_obj = _get_storage_fns()
+            result = get_obj(storage_path)
+            data = result[0] if isinstance(result, tuple) else result
+            # Opportunistic local cache so future requests don't need the cloud
+            try:
+                _os.makedirs(_os.path.dirname(local_file), exist_ok=True)
+                with open(local_file, "wb") as f:
+                    f.write(data)
+                logger.info(f"Employee doc {doc_id}: cached to local ({local_file})")
+            except Exception as e:
+                logger.debug(f"Employee doc {doc_id}: Local cache write failed: {e}")
+        except Exception as e:
+            logger.warning(f"Employee doc {doc_id}: Cloud storage fetch failed: {e}")
+
+    if not data:
+        logger.error(f"Employee doc {doc_id} could not be fetched (cloud + local both failed); storage_path={storage_path}")
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+
+    return Response(
+        content=data,
+        media_type=doc.get("content_type", "application/pdf"),
+        headers={"Content-Disposition": f'inline; filename="{doc["filename"]}"'}
+    )
 
 
 @router.get("/document-types")
