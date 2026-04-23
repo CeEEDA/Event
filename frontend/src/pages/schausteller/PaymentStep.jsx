@@ -24,7 +24,7 @@ export function PaymentStep({ selectedEvent, signupForm, depositAmounts, onPayDe
         <p className="text-[10px] text-amber-600 mt-1">Wird nach der Veranstaltung mit dem tatsächlichen Verbrauch verrechnet und der Restbetrag erstattet</p>
       </div>
       <div className="text-xs text-gray-500 mb-3">
-        Zahlung per <strong className="text-gray-700">{signupForm.payment_method === "paypal" ? "PayPal" : "Kreditkarte"}</strong> · Sichere Abwicklung über Stripe
+        Sichere Abwicklung über Stripe
       </div>
       <Button onClick={onPayDeposit} disabled={saving} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white mb-3" data-testid="pay-deposit-btn">
         {saving ? "Weiterleitung..." : "Jetzt Betrag bezahlen"} <ArrowRight className="w-4 h-4 ml-1" />
