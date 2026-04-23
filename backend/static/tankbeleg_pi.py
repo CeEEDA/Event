@@ -101,6 +101,21 @@ def load_config():
     return conf
 
 
+def _api_base(conf):
+    """Normalisiert die api_url: haengt /api genau einmal an.
+
+    Erlaubt beide Schreibweisen in /etc/tankbeleg_pi.conf:
+      api_url = https://eventenergie.app
+      api_url = https://eventenergie.app/api
+    """
+    url = (conf.get("api_url") or "").rstrip("/")
+    if not url:
+        return ""
+    if url.endswith("/api"):
+        return url
+    return url + "/api"
+
+
 # ====== Logging ======
 
 logging.basicConfig(
@@ -803,8 +818,13 @@ def sync_to_portal(conf):
         local_ids.append(row["local_id"])
 
     try:
+        base = _api_base(conf)
+        if not base:
+            log.warning("api_url nicht konfiguriert, Sync uebersprungen")
+            return 0
+        sync_url = f"{base}/fuel-receipts/sync"
         resp = requests.post(
-            f"{conf['api_url']}/api/fuel-receipts/sync",
+            sync_url,
             json=api_receipts,
             timeout=30,
         )
@@ -816,7 +836,7 @@ def sync_to_portal(conf):
             log.info(f"Sync OK: {created} neu, {skipped} uebersprungen")
             return created
         else:
-            log.warning(f"Sync Fehler {resp.status_code}: {resp.text[:200]}")
+            log.warning(f"Sync Fehler {resp.status_code} (URL={sync_url}): {resp.text[:200]}")
     except requests.ConnectionError:
         log.warning("Portal nicht erreichbar, Belege bleiben lokal gepuffert")
     except Exception as e:

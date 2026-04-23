@@ -1,184 +1,61 @@
-# Eventenergie Portal - PRD
+# Kirmes Billing & HR System — PRD
 
 ## Original Problem Statement
-Comprehensive "Kirmes" (Fairground) billing and HR management system with:
-- Desktop Apps (Mac/Windows) via Electron
-- Mobile Apps (Android/iOS) via Capacitor
-- Server Infrastructure on Windows Server 2019
-- DSE 890 Gateway MQTT Integration for remote generator monitoring and control
+Comprehensive "Kirmes" (Fairground) billing and HR management system. Core focus on hardware integration for fuel receipts (Tankwagen) via a Raspberry Pi emulating an EPSON TM-U295 printer to intercept serial data from a Sening MultiFlow system.
 
-## Architecture
-- **Frontend**: React (CRA + craco)
-- **Backend**: FastAPI + MongoDB (motor)
-- **MQTT**: Mosquitto broker on Windows Server
-- **DSE Gateways**: DSE 890 MK1 with L401 and 8610 controllers
+## Core Requirements
+- Desktop Apps (Mac/Windows), Mobile Apps (Capacitor), Windows Server 2019.
+- Hardware: DSE Gateways, EPSON Printer emulation via Raspberry Pi.
+- Finance/HR: Invoices, FinTS, AI document categorization, Time tracking.
 
+## Product Language
+German (UI + all user communication).
 
-## What's Been Implemented (2026-04-22)
-### KirmesEventDetailPage UI – COMPLETE
-- [x] Removed "Neu berechnen" button from event header (unused handler + RotateCcw import cleaned up)
-- [x] Manual kWh input cells highlighted: amber background (`bg-amber-50`), amber border (`border-amber-400`), labels with pencil icon + "manuell" hint
-- [x] Live meter preview for linked EMU meters: shows current `E_imp_kWh` as "Aktueller Zählerstand (Live)" in fuchsia/emerald gradient card, plus Vorschau Verbrauch = (Aktuell − Einbau) when only kwh_einbau is set
-- [x] Added to both mobile card view and desktop expanded detail panel
+---
 
+## Recently Completed
+- **2026-02 — P0 Fix: Pi Sync 404.** `tankbeleg_pi.py` now uses a `_api_base()` helper that appends `/api` exactly once, so both `api_url=https://eventenergie.app` and `api_url=https://eventenergie.app/api` work. Verified via curl against `/api/fuel-receipts/sync` (HTTP 200).
+- Heuristic Sening receipt parser + ESC/POS bitmap → PNG rendering on Pi.
+- Null-Modem serial handshake (`dsrdtr=False`), Sening Poll reply `0x00`.
+- Frontend fuel management displays PNG receipts.
+- "Angemeldet als" multi-company display in Schausteller login.
 
-## What's Been Implemented (2026-04-18)
+## In Progress
+- User verification of Pi sync fix (requires `git pull` + script re-download on Pi).
 
-### DSE 890 Gateway – COMPLETE
-- [x] Sentinel value filtering (valid() function + _sanitize_telemetry)
-- [x] Control buttons working: Stop/Auto/Start via MQTT Function 3, {"K": key} payload
-- [x] 4-segment topic format (group/type/uid/subtopic)
-- [x] Auto module UID + topic prefix detection from MQTT messages
-- [x] GPS from gateway applied to all connected devices
-- [x] Alarm integration: P3R6 Status Bits + GenComm Page 8 Named Alarm Conditions (52+ Alarme)
-- [x] L401 single-phase view (no L2/L3, no Öldruck, no cos φ)
-- [x] 8610 full 3-phase view (all registers)
-- [x] Betriebsstunden via Page 7 Register 6 (hours topic, 20 min interval)
-- [x] Button blink animation after command (green pulse for 2 min)
-- [x] Mode feedback stored on device after command
-- [x] Mosquitto password auto-management
+## Backlog (prioritized)
+### P1
+- "Lager" quick-action button on Pi Touchscreen UI + backend `lager_entry` key fix (`pk` → `primary_key`).
 
-### Alarm System (2026-04-18 overhaul)
-- [x] GenComm Page 8 register reading via Function 1 (13 registers = 52 named alarms)
-- [x] Correct alarm condition codes: only 2/3/4/5/10 = active alarm (was: >0)
-- [x] Alarm name map aligned to official GenComm Page 8 documentation
-- [x] Severity from condition code: 3/4=shutdown, 2/5/10=warning
-- [x] Dual format support: A-code format (Function 4) + GenComm P008 register format
-- [x] Updated universal topic file includes Page 8 R1-R13
+### P2
+- GPS polling timeout hardening in `tankbeleg_pi.py` (currently disabled via config).
+- Beleg-Counter Jahreswechsel-Logik (reset Jan 1st).
+- Admin-Button "KI neu analysieren".
+- Admin-Button "Alle Mitarbeiter-Dateien lokal sichern".
+- Lastdiagramm Live-Test.
+- GPS support for Kirmeskiste.
+- Suppress Chromium "Translate" popup globally on Pi kiosk.
+- FinTS error 9078 — waiting for ZKA propagation.
 
-### Topic Files
-- [x] Universal: All DSE controllers use same GenComm Topic File
-- [x] Contains: Engine params, generator params, status bits, hours, starts, Page 8 alarms, control
-- [x] Register mapping based on official DSE GenComm documentation
+## Key Files
+- `/app/backend/static/tankbeleg_pi.py` — Pi printer emulator, parser, PNG renderer, sync.
+- `/app/backend/static/tankbeleg_ui.py` — Pi touchscreen UI.
+- `/app/backend/routes/fuel_receipts.py` — Sync endpoints, PNG serving, `/pi/orders`, `/pi/drivers`.
+- `/app/frontend/src/pages/FuelManagementPage.jsx` — Portal receipt view.
 
-### Performance Optimizations
-- [x] MQTT deduplication, DB lookup caching (30s TTL)
-- [x] Telemetry insert throttling (Lichtmast 60s, Stromerzeuger 5min)
-- [x] Snapshot-based telemetry (no N×10 queries)
+## Key Endpoints
+- `POST /api/fuel-receipts/sync` — Bulk sync from Pi (no auth).
+- `GET /api/fuel-receipts/{id}/pdf`, `/bitmap.png`.
+- `GET /api/fuel-receipts/pi/orders`, `/pi/drivers`.
+- `GET /api/download/tankbeleg-pi-script` — Serves the current Pi script.
 
-### Telemetry Parsing Fixes (2026-04-18)
-- [x] Hours parsing: accepts 0 seconds (never-run devices), handles string values
-- [x] Fuel level clamped to max 100% (was showing 107%)
-- [x] Diagnostic logging for /hours topic (MQTT hours OK / MQTT hours FEHLEND)
-- [x] Diagnostic endpoint: GET /api/generators/diagnose-hours
+## 3rd Party Integrations
+- OpenAI GPT-4o via Emergent LLM Key (AI document categorization).
+- Stripe (user-provided keys).
+- FinTS banking (user credentials + product ID).
 
-### DSE USB-Treiber für Raspberry Pi (2026-04-18 NEW)
-- [x] Custom Linux USB driver for DSE controllers (VID 1b90:0001) via pyusb BULK
-- [x] Modbus RTU over USB BULK (Function 3 Read + Function 16 Write)
-- [x] GenComm register reading: Pages 3,4,6,7,8 (Status, Engine, Power, Hours, Alarms)
-- [x] 3-phase support: L1/L2/L3 voltage, current, watts (for 8610/7310)
-- [x] Control commands via KEY+COMPLEMENT (Page 16 Register 8) - verified on real L401
-- [x] GPS integration via gpsd
-- [x] Alarm processing: Pi alarms → generator_alarms → Dashboard alarm banner
-- [x] Pi-command endpoint for remote control from portal
-- [x] udev rule for persistent USB binding after reboot
-- [x] Connection type selection in UI: "DSE 890 Gateway (MQTT)" vs "Pi + USB direkt" vs "Pi + DSE USB/LAN Adapter"
-- [x] LTE setup completely rebuilt based on user-tested working script
-- [x] Uses PPP with defaultroute+replacedefaultroute+ifmetric (was: nodefaultroute)
-- [x] NetworkManager metrics instead of dhcpcd (Pi 5 Bookworm compatible)
-- [x] ModemManager disabled (was blocking ttyUSB ports)
-- [x] GPS: gpsd + sim7600-gps-enable systemd service
-- [x] Fixed port schema: ttyUSB2=GPS, ttyUSB3=AT+PPP
-- [x] Status tools: lte-status, gps-status
-- [x] Routing: eth0 (100) → wlan0 (600) → ppp0 (700)
-- [x] Generalized for ALL DSE controllers (5510, 8610, 8610 MKII, 7310, L401)
-- [x] Controller type passed to generated script (header + config)
-- [x] 3-phase indicator (L1/L2/L3) shown for 8610/7310 controllers
-- [x] Both DSE 890 Gateway AND Pi Setup available for 8610/7310/L401
-
-### Finance
-- [x] Invoice Payment Status (Bezahlt/Offen) & Filter UI
-- [x] 2-Stage Dunning Workflow (Mahnwesen) with Admin Task integration
-- [x] FinTS/HBCI Bank integration code (disabled pending bank registration)
-- [x] Fuel Management (Tankbelege) UI
-
-### Störmeldungs- & Reparatur-System (2026-04-18 NEW)
-- [x] Störmeldung anlegen: Erfasser (auto), Auftrag (aus Liste), Maschine (Suche), Beschreibung, "Gerät sperren"
-- [x] Reparatur-Tab: Offene Störmeldungen mit Status (Offen → In Arbeit → Erledigt)
-- [x] Reparatur eintragen: Was wurde gemacht, Gerät entsperren
-- [x] Status-Farben: Rot=Offen, Amber=In Arbeit, Grün=Erledigt
-- [x] Service-Log: Störmeldung + Reparatur werden in maintenance_entries geloggt
-- [x] Maschinen-Auswertung: Eigene Seite unter /verwaltung/maschinen-auswertung
-- [x] Zeitraum-Filter (Von/Bis), Übersichtskarten, Tabelle pro Maschine, aufklappbar mit Details
-- [ ] Einsatzplanung: Gesperrte Geräte rot markiert (noch zu implementieren)
-
-## 2026-02-XX – DSE USB Fast-Command-Polling Bugfix
-- [x] Kritischer Bug in `dse_usb_sync.py`: Poll-URL zeigte auf nicht existenten Endpoint `/generators/remote-update/{id}/poll` (gab lautlos 404 wegen `except: pass`). Dadurch wurden Befehle nur im 30s-Sync-Zyklus abgeholt → ~20s Latenz.
-- [x] Fix: Korrekte Lightweight-URL `/generators/poll-commands/{id}?key=<device_key>` (wie in `dse5510_sync.py`), Logging für Poll-Antworten aktiviert.
-- [ ] User-Verifikation am physischen DSE L401 ausstehend.
-
-## 2026-02-18 – Stripe Checkout Return Flow Fix (P0)
-- [x] **Root-Cause**: Stripe success_url zeigte auf `/schausteller-anmeldung` statt auf React-Route `/kirmes/anmeldung` → User landete auf White Page
-- [x] Alle Stripe URLs in `payments.py` auf `/kirmes/anmeldung` umgestellt (success + cancel)
-- [x] `_confirm_deposit_and_send_email` setzt `signup.payment_status="bezahlt"` (vorher: "ausstehend") → in Kirmesverwaltung grün sichtbar
-- [x] Frontend `api`-Wrapper (`constants.js`) liefert jetzt `response.status` im Error → saubere 404-Erkennung
-- [x] Neue `PaymentSuccessStep` Komponente für Fresh-Load nach Stripe-Return (ohne Schausteller-Login)
-- [x] `PaymentCheckStep` mit Timeout- und Error-State + "Erneut prüfen" / "Zum Portal"-Buttons
-- [x] URL wird nach Auswertung automatisch bereinigt (kein stuck session_id)
-- [x] Backend-Logging aller Status-Polls und Webhook-Events
-
-## 2026-02-18 – Auto-Refund auf Kreditkarte bei Rechnungsstellung (P0)
-- [x] Pre-Auth verworfen (7-Tage-Limit zu kurz für typische 3+ Wochen Event-Laufzeit)
-- [x] Stattdessen: volle Kaution (Anschluss + kWh-Puffer + MwSt) wird eingezogen, Differenz nach Rechnung automatisch per Stripe Refund API zurück auf Kreditkarte
-- [x] Neue Funktion `refund_deposit_difference()` in `payments.py` – automatisch aufgerufen in `/signups/{id}/invoice` und `/events/{id}/generate-invoices`
-- [x] Speichert `payment_intent_id` + `charge_id` beim Bezahlvorgang via `_fetch_and_store_payment_intent()`
-- [x] Admin-Endpoints: `POST /api/payments/refund/manual`, `GET /api/payments/refund/status/{signup_id}`, `POST /api/payments/refund/sync-payment-intent/{session_id}` (Legacy-Support)
-- [x] Rechnungs-Dokument erhält `deposit_applied`, `deposit_refunded`, `deposit_open_balance`, `refunds[]`
-- [x] UI: Kaution-Badge und Refund-Badge in KirmesEventDetailPage (Mobile + Desktop)
-- [x] Proportionale Refund-Verteilung bei Sammelrechnungen (mehrere Signups eines Schaustellers → Refund pro PaymentIntent anteilig)
-
-## 2026-02-18 – PayPal Payment + Auto-Refund Integration (P0)
-- [x] `payment_method="paypal"` im Signup wird im Checkout berücksichtigt: `payment_methods=["paypal"]` an Stripe übergeben
-- [x] `payment_method="kreditkarte"` → `["card"]` (default)
-- [x] Alle 4 Checkout-Entrypoints unterstützen jetzt PayPal: `/checkout/deposit`, `/checkout/invoice`, `/send-payment-link` (für signup + invoice)
-- [x] Helper `_create_stripe_session_with_error_handling()` mit freundlicher Fehlermeldung wenn PayPal im Stripe-Dashboard nicht aktiviert ist
-- [x] Refund-Flow funktioniert identisch: `stripe.Refund.create(payment_intent=...)` — Stripe erstattet automatisch zurück auf das PayPal-Konto des Kunden
-- [x] Frontend: PaymentStep zeigt die gewählte Zahlungsart an ("Jetzt per PayPal bezahlen" / "Jetzt per Kreditkarte bezahlen")
-- **User-Action erforderlich**: PayPal muss einmalig im Stripe-Dashboard unter Settings → Payment Methods aktiviert werden (https://dashboard.stripe.com/settings/payment_methods)
-
-## 2026-02-18 – Session-Persistierung über Stripe-Redirect (P0)
-- [x] Schausteller-Session wird in `sessionStorage` persistiert via Lazy-Init `useState(() => JSON.parse(...))`
-- [x] Nach Stripe-Return wird Session automatisch wiederhergestellt → User landet im Dashboard, nicht mehr auf Login-Maske
-- [x] `handleLogout` bereinigt sessionStorage
-- [x] Tests bestanden (session injection + reload → Dashboard)
-
-## 2026-02-18 – Event Schließen (Auto + manuell) (P1)
-- [x] `POST /api/kirmes/events/{event_id}/close` mit `{force, target_status}`
-- [x] Auto-Close in `/signups/{id}/invoice` via `_maybe_auto_close_event()` (setzt Status `abgerechnet` wenn alle Signups abgerechnet)
-- [x] Admin-UI Button "Schließen" in `KirmesEventDetailPage` mit Confirm-Dialog
-- [x] Tests: Close ohne force + unbilled → 400, Close mit force → Status `abgerechnet` + Audit-Info
-
-## 2026-02-18 – Thumbnail-Support für Bildvorschauen (P1)
-- [x] **Problem**: Bild-Listen in Dokumentenverwaltung (Event, Order) und Geräteverwaltung luden die vollständigen 2-3 MB Originalbilder pro Eintrag → 30+ MB pro Listen-Ansicht, lange Ladezeiten
-- [x] Neuer Helper `/app/backend/utils/thumbnails.py` mit On-The-Fly JPEG-Generierung (PIL/Pillow, EXIF-korrekt, Cache auf Disk)
-- [x] Backend-Endpoints erweitert um `?thumbnail=1&size=120` Query-Parameter:
-  - `/api/kirmes/events/{event_id}/documents/{doc_id}/file`
-  - `/api/orders/order-documents/{order_pk}/{doc_id}/file`
-  - `/api/devices/{device_id}/image`
-- [x] Frontend nutzt Thumbnail-URLs für Listen (`<img loading="lazy" src=...?thumbnail=1&size=120>`) → ~200-500x kleinere Transfergröße
-- [x] Cache-Control Header für aggressive Browser-Caches (1 Jahr für Datei-basierte, 1 Tag für GridFS)
-- [x] Verifiziert: 7,4 MB Foto → 0,5-15 KB Thumbnail (je nach Motiv)
-
-## 2026-04-20 – Windows-Pfad Bugfix: Dokument-Upload Crash (P0)
-- [x] **Problem**: `POST /api/documents/upload` lieferte auf Live-Windows-Server 500 Internal Server Error
-- [x] **Root Cause**: `temp_path = f"/tmp/{uuid}.{ext}"` war hartkodiert auf Linux-Pfad – `/tmp/` existiert auf Windows nicht → `FileNotFoundError: [Errno 2] No such file or directory`
-- [x] Fix: `temp_path = os.path.join(tempfile.gettempdir(), f"{uuid}.{ext}")` (plattform-unabhängig, nutzt `%TEMP%` auf Windows, `/tmp/` auf Linux)
-- [x] `import tempfile` ergänzt in `/app/backend/routes/documents.py`
-- [x] Lint passed, Preview-Upload (PNG) verifiziert: HTTP 200
-
-## Upcoming Tasks (P1)
-- [ ] Microsoft 365 Postfach-Anbindung (IMAP "Mailbridge" Windows Service)
-- [x] ~~DSE 890 Gateway CSV-Upload (User-Task)~~ — **erledigt 2026-04-20**
-- [ ] PayPal im Stripe-Dashboard aktivieren (User-Task)
-- [ ] Test Tankwagen-Pi setup script on real hardware
-- [ ] FinTS/HBCI activation when bank registers Product ID
-
-## Future Tasks (P2)
-- [ ] Eingangsrechnungen überwachen
-- [ ] Lastdiagramm Live-Test
-- [ ] Chromium "Translate" Popup on RPi Kiosk
-- [ ] GPS Support for Kirmeskiste
-
-## Test Credentials
-- Admin Live: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
-- Admin Preview: admin@test.com / password
+## Hardware Deployment Loop
+Every change to `tankbeleg_pi.py` or `tankbeleg_ui.py`:
+1. Agent pushes to repo.
+2. User `git pull` on Windows Server + restarts backend.
+3. On Pi: `sudo curl -sL -o /opt/tankbeleg/tankbeleg_pi.py "https://eventenergie.app/api/download/tankbeleg-pi-script?v=$(date +%s)" && sudo systemctl restart tankbeleg_pi`.
