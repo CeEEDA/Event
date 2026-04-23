@@ -1566,6 +1566,12 @@ async def download_tankbeleg_reply_tuner():
     content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
     return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_reply_tuner.py"'})
 
+@api_router.get("/download/tankbeleg-capture")
+async def download_tankbeleg_capture():
+    path = os.path.join(STATIC_DIR, "tankbeleg_capture.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_capture.py"'})
+
 @api_router.get("/download/tankbeleg-ui-script")
 async def download_tankbeleg_ui_script():
     path = os.path.join(STATIC_DIR, "tankbeleg_ui.py")
