@@ -446,6 +446,9 @@ class SerialReceiptReader:
         self.stopbits = stopbits
         self.ser = None
         self.buffer = bytearray()
+        # Holds incomplete status-query prefixes across chunked serial reads
+        # so we don't accidentally leak them into the receipt buffer.
+        self.pending_prefix = bytearray()
         # Timeout: wenn X Sekunden keine Daten kommen, ist der Beleg komplett
         self.receipt_timeout = 3.0
         self.last_data_time = 0
@@ -546,12 +549,29 @@ class SerialReceiptReader:
         Also handles ESC/POS Real-time status requests.
         """
         STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 4: 0x12}
+
+        # Prepend any leftover status-query prefix from a previous read.
+        if self.pending_prefix:
+            data = bytes(self.pending_prefix) + data
+            self.pending_prefix = bytearray()
+
         out = bytearray()
         i = 0
         while i < len(data):
             b = data[i]
-            # Check for DLE (0x10)  EOT (0x04)  n (1..4)  -> status query
-            if b == 0x10 and i + 2 < len(data) and data[i + 1] == 0x04:
+            remaining = len(data) - i
+
+            # Partial status-query prefixes at the tail of the chunk: buffer them
+            # for the next read instead of leaking into the receipt buffer.
+            if b == 0x10 and remaining < 3 and (remaining < 2 or data[i + 1] in (0x04, 0x05)):
+                self.pending_prefix.extend(data[i:])
+                return bytes(out)
+            if b == 0x1B and remaining < 3 and (remaining < 2 or data[i + 1] == 0xB3):
+                self.pending_prefix.extend(data[i:])
+                return bytes(out)
+
+            # DLE EOT n (0x10 0x04 n) - Epson printer status query
+            if b == 0x10 and remaining >= 3 and data[i + 1] == 0x04:
                 n = data[i + 2]
                 if n in STATUS_OK:
                     try:
@@ -563,7 +583,7 @@ class SerialReceiptReader:
                     i += 3
                     continue
             # Check for DLE ENQ n (real-time status request, 0x10 0x05 n)
-            if b == 0x10 and i + 2 < len(data) and data[i + 1] == 0x05:
+            if b == 0x10 and remaining >= 3 and data[i + 1] == 0x05:
                 # Respond with 'no error' status byte
                 try:
                     self.ser.write(bytes([0x00]))
@@ -576,7 +596,7 @@ class SerialReceiptReader:
             # Sening MultiFlow proprietary poll:  ESC (0x1B) 0xB3 <n>
             # Observed every ~550ms as '1b b3 ff'. MultiFlow waits for an ACK (0x06)
             # before it will transmit the slip print job. Any non-ACK keeps it polling.
-            if b == 0x1B and i + 2 < len(data) and data[i + 1] == 0xB3:
+            if b == 0x1B and remaining >= 3 and data[i + 1] == 0xB3:
                 zone = data[i + 2]
                 try:
                     self.ser.write(bytes([0x06]))
