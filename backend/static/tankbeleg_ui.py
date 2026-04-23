@@ -272,21 +272,23 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .receipt-card .assigned-tag{{font-size:10px;color:var(--green);margin-top:4px;font-weight:600}}
 .receipt-card .unassigned-tag{{font-size:10px;color:var(--red);margin-top:4px;font-weight:600}}
 
-.form-section{{padding:14px}}
-.form-group{{margin-bottom:12px}}
+.form-section{{padding:12px 14px 0 14px;display:flex;flex-direction:column;height:100%}}
+.form-scroll{{flex:1;overflow-y:auto;padding-bottom:8px}}
+.form-actions{{display:flex;gap:8px;padding:10px 0 12px 0;background:var(--card);border-top:1px solid var(--border);margin-top:4px;position:sticky;bottom:0}}
+.form-group{{margin-bottom:10px}}
 .form-group label{{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px}}
 select,.notes-input{{width:100%;padding:10px;background:var(--bg);border:2px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;outline:none;-webkit-appearance:none;transition:border-color 0.2s}}
 select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}}
-.notes-input{{resize:none;height:60px;cursor:pointer}}
+.notes-input{{resize:none;height:52px;cursor:pointer}}
 
-.btn{{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:12px 20px;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;width:100%;transition:all 0.12s}}
+.btn{{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 20px;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;width:100%;transition:all 0.12s}}
 .btn:active{{transform:scale(0.97)}}
 .btn-primary{{background:var(--accent);color:white;box-shadow:0 2px 6px rgba(192,38,211,0.3)}}
-.btn-lager{{background:#f59e0b;color:white;margin-bottom:14px;box-shadow:0 2px 6px rgba(245,158,11,0.3)}}
+.btn-lager{{background:#f59e0b;color:white;margin-bottom:10px;padding:10px 16px;font-size:14px;box-shadow:0 2px 6px rgba(245,158,11,0.3)}}
 .btn-lager:hover{{background:#d97706}}
 
 .order-picker{{display:flex;gap:8px;align-items:stretch}}
-.order-list{{flex:1;background:var(--bg);border:2px solid var(--border);border-radius:10px;max-height:260px;overflow-y:auto;scroll-behavior:smooth}}
+.order-list{{flex:1;background:var(--bg);border:2px solid var(--border);border-radius:10px;max-height:180px;overflow-y:auto;scroll-behavior:smooth}}
 .order-list::-webkit-scrollbar{{width:0;display:none}}
 .order-item{{padding:14px 14px;font-size:15px;border-bottom:1px solid var(--border);cursor:pointer;line-height:1.3}}
 .order-item:last-child{{border-bottom:none}}
@@ -378,23 +380,25 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
     <div class="panel-body">
       <div id="noSelection" class="empty" style="padding-top:40px"><p>Beleg links antippen</p></div>
       <div id="assignForm" class="form-section" style="display:none">
-        <button type="button" class="btn btn-lager" id="lagerBtn" onclick="assignLager()">Lager / Testlauf</button>
-        <div class="form-group">
-          <label>Auftrag</label>
-          <div class="order-picker">
-            <div class="order-list" id="orderList"></div>
-            <div class="order-arrows">
-              <button type="button" class="order-arrow" id="orderUpBtn" onclick="scrollOrders(-1)">&#9650;</button>
-              <button type="button" class="order-arrow" id="orderDownBtn" onclick="scrollOrders(1)">&#9660;</button>
+        <div class="form-scroll">
+          <button type="button" class="btn btn-lager" id="lagerBtn" onclick="assignLager()">Lager / Testlauf</button>
+          <div class="form-group">
+            <label>Auftrag</label>
+            <div class="order-picker">
+              <div class="order-list" id="orderList"></div>
+              <div class="order-arrows">
+                <button type="button" class="order-arrow" id="orderUpBtn" onclick="scrollOrders(-1)">&#9650;</button>
+                <button type="button" class="order-arrow" id="orderDownBtn" onclick="scrollOrders(1)">&#9660;</button>
+              </div>
             </div>
           </div>
+          <div class="form-group">
+            <label>Bemerkung (optional)</label>
+            <div class="notes-input" id="notesDisplay" onclick="openKeyboard('notes')">Antippen zum Schreiben...</div>
+            <input type="hidden" id="notesValue">
+          </div>
         </div>
-        <div class="form-group">
-          <label>Bemerkung (optional)</label>
-          <div class="notes-input" id="notesDisplay" onclick="openKeyboard('notes')">Antippen zum Schreiben...</div>
-          <input type="hidden" id="notesValue">
-        </div>
-        <div style="display:flex;gap:8px">
+        <div class="form-actions">
           <button class="btn btn-primary" id="saveBtn" onclick="saveAssignment()">Speichern</button>
           <button class="btn-cancel" onclick="clearSelection()">&#x2715;</button>
         </div>
