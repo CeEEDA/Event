@@ -280,6 +280,21 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 .btn-primary{{background:var(--accent);color:white;box-shadow:0 2px 6px rgba(192,38,211,0.3)}}
 .btn-lager{{background:#f59e0b;color:white;margin-bottom:14px;box-shadow:0 2px 6px rgba(245,158,11,0.3)}}
 .btn-lager:hover{{background:#d97706}}
+
+.order-picker{{display:flex;gap:8px;align-items:stretch}}
+.order-list{{flex:1;background:var(--bg);border:2px solid var(--border);border-radius:10px;max-height:260px;overflow-y:auto;scroll-behavior:smooth}}
+.order-list::-webkit-scrollbar{{width:0;display:none}}
+.order-item{{padding:14px 14px;font-size:15px;border-bottom:1px solid var(--border);cursor:pointer;line-height:1.3}}
+.order-item:last-child{{border-bottom:none}}
+.order-item:active{{background:var(--accent-light)}}
+.order-item.selected{{background:var(--accent);color:white;font-weight:700}}
+.order-item .ord-no{{font-weight:700}}
+.order-item .ord-dt{{font-size:12px;color:var(--muted);margin-top:2px}}
+.order-item.selected .ord-dt{{color:rgba(255,255,255,0.8)}}
+.order-arrows{{display:flex;flex-direction:column;gap:6px}}
+.order-arrow{{width:56px;height:60px;border:2px solid var(--border);background:var(--card);border-radius:10px;font-size:28px;font-weight:700;color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.12s}}
+.order-arrow:active{{background:var(--accent);color:white;transform:scale(0.94)}}
+.order-arrow:disabled{{opacity:0.3;cursor:not-allowed}}
 .btn:disabled{{opacity:0.4;cursor:not-allowed;transform:none}}
 .btn-cancel{{background:var(--border);color:var(--muted);border:none;border-radius:10px;padding:12px 18px;font-size:16px;font-weight:700;cursor:pointer}}
 
@@ -298,16 +313,16 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 .new-alert .unit{{font-size:16px;color:var(--muted);font-weight:600}}
 
 /* Touch Keyboard Overlay */
-.kbd-overlay{{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:2px solid var(--border);padding:8px;display:none;z-index:60;box-shadow:0 -4px 20px rgba(0,0,0,0.1)}}
+.kbd-overlay{{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:2px solid var(--border);padding:12px;display:none;z-index:60;box-shadow:0 -4px 20px rgba(0,0,0,0.15)}}
 .kbd-overlay.show{{display:block}}
-.kbd-preview{{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:6px;font-size:15px;min-height:36px;color:var(--text);display:flex;align-items:center;justify-content:space-between}}
-.kbd-preview span{{flex:1}}
-.kbd-done{{background:var(--accent);color:white;border:none;border-radius:6px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer}}
-.kbd-row{{display:flex;gap:3px;margin-bottom:3px;justify-content:center}}
-.kbd-key{{min-width:36px;height:42px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.08s}}
+.kbd-preview{{background:var(--bg);border:2px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:10px;font-size:22px;min-height:54px;color:var(--text);display:flex;align-items:center;justify-content:space-between}}
+.kbd-preview span{{flex:1;word-break:break-all}}
+.kbd-done{{background:var(--accent);color:white;border:none;border-radius:10px;padding:14px 28px;font-size:18px;font-weight:700;cursor:pointer}}
+.kbd-row{{display:flex;gap:6px;margin-bottom:6px;justify-content:center}}
+.kbd-key{{min-width:64px;height:68px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:24px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.08s;flex:1;max-width:88px}}
 .kbd-key:active{{background:var(--accent);color:white;transform:scale(0.94)}}
-.kbd-key.wide{{min-width:56px;font-size:12px}}
-.kbd-key.space{{flex:1;max-width:200px}}
+.kbd-key.wide{{min-width:96px;max-width:120px;font-size:20px}}
+.kbd-key.space{{flex:3;max-width:380px}}
 
 .toast{{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:10px;font-size:14px;font-weight:700;display:none;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,0.15)}}
 .toast.show{{display:block;animation:slideUp 0.3s ease}}
@@ -361,7 +376,13 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
         <button type="button" class="btn btn-lager" id="lagerBtn" onclick="assignLager()">Lager / Testlauf</button>
         <div class="form-group">
           <label>Auftrag</label>
-          <select id="orderSelect"><option value="">-- Auftrag waehlen --</option></select>
+          <div class="order-picker">
+            <div class="order-list" id="orderList"></div>
+            <div class="order-arrows">
+              <button type="button" class="order-arrow" id="orderUpBtn" onclick="scrollOrders(-1)">&#9650;</button>
+              <button type="button" class="order-arrow" id="orderDownBtn" onclick="scrollOrders(1)">&#9660;</button>
+            </div>
+          </div>
         </div>
         <div class="form-group">
           <label>Bemerkung (optional)</label>
@@ -401,7 +422,7 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 <div class="toast" id="toast"></div>
 
 <script>
-let selectedReceipt=null, lastReceiptCount=-1, orders=[], receipts=[];
+let selectedReceipt=null, lastReceiptCount=-1, orders=[], receipts=[], selectedOrderPk='', selectedOrderName='';
 let kbdTarget=null, kbdValue='', kbdShift=false;
 
 const ROWS=[['1','2','3','4','5','6','7','8','9','0'],['q','w','e','r','t','z','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['y','x','c','v','b','n','m']];
@@ -508,13 +529,35 @@ function renderReceipts(){{
 function esc(s){{const d=document.createElement('div');d.textContent=s;return d.innerHTML}}
 
 function populateOrders(){{
-  const sel=document.getElementById('orderSelect');
-  sel.innerHTML='<option value="">-- Auftrag waehlen --</option>';
+  const list=document.getElementById('orderList');
+  list.innerHTML='';
   orders.forEach(o=>{{
-    const l=(o.order_no||'')+' - '+(o.event||o.contact_name||'');
-    const dt=o.dispo_start?' ('+(o.dispo_start||'').substring(0,10)+')':'';
-    sel.innerHTML+='<option value="'+esc(o.primary_key)+'" data-name="'+esc(l)+'">'+esc(l)+dt+'</option>';
+    const label=(o.order_no||'')+' - '+(o.event||o.contact_name||'');
+    const dt=o.dispo_start?(o.dispo_start||'').substring(0,10):'';
+    const div=document.createElement('div');
+    div.className='order-item';
+    div.setAttribute('data-pk',o.primary_key||'');
+    div.setAttribute('data-name',label);
+    div.innerHTML='<div class="ord-no">'+esc(label)+'</div>'+(dt?'<div class="ord-dt">'+esc(dt)+'</div>':'');
+    div.onclick=function(){{selectOrder(o.primary_key||'',label)}};
+    list.appendChild(div);
   }});
+}}
+
+function selectOrder(pk,label){{
+  selectedOrderPk=pk;
+  selectedOrderName=label;
+  document.querySelectorAll('.order-item').forEach(el=>{{
+    el.classList.toggle('selected',el.getAttribute('data-pk')===pk);
+  }});
+  // Ausgewaehltes Element ins Sichtfeld scrollen
+  const sel=document.querySelector('.order-item.selected');
+  if(sel) sel.scrollIntoView({{block:'nearest',behavior:'smooth'}});
+}}
+
+function scrollOrders(direction){{
+  const list=document.getElementById('orderList');
+  list.scrollBy({{top:direction*150,behavior:'smooth'}});
 }}
 
 function updateStats(s){{
@@ -533,7 +576,15 @@ function selectReceipt(id){{
   document.getElementById('noSelection').style.display='none';
   document.getElementById('assignForm').style.display='block';
   document.getElementById('selectedNr').textContent='Beleg Nr. '+(selectedReceipt.beleg_nr||'?');
-  if(selectedReceipt.order_pk) document.getElementById('orderSelect').value=selectedReceipt.order_pk;
+  // Vorhandene Zuordnung in der Liste markieren
+  selectedOrderPk=selectedReceipt.order_pk||'';
+  selectedOrderName=selectedReceipt.order_name||'';
+  document.querySelectorAll('.order-item').forEach(el=>{{
+    el.classList.toggle('selected',el.getAttribute('data-pk')===selectedOrderPk);
+  }});
+  const selEl=document.querySelector('.order-item.selected');
+  if(selEl) selEl.scrollIntoView({{block:'nearest'}});
+  else document.getElementById('orderList').scrollTop=0;
   document.getElementById('notesValue').value=selectedReceipt.notes||'';
   document.getElementById('notesDisplay').textContent=selectedReceipt.notes||'Antippen zum Schreiben...';
   renderReceipts();
@@ -541,6 +592,9 @@ function selectReceipt(id){{
 
 function clearSelection(){{
   selectedReceipt=null;
+  selectedOrderPk='';
+  selectedOrderName='';
+  document.querySelectorAll('.order-item.selected').forEach(el=>el.classList.remove('selected'));
   document.getElementById('noSelection').style.display='';
   document.getElementById('assignForm').style.display='none';
   document.getElementById('selectedNr').textContent='Kein Beleg gewaehlt';
@@ -551,14 +605,11 @@ async function saveAssignment(){{
   if(!selectedReceipt) return;
   const fahrer=document.getElementById('driverSelect').value;
   if(!fahrer){{showToast('Bitte Mitarbeiter oben waehlen',true);return}}
-  const oSel=document.getElementById('orderSelect');
-  const orderPk=oSel.value;
-  const orderName=oSel.selectedOptions[0]?.dataset?.name||'';
-  if(!orderPk){{showToast('Bitte Auftrag waehlen',true);return}}
+  if(!selectedOrderPk){{showToast('Bitte Auftrag aus Liste waehlen',true);return}}
   const notes=document.getElementById('notesValue').value||'';
   document.getElementById('saveBtn').disabled=true;
   try{{
-    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:orderPk,order_name:orderName,fahrer:fahrer,notes:notes}})}});
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:selectedOrderPk,order_name:selectedOrderName,fahrer:fahrer,notes:notes}})}});
     const d=await r.json();
     if(d.ok){{showToast('Beleg zugeordnet!');clearSelection();loadReceipts()}}
     else showToast('Fehler: '+(d.error||'?'),true);
