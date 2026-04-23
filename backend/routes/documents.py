@@ -984,7 +984,18 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         }})
 
         # Jahr/Monat-Unterordner fuer ALLE Kategorien (ausser 'unbekannt' & Co.)
-        if final_folder not in SKIP_YEAR_MONTH_FOLDERS:
+        # Wichtig: Nur anlegen, wenn final_folder SELBST noch kein Jahr/Monat-
+        # Unterordner ist, sonst entstehen bei Reanalyze verschachtelte Ordner
+        # wie "...-eed_2026_04_2026_04".
+        already_in_subfolder = False
+        existing_folder = await db.document_folders.find_one(
+            {"id": final_folder, "parent_id": {"$exists": True, "$ne": None}},
+            {"_id": 0, "parent_id": 1},
+        )
+        if existing_folder:
+            already_in_subfolder = True
+
+        if final_folder not in SKIP_YEAR_MONTH_FOLDERS and not already_in_subfolder:
             doc_date = ai_result.get("date", "")
             subfolder_id = await _ensure_year_month_subfolder(final_folder, doc_date)
             await db.documents.update_one({"id": doc_id}, {"$set": {"folder_id": subfolder_id}})
@@ -1140,6 +1151,68 @@ async def reanalyze_document(doc_id: str):
     )
     asyncio.create_task(_run_ai_analysis(doc_id, temp_path, content_type, doc.get("folder_id", "unbekannt")))
     return {"ok": True, "status": "analysis_started"}
+
+
+@router.post("/cleanup-nested-year-month")
+async def cleanup_nested_year_month():
+    """Bereinigt fehlerhaft mehrfach verschachtelte Jahr/Monat-Ordner, die durch
+    den Reanalyze-Bug entstanden sind (z.B. ...eed_2026_04_2026_04).
+    Verschiebt alle Dokumente in die korrekte einfache Year/Month-Struktur und
+    loescht die ueberzaehligen Ordner."""
+    import re
+
+    pattern = re.compile(r"^(.+?)_(\d{4})_(\d{2})(?:_\d{4}_\d{2})+$")
+    fixed_docs = 0
+    deleted_folders = 0
+
+    async for folder in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+        fid = folder.get("id", "")
+        m = pattern.match(fid)
+        if not m:
+            continue
+        base, year, month = m.group(1), m.group(2), m.group(3)
+        canonical = f"{base}_{year}_{month}"
+        # Sicherstellen, dass der korrekte Ordner existiert
+        canonical_folder = await db.document_folders.find_one({"id": canonical, "is_deleted": False})
+        if not canonical_folder:
+            # Year + Month neu anlegen
+            year_id = f"{base}_{year}"
+            if not await db.document_folders.find_one({"id": year_id, "is_deleted": False}):
+                await db.document_folders.insert_one({
+                    "id": year_id, "name": str(year), "icon": "folder", "color": "gray",
+                    "parent_id": base, "is_deleted": False,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+            await db.document_folders.insert_one({
+                "id": canonical, "name": MONTH_NAMES.get(int(month), str(int(month))),
+                "icon": "folder", "color": "gray",
+                "parent_id": year_id, "is_deleted": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        # Alle Dokumente aus dem kaputten Ordner in den korrekten verschieben
+        res = await db.documents.update_many(
+            {"folder_id": fid, "is_deleted": False},
+            {"$set": {"folder_id": canonical, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        fixed_docs += res.modified_count
+        # Ueberzaehligen Ordner loeschen
+        await db.document_folders.update_one(
+            {"id": fid}, {"$set": {"is_deleted": True}},
+        )
+        deleted_folders += 1
+
+    # Zweiter Pass: Leere Ordner aufraeumen, die noch uebrig sind
+    async for folder in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
+        fid = folder.get("id", "")
+        if not pattern.match(fid):
+            continue
+        has_docs = await db.documents.count_documents({"folder_id": fid, "is_deleted": False})
+        has_children = await db.document_folders.count_documents({"parent_id": fid, "is_deleted": False})
+        if has_docs == 0 and has_children == 0:
+            await db.document_folders.update_one({"id": fid}, {"$set": {"is_deleted": True}})
+            deleted_folders += 1
+
+    return {"ok": True, "fixed_docs": fixed_docs, "deleted_folders": deleted_folders}
 
 
 @router.get("/list")
