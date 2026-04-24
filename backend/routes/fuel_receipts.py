@@ -688,15 +688,41 @@ def _draw_receipt_page(c, doc, display_qty, logo_img=None):
     y = h - 165 * mm
     c.setFillColor(HexColor("#1f2937"))
     c.setFont("Helvetica-Bold", 10)
-    for label, value in [("Standort:", doc.get("location", "")), ("Fahrer:", doc.get("fahrer", doc.get("created_by", "")))]:
+    notes_value = doc.get("notes", "") or ""
+    fields = [("Fahrer:", doc.get("fahrer", doc.get("created_by", "")))]
+    if notes_value.strip():
+        fields.append(("Bemerkung:", notes_value.strip()))
+    for label, value in fields:
         c.drawString(margin, y, label)
         c.setFont("Helvetica", 10)
-        c.drawString(margin + 28 * mm, y, str(value) if value else "—")
+        # Text ggf. umbrechen (max ~75 Zeichen pro Zeile)
+        text_value = str(value) if value else "—"
+        max_width = w - margin - (margin + 28 * mm) - 2 * mm
+        # Simple Umbruch: wenn zu lang, in mehrere Zeilen aufteilen
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        words = text_value.split()
+        line = ""
+        lines = []
+        for word in words:
+            test = f"{line} {word}".strip()
+            if stringWidth(test, "Helvetica", 10) <= max_width:
+                line = test
+            else:
+                if line:
+                    lines.append(line)
+                line = word
+        if line:
+            lines.append(line)
+        if not lines:
+            lines = ["—"]
+        for i, ln in enumerate(lines):
+            c.drawString(margin + 28 * mm, y - i * 5 * mm, ln)
+        extra = max(0, (len(lines) - 1) * 5 * mm)
         c.setStrokeColor(HexColor("#d1d5db"))
         c.setLineWidth(0.5)
-        c.line(margin + 28 * mm, y - 2, w - margin, y - 2)
+        c.line(margin + 28 * mm, y - 2 - extra, w - margin, y - 2 - extra)
         c.setFont("Helvetica-Bold", 10)
-        y -= 12 * mm
+        y -= (12 + max(0, (len(lines) - 1) * 5)) * mm
 
     # Footer
     c.setFillColor(HexColor("#9ca3af"))
@@ -711,20 +737,20 @@ def _draw_receipt_page(c, doc, display_qty, logo_img=None):
 
 @router.get("/pi/orders")
 async def pi_get_orders():
-    """Returns orders within -10 to +10 days for Pi offline cache. No auth for Pi access."""
+    """Returns confirmed orders within -14 to +14 days for Pi offline cache. No auth for Pi access."""
     await _touch_tankwagen_last_seen()
     from datetime import timedelta
     now = datetime.now(timezone.utc)
-    date_from = (now - timedelta(days=10)).isoformat()
-    date_to = (now + timedelta(days=10)).isoformat()
+    date_from = (now - timedelta(days=14)).isoformat()
+    date_to = (now + timedelta(days=14)).isoformat()
 
     query = {
         "is_canceled": {"$ne": True},
         "is_archived": {"$ne": True},
+        "is_confirmed": True,
         "$or": [
             {"dispo_start": {"$lte": date_to}, "dispo_end": {"$gte": date_from}},
             {"event_start": {"$lte": date_to}, "event_end": {"$gte": date_from}},
-            {"dispo_start": None, "event_start": None},
         ]
     }
     orders = await _db.orders_cache.find(query, {"_id": 0}).sort("dispo_start", -1).to_list(500)
