@@ -587,24 +587,34 @@ async def _regenerate_passwd_file():
         try:
             import platform
             if platform.system() == "Windows":
-                # Use Windows Service Controller to cleanly restart Mosquitto.
-                # Never kill the process directly – that breaks the Windows service state.
+                # Robust restart: stop service, kill any stale mosquitto.exe
+                # (keeps happy path as Restart-Service; falls back to manual
+                # stop+kill+start to avoid the "zombie process blocks port 1883"
+                # situation that happens when active clients prevent clean stop).
                 try:
                     result = subprocess.run(
-                        ["powershell", "-NoProfile", "-Command", "Restart-Service mosquitto -Force"],
-                        capture_output=True, timeout=15, text=True,
+                        ["powershell", "-NoProfile", "-Command",
+                         "Restart-Service mosquitto -Force -ErrorAction Stop; "
+                         "Start-Sleep -Seconds 1; "
+                         "$p = Get-Process mosquitto -ErrorAction SilentlyContinue; "
+                         "if ($p -and $p.Count -gt 1) { $p | Sort-Object StartTime | Select-Object -First ($p.Count-1) | Stop-Process -Force }"],
+                        capture_output=True, timeout=20, text=True,
                     )
-                    if result.returncode == 0:
-                        logger.info("Mosquitto Service neugestartet (passwd reload)")
-                    else:
-                        logger.warning(f"Restart-Service mosquitto fehlgeschlagen: {result.stderr}")
+                    if result.returncode != 0:
+                        logger.warning(f"Restart-Service fehlgeschlagen: {result.stderr.strip()[:200]} – Fallback Stop+Kill+Start")
+                        raise RuntimeError("restart failed, fallback")
+                    logger.info("Mosquitto Service neugestartet (passwd reload)")
                 except Exception as svc_e:
-                    # Fallback: try sc.exe if powershell not available
-                    logger.warning(f"PowerShell Restart-Service fehlgeschlagen: {svc_e} – Fallback auf sc.exe")
-                    subprocess.run(["sc.exe", "stop", "mosquitto"], capture_output=True, timeout=10)
+                    # Fallback: stop service, kill zombies, start service
+                    logger.warning(f"Mosquitto Restart fallback: {svc_e}")
+                    subprocess.run(["powershell", "-NoProfile", "-Command", "Stop-Service mosquitto -Force -ErrorAction SilentlyContinue"], capture_output=True, timeout=10)
                     import time
                     time.sleep(2)
-                    subprocess.run(["sc.exe", "start", "mosquitto"], capture_output=True, timeout=10)
+                    subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Process mosquitto -ErrorAction SilentlyContinue | Stop-Process -Force"], capture_output=True, timeout=10)
+                    time.sleep(2)
+                    start_res = subprocess.run(["powershell", "-NoProfile", "-Command", "Start-Service mosquitto"], capture_output=True, timeout=15, text=True)
+                    if start_res.returncode != 0:
+                        logger.error(f"Mosquitto Start auch nach Kill fehlgeschlagen: {start_res.stderr.strip()[:200]}")
             else:
                 # Linux: send SIGHUP to reload config
                 result = subprocess.run(["pkill", "-HUP", "mosquitto"],
@@ -966,25 +976,61 @@ async def passwd_file_import_to_db(
 
 @router.post("/broker/restart")
 async def broker_restart(user: dict = Depends(require_operator)):
-    """Force-restart the Mosquitto broker service. Windows: uses Restart-Service. Linux: sends SIGHUP.
+    """Force-restart the Mosquitto broker service. Windows: uses Restart-Service +
+    zombie-process cleanup. Linux: sends SIGHUP.
 
     Use this when password changes don't take effect (broker keeps the old passwd in memory).
     Requires that the backend process has permission to manage the service.
+
+    Handles the "zombie process blocks port 1883" case that occurs when the service
+    is stopped but mosquitto.exe keeps running (e.g. because active clients prevent
+    a clean shutdown) – stops the service, kills any stale mosquitto.exe, starts fresh.
     """
     import subprocess
     import platform
+    import time
     try:
         if platform.system() == "Windows":
+            # Attempt 1: normal Restart-Service
             result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", "Restart-Service mosquitto -Force"],
+                ["powershell", "-NoProfile", "-Command", "Restart-Service mosquitto -Force -ErrorAction Stop"],
                 capture_output=True, timeout=20, text=True,
             )
-            if result.returncode != 0:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Mosquitto-Neustart fehlgeschlagen (evtl. fehlende Rechte): {result.stderr.strip() or 'unbekannter Fehler'}. Bitte manuell in PowerShell ausfuehren: Restart-Service mosquitto -Force",
+            if result.returncode == 0:
+                # Verify it's actually running and port is bound
+                verify = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "(Get-Service mosquitto).Status.ToString() + '|' + ((Get-Process mosquitto -ErrorAction SilentlyContinue | Measure-Object).Count)"],
+                    capture_output=True, timeout=10, text=True,
                 )
-            return {"ok": True, "message": "Mosquitto-Service neu gestartet"}
+                if "Running|" in (verify.stdout or ""):
+                    return {"ok": True, "message": "Mosquitto-Service neu gestartet"}
+
+            # Attempt 2: zombie cleanup fallback
+            logger.warning(f"Restart-Service primary fehlgeschlagen ({result.stderr.strip()[:200]}) – Fallback Kill+Start")
+            subprocess.run(["powershell", "-NoProfile", "-Command", "Stop-Service mosquitto -Force -ErrorAction SilentlyContinue"], capture_output=True, timeout=10)
+            time.sleep(2)
+            kill_res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-Process mosquitto -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 2"],
+                capture_output=True, timeout=15, text=True,
+            )
+            start_res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Start-Service mosquitto; Start-Sleep -Seconds 1; (Get-Service mosquitto).Status.ToString()"],
+                capture_output=True, timeout=15, text=True,
+            )
+            if start_res.returncode == 0 and "Running" in (start_res.stdout or ""):
+                return {"ok": True, "message": "Mosquitto neu gestartet (nach Zombie-Bereinigung)"}
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Mosquitto-Neustart fehlgeschlagen. "
+                    f"Stop/Kill: {kill_res.stderr.strip()[:150]} | "
+                    f"Start: {start_res.stderr.strip()[:150] or start_res.stdout.strip()[:150]}. "
+                    "Bitte manuell in PowerShell ausfuehren: "
+                    "Get-Process mosquitto | Stop-Process -Force; Start-Service mosquitto"
+                ),
+            )
         else:
             result = subprocess.run(["pkill", "-HUP", "mosquitto"], capture_output=True, timeout=5)
             return {"ok": result.returncode == 0, "message": "SIGHUP gesendet"}
