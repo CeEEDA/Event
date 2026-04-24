@@ -36,8 +36,11 @@ if exist "%LIVE_DIR%\stop-all.bat" (
 ) else (
     taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
     taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
+    taskkill /FI "WINDOWTITLE eq Eventenergie Ollama" /F >nul 2>&1
     taskkill /IM caddy.exe /F >nul 2>&1
     taskkill /IM nginx.exe /F >nul 2>&1
+    taskkill /IM ollama.exe /F >nul 2>&1
+    taskkill /IM "ollama app.exe" /F >nul 2>&1
     timeout /t 3 /nobreak >nul
 )
 echo   Dienste gestoppt.

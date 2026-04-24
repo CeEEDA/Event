@@ -28,21 +28,25 @@ set "NGINX_OK=0"
 set "MQTT_OK=0"
 
 :: ====== 1. Laufende Dienste stoppen ======
-echo  [1/8] Laufende Dienste stoppen...
+echo  [1/9] Laufende Dienste stoppen...
 taskkill /FI "WINDOWTITLE eq Eventenergie Backend" /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq Eventenergie Caddy" /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Eventenergie Ollama" /F >nul 2>&1
 taskkill /IM caddy.exe /F >nul 2>&1
 taskkill /IM nginx.exe /F >nul 2>&1
+taskkill /IM ollama.exe /F >nul 2>&1
+taskkill /IM "ollama app.exe" /F >nul 2>&1
 call :kill_port 8001
 call :kill_port 8002
 call :kill_port 2019
 call :kill_port 443
+call :kill_port 11434
 timeout /t 3 /nobreak >nul
 echo   Alte Prozesse beendet.
 
 :: ====== 2. Mosquitto MQTT Broker ======
 echo.
-echo  [2/8] Mosquitto MQTT Broker pruefen...
+echo  [2/9] Mosquitto MQTT Broker pruefen...
 set "MOSQUITTO_DIR=C:\Program Files\Mosquitto"
 :: Sicherstellen dass die richtige Config verwendet wird (0.0.0.0 statt localhost)
 if exist "%BASE_DIR%\backend\static\mosquitto_eventenergie.conf" (
@@ -85,7 +89,7 @@ if !errorlevel! equ 0 (
 
 :: ====== 3. MongoDB pruefen ======
 echo.
-echo  [3/8] MongoDB pruefen...
+echo  [3/9] MongoDB pruefen...
 sc query MongoDB | findstr "RUNNING" >nul 2>&1
 if !errorlevel! neq 0 (
     echo   MongoDB starten...
@@ -97,7 +101,7 @@ if !errorlevel! neq 0 (
 
 :: ====== 4. Datenbank-Backup (Hintergrund) ======
 echo.
-echo  [4/8] Datenbank-Backup wird im Hintergrund gestartet...
+echo  [4/9] Datenbank-Backup wird im Hintergrund gestartet...
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 set "TIMESTAMP=%date:~6,4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
 set "TIMESTAMP=!TIMESTAMP: =0!"
@@ -117,7 +121,7 @@ for /f "delims=" %%f in ('dir /b /o-d "%BACKUP_DIR%\startup_backup_*" 2^>nul') d
 
 :: ====== 5. Python venv (goto-basiert) ======
 echo.
-echo  [5/8] Python-Umgebung pruefen...
+echo  [5/9] Python-Umgebung pruefen...
 cd /d "%BACKEND_DIR%"
 if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" goto :venv_root
 if exist "venv\Scripts\activate.bat" goto :venv_backend
@@ -133,9 +137,51 @@ echo   Python venv aktiviert (backend\venv)
 goto :venv_done
 :venv_done
 
-:: ====== 6. Frontend Build ======
+:: ====== 6. Ollama (lokale KI) starten ======
 echo.
-echo  [6/8] Frontend Build pruefen...
+echo  [6/9] Ollama (lokale KI) starten...
+set "OLLAMA_EXE=C:\Users\Administrator\AppData\Local\Programs\Ollama\ollama.exe"
+if not exist "%OLLAMA_EXE%" (
+    echo   Ollama nicht installiert unter %OLLAMA_EXE%
+    echo   KI-Funktionen deaktiviert - Portal laeuft aber weiter
+    goto :ollama_done
+)
+:: CPU-Limits setzen (nur fuer diesen Prozess, damit RDP responsiv bleibt)
+set "OLLAMA_HOST=127.0.0.1:11434"
+set "OLLAMA_NUM_PARALLEL=1"
+set "OLLAMA_MAX_LOADED_MODELS=1"
+set "OLLAMA_KEEP_ALIVE=5m"
+set "OLLAMA_NUM_THREADS=2"
+
+call :check_port 11434
+if !errorlevel! equ 0 (
+    echo   Ollama laeuft bereits auf Port 11434
+    goto :ollama_done
+)
+:: Alte Instanzen killen
+taskkill /IM ollama.exe /F >nul 2>&1
+taskkill /IM "ollama app.exe" /F >nul 2>&1
+timeout /t 2 /nobreak >nul
+
+:: Mit niedriger Prioritaet starten (belownormal), damit andere Dienste nicht blockiert werden
+start "Eventenergie Ollama" /min /belownormal "%OLLAMA_EXE%" serve
+echo   Warte auf Ollama-Start (max 15s)...
+set /a "_ow=0"
+:wait_ollama
+if !_ow! geq 8 goto :ollama_done
+set /a "_ow+=1"
+timeout /t 2 /nobreak >nul
+call :check_port 11434
+if !errorlevel! equ 0 (
+    echo   Ollama laeuft auf Port 11434 (niedrige Prioritaet, 2 CPU-Kerne)
+    goto :ollama_done
+)
+goto :wait_ollama
+:ollama_done
+
+:: ====== 7. Frontend Build ======
+echo.
+echo  [7/9] Frontend Build pruefen...
 cd /d "%FRONTEND_DIR%"
 if not exist "build" (
     echo   Kein Build vorhanden - erstelle Build...
@@ -149,9 +195,9 @@ if not exist "build" (
     echo   Build vorhanden
 )
 
-:: ====== 7. Backend starten (goto-basiert) ======
+:: ====== 8. Backend starten (goto-basiert) ======
 echo.
-echo  [7/8] Backend starten auf Port 8002...
+echo  [8/9] Backend starten auf Port 8002...
 cd /d "%BACKEND_DIR%"
 if exist "%PORTAL_DIR%\venv\Scripts\activate.bat" goto :start_be_venv_root
 if exist "venv\Scripts\activate.bat" goto :start_be_venv_local
@@ -185,9 +231,9 @@ if !BACKEND_OK! equ 0 (
     echo   Pruefe das "Eventenergie Backend" Fenster fuer Fehlermeldungen.
 )
 
-:: ====== 8. Caddy + Nginx starten ======
+:: ====== 9. Caddy + Nginx starten ======
 echo.
-echo  [8/8] Caddy (HTTP) + nginx (HTTPS) starten...
+echo  [9/9] Caddy (HTTP) + nginx (HTTPS) starten...
 cd /d "%PORTAL_DIR%"
 
 :: Caddyfile erstellen falls nicht vorhanden
@@ -294,6 +340,8 @@ if !NGINX_OK! equ 1   (echo   [OK] nginx:      Port 443 HTTPS) else (echo   [XX]
 if !MQTT_OK! equ 1 echo   [OK] Mosquitto:  Port 1883
 if !MQTT_OK! equ 2 echo   [--] Mosquitto:  nicht installiert
 if !MQTT_OK! equ 0 echo   [XX] Mosquitto:  NICHT gestartet
+call :check_port 11434
+if !errorlevel! equ 0 (echo   [OK] Ollama KI:  Port 11434) else (echo   [--] Ollama KI:  nicht aktiv)
 echo.
 echo   Portal:   https://eventenergie.app
 echo   Lokal:    http://localhost:8001

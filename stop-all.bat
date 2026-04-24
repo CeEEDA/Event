@@ -37,6 +37,14 @@ taskkill /FI "WINDOWTITLE eq Eventenergie MQTT" /F >nul 2>&1
 taskkill /IM mosquitto.exe /F >nul 2>&1
 echo   Mosquitto gestoppt.
 
+:: Ollama KI stoppen
+echo  Ollama stoppen...
+taskkill /FI "WINDOWTITLE eq Eventenergie Ollama" /F >nul 2>&1
+taskkill /IM ollama.exe /F >nul 2>&1
+taskkill /IM "ollama app.exe" /F >nul 2>&1
+call :kill_port 11434
+echo   Ollama gestoppt.
+
 :: Alte Frontend-Fenster (Fallback)
 taskkill /FI "WINDOWTITLE eq Eventenergie Frontend" /F >nul 2>&1
 
