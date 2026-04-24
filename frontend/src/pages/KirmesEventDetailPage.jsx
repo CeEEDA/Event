@@ -144,7 +144,30 @@ export default function KirmesEventDetailPage() {
       await api.post(`/kirmes/events/${id}/release`);
       toast.success("Veranstaltung freigegeben");
       loadEvent();
-    } catch { toast.error("Fehler"); }
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 401) toast.error("Sitzung abgelaufen – bitte neu anmelden");
+      else if (status === 403) toast.error("Keine Berechtigung zum Freigeben");
+      else if (detail) toast.error(typeof detail === "string" ? detail : "Freigabe fehlgeschlagen");
+      else toast.error(`Freigabe fehlgeschlagen${status ? ` (HTTP ${status})` : " (Netzwerk)"}`);
+    }
+  };
+
+  const handleReopen = async () => {
+    if (!window.confirm(`"${event.name}" wieder öffnen? Der Status wird auf 'freigegeben' zurückgesetzt. Bestehende Rechnungen bleiben erhalten.`)) return;
+    try {
+      const r = await api.post(`/kirmes/events/${id}/reopen`);
+      const n = r.data?.existing_invoices || 0;
+      toast.success(`Veranstaltung wieder freigegeben${n > 0 ? ` – ${n} Rechnung(en) bleiben erhalten` : ""}`);
+      loadEvent();
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 403) toast.error("Keine Berechtigung");
+      else if (detail) toast.error(typeof detail === "string" ? detail : "Aktion fehlgeschlagen");
+      else toast.error(`Aktion fehlgeschlagen${status ? ` (HTTP ${status})` : " (Netzwerk)"}`);
+    }
   };
 
   const handleDeleteSignup = async (signupId) => {
@@ -509,6 +532,11 @@ export default function KirmesEventDetailPage() {
             {event.status === "entwurf" && (
               <Button size="sm" variant="outline" onClick={handleRelease} className="text-blue-600 border-blue-200 px-2 sm:px-3" data-testid="release-btn" title="Freigeben">
                 <Send className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Freigeben</span>
+              </Button>
+            )}
+            {["abgerechnet", "abgeschlossen"].includes(event.status) && canBilling && (
+              <Button size="sm" variant="outline" onClick={handleReopen} className="text-amber-600 border-amber-200 px-2 sm:px-3" data-testid="reopen-btn" title="Wieder öffnen (Status auf freigegeben zurücksetzen)">
+                <Send className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Wieder öffnen</span>
               </Button>
             )}
             {["freigegeben", "aktiv"].includes(event.status) && (

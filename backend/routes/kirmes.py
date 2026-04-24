@@ -380,6 +380,26 @@ async def delete_event(event_id: str, user: dict = Depends(_require_admin)):
     return {"message": "Veranstaltung gelöscht"}
 
 
+@router.post("/events/{event_id}/reopen")
+async def reopen_event(event_id: str, user: dict = Depends(_require_staff)):
+    """Reopen an event: set status back to 'freigegeben' so Schausteller can register again.
+    Does NOT touch invoices or signups. Use this to recover from an accidental
+    'abgerechnet' status when no invoices were actually created."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+    invoice_count = await _db.kirmes_invoices.count_documents({"event_id": event_id})
+    await _db.kirmes_events.update_one(
+        {"id": event_id},
+        {"$set": {"status": "freigegeben"}, "$unset": {"closed_at": "", "closed_by": "", "closed_auto": ""}}
+    )
+    return {
+        "message": "Veranstaltung wieder freigegeben",
+        "status": "freigegeben",
+        "existing_invoices": invoice_count,
+    }
+
+
 @router.post("/events/{event_id}/release")
 async def release_event(event_id: str, user: dict = Depends(_require_staff)):
     """Set event status to 'freigegeben' - makes it visible for schausteller registration."""
@@ -1725,8 +1745,10 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
 
         generated.append({"schausteller_id": schausteller_id, "schausteller_firma": sch.get("firma", ""), "invoice_number": inv_number, "brutto": calc["brutto"], "signups_count": len(sch_signups)})
 
-    # Update event status
-    await _db.kirmes_events.update_one({"id": event_id}, {"$set": {"status": "abgerechnet"}})
+    # Update event status only if ALL signups now have an invoice
+    # (avoids setting 'abgerechnet' when all schausteller were skipped or
+    # the user pressed the button by accident on an event with open signups)
+    await _maybe_auto_close_event(event_id)
 
     return {"generated": len(generated), "skipped": len(skipped), "invoices": generated, "skipped_details": skipped}
 
