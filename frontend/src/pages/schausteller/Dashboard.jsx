@@ -1,8 +1,8 @@
 import { Button } from "../../components/ui/button";
-import { CalendarDays, MapPin, Zap, FileText, Download, LayoutDashboard, Plus } from "lucide-react";
+import { CalendarDays, MapPin, Zap, FileText, Download, LayoutDashboard, Plus, CreditCard } from "lucide-react";
 import { BACKEND_URL, STATUS_LABELS } from "./constants";
 
-export function Dashboard({ schausteller, myBookings, lastdiagramme, onNewBooking, onDownloadInvoice, onPurchaseLastdiagramm, onDownloadLastdiagramm, ldPurchasing, ldDownloading }) {
+export function Dashboard({ schausteller, myBookings, lastdiagramme, onNewBooking, onDownloadInvoice, onPurchaseLastdiagramm, onDownloadLastdiagramm, onPayBooking, payingBookingId, ldPurchasing, ldDownloading }) {
   return (
     <div data-testid="dashboard-step">
       <div className="flex items-center justify-between mb-4">
@@ -27,6 +27,7 @@ export function Dashboard({ schausteller, myBookings, lastdiagramme, onNewBookin
           <div className="divide-y divide-gray-100">
             {myBookings.signups.map(s => {
               const st = STATUS_LABELS[s.payment_status] || STATUS_LABELS.ausstehend;
+              const canPay = s.payment_status === "pending_payment" && !s.deposit_paid && s.payment_method !== "rechnung";
               return (
                 <div key={s.id} className="px-4 py-3" data-testid={`booking-${s.id}`}>
                   <div className="flex items-start justify-between">
@@ -44,6 +45,20 @@ export function Dashboard({ schausteller, myBookings, lastdiagramme, onNewBookin
                     </div>
                     <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${st.cls}`}>{st.text}</span>
                   </div>
+                  {canPay && (
+                    <div className="mt-2 flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => onPayBooking && onPayBooking(s)}
+                        disabled={payingBookingId === s.id}
+                        className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white h-8 text-xs"
+                        data-testid={`pay-booking-${s.id}`}
+                      >
+                        <CreditCard className="w-3.5 h-3.5 mr-1.5" />
+                        {payingBookingId === s.id ? "Wird gestartet…" : "Bezahlvorgang abwickeln"}
+                      </Button>
+                    </div>
+                  )}
                   {s.invoice_number && <div className="mt-2 text-xs text-emerald-600 font-medium">Rechnung: {s.invoice_number}</div>}
                 </div>
               );

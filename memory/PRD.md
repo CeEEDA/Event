@@ -15,6 +15,14 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Schausteller-Portal: Bezahlvorgang nach Abbruch wiederaufnehmen):**
+  - Neuer Button „Bezahlvorgang abwickeln" pro Buchung im Dashboard (`/app/frontend/src/pages/schausteller/Dashboard.jsx`).
+  - Sichtbar nur bei `payment_status === "pending_payment"` UND `!deposit_paid` UND `payment_method !== "rechnung"`.
+  - Handler `handlePayBooking` in `SchaustellerAnmeldungPage.jsx` ruft den bestehenden Endpoint `POST /api/payments/checkout/deposit` auf → neue Stripe-Session → Redirect.
+  - Kein Backend-Change nötig: der Endpoint prüft `signup.deposit_paid`, nicht eine alte Session, also kann er ein abgebrochenes Signup neu abwickeln.
+- **2026-02 — P0 Hotfix (Mosquitto Zombie-Prozess):**
+  - `broker/restart` und `_regenerate_passwd_file()` härter gemacht: Primärversuch `Restart-Service` mit Status-Verifikation, Fallback Stop-Service + Kill aller `mosquitto.exe` + Start-Service.
+  - Löst den Fall, wo aktive DSE890-Clients das saubere Stoppen verhindern und ein Zombie-Prozess Port 1883 blockiert → Service `Stopped`, aber Port belegt, neuer Start schlägt mit `StartServiceFailed` fehl.
 - **2026-02 — P1 Bugfix (Mosquitto Passwd-Datei vs. DB):**
   - Neuer Endpoint `POST /api/mqtt/passwd-file/import-to-db` (dry-run + apply) in `backend/routes/mqtt_config.py`.
   - Fuzzy-Matching von `gw_<token>` → `devices.serial_number/user_field/name` oder `generators.serial_number/name`.

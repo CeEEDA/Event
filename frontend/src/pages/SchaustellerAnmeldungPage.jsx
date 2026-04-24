@@ -349,6 +349,23 @@ export default function SchaustellerAnmeldungPage() {
     } finally { setSaving(false); }
   };
 
+  const [payingBookingId, setPayingBookingId] = useState(null);
+  const handlePayBooking = async (signup) => {
+    if (!signup?.id) return;
+    setPayingBookingId(signup.id);
+    try {
+      const r = await api.post("/payments/checkout/deposit", {
+        signup_id: signup.id,
+        event_id: signup.event_id || signup.event?.id,
+        origin_url: window.location.origin,
+      });
+      if (r.data?.url) { window.location.href = r.data.url; }
+      else { toast.error("Bezahlseite konnte nicht geöffnet werden"); }
+    } catch (err) {
+      toast.error(typeof (err?.response?.data?.detail) === "string" ? err.response.data.detail : "Fehler bei der Zahlung");
+    } finally { setPayingBookingId(null); }
+  };
+
   const handleDownloadInvoice = async (invoiceId) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/kirmes/public/invoice/${invoiceId}/pdf?schausteller_id=${schausteller.id}`);
@@ -447,6 +464,8 @@ export default function SchaustellerAnmeldungPage() {
               onDownloadInvoice={handleDownloadInvoice}
               onPurchaseLastdiagramm={handlePurchaseLastdiagramm}
               onDownloadLastdiagramm={downloadLastdiagramm}
+              onPayBooking={handlePayBooking}
+              payingBookingId={payingBookingId}
               ldPurchasing={ldPurchasing}
               ldDownloading={ldDownloading}
             />
