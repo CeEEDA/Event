@@ -228,7 +228,9 @@ def read_all_gencomm(conn):
             data["status_bits"] = p3[6]
 
     # Page 4: Engine + Generator (all 3 phases)
-    p4 = conn.read_registers(4, 0, 20)
+    # Page 4: Engine + Generator Output (GenComm v2.228)
+    # We need 28 registers to cover through L3 watts (32-bit registers at 22-27)
+    p4 = conn.read_registers(4, 0, 28)
     if p4:
         if len(p4) > 0 and valid(p4[0]):
             data["oil_pressure"] = p4[0]
@@ -246,27 +248,49 @@ def read_all_gencomm(conn):
             data["engine_speed"] = p4[6]
         if len(p4) > 7 and valid(p4[7]):
             data["frequency"] = p4[7] / 10.0
-        # L1 Voltage/Current/Watts
+        # Generator Phase-Neutral Voltages (16-bit, scale /10, in V)
         if len(p4) > 8 and valid(p4[8]):
             data["gen_l1_voltage"] = p4[8] / 10.0
-        if len(p4) > 12 and valid(p4[12]):
-            data["gen_l1_current"] = p4[12] / 10.0
-        if len(p4) > 16 and valid(p4[16]):
-            data["gen_l1_watts"] = p4[16]
-        # L2 Voltage/Current/Watts (3-phase: 8610, 7310)
         if len(p4) > 9 and valid(p4[9]):
             data["gen_l2_voltage"] = p4[9] / 10.0
-        if len(p4) > 13 and valid(p4[13]):
-            data["gen_l2_current"] = p4[13] / 10.0
-        if len(p4) > 17 and valid(p4[17]):
-            data["gen_l2_watts"] = p4[17]
-        # L3 Voltage/Current/Watts (3-phase: 8610, 7310)
         if len(p4) > 10 and valid(p4[10]):
             data["gen_l3_voltage"] = p4[10] / 10.0
-        if len(p4) > 14 and valid(p4[14]):
-            data["gen_l3_current"] = p4[14] / 10.0
-        if len(p4) > 18 and valid(p4[18]):
-            data["gen_l3_watts"] = p4[18]
+        # Registers 11-13 = Line-to-Line voltages (L1-L2, L2-L3, L3-L1) – currently unused
+        # Generator Phase Currents (32-bit! Two consecutive registers, scale /10, in A)
+        # L1 = regs 14-15, L2 = regs 16-17, L3 = regs 18-19
+        def _read_u32(idx):
+            if len(p4) > idx + 1 and valid(p4[idx]) and valid(p4[idx+1]):
+                return (p4[idx] << 16) | p4[idx+1]
+            return None
+        def _read_s32(idx):
+            v = _read_u32(idx)
+            if v is None:
+                return None
+            if v >= 0x80000000:
+                v -= 0x100000000
+            return v
+
+        l1_i = _read_u32(14)
+        if l1_i is not None and l1_i < 0x7FFFFFFC:
+            data["gen_l1_current"] = l1_i / 10.0
+        l2_i = _read_u32(16)
+        if l2_i is not None and l2_i < 0x7FFFFFFC:
+            data["gen_l2_current"] = l2_i / 10.0
+        l3_i = _read_u32(18)
+        if l3_i is not None and l3_i < 0x7FFFFFFC:
+            data["gen_l3_current"] = l3_i / 10.0
+        # Registers 20-21 = Earth current – unused
+        # Generator Phase Watts (32-bit signed, scale 1, in W)
+        # L1 = regs 22-23, L2 = regs 24-25, L3 = regs 26-27
+        l1_w = _read_s32(22)
+        if l1_w is not None and -99999999 <= l1_w <= 99999999:
+            data["gen_l1_watts"] = l1_w
+        l2_w = _read_s32(24)
+        if l2_w is not None and -99999999 <= l2_w <= 99999999:
+            data["gen_l2_watts"] = l2_w
+        l3_w = _read_s32(26)
+        if l3_w is not None and -99999999 <= l3_w <= 99999999:
+            data["gen_l3_watts"] = l3_w
 
     # Page 6: Power factor, total watts
     p6 = conn.read_registers(6, 0, 22)
