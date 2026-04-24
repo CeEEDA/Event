@@ -773,13 +773,38 @@ async def pi_get_orders():
 
 @router.get("/pi/drivers")
 async def pi_get_drivers():
-    """Returns user list with password hashes for Pi offline login."""
+    """Liefert die Liste der Tankwagen-Fahrer fuer den Pi-Kiosk.
+
+    Whitelist-basiert: nur definierte Personen erscheinen auf dem Pi.
+    Matching erfolgt case-insensitive auf Name (Teilstring), damit auch
+    abweichende Schreibweisen (z.B. "Christian Ecker Admin") gefunden werden."""
     await _touch_tankwagen_last_seen()
-    users = await _db.users.find(
+    # Tankwagen-Fahrer-Whitelist. Hinzufuegen/entfernen durch Anpassung dieser Liste.
+    allowed_names = [
+        "Christian Ecker",
+        "Timo Hoppen",
+        "Volker Gutmann",
+        "Mike Diekelmann",
+        "Sebastian Heidtmann",
+        "Martin Mull",
+    ]
+    all_users = await _db.users.find(
         {},
-        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "password_hash": 1}
-    ).to_list(200)
-    return {"drivers": users}
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "password_hash": 1},
+    ).to_list(500)
+    # Whitelist-Matching: reihenfolge beibehalten, duplicates vermeiden
+    drivers = []
+    added_ids = set()
+    for allowed in allowed_names:
+        al = allowed.lower()
+        for u in all_users:
+            un = (u.get("name") or "").lower()
+            if un == al or al in un:
+                if u.get("id") not in added_ids:
+                    drivers.append(u)
+                    added_ids.add(u.get("id"))
+                break
+    return {"drivers": drivers}
 
 
 @router.post("/pi/heartbeat")
