@@ -15,6 +15,10 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Bugfix (iOS Mobile App Login):**
+  - Root cause: `/app/frontend/src/lib/api.js` checked `origin.includes('localhost')` → matched Capacitor native origin `capacitor://localhost` → `BACKEND_URL = ''` → login went to `capacitor://localhost/api/auth/login` (404).
+  - Fix: Detect Capacitor/Ionic protocol (`capacitor:` / `ionic:`) or `window.Capacitor.isNativePlatform()` → always use `REACT_APP_BACKEND_URL` (falls back to `https://eventenergie.app`).
+  - Requires rebuild & redeploy of the iOS/Android app (`bash desktop/build-mobile.sh ios|android` with `REACT_APP_BACKEND_URL=https://eventenergie.app`).
 - **2026-02 — P1 UI Fix (Pi Touchscreen):**
   - Removed "Standort (optional)" field from Beleg-Zuordnung — only "Bemerkung" remains.
   - Added prominent **"Lager / Testlauf"** quick-action button above the Auftrag dropdown (orange, single-tap booking to Lager).

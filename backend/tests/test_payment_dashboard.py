@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://sening-portal.preview.emergentagent.com"
+                "origin_url": "https://kirmeskiste-sync.preview.emergentagent.com"
             },
             timeout=30
         )

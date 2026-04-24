@@ -2,10 +2,18 @@ import axios from "axios";
 import { saveAs } from "file-saver";
 
 const BACKEND_URL = (() => {
-  // If served behind Caddy/reverse proxy, use relative URL
   if (typeof window !== 'undefined' && window.location) {
+    const protocol = window.location.protocol;
     const origin = window.location.origin;
-    // On the live server, use same origin (Caddy proxies /api/*)
+
+    // Capacitor native app (iOS/Android): protocol is "capacitor:" / "ionic:"
+    // -> always use configured backend URL, never same-origin
+    if (protocol === 'capacitor:' || protocol === 'ionic:' ||
+        (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform())) {
+      return process.env.REACT_APP_BACKEND_URL || 'https://eventenergie.app';
+    }
+
+    // Web browser: on the live server behind Caddy, use same origin (Caddy proxies /api/*)
     if (origin.includes('portal.eventenergie') || origin.includes('localhost')) {
       return '';
     }
