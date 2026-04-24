@@ -519,9 +519,37 @@ export default function KirmesEventDetailPage() {
                 <Button size="sm" variant="outline" onClick={exportPDF} className="text-gray-600 px-2 sm:px-3" data-testid="export-pdf-btn" title="Montageliste PDF">
                   <FileDown className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> PDF</span>
                 </Button>
-                {canBilling && <Button size="sm" onClick={handleGenerateAllInvoices} disabled={billingInProgress} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3" data-testid="billing-btn" title="Abrechnung">
-                  <Receipt className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
-                </Button>}
+                {canBilling && (() => {
+                  const signups = event.signups || [];
+                  const total = signups.length;
+                  // Skip billed signups – they already have a kwh_ausbau snapshot
+                  const pending = signups.filter(s => !s.invoice_id && s.payment_status !== "abgerechnet");
+                  const missingAusbau = pending.filter(s => s.kwh_ausbau == null || s.kwh_ausbau === 0).length;
+                  const billingDisabled = billingInProgress || pending.length === 0 || missingAusbau > 0;
+                  const title = pending.length === 0
+                    ? "Alle Anmeldungen bereits abgerechnet"
+                    : missingAusbau > 0
+                      ? `${missingAusbau} von ${pending.length} offenen Anmeldungen haben noch keinen Ausbau-Zählerstand – Abrechnung nicht möglich`
+                      : `Abrechnung für ${pending.length} offene Anmeldung${pending.length === 1 ? "" : "en"}`;
+                  return (
+                    <Button
+                      size="sm"
+                      onClick={handleGenerateAllInvoices}
+                      disabled={billingDisabled}
+                      className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed text-white px-2 sm:px-3"
+                      data-testid="billing-btn"
+                      title={title}
+                    >
+                      <Receipt className="w-3.5 h-3.5 sm:mr-1" />
+                      <span className="hidden sm:inline"> {billingInProgress ? "..." : "Abrechnung"}</span>
+                      {missingAusbau > 0 && (
+                        <span className="ml-1.5 bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none" data-testid="billing-missing-badge">
+                          {missingAusbau}
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })()}
                 {canBilling && !["abgerechnet", "abgeschlossen"].includes(event.status) && (
                   <Button size="sm" variant="outline" onClick={handleCloseEvent} className="text-fuchsia-600 border-fuchsia-200 px-2 sm:px-3" data-testid="close-event-btn" title="Veranstaltung schließen">
                     <Check className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Schließen</span>
@@ -1480,7 +1508,10 @@ export default function KirmesEventDetailPage() {
             </div>
             <p className="text-sm text-gray-600 mb-2">
               {invoiceConfirm.type === "bulk"
-                ? `Für alle ${(event.signups || []).length} Anmeldungen werden Rechnungen erstellt.`
+                ? (() => {
+                    const pending = (event.signups || []).filter(s => !s.invoice_id && s.payment_status !== "abgerechnet");
+                    return `Für ${pending.length} offene Anmeldung${pending.length === 1 ? "" : "en"} werden Rechnungen erstellt.`;
+                  })()
                 : <>Für <strong>{invoiceConfirm.signupName}</strong> wird eine Rechnung erstellt.</>}
             </p>
             <p className="text-xs text-red-500 font-medium mb-5">
