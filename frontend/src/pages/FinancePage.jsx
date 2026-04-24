@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, Download, FileText, Send, ChevronRight,
   TrendingUp, Receipt, CheckCircle, Clock, AlertTriangle,
-  CircleDollarSign, Ban,
+  CircleDollarSign, Ban, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -28,6 +28,8 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(null);
   const [filter, setFilter] = useState("alle");
+  const [sortKey, setSortKey] = useState("invoice_date");
+  const [sortDir, setSortDir] = useState("desc"); // newest first by default
 
   const canAccess = isAdmin || user?.permissions?.can_billing;
 
@@ -107,6 +109,50 @@ export default function FinancePage() {
     : filter === "ueberfaellig" ? invoices.filter(i => i.payment_status === "ueberfaellig")
     : invoices;
 
+  // Sorting
+  const PAYMENT_STATUS_ORDER = { ueberfaellig: 0, faellig: 1, offen: 2, erstellt: 3, bezahlt: 4 };
+  const parseGermanDate = (d) => {
+    if (!d) return 0;
+    // "DD.MM.YYYY" -> timestamp; fallback: Date.parse
+    const m = String(d).match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+    if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}`).getTime();
+    const t = Date.parse(d);
+    return Number.isFinite(t) ? t : 0;
+  };
+  const getSortValue = (inv, key) => {
+    switch (key) {
+      case "invoice_number": return (inv.invoice_number || "").toString();
+      case "schausteller_kundennummer": return (inv.schausteller_kundennummer || "").toString();
+      case "schausteller_firma": return (inv.schausteller_firma || inv.schausteller_name || "").toLowerCase();
+      case "event_name": return (inv.event_name || "").toLowerCase();
+      case "invoice_date": return parseGermanDate(inv.invoice_date);
+      case "netto": return Number(inv.netto) || 0;
+      case "brutto": return Number(inv.brutto) || 0;
+      case "payment_status": return PAYMENT_STATUS_ORDER[inv.payment_status] ?? 99;
+      default: return 0;
+    }
+  };
+  const sorted = [...filtered].sort((a, b) => {
+    const va = getSortValue(a, sortKey);
+    const vb = getSortValue(b, sortKey);
+    let cmp;
+    if (typeof va === "number" && typeof vb === "number") cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), "de", { numeric: true });
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir(key === "invoice_date" || key === "netto" || key === "brutto" ? "desc" : "asc"); }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 inline-block ml-1 opacity-40" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="w-3 h-3 inline-block ml-1 text-fuchsia-600" />
+      : <ArrowDown className="w-3 h-3 inline-block ml-1 text-fuchsia-600" />;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="finance-page">
       <header className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-20">
@@ -183,23 +229,23 @@ export default function FinancePage() {
             <table className="w-full" data-testid="invoice-table">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
-                  <th className="px-4 py-3 text-left">Re.-Nr.</th>
-                  <th className="px-4 py-3 text-left">Kd.-Nr.</th>
-                  <th className="px-4 py-3 text-left">Kunde</th>
-                  <th className="px-4 py-3 text-left hidden md:table-cell">Event</th>
-                  <th className="px-4 py-3 text-left hidden sm:table-cell">Datum</th>
-                  <th className="px-4 py-3 text-right hidden sm:table-cell">Netto</th>
-                  <th className="px-4 py-3 text-right">Brutto</th>
-                  <th className="px-4 py-3 text-center">Zahlung</th>
+                  <th className="px-4 py-3 text-left cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("invoice_number")} data-testid="sort-invoice-number">Re.-Nr.<SortIcon col="invoice_number" /></th>
+                  <th className="px-4 py-3 text-left cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("schausteller_kundennummer")} data-testid="sort-customer-number">Kd.-Nr.<SortIcon col="schausteller_kundennummer" /></th>
+                  <th className="px-4 py-3 text-left cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("schausteller_firma")} data-testid="sort-customer">Kunde<SortIcon col="schausteller_firma" /></th>
+                  <th className="px-4 py-3 text-left hidden md:table-cell cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("event_name")} data-testid="sort-event">Event<SortIcon col="event_name" /></th>
+                  <th className="px-4 py-3 text-left hidden sm:table-cell cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("invoice_date")} data-testid="sort-date">Datum<SortIcon col="invoice_date" /></th>
+                  <th className="px-4 py-3 text-right hidden sm:table-cell cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("netto")} data-testid="sort-netto">Netto<SortIcon col="netto" /></th>
+                  <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("brutto")} data-testid="sort-brutto">Brutto<SortIcon col="brutto" /></th>
+                  <th className="px-4 py-3 text-center cursor-pointer select-none hover:text-fuchsia-700 transition-colors" onClick={() => toggleSort("payment_status")} data-testid="sort-payment">Zahlung<SortIcon col="payment_status" /></th>
                   <th className="px-4 py-3 text-right">Aktionen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">Laden...</td></tr>
-                ) : filtered.length === 0 ? (
+                ) : sorted.length === 0 ? (
                   <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">{search ? "Keine Rechnungen gefunden" : "Noch keine Rechnungen vorhanden"}</td></tr>
-                ) : filtered.map(inv => {
+                ) : sorted.map(inv => {
                   const ps = PAYMENT_STATUS[inv.payment_status] || PAYMENT_STATUS.erstellt;
                   const Icon = ps.icon;
                   return (
