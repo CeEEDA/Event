@@ -430,7 +430,15 @@ export default function KirmesPage() {
       await api.post(`/kirmes/events/${event.id}/release`);
       toast.success("Veranstaltung freigegeben");
       loadEvents();
-    } catch { toast.error("Fehler"); }
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 401) toast.error("Sitzung abgelaufen – bitte neu anmelden");
+      else if (status === 403) toast.error("Keine Berechtigung zum Freigeben");
+      else if (status === 404) toast.error("Veranstaltung nicht gefunden");
+      else if (detail) toast.error(typeof detail === "string" ? detail : getErrorMsg(err, "Freigabe fehlgeschlagen"));
+      else toast.error(`Freigabe fehlgeschlagen${status ? ` (HTTP ${status})` : " (Netzwerk)"}`);
+    }
   };
 
   const handleDelete = async (event) => {
