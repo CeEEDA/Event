@@ -490,11 +490,12 @@ async def _get_custom_ai_instructions() -> str:
 
 
 async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
-    """Analysiert ein Dokument mit lokalem Gemma 3 via Ollama (kein Cloud-Call).
+    """Analysiert ein Dokument mit lokalem Ollama (Text-first, Vision-Fallback).
 
-    PDFs werden seitenweise in Bilder konvertiert, Bilder direkt gesendet.
+    - PDFs mit extrahierbarem Text -> Gemma 2:2b (reiner Text, ~5-10s)
+    - Reine Bilder/Scans -> Gemma 3:1b/4b Vision (~30-180s)
     Gibt ein dict mit suggested_folder, document_type, metadata, full_text, keywords zurueck."""
-    from services.ollama_client import ollama_chat_vision, parse_json_response
+    from services.ollama_client import analyze_document_smart, parse_json_response
 
     response_text = ""
     try:
@@ -517,15 +518,14 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
         if custom_instructions:
             system += f"\n\n=== ZUSAETZLICHE ADMIN-ANWEISUNGEN ===\n{custom_instructions}"
 
-        response_text = await ollama_chat_vision(
+        response_text, mode = await analyze_document_smart(
             system_prompt=system,
-            user_text="Analysiere dieses Dokument und extrahiere alle Informationen als JSON.",
             file_path=file_path,
             mime_type=mime_type,
             want_json=True,
         )
 
-        logger.info(f"[AI-DEBUG] Raw response ({len(response_text)} chars): {response_text[:800]}")
+        logger.info(f"[AI-DEBUG] Mode={mode} Raw response ({len(response_text)} chars): {response_text[:800]}")
         result = parse_json_response(response_text)
         logger.info(f"[AI-DEBUG] Parsed suggested_folder={result.get('suggested_folder')!r}, document_type={result.get('document_type')!r}")
         return result

@@ -19,9 +19,13 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "180"))
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:1b")
+# Text-Only Modell - deutlich schneller auf CPU, da keine Vision-Pipeline.
+# Wird verwendet, sobald Text aus dem PDF extrahiert werden konnte.
+OLLAMA_TEXT_MODEL = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:2b")
+OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "600"))
 OLLAMA_MAX_PDF_PAGES = int(os.environ.get("OLLAMA_MAX_PDF_PAGES", "3"))
+OLLAMA_MAX_TEXT_CHARS = int(os.environ.get("OLLAMA_MAX_TEXT_CHARS", "12000"))
 OLLAMA_IMAGE_MAX_DIM = int(os.environ.get("OLLAMA_IMAGE_MAX_DIM", "1400"))
 
 # Semaphore: Nur EINE Analyse zur Zeit laufen lassen, damit bei vielen parallelen
@@ -52,6 +56,23 @@ def _image_to_base64(pil_image: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
     return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _extract_text_from_pdf(file_path: str, max_pages: int = 10) -> str:
+    """Extrahiert Text direkt aus einem PDF via PyMuPDF (kein OCR).
+    Funktioniert bei allen digital erstellten PDFs (Rechnungen, Vertraege etc.).
+    Gibt leeren String zurueck, wenn das PDF nur Bilder enthaelt (echter Scan)."""
+    try:
+        with fitz.open(file_path) as pdf:
+            pages = min(len(pdf), max_pages)
+            parts = []
+            for i in range(pages):
+                parts.append(pdf[i].get_text("text"))
+            text = "\n".join(parts).strip()
+            return text
+    except Exception as e:
+        logger.warning(f"[ollama] PDF-Text-Extraktion fehlgeschlagen: {e}")
+        return ""
 
 
 def _file_to_image_b64_list(file_path: str, mime_type: str) -> list:
@@ -170,3 +191,50 @@ async def ollama_is_reachable() -> bool:
             return r.status_code == 200
     except Exception:
         return False
+
+
+async def analyze_document_smart(
+    system_prompt: str,
+    file_path: str,
+    mime_type: str,
+    user_text_vision: str = "Analysiere dieses Dokument und gib ein JSON zurueck.",
+    want_json: bool = True,
+) -> tuple:
+    """Hybrid-Analyse: versucht zuerst Text-Extraktion (schnell, 5-10s),
+    faellt bei reinen Bildern/Scans auf Vision-Modell zurueck (langsam, 30-180s).
+
+    Gibt (response_text, mode) zurueck, wobei mode 'text' oder 'vision' ist."""
+    mt = (mime_type or "").lower()
+    # 1) Versuche Text-Extraktion fuer PDFs
+    if mt == "application/pdf" or file_path.lower().endswith(".pdf"):
+        extracted = _extract_text_from_pdf(file_path, max_pages=OLLAMA_MAX_PDF_PAGES)
+        # Mind. 80 Zeichen = "echter" Text, nicht nur Metadaten
+        if extracted and len(extracted.strip()) >= 80:
+            trimmed = extracted[:OLLAMA_MAX_TEXT_CHARS]
+            logger.info(f"[ollama] Text-first: {len(trimmed)} Zeichen aus PDF extrahiert, Modell={OLLAMA_TEXT_MODEL}")
+            text_prompt = (
+                "Hier ist der Text eines Dokuments (direkt aus dem PDF extrahiert):\n\n"
+                f"----- DOKUMENT ANFANG -----\n{trimmed}\n----- DOKUMENT ENDE -----\n\n"
+                "Analysiere das Dokument und gib ein JSON zurueck (keine weiteren Erklaerungen)."
+            )
+            resp = await ollama_chat_vision(
+                system_prompt=system_prompt,
+                user_text=text_prompt,
+                file_path=None,      # Kein Bild-Anhang - wir haben Text
+                mime_type=None,
+                model=OLLAMA_TEXT_MODEL,
+                want_json=want_json,
+            )
+            return resp, "text"
+
+    # 2) Fallback auf Vision-Modell (Scans, Bilder, text-lose PDFs)
+    logger.info(f"[ollama] Vision-Fallback: {file_path}, Modell={OLLAMA_MODEL}")
+    resp = await ollama_chat_vision(
+        system_prompt=system_prompt,
+        user_text=user_text_vision,
+        file_path=file_path,
+        mime_type=mime_type,
+        model=OLLAMA_MODEL,
+        want_json=want_json,
+    )
+    return resp, "vision"
