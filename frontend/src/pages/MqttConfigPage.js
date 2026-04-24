@@ -301,6 +301,8 @@ function PasswdFileDiagnostics() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [importPlan, setImportPlan] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -347,6 +349,31 @@ function PasswdFileDiagnostics() {
       toast.error(getErrorMsg(err, "Broker-Neustart fehlgeschlagen"));
     }
     setRestarting(false);
+  };
+
+  const handleImportDryRun = async () => {
+    setImporting(true);
+    try {
+      const res = await api.post("/mqtt/passwd-file/import-to-db", { apply: false });
+      setImportPlan(res.data);
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Vorschau konnte nicht geladen werden"));
+    }
+    setImporting(false);
+  };
+
+  const handleImportApply = async () => {
+    if (!window.confirm(`${importPlan.to_link} Einträge in DB übernehmen? Der Import überschreibt keine existierenden Verknüpfungen.`)) return;
+    setImporting(true);
+    try {
+      const res = await api.post("/mqtt/passwd-file/import-to-db", { apply: true });
+      toast.success(`${res.data.to_link} Lichtmasten/Geräte in DB verknüpft`);
+      setImportPlan(null);
+      await load();
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Import fehlgeschlagen"));
+    }
+    setImporting(false);
   };
 
   if (loading || !data) return null;
@@ -418,16 +445,84 @@ function PasswdFileDiagnostics() {
         )}
 
         {data.file_only && data.file_only.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-xs font-semibold text-blue-800 mb-2">
-              Nur in Datei vorhanden (nicht in DB — evtl. manuell hinzugefügt):
-            </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="passwd-file-only-list">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <p className="text-xs font-semibold text-blue-800">
+                Nur in Datei vorhanden (nicht in DB — evtl. manuell hinzugefügt):
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-blue-400 text-blue-800 hover:bg-blue-100 shrink-0 text-[11px] h-7"
+                onClick={handleImportDryRun}
+                disabled={importing}
+                data-testid="passwd-import-dryrun-btn"
+              >
+                {importing ? "Lädt…" : "In DB importieren…"}
+              </Button>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {data.file_only.map(u => (
                 <code key={u} className="text-[11px] bg-white border border-blue-300 text-blue-800 px-2 py-0.5 rounded">{u}</code>
               ))}
             </div>
-            <p className="text-[10px] text-blue-700 mt-2">Diese Einträge bleiben erhalten (werden nicht gelöscht).</p>
+            <p className="text-[10px] text-blue-700 mt-2">Diese Einträge bleiben erhalten. Importiere sie in die DB, damit du Passwörter künftig im Portal rotieren kannst.</p>
+          </div>
+        )}
+
+        {importPlan && (
+          <div className="bg-slate-50 border border-slate-300 rounded-lg p-4" data-testid="passwd-import-plan">
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Import-Vorschau</p>
+                <p className="text-[11px] text-slate-600">
+                  {importPlan.to_link} verknüpfbar · {importPlan.conflicts} Konflikte · {importPlan.unmatched} ohne Zuordnung
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setImportPlan(null)} data-testid="passwd-import-cancel-btn">
+                  Abbrechen
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleImportApply}
+                  disabled={importing || importPlan.to_link === 0}
+                  data-testid="passwd-import-apply-btn"
+                >
+                  {importing ? "Importiere…" : `${importPlan.to_link} übernehmen`}
+                </Button>
+              </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-1">
+              {importPlan.plan.map((p, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-[11px] py-1 border-b border-slate-200 last:border-0">
+                  <code className="bg-white border border-slate-300 px-1.5 py-0.5 rounded text-slate-800 shrink-0">{p.username}</code>
+                  {p.action === "link" && (
+                    <>
+                      <span className="text-emerald-700">→ verknüpfen mit</span>
+                      <span className="text-slate-900 font-medium">{p.target_name}</span>
+                      <span className="text-slate-500">({p.target_type})</span>
+                    </>
+                  )}
+                  {p.action === "conflict" && (
+                    <>
+                      <span className="text-amber-700">⚠ Konflikt:</span>
+                      <span className="text-slate-900">{p.target_name}</span>
+                      <span className="text-slate-500">hat bereits <code className="bg-amber-50 px-1 rounded">{p.existing_mqtt_username}</code></span>
+                    </>
+                  )}
+                  {p.action === "unmatched" && (
+                    <span className="text-slate-500">→ kein passendes Gerät gefunden (bleibt in Datei, muss manuell angelegt werden)</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {importPlan.unmatched > 0 && (
+              <p className="text-[10px] text-slate-600 mt-2">
+                Hinweis: Einträge ohne Zuordnung werden <strong>nicht</strong> aus der Passwd-Datei entfernt. Du kannst die zugehörigen Lichtmasten später unter „Geräte" anlegen — dann werden sie beim nächsten Import erkannt.
+              </p>
+            )}
           </div>
         )}
       </div>

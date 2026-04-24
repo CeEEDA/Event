@@ -15,6 +15,11 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Bugfix (Mosquitto Passwd-Datei vs. DB):**
+  - Neuer Endpoint `POST /api/mqtt/passwd-file/import-to-db` (dry-run + apply) in `backend/routes/mqtt_config.py`.
+  - Fuzzy-Matching von `gw_<token>` → `devices.serial_number/user_field/name` oder `generators.serial_number/name`.
+  - UI-Erweiterung in `MqttConfigPage.js`: „In DB importieren…" Button im file-only Block zeigt Plan mit link/conflict/unmatched-Status, dann bestätigter Apply-Schritt.
+  - Sichert die historisch gewachsenen 13 Lichtmast-User in die DB, damit künftige Passwort-Rotation über das Portal möglich ist und die passwd-Datei bei versehentlichem Overwrite aus der DB rekonstruiert werden kann.
 - **2026-02 — P1 Bugfix (iOS Mobile App Login):**
   - Root cause: `/app/frontend/src/lib/api.js` checked `origin.includes('localhost')` → matched Capacitor native origin `capacitor://localhost` → `BACKEND_URL = ''` → login went to `capacitor://localhost/api/auth/login` (404).
   - Fix: Detect Capacitor/Ionic protocol (`capacitor:` / `ionic:`) or `window.Capacitor.isNativePlatform()` → always use `REACT_APP_BACKEND_URL` (falls back to `https://eventenergie.app`).

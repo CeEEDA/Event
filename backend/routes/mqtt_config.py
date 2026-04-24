@@ -843,6 +843,127 @@ async def passwd_file_sync(user: dict = Depends(require_operator)):
     return {"ok": ok, "path": MOSQUITTO_PASSWD_FILE}
 
 
+def _normalize_for_match(s: str) -> str:
+    """Normalize a string for fuzzy matching: lowercase, remove separators."""
+    import re as _re
+    return _re.sub(r"[\s_\-\.]", "", (s or "").lower())
+
+
+async def _find_device_or_generator_for_user(username: str):
+    """Try to find an existing device or generator matching a passwd username.
+    Matches gw_<token> against serial_number, user_field, name (fuzzy)."""
+    if not username.startswith("gw_"):
+        return None, None
+    token = username[3:]  # strip "gw_" prefix
+    token_norm = _normalize_for_match(token)
+    if not token_norm:
+        return None, None
+
+    # Try devices first (lichtmast/stromerzeuger)
+    async for dev in db.devices.find({}, {"_id": 0}):
+        for field in ("serial_number", "user_field", "name"):
+            v = dev.get(field)
+            if v and token_norm in _normalize_for_match(v):
+                return "device", dev
+    # Then generators
+    async for gen in db.generators.find({}, {"_id": 0}):
+        for field in ("serial_number", "name"):
+            v = gen.get(field)
+            if v and token_norm in _normalize_for_match(v):
+                return "generator", gen
+    return None, None
+
+
+@router.post("/passwd-file/import-to-db")
+async def passwd_file_import_to_db(
+    payload: dict = Body(default={}),
+    user: dict = Depends(require_operator),
+):
+    """Import passwd-file users that are missing in DB, linking them to matching devices/generators.
+
+    Body:
+      - `apply` (bool, default False): if False, returns a dry-run plan. If True, performs the import.
+
+    For each file-only username:
+      1. Try to match against devices (by serial_number/user_field/name) then generators
+      2. If matched AND device has no mqtt_username yet → link it (store username + hash from file)
+      3. If matched but device already has a different mqtt_username → skip (conflict)
+      4. If no match → report as unmatched
+    """
+    apply = bool(payload.get("apply", False)) if isinstance(payload, dict) else False
+
+    # Read current passwd file
+    file_entries = {}
+    try:
+        with open(MOSQUITTO_PASSWD_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if ":" in line:
+                    u, pw = line.split(":", 1)
+                    if u and pw:
+                        file_entries[u] = pw
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Passwd-Datei nicht gefunden: {MOSQUITTO_PASSWD_FILE}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Passwd-Datei nicht lesbar: {e}")
+
+    # DB users already linked
+    db_users = set()
+    async for g in db.generators.find({"mqtt_username": {"$exists": True, "$ne": ""}}, {"_id": 0, "mqtt_username": 1}):
+        db_users.add(g.get("mqtt_username"))
+    async for d in db.devices.find({"mqtt_username": {"$exists": True, "$ne": ""}}, {"_id": 0, "mqtt_username": 1}):
+        db_users.add(d.get("mqtt_username"))
+
+    plan = []  # list of {username, action, target_type, target_id, target_name, hash_preview}
+    for username, pw_hash in file_entries.items():
+        if username in db_users:
+            continue  # already linked
+        kind, target = await _find_device_or_generator_for_user(username)
+        entry = {
+            "username": username,
+            "hash_preview": pw_hash[:20] + "..." if len(pw_hash) > 20 else pw_hash,
+        }
+        if not kind:
+            entry["action"] = "unmatched"
+            entry["target_type"] = None
+            entry["target_id"] = None
+            entry["target_name"] = None
+        elif target.get("mqtt_username") and target.get("mqtt_username") != username:
+            entry["action"] = "conflict"
+            entry["target_type"] = kind
+            entry["target_id"] = target.get("id")
+            entry["target_name"] = target.get("name") or target.get("serial_number") or target.get("user_field") or target.get("id")
+            entry["existing_mqtt_username"] = target.get("mqtt_username")
+        else:
+            entry["action"] = "link"
+            entry["target_type"] = kind
+            entry["target_id"] = target.get("id")
+            entry["target_name"] = target.get("name") or target.get("serial_number") or target.get("user_field") or target.get("id")
+        plan.append(entry)
+
+        if apply and entry["action"] == "link":
+            coll = db.devices if kind == "device" else db.generators
+            await coll.update_one(
+                {"id": target.get("id")},
+                {"$set": {
+                    "mqtt_username": username,
+                    "mqtt_password_hash": pw_hash,
+                    "mqtt_imported_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+
+    summary = {
+        "apply": apply,
+        "file_entries_total": len(file_entries),
+        "already_in_db": len([u for u in file_entries if u in db_users]),
+        "to_link": len([p for p in plan if p["action"] == "link"]),
+        "conflicts": len([p for p in plan if p["action"] == "conflict"]),
+        "unmatched": len([p for p in plan if p["action"] == "unmatched"]),
+        "plan": plan,
+    }
+    return summary
+
+
 @router.post("/broker/restart")
 async def broker_restart(user: dict = Depends(require_operator)):
     """Force-restart the Mosquitto broker service. Windows: uses Restart-Service. Linux: sends SIGHUP.
