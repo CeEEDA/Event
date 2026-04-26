@@ -1211,6 +1211,97 @@ async def delete_vacation_entry(user_id: str, entry_id: str, token: str = Query(
 
 # ─── Time Off Requests ──────────────────────────────
 
+@router.post("/time-off/admin-create")
+async def admin_create_time_off(token: str = Query(...), data: dict = Body(...)):
+    """Admin: directly create an approved time-off entry for a user (e.g. Überstundenabbau).
+    Skips the request/approval flow – the entry lands as 'approved' immediately.
+    For 'ueberstundenabbau' the overtime account is reduced by 8h per weekday."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    target_user_id = data.get("user_id")
+    req_type = data.get("type", "ueberstundenabbau")
+    start_date = data.get("start_date")
+    end_date = data.get("end_date") or start_date
+
+    if not target_user_id or not start_date:
+        raise HTTPException(status_code=400, detail="user_id und start_date erforderlich")
+    if req_type not in ("ueberstundenabbau", "urlaub", "krank"):
+        raise HTTPException(status_code=400, detail="Ungueltiger Typ")
+
+    target = await db.users.find_one({"id": target_user_id}, {"_id": 0, "id": 1, "name": 1, "email": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    days = _count_weekdays(start_date, end_date)
+    type_labels = {"krank": "Krankmeldung", "urlaub": "Urlaubsantrag", "ueberstundenabbau": "Überstundenabbau"}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": target_user_id,
+        "user_name": target.get("name", target.get("email", "")),
+        "type": req_type,
+        "type_label": type_labels.get(req_type, req_type),
+        "start_date": start_date,
+        "end_date": end_date,
+        "all_day": True,
+        "start_time": None,
+        "end_time": None,
+        "days": days,
+        "status": "approved",
+        "created_at": now_iso,
+        "resolved_at": now_iso,
+        "resolved_by": caller.get("id"),
+        "resolved_by_name": caller.get("name", "Admin"),
+        "admin_created": True,
+    }
+    await db.time_off_requests.insert_one(entry)
+
+    # If 'ueberstundenabbau': deduct 8h per weekday from overtime account
+    if req_type == "ueberstundenabbau" and days > 0:
+        hours_to_deduct = days * 8.0
+        hr = await db.hr_data.find_one({"user_id": target_user_id}, {"_id": 0})
+        current = float(hr.get("overtime_hours", 0)) if hr else 0.0
+        new_val = round(current - hours_to_deduct, 2)
+        await db.hr_data.update_one(
+            {"user_id": target_user_id},
+            {"$set": {"overtime_hours": new_val, "updated_at": now_iso}},
+            upsert=True,
+        )
+
+    return {k: v for k, v in entry.items() if k != "_id"}
+
+
+@router.delete("/time-off/{request_id}")
+async def admin_delete_time_off(request_id: str, token: str = Query(...)):
+    """Admin: delete a time-off entry. If approved 'ueberstundenabbau', refund the hours."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    req = await db.time_off_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    # Refund overtime if it was an approved Überstundenabbau
+    if req.get("status") == "approved" and req.get("type") == "ueberstundenabbau":
+        days = req.get("days", 0) or 0
+        if days > 0:
+            hours_to_refund = days * 8.0
+            hr = await db.hr_data.find_one({"user_id": req["user_id"]}, {"_id": 0})
+            current = float(hr.get("overtime_hours", 0)) if hr else 0.0
+            new_val = round(current + hours_to_refund, 2)
+            await db.hr_data.update_one(
+                {"user_id": req["user_id"]},
+                {"$set": {"overtime_hours": new_val, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True,
+            )
+
+    await db.time_off_requests.delete_one({"id": request_id})
+    return {"ok": True}
+
+
 @router.post("/time-off")
 async def create_time_off_request(token: str = Query(...), data: dict = Body(...)):
     """Employee creates a time-off request."""

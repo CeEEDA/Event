@@ -62,6 +62,7 @@ export default function AdminZeitDetailPage() {
   const [vacationEntries, setVacationEntries] = useState([]);
   const [vacStart, setVacStart] = useState("");
   const [vacEnd, setVacEnd] = useState("");
+  const [vacType, setVacType] = useState("urlaub"); // "urlaub" | "ueberstundenabbau"
   const [addingVac, setAddingVac] = useState(false);
 
   // Year data
@@ -301,25 +302,54 @@ export default function AdminZeitDetailPage() {
     setSaving(false);
   };
 
+  const reloadTimeOff = useCallback(async () => {
+    try {
+      const r = await api.get(`/employee/time-off?token=${token}&user_id=${userId}`);
+      setTimeOffRequests(r.data || []);
+    } catch {}
+  }, [token, userId]);
+
   const addVacation = async () => {
     if (!vacStart || !vacEnd) { toast.error("Bitte Start- und Enddatum wählen"); return; }
     if (vacEnd < vacStart) { toast.error("Enddatum muss nach Startdatum liegen"); return; }
     setAddingVac(true);
     try {
-      await api.post(`/employee/vacation/${userId}?token=${token}`, { start_date: vacStart, end_date: vacEnd });
-      toast.success("Urlaub eingetragen");
+      if (vacType === "urlaub") {
+        await api.post(`/employee/vacation/${userId}?token=${token}`, { start_date: vacStart, end_date: vacEnd });
+        toast.success("Urlaub eingetragen");
+        loadVacationEntries();
+      } else {
+        await api.post(`/employee/time-off/admin-create?token=${token}`, {
+          user_id: userId,
+          type: "ueberstundenabbau",
+          start_date: vacStart,
+          end_date: vacEnd,
+        });
+        toast.success("Überstundenabbau eingetragen");
+        reloadTimeOff();
+      }
       setVacStart(""); setVacEnd("");
-      loadVacationEntries(); loadHrData();
+      loadHrData();
     } catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
     setAddingVac(false);
   };
 
   const deleteVacation = async (entryId) => {
+    if (!window.confirm("Urlaubseintrag wirklich löschen?")) return;
     try {
       await api.delete(`/employee/vacation/${userId}/${entryId}?token=${token}`);
       toast.success("Urlaub gelöscht");
       loadVacationEntries(); loadHrData();
     } catch { toast.error("Fehler beim Löschen"); }
+  };
+
+  const deleteTimeOff = async (entryId) => {
+    if (!window.confirm("Überstundenabbau wirklich löschen? Die Stunden werden zurück aufs Konto gebucht.")) return;
+    try {
+      await api.delete(`/employee/time-off/${entryId}?token=${token}`);
+      toast.success("Eintrag gelöscht");
+      reloadTimeOff(); loadHrData();
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehler beim Löschen"); }
   };
 
   if (!isAdmin) { navigate("/hub"); return null; }
@@ -845,13 +875,25 @@ export default function AdminZeitDetailPage() {
           )}
         </div>
 
-        {/* Vacation Entries */}
+        {/* Vacation & Überstundenabbau Entries */}
         <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="vacation-section">
           <div className="flex items-center gap-2 mb-3">
             <CalendarDays className="w-4 h-4 text-sky-600" />
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Genehmigte Urlaube</p>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Genehmigte Abwesenheit</p>
           </div>
           <div className="flex flex-wrap items-end gap-3 mb-3 pb-3 border-b border-gray-100">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Typ</label>
+              <select
+                value={vacType}
+                onChange={e => setVacType(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-400"
+                data-testid="vac-type"
+              >
+                <option value="urlaub">Urlaub</option>
+                <option value="ueberstundenabbau">Überstundenabbau</option>
+              </select>
+            </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Von</label>
               <input type="date" value={vacStart} onChange={e => setVacStart(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" data-testid="vac-start" />
@@ -860,26 +902,46 @@ export default function AdminZeitDetailPage() {
               <label className="text-xs text-gray-500 mb-1 block">Bis</label>
               <input type="date" value={vacEnd} onChange={e => setVacEnd(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" data-testid="vac-end" />
             </div>
-            <Button onClick={addVacation} disabled={addingVac} size="sm" className="bg-sky-600 hover:bg-sky-700" data-testid="add-vacation-btn">
+            <Button onClick={addVacation} disabled={addingVac} size="sm" className={vacType === "urlaub" ? "bg-sky-600 hover:bg-sky-700" : "bg-amber-600 hover:bg-amber-700"} data-testid="add-vacation-btn">
               <Plus className="w-3.5 h-3.5 mr-1" /> Eintragen
             </Button>
           </div>
-          {vacationEntries.length === 0 ? (
-            <p className="text-xs text-gray-400">Keine Urlaubseinträge vorhanden</p>
-          ) : (
-            <div className="space-y-1.5">
-              {vacationEntries.map(v => (
-                <div key={v.id} className="flex items-center gap-3 bg-sky-50 rounded-lg px-3 py-2 text-sm">
-                  <CalendarDays className="w-4 h-4 text-sky-500 flex-shrink-0" />
-                  <span className="text-gray-700 font-medium">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
-                  <span className="text-gray-400">—</span>
-                  <span className="text-gray-700 font-medium">{new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
-                  <span className="text-sky-700 font-bold ml-auto">{v.days} Tage</span>
-                  <button onClick={() => deleteVacation(v.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-            </div>
-          )}
+          {(() => {
+            const overtimeEntries = timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved");
+            const merged = [
+              ...vacationEntries.map(v => ({ ...v, _kind: "urlaub" })),
+              ...overtimeEntries.map(o => ({ ...o, _kind: "ueberstundenabbau" })),
+            ].sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""));
+            if (merged.length === 0) {
+              return <p className="text-xs text-gray-400">Keine Einträge vorhanden</p>;
+            }
+            return (
+              <div className="space-y-1.5">
+                {merged.map(v => {
+                  const isOvertime = v._kind === "ueberstundenabbau";
+                  return (
+                    <div key={`${v._kind}-${v.id}`} className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${isOvertime ? "bg-amber-50" : "bg-sky-50"}`} data-testid={`absence-${v._kind}-${v.id}`}>
+                      {isOvertime ? <TrendingUp className="w-4 h-4 text-amber-500 flex-shrink-0" /> : <CalendarDays className="w-4 h-4 text-sky-500 flex-shrink-0" />}
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isOvertime ? "bg-amber-200 text-amber-800" : "bg-sky-200 text-sky-800"}`}>
+                        {isOvertime ? "Üb-Abbau" : "Urlaub"}
+                      </span>
+                      <span className="text-gray-700 font-medium">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      <span className="text-gray-400">—</span>
+                      <span className="text-gray-700 font-medium">{new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      <span className={`font-bold ml-auto ${isOvertime ? "text-amber-700" : "text-sky-700"}`}>{v.days} Tag{v.days === 1 ? "" : "e"}{isOvertime ? ` · ${(v.days * 8).toFixed(0)}h` : ""}</span>
+                      <button
+                        onClick={() => isOvertime ? deleteTimeOff(v.id) : deleteVacation(v.id)}
+                        className="text-gray-400 hover:text-red-500"
+                        data-testid={`delete-absence-${v.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Pending Time-Off Requests */}
