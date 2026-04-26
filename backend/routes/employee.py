@@ -722,6 +722,115 @@ async def get_time_entries(token: str = Query(...), user_id: Optional[str] = Non
     return entries
 
 
+def _parse_local_time_to_utc(date_str: str, time_str: str) -> datetime:
+    """Parse a local German date+time string ('YYYY-MM-DD' + 'HH:MM') as UTC ISO.
+    We store everything in UTC; assume the input is already wall-clock and treat it as UTC for now
+    (the rest of the time-tracking does the same – clock_in via datetime.now(timezone.utc).isoformat())."""
+    if not date_str or not time_str:
+        raise HTTPException(status_code=400, detail="Datum und Uhrzeit erforderlich")
+    try:
+        # Combine date + time into ISO; assume it represents local clock time stored as UTC tz
+        dt = datetime.fromisoformat(f"{date_str}T{time_str}:00").replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Ungueltiges Datum/Uhrzeit: {date_str} {time_str}")
+
+
+@router.post("/time/manual")
+async def create_manual_time_entry(token: str = Query(...), body: dict = Body(...)):
+    """Admin: create a time entry manually for any user (e.g. employee 'verstempelt' himself)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    target_user_id = body.get("user_id")
+    if not target_user_id:
+        raise HTTPException(status_code=400, detail="user_id erforderlich")
+    target_user = await db.users.find_one({"id": target_user_id}, {"_id": 0, "name": 1})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    date_str = body.get("date")
+    start_str = body.get("clock_in_time")
+    end_str = body.get("clock_out_time")
+    clock_in = _parse_local_time_to_utc(date_str, start_str)
+    clock_out = _parse_local_time_to_utc(date_str, end_str) if end_str else None
+
+    if clock_out and clock_out <= clock_in:
+        raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
+
+    duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
+
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": target_user_id,
+        "user_name": target_user.get("name", ""),
+        "clock_in": clock_in.isoformat(),
+        "clock_in_lat": None,
+        "clock_in_lng": None,
+        "clock_out": clock_out.isoformat() if clock_out else None,
+        "clock_out_lat": None,
+        "clock_out_lng": None,
+        "duration_minutes": duration,
+        "date": date_str,
+        "manual": True,
+        "manual_by": caller.get("id"),
+        "manual_by_name": caller.get("name", ""),
+        "manual_note": body.get("note") or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.time_entries.insert_one(entry)
+    return await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
+
+
+@router.put("/time/entries/{entry_id}")
+async def update_time_entry(entry_id: str, token: str = Query(...), body: dict = Body(...)):
+    """Admin: edit an existing time entry (clock_in / clock_out)."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    entry = await db.time_entries.find_one({"id": entry_id}, {"_id": 0})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+
+    date_str = body.get("date") or entry.get("date")
+    start_str = body.get("clock_in_time")
+    end_str = body.get("clock_out_time")
+
+    if not start_str:
+        raise HTTPException(status_code=400, detail="Startzeit erforderlich")
+    clock_in = _parse_local_time_to_utc(date_str, start_str)
+    clock_out = _parse_local_time_to_utc(date_str, end_str) if end_str else None
+    if clock_out and clock_out <= clock_in:
+        raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
+    duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
+
+    update = {
+        "clock_in": clock_in.isoformat(),
+        "clock_out": clock_out.isoformat() if clock_out else None,
+        "duration_minutes": duration,
+        "date": date_str,
+        "edited_by": caller.get("id"),
+        "edited_by_name": caller.get("name", ""),
+        "edited_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if "note" in body:
+        update["manual_note"] = body.get("note") or ""
+    await db.time_entries.update_one({"id": entry_id}, {"$set": update})
+    return await db.time_entries.find_one({"id": entry_id}, {"_id": 0})
+
+
+@router.delete("/time/entries/{entry_id}")
+async def delete_time_entry(entry_id: str, token: str = Query(...)):
+    """Admin: delete a time entry."""
+    caller = await _get_user(token)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    res = await db.time_entries.delete_one({"id": entry_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    return {"ok": True}
+
+
 @router.get("/time/report")
 async def get_time_report(token: str = Query(...),
                            date_from: Optional[str] = None, date_to: Optional[str] = None):
