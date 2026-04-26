@@ -65,6 +65,12 @@ export default function AdminZeitDetailPage() {
   const [vacType, setVacType] = useState("urlaub"); // "urlaub" | "ueberstundenabbau"
   const [addingVac, setAddingVac] = useState(false);
 
+  // Manual time entry editing (must be declared before any early return — rules-of-hooks)
+  const [addRow, setAddRow] = useState({});
+  const [addingRow, setAddingRow] = useState(null);
+  const [editEntryId, setEditEntryId] = useState(null);
+  const [editDraft, setEditDraft] = useState({ date: "", start: "", end: "" });
+
   // Year data
   const [yearEntries, setYearEntries] = useState([]);
   const [timeOffRequests, setTimeOffRequests] = useState([]);
@@ -387,19 +393,12 @@ export default function AdminZeitDetailPage() {
   const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
   const isoToHHMM = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
 
-  // Manual time entry add (per month)
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const [addRow, setAddRow] = useState({}); // { [monthKey]: { date, start, end, note } }
-  const [addingRow, setAddingRow] = useState(null); // monthKey while saving
-  const [editEntryId, setEditEntryId] = useState(null);
-  const [editDraft, setEditDraft] = useState({ date: "", start: "", end: "" });
-
-  const reloadEntries = useCallback(async () => {
+  const reloadEntries = async () => {
     try {
       const r = await api.get(`/employee/time/entries?token=${token}&user_id=${userId}&date_from=${year}-01-01&date_to=${year}-12-31`);
       setYearEntries(r.data || []);
     } catch {}
-  }, [token, userId, year]);
+  };
 
   const startEditEntry = (e) => {
     setEditEntryId(e.id);
