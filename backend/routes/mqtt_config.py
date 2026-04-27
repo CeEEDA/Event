@@ -325,9 +325,12 @@ async def send_generator_command(generator_id: str, cmd: GeneratorCommand, user:
     if not gen and not device:
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
-    # Check if this is a Pi-based generator (DSE 5510) -> queue command instead of MQTT
+    # Check if this is a Pi-based generator (any DSE controller talking via Pi/USB) -> queue command instead of MQTT
+    # Pi-devices are identified by `device_key_hash` (used to authenticate /poll-commands).
+    # MQTT-only devices (gateway-based, e.g. DSE 8610 via DSE 890) don't have a device_key_hash.
     pi_device = device
-    if pi_device and pi_device.get("controller") == "DSE 5510":
+    is_pi_dse = bool(pi_device and pi_device.get("device_key_hash"))
+    if is_pi_dse:
         dse_cmd = DSE_COMMANDS[cmd.command]
         cmd_doc = {
             "id": str(uuid.uuid4()),
