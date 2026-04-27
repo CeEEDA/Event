@@ -230,9 +230,23 @@ def read_all_gencomm(conn):
     # Page 4: Engine + Generator (all 3 phases)
     # Page 4: Engine + Generator Output (GenComm v2.228 - official spec)
     # All generator values from Reg 8 onwards are 32-bit (2 consecutive registers).
-    # We need 34 registers to cover through L3 watts (Reg 32-33).
-    p4 = conn.read_registers(4, 0, 34)
-    if p4:
+    # Split into two reads so a failure on the second part (some controllers don't expose
+    # all 34 regs) doesn't kill the engine + voltage/current parsing.
+    p4_a = conn.read_registers(4, 0, 28)  # Reg 0-27: engine + voltages + currents
+    p4_b = conn.read_registers(4, 28, 6)  # Reg 28-33: L1/L2/L3 watts (32-bit each)
+
+    # Combine into single list with placeholders for missing parts
+    p4 = []
+    if p4_a:
+        p4.extend(p4_a)
+    while len(p4) < 28:
+        p4.append(0xFFFF)
+    if p4_b:
+        p4.extend(p4_b)
+    while len(p4) < 34:
+        p4.append(0xFFFF)
+
+    if p4_a:  # only parse if at least the first chunk succeeded
         def _read_u16(idx):
             if len(p4) > idx and valid(p4[idx]):
                 return p4[idx]
