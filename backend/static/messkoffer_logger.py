@@ -394,8 +394,105 @@ def push_batch(records, last_id):
     raise Exception(f"Server {resp.status_code}: {resp.text}")
 
 
+def _get_or_create_pi_id() -> str:
+    """Persistente Pi-ID (UUID) aus /var/lib/messkoffer/pi_id."""
+    import uuid
+    id_file = "/var/lib/messkoffer/pi_id"
+    try:
+        if os.path.exists(id_file):
+            with open(id_file, "r") as f:
+                v = f.read().strip()
+            if v:
+                return v
+        os.makedirs(os.path.dirname(id_file), exist_ok=True)
+        new_id = str(uuid.uuid4())
+        with open(id_file, "w") as f:
+            f.write(new_id)
+        return new_id
+    except Exception:
+        return str(uuid.uuid4())
+
+
+def _self_script_hash() -> str:
+    import hashlib
+    try:
+        with open(__file__, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception:
+        return ""
+
+
+def _check_and_apply_ota_update():
+    """Prueft beim Backend ob ein neueres messkoffer_logger.py verfuegbar ist
+    und installiert es. Beendet den Prozess nach erfolgreichem Update -
+    systemd startet automatisch neu (Restart=always).
+    """
+    base = CFG.get("api_url")
+    if not base:
+        return False
+    pi_id = _get_or_create_pi_id()
+    current_hash = _self_script_hash()
+    try:
+        import socket
+        hostname = socket.gethostname()
+    except Exception:
+        hostname = ""
+
+    try:
+        params = {"pi_id": pi_id, "hostname": hostname, "hash": current_hash}
+        resp = requests.get(f"{base}/system/ota/pi/messkoffer/check", params=params, timeout=10)
+        if resp.status_code != 200:
+            return False
+        info = resp.json()
+        if not info.get("update_available"):
+            return False
+        log.info(f"OTA: Update verfuegbar (neuer Hash {info.get('file_hash','?')[:12]})")
+
+        resp2 = requests.get(f"{base}/system/ota/pi/messkoffer/download", params={"pi_id": pi_id}, timeout=30)
+        if resp2.status_code != 200:
+            log.warning(f"OTA-Download Fehler {resp2.status_code}")
+            return False
+        new_content = resp2.content
+        import hashlib
+        new_hash = hashlib.sha256(new_content).hexdigest()
+        expected = info.get("file_hash") or resp2.headers.get("X-Hash", "")
+        if expected and new_hash != expected:
+            log.warning("OTA-Hash-Mismatch - Update abgebrochen")
+            return False
+        if len(new_content) < 1000 or b"def main" not in new_content:
+            log.warning("OTA: Skript wirkt unvollstaendig - abgebrochen")
+            return False
+
+        script_path = os.path.realpath(__file__)
+        backup_path = script_path + ".bak"
+        try:
+            import shutil
+            shutil.copy2(script_path, backup_path)
+        except Exception:
+            pass
+        tmp_path = script_path + ".new"
+        with open(tmp_path, "wb") as f:
+            f.write(new_content)
+        os.replace(tmp_path, script_path)
+        log.info(f"OTA: Skript aktualisiert ({len(new_content)} Bytes). Beende Prozess fuer systemd-Neustart...")
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:
+            pass
+        os._exit(0)
+    except requests.RequestException as e:
+        log.debug(f"OTA-Check nicht erreichbar: {e}")
+    except Exception as e:
+        log.warning(f"OTA-Update Fehler: {e}")
+    return False
+
+
 def sync_loop():
-    """Synchronisiert lokale Daten mit dem Portal (Hintergrund-Thread)."""
+    """Synchronisiert lokale Daten mit dem Portal (Hintergrund-Thread).
+    Prueft zusaetzlich vor jedem Sync ob ein OTA-Update vom Backend bereitsteht
+    und installiert es bei Bedarf (analog zu kirmeskiste_sync und tankbeleg_pi).
+    """
     if not CFG["api_url"] or not CFG["device_key"]:
         log.warning("Sync deaktiviert: api_url oder device_key nicht gesetzt")
         return
@@ -403,8 +500,17 @@ def sync_loop():
     consecutive_errors = 0
     log.info("Sync-Thread gestartet")
 
+    last_ota_check = 0
     while True:
         try:
+            # OTA-Check (alle 5 Min)
+            if time.time() - last_ota_check > 300:
+                try:
+                    _check_and_apply_ota_update()
+                except Exception as ota_e:
+                    log.debug(f"OTA-Check fehlgeschlagen (ignoriert): {ota_e}")
+                last_ota_check = time.time()
+
             last_id = get_last_sync_id()
             if last_id is None:
                 consecutive_errors += 1

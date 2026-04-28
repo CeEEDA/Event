@@ -26,14 +26,14 @@ from fastapi.responses import Response
 logger = logging.getLogger("ota_updates")
 router = APIRouter(prefix="/api/system/ota", tags=["OTA Updates"])
 
-# Script-Dateien pro Geraetetyp (liegen im Repo unter /app/backend/static/)
+# Script-Dateien pro Geraetetyp (liegen im Repo unter /app/backend/static/).
+# Nur Eintraege fuer Skripte aufnehmen, die WIRKLICH existieren UND auf der
+# Client-Seite einen OTA-Auto-Update-Mechanismus implementiert haben.
 DEVICE_SCRIPTS = {
-    "kirmeskiste": "kirmeskiste_sync.py",
-    "messkoffer": "messkoffer_sync.py",
-    "lkw": "lkw_sync.py",
-    "stromerzeuger": "stromerzeuger_sync.py",
-    "dse": "dse_sync.py",
-    "tankwagen": "tankbeleg_pi.py",
+    "kirmeskiste": "kirmeskiste_sync.py",      # OTA-faehig (eigener Mechanismus)
+    "messkoffer": "messkoffer_logger.py",      # OTA-faehig ueber anonymen Endpoint
+    "dse": "dse_usb_sync.py",                  # OTA-faehig ueber anonymen Endpoint (ab v2)
+    "tankwagen": "tankbeleg_pi.py",            # OTA-faehig ueber anonymen Endpoint
 }
 
 STATIC_DIR = Path("/app/backend/static")
@@ -196,14 +196,26 @@ async def list_device_status(admin=Depends(_auth_admin)):
     return {"devices": devices, "type_stats": type_stats, "script_types": list(DEVICE_SCRIPTS.keys())}
 
 
-# ====== Anonyme Tankwagen-OTA (kein Auth, da Skript ohnehin public) ======
+# ====== Anonyme Pi-OTA (generisch fuer alle Geraetetypen) ======
+# Skripte sind ohnehin als Download oeffentlich verfuegbar, daher kein Auth.
+# Pi authentifiziert sich nur ueber persistente, eindeutige pi_id (UUID).
 
-@router.get("/tankwagen/check")
-async def tankwagen_check_update(request: Request):
-    """Tankwagen-Pi prueft ob ein Update verfuegbar ist (kein Auth).
-    Pi sendet seine eindeutige pi_local_id (UUID aus seiner SQLite) als 'pi_id'
-    und den aktuellen sha256-Hash seines tankbeleg_pi.py als 'hash'.
+@router.get("/pi/{device_type}/check")
+async def pi_check_update(device_type: str, request: Request):
+    """Pi prueft ob ein Update verfuegbar ist.
+
+    Pi sendet:
+      - pi_id (Pflicht): persistente UUID die der Pi lokal speichert
+      - hostname (optional): zur besseren Identifikation in der Admin-UI
+      - hash (Pflicht): sha256 des aktuell laufenden Skripts
+      - version (optional): semver oder Git-SHA
+
+    Backend liefert zurueck:
+      - update_available: bool (true wenn Hash unterschiedlich ODER force_update)
+      - file_hash, file_size, download_url
     """
+    if device_type not in DEVICE_SCRIPTS:
+        raise HTTPException(404, f"Geraetetyp '{device_type}' nicht unterstuetzt")
     db = _get_db()
     pi_id = request.query_params.get("pi_id", "")
     pi_hostname = request.query_params.get("hostname", "")
@@ -212,18 +224,23 @@ async def tankwagen_check_update(request: Request):
     if not pi_id:
         raise HTTPException(400, "pi_id Parameter fehlt")
 
-    repo_hash, file_size = _get_script_hash("tankwagen")
-    needs_update = current_hash != repo_hash
+    repo_hash, file_size = _get_script_hash(device_type)
+    if not repo_hash:
+        raise HTTPException(404, f"Skript fuer '{device_type}' nicht gefunden")
 
-    # Check-in loggen (analog zu _auth_device-Variante)
-    device_label = pi_hostname or f"Tankwagen-Pi {pi_id[:8]}"
+    # Force-Update-Flag pruefen (vom Admin gesetzt)
+    existing = await db.ota_checkins.find_one({"device_id": pi_id}, {"_id": 0, "force_update": 1})
+    force_update = bool(existing and existing.get("force_update"))
+    needs_update = (current_hash != repo_hash) or force_update
+
+    device_label = pi_hostname or f"{device_type.capitalize()} {pi_id[:8]}"
     await db.ota_checkins.update_one(
         {"device_id": pi_id},
         {"$set": {
             "device_id": pi_id,
             "device_name": device_label,
             "serial": pi_hostname or pi_id,
-            "device_type": "tankwagen",
+            "device_type": device_type,
             "current_version": current_version,
             "current_hash": current_hash,
             "repo_hash": repo_hash,
@@ -236,21 +253,25 @@ async def tankwagen_check_update(request: Request):
 
     return {
         "update_available": needs_update,
+        "force_update": force_update,
         "file_hash": repo_hash,
         "file_size": file_size,
-        "download_url": "/api/system/ota/tankwagen/download",
+        "download_url": f"/api/system/ota/pi/{device_type}/download",
     }
 
 
-@router.get("/tankwagen/download")
-async def tankwagen_download_update(request: Request):
-    """Tankwagen-Pi laed das aktuelle tankbeleg_pi.py herunter (kein Auth)."""
+@router.get("/pi/{device_type}/download")
+async def pi_download_update(device_type: str, request: Request):
+    """Pi laed das aktuelle Skript herunter."""
+    if device_type not in DEVICE_SCRIPTS:
+        raise HTTPException(404, f"Geraetetyp '{device_type}' nicht unterstuetzt")
     db = _get_db()
     pi_id = request.query_params.get("pi_id", "")
 
-    path = STATIC_DIR / "tankbeleg_pi.py"
+    filename = DEVICE_SCRIPTS[device_type]
+    path = STATIC_DIR / filename
     if not path.exists():
-        raise HTTPException(404, "tankbeleg_pi.py nicht gefunden")
+        raise HTTPException(404, f"{filename} nicht gefunden")
     content = path.read_bytes()
     file_hash = hashlib.sha256(content).hexdigest()
 
@@ -260,6 +281,7 @@ async def tankwagen_download_update(request: Request):
             {"$set": {
                 "last_download": datetime.now(timezone.utc).isoformat(),
                 "needs_update": False,
+                "force_update": False,  # Force-Flag nach erfolgreichem Download zuruecksetzen
             }},
         )
 
@@ -267,7 +289,87 @@ async def tankwagen_download_update(request: Request):
         content=content,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": "attachment; filename=tankbeleg_pi.py",
+            "Content-Disposition": f"attachment; filename={filename}",
             "X-Hash": file_hash,
         },
     )
+
+
+# ====== Backwards-Compat: alte Tankwagen-Endpoints (delegiert auf generische) ======
+
+@router.get("/tankwagen/check")
+async def tankwagen_check_update(request: Request):
+    return await pi_check_update("tankwagen", request)
+
+
+@router.get("/tankwagen/download")
+async def tankwagen_download_update(request: Request):
+    return await pi_download_update("tankwagen", request)
+
+
+# ====== Admin-Aktionen: Force-Update ausloesen ======
+
+@router.post("/devices/{device_id}/force-update")
+async def force_update_device(device_id: str, admin=Depends(_auth_admin)):
+    """Admin erzwingt ein Update fuer ein einzelnes Geraet beim naechsten Check-in.
+    Das Geraet sieht beim naechsten OTA-Polling 'update_available=true' und laed
+    das Skript neu, auch wenn der Hash identisch waere.
+    """
+    db = _get_db()
+    result = await db.ota_checkins.update_one(
+        {"device_id": device_id},
+        {"$set": {
+            "force_update": True,
+            "force_update_at": datetime.now(timezone.utc).isoformat(),
+            "force_update_by": admin.get("name") or admin.get("email", ""),
+        }},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, f"Geraet '{device_id}' nicht gefunden")
+    return {"status": "force-update gesetzt", "device_id": device_id}
+
+
+@router.post("/devices/force-update-all")
+async def force_update_all_devices(admin=Depends(_auth_admin), request: Request = None):
+    """Admin erzwingt Update fuer ALLE Geraete (oder nur eines Typs).
+    Optional Body/Query-Param 'device_type' filtert auf einen Typ.
+    """
+    db = _get_db()
+    device_type = ""
+    if request:
+        try:
+            body = await request.json()
+            device_type = body.get("device_type", "") if isinstance(body, dict) else ""
+        except Exception:
+            pass
+        if not device_type:
+            device_type = request.query_params.get("device_type", "")
+
+    query = {}
+    if device_type:
+        if device_type not in DEVICE_SCRIPTS:
+            raise HTTPException(400, f"Unbekannter Geraetetyp '{device_type}'")
+        query["device_type"] = device_type
+
+    result = await db.ota_checkins.update_many(
+        query,
+        {"$set": {
+            "force_update": True,
+            "force_update_at": datetime.now(timezone.utc).isoformat(),
+            "force_update_by": admin.get("name") or admin.get("email", ""),
+        }},
+    )
+    return {"status": "force-update gesetzt", "matched": result.matched_count, "device_type": device_type or "all"}
+
+
+@router.post("/devices/{device_id}/cancel-force-update")
+async def cancel_force_update(device_id: str, admin=Depends(_auth_admin)):
+    """Admin bricht einen pending Force-Update ab (z.B. falls fehlerhaft gesetzt)."""
+    db = _get_db()
+    result = await db.ota_checkins.update_one(
+        {"device_id": device_id},
+        {"$set": {"force_update": False}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, f"Geraet '{device_id}' nicht gefunden")
+    return {"status": "force-update abgebrochen", "device_id": device_id}

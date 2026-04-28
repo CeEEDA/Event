@@ -1240,6 +1240,7 @@ function OtaUpdateSection() {
   const [typeStats, setTypeStats] = useState({});
   const [scriptTypes, setScriptTypes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionBusy, setActionBusy] = useState("");
 
   const token = localStorage.getItem("token");
 
@@ -1254,6 +1255,45 @@ function OtaUpdateSection() {
   }, [token]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const forceUpdateOne = async (device) => {
+    if (!window.confirm(`Update für "${device.device_name || device.device_id}" erzwingen?\nDas Gerät lädt das aktuelle Skript beim nächsten Polling neu (innerhalb weniger Minuten).`)) return;
+    setActionBusy(device.device_id);
+    try {
+      await api.post(`/system/ota/devices/${device.device_id}/force-update`, null, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`Force-Update für ${device.device_name || device.device_id.slice(0, 8)} gesetzt`);
+      loadData();
+    } catch (e) {
+      toast.error(`Fehler: ${e?.response?.data?.detail || e.message}`);
+    }
+    setActionBusy("");
+  };
+
+  const cancelForceUpdate = async (device) => {
+    setActionBusy(device.device_id);
+    try {
+      await api.post(`/system/ota/devices/${device.device_id}/cancel-force-update`, null, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success("Force-Update abgebrochen");
+      loadData();
+    } catch (e) {
+      toast.error(`Fehler: ${e?.response?.data?.detail || e.message}`);
+    }
+    setActionBusy("");
+  };
+
+  const forceUpdateAll = async (deviceType) => {
+    const label = deviceType ? typeLabels[deviceType] || deviceType : "ALLE Geräte";
+    if (!window.confirm(`Update für ${label} erzwingen?\nAlle betroffenen Geräte laden das aktuelle Skript beim nächsten Polling neu.`)) return;
+    setActionBusy("bulk");
+    try {
+      const res = await api.post(`/system/ota/devices/force-update-all`, { device_type: deviceType || "" }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success(`Force-Update gesetzt für ${res.data?.matched || 0} Geräte`);
+      loadData();
+    } catch (e) {
+      toast.error(`Fehler: ${e?.response?.data?.detail || e.message}`);
+    }
+    setActionBusy("");
+  };
 
   const totalDevices = devices.length;
   const needsUpdate = devices.filter(d => d.needs_update).length;
@@ -1270,20 +1310,38 @@ function OtaUpdateSection() {
           <h3 className="text-sm font-semibold text-white">Geräte OTA-Updates</h3>
           {totalDevices > 0 && <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{totalDevices} Geräte</span>}
         </div>
-        <Button size="sm" onClick={loadData} className="bg-white/20 hover:bg-white/30 text-white text-xs">
-          <RefreshCw className="w-3.5 h-3.5 mr-1" /> Aktualisieren
-        </Button>
+        <div className="flex items-center gap-2">
+          {totalDevices > 0 && (
+            <Button size="sm" onClick={() => forceUpdateAll("")} disabled={actionBusy === "bulk"} className="bg-amber-500/90 hover:bg-amber-500 text-white text-xs" data-testid="ota-force-update-all">
+              <Upload className="w-3.5 h-3.5 mr-1" /> Alle updaten
+            </Button>
+          )}
+          <Button size="sm" onClick={loadData} className="bg-white/20 hover:bg-white/30 text-white text-xs">
+            <RefreshCw className="w-3.5 h-3.5 mr-1" /> Aktualisieren
+          </Button>
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Typ-Übersicht */}
+        {/* Typ-Übersicht mit "Alle updaten"-Button pro Typ */}
         {Object.keys(typeStats).length > 0 && (
           <div>
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Nach Gerätetyp</h4>
             <div className="flex flex-wrap gap-2">
               {Object.entries(typeStats).map(([type, stats]) => (
                 <div key={type} className={`px-3 py-2 rounded-lg border text-xs ${typeColors[type] || "bg-gray-100 text-gray-700 border-gray-200"}`}>
-                  <p className="font-semibold">{typeLabels[type] || type}</p>
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <p className="font-semibold">{typeLabels[type] || type}</p>
+                    <button
+                      onClick={() => forceUpdateAll(type)}
+                      disabled={actionBusy === "bulk" || stats.total === 0}
+                      title={`Update für alle ${typeLabels[type] || type}-Geräte erzwingen`}
+                      className="text-[10px] underline opacity-70 hover:opacity-100 disabled:opacity-40"
+                      data-testid={`ota-force-type-${type}`}
+                    >
+                      Alle updaten
+                    </button>
+                  </div>
                   <p>{stats.total} Geräte · <span className="text-green-700">{stats.up_to_date} aktuell</span>{stats.needs_update > 0 && <span className="text-orange-600"> · {stats.needs_update} Update</span>}</p>
                 </div>
               ))}
@@ -1299,7 +1357,7 @@ function OtaUpdateSection() {
           </div>
         )}
 
-        {/* Geräteliste */}
+        {/* Geräteliste mit Per-Device-Force-Update-Button */}
         {loading ? (
           <div className="flex items-center gap-2 text-gray-400 text-xs"><Loader2 className="w-4 h-4 animate-spin" /> Laden...</div>
         ) : devices.length === 0 ? (
@@ -1310,18 +1368,42 @@ function OtaUpdateSection() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {devices.map(d => (
                 <div key={d.device_id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-xs ${
-                  d.needs_update ? "border-orange-200 bg-orange-50" : "border-green-200 bg-green-50"
+                  d.force_update ? "border-amber-300 bg-amber-50" : d.needs_update ? "border-orange-200 bg-orange-50" : "border-green-200 bg-green-50"
                 }`} data-testid={`ota-device-${d.device_id}`}>
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${d.needs_update ? "bg-orange-400" : "bg-green-500"}`} />
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${d.force_update ? "bg-amber-500 animate-pulse" : d.needs_update ? "bg-orange-400" : "bg-green-500"}`} />
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-800 truncate">{d.device_name || d.serial || d.device_id?.slice(0, 8)}</p>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${typeColors[d.device_type] || "bg-gray-100 text-gray-600"}`}>{typeLabels[d.device_type] || d.device_type}</span>
-                      <span className="text-gray-500">v{d.current_version || "?"}</span>
-                      {d.needs_update && <span className="text-orange-600">→ Update</span>}
+                      {d.current_version && <span className="text-gray-500">v{d.current_version}</span>}
+                      {d.force_update && <span className="text-amber-700 font-semibold">⚡ Force-Update pending</span>}
+                      {!d.force_update && d.needs_update && <span className="text-orange-600">→ Update</span>}
                     </div>
                   </div>
-                  <p className="text-gray-400 text-[10px] flex-shrink-0">{d.last_seen?.slice(11, 16) || "—"}</p>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <p className="text-gray-400 text-[10px]">{d.last_seen?.slice(11, 16) || "—"}</p>
+                    {d.force_update ? (
+                      <button
+                        onClick={() => cancelForceUpdate(d)}
+                        disabled={actionBusy === d.device_id}
+                        title="Pending Force-Update abbrechen"
+                        className="text-amber-700 hover:text-amber-900 disabled:opacity-40 px-1"
+                        data-testid={`ota-cancel-force-${d.device_id}`}
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => forceUpdateOne(d)}
+                        disabled={actionBusy === d.device_id}
+                        title="Update erzwingen (auch wenn Hash identisch)"
+                        className="text-sky-600 hover:text-sky-800 disabled:opacity-40 px-1"
+                        data-testid={`ota-force-${d.device_id}`}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
