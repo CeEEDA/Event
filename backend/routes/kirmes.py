@@ -1913,7 +1913,7 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
     import os
-    from fints_banking import FINTS_URL, FINTS_BLZ, get_fints_credentials
+    from fints_banking import FINTS_URL, FINTS_BLZ, FINTS_PRODUCT_ID, FINTS_PRODUCT_VERSION, get_fints_credentials
     creds = get_fints_credentials()
     if not creds:
         return {
@@ -1926,7 +1926,8 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
         from fints.client import FinTS3PinTanClient
         client = FinTS3PinTanClient(
             FINTS_BLZ, creds["user"], creds["pin"], FINTS_URL,
-            product_id=os.environ.get("FINTS_PRODUCT_ID", ""),
+            product_id=FINTS_PRODUCT_ID,
+            product_version=FINTS_PRODUCT_VERSION,
         )
         with client:
             accounts = client.get_sepa_accounts()
@@ -1936,6 +1937,7 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
             "blz": FINTS_BLZ,
             "url": FINTS_URL,
             "user_first_chars": creds["user"][:3] + "***",
+            "product_id": FINTS_PRODUCT_ID[:8] + "***" if FINTS_PRODUCT_ID else "(leer)",
             "accounts_found": len(accounts),
             "accounts": [{"iban": a.iban, "bic": a.bic} for a in accounts],
         }

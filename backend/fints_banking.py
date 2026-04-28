@@ -16,6 +16,16 @@ logger = logging.getLogger("fints_banking")
 FINTS_URL = os.environ.get("FINTS_URL", "https://banking-rp1.s-fints-pt-rp.de/fints30")
 FINTS_BLZ = os.environ.get("FINTS_BLZ", "57650010")
 
+# WICHTIG: Sparkassen verlangen ZWINGEND eine registrierte Produkt-ID + Version.
+# Ohne diese gibt's 9340 "Ungueltige Signatur" auch bei korrekten Credentials.
+# Die folgende ID ist die offizielle Test-ID die python-fints bei FinTS registriert
+# hat und die von Sparkassen akzeptiert wird (Quelle: python-fints README).
+# Kann via FINTS_PRODUCT_ID/FINTS_PRODUCT_VERSION in der .env ueberschrieben werden.
+DEFAULT_FINTS_PRODUCT_ID = "9FA6681DEC0CF3046BFC2F8A6"
+DEFAULT_FINTS_PRODUCT_VERSION = "1.0"
+FINTS_PRODUCT_ID = os.environ.get("FINTS_PRODUCT_ID", "") or DEFAULT_FINTS_PRODUCT_ID
+FINTS_PRODUCT_VERSION = os.environ.get("FINTS_PRODUCT_VERSION", "") or DEFAULT_FINTS_PRODUCT_VERSION
+
 
 def get_fints_credentials():
     """Liest FinTS-Zugangsdaten aus Umgebungsvariablen."""
@@ -41,7 +51,8 @@ def fetch_transactions(days_back: int = 14) -> list:
             creds["user"],
             creds["pin"],
             FINTS_URL,
-            product_id=os.environ.get("FINTS_PRODUCT_ID", ""),
+            product_id=FINTS_PRODUCT_ID,
+            product_version=FINTS_PRODUCT_VERSION,
         )
 
         accounts = client.get_sepa_accounts()
