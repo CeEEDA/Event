@@ -1942,13 +1942,24 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
     except Exception as e:
         msg = str(e)
         hint = "Unbekannter Fehler"
-        if "9340" in msg or "Ungueltige Signatur" in msg or "Ungültige Signatur" in msg:
+        if "Refusing to use PIN after block" in msg or "PIN after block" in msg:
+            hint = (
+                "GESPERRT: Die Bank hat den FinTS-Zugang nach Fehlversuchen blockiert. "
+                "Schritte zur Entsperrung: "
+                "1) Sparkasse Mayen anrufen (02651 / 87-0) ODER im Online-Banking unter "
+                "'Sicherheitsverfahren' den FinTS/HBCI-Zugang entsperren lassen. "
+                "2) Den korrekten ANMELDENAMEN (nicht IBAN/Kontonummer) erfragen. "
+                "3) Backend NEU STARTEN (supervisorctl restart backend), damit der "
+                "lokale Block-Cache geleert wird. "
+                "4) Erst dann erneut 'Verbindung testen' klicken."
+            )
+        elif "9340" in msg or "Ungueltige Signatur" in msg or "Ungültige Signatur" in msg:
             hint = (
                 "Falsche FinTS-Anmeldedaten. WICHTIG: 'FINTS_USER' ist der "
                 "ANMELDENAME aus deinem Online-Banking (NICHT IBAN, NICHT Kontonummer, "
                 "NICHT Kunden-/Legitimations-ID). 'FINTS_PIN' ist deine Online-Banking-PIN. "
-                "Nach 3 Fehlversuchen sperrt die Sparkasse den FinTS-Zugang - dann musst du "
-                "ihn im Online-Banking unter 'Sicherheitsverfahren' entsperren."
+                "ACHTUNG: Nach 3 Fehlversuchen sperrt die Sparkasse den FinTS-Zugang - "
+                "DANN nicht weiter probieren! Stattdessen Sparkasse anrufen und entsperren lassen."
             )
         elif "9120" in msg or "TAN" in msg.lower():
             hint = "TAN-Verfahren nicht eingerichtet. Im Online-Banking unter 'Sicherheitsverfahren' ein PIN/TAN-Verfahren auswaehlen."
