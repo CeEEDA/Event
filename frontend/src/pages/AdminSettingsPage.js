@@ -1259,8 +1259,8 @@ function OtaUpdateSection() {
   const needsUpdate = devices.filter(d => d.needs_update).length;
   const upToDate = totalDevices - needsUpdate;
 
-  const typeLabels = { kirmeskiste: "Kirmeskiste", messkoffer: "Messkoffer", lkw: "LKW", stromerzeuger: "Stromerzeuger", dse: "DSE Gateway" };
-  const typeColors = { kirmeskiste: "bg-sky-100 text-sky-700 border-sky-200", messkoffer: "bg-purple-100 text-purple-700 border-purple-200", lkw: "bg-amber-100 text-amber-700 border-amber-200", stromerzeuger: "bg-emerald-100 text-emerald-700 border-emerald-200", dse: "bg-rose-100 text-rose-700 border-rose-200" };
+  const typeLabels = { kirmeskiste: "Kirmeskiste", messkoffer: "Messkoffer", lkw: "LKW", stromerzeuger: "Stromerzeuger", dse: "DSE Gateway", tankwagen: "Tankwagen-Pi" };
+  const typeColors = { kirmeskiste: "bg-sky-100 text-sky-700 border-sky-200", messkoffer: "bg-purple-100 text-purple-700 border-purple-200", lkw: "bg-amber-100 text-amber-700 border-amber-200", stromerzeuger: "bg-emerald-100 text-emerald-700 border-emerald-200", dse: "bg-rose-100 text-rose-700 border-rose-200", tankwagen: "bg-orange-100 text-orange-700 border-orange-200" };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="ota-update-section">

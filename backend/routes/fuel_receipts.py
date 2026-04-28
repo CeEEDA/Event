@@ -545,6 +545,73 @@ async def delete_fuel_receipt(receipt_id: str, user: dict = Depends(_require_adm
     return {"message": "Tankbeleg geloescht"}
 
 
+@router.post("/admin/reparse")
+async def reparse_fuel_receipts(user: dict = Depends(_require_admin_or_staff)):
+    """Admin-Action: Belege mit gespeichertem raw_receipt_hex erneut durch den
+    aktuellen Sening-Parser jagen und Mengen aktualisieren. Nutzt den
+    Bitmap-Digit-Decoder fuer rueckwirkende Korrektur falsch erkannter Mengen.
+
+    Beispiel: Beleg 16944 wurde frueher als 129 L erkannt (echte Menge 1296 L
+    durch Sening-Bitmap-Suffix). Der Re-Parse setzt das auf 1296 L.
+    """
+    import sys
+    sys.path.insert(0, "/app/backend/static")
+    try:
+        from tankbeleg_pi import parse_receipt_sening  # type: ignore
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Parser nicht verfuegbar: {e}")
+
+    cursor = _db.fuel_receipts.find(
+        {"raw_receipt_hex": {"$exists": True, "$nin": [None, ""]}},
+        {"_id": 0, "id": 1, "beleg_nr": 1, "quantity_liters": 1, "raw_receipt_hex": 1},
+    )
+
+    results = {"checked": 0, "updated": 0, "unchanged": 0, "errors": 0, "changes": []}
+    async for r in cursor:
+        results["checked"] += 1
+        hex_str = r.get("raw_receipt_hex") or ""
+        old_qty = r.get("quantity_liters")
+        try:
+            raw = bytes.fromhex(hex_str)
+            parsed = parse_receipt_sening(raw)
+            new_qty = parsed.get("menge_liter")
+            if new_qty is None:
+                results["errors"] += 1
+                continue
+            new_qty = float(new_qty)
+            if old_qty is not None and abs(float(old_qty) - new_qty) < 0.01:
+                results["unchanged"] += 1
+                continue
+            # Update
+            await _db.fuel_receipts.update_one(
+                {"id": r["id"]},
+                {"$set": {
+                    "quantity_liters": new_qty,
+                    "needs_review": bool(parsed.get("needs_review", False)),
+                    "review_reason": (parsed.get("review_reason") if isinstance(parsed.get("review_reason"), str) else None),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "reparsed_at": datetime.now(timezone.utc).isoformat(),
+                    "reparsed_by": user.get("name", user.get("email", "")),
+                }},
+            )
+            results["updated"] += 1
+            results["changes"].append({
+                "id": r["id"],
+                "beleg_nr": r.get("beleg_nr"),
+                "old_qty": old_qty,
+                "new_qty": new_qty,
+            })
+        except Exception as e:
+            results["errors"] += 1
+            results["changes"].append({
+                "id": r["id"],
+                "beleg_nr": r.get("beleg_nr"),
+                "error": str(e)[:200],
+            })
+
+    return results
+
+
 @router.get("/{receipt_id}/pdf")
 async def export_fuel_receipt_pdf(
     receipt_id: str,

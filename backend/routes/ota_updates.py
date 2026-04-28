@@ -33,6 +33,7 @@ DEVICE_SCRIPTS = {
     "lkw": "lkw_sync.py",
     "stromerzeuger": "stromerzeuger_sync.py",
     "dse": "dse_sync.py",
+    "tankwagen": "tankbeleg_pi.py",
 }
 
 STATIC_DIR = Path("/app/backend/static")
@@ -193,3 +194,80 @@ async def list_device_status(admin=Depends(_auth_admin)):
             type_stats[dt]["up_to_date"] += 1
 
     return {"devices": devices, "type_stats": type_stats, "script_types": list(DEVICE_SCRIPTS.keys())}
+
+
+# ====== Anonyme Tankwagen-OTA (kein Auth, da Skript ohnehin public) ======
+
+@router.get("/tankwagen/check")
+async def tankwagen_check_update(request: Request):
+    """Tankwagen-Pi prueft ob ein Update verfuegbar ist (kein Auth).
+    Pi sendet seine eindeutige pi_local_id (UUID aus seiner SQLite) als 'pi_id'
+    und den aktuellen sha256-Hash seines tankbeleg_pi.py als 'hash'.
+    """
+    db = _get_db()
+    pi_id = request.query_params.get("pi_id", "")
+    pi_hostname = request.query_params.get("hostname", "")
+    current_hash = request.query_params.get("hash", "")
+    current_version = request.query_params.get("version", "")
+    if not pi_id:
+        raise HTTPException(400, "pi_id Parameter fehlt")
+
+    repo_hash, file_size = _get_script_hash("tankwagen")
+    needs_update = current_hash != repo_hash
+
+    # Check-in loggen (analog zu _auth_device-Variante)
+    device_label = pi_hostname or f"Tankwagen-Pi {pi_id[:8]}"
+    await db.ota_checkins.update_one(
+        {"device_id": pi_id},
+        {"$set": {
+            "device_id": pi_id,
+            "device_name": device_label,
+            "serial": pi_hostname or pi_id,
+            "device_type": "tankwagen",
+            "current_version": current_version,
+            "current_hash": current_hash,
+            "repo_hash": repo_hash,
+            "needs_update": needs_update,
+            "file_size": file_size,
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+
+    return {
+        "update_available": needs_update,
+        "file_hash": repo_hash,
+        "file_size": file_size,
+        "download_url": "/api/system/ota/tankwagen/download",
+    }
+
+
+@router.get("/tankwagen/download")
+async def tankwagen_download_update(request: Request):
+    """Tankwagen-Pi laed das aktuelle tankbeleg_pi.py herunter (kein Auth)."""
+    db = _get_db()
+    pi_id = request.query_params.get("pi_id", "")
+
+    path = STATIC_DIR / "tankbeleg_pi.py"
+    if not path.exists():
+        raise HTTPException(404, "tankbeleg_pi.py nicht gefunden")
+    content = path.read_bytes()
+    file_hash = hashlib.sha256(content).hexdigest()
+
+    if pi_id:
+        await db.ota_checkins.update_one(
+            {"device_id": pi_id},
+            {"$set": {
+                "last_download": datetime.now(timezone.utc).isoformat(),
+                "needs_update": False,
+            }},
+        )
+
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": "attachment; filename=tankbeleg_pi.py",
+            "X-Hash": file_hash,
+        },
+    )

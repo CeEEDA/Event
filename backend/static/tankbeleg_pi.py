@@ -975,6 +975,119 @@ def get_stats(db_path):
 
 # ====== Portal Sync ======
 
+# OTA Update State (modul-global, persistent ueber Sync-Cycles)
+_OTA_PI_ID = None        # Eindeutige Pi-Identitaet (UUID, in /var/lib/tankbeleg/pi_id gespeichert)
+
+
+def _get_or_create_pi_id(db_path: str) -> str:
+    """Liefert eine persistente, eindeutige Pi-ID. Wird einmalig generiert
+    und neben der SQLite-DB als Datei abgelegt."""
+    global _OTA_PI_ID
+    if _OTA_PI_ID:
+        return _OTA_PI_ID
+    id_file = Path(os.path.dirname(db_path)) / "pi_id"
+    try:
+        if id_file.exists():
+            content = id_file.read_text().strip()
+            if content:
+                _OTA_PI_ID = content
+                return _OTA_PI_ID
+        new_id = str(uuid.uuid4())
+        id_file.parent.mkdir(parents=True, exist_ok=True)
+        id_file.write_text(new_id)
+        _OTA_PI_ID = new_id
+        return _OTA_PI_ID
+    except Exception as e:
+        log.warning(f"Pi-ID-Datei nicht schreibbar: {e}")
+        _OTA_PI_ID = str(uuid.uuid4())
+        return _OTA_PI_ID
+
+
+def _self_script_hash() -> str:
+    """SHA-256 des aktuell laufenden Skripts."""
+    try:
+        with open(__file__, "rb") as f:
+            import hashlib
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception:
+        return ""
+
+
+def check_and_apply_ota_update(conf: dict) -> bool:
+    """Prueft beim Backend ob ein neueres tankbeleg_pi.py verfuegbar ist.
+    Wenn ja: laed es runter, validiert via Hash, ersetzt das laufende Skript
+    und beendet den Prozess (systemd startet automatisch neu).
+
+    Returns True wenn ein Update angewendet wurde (Prozess wird gleich beendet).
+    """
+    base = _api_base(conf)
+    if not base:
+        return False
+    pi_id = _get_or_create_pi_id(conf.get("db_path", "/var/lib/tankbeleg/tankbeleg.sqlite"))
+    current_hash = _self_script_hash()
+    try:
+        import socket
+        hostname = socket.gethostname()
+    except Exception:
+        hostname = ""
+
+    try:
+        params = {"pi_id": pi_id, "hostname": hostname, "hash": current_hash}
+        resp = requests.get(f"{base}/system/ota/tankwagen/check", params=params, timeout=10)
+        if resp.status_code != 200:
+            log.debug(f"OTA-Check Fehler {resp.status_code}: {resp.text[:200]}")
+            return False
+        info = resp.json()
+        if not info.get("update_available"):
+            log.debug("OTA: kein Update verfuegbar")
+            return False
+        log.info(f"OTA: Update verfuegbar (neuer Hash {info.get('file_hash','?')[:12]})")
+
+        # Download
+        resp2 = requests.get(f"{base}/system/ota/tankwagen/download", params={"pi_id": pi_id}, timeout=30)
+        if resp2.status_code != 200:
+            log.warning(f"OTA-Download Fehler {resp2.status_code}")
+            return False
+        new_content = resp2.content
+        # Hash-Validierung
+        import hashlib
+        new_hash = hashlib.sha256(new_content).hexdigest()
+        expected = info.get("file_hash") or resp2.headers.get("X-Hash", "")
+        if expected and new_hash != expected:
+            log.warning(f"OTA-Hash-Mismatch: erhalten {new_hash[:12]}, erwartet {expected[:12]}")
+            return False
+        # Sanity: Skript muss eine Mindestgroesse haben und 'def main' enthalten
+        if len(new_content) < 1000 or b"def main" not in new_content:
+            log.warning("OTA: Heruntergeladenes Skript wirkt unvollstaendig - abbrechen")
+            return False
+        # Backup + atomic replace
+        script_path = os.path.realpath(__file__)
+        backup_path = script_path + ".bak"
+        try:
+            import shutil
+            shutil.copy2(script_path, backup_path)
+        except Exception as e:
+            log.warning(f"OTA-Backup fehlgeschlagen: {e}")
+        tmp_path = script_path + ".new"
+        with open(tmp_path, "wb") as f:
+            f.write(new_content)
+        os.replace(tmp_path, script_path)
+        log.info(f"OTA: Skript aktualisiert ({len(new_content)} Bytes). Beende Prozess fuer Neustart durch systemd...")
+        # Sanftes Sync der Logs
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:
+            pass
+        # Beenden -> systemd startet automatisch neu (Restart=always)
+        os._exit(0)
+    except requests.RequestException as e:
+        log.debug(f"OTA-Check nicht erreichbar: {e}")
+    except Exception as e:
+        log.warning(f"OTA-Update Fehler: {e}")
+    return False
+
+
 def sync_to_portal(conf):
     """Sendet ungesyncte Belege an das Portal."""
     unsynced = get_unsynced(conf["db_path"])
@@ -1368,6 +1481,11 @@ def main():
             # Periodisch zum Portal syncen
             now = time.time()
             if conf["api_url"] and (now - last_sync_time) >= int(conf["sync_interval"]):
+                # OTA-Update-Check (vor dem Sync, damit der neue Parser direkt greift)
+                try:
+                    check_and_apply_ota_update(conf)
+                except Exception as ota_e:
+                    log.debug(f"OTA-Check fehlgeschlagen (ignoriert): {ota_e}")
                 stats = get_stats(conf["db_path"])
                 if stats["unsynced"] > 0:
                     log.info(f"Starte Sync ({stats['unsynced']} ungesyncte Belege)...")
