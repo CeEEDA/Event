@@ -28,8 +28,6 @@ export default function FuelManagementPage() {
   const [filterCategory, setFilterCategory] = useState("alle");
   const [loading, setLoading] = useState(true);
   const [bitmapReceipt, setBitmapReceipt] = useState(null);
-  const [editReceipt, setEditReceipt] = useState(null);
-  const [editQty, setEditQty] = useState("");
 
   const loadData = useCallback(async () => {
     try {
@@ -55,33 +53,6 @@ export default function FuelManagementPage() {
       toast.success("Beleg bestätigt");
       loadData();
     } catch { toast.error("Fehler"); }
-  };
-
-  const openEdit = (r) => {
-    setEditReceipt(r);
-    setEditQty(String(r.quantity_liters || ""));
-  };
-
-  const saveEdit = async () => {
-    if (!editReceipt) return;
-    const qty = parseFloat(editQty);
-    if (isNaN(qty) || qty <= 0) {
-      toast.error("Ungültige Menge");
-      return;
-    }
-    try {
-      await api.put(`/fuel-receipts/${editReceipt.id}`, {
-        quantity_liters: qty,
-        needs_review: false,
-        review_reason: null,
-      });
-      toast.success(`Menge korrigiert: ${qty.toFixed(1)} L`);
-      setEditReceipt(null);
-      setEditQty("");
-      loadData();
-    } catch (e) {
-      toast.error("Fehler beim Speichern");
-    }
   };
 
   const filtered = receipts.filter(r => {
@@ -204,15 +175,9 @@ export default function FuelManagementPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm font-semibold text-gray-900">{r.beleg_nr || "-"}</span>
                           {r.needs_review && (
-                            <button
-                              type="button"
-                              onClick={() => openEdit(r)}
-                              title={r.review_reason || "Manuelle Prüfung erforderlich - klicken um Menge zu korrigieren"}
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition cursor-pointer"
-                              data-testid={`review-flag-${r.id}`}
-                            >
-                              <AlertTriangle className="w-3 h-3" /> Menge prüfen
-                            </button>
+                            <span title={r.review_reason || "Manuelle Prüfung erforderlich"} className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded" data-testid={`review-flag-${r.id}`}>
+                              <AlertTriangle className="w-3 h-3" /> Review
+                            </span>
                           )}
                         </div>
                       </td>
@@ -299,43 +264,6 @@ export default function FuelManagementPage() {
               className="w-full border border-gray-200 rounded-lg bg-gray-50"
               data-testid="bitmap-image"
             />
-          </div>
-        </div>
-      )}
-      {editReceipt && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setEditReceipt(null)} data-testid="edit-fuel-modal">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Menge korrigieren</h3>
-              <button onClick={() => setEditReceipt(null)} className="text-gray-400 hover:text-gray-700" data-testid="edit-fuel-close">
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="text-sm text-gray-600 mb-3">
-              Beleg {editReceipt.beleg_nr || "-"} · {editReceipt.fuel_type || "-"} · {editReceipt.date || "-"}
-            </div>
-            {editReceipt.review_reason && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-start gap-2 text-sm text-amber-900">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <div>{editReceipt.review_reason}</div>
-              </div>
-            )}
-            <label className="block text-sm font-medium text-gray-700 mb-2">Menge (Liter)</label>
-            <Input
-              type="number"
-              step="0.1"
-              value={editQty}
-              onChange={(e) => setEditQty(e.target.value)}
-              className="mb-4 text-lg font-mono"
-              autoFocus
-              data-testid="edit-fuel-qty"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setEditReceipt(null)} data-testid="edit-fuel-cancel">Abbrechen</Button>
-              <Button onClick={saveEdit} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="edit-fuel-save">
-                Speichern & als geprüft markieren
-              </Button>
-            </div>
           </div>
         </div>
       )}
