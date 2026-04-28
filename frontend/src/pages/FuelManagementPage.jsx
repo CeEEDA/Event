@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, Download, Fuel, Filter,
   Warehouse, Truck, CheckCircle, Clock, XCircle,
-  Image as ImageIcon, AlertTriangle, RefreshCw,
+  Image as ImageIcon, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,19 +55,6 @@ export default function FuelManagementPage() {
     } catch { toast.error("Fehler"); }
   };
 
-  const reparseAll = async () => {
-    if (!window.confirm("Alle Belege mit Hex-Dump erneut durch den Parser jagen? Bestehende Mengen werden ggf. korrigiert.")) return;
-    try {
-      toast.info("Re-Parsing läuft...");
-      const r = await api.post("/fuel-receipts/admin/reparse");
-      const d = r.data || {};
-      toast.success(`Re-Parse fertig: ${d.updated} aktualisiert, ${d.unchanged} unverändert, ${d.errors} Fehler`);
-      loadData();
-    } catch (e) {
-      toast.error(`Re-Parse fehlgeschlagen: ${e?.response?.data?.detail || e.message}`);
-    }
-  };
-
   const filtered = receipts.filter(r => {
     if (filterStatus !== "alle" && r.status !== filterStatus) return false;
     if (filterCategory === "lager" && r.category !== "lager") return false;
@@ -99,12 +86,7 @@ export default function FuelManagementPage() {
             <Fuel className="w-5 h-5 text-amber-600" />
             <h1 className="text-base font-semibold text-gray-900">Tankbeleg-Verwaltung</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={reparseAll} className="text-xs text-gray-600 hover:text-gray-900" title="Alle Belege mit gespeichertem Hex-Dump erneut parsen (z.B. nach Parser-Update)" data-testid="reparse-btn">
-              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Re-Parse
-            </Button>
-            <Logo size="small" />
-          </div>
+          <Logo size="small" />
         </div>
       </header>
 
