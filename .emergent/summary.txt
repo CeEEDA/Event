@@ -1,15 +1,156 @@
-<analysis>tankbeleg_pi.pydsrdtr=False0x00Pillowsync_to_portal()/app/backend/static/tankbeleg_pi.pyapi_urlhttps://eventenergie.app/api/app/backend/routes/fuel_receipts.py/sync/pi/synctankbeleg_pi.py/app/backend/static/tankbeleg_ui.pytankbeleg_pi.pygps_enabled = false/app/backend/static/tankbeleg_pi.pyget_gps_position()gpsdselectasyncio.wait_for.envFINTS_PRODUCT_IDtankbeleg_pi.pySchaustellerAnmeldungPage.jsxdsrdtr=False0x00tankbeleg_pi.pytankbeleg_capture.pytankbeleg_reply_tuner.pytankbeleg_analyze.pyPillow
-/app/
-├── backend/
-│   ├── static/
-│   │   ├── tankbeleg_pi.py          # Pi Printer Emulator, Parser, PNG Renderer
-│   │   ├── tankbeleg_ui.py          # Pi Touchscreen UI
-│   │   ├── tankbeleg_capture.py     # Serial debugging util
-│   │   ├── tankbeleg_analyze.py     # Serial debugging util
-│   ├── routes/
-│   │   ├── fuel_receipts.py         # Sync endpoints, PNG serving
-├── frontend/
-│   ├── src/pages/
-│   │   ├── FuelManagementPage.jsx   # Displays receipts and PNG modals
-│   │   ├── SchaustellerAnmeldungPage.jsx
-pyserialPillowfuel_receiptsraw_hexneeds_reviewreview_reasonreceiptslocal_id, beleg_nr, zaehler_nr, menge_liter, datum, abgabe_start, abgabe_ende, fuel_type, raw_hex, is_bitmap, assigned, order_pk, order_name, synced, sync_errorPillow/app/backend/static/tankbeleg_pi.py/app/backend/static/tankbeleg_ui.py/app/backend/routes/fuel_receipts.py/sync/app/frontend/src/pages/FuelManagementPage.jsx/app/frontend/src/pages/schausteller/SignupForm.jsxtankbeleg_pi.pyPOST /api/fuel-receipts/synctankbeleg_pi.pyGET /api/fuel-receipts/{receipt_id}/pdfGET /api/download/tankbeleg-pi-scripttankbeleg_pi.py/app/backend/static/tankbeleg_pi.pytankbeleg_ui.pygit pullcurlsudo curl -sL -o /opt/tankbeleg/tankbeleg_pi.py https://eventenergie.app/api/download/tankbeleg-pi-script?v=1776952671ESC +enrich_receipt_with_heuristics/app/memory/PRD.md/etc/tankbeleg_pi.confchristian.ecker@eventenergie-deutschland.deqivbeb-Wodha1-sewram/app/memory/PRD.md</analysis>
+<analysis>### Handover Summary
+
+**original_problem_statement**: 
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. Focus is on hardware integration for fuel receipts via a Raspberry Pi (EPSON emulation), desktop/mobile apps, local file storage, and offline AI processing for document categorization.
+
+**User's preferred language**: German 
+**INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
+
+**what currently exists?** 
+A React/FastAPI/MongoDB application. In this session, a massive amount of bug fixing and feature enhancements were completed. Key areas touched include MQTT password synchronization, iOS Capacitor CORS issues, Kirmes Event Billing logic (safety checks and reopen capabilities), Finance table sorting, and an extensive expansion of the Admin HR Time Tracking system (allowing manual edits, sick leave, and overtime reduction). The application heavily relies on local scripts distributed to Raspberry Pis (e.g.,  and ).
+
+**Last working item**:
+    - Last item agent was working: Debugging the Sening Fuel Receipt Parser (). The parser incorrectly extracts large fuel quantities (e.g., 154 L is parsed as 15 L, taking only the first two digits). The user provided a hex dump for a 129 L receipt, and the agent successfully decoded it to analyze the corrupted Sening ESC characters causing the issue ().
+    - Status: IN PROGRESS
+    - Agent Testing Done: N
+    - Which testing method agent to use? manual testing by python -c (Parse the hex dump through the  functions to see where it breaks).
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**:  
+  Issue 1: Sening Fuel Receipt Parser cuts off digits (P0)
+     - Attempted fixes: Extracted the hex dump of a receipt to identify how Sening ESC sequences corrupt the ASCII text (e.g.,  becomes ).
+     - Next debug checklist: Modify  or the regex/ logic in  to robustly extract quantities > 99 L, even if interrupted by control characters or missing the trailing L. Test the exact hex dump provided in the history.
+     - Why fix this issue and what will be achieved with the fix? Ensures correct billing for large fuel quantities.
+     - Status: IN PROGRESS
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Backend (using  with the hex string)
+     - Blocked on other issue: None.
+
+  Issue 2: DSE 4520 MKII via USB shows values in wrong fields (P1)
+     - Attempted fixes: Agent updated Modbus register mapping in  to match the official GenComm 32-bit layout. However, the update caused the Raspberry Pi to stop sending data and drop offline. The agent had to rollback the script to commit  to restore connectivity, meaning the data is flowing again but still mapped to the wrong fields.
+     - Next debug checklist: The user stated they will move this to a test environment die Tage (in the coming days) to safely debug without breaking the production LTE connection. Wait for the user's cue or provide a heavily fault-tolerant script update.
+     - Why fix this issue and what will be achieved with the fix? Accurate voltage/current/wattage display in the portal.
+     - Status: BLOCKED (Pending user test environment setup)
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Backend (Pi Script)
+     - Blocked on other issue: Hardware availability.
+
+  Issue 3: Local AI (Ollama) freezes Windows Server (P2)
+     - Attempted fixes: Scaled down model, restricted threads.
+     - Next debug checklist: Re-enable Ollama and test the PyMuPDF -> gemma2:2b text pipeline.
+     - Why fix this issue and what will be achieved with the fix? Allows automatic document categorization.
+     - Status: BLOCKED (Paused by user)
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? Backend
+     - Blocked on other issue: Server CPU constraints.
+
+  Issue 4: Mobile App iOS Build (P2)
+     - Attempted fixes: Provided Mac instructions.
+     - Status: NOT STARTED
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? NA (User executes locally)
+     - Blocked on other issue: None.
+
+**In progress Task List**:
+  None.
+
+**Upcoming and Future Tasks**
+    Upcoming Tasks:
+    - (P2) Pi-Status-Dashboard: Show last sync timestamp, unsynced count, and GPS status per Pi in the Portal.
+    - (P2) Portal-Auftragsliste Lager Filter/Reiter: Separate internal test runs from normal orders.
+    - (P2) Suchleiste über der Auftragsliste: Add a search bar to the Pi UI to easily find orders.
+    
+    Future Tasks:
+    - (P2) Add GPS Support to Kirmeskiste.
+    - (P2) Lastdiagramm Live-Test.
+    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
+
+**Completed work in this session**
+- Fixed iOS Capacitor App Login 404 Error ( bug) (DONE)
+- Diagnosed MQTT CGNAT issue and fixed  DB sync & robust service restart (DONE)
+- Added Bezahlvorgang abwickeln button for cancelled Stripe Checkouts (DONE)
+- Fixed Kirmes Event Freigeben button error swallowing (DONE)
+- Hardened Kirmes Abrechnen logic: Prevented accidental closure without invoices, disabled button if  is missing, and added Admin Wieder öffnen (Reopen) feature (DONE)
+- Added dynamic sorting to Finance Table (Date, Event, Amount, Payment urgency) (DONE)
+- Fixed Pi-Command queuing for USB-DSE devices (used  instead of string matching) (DONE)
+- Expanded Admin Zeiterfassung: Added manual time entry creation, inline editing, and deletion (DONE)
+- Added Urlaub, Überstundenabbau, and Krank direct Admin entries with automatic overtime account deductions (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+  None.
+
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: DSE USB Modbus Sync crashing/freezing.
+  - Recurrence count: 2
+  - Status: BLOCKED (Rolled back to stable, mismapped version).
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+Sening ESC Protocol parsing, Modbus GenComm Registers, React Hooks (Rules of Hooks), Windows Service Management via PowerShell, MongoDB aggregation.
+
+**key DB schema**
+  - : Now stores  for direct HR entries.
+  - : Uses  to identify Pi-based generators vs MQTT gateways.
+
+**changes in tech stack**
+  - None.
+
+**All files of reference** 
+  -  (Currently modifying parser logic)
+  -  &  (HR features updated)
+  -  (Event billing logic)
+  -  (Broker restart logic)
+
+**Areas that need refactoring**: 
+  - : Needs a highly fault-tolerant Modbus reading mechanism that can pull 32-bit registers without crashing the Pi's serial connection.
+
+**key api endpoints**
+  -  (New)
+  -  (New)
+
+**Critical Info for New Agent** 
+- **RESPOND IN GERMAN ONLY.**
+- The environment runs on a Windows Server (Backend) and Linux Raspberry Pis (Edge).
+- Do NOT push changes to the  script right now. The user had a production outage because of it and explicitly requested to wait until they set up a test environment next week.
+- You have the raw hex string of a faulty Sening fuel receipt in the history (). Use this locally with  to perfect your  and regex logic before proposing the fix to the user.
+
+**documents and test reports created in this job**
+  -  updated.
+  -  verified.
+
+**Last 10 User Messages and any pending HUMAN messages** 
+ 1. (User) Reported update to DSE Pi caused it to stop responding.
+ 2. (Agent) Found bug in  queuing logic, fixed it.
+ 3. (User) Still not working. Complained values were wrong but system was online prior to update. Provided GenComm manual.
+ 4. (Agent) Fixed  to match GenComm 32-bit spec.
+ 5. (User) Reported Pi is completely broken now, no data coming in, UI shows 0s.
+ 6. (Agent) Diagnosed Modbus 34-register read as too large, split reads.
+ 7. (User) Pi went completely offline, LTE dead. Asked to rollback to the 10 AM state.
+ 8. (Agent) Rolled back  via git commands. Instructed user how to apply the stable script to the Pi.
+ 9. (User) Agreed to move DSE to a test environment later. Brought up a NEW issue: Tankwagen fuel receipt parser is cutting off digits (e.g., 154 L becomes 15 L).
+ 10. (Agent) Showed user how to extract the raw hex dump of the receipt from the browser console.
+ 11. (User) Provided the hex dump of a 129 L receipt. 
+ **PENDING HUMAN MESSAGE**: None. The user has provided the hex dump. The agent must now fix  using this data.
+
+**Project Health Check:**
+- Broken:  (Quantity parsing > 99L fails due to Sening ESC corruption).
+- Broken:  (Rolled back to mis-mapped version to preserve LTE stability).
+- Mocked: None.
+
+**3rd Party Integrations** 
+- Stripe (Payments) — requires User API Key
+- Ollama (Local AI) — requires local installation
+
+**Testing status**
+  - Testing agent used after significant changes: NO (Heavy hardware-in-the-loop and Windows Server specifics).
+  - Troubleshoot agent used after agent stuck in loop: NO.
+  - Test files created: None.
+  - Known regressions: Modbus mapping remains incorrect intentionally to preserve uptime.
+
+**Credentials to test flow:**
+- Admin:  / 
+
+**What agent forgot to execute**
+- The agent decoded the hex dump to ASCII but hasn't yet implemented the fix in . You must pick this up immediately.</analysis>
