@@ -15,6 +15,15 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P0 Hotfix (Sening Tankbeleg-Parser: Bitmap-Suffix bei Mengen):**
+  - Sening MultiFlow rendert manchmal die letzte Ziffer der Menge als Bitmap-Grafik (gleiches Pattern wie bei Beleg-Nr/Zähler-Nr). Beispiele: 1296 L → erkannt als 129, 154 L → erkannt als 15.
+  - Neuer `detect_quantity_in_raw()` analysiert den Raw-Bytestream nach `*M+` und erkennt Bitmap-Bytes (≥0x80 / Steuerzeichen) direkt nach den ASCII-Ziffern.
+  - Wenn Bitmap-Suffix erkannt: Beleg wird automatisch als `needs_review=True` markiert mit präzisem Hinweis (z.B. "ASCII-Wert 129 L, echte Menge wahrscheinlich 1290-1299 L").
+  - Spezialisierte `find_quantity_after()` (rechtsbündig statt längste Zahl) verhindert Verwechslung mit Zähler-Werten in derselben Zeile.
+  - **Portal-UI**: `FuelManagementPage.jsx` hat jetzt einen klickbaren "Menge prüfen"-Badge → öffnet Edit-Dialog für direkte Korrektur. Bei Speichern wird `needs_review` automatisch zurückgesetzt.
+  - Backend `FuelReceiptUpdate` unterstützt jetzt `needs_review=False` und `review_reason=null` zum Auflösen des Review-Status.
+  - Files: `/app/backend/static/tankbeleg_pi.py`, `/app/backend/routes/fuel_receipts.py`, `/app/frontend/src/pages/FuelManagementPage.jsx`.
+
 - **2026-02 — P1 Feature (Schausteller-Portal: Bezahlvorgang nach Abbruch wiederaufnehmen):**
   - Neuer Button „Bezahlvorgang abwickeln" pro Buchung im Dashboard (`/app/frontend/src/pages/schausteller/Dashboard.jsx`).
   - Sichtbar nur bei `payment_status === "pending_payment"` UND `!deposit_paid` UND `payment_method !== "rechnung"`.

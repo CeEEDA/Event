@@ -268,6 +268,74 @@ SENING_MARKERS = {
 }
 
 
+def detect_quantity_in_raw(raw: bytes) -> tuple:
+    """Sucht im RAW-Bytestream die Menge nach dem '*M+'-Marker und erkennt
+    ob nach den ASCII-Ziffern noch Bitmap-Bytes folgen (= unvollstaendig).
+
+    Sening MultiFlow druckt die Mengenzeile als:
+        *M+ <bitmap header> <"v beK5 °C" mix> <whitespace> <ASCII-Ziffern> [Bitmap-Bytes] <whitespace> *
+
+    Bei manchen Eichbelegen wird die letzte Ziffer der Menge als Bitmap-Grafik
+    gerendert (gleiches Pattern wie bei Zaehler-Nr und Beleg-Nr). Der ASCII-Teil
+    enthaelt dann nur die ersten N-1 Ziffern.
+
+    Returns:
+        (ascii_digits: str | None, has_bitmap_suffix: bool)
+        ascii_digits = z.B. '129' wenn echte Menge 1296 ist und letzte Ziffer Bitmap
+        has_bitmap_suffix = True wenn nach den Ziffern Bitmap-Bytes liegen
+    """
+    # Find '*M+' marker (preferred) or fallback 'M+'
+    idx = raw.find(b"*M+")
+    if idx < 0:
+        idx = raw.find(b"M+")
+        if idx < 0:
+            return None, False
+    # Limit search to next ESC J (line feed - end of menge-line)
+    end = raw.find(b"\x1b\x4a", idx + 2)
+    if end < 0:
+        end = idx + 100
+    segment = raw[idx:end]
+
+    # Sammle alle ASCII-Ziffernlaeufe mit Position
+    digit_runs = []
+    i = 0
+    while i < len(segment):
+        if 0x30 <= segment[i] <= 0x39:
+            j = i
+            while j < len(segment) and 0x30 <= segment[j] <= 0x39:
+                j += 1
+            digit_runs.append((i, j, segment[i:j].decode("ascii")))
+            i = j
+        else:
+            i += 1
+    if not digit_runs:
+        return None, False
+    # Filter "5" aus "15 °C" und "1"/"15" Eichgueltigkeits-Zahlen heraus
+    # Die echte Menge ist normalerweise der LETZTE Ziffernlauf > 1 Ziffer
+    # ODER der laengste Lauf
+    candidates = [(s, e, d) for (s, e, d) in digit_runs if len(d) >= 2]
+    if not candidates:
+        # Nur 1-stellige Zahlen -> nimm letzte
+        candidates = digit_runs
+    last_pos, last_end, last_digits = candidates[-1]
+
+    # Check ob direkt nach den Ziffern Bitmap-Bytes kommen
+    # Bitmap-Bytes = >= 0x80 ODER < 0x20 (kein TAB/CR/LF)
+    after = segment[last_end: last_end + 10]
+    bitmap_count = 0
+    for b in after:
+        if b in (0x20, 0x2A, 0x0D, 0x0A, 0x09):
+            break  # whitespace/star/CR/LF = end of bitmap area
+        if b >= 0x80 or (b < 0x20 and b not in (0x09, 0x0A, 0x0D)):
+            bitmap_count += 1
+        else:
+            # ASCII-Buchstabe (z.B. 'r' Eichmark) - kein Bitmap mehr
+            # Aber 'r' direkt nach Ziffern OHNE Bitmap dazwischen ist auch OK
+            break
+    has_bitmap = bitmap_count >= 2  # mind. 2 Bytes = wahrscheinlich 1 Bitmap-Char
+    return last_digits, has_bitmap
+
+
 def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
     """Parser fuer Sening MultiFlow mit Bit-Image Mischdruck.
     Extrahiert so viel wie moeglich, markiert fehlende Felder.
@@ -275,6 +343,11 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
     fixed_zaehler_nr: Falls gesetzt und der Parser erkennt nur ein Praefix,
     wird dieser volle Wert verwendet (z.B. '11461' wenn Parser '1146' liefert).
     """
+    # Raw-Stream-Analyse fuer Menge mit Bitmap-Suffix-Erkennung
+    raw_qty_digits, raw_qty_has_bitmap = detect_quantity_in_raw(raw)
+    if raw_qty_digits:
+        log.info(f"  RAW-Menge: ASCII='{raw_qty_digits}' has_bitmap_suffix={raw_qty_has_bitmap}")
+
     stripped = strip_sening_escapes(raw)
     try:
         text = stripped.decode("cp437", errors="replace")
@@ -315,6 +388,32 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
             return candidates[0]
         # Fallback: letzte Zahl (meist der echte Wert, nicht Line-ID)
         return nums[-1]
+
+    def find_quantity_after(segment: str, pattern, max_after: int = 80, min_digits: int = 2):
+        """Spezial fuer die Menge: nimmt die LETZTE Zahl im Tail (rechtsbuendig).
+        Sening druckt die Menge immer rechtsbuendig vor dem 'r'-Bitmap-Rest, also
+        ist die LETZTE Zahl im Tail die korrekte. Tail wird am Segment-Ende
+        (m1, *, Newline) abgeschnitten, damit Werte aus Folgezeilen nicht eingeschleppt werden.
+        Plausibilitaets-Check: 1..99999 Liter."""
+        m = pattern.search(segment)
+        if not m:
+            return None
+        tail = segment[m.end(): m.end() + max_after]
+        # Tail abschneiden am naechsten Segment-Trenner (Sening druckt m1\r am Zeilenende)
+        end_marker = re.search(r"m1|\n", tail)
+        if end_marker:
+            tail = tail[:end_marker.start()]
+        nums = re.findall(r"\d+", tail)
+        if not nums:
+            return None
+        candidates = [n for n in nums if len(n) >= min_digits and 1 <= int(n) <= 99999]
+        log.info(f"  Menge-Tail nach '{pattern.pattern}': {tail!r} -> Kandidaten {nums} (gefiltert {candidates})")
+        if candidates:
+            # LETZTE qualifizierende Zahl (rechtsbuendig) - das ist die Menge
+            return candidates[-1]
+        # Fallback: letzte Zahl mit Plausibilitaet
+        plausible = [n for n in nums if 1 <= int(n) <= 99999]
+        return plausible[-1] if plausible else None
 
     def find_time_after(segment: str, pattern, max_after: int = 100):
         """Findet Zeiten HH:MM:SS, auch bei fehlenden Minuten (Sening-Bitmap)."""
@@ -372,16 +471,39 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
                 if t:
                     result["abgabe_ende"] = t
                     break
-        # Menge (Zahl nach "Menge" oder "M+" oder "bei 15")
+        # Menge (Zahl nach "Menge" oder "M+" oder "bei 15") - SPEZIAL: rechtsbuendig, letzte Zahl
         if result["menge_liter"] is None:
             for pat in SENING_MARKERS["menge"]:
-                v = find_number_after(seg, pat, max_after=60)
+                v = find_quantity_after(seg, pat, max_after=80)
                 if v:
                     try:
                         result["menge_liter"] = float(v)
+                        log.info(f"  -> Menge gewaehlt: {v} L (Marker: {pat.pattern})")
                     except ValueError:
                         pass
                     break
+
+    # ====== Bitmap-Suffix-Detection ======
+    # Sening rendert manchmal die LETZTE Ziffer der Menge als Bitmap-Grafik
+    # (gleiches Pattern wie bei Zaehler-Nr und Beleg-Nr). Dann ist die geparste
+    # ASCII-Menge unvollstaendig (z.B. "129" statt "1296", "15" statt "154").
+    # Wir erkennen das im Raw-Stream und markieren den Beleg als needs_review,
+    # damit der User die Menge manuell auf dem Pi-Touchscreen bestaetigen muss.
+    if raw_qty_has_bitmap and raw_qty_digits:
+        result["needs_review"] = True
+        ascii_val = int(raw_qty_digits)
+        # Schaetzwert: ASCII * 10 (letzte Ziffer unbekannt -> 0..9 -> Mittel ~5)
+        # Der User MUSS manuell bestaetigen, daher kein Default-Setzen.
+        suggested_min = ascii_val * 10
+        suggested_max = ascii_val * 10 + 9
+        reason = (f"Letzte Ziffer der Menge als Bitmap gedruckt - "
+                  f"ASCII-Wert: {ascii_val} L, echte Menge wahrscheinlich "
+                  f"{suggested_min}-{suggested_max} L. Bitte manuell pruefen.")
+        log.warning(f"  [REVIEW] {reason}")
+        if isinstance(result.get("review_reason"), list):
+            result["review_reason"].append(reason)
+        else:
+            result["review_reason"] = [reason]
 
     # Fuel-Type Heuristik (HEL ist der haeufigste)
     if "HEL" in text or "hel" in text.lower():
@@ -452,11 +574,22 @@ def enrich_receipt_with_heuristics(receipt: dict, conf: dict) -> dict:
 
     # 5) Review-Flag bereinigen: Datum ist via NTP gesichert, Zeiten berechnet,
     #    Beleg-Nr per Counter. Nur noch Menge ist Pflicht.
+    #    WICHTIG: Bestehende review_reasons (z.B. Bitmap-Suffix-Detection) erhalten!
+    existing_reasons = receipt.get("review_reason") or []
+    if isinstance(existing_reasons, str):
+        existing_reasons = [existing_reasons]
+    elif not isinstance(existing_reasons, list):
+        existing_reasons = []
+    existing_review = bool(receipt.get("needs_review"))
+
     missing = []
     if not receipt.get("menge_liter"):
         missing.append("Menge")
-    receipt["needs_review"] = bool(missing)
-    receipt["review_reason"] = (", ".join(missing) + " aus Bitmap nicht lesbar") if missing else None
+    if missing:
+        existing_reasons.append(", ".join(missing) + " aus Bitmap nicht lesbar")
+
+    receipt["needs_review"] = bool(missing) or existing_review
+    receipt["review_reason"] = "; ".join(existing_reasons) if existing_reasons else None
     return receipt
 
 

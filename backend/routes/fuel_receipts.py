@@ -136,6 +136,8 @@ class FuelReceiptUpdate(BaseModel):
     gps_lng: Optional[float] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    needs_review: Optional[bool] = None
+    review_reason: Optional[str] = None
 
 
 # ── Endpoints ──
@@ -480,9 +482,17 @@ async def update_fuel_receipt(receipt_id: str, data: FuelReceiptUpdate, user: di
         raise HTTPException(status_code=404, detail="Tankbeleg nicht gefunden")
 
     update = {}
-    for field, value in data.dict(exclude_unset=True).items():
+    raw_data = data.dict(exclude_unset=True)
+    for field, value in raw_data.items():
         if value is not None:
             update[field] = value
+    # Spezialfall: review_reason explizit auf None gesetzt -> in DB loeschen
+    if "review_reason" in raw_data and raw_data["review_reason"] is None:
+        update["review_reason"] = None
+    if "needs_review" in raw_data and raw_data["needs_review"] is False:
+        update["needs_review"] = False
+        # Wenn Review aufgeloest wird, auch review_reason loeschen
+        update["review_reason"] = None
 
     if "fuel_type" in update:
         if update["fuel_type"] not in FUEL_TYPES:
