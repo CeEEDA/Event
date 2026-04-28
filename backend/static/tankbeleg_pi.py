@@ -304,7 +304,7 @@ def decode_sening_bitmap_digit(four_bytes: bytes):
 
 def detect_quantity_in_raw(raw: bytes) -> tuple:
     """Sucht im RAW-Bytestream die Menge nach dem '*M+'-Marker und erkennt
-    ob die letzte Ziffer als Sening-Bitmap encodiert ist.
+    ob die letzte(n) Ziffer(n) als Sening-Bitmap encodiert sind.
 
     Sening MultiFlow druckt die Mengenzeile als:
         *M+ <bitmap header> <"v beK5 °C" mix> <whitespace> <ASCII-Ziffern> [Suffix] <whitespace>
@@ -312,13 +312,15 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
     Suffix-Varianten:
         a) ' L  ' / ' L  *' -> ASCII komplett, keine fehlende Ziffer
         b) '03 8e 3a c8' (Eichende-Marker) -> ASCII komplett
-        c) 'XX YY 72 d3' wo XX/YY eine Ziffer encoden -> letzte Ziffer als Bitmap
+        c) 'XX YY 72 d3' wo XX/YY eine Ziffer encoden -> 1+ Ziffer als Bitmap
+           Bei MEHREREN Bitmap-Ziffern (z.B. >=10000 L) wiederholt sich dieses
+           4-Byte-Pattern. Wir dekodieren so viele konsekutive Quadrupel wie moeglich.
 
     Returns:
-        (ascii_digits, decoded_digit, has_unknown_bitmap)
-        - ascii_digits: str | None - die ASCII-Ziffern aus dem Stream
-        - decoded_digit: str | None - die zusaetzliche Ziffer aus dem Bitmap (oder None)
-        - has_unknown_bitmap: bool - True wenn ein Bitmap-Suffix existiert, der NICHT dekodiert werden konnte
+        (ascii_digits, decoded_digits, has_unknown_bitmap)
+        - ascii_digits: str | None - ASCII-Ziffern aus dem Stream
+        - decoded_digits: str | None - dekodierte Ziffer(n) aus Bitmap (z.B. "6" oder "56")
+        - has_unknown_bitmap: bool - True wenn ein nicht-dekodierbarer Bitmap-Suffix existiert
     """
     idx = raw.find(b"*M+")
     if idx < 0:
@@ -344,30 +346,39 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
             i += 1
     if not digit_runs:
         return None, None, False
-    # Die Menge ist der LETZTE Ziffernlauf >= 2 Ziffern (filtert "5" aus "15 °C" raus)
     candidates = [(s, e, d) for (s, e, d) in digit_runs if len(d) >= 2]
     if not candidates:
         candidates = digit_runs
     last_pos, last_end, last_digits = candidates[-1]
 
-    # Pruefe ob direkt nach den Ziffern Sening-Bitmap-Bytes kommen
-    after = segment[last_end: last_end + 8]
-    decoded_digit = None
+    # Schleife: dekodiere konsekutive 4-Byte-Bitmap-Quadrupel
+    decoded_digits = []
+    pos = last_end
     has_unknown_bitmap = False
-
-    if len(after) >= 4:
-        # Versuch 1: Sening-Digit-Bitmap-Pattern XX YY 72 d3
-        decoded_digit = decode_sening_bitmap_digit(after[:4])
-        if decoded_digit is None:
-            # Pruefe ob ein Suffix da ist, der KEIN ASCII " L" ist und KEIN Standard-Endemarker
-            # Standard-Endemarker (z.B. nach 23 OK): 03 8e 3a c8 -> kein fehlendes Digit
-            # Wenn after mit Bytes >= 0x80 startet und nicht das Ende-Pattern matcht: unbekannt
-            if after[0] >= 0x80 or (after[0] < 0x20 and after[0] not in (0x09, 0x0A, 0x0D, 0x20)):
-                # Ist es das bekannte Ende-Pattern (03 8e 3a c8)? Dann KEIN unknown.
-                if not (after[0] == 0x03 and after[1] == 0x8E):
+    while pos + 4 <= len(segment):
+        chunk = segment[pos:pos + 4]
+        digit = decode_sening_bitmap_digit(chunk)
+        if digit is None:
+            # Pruefe ob hier ueberhaupt ein Bitmap-Suffix beginnt (= unknown)
+            if not decoded_digits:
+                # Erstes Quadrupel ist nicht dekodierbar
+                first = chunk[0]
+                # Bekannter Endemarker (03 8e 3a c8) oder ASCII " L" -> nichts unbekannt
+                if first == 0x03 and chunk[1] == 0x8E:
+                    pass  # Standard-Endemarker, alles OK
+                elif first == 0x20 or first == 0x4C:
+                    pass  # Whitespace oder " L" (ASCII-Ende)
+                elif first >= 0x80 or (first < 0x20 and first not in (0x09, 0x0A, 0x0D)):
                     has_unknown_bitmap = True
+            break
+        decoded_digits.append(digit)
+        pos += 4
+        # Sicherheits-Limit: max 5 Bitmap-Digits (= bis 99999 L)
+        if len(decoded_digits) >= 5:
+            break
 
-    return last_digits, decoded_digit, has_unknown_bitmap
+    decoded_str = "".join(decoded_digits) if decoded_digits else None
+    return last_digits, decoded_str, has_unknown_bitmap
 
 
 def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
@@ -377,10 +388,10 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
     fixed_zaehler_nr: Falls gesetzt und der Parser erkennt nur ein Praefix,
     wird dieser volle Wert verwendet (z.B. '11461' wenn Parser '1146' liefert).
     """
-    # Raw-Stream-Analyse fuer Menge mit Bitmap-Decode
-    raw_qty_digits, raw_qty_bitmap_digit, raw_qty_unknown_bitmap = detect_quantity_in_raw(raw)
+    # Raw-Stream-Analyse fuer Menge mit Bitmap-Decode (mehrere Ziffern moeglich)
+    raw_qty_digits, raw_qty_bitmap_digits, raw_qty_unknown_bitmap = detect_quantity_in_raw(raw)
     if raw_qty_digits:
-        log.info(f"  RAW-Menge: ASCII='{raw_qty_digits}' bitmap_digit={raw_qty_bitmap_digit!r} unknown_bitmap={raw_qty_unknown_bitmap}")
+        log.info(f"  RAW-Menge: ASCII='{raw_qty_digits}' bitmap_digits={raw_qty_bitmap_digits!r} unknown_bitmap={raw_qty_unknown_bitmap}")
 
     stripped = strip_sening_escapes(raw)
     try:
@@ -518,21 +529,23 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
                     break
 
     # ====== Bitmap-Digit-Decode fuer Sening-Eichbelege ======
-    # Sening MultiFlow druckt die letzte Ziffer der Menge MANCHMAL als Bitmap
+    # Sening MultiFlow druckt die letzte(n) Ziffer(n) der Menge MANCHMAL als Bitmap
     # (Eichgueltigkeits-Marker). Wir erkennen das im Raw-Stream und dekodieren
-    # die Ziffer nach der Formel:
+    # die Ziffer(n) nach der Formel:
     #   bitmap = [byte1] [byte2] 0x72 0xd3
     #   byte1 = 0x83 + d * 8,  byte2 = 0x12 - d
+    # Bei MEHREREN Bitmap-Ziffern wiederholt sich das Pattern (z.B. fuer >=10000 L).
     # Beispiele aus echten Belegen:
     #   154 L: ASCII "15" + bitmap 'a3 0e 72 d3' -> dekodiert: "4" -> 154 ✓
     #   1296 L: ASCII "129" + bitmap 'b3 0c 72 d3' -> dekodiert: "6" -> 1296 ✓
-    if raw_qty_digits and raw_qty_bitmap_digit is not None:
+    if raw_qty_digits and raw_qty_bitmap_digits:
         try:
-            full_qty = int(raw_qty_digits + raw_qty_bitmap_digit)
+            full_qty_str = raw_qty_digits + raw_qty_bitmap_digits
+            full_qty = int(full_qty_str)
             current_qty = result.get("menge_liter")
             if current_qty is None or float(current_qty) == float(raw_qty_digits):
                 result["menge_liter"] = float(full_qty)
-                log.info(f"  -> Sening-Bitmap-Decode: ASCII '{raw_qty_digits}' + Bitmap-Digit '{raw_qty_bitmap_digit}' = {full_qty} L")
+                log.info(f"  -> Sening-Bitmap-Decode: ASCII '{raw_qty_digits}' + Bitmap '{raw_qty_bitmap_digits}' = {full_qty} L")
         except (ValueError, TypeError) as e:
             log.warning(f"  Bitmap-Decode fehlgeschlagen: {e}")
     elif raw_qty_unknown_bitmap and raw_qty_digits:
@@ -540,8 +553,7 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
         result["needs_review"] = True
         ascii_val = int(raw_qty_digits)
         reason = (f"Sening-Bitmap-Suffix erkannt aber nicht dekodierbar - "
-                  f"ASCII-Wert: {ascii_val} L, echte Menge wahrscheinlich "
-                  f"{ascii_val * 10}-{ascii_val * 10 + 9} L. "
+                  f"ASCII-Wert: {ascii_val} L. "
                   f"Bitte Hex-Dump an Entwickler senden zur Pattern-Erweiterung.")
         log.warning(f"  [REVIEW] {reason}")
         if isinstance(result.get("review_reason"), list):
