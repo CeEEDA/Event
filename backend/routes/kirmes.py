@@ -1905,6 +1905,70 @@ async def fints_check_payments(user: dict = Depends(_require_staff)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/fints/test-connection")
+async def fints_test_connection(user: dict = Depends(_require_staff)):
+    """Diagnostischer Test: prueft nur die FinTS-Anmeldung, ohne Transaktionen abzurufen.
+    Liefert detaillierte Fehlerursache zurueck (z.B. 9340 Ungueltige Signatur =
+    falscher User/PIN, 9120 = TAN-Verfahren-Problem, etc.)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    import os
+    from fints_banking import FINTS_URL, FINTS_BLZ, get_fints_credentials
+    creds = get_fints_credentials()
+    if not creds:
+        return {
+            "ok": False,
+            "stage": "config",
+            "error": "FINTS_USER oder FINTS_PIN fehlt in der .env",
+            "hint": "Setze beide Variablen, dann Backend neu starten.",
+        }
+    try:
+        from fints.client import FinTS3PinTanClient
+        client = FinTS3PinTanClient(
+            FINTS_BLZ, creds["user"], creds["pin"], FINTS_URL,
+            product_id=os.environ.get("FINTS_PRODUCT_ID", ""),
+        )
+        with client:
+            accounts = client.get_sepa_accounts()
+        return {
+            "ok": True,
+            "stage": "success",
+            "blz": FINTS_BLZ,
+            "url": FINTS_URL,
+            "user_first_chars": creds["user"][:3] + "***",
+            "accounts_found": len(accounts),
+            "accounts": [{"iban": a.iban, "bic": a.bic} for a in accounts],
+        }
+    except Exception as e:
+        msg = str(e)
+        hint = "Unbekannter Fehler"
+        if "9340" in msg or "Ungueltige Signatur" in msg or "Ungültige Signatur" in msg:
+            hint = (
+                "Falsche FinTS-Anmeldedaten. WICHTIG: 'FINTS_USER' ist der "
+                "ANMELDENAME aus deinem Online-Banking (NICHT IBAN, NICHT Kontonummer, "
+                "NICHT Kunden-/Legitimations-ID). 'FINTS_PIN' ist deine Online-Banking-PIN. "
+                "Nach 3 Fehlversuchen sperrt die Sparkasse den FinTS-Zugang - dann musst du "
+                "ihn im Online-Banking unter 'Sicherheitsverfahren' entsperren."
+            )
+        elif "9120" in msg or "TAN" in msg.lower():
+            hint = "TAN-Verfahren nicht eingerichtet. Im Online-Banking unter 'Sicherheitsverfahren' ein PIN/TAN-Verfahren auswaehlen."
+        elif "9050" in msg and "Dialog" in msg:
+            hint = "Dialog wurde von der Bank abgebrochen. Wahrscheinlich Auth-Problem - siehe FINTS_USER und FINTS_PIN."
+        elif "9800" in msg:
+            hint = "Dialog abgebrochen. Bank hat den FinTS-Zugang gesperrt oder Anmeldedaten sind falsch."
+        elif "Connection" in msg or "timeout" in msg.lower():
+            hint = f"Verbindung zu {FINTS_URL} fehlgeschlagen. Internet-Zugang oder URL falsch?"
+        return {
+            "ok": False,
+            "stage": "fints_login",
+            "error": msg[:500],
+            "hint": hint,
+            "blz": FINTS_BLZ,
+            "url": FINTS_URL,
+            "user_first_chars": creds["user"][:3] + "***" if creds.get("user") else "(leer)",
+        }
+
+
 @router.get("/fints/transactions")
 async def fints_get_transactions(days: int = 14, user: dict = Depends(_require_staff)):
     """Kontobewegungen der letzten X Tage abrufen."""

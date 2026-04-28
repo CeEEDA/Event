@@ -1446,12 +1446,30 @@ function FinTSBankingSection() {
 
   const testConnection = async () => {
     setTesting(true);
+    setTransactions(null);
+    try {
+      const res = await api.post("/kirmes/fints/test-connection");
+      const d = res.data || {};
+      if (d.ok) {
+        toast.success(`Verbindung OK – ${d.accounts_found} Konto(s) gefunden`);
+        setTransactions({ test_ok: true, ...d });
+      } else {
+        toast.error(`Login fehlgeschlagen (${d.stage})`);
+        setTransactions({ test_ok: false, ...d });
+      }
+    } catch (e) {
+      toast.error("Verbindung fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+    } finally { setTesting(false); }
+  };
+
+  const loadTransactions = async () => {
+    setTesting(true);
     try {
       const res = await api.get("/kirmes/fints/transactions?days=7");
       setTransactions(res.data);
       toast.success(`${res.data.count} Transaktionen geladen`);
     } catch (e) {
-      toast.error("Verbindung fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+      toast.error("Abruf fehlgeschlagen: " + (e.response?.data?.detail || e.message));
     } finally { setTesting(false); }
   };
 
@@ -1547,7 +1565,41 @@ FINTS_IBAN=DE28576500100098066756`}
           </div>
         )}
 
-        {transactions && (
+        {transactions && transactions.test_ok === false && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm space-y-2" data-testid="fints-test-error">
+            <div className="flex items-center gap-2 font-semibold text-red-800">
+              <XCircle className="w-4 h-4" /> FinTS-Login fehlgeschlagen
+            </div>
+            <div className="text-xs text-red-700 font-mono whitespace-pre-wrap break-all">{transactions.error}</div>
+            <div className="text-xs text-gray-700 bg-white border border-red-100 rounded p-2">
+              <span className="font-semibold">Hinweis:</span> {transactions.hint}
+            </div>
+            <div className="text-[10px] text-gray-500">
+              BLZ: {transactions.blz} · URL: {transactions.url} · User: {transactions.user_first_chars}
+            </div>
+          </div>
+        )}
+
+        {transactions && transactions.test_ok === true && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm space-y-2" data-testid="fints-test-ok">
+            <div className="flex items-center gap-2 font-semibold text-emerald-800">
+              <Check className="w-4 h-4" /> FinTS-Login erfolgreich
+            </div>
+            <div className="text-xs text-emerald-700">
+              {transactions.accounts_found} Konto(s) gefunden:
+            </div>
+            <ul className="text-xs text-gray-700 ml-4 list-disc">
+              {(transactions.accounts || []).map((a, i) => (
+                <li key={i} className="font-mono">{a.iban} ({a.bic})</li>
+              ))}
+            </ul>
+            <Button size="sm" variant="outline" onClick={loadTransactions} className="text-xs mt-2" data-testid="fints-load-tx-btn">
+              Transaktionen der letzten 7 Tage laden
+            </Button>
+          </div>
+        )}
+
+        {transactions && transactions.transactions && (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
             <p className="text-sm font-medium text-gray-900 mb-2">Letzte {transactions.count} Transaktionen (7 Tage):</p>
             <div className="max-h-48 overflow-y-auto space-y-1">
