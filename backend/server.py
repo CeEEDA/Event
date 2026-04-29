@@ -493,6 +493,17 @@ async def verify_reset_token(token: str):
 
 # ============== User Management (Admin) ==============
 
+@api_router.get("/users/active")
+async def list_active_users(user: dict = Depends(get_current_user)):
+    """Lightweight list of active users for dropdowns (z.B. Projektberichte).
+    Erfordert nur Login – keine Admin-Rechte. Liefert nur minimale Felder.
+    """
+    users = await db.users.find(
+        {"is_active": {"$ne": False}, "role": {"$ne": "kunde"}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "is_active": 1}
+    ).to_list(1000)
+    return users
+
 @api_router.get("/users", response_model=List[UserResponse])
 async def list_users(admin: dict = Depends(require_admin)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)

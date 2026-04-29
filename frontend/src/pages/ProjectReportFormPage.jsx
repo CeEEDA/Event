@@ -72,14 +72,14 @@ export default function ProjectReportFormPage() {
 
   // Load existing report if editing
   useEffect(() => {
-    // Load available users and work templates
+    // Load available users and work templates (independent: one failure shouldn't kill the other)
     (async () => {
       try {
-        const [usersRes, templatesRes] = await Promise.all([
-          api.get("/users"),
-          api.get("/project-reports/work-templates"),
-        ]);
+        const usersRes = await api.get("/users/active");
         setAvailableUsers((usersRes.data || []).filter(u => u.is_active !== false && u.role !== "kunde"));
+      } catch { /* silent */ }
+      try {
+        const templatesRes = await api.get("/project-reports/work-templates");
         setWorkTemplates(templatesRes.data || []);
       } catch { /* silent */ }
     })();

@@ -15,6 +15,12 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P0 Hotfix (Projektbericht: Mitarbeiter & Vorlagen für Nicht-Admins):**
+  - Bug: Normale Mitarbeiter sahen im `/project-report/new` weder das Mitarbeiter-Auswahl-Dropdown noch die Textbaustein-Vorlagen. Ursache: `GET /api/users` ist Admin-only (403 für Mitarbeiter) und der Frontend-Call lief in einem `Promise.all` zusammen mit `/work-templates` → bei 403 wurde die ganze Promise abgewiesen, beide State-Setter sprangen nie.
+  - Backend (`/app/backend/server.py`): Neuer Endpoint `GET /api/users/active` mit `Depends(get_current_user)` (nur Login nötig). Liefert ausschliesslich `id, name, email, role, is_active` aktiver Nicht-Kunden – keine sensiblen Felder (`password_hash`, `permissions`, `access_*`, `apps`).
+  - Frontend (`/app/frontend/src/pages/ProjectReportFormPage.jsx`): Calls für `/users/active` und `/project-reports/work-templates` in zwei separate `try/catch`-Blöcke aufgeteilt → ein Fehler killt nicht mehr beide Listen. URL geändert: `/users` → `/users/active`.
+  - Verifiziert: Mitarbeiter-Login (`ma1@test.com`) → Dropdown zeigt 10 aktive User (Anna Weber, Max, Christine Ecker, Sebastian Heidmann, Marcel Pfefferkorn, Martin Mull + Admins), `Textbaustein einfuegen…` Dropdown ist sichtbar. `/api/users` weiterhin 403 für Nicht-Admins.
+
 - **2026-02 — P0 Hotfix (Sening Tankbeleg-Parser: Bitmap-Digit-Decode):**
   - Sening MultiFlow rendert manchmal die letzte Ziffer der Menge als Sening-Bitmap-Encoding (Eichmarker). Beispiel: 1296 L wurde als 129 erkannt (ASCII), 154 L als 15.
   - **Reverse-Engineering der Sening-Bitmap-Codierung** anhand 5 echter Hex-Dumps (Belege 16940-16944) ergab eine eindeutige Formel:
