@@ -842,15 +842,25 @@ export default function HubPage() {
                               <button onClick={async (e) => {
                                 e.stopPropagation();
                                 if (!window.confirm(`Zahlungserinnerung fuer ${t.payment_reminder_invoice_number} an ${t.payment_reminder_email} senden?`)) return;
+                                // Optimistisches Entfernen aus der Liste, damit die Aufgabe sofort verschwindet
+                                setTasks(prev => prev.filter(x => x.id !== t.id));
                                 try {
                                   await api.post(`/kirmes/invoices/${t.payment_reminder_invoice_id}/send-reminder`);
                                   toast.success(`Mahnung ${t.payment_reminder_invoice_number} versendet`);
                                   loadTasks();
-                                } catch { toast.error("Fehler beim Senden"); }
+                                } catch {
+                                  toast.error("Fehler beim Senden");
+                                  loadTasks();
+                                }
                               }} className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors" data-testid={`send-reminder-${t.id}`}>
                                 Versenden
                               </button>
-                              <button onClick={(e) => { e.stopPropagation(); toggleTask(t); }} className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" data-testid={`dismiss-reminder-${t.id}`}>
+                              <button onClick={(e) => {
+                                e.stopPropagation();
+                                // Optimistisches Entfernen
+                                setTasks(prev => prev.filter(x => x.id !== t.id));
+                                toggleTask(t);
+                              }} className="px-2.5 py-1 text-[10px] font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" data-testid={`dismiss-reminder-${t.id}`}>
                                 Ablehnen
                               </button>
                             </div>

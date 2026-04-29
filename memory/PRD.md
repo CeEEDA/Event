@@ -15,6 +15,14 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P0 Bugfix (Mahn-Aufgaben verschwinden nicht nach Versenden):**
+  - **Symptom**: Nach Klick auf "Versenden" einer Mahnungs-Task blieb diese in der Aufgabenliste sichtbar.
+  - **Wurzel**: Race-Condition zwischen `send-reminder`-Endpoint (markiert Task als completed) und dem Mahnungs-Scheduler `check_overdue_invoices` (laeuft alle 6h + bei Server-Start). Der Scheduler suchte nur nach `completed: False`-Tasks fuer dieselbe Stufe; nach einem Versenden war die Bedingung erfuellt → er erstellte sofort eine neue Task mit identischer Stufe. Hot-Reload triggerte das exakt ~9 Sekunden nach einem User-Versand → User sah scheinbar "die Task ist immer noch da".
+  - **Backend-Fix** (`/app/backend/routes/kirmes.py`): Existenz-Check ignoriert `completed`-Status (`is_deleted: {"$ne": True}` reicht). Damit blockiert eine bereits ERLEDIGTE Mahn-Task einer Stufe das Neu-Erstellen derselben Stufe. Naechste Stufe wird erst nach 14 Tagen erzeugt. Kommentar fuer den Aufraeum-Code in `send-reminder` wurde praeziser.
+  - **Frontend-Fix** (`/app/frontend/src/pages/HubPage.js`): Optimistisches `setTasks(prev => prev.filter(...))` direkt beim Klick auf "Versenden"/"Ablehnen" → Task verschwindet sofort. Bei API-Fehler wird `loadTasks()` aufgerufen → Task taucht ggf. wieder auf.
+  - Aufraeumung: 1 hangengebliebene Race-Altlast-Task (Meyer R26-K-0002) per Script geschlossen.
+  - Verifiziert: curl-Flow vorher 1 offen → POST send-reminder → nachher 0 offen ✅.
+
 - **2026-02 — P1 Feature (Hub: Admin-Anwesenheits-Panel im Stempelkarten-Header):**
   - Backend (`/app/backend/routes/employee.py` `/time/presence`): Endpoint liefert jetzt ALLE aktiven Admins/Mitarbeiter mit `clocked_in`-Status (nicht nur die eingestempelten). Sortierung: eingestempelt zuerst, dann alphabetisch. Kunden ausgeschlossen.
   - Frontend (`/app/frontend/src/pages/HubPage.js`): Neuer `presence`-State + 10s-Polling. Im Stempelkarten-Header neben Resturlaub/Überstunden ein Panel "ANWESENHEIT" mit Counter `online/total` und Liste aller Mitarbeiter mit grünen/grauen Punkten (Vorname + Tooltip mit vollen Namen und Uhrzeit). Wird nur Admins angezeigt.

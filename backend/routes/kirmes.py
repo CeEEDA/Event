@@ -2101,11 +2101,12 @@ async def check_overdue_invoices():
             # Noch keine Mahnung → 1. Mahnung
             mahnung_stufe = 1
 
-        # Pruefen ob schon eine offene Aufgabe fuer diese Stufe existiert
+        # Pruefen ob schon eine Aufgabe fuer diese Stufe existiert (offen ODER bereits erledigt)
+        # → Verhindert dass nach einem "Versenden" der Scheduler dieselbe Stufe erneut erstellt.
+        # Eine neue Aufgabe wird erst erzeugt, wenn die NAECHSTE Stufe faellig ist (s. oben).
         existing_task = await _db.tasks.find_one({
             "payment_reminder_invoice_id": inv["id"],
             "payment_reminder_stufe": mahnung_stufe,
-            "completed": False,
             "is_deleted": {"$ne": True},
         })
         if existing_task:
@@ -2240,9 +2241,10 @@ Eventenergie Deutschland GmbH & Co. KG"""
         }
     await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update_fields})
 
-    # Complete the task if exists
+    # Alle offenen Mahnungs-Aufgaben fuer diese Rechnung als erledigt markieren
+    # (egal welche Stufe – das Versenden erledigt den aktuellen Mahn-Vorgang).
     await _db.tasks.update_many(
-        {"payment_reminder_invoice_id": invoice_id, "completed": False},
+        {"payment_reminder_invoice_id": invoice_id, "completed": False, "is_deleted": {"$ne": True}},
         {"$set": {"completed": True, "completed_at": datetime.now(timezone.utc).isoformat(),
                   "completed_by": user.get("id"), "completed_by_name": user.get("name", "")}}
     )
