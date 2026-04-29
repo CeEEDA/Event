@@ -57,6 +57,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 import { OpenLocationCode } from "open-location-code";
+import { openExternal } from "../lib/openExternal";
 
 const olcInstance = new OpenLocationCode();
 
@@ -413,12 +414,12 @@ export default function OrderDetailPage() {
 
   const openFuelPdf = (id) => {
     const token = localStorage.getItem("token");
-    window.open(`${BACKEND_URL}/api/fuel-receipts/${id}/pdf?token=${token}`, "_blank");
+    openExternal(`${BACKEND_URL}/api/fuel-receipts/${id}/pdf?token=${token}`);
   };
 
   const downloadAllPdfs = () => {
     const token = localStorage.getItem("token");
-    window.open(`${BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`, "_blank");
+    openExternal(`${BACKEND_URL}/api/fuel-receipts/by-order/${pk}/pdf-all?token=${token}`);
   };
 
   const deleteProjectReport = async (id) => {
@@ -502,7 +503,7 @@ export default function OrderDetailPage() {
                 className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
                 onClick={() => {
                   const token = localStorage.getItem("token");
-                  window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
+                  openExternal(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`);
                 }}
                 data-testid="billing-pdf-btn"
               >
@@ -1022,7 +1023,7 @@ export default function OrderDetailPage() {
                       className="h-7 text-xs border-gray-300"
                       onClick={() => {
                         const token = localStorage.getItem("token");
-                        window.open(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`, "_blank");
+                        openExternal(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`);
                       }}
                       data-testid="reports-download-all-btn"
                     >
@@ -1102,7 +1103,7 @@ export default function OrderDetailPage() {
                         <button
                           onClick={() => {
                             const token = localStorage.getItem("token");
-                            window.open(`${BACKEND_URL}/api/project-reports/${r.id}/pdf?token=${token}`, "_blank");
+                            openExternal(`${BACKEND_URL}/api/project-reports/${r.id}/pdf?token=${token}`);
                           }}
                           className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
                           title="PDF herunterladen"
@@ -1505,7 +1506,7 @@ function GpsMapModal({ receipt, onClose }) {
         <div className="p-3 flex justify-end gap-2">
           <Button
             size="sm" variant="outline"
-            onClick={() => window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank")}
+            onClick={() => openExternal(`https://www.google.com/maps?q=${lat},${lng}`)}
             className="text-xs"
             data-testid="gps-google-maps-btn"
           >

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import CameraCapture from "../components/CameraCapture";
+import { openExternal } from "../lib/openExternal";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -127,7 +128,7 @@ export default function OrderDocumentsPage() {
 
   const downloadZip = () => {
     const token = localStorage.getItem("token");
-    window.open(`${BACKEND}/api/orders/order-documents/${pk}/zip?token=${token}`, "_blank");
+    openExternal(`${BACKEND}/api/orders/order-documents/${pk}/zip?token=${token}`);
   };
 
   const getFileUrl = (doc) =>

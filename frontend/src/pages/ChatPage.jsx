@@ -10,6 +10,7 @@ import {
   MessageSquare, X, Search, Check, CheckCheck, Loader2,
   FileText, Download, UserPlus, UserMinus, ChevronRight, Camera, Pencil,
 } from "lucide-react";
+import { openExternal } from "../lib/openExternal";
 
 const API = BACKEND_URL;
 
@@ -394,7 +395,7 @@ export default function ChatPage() {
                                   src={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}&thumbnail=1&size=400`}
                                   alt={m.attachment.filename}
                                   className="rounded-lg max-w-full max-h-48 cursor-pointer"
-                                  onClick={() => window.open(`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`, "_blank")}
+                                  onClick={() => openExternal(`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`)}
                                 />
                               ) : (
                                 <a

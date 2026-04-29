@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
+import { openExternal } from "../lib/openExternal";
 
 // Pi Setup Section for Messkoffer - generates all-in-one installer
 function PiSetupSection({ deviceId, deviceName, deviceType }) {
@@ -454,11 +455,11 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
 
   const handleDownloadModuleTopics = () => {
     if (!controller || !topicInfo) return;
-    window.open(`${BACKEND_URL}/api/download-controller-topics/${encodeURIComponent(controller)}?t=${Date.now()}`, "_blank");
+    openExternal(`${BACKEND_URL}/api/download-controller-topics/${encodeURIComponent(controller)}?t=${Date.now()}`);
   };
 
   const handleDownloadGatewayTopics = () => {
-    window.open(`${BACKEND_URL}/api/download-dse890-gateway-topics?t=${Date.now()}`, "_blank");
+    openExternal(`${BACKEND_URL}/api/download-dse890-gateway-topics?t=${Date.now()}`);
   };
 
   return (

@@ -11,6 +11,7 @@ import {
   DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText, Check, Heart, FileDown,
   Pencil, X,
 } from "lucide-react";
+import { openExternal } from "../lib/openExternal";
 
 export default function AdminZeitDetailPage() {
   const { user } = useAuth();
@@ -272,7 +273,7 @@ export default function AdminZeitDetailPage() {
 
   const downloadCsv = async () => {
     const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/payroll/${userId}/csv?month=${payrollMonth}&token=${token}`;
-    window.open(url, "_blank");
+    openExternal(url);
   };
 
   // Load ALL time entries for the year

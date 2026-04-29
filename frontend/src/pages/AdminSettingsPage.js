@@ -50,6 +50,7 @@ import {
   Laptop,
   CircleDollarSign,
 } from "lucide-react";
+import { openExternal } from "../lib/openExternal";
 
 /* ───── System Status Dashboard ───── */
 function SystemStatusDashboard() {
@@ -1112,7 +1113,7 @@ function SoftwareDownloadsSection() {
       "build-mobile.ps1": "build-mobile-win",
       "build-mobile.sh": "build-mobile-mac",
     };
-    window.open(`${BACKEND_URL}/api/system/downloads/${routeMap[filename] || filename}`, "_blank");
+    openExternal(`${BACKEND_URL}/api/system/downloads/${routeMap[filename] || filename}`);
   };
 
   const formatSize = (bytes) => {

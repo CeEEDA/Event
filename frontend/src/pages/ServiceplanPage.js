@@ -16,6 +16,7 @@ import {
 import QrScanner from "../components/QrScanner";
 import EventLog from "../components/EventLog";
 import FaultDiagnosticsPanel from "../components/FaultDiagnosticsPanel";
+import { openExternal } from "../lib/openExternal";
 
 const TYPE_LABELS = { stromerzeuger: "Stromerzeuger", lichtmast: "Lichtmast", messkoffer: "Messkoffer", kirmeskiste: "Kirmeskiste", verteiler: "Verteiler" };
 
@@ -858,7 +859,7 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
                     const url = window.URL.createObjectURL(new Blob([res.data]));
                     const ct = res.headers["content-type"] || "";
                     if (ct.startsWith("image/") || ct === "application/pdf") {
-                      window.open(url, "_blank");
+                      openExternal(url);
                     } else {
                       const a = document.createElement("a");
                       a.href = url; a.download = doc.filename || "dokument"; a.click();

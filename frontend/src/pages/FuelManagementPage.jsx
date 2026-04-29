@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { Logo } from "../components/Logo";
+import { openExternal } from "../lib/openExternal";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -218,7 +219,7 @@ export default function FuelManagementPage() {
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-amber-600" onClick={() => {
                               const token = localStorage.getItem("token");
                               const url = `${process.env.REACT_APP_BACKEND_URL}/api/fuel-receipts/${r.id}/pdf?token=${token}`;
-                              window.open(url, "_blank");
+                              openExternal(url, { title: `Tankbeleg ${r.beleg_nr || ""}` });
                             }} title="PDF" data-testid={`pdf-fuel-${r.id}`}>
                               <Download className="w-4 h-4" />
                             </Button>

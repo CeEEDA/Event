@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
 import { Toaster } from "./components/ui/sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { openExternal } from "./lib/openExternal";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -496,6 +498,33 @@ function AppRoutes() {
 }
 
 function App() {
+  // Globaler Interceptor: Auf Capacitor (iPad/Android) werden ALLE Klicks auf
+  // <a target="_blank"> in den In-App-Browser umgeleitet. Sonst oeffnet sich
+  // im selben WebView ohne Zurueck-Button und der User "strandet" in der Datei.
+  useEffect(() => {
+    const isNative =
+      typeof window !== "undefined" &&
+      window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === "function" &&
+      window.Capacitor.isNativePlatform();
+    if (!isNative) return;
+
+    const handler = (e) => {
+      const anchor = e.target.closest && e.target.closest("a[target='_blank'], a[target=_blank]");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Resolve relative URLs zu absolute
+      const absoluteUrl = new URL(href, window.location.href).toString();
+      openExternal(absoluteUrl);
+    };
+
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
 import api from "../lib/api";
+import { openExternal } from "../lib/openExternal";
 import { 
   Link2, 
   Trash2, 
@@ -184,7 +185,7 @@ export const SharesPanel = () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => window.open(`/share/${share.token}`, "_blank")}
+                        onClick={() => openExternal(`/share/${share.token}`)}
                         className="h-8 w-8 text-gray-500 hover:text-fuchsia-600"
                         disabled={expired}
                         data-testid={`open-share-${share.id}`}

@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import SignatureCanvas from "react-signature-canvas";
 import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck, UserPlus, Lock, FileDown } from "lucide-react";
+import { openExternal } from "../lib/openExternal";
 
 const ROLLEN = ["PL", "ME", "T", "H"];
 const STUNDEN_TYPEN = ["N", "E", "NO"];
@@ -233,7 +234,7 @@ export default function ProjectReportFormPage() {
             {isEdit && (
               <Button variant="outline" size="sm" onClick={() => {
                 const token = localStorage.getItem("token");
-                window.open(`${process.env.REACT_APP_BACKEND_URL}/api/project-reports/${reportId}/pdf?token=${token}`, "_blank");
+                openExternal(`${process.env.REACT_APP_BACKEND_URL}/api/project-reports/${reportId}/pdf?token=${token}`);
               }} data-testid="pdf-btn">
                 <FileDown className="w-4 h-4 mr-1" /> PDF
               </Button>

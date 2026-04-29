@@ -7,6 +7,7 @@ import {
 import { Button } from "./ui/button";
 import { Copy, ExternalLink, Download } from "lucide-react";
 import { toast } from "sonner";
+import { openExternal } from "../lib/openExternal";
 
 export const DownloadLinkDialog = ({ open, onClose, url, filename }) => {
   const copyLink = () => {
@@ -25,7 +26,7 @@ export const DownloadLinkDialog = ({ open, onClose, url, filename }) => {
   };
 
   const openInNewTab = () => {
-    window.open(url, "_blank", "noopener,noreferrer");
+    openExternal(url);
   };
 
   return (
