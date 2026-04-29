@@ -1332,8 +1332,8 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                {/* App Permissions Section (für Mitarbeiter & Kunden – Admin sieht das nicht) */}
-                {formData.role !== "admin" && (
+                {/* App Permissions Section (nur für Kunden – steuert Geräte-Zugriff) */}
+                {formData.role === "kunde" && (
                 <div className="border-t border-gray-200 pt-4 mt-4">
                   <h3 className="font-semibold text-gray-900 mb-4">App-Berechtigungen</h3>
                   
@@ -1714,7 +1714,7 @@ export default function AdminPage() {
                 </div>
                 )}
 
-                {formData.role !== "kunde" && (
+                {formData.role !== "kunde" && formData.role !== "mitarbeiter" && (
                   <div className="border-t border-gray-200 pt-4 mt-4">
                     <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
                       <div className="flex items-center justify-between">
