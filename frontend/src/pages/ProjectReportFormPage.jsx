@@ -7,8 +7,9 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import SignatureCanvas from "react-signature-canvas";
-import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck, UserPlus, Lock, FileDown } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Loader2, ClipboardList, Users, Wrench, Truck, UserPlus, Lock, FileDown, Search, FileText } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
 const ROLLEN = ["PL", "ME", "T", "H"];
 const STUNDEN_TYPEN = ["N", "E", "NO"];
@@ -64,6 +65,10 @@ export default function ProjectReportFormPage() {
   const [workTemplates, setWorkTemplates] = useState([]);
   const [material, setMaterial] = useState([emptyMaterial()]);
   const [fahrzeuge, setFahrzeuge] = useState([emptyVehicle()]);
+
+  // Textbaustein-Picker (Popup mit Suche)
+  const [tplPickerIdx, setTplPickerIdx] = useState(null); // workLog row index oder null
+  const [tplSearch, setTplSearch] = useState("");
 
   const sigTechRef = useRef(null);
   const sigKundeRef = useRef(null);
@@ -411,23 +416,15 @@ export default function ProjectReportFormPage() {
                     <div className="flex items-center justify-between mb-0.5">
                       <Label className="text-[10px] text-gray-400 uppercase">Arbeitsbeschreibung</Label>
                       {workTemplates.length > 0 && (
-                        <select
-                          className="text-[10px] h-5 border rounded px-1 text-gray-500 bg-white"
-                          value=""
-                          onChange={e => {
-                            const tid = e.target.value;
-                            if (!tid) return;
-                            const tpl = workTemplates.find(t => t.id === tid);
-                            if (!tpl) return;
-                            setWorkLog(w => w.map((x, i) => i === wIdx ? { ...x, beschreibung: x.beschreibung ? x.beschreibung + "\n" + tpl.text : tpl.text } : x));
-                          }}
-                          data-testid={`worklog-template-${wIdx}`}
+                        <button
+                          type="button"
+                          onClick={() => { setTplPickerIdx(wIdx); setTplSearch(""); }}
+                          className="inline-flex items-center gap-1 text-[10px] h-6 border border-gray-200 rounded px-2 text-gray-600 bg-white hover:bg-fuchsia-50 hover:border-fuchsia-300 hover:text-fuchsia-700 transition-colors"
+                          data-testid={`worklog-template-btn-${wIdx}`}
                         >
-                          <option value="">Textbaustein einfuegen...</option>
-                          {workTemplates.map(t => (
-                            <option key={t.id} value={t.id}>{t.bezeichnung || t.text}</option>
-                          ))}
-                        </select>
+                          <FileText className="w-3 h-3" />
+                          Textbaustein
+                        </button>
                       )}
                     </div>
                     <textarea
@@ -630,6 +627,95 @@ export default function ProjectReportFormPage() {
           </div>
         )}
       </fieldset>
+
+      {/* Textbaustein Picker Dialog */}
+      <Dialog open={tplPickerIdx !== null} onOpenChange={(open) => { if (!open) { setTplPickerIdx(null); setTplSearch(""); } }}>
+        <DialogContent className="max-w-xl max-h-[80vh] flex flex-col p-0 gap-0" data-testid="template-picker-dialog">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b">
+            <DialogTitle className="text-base flex items-center gap-2">
+              <FileText className="w-4 h-4 text-fuchsia-600" />
+              Textbaustein einfügen
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-5 py-3 border-b bg-gray-50">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <Input
+                autoFocus
+                value={tplSearch}
+                onChange={e => setTplSearch(e.target.value)}
+                placeholder="Suchen (Bezeichnung, Text, Kategorie)..."
+                className="pl-9 h-9"
+                data-testid="template-picker-search"
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto flex-1 px-2 py-2">
+            {(() => {
+              const q = tplSearch.trim().toLowerCase();
+              const filtered = workTemplates.filter(t => {
+                if (!q) return true;
+                return (
+                  (t.bezeichnung || "").toLowerCase().includes(q) ||
+                  (t.text || "").toLowerCase().includes(q) ||
+                  (t.kategorie || "").toLowerCase().includes(q)
+                );
+              });
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-10 text-sm text-gray-400" data-testid="template-picker-empty">
+                    Keine Textbausteine gefunden
+                  </div>
+                );
+              }
+              // Gruppieren nach Kategorie
+              const groups = {};
+              filtered.forEach(t => {
+                const k = (t.kategorie || "").trim() || "Allgemein";
+                if (!groups[k]) groups[k] = [];
+                groups[k].push(t);
+              });
+              const groupNames = Object.keys(groups).sort((a, b) => {
+                if (a === "Allgemein") return 1;
+                if (b === "Allgemein") return -1;
+                return a.localeCompare(b, "de");
+              });
+              return groupNames.map(g => (
+                <div key={g} className="mb-2">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-400 px-3 py-1.5 sticky top-0 bg-white">{g}</div>
+                  <div className="space-y-1">
+                    {groups[g].map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          const idx = tplPickerIdx;
+                          setWorkLog(w => w.map((x, i) => i === idx ? { ...x, beschreibung: x.beschreibung ? x.beschreibung + "\n" + t.text : t.text } : x));
+                          setTplPickerIdx(null);
+                          setTplSearch("");
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-md hover:bg-fuchsia-50 hover:border-fuchsia-300 border border-transparent transition-colors group"
+                        data-testid={`template-picker-item-${t.id}`}
+                      >
+                        <div className="text-sm font-medium text-gray-900 group-hover:text-fuchsia-700 truncate">
+                          {t.bezeichnung || t.text}
+                        </div>
+                        {t.bezeichnung && t.text && t.text !== t.bezeichnung && (
+                          <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{t.text}</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+          <div className="px-5 py-2 border-t bg-gray-50 text-[11px] text-gray-500 flex items-center justify-between">
+            <span data-testid="template-picker-count">{workTemplates.length} Textbaustein{workTemplates.length === 1 ? "" : "e"}</span>
+            <span className="text-gray-400">ESC zum Schliessen</span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

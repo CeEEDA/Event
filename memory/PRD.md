@@ -15,6 +15,11 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 UX (Projektbericht: Textbaustein-Picker mit Suche):**
+  - Bug/UX: Bei spaeter 40+ Textbausteinen wurde das native `<select>`-Dropdown unuebersichtlich.
+  - Fix (`/app/frontend/src/pages/ProjectReportFormPage.jsx`): Inline-`<select>` durch Button "Textbaustein" ersetzt; oeffnet Dialog (`shadcn/ui Dialog`) mit Suchleiste (Auto-Fokus, durchsucht Bezeichnung+Text+Kategorie), Gruppierung nach Kategorie (z.B. AUFBAU, ELEKTRO, ALLGEMEIN ans Ende), und Klick fuegt den Text ein und schliesst das Popup. Footer-Counter mit Gesamtzahl.
+  - Verifiziert: 5 Bausteine -> Suche "kabel" filtert auf 3, Klick fuegt Text in Arbeitsbeschreibung ein.
+
 - **2026-02 — P0 Hotfix (Projektbericht: Mitarbeiter & Vorlagen für Nicht-Admins):**
   - Bug: Normale Mitarbeiter sahen im `/project-report/new` weder das Mitarbeiter-Auswahl-Dropdown noch die Textbaustein-Vorlagen. Ursache: `GET /api/users` ist Admin-only (403 für Mitarbeiter) und der Frontend-Call lief in einem `Promise.all` zusammen mit `/work-templates` → bei 403 wurde die ganze Promise abgewiesen, beide State-Setter sprangen nie.
   - Backend (`/app/backend/server.py`): Neuer Endpoint `GET /api/users/active` mit `Depends(get_current_user)` (nur Login nötig). Liefert ausschliesslich `id, name, email, role, is_active` aktiver Nicht-Kunden – keine sensiblen Felder (`password_hash`, `permissions`, `access_*`, `apps`).
