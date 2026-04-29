@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronRight, Clock, CalendarOff, Receipt, User as UserIcon, Heart } from "lucide-react";
+import { ArrowLeft, ChevronRight, Clock, CalendarOff, Receipt, User as UserIcon, Heart, FileText } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "../components/ui/dialog";
@@ -116,6 +116,14 @@ export default function MitarbeiterDatenPage() {
       onClick: () => navigate("/abrechnung"),
     },
     {
+      key: "dokumente",
+      label: "Dokumente",
+      description: "Personalausweis, Führerschein und Zertifikate ansehen",
+      icon: FileText,
+      color: "fuchsia",
+      onClick: () => navigate("/mitarbeiter-daten/dokumente"),
+    },
+    {
       key: "verbandsbuch",
       label: "Verbandseintrag melden",
       description: "Unfall, Verletzung oder Erkrankung gem. DGUV dokumentieren",
@@ -130,6 +138,7 @@ export default function MitarbeiterDatenPage() {
     orange: { bg: "bg-orange-100", text: "text-orange-600", hoverBorder: "hover:border-orange-400", hoverIcon: "group-hover:bg-orange-600" },
     emerald: { bg: "bg-emerald-100", text: "text-emerald-600", hoverBorder: "hover:border-emerald-400", hoverIcon: "group-hover:bg-emerald-600" },
     red: { bg: "bg-red-100", text: "text-red-600", hoverBorder: "hover:border-red-400", hoverIcon: "group-hover:bg-red-600" },
+    fuchsia: { bg: "bg-fuchsia-100", text: "text-fuchsia-600", hoverBorder: "hover:border-fuchsia-400", hoverIcon: "group-hover:bg-fuchsia-600" },
   };
 
   return (

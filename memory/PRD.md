@@ -15,6 +15,19 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Mitarbeiter: eigene Dokumente einsehen):**
+  - Mitarbeiter koennen jetzt im Bereich "Mitarbeiter-Daten" ihre eigenen Personaldokumente (Personalausweis, Fuehrerschein, Fahrerkarte, Erste Hilfe, Sicherheitsunterweisung, Staplerschein, Hubarbeitsbuehne, Teleskoplader, Baumaschine) einsehen und herunterladen.
+  - Neuer Tile "Dokumente" in `MitarbeiterDatenPage.jsx` (fuchsia, FileText) → Route `/mitarbeiter-daten/dokumente`.
+  - Neue Seite `MitarbeiterDokumentePage.jsx` mit Stats-Strip (Gesamt/Gueltig/Laeuft bald/Abgelaufen), Status-Karten je Dokumenttyp (gruen/amber/rot) und `openExternal`-Anbindung fuer Tablet-PDF-Viewer.
+  - **Sicherheit verifiziert per curl** (6-Schritte-Test):
+    1. Mitarbeiter ohne `user_id` → eigene Docs ✅
+    2. Mitarbeiter mit `user_id=admin` injiziert → Backend ignoriert, eigene Docs ✅
+    3. Admin laedt Dok fuer MA1 hoch → korrekt zugeordnet ✅
+    4. MA1 sieht hochgeladenes Dok ✅
+    5. MA1 lädt eigenes Dok runter → 200 ✅
+    6. MA1 versucht fremdes Admin-Dok zu downloaden → **403** ✅
+  - Backend (`/app/backend/routes/employee.py`) war bereits sauber abgesichert (Zeile 268+472): `target_id = user_id if user_id and caller.role==admin else caller.id`.
+
 - **2026-02 — P0 Bugfix (Generator-Detail: "Laedt forever" fuer Mitarbeiter):**
   - Symptom: Mitarbeiter sieht 7 Maschinen in Monitoring-Liste, beim Klick bleibt manchmal nur "Laedt..." stehen (nicht immer, Maschine egal).
   - Wurzel: `GET /api/generators/{id}` (`server-side`) lehnte Mitarbeiter ohne expliziten `generator_monitoring.generator_ids`-Eintrag mit 403 ab. Die LIST aber blendet automatisch ALLE aktiven Stromerzeuger-/Lichtmast-Devices als virtuelle `dev-`-Generatoren ein (ohne Permission-Check) → Inkonsistenz. Ergebnis: 403 in `Promise.all([device, telemetry, alarms])` killte alle 3, Frontend fiel in `catch` → Toast + Navigate zurueck → User sieht "Laedt"-Flackern.
