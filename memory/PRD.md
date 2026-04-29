@@ -15,6 +15,12 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P0 UI-Cleanup (Benutzerverwaltung):**
+  - In `/app/frontend/src/pages/AdminPage.js` die Spalten **FileShare**, **Monitoring** und **Energy** aus der Haupt-Benutzer-Tabelle entfernt (sowohl `<th>` als auch `<td>`).
+  - colSpan der Loading-/Empty-/Expand-Zeilen von 8 auf 5 angepasst.
+  - Verbleibende Spalten: Name, E-Mail, Rolle, Status, Aktionen.
+  - Detail-/Berechtigungsverwaltung dieser Apps bleibt im Edit-Dialog erhalten.
+
 - **2026-02 — P1 Feature (Rollenbasierte Hub-Kacheln + ADR / Tankwagen-Betanker):**
   - Neues Feld `apps.modules.{key}` pro User (orders, einsatzplanung, kirmes, verwaltung, power_monitoring, energy_monitoring, devices, fileshare, serviceplan, **adr**). Default true (Backward-Compat); Admin sieht IMMER alles.
   - Immer sichtbar fuer alle Rollen: Chat, Mitarbeiter-Daten, FAQ.

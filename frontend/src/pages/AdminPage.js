@@ -911,9 +911,6 @@ export default function AdminPage() {
                         <th className="px-4 py-3 text-left">Name</th>
                         <th className="px-4 py-3 text-left hidden md:table-cell">E-Mail</th>
                         <th className="px-4 py-3 text-left">Rolle</th>
-                        <th className="px-4 py-3 text-left hidden sm:table-cell">FileShare</th>
-                        <th className="px-4 py-3 text-left hidden sm:table-cell">Monitoring</th>
-                        <th className="px-4 py-3 text-left hidden lg:table-cell">Energy</th>
                         <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
                         <th className="px-4 py-3 text-right">Aktionen</th>
                       </tr>
@@ -921,7 +918,7 @@ export default function AdminPage() {
                     <tbody className="divide-y divide-gray-100">
                       {loading ? (
                         <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-gray-500">Laden...</td>
+                          <td colSpan={5} className="px-4 py-8 text-center text-gray-500">Laden...</td>
                         </tr>
                       ) : (() => {
                         const filtered = users.filter(u => {
@@ -938,7 +935,7 @@ export default function AdminPage() {
                         if (filtered.length === 0) {
                           return (
                             <tr>
-                              <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                              <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                                 {userSearch ? "Keine Benutzer gefunden" : "Keine Benutzer in dieser Kategorie"}
                               </td>
                             </tr>
@@ -971,49 +968,6 @@ export default function AdminPage() {
                               <span className={`px-2 py-1 rounded text-xs font-medium ${ROLE_COLORS[user.role]}`}>
                                 {ROLE_LABELS[user.role]}
                               </span>
-                            </td>
-                            <td className="px-4 py-3 hidden sm:table-cell">
-                              {user.role === "admin" || user.apps?.filesharing?.enabled ? (
-                                <span className="inline-flex items-center gap-1 text-green-600 text-xs">
-                                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                                  Aktiv
-                                  {user.apps?.filesharing?.can_write && " (Schreiben)"}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-gray-400 text-xs">
-                                  <span className="w-2 h-2 rounded-full bg-gray-300" />
-                                  Nicht aktiv
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 hidden sm:table-cell">
-                              {user.role === "admin" || user.apps?.generator_monitoring?.enabled ? (
-                                <span className="inline-flex items-center gap-1 text-green-600 text-xs">
-                                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                                  {user.role === "admin" || user.apps?.generator_monitoring?.access_all ? "Alle" : `${(user.apps?.generator_monitoring?.generator_ids || []).length} Geräte`}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-gray-400 text-xs">
-                                  <span className="w-2 h-2 rounded-full bg-gray-300" />
-                                  Nicht aktiv
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 hidden lg:table-cell">
-                              {user.role === "admin" || user.apps?.energy_monitoring?.enabled ? (
-                                <span className="inline-flex items-center gap-1 text-green-600 text-xs">
-                                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                                  {user.role === "admin" || user.apps?.energy_monitoring?.access_all ? "Alle" : `${(user.apps?.energy_monitoring?.device_ids || []).length} Geräte`}
-                                  {user.role === "kunde" && user.apps?.energy_monitoring?.access_type === "temporary" && (
-                                    <CalendarDays className="w-3 h-3 text-amber-500 ml-0.5" title="Zeitlich begrenzt" />
-                                  )}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-gray-400 text-xs">
-                                  <span className="w-2 h-2 rounded-full bg-gray-300" />
-                                  Nicht aktiv
-                                </span>
-                              )}
                             </td>
                             <td className="px-4 py-3 hidden sm:table-cell">
                               {user.is_active ? (
@@ -1064,7 +1018,7 @@ export default function AdminPage() {
                           </tr>
                           {expandedUserId === user.id && (
                             <tr data-testid={`user-activity-${user.id}`}>
-                              <td colSpan={8} className="px-4 py-0">
+                              <td colSpan={5} className="px-4 py-0">
                                 <div className="py-3 pl-11 space-y-4">
                                   {/* Employee Profile Section */}
                                   {(user.role === "mitarbeiter" || user.role === "admin") && (() => {
