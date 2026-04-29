@@ -33,6 +33,7 @@ import SchaustellerDetailPage from "./pages/SchaustellerDetailPage";
 import MeterZuordnungPage from "./pages/MeterZuordnungPage";
 import MeterDiagnosticsPage from "./pages/MeterDiagnosticsPage";
 import ProjectReportFormPage from "./pages/ProjectReportFormPage";
+import StundenberichteListPage from "./pages/StundenberichteListPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import FinancePage from "./pages/FinancePage";
 import VerwaltungPage from "./pages/VerwaltungPage";
@@ -383,6 +384,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AuswertungIndexPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/stundenberichte"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <StundenberichteListPage />
           </ProtectedRoute>
         }
       />

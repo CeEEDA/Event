@@ -1,8 +1,16 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench, Heart } from "lucide-react";
+import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench, Heart, ClipboardList } from "lucide-react";
 
 const subPages = [
+  {
+    key: "stundenberichte",
+    label: "Stundenberichte",
+    description: "Alle Projektberichte mit Volltextsuche – inkl. Blanko-Berichte",
+    icon: ClipboardList,
+    color: "fuchsia",
+    path: "/verwaltung/stundenberichte",
+  },
   {
     key: "dokumente",
     label: "Mitarbeiterdokumente",

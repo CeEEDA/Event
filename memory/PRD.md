@@ -15,6 +15,14 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Projektbericht leer + Stundenberichte-Verwaltung):**
+  - Neuer Button "Projektbericht leer" im Header der `OrdersPage` (`/orders`) → oeffnet `/project-report/new` ohne `order_pk`/`order_name` (Mitarbeiter fuellt Kundendaten manuell aus). Datenmodell unterstuetzte das schon (`order_pk: Optional[str]`).
+  - Neue Admin-Seite `/verwaltung/stundenberichte` (`StundenberichteListPage.jsx`) mit Volltextsuche (Kunde, Projektnummer, Ort, Mitarbeiter, Arbeitsbeschreibung, Bemerkungen) und Filter-Pills (Alle / Mit Projekt / Blanko).
+  - Blanko-Berichte (`order_pk == null`) sind optisch klar gekennzeichnet: gelber Linker Rand, BLANKO-Badge, FileWarning-Icon, Amber-Tint.
+  - Tile "Stundenberichte" als erster Eintrag in `AuswertungIndexPage` (Verwaltung > Auswertung).
+  - Backend: `GET /api/project-reports` (admin-only) mit kompakter Projektion (~12 Felder) – sortiert nach `created_at desc`, Limit 2000.
+  - Verifiziert: Blanko-Bericht via curl erstellt, taucht mit BLANKO-Badge in Liste auf, Suche/Filter funktionieren, Mitarbeiter-Token erhaelt 403.
+
 - **2026-02 — P1 UX (Projektbericht: Textbaustein-Picker mit Suche):**
   - Bug/UX: Bei spaeter 40+ Textbausteinen wurde das native `<select>`-Dropdown unuebersichtlich.
   - Fix (`/app/frontend/src/pages/ProjectReportFormPage.jsx`): Inline-`<select>` durch Button "Textbaustein" ersetzt; oeffnet Dialog (`shadcn/ui Dialog`) mit Suchleiste (Auto-Fokus, durchsucht Bezeichnung+Text+Kategorie), Gruppierung nach Kategorie (z.B. AUFBAU, ELEKTRO, ALLGEMEIN ans Ende), und Klick fuegt den Text ein und schliesst das Popup. Footer-Counter mit Gesamtzahl.

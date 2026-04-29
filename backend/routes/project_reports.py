@@ -163,6 +163,34 @@ async def get_reports_by_order(order_pk: str, user: dict = Depends(_auth_user)):
     return reports
 
 
+@router.get("")
+async def list_all_project_reports(user: dict = Depends(_require_admin)):
+    """Liste aller Projektberichte mit kompakter Projektion fuer die Admin-Verwaltung.
+    Inkludiert blanko Berichte (order_pk == None) – Frontend kennzeichnet diese visuell.
+    """
+    reports = await _db.project_reports.find(
+        {},
+        {
+            "_id": 0,
+            "id": 1,
+            "order_pk": 1,
+            "order_name": 1,
+            "kunde_name": 1,
+            "kunde_ort": 1,
+            "projektnummer": 1,
+            "projekt_datum": 1,
+            "bemerkungen": 1,
+            "mitarbeiter": 1,
+            "work_log": 1,
+            "unterschrift_kunde": 1,
+            "created_by": 1,
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    ).sort("created_at", -1).to_list(2000)
+    return reports
+
+
 # ── Work Templates (Textbausteine) ──
 
 @router.get("/work-templates")
