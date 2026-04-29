@@ -15,6 +15,11 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Chat: Teams-Style Reactions + Threaded Replies):**
+  - Backend (`/app/backend/routes/chat.py`): `reactions: dict[emoji,[user_ids]]` + `parent_id` auf Messages, neuer `POST /chat/messages/{id}/react`, Top-Level-Liste mit `reply_count`-Aggregation, Replies auf Replies werden auf Root geflacht.
+  - Frontend (`/app/frontend/src/pages/ChatPage.jsx`): Schwebende Reaktionsleiste auf Hover (4 Quick + erweitertes 12-Emoji-Picker + Antworten), Reaktion-Badges unter Nachricht (toggle bei Klick), "X Antworten"-Link expandiert inline-Thread mit fuchsia-Linker-Border + Reply-Input.
+  - Verifiziert per curl + Playwright: Reaktionen toggle sauber, Thread-Replies persistiert, Polling synchronisiert offenen Thread.
+
 - **2026-02 — P1 Feature (Mitarbeiter: eigene Dokumente einsehen):**
   - Mitarbeiter koennen jetzt im Bereich "Mitarbeiter-Daten" ihre eigenen Personaldokumente (Personalausweis, Fuehrerschein, Fahrerkarte, Erste Hilfe, Sicherheitsunterweisung, Staplerschein, Hubarbeitsbuehne, Teleskoplader, Baumaschine) einsehen und herunterladen.
   - Neuer Tile "Dokumente" in `MitarbeiterDatenPage.jsx` (fuchsia, FileText) → Route `/mitarbeiter-daten/dokumente`.

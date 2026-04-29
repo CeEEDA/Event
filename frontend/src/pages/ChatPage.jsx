@@ -9,6 +9,7 @@ import {
   ArrowLeft, Send, Plus, Users, User, Paperclip, Image,
   MessageSquare, X, Search, Check, CheckCheck, Loader2,
   FileText, Download, UserPlus, UserMinus, ChevronRight, Camera, Pencil,
+  SmilePlus, MessageCircle, CornerDownRight,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
 
@@ -46,6 +47,12 @@ export default function ChatPage() {
   const [editName, setEditName] = useState("");
   const avatarInputRef = useRef(null);
   const [memberAvatars, setMemberAvatars] = useState({});
+  // Teams-Style Thread + Reactions
+  const [openThreadId, setOpenThreadId] = useState(null);
+  const [threadReplies, setThreadReplies] = useState([]);
+  const [threadInput, setThreadInput] = useState("");
+  const [threadSending, setThreadSending] = useState(false);
+  const [reactionPickerFor, setReactionPickerFor] = useState(null); // msg.id whose reaction bar is shown
 
   const loadConversations = useCallback(async () => {
     try {
@@ -104,8 +111,74 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const loadThread = useCallback(async (msgId) => {
+    if (!activeConvo || !msgId) return;
+    try {
+      const res = await api.get(`/chat/conversations/${activeConvo.id}/messages?token=${token}&parent_id=${msgId}`);
+      setThreadReplies(res.data || []);
+      // sender avatars
+      const senderIds = [...new Set((res.data || []).map(m => m.sender_id).filter(Boolean))];
+      senderIds.forEach(sid => {
+        if (!memberAvatars[sid]) {
+          api.get(`/employee/profile/${sid}?token=${token}`).then(r => {
+            if (r.data.avatar_path) {
+              setMemberAvatars(prev => ({ ...prev, [sid]: `${API}/api/employee/avatar/${sid}?token=${token}&_=${r.data.avatar_path}` }));
+            }
+          }).catch(() => {});
+        }
+      });
+    } catch {}
+  }, [activeConvo, token, memberAvatars]);
+
+  const toggleThread = (msgId) => {
+    if (openThreadId === msgId) {
+      setOpenThreadId(null);
+      setThreadReplies([]);
+      setThreadInput("");
+    } else {
+      setOpenThreadId(msgId);
+      setThreadInput("");
+      loadThread(msgId);
+    }
+  };
+
+  const sendThreadReply = async (e) => {
+    e?.preventDefault();
+    if (!threadInput.trim() || !activeConvo || !openThreadId || threadSending) return;
+    setThreadSending(true);
+    try {
+      const formData = new FormData();
+      formData.append("text", threadInput.trim());
+      formData.append("parent_id", openThreadId);
+      await api.post(`/chat/conversations/${activeConvo.id}/messages?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setThreadInput("");
+      await loadThread(openThreadId);
+      loadMessages(activeConvo.id);
+    } catch { toast.error("Antwort fehlgeschlagen"); }
+    finally { setThreadSending(false); }
+  };
+
+  const toggleReaction = async (msgId, emoji) => {
+    try {
+      const formData = new FormData();
+      formData.append("emoji", emoji);
+      const res = await api.post(`/chat/messages/${msgId}/react?token=${token}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      // Inline State-Update fuer sofortiges Feedback
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reactions: res.data.reactions } : m));
+      setThreadReplies(prev => prev.map(m => m.id === msgId ? { ...m, reactions: res.data.reactions } : m));
+      setReactionPickerFor(null);
+    } catch { toast.error("Reaktion fehlgeschlagen"); }
+  };
+
   const openConvo = async (convo) => {
     setActiveConvo(convo);
+    setOpenThreadId(null);
+    setThreadReplies([]);
+    setReactionPickerFor(null);
     loadMessages(convo.id);
   };
 
@@ -375,46 +448,198 @@ export default function ChatPage() {
                   const isMine = m.sender_id === user?.id;
                   const isImage = m.attachment?.content_type?.startsWith("image/");
                   const senderAvatar = memberAvatars[m.sender_id];
+                  const reactions = m.reactions || {};
+                  const reactionEntries = Object.entries(reactions).filter(([, ids]) => (ids || []).length > 0);
+                  const replyCount = m.reply_count || 0;
+                  const isThreadOpen = openThreadId === m.id;
+                  const showPicker = reactionPickerFor === m.id;
                   return (
-                    <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"} gap-2`}>
-                      {!isMine && (
-                        <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 mt-4">
-                          {senderAvatar ? <img src={senderAvatar} alt="" className="w-full h-full object-cover" /> : <User className="w-3.5 h-3.5 text-gray-400" />}
-                        </div>
-                      )}
-                      <div className={`max-w-[70%]`}>
-                        {!isMine && activeConvo.type === "group" && (
-                          <span className="text-[10px] text-gray-400 ml-1">{m.sender_name}</span>
+                    <div key={m.id} className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}>
+                      <div className={`flex ${isMine ? "justify-end" : "justify-start"} gap-2 w-full`}>
+                        {!isMine && (
+                          <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 mt-4">
+                            {senderAvatar ? <img src={senderAvatar} alt="" className="w-full h-full object-cover" /> : <User className="w-3.5 h-3.5 text-gray-400" />}
+                          </div>
                         )}
-                        <div className={`rounded-2xl px-3 py-2 ${isMine ? "bg-fuchsia-600 text-white rounded-br-md" : "bg-white border border-gray-200 text-gray-900 rounded-bl-md"}`}>
-                          {m.attachment && (
-                            <div className="mb-1">
-                              {isImage ? (
-                                <img
-                                  loading="lazy"
-                                  src={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}&thumbnail=1&size=400`}
-                                  alt={m.attachment.filename}
-                                  className="rounded-lg max-w-full max-h-48 cursor-pointer"
-                                  onClick={() => openExternal(`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`)}
-                                />
-                              ) : (
-                                <a
-                                  href={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`}
-                                  target="_blank" rel="noreferrer"
-                                  className={`text-xs underline flex items-center gap-1 ${isMine ? "text-white/90" : "text-fuchsia-600"}`}
-                                >
-                                  <Paperclip className="w-3 h-3" /> {m.attachment.filename}
-                                </a>
-                              )}
+                        <div className={`max-w-[70%] relative group`}>
+                          {!isMine && activeConvo.type === "group" && (
+                            <span className="text-[10px] text-gray-400 ml-1">{m.sender_name}</span>
+                          )}
+                          <div className={`relative rounded-2xl px-3 py-2 ${isMine ? "bg-fuchsia-600 text-white rounded-br-md" : "bg-white border border-gray-200 text-gray-900 rounded-bl-md"}`}>
+                            {/* Hover-Reaction-Bar (Teams-Style) */}
+                            <div className={`absolute ${isMine ? "right-1" : "left-1"} -top-7 hidden group-hover:flex items-center gap-0.5 bg-white border border-gray-200 rounded-full shadow-md px-1 py-0.5 z-10`} data-testid={`msg-actions-${m.id}`}>
+                              {["👍", "❤️", "😂", "😮"].map(em => (
+                                <button
+                                  key={em}
+                                  onClick={() => toggleReaction(m.id, em)}
+                                  className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-base transition-transform hover:scale-110"
+                                  title={`Mit ${em} reagieren`}
+                                  data-testid={`react-${em}-${m.id}`}
+                                >{em}</button>
+                              ))}
+                              <button
+                                onClick={() => setReactionPickerFor(showPicker ? null : m.id)}
+                                className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                                title="Weitere Reaktion"
+                                data-testid={`react-more-${m.id}`}
+                              ><SmilePlus className="w-3.5 h-3.5" /></button>
+                              <div className="w-px h-4 bg-gray-200 mx-0.5" />
+                              <button
+                                onClick={() => toggleThread(m.id)}
+                                className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                                title="Antworten"
+                                data-testid={`reply-${m.id}`}
+                              ><MessageCircle className="w-3.5 h-3.5" /></button>
+                            </div>
+                            {/* Extended Reaction Picker */}
+                            {showPicker && (
+                              <div className={`absolute ${isMine ? "right-1" : "left-1"} -top-16 flex items-center gap-0.5 bg-white border border-gray-200 rounded-full shadow-lg px-2 py-1 z-20`} data-testid={`react-picker-${m.id}`}>
+                                {["👍", "❤️", "😂", "😮", "😢", "😡", "🎉", "🙏", "🔥", "👏", "✅", "❓"].map(em => (
+                                  <button
+                                    key={em}
+                                    onClick={() => toggleReaction(m.id, em)}
+                                    className="w-7 h-7 rounded-full hover:bg-gray-100 flex items-center justify-center text-base transition-transform hover:scale-110"
+                                  >{em}</button>
+                                ))}
+                              </div>
+                            )}
+                            {m.attachment && (
+                              <div className="mb-1">
+                                {isImage ? (
+                                  <img
+                                    loading="lazy"
+                                    src={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}&thumbnail=1&size=400`}
+                                    alt={m.attachment.filename}
+                                    className="rounded-lg max-w-full max-h-48 cursor-pointer"
+                                    onClick={() => openExternal(`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`)}
+                                  />
+                                ) : (
+                                  <a
+                                    href={`${API}/api/chat/conversations/${activeConvo.id}/file/${m.attachment.id}?token=${token}`}
+                                    target="_blank" rel="noreferrer"
+                                    className={`text-xs underline flex items-center gap-1 ${isMine ? "text-white/90" : "text-fuchsia-600"}`}
+                                  >
+                                    <Paperclip className="w-3 h-3" /> {m.attachment.filename}
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                            {m.text && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>}
+                            <div className={`flex items-center justify-end gap-1 mt-0.5 ${isMine ? "text-white/60" : "text-gray-400"}`}>
+                              <span className="text-[10px]">{formatTime(m.created_at)}</span>
+                              {isMine && <CheckCheck className="w-3 h-3" />}
+                            </div>
+                          </div>
+                          {/* Reaction badges below the bubble */}
+                          {reactionEntries.length > 0 && (
+                            <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? "justify-end" : "justify-start"}`} data-testid={`reactions-${m.id}`}>
+                              {reactionEntries.map(([emoji, ids]) => {
+                                const mineReacted = (ids || []).includes(user?.id);
+                                return (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => toggleReaction(m.id, emoji)}
+                                    className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 border transition-colors ${
+                                      mineReacted
+                                        ? "bg-fuchsia-50 border-fuchsia-300 text-fuchsia-700"
+                                        : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                                    }`}
+                                    data-testid={`reaction-badge-${emoji}-${m.id}`}
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="text-[10px] font-medium">{(ids || []).length}</span>
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
-                          {m.text && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>}
-                          <div className={`flex items-center justify-end gap-1 mt-0.5 ${isMine ? "text-white/60" : "text-gray-400"}`}>
-                            <span className="text-[10px]">{formatTime(m.created_at)}</span>
-                            {isMine && <CheckCheck className="w-3 h-3" />}
-                          </div>
+                          {/* Reply count link */}
+                          {replyCount > 0 && (
+                            <button
+                              onClick={() => toggleThread(m.id)}
+                              className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full hover:bg-fuchsia-50 ${isMine ? "self-end text-fuchsia-200 hover:text-fuchsia-700" : "text-fuchsia-600"}`}
+                              data-testid={`reply-count-${m.id}`}
+                            >
+                              <CornerDownRight className="w-3 h-3" />
+                              {replyCount} {replyCount === 1 ? "Antwort" : "Antworten"}
+                              <ChevronRight className={`w-3 h-3 transition-transform ${isThreadOpen ? "rotate-90" : ""}`} />
+                            </button>
+                          )}
                         </div>
                       </div>
+                      {/* Thread Replies (inline, indented) */}
+                      {isThreadOpen && (
+                        <div className={`w-full ${isMine ? "pr-9" : "pl-9"} mt-2 mb-1`} data-testid={`thread-${m.id}`}>
+                          <div className="border-l-2 border-fuchsia-200 pl-3 space-y-2">
+                            {threadReplies.length === 0 && (
+                              <p className="text-[11px] text-gray-400 italic">Noch keine Antworten – starte die Diskussion.</p>
+                            )}
+                            {threadReplies.map(r => {
+                              const rIsMine = r.sender_id === user?.id;
+                              const rAvatar = memberAvatars[r.sender_id];
+                              const rReactions = r.reactions || {};
+                              const rReactionEntries = Object.entries(rReactions).filter(([, ids]) => (ids || []).length > 0);
+                              return (
+                                <div key={r.id} className="flex gap-2 items-start group/reply">
+                                  <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 mt-0.5">
+                                    {rAvatar ? <img src={rAvatar} alt="" className="w-full h-full object-cover" /> : <User className="w-3 h-3 text-gray-400" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[11px] font-medium text-gray-700">{rIsMine ? "Du" : r.sender_name}</span>
+                                      <span className="text-[10px] text-gray-400">{formatTime(r.created_at)}</span>
+                                      {/* Inline reaction button on reply */}
+                                      <button
+                                        onClick={() => toggleReaction(r.id, "👍")}
+                                        className="opacity-0 group-hover/reply:opacity-100 transition-opacity ml-auto p-1 rounded hover:bg-gray-100 text-gray-400"
+                                        title="👍 reagieren"
+                                        data-testid={`reply-react-${r.id}`}
+                                      ><SmilePlus className="w-3 h-3" /></button>
+                                    </div>
+                                    {r.text && <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{r.text}</p>}
+                                    {rReactionEntries.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {rReactionEntries.map(([emoji, ids]) => {
+                                          const mineReacted = (ids || []).includes(user?.id);
+                                          return (
+                                            <button
+                                              key={emoji}
+                                              onClick={() => toggleReaction(r.id, emoji)}
+                                              className={`px-1.5 py-0.5 rounded-full text-xs flex items-center gap-1 border ${mineReacted ? "bg-fuchsia-50 border-fuchsia-300 text-fuchsia-700" : "bg-white border-gray-200 text-gray-600"}`}
+                                            >
+                                              <span>{emoji}</span><span className="text-[10px]">{(ids || []).length}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {/* Reply input */}
+                            <form onSubmit={sendThreadReply} className="flex items-center gap-2 mt-2">
+                              <Input
+                                value={threadInput}
+                                onChange={e => setThreadInput(e.target.value)}
+                                placeholder="Antworten..."
+                                className="h-8 text-sm bg-white"
+                                data-testid={`thread-input-${m.id}`}
+                                autoFocus
+                              />
+                              <Button
+                                type="submit"
+                                size="sm"
+                                disabled={!threadInput.trim() || threadSending}
+                                className="h-8 px-3 bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                                data-testid={`thread-send-${m.id}`}
+                              >
+                                {threadSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              </Button>
+                            </form>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

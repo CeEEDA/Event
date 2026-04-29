@@ -104,18 +104,46 @@ async def create_conversation(body: dict, token: str = Query(...)):
 
 
 @router.get("/conversations/{conv_id}/messages")
-async def get_messages(conv_id: str, token: str = Query(...), before: Optional[str] = None, limit: int = 50):
+async def get_messages(conv_id: str, token: str = Query(...), before: Optional[str] = None, limit: int = 50, parent_id: Optional[str] = None):
     user = await _get_user(token)
     convo = await db.chat_conversations.find_one({"id": conv_id, "members": user["id"]}, {"_id": 0})
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation nicht gefunden")
 
-    query = {"conversation_id": conv_id}
+    if parent_id:
+        # Replies fuer einen bestimmten Thread (alle, chronologisch)
+        replies = await db.chat_messages.find(
+            {"conversation_id": conv_id, "parent_id": parent_id},
+            {"_id": 0}
+        ).sort("created_at", 1).to_list(500)
+        # Mark replies as read
+        await db.chat_messages.update_many(
+            {"conversation_id": conv_id, "parent_id": parent_id, "sender_id": {"$ne": user["id"]}, "read_by": {"$nin": [user["id"]]}},
+            {"$addToSet": {"read_by": user["id"]}}
+        )
+        return replies
+
+    # Hauptthread: nur Top-Level Messages (parent_id None oder nicht gesetzt)
+    query = {"conversation_id": conv_id, "$or": [{"parent_id": None}, {"parent_id": {"$exists": False}}]}
     if before:
         query["created_at"] = {"$lt": before}
 
     messages = await db.chat_messages.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     messages.reverse()
+
+    # reply_count fuer jede Top-Level-Nachricht ermitteln
+    msg_ids = [m["id"] for m in messages]
+    if msg_ids:
+        agg = await db.chat_messages.aggregate([
+            {"$match": {"conversation_id": conv_id, "parent_id": {"$in": msg_ids}}},
+            {"$group": {"_id": "$parent_id", "count": {"$sum": 1}, "last": {"$max": "$created_at"}}}
+        ]).to_list(len(msg_ids))
+        counts = {a["_id"]: {"count": a["count"], "last_reply_at": a.get("last")} for a in agg}
+        for m in messages:
+            info = counts.get(m["id"], {"count": 0})
+            m["reply_count"] = info["count"]
+            if info.get("last_reply_at"):
+                m["last_reply_at"] = info["last_reply_at"]
 
     # Mark as read
     await db.chat_messages.update_many(
@@ -127,11 +155,20 @@ async def get_messages(conv_id: str, token: str = Query(...), before: Optional[s
 
 
 @router.post("/conversations/{conv_id}/messages")
-async def send_message(conv_id: str, token: str = Query(...), text: str = Form(""), file: Optional[UploadFile] = None):
+async def send_message(conv_id: str, token: str = Query(...), text: str = Form(""), parent_id: Optional[str] = Form(None), file: Optional[UploadFile] = None):
     user = await _get_user(token)
     convo = await db.chat_conversations.find_one({"id": conv_id, "members": user["id"]}, {"_id": 0})
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation nicht gefunden")
+
+    # parent_id validieren falls gesetzt
+    if parent_id:
+        parent = await db.chat_messages.find_one({"id": parent_id, "conversation_id": conv_id}, {"_id": 0, "id": 1, "parent_id": 1})
+        if not parent:
+            raise HTTPException(status_code=404, detail="Eltern-Nachricht nicht gefunden")
+        # Verhindere mehrstufige Threads (Reply auf Reply) – wie Teams
+        if parent.get("parent_id"):
+            parent_id = parent["parent_id"]
 
     now = datetime.now(timezone.utc).isoformat()
     attachment = None
@@ -157,19 +194,59 @@ async def send_message(conv_id: str, token: str = Query(...), text: str = Form("
         "text": text.strip(),
         "attachment": attachment,
         "read_by": [user["id"]],
+        "reactions": {},
+        "parent_id": parent_id,
         "created_at": now,
     }
     await db.chat_messages.insert_one(msg)
     del msg["_id"]
 
-    # Update last_message
-    preview = text.strip()[:80] if text.strip() else (f"📎 {attachment['filename']}" if attachment else "")
-    await db.chat_conversations.update_one(
-        {"id": conv_id},
-        {"$set": {"last_message": {"text": preview, "sender_id": user["id"], "sender_name": user["name"], "sent_at": now}, "updated_at": now}}
-    )
+    # Update last_message nur wenn es eine Top-Level Nachricht ist
+    if not parent_id:
+        preview = text.strip()[:80] if text.strip() else (f"📎 {attachment['filename']}" if attachment else "")
+        await db.chat_conversations.update_one(
+            {"id": conv_id},
+            {"$set": {"last_message": {"text": preview, "sender_id": user["id"], "sender_name": user["name"], "sent_at": now}, "updated_at": now}}
+        )
+    else:
+        # Bei Reply trotzdem updated_at hochsetzen, damit die Konvo nach oben sortiert wird
+        await db.chat_conversations.update_one(
+            {"id": conv_id},
+            {"$set": {"updated_at": now}}
+        )
 
     return msg
+
+
+@router.post("/messages/{msg_id}/react")
+async def toggle_reaction(msg_id: str, token: str = Query(...), emoji: str = Form(...)):
+    """Toggle a reaction emoji on a message (Teams-style)."""
+    user = await _get_user(token)
+    if not emoji or len(emoji) > 10:
+        raise HTTPException(status_code=400, detail="Ungueltiges Emoji")
+    msg = await db.chat_messages.find_one({"id": msg_id}, {"_id": 0, "id": 1, "conversation_id": 1, "reactions": 1})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Nachricht nicht gefunden")
+    # Pruefen ob User Mitglied der Konversation ist
+    convo = await db.chat_conversations.find_one({"id": msg["conversation_id"], "members": user["id"]}, {"_id": 0, "id": 1})
+    if not convo:
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+
+    reactions = msg.get("reactions") or {}
+    current = list(reactions.get(emoji) or [])
+    uid = user["id"]
+    if uid in current:
+        current.remove(uid)
+    else:
+        current.append(uid)
+    if current:
+        reactions[emoji] = current
+    else:
+        reactions.pop(emoji, None)
+
+    await db.chat_messages.update_one({"id": msg_id}, {"$set": {"reactions": reactions}})
+    return {"id": msg_id, "reactions": reactions}
+
 
 
 @router.get("/conversations/{conv_id}/file/{attachment_id}")
