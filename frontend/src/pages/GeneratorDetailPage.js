@@ -234,21 +234,35 @@ export default function GeneratorDetailPage() {
   const [exporting, setExporting] = useState(false);
 
   const fetchData = useCallback(async () => {
+    // Wichtig: Generator-Doc ist die kritische Anforderung – wenn DAS klappt,
+    // soll die Seite rendern. Telemetry/Alarms duerfen im Hintergrund nachladen,
+    // sonst bleibt "Laden..." bei langsamen Telemetry-Queries oder einzelnen
+    // 403/500-Fehlern haengen (frueher: Promise.all → ein Fehler killt alle drei).
     try {
-      const [genRes, telRes, alarmRes] = await Promise.all([
-        api.get(`/generators/${id}`),
-        api.get(`/generators/${id}/telemetry?hours=${hours}&limit=200`),
-        api.get(`/generators/${id}/alarms?active_only=true`),
-      ]);
+      const genRes = await api.get(`/generators/${id}`);
       setGenerator(genRes.data);
-      setTelemetry(telRes.data);
-      setAlarms(alarmRes.data);
     } catch (err) {
-      toast.error("Fehler beim Laden");
+      if (err.response?.status === 403) {
+        toast.error("Kein Zugriff auf diesen Generator");
+      } else if (err.response?.status === 404) {
+        toast.error("Generator nicht gefunden");
+      } else {
+        toast.error("Fehler beim Laden");
+      }
       navigate("/generators");
+      return;
     } finally {
       setLoading(false);
     }
+    // Telemetry + Alarms unabhaengig nachladen – Fehler nur loggen, Page bleibt nutzbar
+    try {
+      const telRes = await api.get(`/generators/${id}/telemetry?hours=${hours}&limit=200`);
+      setTelemetry(telRes.data);
+    } catch (e) { console.error("Telemetry load failed:", e); }
+    try {
+      const alarmRes = await api.get(`/generators/${id}/alarms?active_only=true`);
+      setAlarms(alarmRes.data);
+    } catch (e) { console.error("Alarm load failed:", e); }
   }, [id, hours, navigate]);
 
   const fetchAnalyse = useCallback(async () => {

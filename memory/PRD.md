@@ -15,6 +15,14 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P0 Bugfix (Generator-Detail: "Laedt forever" fuer Mitarbeiter):**
+  - Symptom: Mitarbeiter sieht 7 Maschinen in Monitoring-Liste, beim Klick bleibt manchmal nur "Laedt..." stehen (nicht immer, Maschine egal).
+  - Wurzel: `GET /api/generators/{id}` (`server-side`) lehnte Mitarbeiter ohne expliziten `generator_monitoring.generator_ids`-Eintrag mit 403 ab. Die LIST aber blendet automatisch ALLE aktiven Stromerzeuger-/Lichtmast-Devices als virtuelle `dev-`-Generatoren ein (ohne Permission-Check) → Inkonsistenz. Ergebnis: 403 in `Promise.all([device, telemetry, alarms])` killte alle 3, Frontend fiel in `catch` → Toast + Navigate zurueck → User sieht "Laedt"-Flackern.
+  - Backend-Fix (`/app/backend/routes/generators.py` `get_generator`): Rolle `mitarbeiter` erhaelt vollen Zugriff (konsistent mit Liste). `kunde` bleibt strikt eingeschraenkt.
+  - Frontend-Robustheit (`GeneratorDetailPage.js` `fetchData`): `Promise.all` durch sequenzielle Calls ersetzt. Generator-Doc laedt zuerst (kritisch), beendet `loading`. Telemetry + Alarms laden im Hintergrund nach – einzelne Fehler killen nicht mehr die ganze Seite.
+  - Auch `EnergyMonitoringDetailPage.js` defensiv gehaertet (Loading nur an `fetchDevice` gekoppelt + 15s Safety-Timer + distinkter Loading-Text "Geraetedaten werden geladen..." um zukuenftiges Debugging zu vereinfachen).
+  - Verifiziert per curl mit `ma1@test.com`: `GET /generators/dev-xxx` → 200, `GET /telemetry` → 200, `GET /alarms` → 200.
+
 - **2026-02 — P1 UX (Textbausteine: aus Einstellungen → Verwaltung verschoben):**
   - Textbausteine-Bereich aus `AdminSettingsPage.js` (Einstellungen) entfernt und als eigenstaendige Admin-Seite `/verwaltung/textbausteine` neu angelegt (`TextbausteineAdminPage.jsx`).
   - Neuer Tile "Textbausteine" (FileText, amber) in `VerwaltungPage.jsx` zwischen Mitarbeiter und KI-Training.

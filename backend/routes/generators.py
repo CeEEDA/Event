@@ -513,11 +513,19 @@ async def get_generator(generator_id: str, user: dict = Depends(get_authenticate
         raise HTTPException(status_code=404, detail="Generator nicht gefunden")
 
     # Check access for non-admins
-    if user["role"] != "admin":
+    if user["role"] == "admin":
+        pass  # Admin sieht alles
+    elif user["role"] == "mitarbeiter":
+        # Mitarbeiter: voller Zugriff auf alle Geraete (konsistent mit Liste,
+        # die ohnehin alle aktiven Stromerzeuger-/Lichtmast-Devices als
+        # virtuelle dev-Generatoren einblendet).
+        pass
+    else:
+        # Kunden / sonstige Rollen: explizite Freigabe oder Zuweisung erforderlich
         apps = user.get("apps", {})
         gm = apps.get("generator_monitoring", {})
         if gm.get("enabled") and (gm.get("access_all") or generator_id in gm.get("generator_ids", [])):
-            pass  # allowed
+            pass  # allowed via app permission
         elif gen.get("assigned_customer_id") == user["id"]:
             pass  # allowed via assignment
         else:

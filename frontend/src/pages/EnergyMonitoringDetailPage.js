@@ -99,13 +99,19 @@ export default function EnergyMonitoringDetailPage() {
     try {
       const res = await api.get(`/energy-monitoring/devices/${id}`);
       setDevice(res.data);
+      return true;
     } catch (err) {
       if (err.response?.status === 403) {
         toast.error("Kein Zugriff auf dieses Gerät");
         navigate("/energy-monitoring");
-        return;
+        return false;
       }
-      toast.error("Fehler beim Laden");
+      if (err.response?.status === 404) {
+        toast.error("Gerät nicht gefunden");
+        return false;
+      }
+      toast.error("Fehler beim Laden des Geräts");
+      return false;
     }
   }, [id, navigate]);
 
@@ -143,7 +149,22 @@ export default function EnergyMonitoringDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    Promise.all([fetchDevice(), fetchTelemetry(), fetchLatest()]).finally(() => setLoading(false));
+    // Wichtig: setLoading(false) sobald das Geraet geladen ist – telemetry/latest
+    // duerfen im Hintergrund nachladen. Sonst bleibt "Laden..." bei langsamen
+    // Telemetry-Requests (oder Backend-Hangern) ewig stehen, obwohl die
+    // Geraetedaten schon da sind. (Reproduziert bei Mitarbeitern mit
+    // eingeschraenktem Geraete-Zugriff.)
+    let cancelled = false;
+    const safetyTimer = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 15000); // 15s Safety-Net falls fetchDevice haengt
+    fetchDevice().finally(() => {
+      if (!cancelled) setLoading(false);
+      clearTimeout(safetyTimer);
+    });
+    fetchTelemetry();
+    fetchLatest();
+    return () => { cancelled = true; clearTimeout(safetyTimer); };
   }, [fetchDevice, fetchTelemetry, fetchLatest]);
 
   useEffect(() => {
@@ -234,8 +255,8 @@ export default function EnergyMonitoringDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-pulse text-fuchsia-600">Laden...</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center" data-testid="detail-loading">
+        <div className="animate-pulse text-fuchsia-600">Geräte­daten werden geladen…</div>
       </div>
     );
   }
