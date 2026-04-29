@@ -727,6 +727,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
   const [parts, setParts] = useState([]);
   const [showAddPart, setShowAddPart] = useState(false);
   const [newPart, setNewPart] = useState({ part_type: "", part_number: "", liters: "", notes: "" });
+  const [partCustomMode, setPartCustomMode] = useState(false);
   const [controllerCustomMode, setControllerCustomMode] = useState(false);
 
   const isGenerator = formData.device_type === "stromerzeuger" || formData.device_type === "lichtmast";
@@ -830,6 +831,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       });
       toast.success("Ersatzteil hinzugefügt");
       setNewPart({ part_type: "", part_number: "", liters: "", notes: "" });
+      setPartCustomMode(false);
       setShowAddPart(false);
       loadParts();
     } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
@@ -1027,11 +1029,13 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                     <div>
                       <Label className="text-gray-600 text-xs">Typ *</Label>
                       <select
-                        value={PART_TYPES.includes(newPart.part_type) ? newPart.part_type : (newPart.part_type ? "__custom" : "")}
+                        value={partCustomMode ? "__custom" : (PART_TYPES.includes(newPart.part_type) ? newPart.part_type : "")}
                         onChange={e => {
                           if (e.target.value === "__custom") {
+                            setPartCustomMode(true);
                             setNewPart(p => ({ ...p, part_type: "" }));
                           } else {
+                            setPartCustomMode(false);
                             setNewPart(p => ({ ...p, part_type: e.target.value }));
                           }
                         }}
@@ -1042,7 +1046,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                         {PART_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                         <option value="__custom">Sonderteil (Freitext)...</option>
                       </select>
-                      {!PART_TYPES.includes(newPart.part_type) && newPart.part_type !== "" && (
+                      {partCustomMode && (
                         <Input
                           value={newPart.part_type}
                           onChange={e => setNewPart(p => ({ ...p, part_type: e.target.value }))}

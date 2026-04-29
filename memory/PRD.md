@@ -15,6 +15,12 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Bugfix (Geräteverwaltung: Ersatzteil "Sonderteil (Freitext)" funktionierte nicht):**
+  - **Symptom**: Bei Auswahl "Sonderteil (Freitext)..." erschien kein Eingabefeld; Klick auf Hinzufuegen → Fehler "Bitte Typ auswaehlen".
+  - **Wurzel**: Das Freitext-Input wurde nur gerendert, wenn `newPart.part_type !== ""` UND nicht in PART_TYPES. Beim Wechsel auf `__custom` wurde aber genau `part_type=""` gesetzt → Bedingung falsch → Input unsichtbar → User konnte nichts eingeben.
+  - **Fix** (`/app/frontend/src/pages/DeviceManagementPage.js`): Separater `partCustomMode`-State (analog zum bereits funktionierenden `controllerCustomMode`-Pattern). Input erscheint sobald `partCustomMode === true`, unabhaengig von `part_type`-Wert. Reset bei "Hinzufuegen"/"Abbrechen".
+  - **Verifiziert** per Playwright: Sonderteil waehlen → Input erscheint → "Spezialschmierstoff XY" eintippen → Hinzufuegen → Toast "hinzugefuegt" ✅, kein "Bitte Typ auswaehlen"-Fehler mehr.
+
 - **2026-02 — P0 Bugfix (Mahn-Aufgaben verschwinden nicht nach Versenden):**
   - **Symptom**: Nach Klick auf "Versenden" einer Mahnungs-Task blieb diese in der Aufgabenliste sichtbar.
   - **Wurzel**: Race-Condition zwischen `send-reminder`-Endpoint (markiert Task als completed) und dem Mahnungs-Scheduler `check_overdue_invoices` (laeuft alle 6h + bei Server-Start). Der Scheduler suchte nur nach `completed: False`-Tasks fuer dieselbe Stufe; nach einem Versenden war die Bedingung erfuellt → er erstellte sofort eine neue Task mit identischer Stufe. Hot-Reload triggerte das exakt ~9 Sekunden nach einem User-Versand → User sah scheinbar "die Task ist immer noch da".
