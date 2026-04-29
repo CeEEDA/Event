@@ -1087,7 +1087,7 @@ export default function ServiceplanPage() {
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn"><ArrowLeft className="w-4 h-4 mr-1" /> Zurück</Button>
+            <Button variant="ghost" size="sm" onClick={() => { if (selectedPlan) { setSelectedPlan(null); loadData(); } else { navigate(-1); } }} className="text-gray-600 hover:text-fuchsia-600" data-testid="back-btn"><ArrowLeft className="w-4 h-4 mr-1" /> Zurück</Button>
             <div className="h-5 w-px bg-gray-200" />
             <h1 className="text-base font-semibold text-gray-900">Serviceplan</h1>
             {/* Tabs */}
