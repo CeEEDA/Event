@@ -41,6 +41,7 @@ export default function HubPage() {
   const [clockLoading, setClockLoading] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("");
   const [recentEntries, setRecentEntries] = useState([]);
+  const [presence, setPresence] = useState([]); // Admin: Anwesenheits-Liste aller Mitarbeiter
   const [hrData, setHrData] = useState(null);
   const [birthdays, setBirthdays] = useState([]);
   const [infoPosts, setInfoPosts] = useState([]);
@@ -151,6 +152,7 @@ export default function HubPage() {
     loadUnreadChats();
     loadClockStatus();
     loadRecentEntries();
+    loadPresence();
     // Load HR data
     api.get(`/employee/hr-data/${user.id}?token=${token}`).then(r => setHrData(r.data)).catch(() => {});
     // Geburtstage heute
@@ -162,7 +164,7 @@ export default function HubPage() {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
     }).catch(() => {});
     // Poll for updates every 10 seconds
-    const poll = setInterval(() => { loadTasks(); loadUnreadChats(); }, 10000);
+    const poll = setInterval(() => { loadTasks(); loadUnreadChats(); loadPresence(); }, 10000);
     return () => clearInterval(poll);
   }, [loadTasks, token]);
 
@@ -195,6 +197,14 @@ export default function HubPage() {
     try {
       const res = await api.get(`/employee/time/entries?token=${token}`);
       setRecentEntries((res.data || []).filter(e => e.clock_out).slice(0, 5));
+    } catch {}
+  };
+
+  const loadPresence = async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await api.get(`/employee/time/presence?token=${token}`);
+      setPresence(res.data || []);
     } catch {}
   };
 
@@ -235,6 +245,7 @@ export default function HubPage() {
       }
     } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
     setClockLoading(false);
+    loadPresence();
   };
 
   const loadUnreadChats = () => {
@@ -483,6 +494,38 @@ export default function HubPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Admin: Anwesenheit aller Mitarbeiter */}
+              {isAdmin && presence.length > 0 && (
+                <div className="flex-shrink-0 lg:w-[280px] xl:w-[320px] bg-gray-50 rounded-lg border border-gray-100 px-3 py-2.5" data-testid="presence-panel">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
+                      <Users className="w-3 h-3" /> Anwesenheit
+                    </p>
+                    <span className="text-[10px] text-gray-400">
+                      <span className="font-semibold text-green-600" data-testid="presence-online-count">{presence.filter(p => p.clocked_in).length}</span>
+                      <span className="text-gray-400"> / {presence.length}</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2 gap-y-1 max-h-[110px] overflow-y-auto pr-1">
+                    {presence.map(p => {
+                      const firstName = (p.user_name || "").split(" ")[0] || p.user_name;
+                      const sinceLabel = p.clock_in ? new Date(p.clock_in).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
+                      return (
+                        <span
+                          key={p.user_id}
+                          title={p.clocked_in ? `${p.user_name} – seit ${sinceLabel} Uhr` : `${p.user_name} – nicht anwesend`}
+                          className={`inline-flex items-center gap-1 text-[11px] leading-tight ${p.clocked_in ? "text-gray-800" : "text-gray-400"}`}
+                          data-testid={`presence-${p.user_id}`}
+                        >
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.clocked_in ? "bg-green-500 ring-2 ring-green-100" : "bg-gray-300"}`} />
+                          {firstName}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

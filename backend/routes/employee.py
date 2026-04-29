@@ -598,12 +598,33 @@ async def get_time_status(token: str = Query(...)):
 
 @router.get("/time/presence")
 async def get_time_presence(token: str = Query(...)):
-    """Admin: get all currently clocked-in employees."""
+    """Admin: get all employees with their current clock-in status (anwesend / abwesend)."""
     caller = await _get_user(token)
     if caller.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
-    entries = await db.time_entries.find({"clock_out": None}, {"_id": 0}).to_list(500)
-    return [{"user_id": e["user_id"], "user_name": e.get("user_name", ""), "clock_in": e["clock_in"]} for e in entries]
+    # Alle aktiven Mitarbeiter und Admins (keine Kunden)
+    users = await db.users.find(
+        {"is_active": {"$ne": False}, "role": {"$in": ["admin", "mitarbeiter"]}},
+        {"_id": 0, "id": 1, "name": 1, "role": 1}
+    ).to_list(500)
+    # Aktuell offene Time-Entries (eingestempelt)
+    open_entries = await db.time_entries.find(
+        {"clock_out": None}, {"_id": 0, "user_id": 1, "clock_in": 1}
+    ).to_list(500)
+    by_user = {e["user_id"]: e["clock_in"] for e in open_entries}
+    presence = []
+    for u in users:
+        clock_in = by_user.get(u["id"])
+        presence.append({
+            "user_id": u["id"],
+            "user_name": u.get("name", ""),
+            "role": u.get("role", ""),
+            "clocked_in": clock_in is not None,
+            "clock_in": clock_in,
+        })
+    # Sortierung: eingestempelt zuerst, danach Name
+    presence.sort(key=lambda p: (not p["clocked_in"], (p["user_name"] or "").lower()))
+    return presence
 
 
 @router.post("/time/clock-in")

@@ -15,6 +15,11 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Hub: Admin-Anwesenheits-Panel im Stempelkarten-Header):**
+  - Backend (`/app/backend/routes/employee.py` `/time/presence`): Endpoint liefert jetzt ALLE aktiven Admins/Mitarbeiter mit `clocked_in`-Status (nicht nur die eingestempelten). Sortierung: eingestempelt zuerst, dann alphabetisch. Kunden ausgeschlossen.
+  - Frontend (`/app/frontend/src/pages/HubPage.js`): Neuer `presence`-State + 10s-Polling. Im Stempelkarten-Header neben Resturlaub/Überstunden ein Panel "ANWESENHEIT" mit Counter `online/total` und Liste aller Mitarbeiter mit grünen/grauen Punkten (Vorname + Tooltip mit vollen Namen und Uhrzeit). Wird nur Admins angezeigt.
+  - Verifiziert per curl + Playwright: Anna stempelt ein → Counter 1/10, grüner Punkt + Sortierung an erste Stelle. Mitarbeiter erhalten 403.
+
 - **2026-02 — P1 Feature (Chat: Teams-Style Reactions + Threaded Replies):**
   - Backend (`/app/backend/routes/chat.py`): `reactions: dict[emoji,[user_ids]]` + `parent_id` auf Messages, neuer `POST /chat/messages/{id}/react`, Top-Level-Liste mit `reply_count`-Aggregation, Replies auf Replies werden auf Root geflacht.
   - Frontend (`/app/frontend/src/pages/ChatPage.jsx`): Schwebende Reaktionsleiste auf Hover (4 Quick + erweitertes 12-Emoji-Picker + Antworten), Reaktion-Badges unter Nachricht (toggle bei Klick), "X Antworten"-Link expandiert inline-Thread mit fuchsia-Linker-Border + Reply-Input.
