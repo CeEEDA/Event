@@ -56,6 +56,7 @@ import {
   AlertTriangle,
   Check,
   Camera,
+  Truck,
 } from "lucide-react";
 import axios from "axios";
 
@@ -121,7 +122,19 @@ export default function AdminPage() {
         device_ids: []
       },
       finance: { enabled: false },
-      dokumentenverwaltung: { enabled: false }
+      dokumentenverwaltung: { enabled: false },
+      modules: {
+        orders: true,
+        einsatzplanung: true,
+        kirmes: true,
+        verwaltung: true,
+        power_monitoring: true,
+        energy_monitoring: true,
+        devices: true,
+        fileshare: true,
+        serviceplan: true,
+        adr: false,
+      }
     }
   });
 
@@ -409,7 +422,19 @@ export default function AdminPage() {
           device_ids: user.apps?.energy_monitoring?.device_ids || []
         },
         finance: user.apps?.finance || { enabled: false },
-        dokumentenverwaltung: user.apps?.dokumentenverwaltung || { enabled: false }
+        dokumentenverwaltung: user.apps?.dokumentenverwaltung || { enabled: false },
+        modules: {
+          orders: user.apps?.modules?.orders !== false,
+          einsatzplanung: user.apps?.modules?.einsatzplanung !== false,
+          kirmes: user.apps?.modules?.kirmes !== false,
+          verwaltung: user.apps?.modules?.verwaltung !== false,
+          power_monitoring: user.apps?.modules?.power_monitoring !== false,
+          energy_monitoring: user.apps?.modules?.energy_monitoring !== false,
+          devices: user.apps?.modules?.devices !== false,
+          fileshare: user.apps?.modules?.fileshare !== false,
+          serviceplan: user.apps?.modules?.serviceplan !== false,
+          adr: !!user.apps?.modules?.adr,
+        }
       }
     });
     setModalOpen(true);
@@ -1285,6 +1310,54 @@ export default function AdminPage() {
                     data-testid="user-active-toggle"
                   />
                 </div>
+
+                {formData.role === "mitarbeiter" && (
+                  <div className="border-t border-gray-200 pt-4 mt-2">
+                    <h3 className="font-semibold text-gray-900 mb-3">Hub-Kacheln (Module)</h3>
+                    <p className="text-xs text-gray-500 mb-3">Steuere welche Bereiche der Mitarbeiter im Hub sieht. <strong>Chat, Mitarbeiter-Daten und FAQ sind immer sichtbar.</strong></p>
+                    <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[
+                        { key: "orders", label: "Aufträge" },
+                        { key: "einsatzplanung", label: "Einsatzplanung" },
+                        { key: "kirmes", label: "Kirmes" },
+                        { key: "verwaltung", label: "Verwaltung" },
+                        { key: "power_monitoring", label: "Power Monitoring" },
+                        { key: "energy_monitoring", label: "Energy Monitoring" },
+                        { key: "devices", label: "Geräte" },
+                        { key: "fileshare", label: "FileShare" },
+                        { key: "serviceplan", label: "Serviceplan" },
+                      ].map(m => (
+                        <div key={m.key} className="flex items-center justify-between bg-white rounded-md px-3 py-2 border border-gray-100">
+                          <Label className="text-sm text-gray-800 cursor-pointer" htmlFor={`mod-${m.key}`}>{m.label}</Label>
+                          <Switch
+                            id={`mod-${m.key}`}
+                            checked={formData.apps.modules?.[m.key] !== false}
+                            onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), [m.key]: checked } } }))}
+                            data-testid={`module-toggle-${m.key}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ADR – Tankwagen Betanker */}
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 mt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Truck className="w-5 h-5 text-rose-600" />
+                          <div>
+                            <Label className="text-gray-900 font-medium">ADR / Tankwagen-Betanker</Label>
+                            <p className="text-xs text-gray-500 mt-0.5">Mitarbeiter mit gueltigem ADR-Schein. Wird automatisch im Tankwagen als Betanker eingetragen.</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={!!formData.apps.modules?.adr}
+                          onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), adr: checked } } }))}
+                          data-testid="module-toggle-adr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {formData.role === "mitarbeiter" && (
                   <div className="border-t border-gray-200 pt-4 mt-2">

@@ -504,6 +504,23 @@ async def list_active_users(user: dict = Depends(get_current_user)):
     ).to_list(1000)
     return users
 
+
+@api_router.get("/users/adr")
+async def list_adr_users(user: dict = Depends(get_current_user)):
+    """Liste aller Mitarbeiter (und Admins) mit aktivem ADR-Schein.
+    Wird im Tankwagen als Liste der "Betanker / Mitarbeiter" benoetigt.
+    """
+    users = await db.users.find(
+        {
+            "is_active": {"$ne": False},
+            "role": {"$in": ["admin", "mitarbeiter"]},
+            "apps.modules.adr": True,
+        },
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}
+    ).to_list(500)
+    users.sort(key=lambda u: (u.get("name") or "").lower())
+    return users
+
 @api_router.get("/users", response_model=List[UserResponse])
 async def list_users(admin: dict = Depends(require_admin)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)

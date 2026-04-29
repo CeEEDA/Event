@@ -12,7 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
-  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle,
+  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import {
@@ -72,6 +72,18 @@ export default function HubPage() {
   const hasEnergyMonitoring = isAdmin || user?.apps?.energy_monitoring?.enabled;
   const hasBilling = isAdmin || user?.permissions?.can_billing;
   const isStaff = isAdmin || user?.role === "mitarbeiter";
+
+  // Per-Tile-Berechtigungen fuer Mitarbeiter (Admin sieht IMMER alles).
+  // Default true (backward compat) – Admin kann pro User in der Benutzerverwaltung
+  // einzelne Kacheln deaktivieren.
+  const tileAllowed = (key) => {
+    if (isAdmin) return true;
+    const m = user?.apps?.modules;
+    if (!m) return true; // kein Modules-Feld -> alle erlaubt (Migrationsphase)
+    return m[key] !== false;
+  };
+  const isCustomer = user?.role === "kunde";
+  const hasAdr = !!user?.apps?.modules?.adr;
 
   // Desktop mode: Electron app shows only module tiles
   const isDesktopMode = new URLSearchParams(window.location.search).get('desktop') === '1';
@@ -348,15 +360,16 @@ export default function HubPage() {
   const priorityLabel = { high: "Hoch", medium: "Mittel", low: "Niedrig" };
 
   const modules = [
-    isStaff && { key: "orders", icon: ClipboardList, label: "Aufträge", path: "/orders", color: "bg-fuchsia-100 text-fuchsia-600" },
-    isAdmin && { key: "einsatzplanung", icon: CalendarDays, label: "Einsatzplanung", path: "/einsatzplanung", color: "bg-indigo-100 text-indigo-600" },
-    isStaff && { key: "kirmes", icon: Tent, label: "Kirmes", path: "/kirmes", color: "bg-pink-100 text-pink-600" },
-    hasBilling && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
-    hasMonitoring && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
-    hasEnergyMonitoring && { key: "energy", icon: Zap, label: "Energy Monitoring", path: "/energy-monitoring", color: "bg-yellow-100 text-yellow-700" },
-    isStaff && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-teal-100 text-teal-600" },
-    hasFilesharing && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
-    isStaff && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
+    isStaff && tileAllowed("orders") && { key: "orders", icon: ClipboardList, label: "Aufträge", path: "/orders", color: "bg-fuchsia-100 text-fuchsia-600" },
+    (isAdmin || (isStaff && tileAllowed("einsatzplanung"))) && { key: "einsatzplanung", icon: CalendarDays, label: "Einsatzplanung", path: "/einsatzplanung", color: "bg-indigo-100 text-indigo-600" },
+    isStaff && tileAllowed("kirmes") && { key: "kirmes", icon: Tent, label: "Kirmes", path: "/kirmes", color: "bg-pink-100 text-pink-600" },
+    !isCustomer && hasBilling && tileAllowed("verwaltung") && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
+    hasMonitoring && tileAllowed("power_monitoring") && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
+    hasEnergyMonitoring && tileAllowed("energy_monitoring") && { key: "energy", icon: Zap, label: "Energy Monitoring", path: "/energy-monitoring", color: "bg-yellow-100 text-yellow-700" },
+    isStaff && tileAllowed("devices") && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-teal-100 text-teal-600" },
+    hasFilesharing && tileAllowed("fileshare") && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
+    isStaff && tileAllowed("serviceplan") && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
+    isStaff && hasAdr && { key: "adr", icon: Truck, label: "ADR / Tankwagen", path: "/adr", color: "bg-rose-100 text-rose-600" },
     { key: "faq", icon: HelpCircle, label: "FAQ", path: "/faq", color: "bg-indigo-100 text-indigo-600" },
     isAdmin && { key: "admin", icon: Users, label: "Benutzer", path: "/admin", color: "bg-gray-100 text-gray-600" },
     isAdmin && { key: "settings", icon: Settings, label: "Einstellungen", path: "/admin/settings", color: "bg-gray-100 text-gray-600" },

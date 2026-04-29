@@ -15,6 +15,15 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Rollenbasierte Hub-Kacheln + ADR / Tankwagen-Betanker):**
+  - Neues Feld `apps.modules.{key}` pro User (orders, einsatzplanung, kirmes, verwaltung, power_monitoring, energy_monitoring, devices, fileshare, serviceplan, **adr**). Default true (Backward-Compat); Admin sieht IMMER alles.
+  - Immer sichtbar fuer alle Rollen: Chat, Mitarbeiter-Daten, FAQ.
+  - Kunden: Verwaltung-Tile (Finance/Dokumentenverwaltung) geblockt.
+  - AdminPage: Neue Sektion "Hub-Kacheln (Module)" mit 9 Toggles + roter ADR-Block.
+  - HubPage: `tileAllowed(key)` filtert Mitarbeiter-Kacheln, ADR-Tile bei `modules.adr===true`.
+  - Backend: `GET /api/users/adr` liefert alle Betanker.
+  - Neue Page `/adr` mit Betanker-Liste + Hinweis auf naechsten Schritt (Bestaetigung).
+
 - **2026-02 — P1 Feature (Aufgaben: Quick-Select Gruppe "Alle Mitarbeiter"):**
   - In der "Neue Aufgabe"-Dialog-Box ueber der Mitarbeiterliste zwei Pills hinzugefuegt:
     - **Alle Mitarbeiter (N)** – selektiert alle User mit `role==mitarbeiter`
