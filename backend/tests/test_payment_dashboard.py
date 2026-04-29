@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://fuel-parser-fix.preview.emergentagent.com"
+                "origin_url": "https://kirmeskiste-portal-1.preview.emergentagent.com"
             },
             timeout=30
         )
