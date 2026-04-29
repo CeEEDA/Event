@@ -1378,7 +1378,8 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                {/* App Permissions Section */}
+                {/* App Permissions Section (für Mitarbeiter & Kunden – Admin sieht das nicht) */}
+                {formData.role !== "admin" && (
                 <div className="border-t border-gray-200 pt-4 mt-4">
                   <h3 className="font-semibold text-gray-900 mb-4">App-Berechtigungen</h3>
                   
@@ -1757,6 +1758,28 @@ export default function AdminPage() {
                     </div>
                   )}
                 </div>
+                )}
+
+                {formData.role !== "kunde" && (
+                  <div className="border-t border-gray-200 pt-4 mt-4">
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Truck className="w-5 h-5 text-rose-600" />
+                          <div>
+                            <Label className="text-gray-900 font-medium">ADR / Tankwagen-Betanker</Label>
+                            <p className="text-xs text-gray-500 mt-0.5">Mitarbeiter mit gueltigem ADR-Schein. Wird automatisch im Tankwagen als Betanker eingetragen.</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={!!formData.apps.modules?.adr}
+                          onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), adr: checked } } }))}
+                          data-testid="module-toggle-adr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
