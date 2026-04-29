@@ -123,8 +123,8 @@ export default function AdminZeiterfassungPage() {
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Anwesenheit</p>
           <div className="flex flex-wrap gap-3">
             {allEmployees.map(emp => {
-              const isPresent = presence.some(p => p.user_id === emp.id);
               const presenceEntry = presence.find(p => p.user_id === emp.id);
+              const isPresent = !!presenceEntry?.clocked_in;
               return (
                 <div key={emp.id} className="flex items-center gap-1.5" data-testid={`presence-${emp.id}`}>
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPresent ? "bg-green-500" : "bg-gray-300"}`} />
