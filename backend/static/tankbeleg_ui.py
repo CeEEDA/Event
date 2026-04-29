@@ -26,6 +26,11 @@ try:
 except ImportError:
     requests = None
 
+try:
+    import bcrypt
+except ImportError:
+    bcrypt = None
+
 # ====== Konfiguration ======
 
 DEFAULT_CONF = {
@@ -91,6 +96,10 @@ def init_cache_db(db_path):
         conn.execute("ALTER TABLE drivers_cache ADD COLUMN password_hash TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE drivers_cache ADD COLUMN pin_hash TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -131,11 +140,13 @@ def sync_drivers_from_backend(conf):
         if resp.status_code == 200:
             drivers = resp.json().get("drivers", [])
             conn = sqlite3.connect(conf["db_path"])
+            # Replace cache: ADR-Liste komplett austauschen, damit deaktivierte User verschwinden
+            conn.execute("DELETE FROM drivers_cache")
             for d in drivers:
-                conn.execute("""INSERT OR REPLACE INTO drivers_cache (id,name,email,role,password_hash,cached_at)
-                    VALUES (?,?,?,?,?,?)""",
+                conn.execute("""INSERT OR REPLACE INTO drivers_cache (id,name,email,role,password_hash,pin_hash,cached_at)
+                    VALUES (?,?,?,?,?,?,?)""",
                     (d.get("id",""),d.get("name",""),d.get("email",""),d.get("role",""),
-                     d.get("password_hash",""),datetime.now(timezone.utc).isoformat()))
+                     d.get("password_hash",""),d.get("pin_hash",""),datetime.now(timezone.utc).isoformat()))
             conn.commit(); conn.close()
             log.info(f"Fahrer synchronisiert: {len(drivers)}")
             return len(drivers)
@@ -160,6 +171,23 @@ def get_all_drivers(db_path):
     conn = sqlite3.connect(db_path); conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT id,name,email,role FROM drivers_cache ORDER BY name").fetchall()
     conn.close(); return [dict(r) for r in rows]
+
+
+def verify_driver_pin(db_path, driver_id, pin):
+    """Prueft den eingegebenen 6-stelligen PIN gegen den gecachten bcrypt-Hash.
+    Funktioniert offline. Gibt True zurueck, wenn PIN korrekt."""
+    if not driver_id or not pin or not bcrypt:
+        return False
+    conn = sqlite3.connect(db_path); conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT pin_hash FROM drivers_cache WHERE id=?", (driver_id,)).fetchone()
+    conn.close()
+    if not row or not row["pin_hash"]:
+        return False
+    try:
+        return bcrypt.checkpw(pin.encode("utf-8"), row["pin_hash"].encode("utf-8"))
+    except Exception as e:
+        log.error(f"PIN-Verify Fehler: {e}")
+        return False
 
 
 def get_receipts(db_path, limit=50):
@@ -335,6 +363,24 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 .toast.success{{background:var(--green);color:white}}
 .toast.error{{background:var(--red);color:white}}
 @keyframes slideUp{{from{{opacity:0;transform:translateX(-50%) translateY(20px)}}to{{opacity:1;transform:translateX(-50%) translateY(0)}}}}
+
+/* PIN Login Overlay */
+.pin-overlay{{position:fixed;inset:0;background:rgba(15,23,42,0.78);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:80}}
+.pin-overlay.show{{display:flex}}
+.pin-card{{background:var(--card);border:2px solid var(--accent);border-radius:18px;padding:24px 26px;width:380px;max-width:90vw;box-shadow:0 16px 60px rgba(0,0,0,0.35)}}
+.pin-card h2{{font-size:18px;font-weight:800;margin-bottom:4px;text-align:center}}
+.pin-card .pin-driver{{font-size:13px;color:var(--accent-dark);text-align:center;margin-bottom:16px;font-weight:600}}
+.pin-dots{{display:flex;justify-content:center;gap:10px;margin-bottom:18px}}
+.pin-dot{{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:var(--bg);transition:all 0.15s}}
+.pin-dot.filled{{background:var(--accent);border-color:var(--accent);transform:scale(1.1)}}
+.pin-card.error .pin-dot{{border-color:var(--red);background:var(--red-bg)}}
+.pin-card.error{{animation:shake 0.4s}}
+@keyframes shake{{0%,100%{{transform:translateX(0)}}25%{{transform:translateX(-8px)}}75%{{transform:translateX(8px)}}}}
+.pin-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}}
+.pin-key{{height:64px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:24px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.08s}}
+.pin-key:active{{background:var(--accent);color:white;transform:scale(0.94)}}
+.pin-key.action{{font-size:14px;font-weight:600}}
+.pin-cancel{{width:100%;padding:10px;border:none;background:var(--border);color:var(--muted);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer}}
 ::-webkit-scrollbar{{width:5px}}
 ::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
 </style></head>
@@ -353,7 +399,7 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 
 <div class="driver-bar">
   <label>Mitarbeiter:</label>
-  <select id="driverSelect"><option value="">-- Mitarbeiter waehlen --</option></select>
+  <select id="driverSelect" onchange="onDriverChange()"><option value="">-- Mitarbeiter waehlen --</option></select>
 </div>
 
 <div class="main">
@@ -428,11 +474,26 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
   <div id="kbdRows"></div>
 </div>
 
+<!-- PIN Login Overlay -->
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-card" id="pinCard">
+    <h2>PIN eingeben</h2>
+    <div class="pin-driver" id="pinDriver"></div>
+    <div class="pin-dots" id="pinDots">
+      <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="pin-grid" id="pinGrid"></div>
+    <button class="pin-cancel" onclick="cancelPin()">Abbrechen</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 let selectedReceipt=null, lastReceiptCount=-1, orders=[], receipts=[], selectedOrderPk='', selectedOrderName='';
 let kbdTarget=null, kbdValue='', kbdShift=false;
+let verifiedDriver='', driversMap={{}}, pinDriverId='', pinDriverName='', pinValue='';
 
 const ROWS=[['1','2','3','4','5','6','7','8','9','0'],['q','w','e','r','t','z','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['y','x','c','v','b','n','m']];
 const ROWS_SHIFT=[['!','@','#','$','%','&','/','(',')','+'],['Q','W','E','R','T','Z','U','I','O','P'],['A','S','D','F','G','H','J','K','L'],['Y','X','C','V','B','N','M']];
@@ -504,12 +565,95 @@ async function loadDrivers(){{
   try{{
     const d=await fetchJSON('/api/drivers');
     const drivers=d.drivers||[];
+    driversMap={{}};
+    drivers.forEach(dr=>{{ driversMap[dr.name||dr.email]={{id:dr.id,name:dr.name||dr.email}}; }});
     const sel=document.getElementById('driverSelect');
+    const previous=sel.value;
     sel.innerHTML='<option value="">-- Mitarbeiter waehlen --</option>';
     drivers.forEach(dr=>{{
-      sel.innerHTML+='<option value="'+esc(dr.name||dr.email)+'">'+esc(dr.name||dr.email)+'</option>';
+      const v=esc(dr.name||dr.email);
+      sel.innerHTML+='<option value="'+v+'" data-id="'+esc(dr.id)+'">'+v+'</option>';
     }});
+    // Falls der bisherige Mitarbeiter nicht mehr in der Liste ist (ADR deaktiviert) -> abmelden
+    if(previous && !driversMap[previous]){{
+      sel.value='';
+      verifiedDriver='';
+      showToast('Mitarbeiter nicht mehr freigegeben',true);
+    }}else if(previous){{
+      sel.value=previous;
+    }}
   }}catch(e){{}}
+}}
+
+function onDriverChange(){{
+  const sel=document.getElementById('driverSelect');
+  const name=sel.value;
+  if(!name){{ verifiedDriver=''; return; }}
+  if(name===verifiedDriver) return; // bereits angemeldet
+  // PIN-Eingabe oeffnen
+  openPinDialog(name);
+}}
+
+function openPinDialog(driverName){{
+  const dr=driversMap[driverName];
+  if(!dr){{ showToast('Unbekannter Mitarbeiter',true); return; }}
+  pinDriverId=dr.id;
+  pinDriverName=driverName;
+  pinValue='';
+  document.getElementById('pinDriver').textContent=driverName;
+  renderPinDots();
+  buildPinGrid();
+  document.getElementById('pinCard').classList.remove('error');
+  document.getElementById('pinOverlay').classList.add('show');
+}}
+
+function buildPinGrid(){{
+  const keys=['1','2','3','4','5','6','7','8','9','C','0','OK'];
+  const html=keys.map(k=>{{
+    const cls=(k==='C'||k==='OK')?'pin-key action':'pin-key';
+    return '<div class="'+cls+'" onmousedown="pinKey(\\''+k+'\\');event.preventDefault()" ontouchstart="pinKey(\\''+k+'\\');event.preventDefault()">'+k+'</div>';
+  }}).join('');
+  document.getElementById('pinGrid').innerHTML=html;
+}}
+
+function pinKey(k){{
+  if(k==='C'){{ pinValue=''; renderPinDots(); return; }}
+  if(k==='OK'){{ verifyPin(); return; }}
+  if(pinValue.length>=6) return;
+  pinValue+=k;
+  renderPinDots();
+  if(pinValue.length===6) verifyPin();
+}}
+
+function renderPinDots(){{
+  const dots=document.querySelectorAll('#pinDots .pin-dot');
+  dots.forEach((d,i)=>{{ d.classList.toggle('filled', i<pinValue.length); }});
+}}
+
+async function verifyPin(){{
+  if(pinValue.length!==6){{ showPinError(); return; }}
+  try{{
+    const r=await fetch('/api/verify-pin',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{driver_id:pinDriverId,pin:pinValue}})}});
+    const d=await r.json();
+    if(d.ok){{
+      verifiedDriver=pinDriverName;
+      document.getElementById('pinOverlay').classList.remove('show');
+      showToast('Angemeldet: '+pinDriverName);
+    }}else{{ showPinError(); }}
+  }}catch(e){{ showPinError(); }}
+}}
+
+function showPinError(){{
+  const card=document.getElementById('pinCard');
+  card.classList.add('error');
+  pinValue='';
+  setTimeout(()=>{{ card.classList.remove('error'); renderPinDots(); }},500);
+}}
+
+function cancelPin(){{
+  document.getElementById('pinOverlay').classList.remove('show');
+  // Dropdown auf den letzten verifizierten Mitarbeiter zuruecksetzen
+  document.getElementById('driverSelect').value=verifiedDriver||'';
 }}
 
 async function checkConn(){{
@@ -630,6 +774,7 @@ async function saveAssignment(){{
   if(!selectedReceipt) return;
   const fahrer=document.getElementById('driverSelect').value;
   if(!fahrer){{showToast('Bitte Mitarbeiter oben waehlen',true);return}}
+  if(fahrer!==verifiedDriver){{showToast('PIN-Verifikation fehlt',true);openPinDialog(fahrer);return}}
   if(!selectedOrderPk){{showToast('Bitte Auftrag aus Liste waehlen',true);return}}
   const notes=document.getElementById('notesValue').value||'';
   document.getElementById('saveBtn').disabled=true;
@@ -646,6 +791,7 @@ async function assignLager(){{
   if(!selectedReceipt) return;
   const fahrer=document.getElementById('driverSelect').value;
   if(!fahrer){{showToast('Bitte Mitarbeiter oben waehlen',true);return}}
+  if(fahrer!==verifiedDriver){{showToast('PIN-Verifikation fehlt',true);openPinDialog(fahrer);return}}
   const notes=document.getElementById('notesValue').value||'';
   document.getElementById('lagerBtn').disabled=true;
   document.getElementById('saveBtn').disabled=true;
@@ -747,6 +893,9 @@ class KioskHandler(SimpleHTTPRequestHandler):
             sync_orders_from_backend(self.conf)
             sync_drivers_from_backend(self.conf)
             self._json({"ok": True})
+        elif path == "/api/verify-pin":
+            ok = verify_driver_pin(self.conf["db_path"], body.get("driver_id", ""), body.get("pin", ""))
+            self._json({"ok": ok})
         else:
             self.send_error(404)
 

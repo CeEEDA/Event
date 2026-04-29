@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import uuid
 import math
 import base64
+import bcrypt
 import httpx
 
 router = APIRouter(prefix="/api/fuel-receipts", tags=["fuel-receipts"])
@@ -783,37 +784,40 @@ async def pi_get_orders():
 
 @router.get("/pi/drivers")
 async def pi_get_drivers():
-    """Liefert die Liste der Tankwagen-Fahrer fuer den Pi-Kiosk.
+    """Liefert die ADR-Mitarbeiter fuer den Tankwagen-Pi.
 
-    Whitelist-basiert: nur definierte Personen erscheinen auf dem Pi.
-    Matching erfolgt case-insensitive auf Name (Teilstring), damit auch
-    abweichende Schreibweisen (z.B. "Christian Ecker Admin") gefunden werden."""
+    - Nur User mit `apps.modules.adr === True` (Hub-Kachel ADR aktiviert).
+    - PIN = Geburtsdatum als 6-stelliger Code: TT + MM + JJ (z.B. 10.11.2004 -> '101104').
+    - PIN wird als bcrypt-Hash im Feld `pin_hash` mitgegeben (Pi validiert offline).
+    - User ohne hinterlegtes Geburtsdatum werden uebersprungen (kein PIN moeglich).
+    - Alle erscheinen auf dem Pi mit `role = 'mitarbeiter'` (auch Admins).
+    """
     await _touch_tankwagen_last_seen()
-    # Tankwagen-Fahrer-Whitelist. Hinzufuegen/entfernen durch Anpassung dieser Liste.
-    allowed_names = [
-        "Christian Ecker",
-        "Timo Hoppen",
-        "Volker Gutmann",
-        "Mike Diekelmann",
-        "Sebastian Heidtmann",
-        "Martin Mull",
-    ]
-    all_users = await _db.users.find(
-        {},
-        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "password_hash": 1},
-    ).to_list(500)
-    # Whitelist-Matching: reihenfolge beibehalten, duplicates vermeiden
+    cursor = _db.users.find(
+        {"apps.modules.adr": True, "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "date_of_birth": 1},
+    )
     drivers = []
-    added_ids = set()
-    for allowed in allowed_names:
-        al = allowed.lower()
-        for u in all_users:
-            un = (u.get("name") or "").lower()
-            if un == al or al in un:
-                if u.get("id") not in added_ids:
-                    drivers.append(u)
-                    added_ids.add(u.get("id"))
-                break
+    async for u in cursor:
+        dob = (u.get("date_of_birth") or "").strip()
+        if not dob:
+            continue
+        try:
+            yyyy, mm, dd = dob.split("-")
+            if len(yyyy) != 4 or len(mm) != 2 or len(dd) != 2:
+                continue
+            pin = f"{dd}{mm}{yyyy[-2:]}"
+        except Exception:
+            continue
+        pin_hash = bcrypt.hashpw(pin.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        drivers.append({
+            "id": u.get("id", ""),
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "role": "mitarbeiter",
+            "pin_hash": pin_hash,
+        })
+    drivers.sort(key=lambda d: d["name"].lower())
     return {"drivers": drivers}
 
 

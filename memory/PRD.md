@@ -15,6 +15,17 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P0 Tankwagen-Pi: ADR-Mitarbeiter-Sync mit PIN-Login:**
+  - **Backend `fuel_receipts.py` `/pi/drivers`**: Hardcoded Whitelist entfernt. Liefert jetzt nur noch User mit `apps.modules.adr === True` und gesetztem `date_of_birth`. PIN = TT+MM+JJ aus Geburtsdatum (z.B. 10.11.2004 → "101104"), bcrypt-gehasht im Feld `pin_hash`. Alle erscheinen mit `role: "mitarbeiter"` (auch Admins).
+  - **Pi-Kiosk `tankbeleg_ui.py`**: 
+    - SQLite-Schema um `pin_hash` Spalte erweitert. Driver-Sync ersetzt nun komplett die Cache-Tabelle (deaktivierte ADR-User verschwinden automatisch).
+    - Neuer `/api/verify-pin` Endpoint im lokalen Kiosk-Server (offline-fähige bcrypt-Validierung).
+    - PIN-Login-Modal mit 3x4 Numpad (1-9, Clear, 0, OK), 6 Punkte als Eingabe-Anzeige, Shake-Animation bei falschem PIN.
+    - Beim Wechsel des Mitarbeiters im Dropdown wird automatisch der PIN-Dialog geöffnet. `saveAssignment` und `assignLager` prüfen, dass der gewählte Mitarbeiter verifiziert ist.
+    - Wenn ein zuvor gewählter Mitarbeiter beim Sync nicht mehr in der ADR-Liste erscheint (Admin hat ADR deaktiviert) → automatisches Abmelden.
+  - **Push-Update**: Bereits via 5-Min-Polling (`background_sync`) und manuellem Refresh-Button im Header. Sobald Admin im Portal den ADR-Toggle ändert, übernimmt der Pi das beim nächsten Sync.
+  - **Verifiziert per curl**: Anna Weber (DOB 10.11.2004) → PIN "101104" matched ✓, falscher PIN ✗. Christian Ecker (Admin) → erscheint mit `role: "mitarbeiter"`. Max (kein DOB) → übersprungen.
+
 - **2026-02 — P0 Permissions-Refactor (Verwaltung-Modul + Sonderberechtigung "Abrechnung"):**
   - **Frontend `App.js`**: ProtectedRoute um `requiredModule` und `requiresBilling` erweitert. Alle `/verwaltung/*` Sub-Routen von `requiredRole="admin"` auf `requiredModule="verwaltung"` umgestellt → Mitarbeiter mit aktivem Verwaltung-Modul sehen alle Sub-Pages (Auswertung, Stundenberichte, Textbausteine, Zeiterfassung, Fuel, Maschinen-Auswertung, Verbandsbuch).
   - **VerwaltungPage.jsx**: `adminOnly`-Filter entfernt für Auswertung/Mitarbeiter/Textbausteine; Finance jetzt `requiresBilling`; KI-Training bleibt admin-only.
