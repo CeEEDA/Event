@@ -88,7 +88,7 @@ export default function KiTrainingPage() {
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/")} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+          <button onClick={() => navigate("/verwaltung")} className="p-2 hover:bg-gray-200 rounded-lg transition-colors" data-testid="back-btn">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>

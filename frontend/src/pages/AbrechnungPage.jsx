@@ -33,7 +33,7 @@ export default function AbrechnungPage() {
     <div className="min-h-screen bg-gray-50" data-testid="abrechnung-page">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate("/hub")} className="text-gray-500 hover:text-gray-700" data-testid="back-btn">
+          <button onClick={() => navigate("/mitarbeiter-daten")} className="text-gray-500 hover:text-gray-700" data-testid="back-btn">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <Receipt className="w-5 h-5 text-emerald-600" />
