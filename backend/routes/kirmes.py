@@ -76,6 +76,16 @@ async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(sec
     return user
 
 
+async def _require_billing(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Admin oder Mitarbeiter mit Sonderberechtigung 'Abrechnung' (permissions.can_billing)."""
+    user = await _auth_user(credentials)
+    if user["role"] == "admin":
+        return user
+    if user["role"] == "mitarbeiter" and user.get("permissions", {}).get("can_billing"):
+        return user
+    raise HTTPException(status_code=403, detail="Abrechnungs-Berechtigung erforderlich")
+
+
 # ============== Models ==============
 
 class StandardPrice(BaseModel):
@@ -207,7 +217,7 @@ async def get_standard_prices(user: dict = Depends(_require_staff)):
 
 
 @router.put("/standard-prices")
-async def update_standard_prices(data: StandardPriceUpdate, user: dict = Depends(_require_admin)):
+async def update_standard_prices(data: StandardPriceUpdate, user: dict = Depends(_require_billing)):
     now = datetime.now(timezone.utc).isoformat()
     for p in data.prices:
         await _db.kirmes_standard_prices.update_one(
@@ -262,7 +272,7 @@ async def list_events(
 
 
 @router.post("/events")
-async def create_event(data: EventCreate, user: dict = Depends(_require_staff)):
+async def create_event(data: EventCreate, user: dict = Depends(_require_billing)):
     # Get prices
     if data.use_standard_prices:
         std_prices = await _db.kirmes_standard_prices.find({"type": {"$ne": "global"}, "category": {"$ne": "wohnwagen"}}, {"_id": 0}).to_list(100)
@@ -329,7 +339,7 @@ class EventPaymentMode(BaseModel):
     kauf_auf_rechnung: bool
 
 @router.put("/events/{event_id}/payment-mode")
-async def set_event_payment_mode(event_id: str, data: EventPaymentMode, user: dict = Depends(_require_staff)):
+async def set_event_payment_mode(event_id: str, data: EventPaymentMode, user: dict = Depends(_require_billing)):
     """Toggle payment mode for entire event: Rechnung vs Kreditkarte/PayPal."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
@@ -346,7 +356,7 @@ async def set_event_payment_mode(event_id: str, data: EventPaymentMode, user: di
 
 
 @router.put("/events/{event_id}")
-async def update_event(event_id: str, data: EventUpdate, user: dict = Depends(_require_staff)):
+async def update_event(event_id: str, data: EventUpdate, user: dict = Depends(_require_billing)):
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
@@ -381,7 +391,7 @@ async def delete_event(event_id: str, user: dict = Depends(_require_admin)):
 
 
 @router.post("/events/{event_id}/reopen")
-async def reopen_event(event_id: str, user: dict = Depends(_require_staff)):
+async def reopen_event(event_id: str, user: dict = Depends(_require_billing)):
     """Reopen an event: set status back to 'freigegeben' so Schausteller can register again.
     Does NOT touch invoices or signups. Use this to recover from an accidental
     'abgerechnet' status when no invoices were actually created."""
@@ -401,7 +411,7 @@ async def reopen_event(event_id: str, user: dict = Depends(_require_staff)):
 
 
 @router.post("/events/{event_id}/release")
-async def release_event(event_id: str, user: dict = Depends(_require_staff)):
+async def release_event(event_id: str, user: dict = Depends(_require_billing)):
     """Set event status to 'freigegeben' - makes it visible for schausteller registration."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
@@ -419,7 +429,7 @@ class CloseEventRequest(BaseModel):
 
 
 @router.post("/events/{event_id}/close")
-async def close_event(event_id: str, data: CloseEventRequest = Body(default=None), user: dict = Depends(_require_staff)):
+async def close_event(event_id: str, data: CloseEventRequest = Body(default=None), user: dict = Depends(_require_billing)):
     """Manually close an event (set status to 'abgerechnet' or 'abgeschlossen'). Validates that all signups are billed unless force=true."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
@@ -1390,7 +1400,7 @@ def _calculate_invoice(signups: list, event: dict, schausteller: dict) -> dict:
 
 
 @router.post("/signups/{signup_id}/invoice")
-async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_require_staff)):
+async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_require_billing)):
     """Generate a combined invoice for ALL signups of the same schausteller in the same event."""
     signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
     if not signup:
@@ -1554,7 +1564,7 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
 
 
 @router.post("/events/{event_id}/generate-invoices")
-async def generate_all_invoices(event_id: str, user: dict = Depends(_require_staff)):
+async def generate_all_invoices(event_id: str, user: dict = Depends(_require_billing)):
     """Generate one combined invoice per schausteller for all their signups in an event."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:
@@ -1754,7 +1764,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_sta
 
 
 @router.post("/events/{event_id}/reset-invoices")
-async def reset_and_regenerate_invoices(event_id: str, user: dict = Depends(_require_admin)):
+async def reset_and_regenerate_invoices(event_id: str, user: dict = Depends(_require_billing)):
     """Delete all invoices for an event and reset signup payment status, so invoices can be regenerated."""
     event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
     if not event:

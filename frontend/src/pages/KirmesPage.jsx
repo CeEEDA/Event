@@ -402,7 +402,7 @@ function EventModal({ open, onClose, onSaved, editing }) {
 
 export default function KirmesPage() {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canBilling } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -528,7 +528,7 @@ export default function KirmesPage() {
             <h1 className="text-sm sm:text-base font-semibold text-gray-900 truncate">Kirmes-Verwaltung</h1>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {isAdmin && (
+            {canBilling && (
               <Button size="sm" variant="outline" onClick={() => setShowPriceList(true)} className="text-gray-600 hidden sm:flex" data-testid="price-list-btn">
                 Standard-Preise
               </Button>
@@ -538,9 +538,11 @@ export default function KirmesPage() {
                 <CreditCard className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Zahlungen</span>
               </Button>
             )}
-            <Button size="sm" onClick={() => { setEditingEvent(null); setShowEventModal(true); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-event-btn">
-              <Plus className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Neue Veranstaltung</span>
-            </Button>
+            {canBilling && (
+              <Button size="sm" onClick={() => { setEditingEvent(null); setShowEventModal(true); }} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="new-event-btn">
+                <Plus className="w-4 h-4 sm:mr-1" /> <span className="hidden sm:inline">Neue Veranstaltung</span>
+              </Button>
+            )}
             <Logo size="small" className="hidden sm:block" />
           </div>
         </div>
@@ -632,7 +634,7 @@ export default function KirmesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                    {event.status === "entwurf" && (
+                    {event.status === "entwurf" && canBilling && (
                       <Button size="sm" variant="outline" onClick={() => handleRelease(event)} className="text-blue-600 border-blue-200 hover:bg-blue-50" data-testid={`release-${event.id}`}>
                         <Send className="w-3.5 h-3.5 mr-1" /> Freigeben
                       </Button>
@@ -642,9 +644,11 @@ export default function KirmesPage() {
                         {copiedLink === event.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                       </button>
                     )}
-                    <button onClick={() => { setEditingEvent(event); setShowEventModal(true); }} className="p-2 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Bearbeiten" data-testid={`edit-${event.id}`}>
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                    {canBilling && (
+                      <button onClick={() => { setEditingEvent(event); setShowEventModal(true); }} className="p-2 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Bearbeiten" data-testid={`edit-${event.id}`}>
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
                     {isAdmin && (
                       <button onClick={() => handleDelete(event)} className="p-2 text-gray-400 hover:text-red-500 transition-colors" title="Löschen" data-testid={`delete-${event.id}`}>
                         <Trash2 className="w-4 h-4" />

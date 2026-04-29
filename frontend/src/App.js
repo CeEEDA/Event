@@ -58,7 +58,7 @@ import EinsatzplanungPage from "./pages/EinsatzplanungPage";
 import MaschinenAuswertungPage from "./pages/MaschinenAuswertungPage";
 import "./App.css";
 
-const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
+const ProtectedRoute = ({ children, requiredRole, requiredApp, requiredModule, requiresBilling }) => {
   const { user, loading } = useAuth();
   
   if (loading) {
@@ -80,6 +80,21 @@ const ProtectedRoute = ({ children, requiredRole, requiredApp }) => {
   if (requiredApp && user.role !== "admin") {
     const appPerm = user.apps?.[requiredApp];
     if (!appPerm?.enabled) {
+      return <Navigate to="/hub" replace />;
+    }
+  }
+
+  // Hub-Kachel-Modul: Mitarbeiter braucht apps.modules[module] !== false (default true)
+  if (requiredModule && user.role !== "admin") {
+    const modules = user.apps?.modules || {};
+    if (modules[requiredModule] === false) {
+      return <Navigate to="/hub" replace />;
+    }
+  }
+
+  // Sonderberechtigung "Abrechnung" – nur Admin oder Mitarbeiter mit can_billing
+  if (requiresBilling && user.role !== "admin") {
+    if (!user.permissions?.can_billing) {
       return <Navigate to="/hub" replace />;
     }
   }
@@ -385,7 +400,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/auswertung"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <AuswertungIndexPage />
           </ProtectedRoute>
         }
@@ -393,7 +408,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/stundenberichte"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <StundenberichteListPage />
           </ProtectedRoute>
         }
@@ -401,7 +416,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/textbausteine"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <TextbausteineAdminPage />
           </ProtectedRoute>
         }
@@ -409,7 +424,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/auswertung/dokumente"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <AuswertungPage />
           </ProtectedRoute>
         }
@@ -417,7 +432,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/zeiterfassung"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <AdminZeiterfassungPage />
           </ProtectedRoute>
         }
@@ -425,7 +440,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/fuel"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <FuelManagementPage />
           </ProtectedRoute>
         }
@@ -433,7 +448,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/maschinen-auswertung"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <MaschinenAuswertungPage />
           </ProtectedRoute>
         }
@@ -441,7 +456,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/zeiterfassung/:userId/notizen"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <MitarbeiterNotizenPage />
           </ProtectedRoute>
         }
@@ -449,7 +464,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/zeiterfassung/:userId"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <AdminZeitDetailPage />
           </ProtectedRoute>
         }
@@ -498,7 +513,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/auswertung/verbandsbuch"
         element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredModule="verwaltung">
             <VerbandsbuchPage />
           </ProtectedRoute>
         }

@@ -15,7 +15,16 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
-- **2026-02 — P0 UI-Cleanup (Benutzerverwaltung):**
+- **2026-02 — P0 Permissions-Refactor (Verwaltung-Modul + Sonderberechtigung "Abrechnung"):**
+  - **Frontend `App.js`**: ProtectedRoute um `requiredModule` und `requiresBilling` erweitert. Alle `/verwaltung/*` Sub-Routen von `requiredRole="admin"` auf `requiredModule="verwaltung"` umgestellt → Mitarbeiter mit aktivem Verwaltung-Modul sehen alle Sub-Pages (Auswertung, Stundenberichte, Textbausteine, Zeiterfassung, Fuel, Maschinen-Auswertung, Verbandsbuch).
+  - **VerwaltungPage.jsx**: `adminOnly`-Filter entfernt für Auswertung/Mitarbeiter/Textbausteine; Finance jetzt `requiresBilling`; KI-Training bleibt admin-only.
+  - **Backend `kirmes.py`**: Neuer `_require_billing` Helper (Admin oder Mitarbeiter mit `permissions.can_billing`). Folgende Endpoints umgestellt:
+    - `PUT /standard-prices`, `POST /events`, `PUT /events/{id}`, `PUT /events/{id}/payment-mode`, `POST /events/{id}/reopen`, `POST /events/{id}/release`, `POST /events/{id}/close`, `POST /signups/{id}/invoice` (Einzel-Abrechnung), `POST /events/{id}/generate-invoices` (Komplett), `POST /events/{id}/reset-invoices`.
+    - `DELETE /events/{id}` bleibt admin-only (Sicherheit).
+  - **Frontend `KirmesPage.jsx`**: Buttons "Standard-Preise", "Neue Veranstaltung", Stift (Bearbeiten) und "Freigeben" jetzt mit `canBilling` gegated. Löschen bleibt admin-only.
+  - **Verifiziert per curl**: Mitarbeiter ohne `can_billing` bekommt 403 auf write-Endpoints, mit `can_billing` 200.
+
+- **2026-02 — P0 UI-Cleanup (Mitarbeiter-Edit-Dialog & Benutzer-Tabelle):**
   - In `/app/frontend/src/pages/AdminPage.js` die Spalten **FileShare**, **Monitoring** und **Energy** aus der Haupt-Benutzer-Tabelle entfernt (sowohl `<th>` als auch `<td>`).
   - colSpan der Loading-/Empty-/Expand-Zeilen von 8 auf 5 angepasst.
   - Verbleibende Spalten: Name, E-Mail, Rolle, Status, Aktionen.

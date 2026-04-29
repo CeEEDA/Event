@@ -4,6 +4,9 @@
 - **Live (Production)**: christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram
 - **Preview (Testing)**: admin@test.com / password
 
+## Mitarbeiter Accounts (Preview)
+- **Anna Weber (Mitarbeiter, Verwaltung+Abrechnung aktiv)**: ma1@test.com / Anna2026!
+
 ## Schausteller Portal (Public)
 Registrierung über `/kirmes/anmeldung` (E-Mail-Verifikation per 6-stelligem Code)
 

@@ -16,7 +16,7 @@ export default function VerwaltungPage() {
       icon: Receipt,
       color: "emerald",
       path: "/finance",
-      requiredApp: "finance",
+      requiresBilling: true,
     },
     {
       key: "documents",
@@ -34,7 +34,6 @@ export default function VerwaltungPage() {
       icon: BarChart3,
       color: "fuchsia",
       path: "/verwaltung/auswertung",
-      adminOnly: true,
     },
     {
       key: "zeiterfassung",
@@ -43,7 +42,6 @@ export default function VerwaltungPage() {
       icon: Clock,
       color: "green",
       path: "/verwaltung/zeiterfassung",
-      adminOnly: true,
     },
     {
       key: "textbausteine",
@@ -52,7 +50,6 @@ export default function VerwaltungPage() {
       icon: FileText,
       color: "amber",
       path: "/verwaltung/textbausteine",
-      adminOnly: true,
     },
     {
       key: "ki-training",
@@ -65,9 +62,12 @@ export default function VerwaltungPage() {
     },
   ];
 
-  const items = allItems.filter(item => 
-    item.adminOnly ? isAdmin : (isAdmin || user?.apps?.[item.requiredApp]?.enabled)
-  );
+  const items = allItems.filter(item => {
+    if (item.adminOnly) return isAdmin;
+    if (item.requiredApp) return isAdmin || user?.apps?.[item.requiredApp]?.enabled;
+    if (item.requiresBilling) return isAdmin || !!user?.permissions?.can_billing;
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50" data-testid="verwaltung-page">
