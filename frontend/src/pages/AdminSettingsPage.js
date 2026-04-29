@@ -889,127 +889,6 @@ function MosquittoSetupSection() {
   );
 }
 
-/* ───── Textbausteine (Projektbericht) ───── */
-function TextbausteineSection() {
-  const [templates, setTemplates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [newText, setNewText] = useState("");
-  const [newBezeichnung, setNewBezeichnung] = useState("");
-  const [newKategorie, setNewKategorie] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editText, setEditText] = useState("");
-  const [editBezeichnung, setEditBezeichnung] = useState("");
-  const [editKategorie, setEditKategorie] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      const { data } = await api.get("/project-reports/work-templates");
-      setTemplates(data || []);
-    } catch { setTemplates([]); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleAdd = async () => {
-    if (!newBezeichnung.trim() || !newText.trim()) { toast.error("Bezeichnung und Text sind erforderlich"); return; }
-    try {
-      await api.post("/project-reports/work-templates", { bezeichnung: newBezeichnung.trim(), text: newText.trim(), kategorie: newKategorie.trim() });
-      setNewBezeichnung(""); setNewText(""); setNewKategorie("");
-      toast.success("Textbaustein angelegt");
-      load();
-    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
-  };
-
-  const handleUpdate = async (id) => {
-    try {
-      await api.put(`/project-reports/work-templates/${id}`, { bezeichnung: editBezeichnung.trim(), text: editText.trim(), kategorie: editKategorie.trim() });
-      setEditingId(null);
-      toast.success("Aktualisiert");
-      load();
-    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("Textbaustein wirklich loeschen?")) return;
-    try {
-      await api.delete(`/project-reports/work-templates/${id}`);
-      toast.success("Geloescht");
-      load();
-    } catch (err) { toast.error(getErrorMsg(err, "Fehler")); }
-  };
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="textbausteine-section">
-      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-fuchsia-600 to-purple-500">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
-            <FileText className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-white">Textbausteine</h3>
-            <p className="text-[10px] text-fuchsia-100">Vordefinierte Texte fuer das Arbeitsprotokoll im Projektbericht</p>
-          </div>
-        </div>
-      </div>
-      <div className="p-5 space-y-4">
-        {/* Add new */}
-        <div className="flex items-end gap-2 flex-wrap" data-testid="add-template-form">
-          <div className="w-48">
-            <Label className="text-xs text-gray-500">Bezeichnung</Label>
-            <Input value={newBezeichnung} onChange={e => setNewBezeichnung(e.target.value)} placeholder="Kurzname" className="mt-0.5 h-8 text-sm" data-testid="new-template-bezeichnung" />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <Label className="text-xs text-gray-500">Text</Label>
-            <Input value={newText} onChange={e => setNewText(e.target.value)} placeholder="Fertiger Text der eingefuegt wird..."
-              className="mt-0.5 h-8 text-sm" onKeyDown={e => e.key === "Enter" && handleAdd()} data-testid="new-template-text" />
-          </div>
-          <Button size="sm" onClick={handleAdd} className="h-8 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="add-template-btn">
-            <Plus className="w-3 h-3 mr-1" /> Hinzufuegen
-          </Button>
-        </div>
-
-        {/* List */}
-        {loading ? (
-          <div className="text-center py-4"><Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" /></div>
-        ) : templates.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-4">Keine Textbausteine angelegt</p>
-        ) : (
-          <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
-            {templates.map(t => (
-              <div key={t.id} className="px-3 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors" data-testid={`template-${t.id}`}>
-                {editingId === t.id ? (
-                  <>
-                    <Input value={editBezeichnung} onChange={e => setEditBezeichnung(e.target.value)} className="w-36 h-7 text-xs" placeholder="Bezeichnung" />
-                    <Input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 h-7 text-xs" placeholder="Text"
-                      onKeyDown={e => e.key === "Enter" && handleUpdate(t.id)} />
-                    <Button size="sm" onClick={() => handleUpdate(t.id)} className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white">
-                      <Save className="w-3 h-3" />
-                    </Button>
-                    <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600 text-xs px-1">Abbrechen</button>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm font-medium text-gray-900 shrink-0">{t.bezeichnung || "—"}</span>
-                    <span className="text-xs text-gray-400 mx-1">→</span>
-                    <span className="flex-1 text-sm text-gray-500 truncate">{t.text}</span>
-                    <button onClick={() => { setEditingId(t.id); setEditBezeichnung(t.bezeichnung || ""); setEditText(t.text); setEditKategorie(t.kategorie || ""); }}
-                      className="text-gray-400 hover:text-fuchsia-600 p-1" data-testid={`edit-template-${t.id}`}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => handleDelete(t.id)} className="text-gray-400 hover:text-red-500 p-1" data-testid={`delete-template-${t.id}`}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* ───── Hilfsmittel / Pi-Werkzeuge ───── */
 function HilfsmittelSection() {
@@ -2087,9 +1966,6 @@ export default function AdminSettingsPage() {
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
-
-          {/* Textbausteine (Projektbericht) */}
-          <TextbausteineSection />
 
           {/* Hilfsmittel */}
           <div id="hilfsmittel-section">

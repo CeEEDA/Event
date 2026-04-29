@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Zap } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Zap, FileText } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -43,6 +43,15 @@ export default function VerwaltungPage() {
       icon: Clock,
       color: "green",
       path: "/verwaltung/zeiterfassung",
+      adminOnly: true,
+    },
+    {
+      key: "textbausteine",
+      label: "Textbausteine",
+      description: "Vordefinierte Texte für das Arbeitsprotokoll im Projektbericht",
+      icon: FileText,
+      color: "amber",
+      path: "/verwaltung/textbausteine",
       adminOnly: true,
     },
     {

@@ -15,6 +15,12 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 UX (Textbausteine: aus Einstellungen → Verwaltung verschoben):**
+  - Textbausteine-Bereich aus `AdminSettingsPage.js` (Einstellungen) entfernt und als eigenstaendige Admin-Seite `/verwaltung/textbausteine` neu angelegt (`TextbausteineAdminPage.jsx`).
+  - Neuer Tile "Textbausteine" (FileText, amber) in `VerwaltungPage.jsx` zwischen Mitarbeiter und KI-Training.
+  - Erweiterungen vs. alter Section: optionales Kategorie-Feld beim Anlegen, Volltextsuche (Bezeichnung/Text/Kategorie), Gruppierung nach Kategorie in Gruppen-Karten.
+  - Verifiziert: Admin sieht Tile, Liste mit 5 Bausteinen, Suche "kabel" filtert auf 3 (gruppiert ELEKTRO + ALLGEMEIN), Add/Edit/Delete funktionieren.
+
 - **2026-02 — P1 Feature (Projektbericht leer + Stundenberichte-Verwaltung):**
   - Neuer Button "Projektbericht leer" im Header der `OrdersPage` (`/orders`) → oeffnet `/project-report/new` ohne `order_pk`/`order_name` (Mitarbeiter fuellt Kundendaten manuell aus). Datenmodell unterstuetzte das schon (`order_pk: Optional[str]`).
   - Neue Admin-Seite `/verwaltung/stundenberichte` (`StundenberichteListPage.jsx`) mit Volltextsuche (Kunde, Projektnummer, Ort, Mitarbeiter, Arbeitsbeschreibung, Bemerkungen) und Filter-Pills (Alle / Mit Projekt / Blanko).
