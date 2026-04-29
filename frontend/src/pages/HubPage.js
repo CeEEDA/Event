@@ -967,6 +967,64 @@ export default function HubPage() {
 
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1.5 block">Zuweisen an</label>
+                {/* Quick-Select Gruppen */}
+                {(() => {
+                  const allMitarbeiterIds = allUsers.filter(u => u.role === "mitarbeiter").map(u => u.id);
+                  const allStaffIds = allUsers.map(u => u.id); // alle (Mitarbeiter + Admins)
+                  const includesAllMitarbeiter = allMitarbeiterIds.length > 0 && allMitarbeiterIds.every(id => newTask.assigned_to.includes(id));
+                  const includesAllStaff = allStaffIds.length > 0 && allStaffIds.every(id => newTask.assigned_to.includes(id));
+                  return (
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                      <span className="text-[10px] uppercase tracking-wide text-gray-400 mr-1">Gruppe:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (includesAllMitarbeiter) {
+                            // toggle off
+                            setNewTask(p => ({ ...p, assigned_to: p.assigned_to.filter(id => !allMitarbeiterIds.includes(id)) }));
+                          } else {
+                            // hinzufuegen (dedupliziert)
+                            setNewTask(p => ({ ...p, assigned_to: Array.from(new Set([...p.assigned_to, ...allMitarbeiterIds])) }));
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                          includesAllMitarbeiter
+                            ? "bg-fuchsia-600 border-fuchsia-600 text-white"
+                            : "bg-white border-gray-200 text-gray-700 hover:border-fuchsia-400 hover:text-fuchsia-700"
+                        }`}
+                        data-testid="assign-group-mitarbeiter"
+                      >
+                        <Users className="w-3 h-3" /> Alle Mitarbeiter ({allMitarbeiterIds.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (includesAllStaff) {
+                            setNewTask(p => ({ ...p, assigned_to: p.assigned_to.filter(id => !allStaffIds.includes(id)) }));
+                          } else {
+                            setNewTask(p => ({ ...p, assigned_to: Array.from(new Set([...p.assigned_to, ...allStaffIds])) }));
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                          includesAllStaff
+                            ? "bg-fuchsia-600 border-fuchsia-600 text-white"
+                            : "bg-white border-gray-200 text-gray-700 hover:border-fuchsia-400 hover:text-fuchsia-700"
+                        }`}
+                        data-testid="assign-group-staff"
+                      >
+                        <Users className="w-3 h-3" /> Alle (inkl. Admins)
+                      </button>
+                      {newTask.assigned_to.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setNewTask(p => ({ ...p, assigned_to: [] }))}
+                          className="ml-auto text-[11px] text-gray-400 hover:text-gray-700"
+                          data-testid="assign-clear"
+                        >Auswahl leeren</button>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-50">
                   {/* Self */}
                   <label className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer">

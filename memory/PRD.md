@@ -15,6 +15,14 @@ German (UI + all user communication).
 ---
 
 ## Recently Completed
+- **2026-02 — P1 Feature (Aufgaben: Quick-Select Gruppe "Alle Mitarbeiter"):**
+  - In der "Neue Aufgabe"-Dialog-Box ueber der Mitarbeiterliste zwei Pills hinzugefuegt:
+    - **Alle Mitarbeiter (N)** – selektiert alle User mit `role==mitarbeiter`
+    - **Alle (inkl. Admins)** – selektiert alle Mitarbeiter UND Admins
+    - **Auswahl leeren** – Reset
+  - Pills sind Toggle: erneuter Klick entfernt nur die Gruppen-IDs, manuell hinzugefuegte User bleiben erhalten. Aktive Pill fuchsia.
+  - Verifiziert: Klick auf "Alle Mitarbeiter (7)" → 7 Person(en) ausgewählt-Counter.
+
 - **2026-02 — P1 Bugfix (Geräteverwaltung: Ersatzteil "Sonderteil (Freitext)" funktionierte nicht):**
   - **Symptom**: Bei Auswahl "Sonderteil (Freitext)..." erschien kein Eingabefeld; Klick auf Hinzufuegen → Fehler "Bitte Typ auswaehlen".
   - **Wurzel**: Das Freitext-Input wurde nur gerendert, wenn `newPart.part_type !== ""` UND nicht in PART_TYPES. Beim Wechsel auf `__custom` wurde aber genau `part_type=""` gesetzt → Bedingung falsch → Input unsichtbar → User konnte nichts eingeben.
