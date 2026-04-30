@@ -78,6 +78,13 @@ def check_energy_monitoring_access(user: dict) -> bool:
     if user["role"] == "admin":
         return True
 
+    # Mitarbeiter mit aktivem Hub-Modul "energy_monitoring" haben Vollzugriff
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("energy_monitoring") is not False:
+            return True
+        return False
+
     apps = user.get("apps", {})
     em = apps.get("energy_monitoring", {})
     if not em.get("enabled", False):
@@ -106,6 +113,13 @@ def get_allowed_device_ids(user: dict) -> Optional[List[str]]:
     """Return list of allowed device IDs or None for all access."""
     if user["role"] == "admin":
         return None  # All access
+
+    # Mitarbeiter mit aktivem Hub-Modul "energy_monitoring" sehen alle Geraete
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("energy_monitoring") is not False:
+            return None
+        return []
 
     apps = user.get("apps", {})
     em = apps.get("energy_monitoring", {})

@@ -250,6 +250,21 @@ async def cleanup_ghost_generators(user: dict = Depends(get_authenticated_user))
 
 @router.get("")
 async def list_generators(user: dict = Depends(get_authenticated_user)):
+    # Mitarbeiter mit aktivem Hub-Modul "power_monitoring" sehen alle Geraete
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("power_monitoring") is not False:
+            generators = await db.generators.find({"is_active": True}, {"_id": 0}).to_list(1000)
+            real_gens = []
+            for g in generators:
+                if g.get("source") == "mqtt_auto" and not g.get("serial_number"):
+                    continue
+                if g.get("type") == "dse5510_pi" and not g.get("serial_number"):
+                    continue
+                real_gens.append(g)
+            return real_gens
+        return []
+
     if user["role"] == "admin":
         generators = await db.generators.find(
             {},

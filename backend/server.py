@@ -270,7 +270,13 @@ async def require_filesharing(user: dict = Depends(get_current_user)) -> dict:
     # Admins always have access
     if user["role"] == UserRole.ADMIN:
         return user
-    # Check if filesharing is enabled for user
+    # Mitarbeiter mit aktivem Hub-Modul "fileshare" haben Vollzugriff
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("fileshare") is not False:
+            return user
+        raise HTTPException(status_code=403, detail="FileShare nicht freigeschaltet")
+    # Check if filesharing is enabled for user (legacy fuer Kunden)
     apps = user.get("apps", {})
     filesharing = apps.get("filesharing", {})
     if not filesharing.get("enabled", False):
@@ -280,6 +286,10 @@ async def require_filesharing(user: dict = Depends(get_current_user)) -> dict:
 def can_user_write(user: dict) -> bool:
     if user["role"] == UserRole.ADMIN:
         return True
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("fileshare") is not False:
+            return True
     apps = user.get("apps", {})
     filesharing = apps.get("filesharing", {})
     return filesharing.get("can_write", False)
@@ -287,6 +297,10 @@ def can_user_write(user: dict) -> bool:
 def can_user_delete(user: dict) -> bool:
     if user["role"] == UserRole.ADMIN:
         return True
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("fileshare") is not False:
+            return True
     apps = user.get("apps", {})
     filesharing = apps.get("filesharing", {})
     return filesharing.get("can_delete", False)
@@ -294,6 +308,10 @@ def can_user_delete(user: dict) -> bool:
 def get_user_upload_limit(user: dict) -> int:
     if user["role"] == UserRole.ADMIN:
         return 10000  # 10 GB for admin
+    if user["role"] == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("fileshare") is not False:
+            return 1000  # 1 GB for Mitarbeiter mit fileshare-Modul
     apps = user.get("apps", {})
     filesharing = apps.get("filesharing", {})
     return filesharing.get("max_upload_size_mb", 100)

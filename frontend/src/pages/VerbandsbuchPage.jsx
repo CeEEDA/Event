@@ -28,9 +28,8 @@ export default function VerbandsbuchPage() {
   const [mailSending, setMailSending] = useState(false);
 
   useEffect(() => {
-    if (user?.role !== "admin") { navigate("/hub"); return; }
     loadEntries();
-  }, [user, navigate]);
+  }, []);
 
   const loadEntries = async () => {
     setLoading(true);
