@@ -67,10 +67,6 @@ export default function HubPage() {
   const commentsEndRef = useRef(null);
   const taskFileRef = useRef(null);
 
-  const hasFilesharing = isAdmin || user?.apps?.filesharing?.enabled;
-  const hasMonitoring = isAdmin || user?.apps?.generator_monitoring?.enabled;
-  const hasEnergyMonitoring = isAdmin || user?.apps?.energy_monitoring?.enabled;
-  const hasBilling = isAdmin || user?.permissions?.can_billing;
   const isStaff = isAdmin || user?.role === "mitarbeiter";
 
   // Per-Tile-Berechtigungen fuer Mitarbeiter (Admin sieht IMMER alles).
@@ -84,6 +80,12 @@ export default function HubPage() {
   };
   const isCustomer = user?.role === "kunde";
   const hasAdr = !!user?.apps?.modules?.adr;
+
+  // Mitarbeiter: Hub-Kachel-Toggles steuern. Kunden: Legacy-App-Berechtigungen.
+  const hasFilesharing = isAdmin || (isCustomer ? !!user?.apps?.filesharing?.enabled : tileAllowed("fileshare"));
+  const hasMonitoring = isAdmin || (isCustomer ? !!user?.apps?.generator_monitoring?.enabled : tileAllowed("power_monitoring"));
+  const hasEnergyMonitoring = isAdmin || (isCustomer ? !!user?.apps?.energy_monitoring?.enabled : tileAllowed("energy_monitoring"));
+  const hasBilling = isAdmin || !!user?.permissions?.can_billing;
 
   // Desktop mode: Electron app shows only module tiles
   const isDesktopMode = new URLSearchParams(window.location.search).get('desktop') === '1';
@@ -363,7 +365,7 @@ export default function HubPage() {
     isStaff && tileAllowed("orders") && { key: "orders", icon: ClipboardList, label: "Aufträge", path: "/orders", color: "bg-fuchsia-100 text-fuchsia-600" },
     (isAdmin || (isStaff && tileAllowed("einsatzplanung"))) && { key: "einsatzplanung", icon: CalendarDays, label: "Einsatzplanung", path: "/einsatzplanung", color: "bg-indigo-100 text-indigo-600" },
     isStaff && tileAllowed("kirmes") && { key: "kirmes", icon: Tent, label: "Kirmes", path: "/kirmes", color: "bg-pink-100 text-pink-600" },
-    !isCustomer && hasBilling && tileAllowed("verwaltung") && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
+    !isCustomer && tileAllowed("verwaltung") && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
     hasMonitoring && tileAllowed("power_monitoring") && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
     hasEnergyMonitoring && tileAllowed("energy_monitoring") && { key: "energy", icon: Zap, label: "Energy Monitoring", path: "/energy-monitoring", color: "bg-yellow-100 text-yellow-700" },
     isStaff && tileAllowed("devices") && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-teal-100 text-teal-600" },
