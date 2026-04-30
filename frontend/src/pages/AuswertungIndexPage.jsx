@@ -58,8 +58,6 @@ export default function AuswertungIndexPage() {
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
 
-  if (!isAdmin) { navigate("/hub"); return null; }
-
   return (
     <div className="min-h-screen bg-gray-50" data-testid="auswertung-index-page">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">

@@ -55,6 +55,18 @@ async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(sec
     return user
 
 
+async def _require_verwaltung(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Admin oder Mitarbeiter mit aktivem Hub-Modul 'verwaltung'."""
+    user = await _auth_user(credentials)
+    if user.get("role") == "admin":
+        return user
+    if user.get("role") == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("verwaltung") is not False:
+            return user
+    raise HTTPException(status_code=403, detail="Verwaltungs-Berechtigung erforderlich")
+
+
 async def _next_lfd_nr() -> int:
     """Get next consecutive Lfd. Nr. (starts at 1)."""
     pipeline = [
@@ -120,7 +132,7 @@ async def create_entry(payload: VerbandsbuchCreate, user=Depends(_auth_user)):
 
 
 @router.get("")
-async def list_entries(user=Depends(_require_admin)):
+async def list_entries(user=Depends(_require_verwaltung)):
     """Admin only: list all entries sorted by lfd_nr desc (newest first)."""
     items = []
     async for doc in _db.verbandsbuch.find({"is_deleted": False}, {"_id": 0}).sort("lfd_nr", -1):
@@ -129,7 +141,7 @@ async def list_entries(user=Depends(_require_admin)):
 
 
 @router.get("/by-user/{user_id}")
-async def list_by_user(user_id: str, user=Depends(_require_admin)):
+async def list_by_user(user_id: str, user=Depends(_require_verwaltung)):
     """Return entries where the given user_id was either the injured person OR the reporter.
     Matching for 'injured_name' uses the user's stored name (case-insensitive substring).
     """
@@ -154,7 +166,7 @@ async def list_by_user(user_id: str, user=Depends(_require_admin)):
 
 
 @router.get("/{entry_id}")
-async def get_entry(entry_id: str, user=Depends(_require_admin)):
+async def get_entry(entry_id: str, user=Depends(_require_verwaltung)):
     entry = await _db.verbandsbuch.find_one({"id": entry_id, "is_deleted": False}, {"_id": 0})
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
@@ -267,7 +279,7 @@ def _generate_pdf(entry: dict) -> bytes:
 
 
 @router.get("/{entry_id}/pdf")
-async def download_pdf(entry_id: str, user=Depends(_require_admin)):
+async def download_pdf(entry_id: str, user=Depends(_require_verwaltung)):
     entry = await _db.verbandsbuch.find_one({"id": entry_id, "is_deleted": False}, {"_id": 0})
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")

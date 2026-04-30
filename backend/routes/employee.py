@@ -36,6 +36,19 @@ DOCUMENT_LABELS = {
 }
 
 
+def _has_verwaltung(caller: dict) -> bool:
+    """Admin oder Mitarbeiter mit aktivem Hub-Kachel-Toggle 'verwaltung'.
+    Wird fuer admin-aehnliche Read-Endpoints in der Verwaltung verwendet."""
+    if not caller:
+        return False
+    if caller.get("role") == "admin":
+        return True
+    if caller.get("role") == "mitarbeiter":
+        modules = (caller.get("apps") or {}).get("modules") or {}
+        return modules.get("verwaltung") is not False
+    return False
+
+
 def _get_storage_fns():
     from routes.documents import put_object, get_object
     return put_object, get_object
@@ -263,9 +276,9 @@ async def admin_upload_avatar(user_id: str, token: str = Query(...), file: Uploa
 
 @router.get("/documents")
 async def get_documents(token: str = Query(...), user_id: Optional[str] = None):
-    """Get all documents for a user. Admins can view other users' docs."""
+    """Get all documents for a user. Admins/Verwaltung can view other users' docs."""
     caller = await _get_user(token)
-    target_id = user_id if user_id and caller.get("role") == "admin" else caller["id"]
+    target_id = user_id if user_id and _has_verwaltung(caller) else caller["id"]
 
     docs = await db.employee_documents.find(
         {"user_id": target_id},
@@ -282,7 +295,7 @@ async def upload_document(token: str = Query(...),
                            file: UploadFile = File(...)):
     """Upload a document/certificate PDF. AI checks expiry date."""
     caller = await _get_user(token)
-    target_id = user_id if user_id and caller.get("role") == "admin" else caller["id"]
+    target_id = user_id if user_id and _has_verwaltung(caller) else caller["id"]
 
     if doc_type not in DOCUMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Ungültiger Dokumenttyp: {doc_type}")
@@ -523,10 +536,10 @@ async def get_document_types(token: str = Query(...)):
 
 @router.get("/report/expiry")
 async def get_expiry_report(token: str = Query(...)):
-    """Admin: Get report of all document expiry dates across all employees."""
+    """Admin/Verwaltung: Get report of all document expiry dates across all employees."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Verwaltungs-Berechtigung erforderlich")
 
     # Get all active documents with expiry dates
     docs = await db.employee_documents.find(
@@ -598,10 +611,10 @@ async def get_time_status(token: str = Query(...)):
 
 @router.get("/time/presence")
 async def get_time_presence(token: str = Query(...)):
-    """Admin: get all employees with their current clock-in status (anwesend / abwesend)."""
+    """Admin/Verwaltung: get all employees with their current clock-in status (anwesend / abwesend)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Verwaltungs-Berechtigung erforderlich")
     # Alle aktiven Mitarbeiter und Admins (keine Kunden)
     users = await db.users.find(
         {"is_active": {"$ne": False}, "role": {"$in": ["admin", "mitarbeiter"]}},
@@ -855,10 +868,10 @@ async def delete_time_entry(entry_id: str, token: str = Query(...)):
 @router.get("/time/report")
 async def get_time_report(token: str = Query(...),
                            date_from: Optional[str] = None, date_to: Optional[str] = None):
-    """Admin: get time report for all employees."""
+    """Admin/Verwaltung: get time report for all employees."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Verwaltungs-Berechtigung erforderlich")
 
     query = {"clock_out": {"$ne": None}}
     if date_from:
@@ -1175,7 +1188,7 @@ async def _recalc_vacation_used(user_id: str, year: int):
 @router.get("/vacation/{user_id}")
 async def get_vacation_entries(user_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin" and caller["id"] != user_id:
+    if not _has_verwaltung(caller) and caller["id"] != user_id:
         raise HTTPException(status_code=403, detail="Kein Zugriff")
     year = datetime.now(timezone.utc).year
     entries = await db.vacation_entries.find(
@@ -1405,10 +1418,10 @@ async def create_time_off_request(token: str = Query(...), data: dict = Body(...
 
 @router.get("/time-off")
 async def get_time_off_requests(token: str = Query(...), user_id: str = None):
-    """Get time-off requests. Employees see their own, admins can filter by user_id or see all."""
+    """Get time-off requests. Employees see their own, admins/verwaltung can filter by user_id or see all."""
     caller = await _get_user(token)
     query = {}
-    if caller.get("role") == "admin":
+    if _has_verwaltung(caller):
         if user_id:
             query["user_id"] = user_id
     else:

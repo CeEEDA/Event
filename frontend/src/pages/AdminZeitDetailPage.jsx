@@ -363,8 +363,6 @@ export default function AdminZeitDetailPage() {
     } catch (e) { toast.error(e.response?.data?.detail || "Fehler beim Löschen"); }
   };
 
-  if (!isAdmin) { navigate("/hub"); return null; }
-
   const vacUsed = hrData?.vacation_days_used || 0;
   const vacTotal = parseInt(vacationTotal) || 0;
   const vacRemaining = vacTotal - vacUsed;

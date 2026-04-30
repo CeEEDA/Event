@@ -24,7 +24,6 @@ export default function StundenberichteListPage() {
   const [filter, setFilter] = useState("alle"); // alle | projekt | blanko
 
   useEffect(() => {
-    if (!isAdmin) { navigate("/hub"); return; }
     (async () => {
       try {
         const { data } = await api.get("/project-reports");
@@ -33,7 +32,7 @@ export default function StundenberichteListPage() {
         setReports([]);
       } finally { setLoading(false); }
     })();
-  }, [isAdmin, navigate]);
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

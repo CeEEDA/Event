@@ -80,8 +80,6 @@ export default function AdminZeiterfassungPage() {
     });
   }, [token, allEmployees]);
 
-  if (!isAdmin) { navigate("/hub"); return null; }
-
   const filtered = timeReport.filter(emp => {
     if (!search.trim()) return true;
     return emp.user_name?.toLowerCase().includes(search.toLowerCase());

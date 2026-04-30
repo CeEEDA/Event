@@ -29,8 +29,6 @@ export default function AuswertungPage() {
 
   useEffect(() => { loadReport(); }, [loadReport]);
 
-  if (!isAdmin) { navigate("/hub"); return null; }
-
   const filtered = report.filter(d => {
     if (search) {
       const q = search.toLowerCase();

@@ -33,9 +33,8 @@ export default function TextbausteineAdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) { navigate("/hub"); return; }
     load();
-  }, [isAdmin, load, navigate]);
+  }, [load]);
 
   const handleAdd = async () => {
     if (!newBezeichnung.trim() || !newText.trim()) { toast.error("Bezeichnung und Text sind erforderlich"); return; }

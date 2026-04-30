@@ -34,6 +34,18 @@ async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(sec
     return user
 
 
+async def _require_verwaltung(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Admin oder Mitarbeiter mit aktivem Hub-Modul 'verwaltung'."""
+    user = await _auth_user(credentials)
+    if user.get("role") == "admin":
+        return user
+    if user.get("role") == "mitarbeiter":
+        modules = (user.get("apps") or {}).get("modules") or {}
+        if modules.get("verwaltung") is not False:
+            return user
+    raise HTTPException(status_code=403, detail="Verwaltungs-Berechtigung erforderlich")
+
+
 # ── Models ──
 
 class WorkLogEntry(BaseModel):
@@ -164,7 +176,7 @@ async def get_reports_by_order(order_pk: str, user: dict = Depends(_auth_user)):
 
 
 @router.get("")
-async def list_all_project_reports(user: dict = Depends(_require_admin)):
+async def list_all_project_reports(user: dict = Depends(_require_verwaltung)):
     """Liste aller Projektberichte mit kompakter Projektion fuer die Admin-Verwaltung.
     Inkludiert blanko Berichte (order_pk == None) – Frontend kennzeichnet diese visuell.
     """
