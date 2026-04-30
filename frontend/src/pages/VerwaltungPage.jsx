@@ -25,7 +25,6 @@ export default function VerwaltungPage() {
       icon: FolderOpen,
       color: "blue",
       path: "/verwaltung/dokumente",
-      requiredApp: "dokumentenverwaltung",
     },
     {
       key: "auswertung",

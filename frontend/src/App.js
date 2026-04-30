@@ -240,7 +240,7 @@ function AppRoutes() {
       <Route
         path="/verwaltung/dokumente"
         element={
-          <ProtectedRoute requiredApp="dokumentenverwaltung">
+          <ProtectedRoute requiredModule="verwaltung">
             <DocumentManagementPage />
           </ProtectedRoute>
         }
@@ -248,7 +248,7 @@ function AppRoutes() {
       <Route
         path="/finance"
         element={
-          <ProtectedRoute requiredApp="finance">
+          <ProtectedRoute requiresBilling={true}>
             <FinancePage />
           </ProtectedRoute>
         }
