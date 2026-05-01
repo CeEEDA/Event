@@ -373,7 +373,6 @@ export default function HubPage() {
     isStaff && tileAllowed("devices") && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-teal-100 text-teal-600" },
     hasFilesharing && tileAllowed("fileshare") && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
     isStaff && tileAllowed("serviceplan") && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
-    isStaff && hasAdr && { key: "adr", icon: Truck, label: "ADR / Tankwagen", path: "/adr", color: "bg-rose-100 text-rose-600" },
     { key: "faq", icon: HelpCircle, label: "FAQ", path: "/faq", color: "bg-indigo-100 text-indigo-600" },
     isAdmin && { key: "admin", icon: Users, label: "Benutzer", path: "/admin", color: "bg-gray-100 text-gray-600" },
     isAdmin && { key: "settings", icon: Settings, label: "Einstellungen", path: "/admin/settings", color: "bg-gray-100 text-gray-600" },
