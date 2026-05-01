@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
+import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
@@ -21,6 +22,7 @@ import {
   ChevronDown,
   Filter,
   FilePlus,
+  LogOut,
 } from "lucide-react";
 
 const formatDate = (d) => {
@@ -94,6 +96,9 @@ const getOrderStatus = (order) => {
 
 export default function OrdersPage() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const isFreelancer = user?.role === "freelancer";
+  const handleLogout = () => { logout(); navigate("/login"); };
 
   const today = toISODate(new Date());
 
@@ -202,48 +207,68 @@ export default function OrdersPage() {
       <header className="bg-white border-b border-gray-200 p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/hub")}
-              className="text-gray-600 hover:text-fuchsia-600"
-              data-testid="back-to-hub-btn"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" /> Zurück
-            </Button>
-            <div className="h-6 w-px bg-gray-200" />
+            {!isFreelancer && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/hub")}
+                  className="text-gray-600 hover:text-fuchsia-600"
+                  data-testid="back-to-hub-btn"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Zurück
+                </Button>
+                <div className="h-6 w-px bg-gray-200" />
+              </>
+            )}
             <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <ClipboardList className="w-5 h-5 text-fuchsia-600" />
-              Auftragsverwaltung
+              {isFreelancer ? "Meine Aufträge" : "Auftragsverwaltung"}
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            {lastSynced && (
+            {lastSynced && !isFreelancer && (
               <span className="text-xs text-gray-400 hidden sm:inline">
                 Sync: {new Date(lastSynced).toLocaleString("de-DE", {hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit"})}
               </span>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/project-report/new")}
-              className="border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-50 hover:text-fuchsia-700 hover:border-fuchsia-300"
-              data-testid="new-blank-report-btn"
-            >
-              <FilePlus className="w-4 h-4 mr-1" />
-              <span className="hidden sm:inline">Projektbericht leer</span>
-              <span className="sm:hidden">Leer</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={triggerSync}
-              disabled={syncing}
-              data-testid="sync-orders-btn"
-            >
-              <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Synchronisiere..." : "Aktualisieren"}
-            </Button>
+            {!isFreelancer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/project-report/new")}
+                className="border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-50 hover:text-fuchsia-700 hover:border-fuchsia-300"
+                data-testid="new-blank-report-btn"
+              >
+                <FilePlus className="w-4 h-4 mr-1" />
+                <span className="hidden sm:inline">Projektbericht leer</span>
+                <span className="sm:hidden">Leer</span>
+              </Button>
+            )}
+            {!isFreelancer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={triggerSync}
+                disabled={syncing}
+                data-testid="sync-orders-btn"
+              >
+                <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Synchronisiere..." : "Aktualisieren"}
+              </Button>
+            )}
+            {isFreelancer && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="text-gray-600 hover:text-red-600 hover:border-red-300"
+                data-testid="logout-btn"
+              >
+                <LogOut className="w-4 h-4 mr-1" />
+                <span className="hidden sm:inline">Abmelden</span>
+              </Button>
+            )}
             <Logo size="small" />
           </div>
         </div>

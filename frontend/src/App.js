@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { Toaster } from "./components/ui/sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -60,6 +60,7 @@ import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp, requiredModule, requiresBilling }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
   
   if (loading) {
     return (
@@ -71,6 +72,15 @@ const ProtectedRoute = ({ children, requiredRole, requiredApp, requiredModule, r
   
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Freelancer dürfen NUR Auftragsliste & Auftragsdetails sehen
+  if (user.role === "freelancer") {
+    const path = location.pathname;
+    const allowed = path === "/orders" || path.startsWith("/orders/");
+    if (!allowed) {
+      return <Navigate to="/orders" replace />;
+    }
   }
   
   if (requiredRole && user.role !== requiredRole && user.role !== "admin") {
@@ -114,6 +124,9 @@ const PublicRoute = ({ children }) => {
   }
   
   if (user) {
+    if (user.role === "freelancer") {
+      return <Navigate to="/orders" replace />;
+    }
     return <Navigate to="/hub" replace />;
   }
   
