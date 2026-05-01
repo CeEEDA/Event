@@ -57,6 +57,7 @@ import {
   Check,
   Camera,
   Truck,
+  Briefcase,
 } from "lucide-react";
 import axios from "axios";
 
@@ -97,6 +98,12 @@ export default function AdminPage() {
     steuernummer: "", email: "", telefon: "", rechnungs_email: "",
   });
   const [schaustellerNewPassword, setSchaustellerNewPassword] = useState("");
+  // Freelancer-Auftragszuweisung
+  const [freelancerOrderPks, setFreelancerOrderPks] = useState([]);
+  const [freelancerSearchQ, setFreelancerSearchQ] = useState("");
+  const [freelancerSearchResults, setFreelancerSearchResults] = useState([]);
+  const [freelancerSearchLoading, setFreelancerSearchLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -311,6 +318,25 @@ export default function AdminPage() {
     if (userRoleFilter === "schausteller") loadSchausteller();
   }, [userRoleFilter, schaustellerSearch]);
 
+  // Freelancer-Auftrags-Suche (debounced)
+  useEffect(() => {
+    if (!modalOpen || formData.role !== "freelancer") return;
+    const handler = setTimeout(async () => {
+      setFreelancerSearchLoading(true);
+      try {
+        const r = await api.get("/orders/freelancer-search", {
+          params: { q: freelancerSearchQ, limit: 50 }
+        });
+        setFreelancerSearchResults(r.data || []);
+      } catch {
+        setFreelancerSearchResults([]);
+      } finally {
+        setFreelancerSearchLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [freelancerSearchQ, modalOpen, formData.role]);
+
   const openEditSchausteller = (sch) => {
     setEditingSchausteller(sch);
     setSchaustellerForm({
@@ -396,6 +422,18 @@ export default function AdminPage() {
 
   const openEditModal = (user) => {
     setEditingUser(user);
+    setFreelancerOrderPks([]);
+    setFreelancerSearchQ("");
+    setFreelancerSearchResults([]);
+    if (user.role === "freelancer") {
+      api.get(`/orders/freelancer-assignments/${user.id}`)
+        .then(r => setFreelancerOrderPks(r.data?.order_pks || []))
+        .catch(() => setFreelancerOrderPks([]));
+      // initial: zeige zugewiesene + aktuelle Aufträge
+      api.get("/orders/freelancer-search", { params: { q: "", limit: 50 } })
+        .then(r => setFreelancerSearchResults(r.data || []))
+        .catch(() => setFreelancerSearchResults([]));
+    }
     setFormData({
       name: user.name,
       email: user.email,
@@ -457,6 +495,12 @@ export default function AdminPage() {
           apps: formData.apps,
           permissions: formData.permissions || {}
         });
+        // Freelancer: Auftrags-Zuweisungen separat speichern
+        if (formData.role === "freelancer") {
+          await api.put(`/orders/freelancer-assignments/${editingUser.id}`, {
+            order_pks: freelancerOrderPks
+          });
+        }
         toast.success("Benutzer aktualisiert");
       } else {
         if (!formData.password) {
@@ -1333,6 +1377,82 @@ export default function AdminPage() {
                           data-testid="can-billing-toggle"
                         />
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {formData.role === "freelancer" && (
+                  <div className="border-t border-gray-200 pt-4 mt-2">
+                    <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-amber-600" />
+                      Auftragszuweisung
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Der Freelancer sieht nur die hier ausgewählten Aufträge.
+                      Aufträge werden 5 Tage nach Job-Ende automatisch ausgeblendet.
+                      Tankbelege und Kundendaten sind in der Auftragsmaske nicht sichtbar.
+                    </p>
+
+                    <div className="bg-amber-50 rounded-lg p-3 mb-3">
+                      <span className="text-sm font-medium text-amber-900" data-testid="freelancer-assigned-count">
+                        {freelancerOrderPks.length} Auftrag/Aufträge zugewiesen
+                      </span>
+                    </div>
+
+                    <div className="relative mb-2">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        placeholder="Auftrag suchen (Nr., Event, Adresse...)"
+                        value={freelancerSearchQ}
+                        onChange={e => setFreelancerSearchQ(e.target.value)}
+                        className="pl-9 border-gray-300"
+                        data-testid="freelancer-order-search"
+                      />
+                    </div>
+
+                    <div className="border border-gray-200 rounded-lg max-h-72 overflow-y-auto bg-white">
+                      {freelancerSearchLoading ? (
+                        <div className="p-4 text-center text-sm text-gray-400">Lade...</div>
+                      ) : freelancerSearchResults.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-gray-400">Keine Aufträge gefunden</div>
+                      ) : (
+                        freelancerSearchResults.map(o => {
+                          const checked = freelancerOrderPks.includes(o.primary_key);
+                          return (
+                            <label
+                              key={o.primary_key}
+                              className={`flex items-start gap-3 px-3 py-2.5 border-b border-gray-100 last:border-b-0 cursor-pointer hover:bg-amber-50/50 transition-colors ${checked ? "bg-amber-50/70" : ""}`}
+                              data-testid={`freelancer-order-row-${o.primary_key}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 accent-amber-600"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFreelancerOrderPks(prev => prev.includes(o.primary_key) ? prev : [...prev, o.primary_key]);
+                                  } else {
+                                    setFreelancerOrderPks(prev => prev.filter(p => p !== o.primary_key));
+                                  }
+                                }}
+                                data-testid={`freelancer-order-toggle-${o.primary_key}`}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold text-gray-900">{o.order_no}</span>
+                                  {o.event_start && (
+                                    <span className="text-xs text-gray-500">
+                                      {o.event_start}{o.event_end && o.event_end !== o.event_start ? ` – ${o.event_end}` : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                {o.event && <div className="text-sm text-gray-700 truncate">{o.event}</div>}
+                                {o.address && <div className="text-xs text-gray-500 truncate">{o.address}</div>}
+                              </div>
+                            </label>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 )}

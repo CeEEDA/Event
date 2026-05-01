@@ -353,6 +353,8 @@ async def get_fuel_receipt_bitmap(
 
 @router.get("/by-order/{order_pk}")
 async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user)):
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Freelancer haben keinen Zugriff auf Tankbelege")
     """Get all fuel receipts for a specific order with adjustment applied."""
     receipts = await _db.fuel_receipts.find(
         {"order_pk": str(order_pk)}, {"_id": 0, "bitmap_png_base64": 0}

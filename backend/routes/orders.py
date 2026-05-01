@@ -191,6 +191,48 @@ async def _auth_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return user
 
 
+# ── Freelancer Helpers ──
+def _freelancer_assigned_pks(user: dict):
+    """Return list of order_pks (strings) assigned to a freelancer user."""
+    raw = user.get("freelancer_orders") or []
+    return [str(x) for x in raw]
+
+
+def _freelancer_order_visible(order_obj: dict, today_str: str = None):
+    """Freelancer-Sichtbarkeit: Auftrag nur sichtbar bis 5 Tage NACH Job-Ende.
+    Verwendet event_end (fallback dispo_end). Aufträge ohne Enddatum bleiben sichtbar."""
+    from datetime import date
+    if today_str is None:
+        today_str = date.today().isoformat()
+    end = order_obj.get("event_end") or order_obj.get("dispo_end") or ""
+    if not end or end == "0000-00-00":
+        return True
+    try:
+        end_d = date.fromisoformat(end)
+        from datetime import timedelta
+        cutoff = end_d + timedelta(days=5)
+        return date.fromisoformat(today_str) <= cutoff
+    except Exception:
+        return True
+
+
+async def _check_freelancer_order_access(user: dict, order_pk):
+    """Raise 403 wenn role=freelancer und Auftrag nicht (mehr) zugewiesen."""
+    if user.get("role") != "freelancer":
+        return
+    pks = _freelancer_assigned_pks(user)
+    if str(order_pk) not in pks:
+        raise HTTPException(status_code=403, detail="Auftrag nicht zugewiesen")
+    # Lookup order to check 5-day cutoff
+    o = None
+    if str(order_pk).isdigit():
+        o = await _db.orders_cache.find_one({"primary_key": int(order_pk)}, {"_id": 0})
+    if not o:
+        o = await _db.orders_cache.find_one({"primary_key": str(order_pk)}, {"_id": 0})
+    if o and not _freelancer_order_visible(o):
+        raise HTTPException(status_code=403, detail="Auftrag bereits abgeschlossen (5 Tage nach Ende abgelaufen)")
+
+
 # ── Sync Endpoints ──
 
 @router.get("/sync/status")
@@ -408,6 +450,16 @@ async def get_epirent_orders(
             s in o.get("address", "").lower()
         ]
 
+    # Freelancer-Filter: nur zugewiesene Aufträge + 5 Tage nach Job-Ende
+    if user.get("role") == "freelancer":
+        assigned = set(_freelancer_assigned_pks(user))
+        result = [o for o in result
+                  if str(o.get("primary_key")) in assigned and _freelancer_order_visible(o)]
+        # Kundendaten aus der Liste entfernen
+        for o in result:
+            o["contact_name"] = ""
+            o["customer_no"] = ""
+
     return {
         "orders": result,
         "total": len(result),
@@ -474,6 +526,7 @@ async def _get_full_order(api_url, api_key, order_pk, ssl_skip=False):
 @router.get("/epirent/{order_pk}")
 async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
     """Get full order detail including delivery address and geocoded location."""
+    await _check_freelancer_order_access(user, order_pk)
     config = await _get_epirent_config()
     api_url = config.get("api_url", "").rstrip("/")
     api_key = config.get("api_key", "")
@@ -586,7 +639,7 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
                     upsert=True,
                 )
 
-        return {
+        result_payload = {
             "primary_key": raw.get("primary_key"),
             "order_no": raw.get("order_no_fmt", str(raw.get("order_no", ""))),
             "event": raw.get("event", ""),
@@ -621,6 +674,15 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
             "contact_postal_code": contact_details.get("postal_code", ""),
             "contact_city": contact_details.get("city", ""),
         }
+
+        # Freelancer: Kundendaten unkenntlich machen
+        if user.get("role") == "freelancer":
+            for k in ("contact_name", "customer_no", "contact_phone", "contact_email",
+                      "contact_street", "contact_postal_code", "contact_city", "sum_net", "sum_gro"):
+                result_payload[k] = "" if isinstance(result_payload.get(k), str) else 0
+            result_payload["address_raw"]["name"] = ""
+
+        return result_payload
 
     except HTTPException:
         raise
@@ -1629,3 +1691,70 @@ async def delete_messprotokoll(order_pk: str, doc_id: str,
     await _db.messprotokolle.delete_one({"id": doc_id, "order_pk": order_pk})
     return {"message": "Messprotokoll geloescht"}
 
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Freelancer Auftragszuweisung (Admin only)
+# ══════════════════════════════════════════════════════════════════════════
+
+async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    payload = _decode_jwt_token(credentials.credentials)
+    u = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not u or u.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    return u
+
+
+@router.get("/freelancer-assignments/{user_id}")
+async def get_freelancer_assignments(user_id: str, _admin: dict = Depends(_require_admin)):
+    """Aktuelle Auftrags-Zuweisungen eines Freelancers (Liste der order_pks)."""
+    u = await _db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "role": 1, "freelancer_orders": 1})
+    if not u:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    return {"user_id": user_id, "order_pks": _freelancer_assigned_pks(u)}
+
+
+class _FreelancerAssignmentUpdate(BaseModel):
+    order_pks: list[str]
+
+
+@router.put("/freelancer-assignments/{user_id}")
+async def set_freelancer_assignments(user_id: str, data: _FreelancerAssignmentUpdate,
+                                       _admin: dict = Depends(_require_admin)):
+    """Setze die komplette Liste zugewiesener Aufträge fuer einen Freelancer."""
+    u = await _db.users.find_one({"id": user_id}, {"_id": 0})
+    if not u:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    pks = [str(x) for x in (data.order_pks or [])]
+    await _db.users.update_one({"id": user_id}, {"$set": {"freelancer_orders": pks}})
+    return {"user_id": user_id, "order_pks": pks, "count": len(pks)}
+
+
+@router.get("/freelancer-search")
+async def search_assignable_orders(q: str = "", limit: int = Query(50, ge=1, le=200),
+                                     _admin: dict = Depends(_require_admin)):
+    """Suche im orders_cache fuer die Freelancer-Zuweisungs-Maske."""
+    rows = await _db.orders_cache.find({}, {"_id": 0, "_synced_at": 0}).to_list(1000)
+    # Filter: nicht storniert/archiviert
+    rows = [o for o in rows if not o.get("is_canceled") and not o.get("is_archived")]
+    if q:
+        s = q.lower()
+        rows = [o for o in rows if
+                s in (o.get("event") or "").lower() or
+                s in (o.get("order_no") or "").lower() or
+                s in (o.get("contact_name") or "").lower() or
+                s in str(o.get("customer_no") or "").lower() or
+                s in (o.get("address") or "").lower()]
+    # Sortiere nach event_start desc
+    rows.sort(key=lambda o: (o.get("event_start") or o.get("dispo_start") or ""), reverse=True)
+    rows = rows[:limit]
+    # Reduzierte Felder
+    return [{
+        "primary_key": str(o.get("primary_key")),
+        "order_no": o.get("order_no") or "",
+        "event": o.get("event") or "",
+        "contact_name": o.get("contact_name") or "",
+        "event_start": o.get("event_start") or o.get("dispo_start") or "",
+        "event_end": o.get("event_end") or o.get("dispo_end") or "",
+        "address": o.get("address") or "",
+    } for o in rows]

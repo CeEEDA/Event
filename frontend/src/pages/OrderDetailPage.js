@@ -233,7 +233,8 @@ export default function OrderDetailPage() {
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
   const [docCount, setDocCount] = useState(0);
 
-  const { isAdmin } = useAuth();
+  const { isAdmin, user: currentUser } = useAuth();
+  const isFreelancer = currentUser?.role === "freelancer";
 
   const fetchOrder = useCallback(async () => {
     setLoading(true);
@@ -271,6 +272,7 @@ export default function OrderDetailPage() {
   }, [pk]);
 
   const fetchFuelReceipts = useCallback(async () => {
+    if (isFreelancer) return;
     setFuelLoading(true);
     try {
       const { data } = await api.get(`/fuel-receipts/by-order/${pk}`);
@@ -280,7 +282,7 @@ export default function OrderDetailPage() {
     } finally {
       setFuelLoading(false);
     }
-  }, [pk]);
+  }, [pk, isFreelancer]);
 
   const fetchProjectReports = useCallback(async () => {
     setProjectReportsLoading(true);
@@ -544,8 +546,14 @@ export default function OrderDetailPage() {
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="order-info-customer">
               <p className="text-xs text-gray-500 mb-1">Kunde</p>
-              <p className="font-semibold text-gray-900">{order?.contact_name || "—"}</p>
-              <p className="text-sm text-gray-500 mt-1">Kd.-Nr. {order?.customer_no || "—"}</p>
+              {isFreelancer ? (
+                <p className="font-semibold text-gray-400 italic">— ausgeblendet —</p>
+              ) : (
+                <>
+                  <p className="font-semibold text-gray-900">{order?.contact_name || "—"}</p>
+                  <p className="text-sm text-gray-500 mt-1">Kd.-Nr. {order?.customer_no || "—"}</p>
+                </>
+              )}
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="order-info-address">
               <p className="text-xs text-gray-500 mb-1">Lieferanschrift</p>
@@ -1146,6 +1154,7 @@ export default function OrderDetailPage() {
           </div>
 
           {/* Tankbelege Section */}
+          {!isFreelancer && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="fuel-receipts-section">
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1256,6 +1265,7 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+          )}
 
           {/* ═════ Messprotokolle ═════ */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">

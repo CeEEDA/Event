@@ -17,7 +17,14 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session
-- ✅ **Messprotokoll Delete (Admin only)** – DELETE `/api/orders/messprotokoll/{order_pk}/{doc_id}` removes DB entry, order_document and PDF file. Frontend trash button wrapped in `{isAdmin}` with confirm dialog.
+- ✅ **Freelancer-Rolle + Auftragszuweisung** – Neue Rolle `freelancer` mit:
+  - User-Feld `freelancer_orders: [order_pk, ...]`
+  - Edit-Modal: Suchmaske + Checkbox-Liste zur Auftragszuweisung
+  - Auftragsliste: zeigt nur zugewiesene Aufträge, automatischer Filter 5 Tage nach Job-Ende
+  - Auftragsdetail: Kundendaten (Name, Kd-Nr, Tel, Email, Adresse, Summen) ausgeblendet
+  - Tankbelege-Section komplett ausgeblendet (Frontend) + Backend 403
+  - 403 bei Detail-Zugriff auf nicht-zugewiesene oder abgelaufene Aufträge
+- ✅ **Messprotokoll Delete (Admin only)** – DELETE `/api/orders/messprotokoll/{order_pk}/{doc_id}` mit Trash-Button im UI
 
 ### Previous Session
 - ✅ Messprotokoll feature (PDF generator, 7-tab modal, numbering `{OrderNo}-MP-{NNNN}`)
