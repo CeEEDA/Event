@@ -862,8 +862,12 @@ export default function HubPage() {
                                 // Optimistisches Entfernen aus der Liste, damit die Aufgabe sofort verschwindet
                                 setTasks(prev => prev.filter(x => x.id !== t.id));
                                 try {
-                                  await api.post(`/kirmes/invoices/${t.payment_reminder_invoice_id}/send-reminder`);
-                                  toast.success(`Mahnung ${t.payment_reminder_invoice_number} versendet`);
+                                  const res = await api.post(`/kirmes/invoices/${t.payment_reminder_invoice_id}/send-reminder`);
+                                  if (res.data?.email_sent === false) {
+                                    toast.warning(`Mahnung ${t.payment_reminder_invoice_number} markiert - E-Mail fehlgeschlagen`);
+                                  } else {
+                                    toast.success(`Mahnung ${t.payment_reminder_invoice_number} versendet`);
+                                  }
                                   loadTasks();
                                 } catch {
                                   toast.error("Fehler beim Senden");

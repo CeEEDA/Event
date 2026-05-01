@@ -2231,35 +2231,45 @@ Falls Sie die Zahlung bereits veranlasst haben, betrachten Sie diese Erinnerung 
 Mit freundlichen Grüßen
 Eventenergie Deutschland GmbH & Co. KG"""
 
+    # Email-Versand. Fehler werden geloggt, aber fuehren NICHT zum Rollback,
+    # damit die Aufgabe in jedem Fall verschwindet (sonst taucht sie bei jedem Scheduler-Lauf wieder auf).
+    email_sent = True
+    email_error = None
     try:
         from email_service import send_email
         send_email(to_email=email, subject=subject, html_body=body.replace("\n", "<br>"))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"E-Mail-Versand fehlgeschlagen: {e}")
+        email_sent = False
+        email_error = str(e)
+        mahnung_logger.error(f"Mahnung-Email fuer {inv['invoice_number']} fehlgeschlagen: {e}")
 
-    # Mark reminder sent (Stufe-spezifisch)
+    # Mark reminder sent (Stufe-spezifisch) – auch bei Email-Fehler,
+    # damit User nicht die gleiche Mahnstufe erneut aus der Aufgabenliste triggert.
     update_fields = {}
     if stufe == 1:
         update_fields = {
             "reminder_sent_at": datetime.now(timezone.utc).isoformat(),
             "reminder_sent_by": user.get("name", ""),
+            "reminder_email_ok": email_sent,
         }
     elif stufe == 2:
         update_fields = {
             "reminder2_sent_at": datetime.now(timezone.utc).isoformat(),
             "reminder2_sent_by": user.get("name", ""),
+            "reminder2_email_ok": email_sent,
         }
     await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update_fields})
 
     # Alle offenen Mahnungs-Aufgaben fuer diese Rechnung als erledigt markieren
-    # (egal welche Stufe – das Versenden erledigt den aktuellen Mahn-Vorgang).
     await _db.tasks.update_many(
         {"payment_reminder_invoice_id": invoice_id, "completed": False, "is_deleted": {"$ne": True}},
         {"$set": {"completed": True, "completed_at": datetime.now(timezone.utc).isoformat(),
                   "completed_by": user.get("id"), "completed_by_name": user.get("name", "")}}
     )
 
-    return {"message": f"Zahlungserinnerung an {email} gesendet"}
+    if not email_sent:
+        return {"message": f"Zahlungserinnerung als erledigt markiert, aber E-Mail-Versand an {email} fehlgeschlagen: {email_error}", "email_sent": False}
+    return {"message": f"Zahlungserinnerung an {email} gesendet", "email_sent": True}
 
 
 
