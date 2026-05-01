@@ -1304,6 +1304,26 @@ function FinTSBankingSection() {
   const [transactions, setTransactions] = useState(null);
   const [enabled, setEnabled] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [stateInfo, setStateInfo] = useState(null);
+  const [resetting, setResetting] = useState(false);
+
+  const loadStateInfo = async () => {
+    try {
+      const r = await api.get("/kirmes/fints/state-info");
+      setStateInfo(r.data);
+    } catch { setStateInfo(null); }
+  };
+
+  const resetState = async () => {
+    if (!window.confirm("Bank-Anmeldung zurücksetzen? Beim nächsten Abruf wird wieder eine pushTAN angefordert.")) return;
+    setResetting(true);
+    try {
+      await api.post("/kirmes/fints/reset-state");
+      toast.success("Bank-Anmeldung zurückgesetzt");
+      await loadStateInfo();
+    } catch { toast.error("Fehler beim Zurücksetzen"); }
+    finally { setResetting(false); }
+  };
 
   const checkStatus = async () => {
     try {
@@ -1339,7 +1359,7 @@ function FinTSBankingSection() {
       }
     } catch (e) {
       toast.error("Verbindung fehlgeschlagen: " + (e.response?.data?.detail || e.message));
-    } finally { setTesting(false); }
+    } finally { setTesting(false); loadStateInfo(); }
   };
 
   const loadTransactions = async () => {
@@ -1350,7 +1370,7 @@ function FinTSBankingSection() {
       toast.success(`${res.data.count} Transaktionen geladen`);
     } catch (e) {
       toast.error("Abruf fehlgeschlagen: " + (e.response?.data?.detail || e.message));
-    } finally { setTesting(false); }
+    } finally { setTesting(false); loadStateInfo(); }
   };
 
   const runCheck = async () => {
@@ -1361,10 +1381,10 @@ function FinTSBankingSection() {
       toast.success(`Abgleich: ${res.data.matched} Zuordnungen, ${res.data.auto_marked} automatisch bezahlt`);
     } catch (e) {
       toast.error("Fehler: " + (e.response?.data?.detail || e.message));
-    } finally { setChecking(false); }
+    } finally { setChecking(false); loadStateInfo(); }
   };
 
-  useEffect(() => { checkStatus(); }, []);
+  useEffect(() => { checkStatus(); loadStateInfo(); }, []);
 
   const isConfigured = status?.status === "configured";
 
@@ -1392,6 +1412,60 @@ function FinTSBankingSection() {
         </div>
       </div>
       <div className="p-5 space-y-4">
+        {/* Bank-Anmeldung-Indikator (MoneyMoney-Stil) */}
+        {stateInfo && (() => {
+          const has = stateInfo.has_state;
+          const ageDays = stateInfo.age_days;
+          const renewIn = stateInfo.sca_renewal_in_days;
+          let bg = "bg-gray-50 border-gray-200";
+          let dot = "bg-gray-400";
+          let label = "Keine Bank-Anmeldung";
+          let sub = "Beim ersten Abruf wird eine pushTAN angefordert.";
+          if (has && renewIn !== null && renewIn !== undefined) {
+            if (renewIn > 30) {
+              bg = "bg-emerald-50 border-emerald-200"; dot = "bg-emerald-500 animate-pulse";
+              label = "Bank-Verbindung aktiv";
+              sub = `Nächste pushTAN-Bestätigung in ${renewIn} Tagen fällig.`;
+            } else if (renewIn > 0) {
+              bg = "bg-amber-50 border-amber-200"; dot = "bg-amber-500 animate-pulse";
+              label = "Bank-Verbindung aktiv – Erneuerung bald";
+              sub = `Nur noch ${renewIn} Tag${renewIn === 1 ? "" : "e"} bis zur nächsten pushTAN.`;
+            } else {
+              bg = "bg-rose-50 border-rose-200"; dot = "bg-rose-500";
+              label = "pushTAN-Bestätigung fällig";
+              sub = "90-Tage-Frist abgelaufen – nächster Abruf erfordert pushTAN.";
+            }
+          }
+          return (
+            <div className={`border rounded-lg p-3 flex items-start justify-between gap-3 ${bg}`} data-testid="fints-state-indicator">
+              <div className="flex items-start gap-3 min-w-0">
+                <span className={`mt-1.5 inline-block w-2.5 h-2.5 rounded-full ${dot} flex-shrink-0`} />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-gray-900">{label}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">{sub}</div>
+                  {has && ageDays !== null && (
+                    <div className="text-[11px] text-gray-400 mt-1">
+                      Anmeldung gespeichert vor {ageDays} Tag{ageDays === 1 ? "" : "en"}
+                      {stateInfo.updated_at && ` (${new Date(stateInfo.updated_at).toLocaleDateString("de-DE")})`}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {has && (
+                <button
+                  onClick={resetState}
+                  disabled={resetting}
+                  className="text-xs text-gray-500 hover:text-rose-600 underline whitespace-nowrap flex-shrink-0"
+                  data-testid="fints-reset-state-btn"
+                  title="Bank-Anmeldung zurücksetzen (erfordert neue pushTAN)"
+                >
+                  Zurücksetzen
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         <div className="text-sm text-gray-600">
           <p>Automatischer Kontoabgleich mit offenen Rechnungen (alle 6 Stunden).</p>
           <p className="text-xs text-gray-400 mt-1">IBAN: DE28 5765 0010 0098 0667 56 · BLZ: 57650010</p>
