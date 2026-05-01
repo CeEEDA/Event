@@ -1839,7 +1839,7 @@ export default function AdminPage() {
                 </div>
                 )}
 
-                {formData.role !== "kunde" && formData.role !== "mitarbeiter" && (
+                {formData.role === "admin" && (
                   <div className="border-t border-gray-200 pt-4 mt-4">
                     <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
                       <div className="flex items-center justify-between">
