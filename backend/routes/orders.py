@@ -1707,11 +1707,28 @@ async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(sec
 
 @router.get("/freelancer-assignments/{user_id}")
 async def get_freelancer_assignments(user_id: str, _admin: dict = Depends(_require_admin)):
-    """Aktuelle Auftrags-Zuweisungen eines Freelancers (Liste der order_pks)."""
+    """Aktuelle Auftrags-Zuweisungen eines Freelancers mit Auftrags-Details."""
     u = await _db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "role": 1, "freelancer_orders": 1})
     if not u:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
-    return {"user_id": user_id, "order_pks": _freelancer_assigned_pks(u)}
+    pks = _freelancer_assigned_pks(u)
+    # Lade Auftrags-Details
+    orders = []
+    if pks:
+        int_pks = [int(p) for p in pks if str(p).isdigit()]
+        rows = await _db.orders_cache.find(
+            {"primary_key": {"$in": int_pks}}, {"_id": 0, "_synced_at": 0}
+        ).to_list(500)
+        orders = [{
+            "primary_key": str(o.get("primary_key")),
+            "order_no": o.get("order_no") or "",
+            "event": o.get("event") or "",
+            "contact_name": o.get("contact_name") or "",
+            "event_start": o.get("event_start") or o.get("dispo_start") or "",
+            "event_end": o.get("event_end") or o.get("dispo_end") or "",
+            "address": o.get("address") or "",
+        } for o in rows]
+    return {"user_id": user_id, "order_pks": pks, "orders": orders}
 
 
 class _FreelancerAssignmentUpdate(BaseModel):
