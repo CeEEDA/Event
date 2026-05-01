@@ -1917,13 +1917,17 @@ async def fints_check_payments(user: dict = Depends(_require_staff)):
 
 @router.post("/fints/test-connection")
 async def fints_test_connection(user: dict = Depends(_require_staff)):
-    """Diagnostischer Test: prueft nur die FinTS-Anmeldung, ohne Transaktionen abzurufen.
-    Liefert detaillierte Fehlerursache zurueck (z.B. 9340 Ungueltige Signatur =
-    falscher User/PIN, 9120 = TAN-Verfahren-Problem, etc.)."""
+    """Diagnostischer Test: prueft die FinTS-Anmeldung in 3 Stufen.
+    1) Bank-Verbindung + BPD (Bankparameterdaten)
+    2) TAN-Mechanismen abfragen
+    3) SEPA-Konten abrufen
+    Liefert detaillierte Fehlerursache zurueck inkl. Bank-Trace."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
-    import os
+    import io
+    import logging as _logging
     from fints_banking import FINTS_URL, FINTS_BLZ, FINTS_PRODUCT_ID, FINTS_PRODUCT_VERSION, get_fints_credentials
+
     creds = get_fints_credentials()
     if not creds:
         return {
@@ -1932,6 +1936,29 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
             "error": "FINTS_USER oder FINTS_PIN fehlt in der .env",
             "hint": "Setze beide Variablen, dann Backend neu starten.",
         }
+
+    # ── Capture python-fints log output ───────────────────────────
+    buf = io.StringIO()
+    handler = _logging.StreamHandler(buf)
+    handler.setLevel(_logging.DEBUG)
+    handler.setFormatter(_logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    fints_logger = _logging.getLogger("fints")
+    fints_logger.addHandler(handler)
+    prev_level = fints_logger.level
+    fints_logger.setLevel(_logging.DEBUG)
+
+    diag = {
+        "stage": "init",
+        "blz": FINTS_BLZ,
+        "url": FINTS_URL,
+        "user_first_chars": creds["user"][:3] + "***",
+        "user_length": len(creds["user"]),
+        "user_is_numeric": creds["user"].isdigit(),
+        "pin_length": len(creds["pin"]),
+        "product_id_first_chars": (FINTS_PRODUCT_ID[:8] + "***") if FINTS_PRODUCT_ID else "(leer)",
+        "product_version": FINTS_PRODUCT_VERSION or "(leer)",
+    }
+
     try:
         from fints.client import FinTS3PinTanClient
         client = FinTS3PinTanClient(
@@ -1939,57 +1966,84 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
             product_id=FINTS_PRODUCT_ID,
             product_version=FINTS_PRODUCT_VERSION,
         )
+
+        diag["stage"] = "connecting"
         with client:
+            # Stage 1: Bank dialog active here
+            diag["stage"] = "tan_mechanisms"
+            try:
+                mechanisms = client.get_tan_mechanisms()
+                # mechanisms is dict {id: TwoStepParameter}
+                diag["tan_mechanisms"] = [
+                    {
+                        "id": k,
+                        "name": getattr(v, "name", None) or getattr(v, "tan_name", "") or str(v)[:80],
+                        "tech_id": getattr(v, "security_function", k),
+                    }
+                    for k, v in (mechanisms or {}).items()
+                ]
+                cur_mech = client.get_current_tan_mechanism()
+                diag["current_tan_mechanism"] = str(cur_mech) if cur_mech else None
+            except Exception as ex:
+                diag["tan_mechanisms_error"] = str(ex)[:400]
+
+            # Stage 2: Get accounts (this triggers actual SCA on most Sparkassen)
+            diag["stage"] = "get_accounts"
             accounts = client.get_sepa_accounts()
-        return {
-            "ok": True,
-            "stage": "success",
-            "blz": FINTS_BLZ,
-            "url": FINTS_URL,
-            "user_first_chars": creds["user"][:3] + "***",
-            "product_id": FINTS_PRODUCT_ID[:8] + "***" if FINTS_PRODUCT_ID else "(leer)",
-            "accounts_found": len(accounts),
-            "accounts": [{"iban": a.iban, "bic": a.bic} for a in accounts],
-        }
+            diag["accounts_found"] = len(accounts)
+            diag["accounts"] = [{"iban": a.iban, "bic": a.bic} for a in accounts]
+            diag["stage"] = "success"
+            diag["ok"] = True
+
+        return diag
+
     except Exception as e:
         msg = str(e)
-        hint = "Unbekannter Fehler"
-        if "Refusing to use PIN after block" in msg or "PIN after block" in msg:
-            hint = (
-                "GESPERRT: Die Bank hat den FinTS-Zugang nach Fehlversuchen blockiert. "
-                "Schritte zur Entsperrung: "
-                "1) Sparkasse Mayen anrufen (02651 / 87-0) ODER im Online-Banking unter "
-                "'Sicherheitsverfahren' den FinTS/HBCI-Zugang entsperren lassen. "
-                "2) Den korrekten ANMELDENAMEN (nicht IBAN/Kontonummer) erfragen. "
-                "3) Backend NEU STARTEN (supervisorctl restart backend), damit der "
-                "lokale Block-Cache geleert wird. "
-                "4) Erst dann erneut 'Verbindung testen' klicken."
+        diag["ok"] = False
+        diag["error"] = msg[:800]
+        diag["error_type"] = type(e).__name__
+
+        # Tail of fints log for context
+        log_text = buf.getvalue()
+        diag["fints_log_tail"] = log_text[-2500:] if log_text else ""
+
+        # Detect specific bank response codes in log + exception
+        combined = (msg + " " + log_text).lower()
+        hints = []
+
+        if "9340" in combined or "ungültige signatur" in combined or "ungueltige signatur" in combined:
+            hints.append(
+                "9340 'Ungültige Signatur' – Hauptursachen bei Sparkasse pushTAN:\n"
+                "  • Anmeldename FALSCH: FinTS nutzt oft NICHT den Web-Anmeldenamen, "
+                "sondern die 10-stellige Legitimations-ID. Im Online-Banking unter "
+                "'Service' → 'Online-Banking' → 'FinTS-Zugang verwalten' steht der korrekte FinTS-Anmeldename.\n"
+                "  • PSD2/SCA: Bei pushTAN MUSS beim ersten FinTS-Login eine pushTAN bestätigt werden. "
+                "Dieser Backend-Endpunkt unterstützt das nicht – die Bank wirft daher 9340 ab. "
+                "Lösung: einmalig in einer Banking-App (z.B. StarMoney, Hibiscus) anmelden und TAN bestätigen, "
+                "danach kann python-fints den Zugang nutzen.\n"
+                "  • Produkt-ID: Sparkassen lehnen Test-IDs ab → eine eigene Produkt-ID bei der DK registrieren "
+                "und in FINTS_PRODUCT_ID setzen."
             )
-        elif "9340" in msg or "Ungueltige Signatur" in msg or "Ungültige Signatur" in msg:
-            hint = (
-                "Falsche FinTS-Anmeldedaten. WICHTIG: 'FINTS_USER' ist der "
-                "ANMELDENAME aus deinem Online-Banking (NICHT IBAN, NICHT Kontonummer, "
-                "NICHT Kunden-/Legitimations-ID). 'FINTS_PIN' ist deine Online-Banking-PIN. "
-                "ACHTUNG: Nach 3 Fehlversuchen sperrt die Sparkasse den FinTS-Zugang - "
-                "DANN nicht weiter probieren! Stattdessen Sparkasse anrufen und entsperren lassen."
-            )
-        elif "9120" in msg or "TAN" in msg.lower():
-            hint = "TAN-Verfahren nicht eingerichtet. Im Online-Banking unter 'Sicherheitsverfahren' ein PIN/TAN-Verfahren auswaehlen."
-        elif "9050" in msg and "Dialog" in msg:
-            hint = "Dialog wurde von der Bank abgebrochen. Wahrscheinlich Auth-Problem - siehe FINTS_USER und FINTS_PIN."
-        elif "9800" in msg:
-            hint = "Dialog abgebrochen. Bank hat den FinTS-Zugang gesperrt oder Anmeldedaten sind falsch."
-        elif "Connection" in msg or "timeout" in msg.lower():
-            hint = f"Verbindung zu {FINTS_URL} fehlgeschlagen. Internet-Zugang oder URL falsch?"
-        return {
-            "ok": False,
-            "stage": "fints_login",
-            "error": msg[:500],
-            "hint": hint,
-            "blz": FINTS_BLZ,
-            "url": FINTS_URL,
-            "user_first_chars": creds["user"][:3] + "***" if creds.get("user") else "(leer)",
-        }
+        if "9050" in combined:
+            hints.append("9050 'Nachricht enthält Fehler' – meist Folgefehler von 9340/9340. Siehe oben.")
+        if "9800" in combined:
+            hints.append("9800 'Dialog abgebrochen' – Bank hat den Dialog wegen vorausgehendem Fehler beendet.")
+        if "9120" in combined:
+            hints.append("9120 'TAN-Verfahren-Problem' – im Online-Banking unter 'Sicherheitsverfahren' "
+                         "ein Verfahren explizit aktivieren.")
+        if "pin after block" in combined or "refusing to use pin" in combined:
+            hints.append("GESPERRT: Lokaler Block-Cache aktiv. Backend neu starten ODER "
+                         "Sparkasse anrufen, um FinTS-Zugang zu entsperren.")
+        if "connection" in combined or "timeout" in combined or "ssl" in combined:
+            hints.append(f"Netzwerk: Verbindung zu {FINTS_URL} fehlgeschlagen.")
+        if not hints:
+            hints.append("Unspezifischer Fehler. Siehe 'fints_log_tail' für Details.")
+
+        diag["hint"] = "\n\n".join(hints)
+        return diag
+    finally:
+        fints_logger.removeHandler(handler)
+        fints_logger.setLevel(prev_level)
 
 
 @router.get("/fints/transactions")
