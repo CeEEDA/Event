@@ -63,6 +63,140 @@ def _resolve_decoupled_tan(client, response, max_wait_seconds=120, poll_interval
     return response
 
 
+# ── Persistenter Client-State (PSD2 90-Tage-Regel, MoneyMoney-Style) ──
+
+async def _load_fints_state(db) -> bytes | None:
+    """Laedt den persistierten FinTS-Client-State aus der DB (Bytes)."""
+    doc = await db.system_settings.find_one({"key": "fints_client_state"}, {"_id": 0})
+    if not doc:
+        return None
+    import base64
+    raw = doc.get("value")
+    if not raw:
+        return None
+    try:
+        return base64.b64decode(raw)
+    except Exception:
+        return None
+
+
+async def _save_fints_state(db, state_bytes: bytes):
+    """Speichert den FinTS-Client-State in der DB (Base64)."""
+    import base64
+    from datetime import datetime as _dt, timezone as _tz
+    encoded = base64.b64encode(state_bytes).decode("ascii") if state_bytes else ""
+    await db.system_settings.update_one(
+        {"key": "fints_client_state"},
+        {"$set": {
+            "key": "fints_client_state",
+            "value": encoded,
+            "updated_at": _dt.now(_tz.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+
+
+async def _build_client(db, force_fresh: bool = False):
+    """Erzeugt einen FinTS3PinTanClient mit (optional) wiederhergestelltem Bank-State.
+    Bei wiederhergestelltem State entfaellt die SCA-Bestaetigung fuer 90 Tage."""
+    from fints.client import FinTS3PinTanClient
+    creds = get_fints_credentials()
+    if not creds:
+        return None, None
+    state = None if force_fresh else await _load_fints_state(db)
+    client = FinTS3PinTanClient(
+        FINTS_BLZ,
+        creds["user"],
+        creds["pin"],
+        FINTS_URL,
+        product_id=FINTS_PRODUCT_ID,
+        product_version=FINTS_PRODUCT_VERSION,
+        set_data=state,
+    )
+    return client, bool(state)
+
+
+async def fetch_transactions_persisted(db, days_back: int = 14) -> dict:
+    """Holt Transaktionen mit persistiertem Client-State (MoneyMoney-Stil).
+    - Erstanmeldung: pushTAN-Bestaetigung erforderlich, danach State gespeichert
+    - Folgeabrufe (90 Tage): voll automatisch ohne TAN
+    Liefert dict mit transactions + meta-Info."""
+    creds = get_fints_credentials()
+    if not creds:
+        logger.warning("FinTS: Keine Zugangsdaten konfiguriert")
+        return {"transactions": [], "ok": False, "error": "Keine Zugangsdaten"}
+
+    client, restored = await _build_client(db)
+    if not client:
+        return {"transactions": [], "ok": False, "error": "Keine Zugangsdaten"}
+
+    sca_required = False
+    try:
+        with client:
+            accounts_resp = client.get_sepa_accounts()
+            from fints.client import NeedRetryResponse
+            if isinstance(accounts_resp, NeedRetryResponse):
+                sca_required = True
+            accounts = _resolve_decoupled_tan(client, accounts_resp)
+            if not accounts:
+                return {"transactions": [], "ok": False, "error": "Keine Konten gefunden"}
+
+            target_iban = os.environ.get("FINTS_IBAN", "DE28576500100098066756")
+            account = next((a for a in accounts if a.iban == target_iban), accounts[0])
+
+            start_date = datetime.now() - timedelta(days=days_back)
+            end_date = datetime.now()
+            tx_resp = client.get_transactions(account, start_date=start_date, end_date=end_date)
+            if isinstance(tx_resp, NeedRetryResponse):
+                sca_required = True
+            transactions = _resolve_decoupled_tan(client, tx_resp)
+
+        # State NACH erfolgreicher Anmeldung sichern
+        try:
+            new_state = client.deconstruct(including_private=True)
+            if new_state:
+                await _save_fints_state(db, new_state)
+                logger.info(f"FinTS: Client-State gespeichert ({len(new_state)} Bytes)")
+        except Exception as e:
+            logger.warning(f"FinTS: State konnte nicht gespeichert werden: {e}")
+
+        results = []
+        for t in transactions:
+            data = t.data
+            amount = data.get("amount", {})
+            if hasattr(amount, "amount"):
+                amt = float(amount.amount)
+                cur = str(amount.currency)
+            elif hasattr(amount, "get"):
+                amt = float(amount.get("amount", 0))
+                cur = str(amount.get("currency", "EUR"))
+            else:
+                amt = float(amount) if amount else 0
+                cur = "EUR"
+            results.append({
+                "date": str(data.get("date", "")),
+                "amount": amt,
+                "currency": cur,
+                "applicant_name": data.get("applicant_name", "") or "",
+                "purpose": data.get("purpose", "") or "",
+                "applicant_iban": data.get("applicant_iban", "") or "",
+                "posting_text": data.get("posting_text", "") or "",
+                "entry_date": str(data.get("entry_date", "")),
+            })
+
+        logger.info(f"FinTS: {len(results)} Transaktionen (state_restored={restored}, sca_required={sca_required})")
+        return {
+            "transactions": results,
+            "ok": True,
+            "state_restored": restored,
+            "sca_required": sca_required,
+            "iban": account.iban,
+        }
+    except Exception as e:
+        logger.error(f"FinTS Fehler: {e}")
+        return {"transactions": [], "ok": False, "error": str(e)[:500]}
+
+
 def fetch_transactions(days_back: int = 14) -> list:
     """Holt Kontobewegungen der letzten X Tage via FinTS (mit pushTAN-Support)."""
     creds = get_fints_credentials()

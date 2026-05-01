@@ -2057,15 +2057,66 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
 
 @router.get("/fints/transactions")
 async def fints_get_transactions(days: int = 14, user: dict = Depends(_require_staff)):
-    """Kontobewegungen der letzten X Tage abrufen."""
+    """Kontobewegungen der letzten X Tage abrufen.
+    Nutzt persistierten Client-State (PSD2 90-Tage-Regel) wie MoneyMoney:
+    - Erstanmeldung: pushTAN bestaetigen, danach 90 Tage automatisch
+    - Weitere Abrufe: voll automatisch ohne TAN."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admins")
     try:
-        from fints_banking import fetch_transactions
-        transactions = fetch_transactions(days_back=days)
-        return {"transactions": transactions, "count": len(transactions)}
+        from fints_banking import fetch_transactions_persisted
+        result = await fetch_transactions_persisted(_db, days_back=days)
+        return {
+            "transactions": result.get("transactions", []),
+            "count": len(result.get("transactions", [])),
+            "ok": result.get("ok", False),
+            "state_restored": result.get("state_restored", False),
+            "sca_required": result.get("sca_required", False),
+            "iban": result.get("iban"),
+            "error": result.get("error"),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/fints/reset-state")
+async def fints_reset_state(user: dict = Depends(_require_staff)):
+    """Loescht den persistierten Bank-Client-State. Naechster Abruf erfordert dann pushTAN.
+    Verwende das, wenn die Bank nach 90 Tagen wieder SCA verlangt oder bei Verbindungsproblemen."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    result = await _db.system_settings.delete_one({"key": "fints_client_state"})
+    return {"ok": True, "deleted": result.deleted_count}
+
+
+@router.get("/fints/state-info")
+async def fints_state_info(user: dict = Depends(_require_staff)):
+    """Info ueber den persistierten Bank-State (Alter, ob ein State vorhanden ist)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    doc = await _db.system_settings.find_one({"key": "fints_client_state"}, {"_id": 0})
+    if not doc or not doc.get("value"):
+        return {"has_state": False, "hint": "Noch keine Bank-Anmeldung gespeichert. Beim ersten Abruf pushTAN bestaetigen."}
+    from datetime import datetime as _dt, timezone as _tz
+    updated = doc.get("updated_at")
+    age_days = None
+    if updated:
+        try:
+            d = _dt.fromisoformat(updated.replace("Z", "+00:00"))
+            age_days = (_dt.now(_tz.utc) - d).days
+        except Exception:
+            pass
+    return {
+        "has_state": True,
+        "updated_at": updated,
+        "age_days": age_days,
+        "sca_renewal_in_days": max(0, 90 - age_days) if age_days is not None else None,
+        "hint": (
+            "Bank-Anmeldung gespeichert. Abrufe der naechsten 90 Tage laufen ohne pushTAN."
+            if age_days is None or age_days < 90
+            else "90 Tage abgelaufen – beim naechsten Abruf wird wieder eine pushTAN angefordert."
+        ),
+    }
 
 
 @router.post("/fints/save-credentials")
