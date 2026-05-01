@@ -1973,7 +1973,6 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
             diag["stage"] = "tan_mechanisms"
             try:
                 mechanisms = client.get_tan_mechanisms()
-                # mechanisms is dict {id: TwoStepParameter}
                 diag["tan_mechanisms"] = [
                     {
                         "id": k,
@@ -1989,7 +1988,17 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
 
             # Stage 2: Get accounts (this triggers actual SCA on most Sparkassen)
             diag["stage"] = "get_accounts"
-            accounts = client.get_sepa_accounts()
+            from fints_banking import _resolve_decoupled_tan
+            accounts_resp = client.get_sepa_accounts()
+            try:
+                from fints.client import NeedRetryResponse
+                if isinstance(accounts_resp, NeedRetryResponse):
+                    diag["pushtan_triggered"] = True
+                    diag["pushtan_decoupled"] = bool(getattr(accounts_resp, "decoupled", False))
+                    diag["pushtan_challenge"] = str(getattr(accounts_resp, "challenge", ""))[:300]
+            except Exception:
+                pass
+            accounts = _resolve_decoupled_tan(client, accounts_resp, max_wait_seconds=120)
             diag["accounts_found"] = len(accounts)
             diag["accounts"] = [{"iban": a.iban, "bic": a.bic} for a in accounts]
             diag["stage"] = "success"

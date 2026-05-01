@@ -36,8 +36,35 @@ def get_fints_credentials():
     return {"user": user, "pin": pin}
 
 
+def _resolve_decoupled_tan(client, response, max_wait_seconds=120, poll_interval=2.0):
+    """Behandelt decoupled pushTAN: pollt die Bank, bis der User in der pushTAN-App bestaetigt hat.
+    Gibt die finale Response zurueck (oder hebt Exception bei Timeout/klassischer TAN)."""
+    try:
+        from fints.client import NeedRetryResponse, NeedTANResponse  # noqa: F401
+    except Exception:
+        from fints.client import NeedRetryResponse  # decoupled flow uses base
+    import time as _time
+    waited = 0.0
+    while isinstance(response, NeedRetryResponse):
+        if not getattr(response, "decoupled", False):
+            raise RuntimeError(
+                "Bank verlangt klassische TAN-Eingabe (z.B. chipTAN). "
+                "Dieser Endpunkt unterstuetzt nur decoupled pushTAN."
+            )
+        if waited >= max_wait_seconds:
+            raise TimeoutError(
+                f"Timeout: pushTAN nicht innerhalb von {max_wait_seconds}s bestaetigt. "
+                "Bitte schneller in der pushTAN-App bestaetigen oder erneut versuchen."
+            )
+        logger.info(f"FinTS pushTAN: warte auf Bestaetigung (decoupled, {waited:.0f}s)...")
+        _time.sleep(poll_interval)
+        waited += poll_interval
+        response = client.send_tan(response, "")
+    return response
+
+
 def fetch_transactions(days_back: int = 14) -> list:
-    """Holt Kontobewegungen der letzten X Tage via FinTS."""
+    """Holt Kontobewegungen der letzten X Tage via FinTS (mit pushTAN-Support)."""
     creds = get_fints_credentials()
     if not creds:
         logger.warning("FinTS: Keine Zugangsdaten konfiguriert")
@@ -55,26 +82,30 @@ def fetch_transactions(days_back: int = 14) -> list:
             product_version=FINTS_PRODUCT_VERSION,
         )
 
-        accounts = client.get_sepa_accounts()
-        if not accounts:
-            logger.warning("FinTS: Keine Konten gefunden")
-            return []
-
-        target_iban = os.environ.get("FINTS_IBAN", "DE28576500100098066756")
-        account = None
-        for a in accounts:
-            if a.iban == target_iban:
-                account = a
-                break
-        if not account:
-            account = accounts[0]
-            logger.info(f"FinTS: Ziel-IBAN nicht gefunden, nutze {account.iban}")
-
-        start_date = datetime.now() - timedelta(days=days_back)
-        end_date = datetime.now()
-
         with client:
-            transactions = client.get_transactions(account, start_date=start_date, end_date=end_date)
+            # Konten holen (kann pushTAN ausloesen bei Erstanmeldung)
+            accounts_resp = client.get_sepa_accounts()
+            accounts = _resolve_decoupled_tan(client, accounts_resp)
+            if not accounts:
+                logger.warning("FinTS: Keine Konten gefunden")
+                return []
+
+            target_iban = os.environ.get("FINTS_IBAN", "DE28576500100098066756")
+            account = None
+            for a in accounts:
+                if a.iban == target_iban:
+                    account = a
+                    break
+            if not account:
+                account = accounts[0]
+                logger.info(f"FinTS: Ziel-IBAN nicht gefunden, nutze {account.iban}")
+
+            start_date = datetime.now() - timedelta(days=days_back)
+            end_date = datetime.now()
+
+            # Transaktionen holen (loest pushTAN aus bei 90-Tage-Regel)
+            tx_resp = client.get_transactions(account, start_date=start_date, end_date=end_date)
+            transactions = _resolve_decoupled_tan(client, tx_resp)
 
         results = []
         for t in transactions:
