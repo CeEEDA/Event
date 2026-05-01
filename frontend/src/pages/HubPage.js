@@ -99,11 +99,13 @@ export default function HubPage() {
 
   const loadTasks = useCallback(async () => {
     try {
-      const f = isAdmin ? "all" : "both";
+      // Admin sieht per Default nur eigene Tasks (assigned_to ODER created_by).
+      // Nur im explizit gewaehlten "alle"-Tab werden systemweit ALLE Tasks geladen.
+      const f = (isAdmin && viewFilter === "alle") ? "all" : "both";
       const res = await api.get(`/chat/tasks?token=${token}&filter=${f}`);
       setTasks(res.data);
     } catch {}
-  }, [token, isAdmin]);
+  }, [token, isAdmin, viewFilter]);
 
   const loadInfoPosts = useCallback(async () => {
     try {
