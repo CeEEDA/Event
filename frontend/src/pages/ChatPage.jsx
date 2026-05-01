@@ -338,7 +338,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50" data-testid="chat-page">
+    <div className="h-screen h-[100dvh] flex flex-col bg-gray-50" data-testid="chat-page">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
         <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600" data-testid="chat-back-btn">
