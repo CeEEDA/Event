@@ -65,6 +65,7 @@ class UserRole:
     ADMIN = "admin"
     KUNDE = "kunde"
     MITARBEITER = "mitarbeiter"
+    FREELANCER = "freelancer"
 
 class FilesharingPermissions(BaseModel):
     enabled: bool = False

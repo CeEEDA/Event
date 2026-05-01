@@ -63,12 +63,14 @@ import axios from "axios";
 const ROLE_LABELS = {
   admin: "Administrator",
   mitarbeiter: "Mitarbeiter",
+  freelancer: "Freelancer",
   kunde: "Kunde"
 };
 
 const ROLE_COLORS = {
   admin: "bg-fuchsia-100 text-fuchsia-800",
   mitarbeiter: "bg-blue-100 text-blue-700",
+  freelancer: "bg-amber-100 text-amber-800",
   kunde: "bg-gray-100 text-gray-700"
 };
 
@@ -773,7 +775,7 @@ export default function AdminPage() {
                   >
                     <UserCheck className="w-4 h-4" />
                     Mitarbeiter
-                    <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{users.filter(u => u.role === "mitarbeiter").length}</span>
+                    <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{users.filter(u => u.role === "mitarbeiter" || u.role === "freelancer").length}</span>
                   </button>
                   <button
                     onClick={() => { setUserRoleFilter("schausteller"); setSchaustellerSearch(""); }}
@@ -924,7 +926,7 @@ export default function AdminPage() {
                         const filtered = users.filter(u => {
                           // Role filter
                           if (userRoleFilter === "kunden" && u.role !== "kunde") return false;
-                          if (userRoleFilter === "mitarbeiter" && u.role !== "mitarbeiter" && u.role !== "admin") return false;
+                          if (userRoleFilter === "mitarbeiter" && u.role !== "mitarbeiter" && u.role !== "admin" && u.role !== "freelancer") return false;
                           // Search filter
                           if (userSearch) {
                             const q = userSearch.toLowerCase();
@@ -951,6 +953,8 @@ export default function AdminPage() {
                                     <Shield className="w-4 h-4 text-fuchsia-600" />
                                   ) : user.role === "mitarbeiter" ? (
                                     <UserCheck className="w-4 h-4 text-blue-500" />
+                                  ) : user.role === "freelancer" ? (
+                                    <UserCheck className="w-4 h-4 text-amber-600" />
                                   ) : (
                                     <User className="w-4 h-4 text-gray-500" />
                                   )}
@@ -1249,6 +1253,7 @@ export default function AdminPage() {
                 <SelectContent>
                   <SelectItem value="admin">Administrator</SelectItem>
                   <SelectItem value="mitarbeiter">Mitarbeiter</SelectItem>
+                  <SelectItem value="freelancer">Freelancer</SelectItem>
                   <SelectItem value="kunde">Kunde</SelectItem>
                 </SelectContent>
               </Select>
