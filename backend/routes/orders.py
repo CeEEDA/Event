@@ -1497,3 +1497,102 @@ async def get_crew_batch(data: dict, user: dict = Depends(_auth_user)):
             logger.error(f"Batch crew error: {e}")
 
     return {"results": results}
+
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Messprotokoll (elektrische Anlage nach DIN VDE 0100-600 / DGUV V3)
+# ══════════════════════════════════════════════════════════════════════════
+from fastapi import Body as _Body  # noqa: E402
+
+
+@router.post("/messprotokoll/{order_pk}")
+async def create_messprotokoll(order_pk: str, data: dict = _Body(...),
+                                credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Generate Messprotokoll PDF, store in order_documents (kategorie=messprotokolle)
+    and persist structured data in messprotokolle collection."""
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="Nicht authentifiziert")
+
+    # Prüfer = aktuell angemeldeter User
+    data["pruefer_id"] = user.get("id", "")
+    data["pruefer_name"] = user.get("name", user.get("email", ""))
+
+    # Fortlaufende Protokoll-Nr. falls nicht gesetzt
+    if not data.get("protokoll_nr"):
+        count = await _db.messprotokolle.count_documents({})
+        jahr = datetime.now(timezone.utc).year
+        data["protokoll_nr"] = f"MP-{jahr}-{count + 1:04d}"
+
+    if not data.get("pruef_datum"):
+        data["pruef_datum"] = datetime.now(timezone.utc).strftime("%d.%m.%Y")
+
+    # PDF generieren
+    try:
+        from services.messprotokoll_pdf import generate_messprotokoll_pdf
+        pdf_bytes = generate_messprotokoll_pdf(data)
+    except Exception as e:
+        logger.error(f"Messprotokoll PDF-Fehler: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF-Erzeugung fehlgeschlagen: {e}")
+
+    # PDF als order_document speichern
+    doc_id = str(_uuid.uuid4())
+    stored_name = f"{doc_id}.pdf"
+    order_dir = _os.path.join(_ORDER_DOC_STORAGE, order_pk)
+    _os.makedirs(order_dir, exist_ok=True)
+    file_path = _os.path.join(order_dir, stored_name)
+    with open(file_path, "wb") as f:
+        f.write(pdf_bytes)
+
+    original_name = f"Messprotokoll_{data['protokoll_nr']}_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+    doc = {
+        "id": doc_id,
+        "order_pk": order_pk,
+        "filename": stored_name,
+        "original_name": original_name,
+        "content_type": "application/pdf",
+        "size": len(pdf_bytes),
+        "kategorie": "messprotokolle",
+        "uploaded_by": user.get("name", user.get("email", "")),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "messprotokoll_id": doc_id,
+    }
+    await _db.order_documents.insert_one(doc)
+
+    # Messprotokoll-Datensatz separat speichern (fuer spaeteres Bearbeiten/Erneut-PDF)
+    mp_record = {
+        "id": doc_id,
+        "order_pk": order_pk,
+        "protokoll_nr": data["protokoll_nr"],
+        "pruefer_id": data["pruefer_id"],
+        "pruefer_name": data["pruefer_name"],
+        "pruef_datum": data["pruef_datum"],
+        "data": data,
+        "document_id": doc_id,
+        "created_by": user.get("name", user.get("email", "")),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _db.messprotokolle.insert_one(mp_record)
+
+    return {
+        "id": doc_id,
+        "protokoll_nr": data["protokoll_nr"],
+        "original_name": original_name,
+        "message": "Messprotokoll angelegt",
+    }
+
+
+@router.get("/messprotokoll/{order_pk}")
+async def list_messprotokolle(order_pk: str,
+                                credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Liste aller Messprotokolle dieses Auftrags (nur Metadaten)."""
+    _decode_jwt_token(credentials.credentials)
+    rows = await _db.messprotokolle.find(
+        {"order_pk": order_pk},
+        {"_id": 0, "id": 1, "protokoll_nr": 1, "pruefer_name": 1, "pruef_datum": 1,
+         "created_at": 1, "created_by": 1, "document_id": 1}
+    ).sort("created_at", -1).to_list(200)
+    return rows
+

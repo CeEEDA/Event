@@ -42,6 +42,7 @@ import {
   Eye,
   FolderOpen,
   ChevronRight,
+  ClipboardCheck,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -58,6 +59,7 @@ L.Icon.Default.mergeOptions({
 });
 import { OpenLocationCode } from "open-location-code";
 import { openExternal } from "../lib/openExternal";
+import MessprotokollDialog from "../components/MessprotokollDialog";
 
 const olcInstance = new OpenLocationCode();
 
@@ -225,6 +227,10 @@ export default function OrderDetailPage() {
   // Projektberichte
   const [projectReports, setProjectReports] = useState([]);
   const [projectReportsLoading, setProjectReportsLoading] = useState(false);
+
+  // Messprotokolle
+  const [messprotokolle, setMessprotokolle] = useState([]);
+  const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
   const [docCount, setDocCount] = useState(0);
 
   const { isAdmin } = useAuth();
@@ -288,14 +294,24 @@ export default function OrderDetailPage() {
     }
   }, [pk]);
 
+  const fetchMessprotokolle = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/orders/messprotokoll/${pk}`);
+      setMessprotokolle(data || []);
+    } catch {
+      setMessprotokolle([]);
+    }
+  }, [pk]);
+
   useEffect(() => {
     fetchOrder();
     fetchAssets();
     fetchFuelReceipts();
     fetchProjectReports();
+    fetchMessprotokolle();
     // Document count
     api.get(`/orders/order-documents/${pk}`).then(r => setDocCount(r.data?.length || 0)).catch(() => {});
-  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports]);
+  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle]);
 
   useEffect(() => {
     if (order?.center_lat) fetchGenerators();
@@ -1240,6 +1256,72 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+
+          {/* ═════ Messprotokolle ═════ */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <ClipboardCheck className="w-5 h-5 text-violet-600" />
+                <h3 className="text-base font-bold text-gray-900">Messprotokolle</h3>
+                {messprotokolle.length > 0 && (
+                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-violet-100 text-violet-700">{messprotokolle.length}</span>
+                )}
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setShowMessprotokollDialog(true)}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+                data-testid="messprotokoll-new-btn"
+              >
+                <Plus className="w-4 h-4 mr-1" /> Messprotokoll
+              </Button>
+            </div>
+
+            {messprotokolle.length === 0 ? (
+              <div className="text-center py-8 text-sm text-gray-400">
+                <ClipboardCheck className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                Noch kein Messprotokoll erstellt.
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {messprotokolle.map((mp) => (
+                  <div key={mp.id} className="flex items-center justify-between py-3" data-testid={`messprotokoll-${mp.id}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ClipboardCheck className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 truncate">{mp.protokoll_nr}</div>
+                        <div className="text-xs text-gray-500">
+                          Prüfer: {mp.pruefer_name} · {mp.pruef_datum}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const resp = await api.get(`/orders/order-documents/${pk}/${mp.document_id}/file`, { responseType: "blob" });
+                          const url = window.URL.createObjectURL(resp.data);
+                          window.open(url, "_blank");
+                        } catch { toast.error("PDF nicht gefunden"); }
+                      }}
+                      className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
+                      title="PDF öffnen"
+                      data-testid={`messprotokoll-open-${mp.id}`}
+                    >
+                      <FileDown className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showMessprotokollDialog && (
+            <MessprotokollDialog
+              order={{ ...order, primary_key: pk }}
+              onClose={() => setShowMessprotokollDialog(false)}
+              onSaved={() => { setShowMessprotokollDialog(false); fetchMessprotokolle(); setDocCount((c) => c + 1); }}
+            />
+          )}
 
           {/* Fuel Receipt Modal */}
           {showFuelModal && (
