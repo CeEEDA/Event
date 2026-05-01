@@ -1601,3 +1601,31 @@ async def list_messprotokolle(order_pk: str,
     ).sort("created_at", -1).to_list(200)
     return rows
 
+
+@router.delete("/messprotokoll/{order_pk}/{doc_id}")
+async def delete_messprotokoll(order_pk: str, doc_id: str,
+                                credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Loescht ein Messprotokoll (DB-Eintrag, order_document und PDF-Datei). Nur Admin."""
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins duerfen Messprotokolle loeschen")
+
+    mp = await _db.messprotokolle.find_one({"id": doc_id, "order_pk": order_pk}, {"_id": 0})
+    if not mp:
+        raise HTTPException(status_code=404, detail="Messprotokoll nicht gefunden")
+
+    document_id = mp.get("document_id") or doc_id
+    od = await _db.order_documents.find_one({"id": document_id, "order_pk": order_pk}, {"_id": 0})
+    if od:
+        file_path = _os.path.join(_ORDER_DOC_STORAGE, order_pk, od.get("filename", ""))
+        if od.get("filename") and _os.path.exists(file_path):
+            try:
+                _os.remove(file_path)
+            except Exception as e:
+                logger.warning(f"Messprotokoll-PDF konnte nicht geloescht werden: {e}")
+        await _db.order_documents.delete_one({"id": document_id})
+
+    await _db.messprotokolle.delete_one({"id": doc_id, "order_pk": order_pk})
+    return {"message": "Messprotokoll geloescht"}
+

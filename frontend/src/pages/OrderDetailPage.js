@@ -1295,20 +1295,42 @@ export default function OrderDetailPage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const resp = await api.get(`/orders/order-documents/${pk}/${mp.document_id}/file`, { responseType: "blob" });
-                          const url = window.URL.createObjectURL(resp.data);
-                          window.open(url, "_blank");
-                        } catch { toast.error("PDF nicht gefunden"); }
-                      }}
-                      className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
-                      title="PDF öffnen"
-                      data-testid={`messprotokoll-open-${mp.id}`}
-                    >
-                      <FileDown className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const resp = await api.get(`/orders/order-documents/${pk}/${mp.document_id}/file`, { responseType: "blob" });
+                            const url = window.URL.createObjectURL(resp.data);
+                            window.open(url, "_blank");
+                          } catch { toast.error("PDF nicht gefunden"); }
+                        }}
+                        className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
+                        title="PDF öffnen"
+                        data-testid={`messprotokoll-open-${mp.id}`}
+                      >
+                        <FileDown className="w-4 h-4" />
+                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Messprotokoll ${mp.protokoll_nr} wirklich löschen?`)) return;
+                            try {
+                              await api.delete(`/orders/messprotokoll/${pk}/${mp.id}`);
+                              toast.success("Messprotokoll gelöscht");
+                              fetchMessprotokolle();
+                              setDocCount((c) => Math.max(0, c - 1));
+                            } catch (e) {
+                              toast.error(e?.response?.data?.detail || "Löschen fehlgeschlagen");
+                            }
+                          }}
+                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"
+                          title="Messprotokoll löschen"
+                          data-testid={`messprotokoll-delete-${mp.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
