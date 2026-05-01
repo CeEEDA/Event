@@ -1520,11 +1520,16 @@ async def create_messprotokoll(order_pk: str, data: dict = _Body(...),
     data["pruefer_id"] = user.get("id", "")
     data["pruefer_name"] = user.get("name", user.get("email", ""))
 
-    # Fortlaufende Protokoll-Nr. falls nicht gesetzt
+    # Fortlaufende Protokoll-Nr. je Auftrag: {Auftragsnummer}-MP-{NNNN}
     if not data.get("protokoll_nr"):
-        count = await _db.messprotokolle.count_documents({})
-        jahr = datetime.now(timezone.utc).year
-        data["protokoll_nr"] = f"MP-{jahr}-{count + 1:04d}"
+        order_doc = None
+        if order_pk.isdigit():
+            order_doc = await _db.orders_cache.find_one({"primary_key": int(order_pk)}, {"_id": 0, "order_no": 1})
+        if not order_doc:
+            order_doc = await _db.orders_cache.find_one({"primary_key": order_pk}, {"_id": 0, "order_no": 1})
+        order_no = (order_doc or {}).get("order_no") or data.get("auftrags_nr") or order_pk
+        existing_count = await _db.messprotokolle.count_documents({"order_pk": order_pk})
+        data["protokoll_nr"] = f"{order_no}-MP-{existing_count + 1:04d}"
 
     if not data.get("pruef_datum"):
         data["pruef_datum"] = datetime.now(timezone.utc).strftime("%d.%m.%Y")

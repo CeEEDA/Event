@@ -1048,7 +1048,7 @@ export default function OrderDetailPage() {
                   )}
                   <Button
                     size="sm"
-                    className="h-7 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
+                    className="h-7 text-xs min-w-[150px] bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                     onClick={() => navigate(`/project-report/new?order_pk=${pk}&order_name=${encodeURIComponent(`${order?.order_no || ""} - ${order?.event || order?.contact_name || ""}`)}`)}
                     data-testid="add-project-report-btn"
                   >
@@ -1177,11 +1177,11 @@ export default function OrderDetailPage() {
                   )}
                   <Button
                     size="sm"
-                    className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                    className="h-7 text-xs min-w-[150px] bg-amber-500 hover:bg-amber-600 text-white"
                     onClick={() => { setEditFuelReceipt(null); setShowFuelModal(true); }}
                     data-testid="add-fuel-receipt-btn"
                   >
-                    <Plus className="w-3 h-3 mr-1" /> Neuer Beleg
+                    <Plus className="w-3 h-3 mr-1" /> Neuer Tankbeleg
                   </Button>
                 </div>
               </div>
@@ -1270,10 +1270,10 @@ export default function OrderDetailPage() {
               <Button
                 size="sm"
                 onClick={() => setShowMessprotokollDialog(true)}
-                className="bg-violet-600 hover:bg-violet-700 text-white"
+                className="h-7 text-xs min-w-[150px] bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                 data-testid="messprotokoll-new-btn"
               >
-                <Plus className="w-4 h-4 mr-1" /> Messprotokoll
+                <Plus className="w-3 h-3 mr-1" /> Neues Messprotokoll
               </Button>
             </div>
 
