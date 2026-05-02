@@ -452,9 +452,12 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
     """Hauptfunktion: Transaktionen holen, abgleichen, automatisch verarbeiten."""
     import uuid
 
-    transactions = fetch_transactions(days_back=30)
+    # Nutze die persistierte Variante (State wird wiederverwendet, 90 Tage ohne pushTAN)
+    result = await fetch_transactions_persisted(db, days_back=30)
+    transactions = result.get("transactions", [])
     if not transactions:
-        return {"checked": 0, "matched": 0, "auto_marked": 0, "admin_tasks": 0, "suggestions": 0}
+        return {"checked": 0, "matched": 0, "auto_marked": 0, "admin_tasks": 0, "suggestions": 0,
+                "ok": result.get("ok", False), "error": result.get("error")}
 
     # Offene Rechnungen laden
     invoices = await db.kirmes_invoices.find(
