@@ -91,7 +91,7 @@ async def get_profile(token: str = Query(...)):
 async def get_all_employees(token: str = Query(...)):
     """Admin only: get all employees with their profile and document summary."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).to_list(500)
@@ -142,7 +142,7 @@ async def get_all_employees(token: str = Query(...)):
 async def get_profile_by_id(user_id: str, token: str = Query(...)):
     """Admin: get any user's profile."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin" and caller["id"] != user_id:
+    if not _has_verwaltung(caller) and caller["id"] != user_id:
         raise HTTPException(status_code=403, detail="Nur Admins")
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
@@ -258,7 +258,7 @@ async def get_avatar(user_id: str, token: str = Query(...)):
 async def admin_upload_avatar(user_id: str, token: str = Query(...), file: UploadFile = File(...)):
     """Admin uploads avatar for any user."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     file_bytes = await file.read()
     storage_path = f"eventenergie-avatars/{user_id}/{file.filename}"
@@ -463,7 +463,7 @@ async def update_document(doc_id: str, token: str = Query(...), body: dict = {})
     doc = await db.employee_documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
-    if caller.get("role") != "admin" and caller["id"] != doc["user_id"]:
+    if not _has_verwaltung(caller) and caller["id"] != doc["user_id"]:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
     updates = {}
@@ -482,7 +482,7 @@ async def download_document(doc_id: str, token: str = Query(...)):
     doc = await db.employee_documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
-    if caller.get("role") != "admin" and caller["id"] != doc["user_id"]:
+    if not _has_verwaltung(caller) and caller["id"] != doc["user_id"]:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
     storage_path = doc.get("storage_path", "")
@@ -774,7 +774,7 @@ def _parse_local_time_to_utc(date_str: str, time_str: str) -> datetime:
 async def create_manual_time_entry(token: str = Query(...), body: dict = Body(...)):
     """Admin: create a time entry manually for any user (e.g. employee 'verstempelt' himself)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     target_user_id = body.get("user_id")
     if not target_user_id:
@@ -820,7 +820,7 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
 async def update_time_entry(entry_id: str, token: str = Query(...), body: dict = Body(...)):
     """Admin: edit an existing time entry (clock_in / clock_out)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     entry = await db.time_entries.find_one({"id": entry_id}, {"_id": 0})
     if not entry:
@@ -857,7 +857,7 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
 async def delete_time_entry(entry_id: str, token: str = Query(...)):
     """Admin: delete a time entry."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     res = await db.time_entries.delete_one({"id": entry_id})
     if res.deleted_count == 0:
@@ -910,7 +910,7 @@ async def get_time_report(token: str = Query(...),
 async def get_hr_data(user_id: str, token: str = Query(...)):
     """Get HR data (overtime, vacation, birthday) for a user. Admins get full data, employees only their own."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin" and caller["id"] != user_id:
+    if not _has_verwaltung(caller) and caller["id"] != user_id:
         raise HTTPException(status_code=403, detail="Kein Zugriff")
 
     year = datetime.now(timezone.utc).year
@@ -931,7 +931,7 @@ async def get_hr_data(user_id: str, token: str = Query(...)):
 async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Body(...)):
     """Admin only: update HR data for a user."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     year = datetime.now(timezone.utc).year
@@ -1042,7 +1042,7 @@ async def create_info_post(
 ):
     """Admin: neuen Info-Post erstellen (Text und/oder Anhang, optional Ablauf & Deadline)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins duerfen Info-Posts erstellen")
     text = (text or "").strip()
     if not text and not file:
@@ -1142,7 +1142,7 @@ async def download_info_post_attachment(post_id: str, token: str = Query(...), t
 async def delete_info_post(post_id: str, token: str = Query(...)):
     """Admin: Info-Post loeschen (Soft-Delete)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     res = await db.info_posts.update_one(
         {"id": post_id},
@@ -1200,7 +1200,7 @@ async def get_vacation_entries(user_id: str, token: str = Query(...)):
 @router.post("/vacation/{user_id}")
 async def add_vacation_entry(user_id: str, token: str = Query(...), data: dict = Body(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     start_date = data.get("start_date")
@@ -1230,7 +1230,7 @@ async def add_vacation_entry(user_id: str, token: str = Query(...), data: dict =
 @router.delete("/vacation/{user_id}/{entry_id}")
 async def delete_vacation_entry(user_id: str, entry_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     entry = await db.vacation_entries.find_one({"id": entry_id, "user_id": user_id})
@@ -1251,7 +1251,7 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
     Skips the request/approval flow – the entry lands as 'approved' immediately.
     For 'ueberstundenabbau' the overtime account is reduced by 8h per weekday."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     target_user_id = data.get("user_id")
@@ -1312,7 +1312,7 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
 async def admin_delete_time_off(request_id: str, token: str = Query(...)):
     """Admin: delete a time-off entry. If approved 'ueberstundenabbau', refund the hours."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     req = await db.time_off_requests.find_one({"id": request_id}, {"_id": 0})
     if not req:
@@ -1450,7 +1450,7 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
             raise HTTPException(status_code=403, detail="Nur der Antragsteller kann zurückziehen")
     else:
         # approved/rejected: only admins
-        if caller.get("role") != "admin":
+        if not _has_verwaltung(caller):
             raise HTTPException(status_code=403, detail="Nur Admins")
 
     await db.time_off_requests.update_one(
@@ -1515,7 +1515,7 @@ WEEKDAYS = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"
 @router.get("/work-schedule/{user_id}")
 async def get_work_schedule(user_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin" and caller["id"] != user_id:
+    if not _has_verwaltung(caller) and caller["id"] != user_id:
         raise HTTPException(status_code=403, detail="Kein Zugriff")
     doc = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
@@ -1525,7 +1525,7 @@ async def get_work_schedule(user_id: str, token: str = Query(...)):
 @router.put("/work-schedule/{user_id}")
 async def update_work_schedule(user_id: str, token: str = Query(...), data: dict = Body(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     update_fields = {"user_id": user_id, "updated_at": datetime.now(timezone.utc).isoformat()}
     if "days" in data:
@@ -1643,7 +1643,7 @@ async def get_my_payroll_documents(token: str = Query(...)):
 async def get_payroll_documents_admin(user_id: str, token: str = Query(...)):
     """Admin gets assigned DATEV payroll PDFs for a user."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     docs = await db.documents.find(
         {"assigned_user_id": user_id, "folder_id": {"$regex": "^lohnabrechnung"}, "is_deleted": False},
@@ -1656,7 +1656,7 @@ async def get_payroll_documents_admin(user_id: str, token: str = Query(...)):
 async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(...)):
     """Calculate payroll for a user for a given month (YYYY-MM)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin" and caller["id"] != user_id:
+    if not _has_verwaltung(caller) and caller["id"] != user_id:
         raise HTTPException(status_code=403, detail="Kein Zugriff")
 
     year_num, month_num = int(month[:4]), int(month[5:7])
@@ -1780,7 +1780,7 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
 async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Query(...)):
     """Export payroll as CSV."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     payroll = await get_payroll(user_id, month, token)
@@ -1830,7 +1830,7 @@ async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Qu
 @router.get("/deductions/{user_id}")
 async def get_deductions(user_id: str, month: str = Query(...), token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     items = await db.payroll_deductions.find({"user_id": user_id, "month": month}, {"_id": 0}).to_list(100)
     return items
@@ -1838,7 +1838,7 @@ async def get_deductions(user_id: str, month: str = Query(...), token: str = Que
 @router.post("/deductions/{user_id}")
 async def add_deduction(user_id: str, token: str = Query(...), data: dict = Body(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     entry = {
         "id": str(uuid.uuid4()),
@@ -1854,7 +1854,7 @@ async def add_deduction(user_id: str, token: str = Query(...), data: dict = Body
 @router.delete("/deductions/entry/{deduction_id}")
 async def delete_deduction(deduction_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.payroll_deductions.delete_one({"id": deduction_id})
     return {"ok": True}
@@ -1866,7 +1866,7 @@ async def delete_deduction(deduction_id: str, token: str = Query(...)):
 async def release_payroll(user_id: str, month: str = Query(...), token: str = Query(...)):
     """Admin releases (saves) a payroll for a specific month."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     # Calculate payroll snapshot
     payroll_data = await get_payroll(user_id, month, token)
@@ -1902,7 +1902,7 @@ async def get_payroll_releases(user_id: str, token: str = Query(...)):
 @router.get("/notes/{user_id}")
 async def get_notes(user_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     notes = await db.employee_notes.find({"user_id": user_id, "deleted": {"$ne": True}}, {"_id": 0}).sort("date", -1).to_list(500)
     return notes
@@ -1910,7 +1910,7 @@ async def get_notes(user_id: str, token: str = Query(...)):
 @router.post("/notes/{user_id}")
 async def create_note(user_id: str, token: str = Query(...), data: dict = Body(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     note = {
         "id": str(uuid.uuid4()),
@@ -1930,7 +1930,7 @@ async def create_note(user_id: str, token: str = Query(...), data: dict = Body(.
 @router.put("/notes/entry/{note_id}")
 async def update_note(note_id: str, token: str = Query(...), data: dict = Body(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
     for key in ("title", "text", "date"):
@@ -1942,7 +1942,7 @@ async def update_note(note_id: str, token: str = Query(...), data: dict = Body(.
 @router.delete("/notes/entry/{note_id}")
 async def delete_note(note_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.employee_notes.update_one({"id": note_id}, {"$set": {"deleted": True}})
     return {"ok": True}
@@ -1950,7 +1950,7 @@ async def delete_note(note_id: str, token: str = Query(...)):
 @router.post("/notes/entry/{note_id}/upload")
 async def upload_note_file(note_id: str, token: str = Query(...), file: UploadFile = File(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     note = await db.employee_notes.find_one({"id": note_id})
     if not note:
@@ -1976,7 +1976,7 @@ async def upload_note_file(note_id: str, token: str = Query(...), file: UploadFi
 @router.get("/notes/files/{note_id}/{file_id}")
 async def download_note_file(note_id: str, file_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     note = await db.employee_notes.find_one({"id": note_id})
     if not note:
@@ -1995,7 +1995,7 @@ async def download_note_file(note_id: str, file_id: str, token: str = Query(...)
 @router.delete("/notes/files/{note_id}/{file_id}")
 async def delete_note_file(note_id: str, file_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.employee_notes.update_one({"id": note_id}, {"$pull": {"files": {"id": file_id}}})
     return {"ok": True}
@@ -2066,7 +2066,7 @@ async def trigger_faq_seed(token: str = Query(...), force: int = 0):
     - force=0: nur fehlende hinzufuegen (idempotent)
     - force=1: alle loeschen und neu seeden"""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     res = await seed_faqs_from_file(force=bool(force))
     if res.get("error"):
@@ -2091,7 +2091,7 @@ async def list_faqs(token: str = Query(...), q: str = Query("")):
 async def create_faq(token: str = Query(...), data: dict = Body(...)):
     """Admin: Neue FAQ anlegen."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     question = (data.get("question") or "").strip()
     answer = (data.get("answer") or "").strip()
@@ -2122,7 +2122,7 @@ async def create_faq(token: str = Query(...), data: dict = Body(...)):
 async def update_faq(faq_id: str, token: str = Query(...), data: dict = Body(...)):
     """Admin: FAQ aktualisieren (Frage, Antwort, Kategorie, Reihenfolge)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     update = {"updated_at": datetime.now(timezone.utc).isoformat()}
     for k in ("question", "answer", "category"):
@@ -2147,7 +2147,7 @@ async def update_faq(faq_id: str, token: str = Query(...), data: dict = Body(...
 async def delete_faq(faq_id: str, token: str = Query(...)):
     """Admin: FAQ loeschen (Soft-Delete)."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     res = await db.faqs.update_one(
         {"id": faq_id},
@@ -2165,7 +2165,7 @@ async def delete_faq(faq_id: str, token: str = Query(...)):
 async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
     """Admin: Get all assignments for a week (e.g. '2026-W15')."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     assignments = await db.shift_assignments.find({"week_key": week}, {"_id": 0}).to_list(1000)
     # Get release status
@@ -2199,7 +2199,7 @@ async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
 async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...)):
     """Admin: Create or update a shift assignment."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     assignment_id = data.get("id")
     if assignment_id:
@@ -2239,7 +2239,7 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
 async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
     """Admin: Delete a shift assignment."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.shift_assignments.delete_one({"id": assignment_id})
     return {"ok": True}
@@ -2257,7 +2257,7 @@ async def get_job_reqs(week: str = Query(...), token: str = Query(...)):
 async def upsert_job_req(data: dict = Body(...), token: str = Query(...)):
     """Admin: Set personnel requirements for a job in a week."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     order_pk = data.get("order_pk")
     week_key = data.get("week_key")
@@ -2278,7 +2278,7 @@ async def upsert_job_req(data: dict = Body(...), token: str = Query(...)):
 async def release_shift_plan(week: str = Query(...), token: str = Query(...)):
     """Admin: Release a week plan so employees can see it."""
     caller = await _get_user(token)
-    if caller.get("role") != "admin":
+    if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     await db.shift_releases.update_one({"week_key": week}, {"$set": {
         "week_key": week,
