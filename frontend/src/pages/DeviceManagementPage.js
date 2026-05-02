@@ -44,17 +44,20 @@ import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
 import { openExternal } from "../lib/openExternal";
 
-// Pi Setup Section for Messkoffer - generates all-in-one installer
-function PiSetupSection({ deviceId, deviceName, deviceType }) {
+// Pi Setup Section for Messkoffer / Kirmeskiste (Standard 4-Meter / 8Z S0-Pulse)
+function PiSetupSection({ deviceId, deviceName, deviceType, kirmeskisteVariant }) {
   const [loading, setLoading] = useState(false);
   const [wgetCommand, setWgetCommand] = useState(null);
   const isKirmeskiste = deviceType === "kirmeskiste";
+  const is8Z = isKirmeskiste && kirmeskisteVariant === "8z";
 
   const handleGenerateSetup = async () => {
     if (!window.confirm("Ein neuer Geräteschlüssel wird generiert und in das Setup-Skript eingebettet.\n\nFalls bereits ein Schlüssel existiert, wird er ersetzt.\n\nFortfahren?")) return;
     setLoading(true);
     try {
-      const endpoint = isKirmeskiste
+      const endpoint = is8Z
+        ? `/energy-monitoring/devices/${deviceId}/kirmeskiste-8z-setup`
+        : isKirmeskiste
         ? `/energy-monitoring/devices/${deviceId}/kirmeskiste-setup`
         : `/energy-monitoring/devices/${deviceId}/setup-script`;
       const res = await api.post(endpoint);
@@ -81,7 +84,9 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
         <h3 className="text-sm font-medium text-gray-900">Pi Setup</h3>
       </div>
       <p className="text-[10px] text-gray-400 mb-3">
-        {isKirmeskiste
+        {is8Z
+          ? "Generiert ein Installations-Skript fuer Pi 5 + Sequent 16-LV HAT + SIM7600 LTE/GPS + 8x ABB D11/D13 (S0-Pulse). Inkl. lokaler DB, Telekom APN, OTA-Auto-Update."
+          : isKirmeskiste
           ? "Generiert ein Installations-Skript mit 4x EMU Pro II Modbus-Anbindung, GPS, lokaler Datenbank und Portal-Sync."
           : "Generiert ein Installations-Skript mit Shelly-Logger, GPS-Anbindung, lokaler Datenbank und Portal-Sync."}
       </p>
@@ -111,11 +116,20 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
         {loading ? "Wird generiert..." : "Setup generieren"}
       </Button>
       <p className="text-[10px] text-gray-400 mt-2">
-        {isKirmeskiste
+        {is8Z
+          ? "Enthält: Sequent-CLI + S0-Pulse-Logger + SIM7600 LTE/GPS + Lokale DB + Schlüssel + OTA + Systemd"
+          : isKirmeskiste
           ? "Enthält: 4x EMU Modbus-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst"
           : "Enthält: Shelly-Logger + GPS + Lokale DB + Schlüssel + Systemd-Dienst"}
       </p>
-      {isKirmeskiste && (
+
+      {/* 8Z: kWh-Anfangsstaende eintragen + 8 QR-Print-Buttons */}
+      {is8Z && (
+        <Kirmeskiste8zMeterPanel deviceId={deviceId} />
+      )}
+
+      {/* Standard Kirmeskiste 4-Meter: feste IPs + 4 QR-Print-Buttons */}
+      {isKirmeskiste && !is8Z && (
         <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-3">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Feste LAN-Adressen</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] font-mono text-gray-600">
@@ -149,7 +163,6 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
                       const data = await resp.json();
                       toast.success(data.message || `Zaehler ${i} gedruckt`);
                     } else {
-                      // Image returned (no printer or print failed) - download as fallback
                       const printError = resp.headers.get("x-print-error");
                       const blob = await resp.blob();
                       const url = window.URL.createObjectURL(blob);
@@ -176,6 +189,173 @@ function PiSetupSection({ deviceId, deviceName, deviceType }) {
     </div>
   );
 }
+
+
+// Kirmeskiste 8 Zaehler: Anfangs-kWh-Staende + QR-Druck
+function Kirmeskiste8zMeterPanel({ deviceId }) {
+  const [meters, setMeters] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState(null);
+
+  const loadMeters = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/energy-monitoring/devices/${deviceId}/meters`);
+      // Sort by hat_channel (or meter_name fallback)
+      const sorted = [...res.data].sort((a, b) => {
+        const ca = a.hat_channel ?? 99, cb = b.hat_channel ?? 99;
+        if (ca !== cb) return ca - cb;
+        return (a.meter_name || "").localeCompare(b.meter_name || "");
+      });
+      setMeters(sorted);
+    } catch (err) {
+      // Wenn noch keine Meter existieren: leeres Array
+      setMeters([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId]);
+
+  useEffect(() => { loadMeters(); }, [loadMeters]);
+
+  const updateOffset = async (meter, val) => {
+    setSavingId(meter.id);
+    try {
+      const kwh = parseFloat(String(val).replace(",", "."));
+      if (Number.isNaN(kwh) || kwh < 0) {
+        toast.error("Ungueltiger kWh-Wert");
+        return;
+      }
+      await api.put(
+        `/energy-monitoring/devices/${deviceId}/meters/${meter.id}/kwh-offset`,
+        { kwh_offset: kwh }
+      );
+      toast.success(`${meter.meter_name}: Anfangsstand gespeichert`);
+      loadMeters();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Speichern fehlgeschlagen");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const printLabel = async (idx) => {
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/kirmes/devices/${deviceId}/print-label/${idx}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || "Druckfehler");
+      }
+      const ct = resp.headers.get("content-type");
+      if (ct && ct.includes("application/json")) {
+        const data = await resp.json();
+        toast.success(data.message || `Zaehler ${idx} gedruckt`);
+      } else {
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `label_zaehler_${idx}.png`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        toast.info("Kein Drucker konfiguriert. Label als Bild heruntergeladen.");
+      }
+    } catch (err) {
+      toast.error(err.message || "Label konnte nicht gedruckt werden");
+    }
+  };
+
+  if (loading) {
+    return <p className="mt-3 text-[11px] text-gray-400">Zaehler werden geladen...</p>;
+  }
+
+  if (!meters.length) {
+    return (
+      <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <p className="text-[11px] text-amber-700">
+          Noch keine Zaehler angelegt. Klicke "Setup generieren" – die 8 Zaehler werden dann automatisch erstellt.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-3" data-testid="kirmeskiste-8z-meter-panel">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
+        Zaehler ({meters.length}) – Anfangsstand vom Display ablesen
+      </p>
+      <div className="space-y-1.5">
+        {meters.slice(0, 8).map((m, idx) => {
+          const channel = m.hat_channel ?? (idx + 1);
+          return (
+            <MeterOffsetRow
+              key={m.id}
+              meter={m}
+              channel={channel}
+              index={idx + 1}
+              saving={savingId === m.id}
+              onSave={(val) => updateOffset(m, val)}
+              onPrint={() => printLabel(idx + 1)}
+            />
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-gray-400 mt-2">
+        Hinweis: Der Pi zaehlt die Pulse autark weiter – der Anfangsstand wird beim ersten Sync uebernommen.
+        Pulses/kWh werden auf dem Pi konfiguriert (Default 1000).
+      </p>
+    </div>
+  );
+}
+
+
+function MeterOffsetRow({ meter, channel, index, saving, onSave, onPrint }) {
+  const [val, setVal] = useState(
+    meter.kwh_offset !== undefined && meter.kwh_offset !== null
+      ? String(meter.kwh_offset).replace(".", ",")
+      : ""
+  );
+  return (
+    <div className="grid grid-cols-12 gap-2 items-center text-[11px]">
+      <div className="col-span-1 font-mono text-gray-500 text-center">K{channel}</div>
+      <div className="col-span-4 font-medium text-gray-700 truncate" title={meter.meter_name}>
+        {meter.meter_name || `Zaehler ${index}`}
+      </div>
+      <div className="col-span-4">
+        <Input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onBlur={() => {
+            const cur = (meter.kwh_offset !== undefined && meter.kwh_offset !== null)
+              ? String(meter.kwh_offset).replace(".", ",")
+              : "";
+            if (val !== cur) onSave(val);
+          }}
+          placeholder="0,000"
+          className="h-7 text-[11px] py-1"
+          data-testid={`meter-offset-input-${index}`}
+        />
+      </div>
+      <div className="col-span-1 text-gray-400 text-[10px]">kWh</div>
+      <div className="col-span-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-7 text-[10px] text-gray-600 hover:text-fuchsia-600 px-1"
+          onClick={onPrint}
+          disabled={saving}
+          data-testid={`print-label-8z-${index}`}
+        >
+          <Printer className="w-3 h-3 mr-1" /> QR
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 
 // Pi Setup for DSE Controllers via USB/RS232 Modbus RTU
 // Match flexibel: "DSE 8610", "DSE 8610 MKII", "DSE 8610 MK2", etc.
@@ -1388,7 +1568,12 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
             <>
               {/* Pi Setup - all-in-one installer (only for existing devices) */}
               {editing && (
-                <PiSetupSection deviceId={editing.id} deviceName={editing.serial_number} deviceType={formData.device_type} />
+                <PiSetupSection
+                  deviceId={editing.id}
+                  deviceName={editing.serial_number}
+                  deviceType={formData.device_type}
+                  kirmeskisteVariant={formData.kirmeskiste_variant || "standard"}
+                />
               )}
             </>
           )}

@@ -1078,6 +1078,347 @@ echo ""
     }
 
 
+# ============== Kirmeskiste 8 Zaehler (S0-Pulse via Sequent HAT) Setup ==============
+
+class Kirmeskiste8zSetupRequest(BaseModel):
+    lte_apn: str = "internet.m2mportal.de"
+    enable_gps: bool = True
+
+
+class MeterOffsetUpdate(BaseModel):
+    kwh_offset: float
+
+
+@router.put("/devices/{device_id}/meters/{meter_id}/kwh-offset")
+async def update_meter_kwh_offset(
+    device_id: str, meter_id: str, body: MeterOffsetUpdate,
+    user: dict = Depends(require_staff)
+):
+    """Setzt den Anfangs-kWh-Stand fuer einen S0-Zaehler (Kirmeskiste 8Z).
+    Wird einmal beim Aufstellen der Kirmeskiste vom Display abgelesen und im Portal eingetragen."""
+    meter = await db.emu_meters.find_one({"id": meter_id, "device_id": device_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zaehler nicht gefunden")
+    await db.emu_meters.update_one(
+        {"id": meter_id, "device_id": device_id},
+        {"$set": {
+            "kwh_offset": float(body.kwh_offset),
+            "kwh_offset_updated_at": datetime.now(timezone.utc).isoformat(),
+            "kwh_offset_updated_by": user.get("name", ""),
+        }}
+    )
+    return {"meter_id": meter_id, "kwh_offset": float(body.kwh_offset)}
+
+
+@router.get("/devices/{device_id}/meters/{meter_id}/kwh-offset")
+async def get_meter_kwh_offset(device_id: str, meter_id: str, api_key: str = ""):
+    """Pi laedt den vom Portal eingestellten kWh-Anfangsstand. Auth via device api_key."""
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+    key_hash = device.get("device_key_hash")
+    if not key_hash or not _verify_key(api_key, key_hash):
+        raise HTTPException(status_code=401, detail="Ungueltiger Geraeteschluessel")
+    meter = await db.emu_meters.find_one({"id": meter_id, "device_id": device_id}, {"_id": 0})
+    if not meter:
+        raise HTTPException(status_code=404, detail="Zaehler nicht gefunden")
+    return {"meter_id": meter_id, "kwh_offset": float(meter.get("kwh_offset") or 0.0)}
+
+
+@router.post("/devices/{device_id}/kirmeskiste-8z-setup")
+async def generate_kirmeskiste_8z_setup(
+    device_id: str, request: Request,
+    body: Kirmeskiste8zSetupRequest = None,
+    admin: dict = Depends(require_admin)
+):
+    """Generate an all-in-one bash installer for Kirmeskiste 8Z (Pi 5 + Sequent HAT + SIM7600)."""
+    if body is None:
+        body = Kirmeskiste8zSetupRequest()
+
+    api_base = _get_api_base(request)
+
+    device = await db.devices.find_one({
+        "id": device_id, "device_type": "kirmeskiste",
+        "kirmeskiste_variant": "8z",
+    }, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Kirmeskiste 8Z nicht gefunden")
+
+    # Geraete-Key generieren
+    plain_key = secrets.token_hex(24)
+    key_hash = _hash_key(plain_key)
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"device_key_hash": key_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    # 8 Meter anlegen (oder bestehende uebernehmen, sortiert nach hat_channel)
+    existing = await db.emu_meters.find({"device_id": device_id}, {"_id": 0}).to_list(20)
+    by_channel = {m.get("hat_channel"): m for m in existing if m.get("hat_channel")}
+
+    meter_ids = []
+    for ch in range(1, 9):
+        if ch in by_channel:
+            mid = by_channel[ch]["id"]
+        else:
+            mid = str(uuid.uuid4())
+            await db.emu_meters.insert_one({
+                "id": mid,
+                "device_id": device_id,
+                "meter_name": f"Zaehler {ch}",
+                "meter_ip": "",
+                "meter_type": "ABB D11/D13 (S0 Pulse)",
+                "hat_channel": ch,
+                "pulses_per_kwh": 1000,
+                "kwh_offset": 0.0,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        meter_ids.append(mid)
+
+    await db.devices.update_one(
+        {"id": device_id},
+        {"$set": {"meter_count": len(meter_ids)}}
+    )
+
+    # Sync-Skript laden
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "kirmeskiste8z_sync.py")
+    with open(script_path, "r") as f:
+        sync_script = f.read()
+
+    # Meter-Config
+    meter_conf_sections = ""
+    for ch, mid in enumerate(meter_ids, start=1):
+        meter_conf_sections += f"""
+[meter_{ch}]
+meter_id = {mid}
+channel = {ch}
+pulses_per_kwh = 1000
+name = Zaehler {ch}
+"""
+
+    serial = device.get("serial_number", device_id[:12])
+    api_url = api_base
+    enable_gps = "true" if body.enable_gps else "false"
+    lte_apn = body.lte_apn
+
+    bash_script = f"""#!/bin/bash
+# ==============================================================
+#  Kirmeskiste 8 Zaehler Auto-Setup - {serial}
+#  Generiert am {datetime.now().strftime('%d.%m.%Y %H:%M')}
+#  Pi 5 + Sequent 16-LV HAT + SIM7600 LTE/GPS + 8x ABB D11/D13 (S0)
+# ==============================================================
+set -e
+
+echo "========================================================"
+echo "  Kirmeskiste 8 Zaehler Setup (Clean Install)"
+echo "  Geraet: {serial}"
+echo "========================================================"
+
+# ===== SCHRITT 0: ALTE INSTALLATIONEN AUFRAUMEN =====
+echo ""
+echo "[0/8] Alte Installationen aufraumen..."
+for SVC in kirmeskiste8z_sync sequent-init kirmeskiste_sync emu_sync; do
+    if systemctl is-active --quiet "$SVC" 2>/dev/null; then
+        echo "  Stoppe Service: $SVC"
+        sudo systemctl stop "$SVC" 2>/dev/null || true
+    fi
+    if systemctl is-enabled --quiet "$SVC" 2>/dev/null; then
+        sudo systemctl disable "$SVC" 2>/dev/null || true
+    fi
+    if [ -f "/etc/systemd/system/$SVC.service" ]; then
+        echo "  Entferne Service-Datei: $SVC.service"
+        sudo rm -f "/etc/systemd/system/$SVC.service"
+    fi
+done
+sudo rm -f /etc/kirmeskiste8z.conf
+sudo rm -f /var/lib/kirmeskiste8z/kirmeskiste8z.sqlite
+sudo rm -f /var/lib/kirmeskiste8z/kirmeskiste8z.sqlite-wal
+sudo rm -f /var/lib/kirmeskiste8z/kirmeskiste8z.sqlite-shm
+sudo systemctl daemon-reload
+
+# ===== SCHRITT 1: SYSTEM AKTUALISIEREN =====
+echo "[1/8] System aktualisieren..."
+sudo apt-get update -qq
+sudo apt-get install -y -qq python3-pip python3-venv git build-essential i2c-tools \\
+    gpsd gpsd-clients python3-gpiozero python3-lgpio
+
+# ===== SCHRITT 2: I2C AKTIVIEREN =====
+echo "[2/8] I2C aktivieren..."
+sudo raspi-config nonint do_i2c 0 || true
+
+# ===== SCHRITT 3: SEQUENT 16-LV CLI INSTALLIEREN =====
+echo "[3/8] Sequent 16-LV HAT CLI installieren..."
+TMPDIR_SEQUENT=$(mktemp -d)
+git clone --depth=1 https://github.com/SequentMicrosystems/16inpind-rpi.git "$TMPDIR_SEQUENT/16inpind-rpi" 2>/dev/null || true
+if [ -d "$TMPDIR_SEQUENT/16inpind-rpi" ]; then
+    cd "$TMPDIR_SEQUENT/16inpind-rpi"
+    sudo make install
+    cd -
+    rm -rf "$TMPDIR_SEQUENT"
+else
+    echo "  WARNUNG: Sequent CLI Repo nicht erreichbar, Setup mit vorhandener Installation fortfahren."
+fi
+test -x /usr/local/bin/16inpind || {{ echo "FEHLER: 16inpind nicht installiert"; exit 1; }}
+
+# ===== SCHRITT 4: PYTHON VENV =====
+echo "[4/8] Python-Umgebung..."
+INSTALL_DIR="/opt/kirmeskiste8z"
+sudo rm -rf "$INSTALL_DIR"
+sudo mkdir -p "$INSTALL_DIR"
+sudo python3 -m venv --system-site-packages "$INSTALL_DIR/venv"
+sudo "$INSTALL_DIR/venv/bin/pip" install --quiet requests gpsd-py3
+
+# ===== SCHRITT 5: SYNC-SKRIPT =====
+echo "[5/8] Sync-Skript installieren..."
+sudo tee "$INSTALL_DIR/kirmeskiste8z_sync.py" > /dev/null << 'SYNC_SCRIPT'
+{sync_script}
+SYNC_SCRIPT
+sudo chmod +x "$INSTALL_DIR/kirmeskiste8z_sync.py"
+
+# ===== SCHRITT 6: KONFIGURATION + LTE (Telekom M2M) =====
+echo "[6/8] Konfiguration schreiben..."
+sudo mkdir -p /var/lib/kirmeskiste8z
+
+sudo tee /etc/kirmeskiste8z.conf > /dev/null << 'CONF'
+[kirmeskiste8z]
+api_url = {api_url}
+device_key = {plain_key}
+device_id = {device_id}
+db_path = /var/lib/kirmeskiste8z/kirmeskiste8z.sqlite
+read_interval = 10
+sync_interval = 60
+retry_delay = 30
+batch_size = 500
+gps_enabled = {enable_gps}
+{meter_conf_sections}
+CONF
+sudo chmod 600 /etc/kirmeskiste8z.conf
+
+# LTE: APN konfigurieren (NetworkManager)
+if command -v nmcli >/dev/null 2>&1; then
+    echo "  Konfiguriere LTE-APN ({lte_apn}) via NetworkManager..."
+    sudo nmcli connection delete "telekom-lte" 2>/dev/null || true
+    sudo nmcli connection add type gsm ifname '*' con-name "telekom-lte" \\
+        apn "{lte_apn}" connection.autoconnect yes 2>/dev/null || \\
+        echo "  HINWEIS: LTE-Modem nicht erkannt (SIM7600 noch nicht initialisiert?)"
+fi
+
+# GPS: gpsd-Konfiguration fuer SIM7600
+if [ "{enable_gps}" = "true" ]; then
+    echo "  Konfiguriere gpsd fuer SIM7600..."
+    if [ -e /dev/ttyUSB1 ]; then
+        GPS_DEV=/dev/ttyUSB1
+    elif [ -e /dev/ttyAMA0 ]; then
+        GPS_DEV=/dev/ttyAMA0
+    else
+        GPS_DEV=/dev/ttyUSB1
+    fi
+    sudo tee /etc/default/gpsd > /dev/null << EOF
+START_DAEMON="true"
+GPSD_OPTIONS="-n"
+DEVICES="$GPS_DEV"
+USBAUTO="false"
+EOF
+    sudo systemctl enable gpsd
+    sudo systemctl restart gpsd 2>/dev/null || true
+fi
+
+# ===== SCHRITT 7: SEQUENT-INIT-SERVICE (Edge+Counter-Interrupt nach Boot) =====
+echo "[7/8] Sequent-Init-Service einrichten..."
+sudo tee /etc/systemd/system/sequent-init.service > /dev/null << 'SEQUENTINIT'
+[Unit]
+Description=Sequent HAT Counter Init (Edge + Interrupt)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'for ch in 1 2 3 4 5 6 7 8; do /usr/local/bin/16inpind 0 optedgewr $ch 1; /usr/local/bin/16inpind 0 optintwr $ch 1; done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+SEQUENTINIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable sequent-init
+sudo systemctl start sequent-init
+
+# ===== SCHRITT 8: SYSTEMD SERVICE =====
+echo "[8/8] Systemd-Service..."
+sudo tee /etc/systemd/system/kirmeskiste8z_sync.service > /dev/null << 'SERVICE'
+[Unit]
+Description=Kirmeskiste 8Z Sync - Eventenergie Portal
+After=network-online.target sequent-init.service
+Wants=network-online.target sequent-init.service
+
+[Service]
+Type=simple
+ExecStart=/opt/kirmeskiste8z/venv/bin/python3 /opt/kirmeskiste8z/kirmeskiste8z_sync.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/kirmeskiste8z
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable kirmeskiste8z_sync
+sudo systemctl restart kirmeskiste8z_sync
+
+sleep 3
+if systemctl is-active --quiet kirmeskiste8z_sync; then
+    echo "  Service laeuft!"
+else
+    echo "  WARNUNG: Service nicht aktiv. Pruefen mit:"
+    echo "    sudo journalctl -u kirmeskiste8z_sync -n 30"
+fi
+
+echo ""
+echo "========================================================"
+echo "  Setup abgeschlossen!"
+echo "========================================================"
+echo ""
+echo "  Geraet-ID:     {device_id}"
+echo "  Geraet-Key:    {plain_key[:8]}..."
+echo "  Portal:        {api_url}"
+echo "  Konfiguration: /etc/kirmeskiste8z.conf"
+echo "  Datenbank:     /var/lib/kirmeskiste8z/kirmeskiste8z.sqlite"
+echo "  Pi-ID-File:    /var/lib/kirmeskiste8z/pi_id"
+echo ""
+echo "  HAT-Diagnose: i2cdetect -y 1   (sollte 0x20 zeigen)"
+echo ""
+echo "  Service pruefen:"
+echo "    sudo systemctl status kirmeskiste8z_sync"
+echo "    sudo journalctl -u kirmeskiste8z_sync -f"
+echo ""
+echo "  WICHTIG: Anfangs-Zaehlerstaende im Portal eintragen!"
+echo "  (Geraet bearbeiten -> Bereich 'Zaehler' -> kWh eintragen)"
+echo ""
+"""
+
+    download_token = secrets.token_urlsafe(32)
+    _setup_downloads[download_token] = {
+        "script": bash_script,
+        "device_id": device_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    }
+
+    download_url = f"{api_base}/energy-monitoring/setup-download/{download_token}"
+
+    return {
+        "download_url": download_url,
+        "download_token": download_token,
+        "device_id": device_id,
+        "device_key": plain_key,
+        "meter_ids": meter_ids,
+        "message": f"Kirmeskiste 8Z Setup-Skript fuer {serial} generiert",
+    }
+
+
 # ============== DSE 5510 Setup ==============
 
 class DSE5510SetupRequest(BaseModel):

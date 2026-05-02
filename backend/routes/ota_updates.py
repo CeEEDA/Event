@@ -31,6 +31,7 @@ router = APIRouter(prefix="/api/system/ota", tags=["OTA Updates"])
 # Client-Seite einen OTA-Auto-Update-Mechanismus implementiert haben.
 DEVICE_SCRIPTS = {
     "kirmeskiste": "kirmeskiste_sync.py",      # OTA-faehig (eigener Mechanismus)
+    "kirmeskiste_8z": "kirmeskiste8z_sync.py", # OTA-faehig - 8x S0-Pulse via Sequent HAT
     "messkoffer": "messkoffer_logger.py",      # OTA-faehig ueber anonymen Endpoint
     "dse": "dse_usb_sync.py",                  # OTA-faehig ueber anonymen Endpoint (ab v2)
     "tankwagen": "tankbeleg_pi.py",            # OTA-faehig ueber anonymen Endpoint
