@@ -1894,6 +1894,21 @@ async def update_payment_status(invoice_id: str, data: PaymentStatusUpdate, user
 
     await _db.kirmes_invoices.update_one({"id": invoice_id}, {"$set": update})
 
+    # Wenn als "bezahlt" markiert: alle offenen Mahnungs-Aufgaben dieser Rechnung schliessen
+    if data.payment_status == "bezahlt":
+        await _db.tasks.update_many(
+            {"payment_reminder_invoice_id": invoice_id, "completed": False, "is_deleted": {"$ne": True}},
+            {"$set": {
+                "completed": True,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_by": user.get("id"),
+                "completed_by_name": f"{user.get('name', '')} (Rechnung als bezahlt markiert)",
+            }}
+        )
+
+    return {"message": "Zahlungsstatus aktualisiert", "payment_status": data.payment_status}
+
+
 # ============== FinTS Banking Integration ==============
 
 @router.post("/fints/check-payments")
@@ -2205,9 +2220,6 @@ async def fints_toggle(data: FintsToggle, user: dict = Depends(_require_staff)):
             "enabled": is_enabled,
         }
     return {"status": "not_configured", "message": "Bitte FINTS_USER und FINTS_PIN in .env setzen", "enabled": False}
-
-
-    return {"message": "Zahlungsstatus aktualisiert", "payment_status": data.payment_status}
 
 
 async def check_overdue_invoices():

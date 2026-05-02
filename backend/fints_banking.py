@@ -452,11 +452,42 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
     """Hauptfunktion: Transaktionen holen, abgleichen, automatisch verarbeiten."""
     import uuid
 
+    # Hilfsfunktion: offene Mahnungs-Tasks fuer eine Rechnung schliessen
+    async def _close_mahnung_tasks(invoice_id, reason):
+        return await db.tasks.update_many(
+            {"payment_reminder_invoice_id": invoice_id,
+             "completed": False, "is_deleted": {"$ne": True}},
+            {"$set": {
+                "completed": True,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_by_name": reason,
+            }}
+        )
+
+    # Sweep: Offene Mahnungs-Tasks fuer Rechnungen, die bereits als "bezahlt" markiert sind,
+    # automatisch schliessen (Aufraeumen falls Tasks vor dem Bezahlt-Status erstellt wurden).
+    paid_with_open_tasks = await db.tasks.distinct(
+        "payment_reminder_invoice_id",
+        {"task_type": "payment_reminder", "completed": False, "is_deleted": {"$ne": True}}
+    )
+    swept_closed = 0
+    if paid_with_open_tasks:
+        paid_invoices = await db.kirmes_invoices.find(
+            {"id": {"$in": paid_with_open_tasks}, "payment_status": "bezahlt"},
+            {"_id": 0, "id": 1}
+        ).to_list(5000)
+        for pinv in paid_invoices:
+            tc = await _close_mahnung_tasks(pinv["id"], "Auto-Cleanup (Rechnung bereits bezahlt)")
+            swept_closed += tc.modified_count or 0
+        if swept_closed:
+            logger.info(f"FinTS Sweep: {swept_closed} offene Mahnungs-Task(s) fuer bereits bezahlte Rechnungen geschlossen")
+
     # Nutze die persistierte Variante (State wird wiederverwendet, 90 Tage ohne pushTAN)
     result = await fetch_transactions_persisted(db, days_back=30)
     transactions = result.get("transactions", [])
     if not transactions:
         return {"checked": 0, "matched": 0, "auto_marked": 0, "admin_tasks": 0, "suggestions": 0,
+                "swept_closed": swept_closed,
                 "ok": result.get("ok", False), "error": result.get("error")}
 
     # Offene Rechnungen laden
@@ -577,4 +608,5 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
         "auto_marked": auto_marked,
         "admin_tasks": admin_tasks,
         "suggestions": suggestions,
+        "swept_closed": swept_closed,
     }
