@@ -1082,6 +1082,10 @@ echo ""
 
 class Kirmeskiste8zSetupRequest(BaseModel):
     lte_apn: str = "internet.m2mportal.de"
+    lte_pin: str = "0000"          # SIM-PIN (Telekom M2M Standard)
+    lte_user: str = ""              # i.d.R. leer bei Telekom M2M
+    lte_password: str = ""          # i.d.R. leer bei Telekom M2M
+    enable_lte: bool = True
     enable_gps: bool = True
 
 
@@ -1199,7 +1203,14 @@ name = Zaehler {ch}
     serial = device.get("serial_number", device_id[:12])
     api_url = api_base
     enable_gps = "true" if body.enable_gps else "false"
+    enable_lte_str = "true" if body.enable_lte else "false"
     lte_apn = body.lte_apn
+    lte_pin = body.lte_pin or "0000"
+    lte_user = body.lte_user or ""
+    lte_pwd = body.lte_password or ""
+    # PPP-Auth-Zeilen vorbereiten (kein verschachteltes f-string)
+    ppp_user_line = f"user {lte_user}" if lte_user else "noauth"
+    ppp_pwd_line = f"password {lte_pwd}" if lte_pwd else ""
 
     bash_script = f"""#!/bin/bash
 # ==============================================================
@@ -1294,25 +1305,130 @@ gps_enabled = {enable_gps}
 CONF
 sudo chmod 600 /etc/kirmeskiste8z.conf
 
-# LTE: APN konfigurieren (NetworkManager)
-if command -v nmcli >/dev/null 2>&1; then
-    echo "  Konfiguriere LTE-APN ({lte_apn}) via NetworkManager..."
-    sudo nmcli connection delete "telekom-lte" 2>/dev/null || true
-    sudo nmcli connection add type gsm ifname '*' con-name "telekom-lte" \\
-        apn "{lte_apn}" connection.autoconnect yes 2>/dev/null || \\
-        echo "  HINWEIS: LTE-Modem nicht erkannt (SIM7600 noch nicht initialisiert?)"
+# ===== LTE (SIM7600 + PPP + Telekom M2M) =====
+if [ "{enable_lte_str}" = "true" ]; then
+    echo "  Konfiguriere LTE (APN={lte_apn}, PIN={lte_pin})..."
+
+    # ModemManager kann ttyUSB blockieren -> deaktivieren
+    sudo systemctl stop ModemManager 2>/dev/null || true
+    sudo systemctl disable ModemManager 2>/dev/null || true
+
+    # Pakete fuer PPP + Werkzeuge
+    sudo apt-get install -y -qq ppp ifmetric dnsutils
+
+    # SIM7600 einschalten ueber PWRKEY GPIO4 (falls noch nicht da)
+    if command -v pinctrl &>/dev/null; then
+        if ! ls /dev/ttyUSB3 &>/dev/null 2>&1; then
+            echo "    SIM7600 PWRKEY-Puls (GPIO4)..."
+            pinctrl set 4 op dl
+            sleep 0.1
+            pinctrl set 4 op dh
+            sleep 2
+            pinctrl set 4 op dl
+            echo "    Warte 15s auf USB-Enumeration..."
+            sleep 15
+        else
+            echo "    SIM7600 bereits aktiv."
+        fi
+    fi
+
+    # Auf /dev/ttyUSB3 (PPP) warten
+    for i in $(seq 1 30); do
+        [ -e /dev/ttyUSB3 ] && break
+        sleep 1
+    done
+
+    # PPP + Chat-Skript schreiben (mit SIM-PIN!)
+    sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d /etc/ppp/ip-down.d
+
+    sudo tee /etc/ppp/peers/m2m > /dev/null << 'PPPCONF'
+/dev/ttyUSB3
+115200
+connect "/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect"
+{ppp_user_line}
+{ppp_pwd_line}
+nodefaultroute
+noipdefault
+novj
+novjccomp
+noccp
+ipcp-accept-local
+ipcp-accept-remote
+local
+lock
+persist
+maxfail 0
+holdoff 10
+debug
+PPPCONF
+
+    # Chat-Skript: PIN setzen (falls noetig), dann APN waehlen, dann *99# anrufen
+    sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
+ABORT 'BUSY'
+ABORT 'NO CARRIER'
+ABORT 'ERROR'
+ABORT 'NO ANSWER'
+TIMEOUT 30
+'' AT
+OK ATZ
+OK 'AT+CMEE=2'
+OK 'AT+CPIN?'
+OK-AT+CPIN={lte_pin}-OK 'AT+CGDCONT=1,"IP","{lte_apn}"'
+OK ATD*99#
+CONNECT ''
+CHATSCRIPT
+
+    sudo chmod 644 /etc/ppp/peers/m2m /etc/chatscripts/m2m-connect
+
+    # PPP-Hooks: LTE-Route mit hoher Metric (eth0/wlan0 bleiben Default)
+    sudo tee /etc/ppp/ip-up.d/10-add-lte-route > /dev/null << 'PPPHOOK1'
+#!/bin/sh
+# Route via ppp0 als Backup (Metric 700, hoeher als eth0=100, wlan0=600)
+ip route add default dev "$IFNAME" metric 700 2>/dev/null || true
+PPPHOOK1
+
+    sudo tee /etc/ppp/ip-down.d/10-remove-lte-route > /dev/null << 'PPPHOOK1D'
+#!/bin/sh
+ip route del default dev "$IFNAME" 2>/dev/null || true
+PPPHOOK1D
+
+    sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route
+
+    # Systemd-Service fuer LTE
+    sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESVC'
+[Unit]
+Description=LTE PPP Connection (SIM7600 - Telekom M2M)
+After=multi-user.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/pon m2m
+ExecStop=/usr/bin/poff m2m
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target
+LTESVC
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable lte-connection
+    sudo systemctl start lte-connection || echo "    LTE konnte nicht direkt starten - nach Reboot pruefen"
 fi
 
-# GPS: gpsd-Konfiguration fuer SIM7600
+# ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
 if [ "{enable_gps}" = "true" ]; then
-    echo "  Konfiguriere gpsd fuer SIM7600..."
-    if [ -e /dev/ttyUSB1 ]; then
-        GPS_DEV=/dev/ttyUSB1
-    elif [ -e /dev/ttyAMA0 ]; then
-        GPS_DEV=/dev/ttyAMA0
-    else
-        GPS_DEV=/dev/ttyUSB1
+    echo "  Aktiviere GPS auf SIM7600 (AT+CGPS=1)..."
+    # GPS-Engine im SIM7600 einschalten: Befehl ueber /dev/ttyUSB2 (AT-Port)
+    if [ -e /dev/ttyUSB2 ]; then
+        (echo -e 'AT+CGPS=1,1\\r'; sleep 1) > /dev/ttyUSB2 2>/dev/null || true
     fi
+
+    # gpsd fuer NMEA-Stream auf /dev/ttyUSB1
+    GPS_DEV=/dev/ttyUSB1
+    [ -e /dev/ttyAMA0 ] && [ ! -e /dev/ttyUSB1 ] && GPS_DEV=/dev/ttyAMA0
     sudo tee /etc/default/gpsd > /dev/null << EOF
 START_DAEMON="true"
 GPSD_OPTIONS="-n"

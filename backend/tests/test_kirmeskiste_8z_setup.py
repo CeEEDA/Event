@@ -127,7 +127,27 @@ async def _run():
             assert "internet.m2mportal.de" in txt
             assert device_id in txt
             assert api_key in txt
-            print(f"[OK] Setup bash script downloads correctly ({len(txt)} chars)")
+            # LTE-Spezifika
+            assert "/etc/ppp/peers/m2m" in txt, "PPP-Konfig fehlt"
+            assert "/etc/chatscripts/m2m-connect" in txt, "Chat-Skript fehlt"
+            assert "AT+CPIN=0000" in txt, "SIM-PIN 0000 fehlt im Chat-Skript"
+            assert "ATD*99#" in txt, "Dial-String fehlt"
+            assert "ModemManager" in txt, "ModemManager-Disable fehlt"
+            assert "AT+CGPS=1" in txt, "GPS-Aktivierung fehlt"
+            assert "lte-connection.service" in txt, "LTE-Service fehlt"
+            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS ({len(txt)} chars)")
+
+            # Custom PIN test
+            r8b = await http.post(
+                f"/api/energy-monitoring/devices/{device_id}/kirmeskiste-8z-setup",
+                json={"lte_apn": "internet.m2mportal.de", "lte_pin": "1234",
+                      "enable_gps": True, "enable_lte": True},
+                headers=H,
+            )
+            assert r8b.status_code == 200
+            r8c = await http.get(r8b.json()["download_url"])
+            assert "AT+CPIN=1234" in r8c.text, "Custom PIN nicht uebernommen"
+            print(f"[OK] Custom SIM-PIN wird ins Skript uebernommen")
 
         finally:
             # Cleanup
