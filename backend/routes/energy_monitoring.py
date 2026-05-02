@@ -1087,8 +1087,9 @@ class Kirmeskiste8zSetupRequest(BaseModel):
     lte_password: str = ""          # i.d.R. leer bei Telekom M2M
     enable_lte: bool = True
     enable_gps: bool = True
-    lte_uart: bool = False          # Default: USB-Modus wie beim DSE-Setup (ttyUSB3).
-                                    # True nur wenn UART-Pin-Modus ohne USB-Kabel.
+    lte_uart: bool = True           # Waveshare SIM7600: LTE ueber UART (GPIO-Pins),
+                                    # GPS separat ueber USB-Kabel.
+                                    # False = USB-Modus (PPP ueber /dev/ttyUSB3).
 
 
 class MeterOffsetUpdate(BaseModel):
