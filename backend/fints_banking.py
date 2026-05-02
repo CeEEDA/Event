@@ -132,8 +132,15 @@ async def _build_client(db, force_fresh: bool = False):
         FINTS_URL,
         product_id=FINTS_PRODUCT_ID,
         product_version=FINTS_PRODUCT_VERSION,
-        set_data=state,
     )
+    # State (falls vorhanden) per Methode setzen – seit python-fints 5.x
+    if state:
+        try:
+            client.set_data(state)
+            logger.info(f"FinTS: Client-State wiederhergestellt ({len(state)} Bytes)")
+        except Exception as e:
+            logger.warning(f"FinTS: set_data fehlgeschlagen, starte mit frischem State: {e}")
+            state = None
     return client, bool(state)
 
 
