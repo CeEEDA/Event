@@ -486,6 +486,18 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
                     "payment_updated_by": "FinTS Auto-Match",
                 }}
             )
+            # Offene Mahnungs-Tasks fuer diese Rechnung automatisch als erledigt markieren
+            tc = await db.tasks.update_many(
+                {"payment_reminder_invoice_id": m["invoice_id"],
+                 "completed": False, "is_deleted": {"$ne": True}},
+                {"$set": {
+                    "completed": True,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_by_name": "FinTS Auto-Match (Zahlung eingegangen)",
+                }}
+            )
+            if tc.modified_count:
+                logger.info(f"FinTS: {tc.modified_count} offene Mahnungs-Task(s) fuer {m['invoice_number']} automatisch geschlossen (Zahlung eingegangen)")
             auto_marked += 1
             logger.info(f"FinTS: {m['invoice_number']} → BEZAHLT ({m['match_type']}: {m['match_reason']})")
 

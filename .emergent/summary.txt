@@ -1,64 +1,37 @@
-<analysis>### Handover Summary
+<analysis>**original_problem_statement**: 
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent requests focused on introducing a Freelancer role, fixing mobile UI glitches, deeply integrating and debugging FinTS/HBCI banking (with Sparkasse pushTAN and 90-day persistence), fixing HR RBAC visibility bugs, enhancing shift planning for multi-day events, and automating the closure of billing tasks.
 
-**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. Focus is on hardware integration for fuel receipts via a Raspberry Pi (EPSON emulation), desktop/mobile apps, local file storage, and offline AI processing for document categorization.
-
-**User's preferred language**: German 
+**User's preferred language**: German
 **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A React/FastAPI/MongoDB application. In this session, a massive amount of bug fixing and feature enhancements were completed. Key areas touched include MQTT password synchronization, iOS Capacitor CORS issues, Kirmes Event Billing logic (safety checks and reopen capabilities), Finance table sorting, and an extensive expansion of the Admin HR Time Tracking system (allowing manual edits, sick leave, and overtime reduction). The application heavily relies on local scripts distributed to Raspberry Pis (e.g.,  and ).
+A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, HR Documents, Generator/Energy Monitoring, Service Plans, Kiosk-Pi app, and a newly implemented Messprotokoll PDF generator. It has robust RBAC. A major FinTS/HBCI banking module now syncs with Sparkasse using PSD2 90-day persistence (MoneyMoney style).
 
 **Last working item**:
-    - Last item agent was working: Debugging the Sening Fuel Receipt Parser (). The parser incorrectly extracts large fuel quantities (e.g., 154 L is parsed as 15 L, taking only the first two digits). The user provided a hex dump for a 129 L receipt, and the agent successfully decoded it to analyze the corrupted Sening ESC characters causing the issue ().
-    - Status: IN PROGRESS
+    - Last item agent was working: Automating the closure of Zahlungserinnerung (Payment Reminder / Mahnung) tasks. The user reported that if an invoice is paid and matched via the FinTS banking sync, the open reminder task in the Hub should automatically disappear.
+    - Status: TESTING PENDING (The agent modified  in  to mark the task as completed, but ran out of context before verifying).
     - Agent Testing Done: N
-    - Which testing method agent to use? manual testing by python -c (Parse the hex dump through the  functions to see where it breaks).
+    - Which testing method agent to use? backend (Use python -c or curl to trigger  and verify if the corresponding task in the  collection is marked ).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Sening Fuel Receipt Parser cuts off digits (P0)
-     - Attempted fixes: Extracted the hex dump of a receipt to identify how Sening ESC sequences corrupt the ASCII text (e.g.,  becomes ).
-     - Next debug checklist: Modify  or the regex/ logic in  to robustly extract quantities > 99 L, even if interrupted by control characters or missing the trailing L. Test the exact hex dump provided in the history.
-     - Why fix this issue and what will be achieved with the fix? Ensures correct billing for large fuel quantities.
-     - Status: IN PROGRESS
-     - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? Backend (using  with the hex string)
-     - Blocked on other issue: None.
-
-  Issue 2: DSE 4520 MKII via USB shows values in wrong fields (P1)
-     - Attempted fixes: Agent updated Modbus register mapping in  to match the official GenComm 32-bit layout. However, the update caused the Raspberry Pi to stop sending data and drop offline. The agent had to rollback the script to commit  to restore connectivity, meaning the data is flowing again but still mapped to the wrong fields.
-     - Next debug checklist: The user stated they will move this to a test environment die Tage (in the coming days) to safely debug without breaking the production LTE connection. Wait for the user's cue or provide a heavily fault-tolerant script update.
-     - Why fix this issue and what will be achieved with the fix? Accurate voltage/current/wattage display in the portal.
-     - Status: BLOCKED (Pending user test environment setup)
-     - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? Backend (Pi Script)
-     - Blocked on other issue: Hardware availability.
-
-  Issue 3: Local AI (Ollama) freezes Windows Server (P2)
-     - Attempted fixes: Scaled down model, restricted threads.
-     - Next debug checklist: Re-enable Ollama and test the PyMuPDF -> gemma2:2b text pipeline.
-     - Why fix this issue and what will be achieved with the fix? Allows automatic document categorization.
-     - Status: BLOCKED (Paused by user)
-     - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? Backend
-     - Blocked on other issue: Server CPU constraints.
-
-  Issue 4: Mobile App iOS Build (P2)
-     - Attempted fixes: Provided Mac instructions.
-     - Status: NOT STARTED
+  Issue 1: Auto-close Payment Reminder tasks on FinTS match (P0)
+     - Attempted fixes: Agent updated  in  to search for open tasks with  and set them to completed.
+     - Next debug checklist: Check  around line 470. Verify that when  marks an invoice as auto_paid, the subsequent  successfully finds and closes the associated task.
+     - Why fix this issue and what will be achieved with the fix? Prevents users from accidentally sending dunning emails for invoices that were automatically detected as paid by the banking sync.
+     - Status: TESTING PENDING
      - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? NA (User executes locally)
-     - Blocked on other issue: None.
+     - Should Test frontend/backend/both after fix? backend
+     - Blocked on other issue: None
 
 **In progress Task List**:
-  None.
+  None
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
     - (P2) Pi-Status-Dashboard: Show last sync timestamp, unsynced count, and GPS status per Pi in the Portal.
     - (P2) Portal-Auftragsliste Lager Filter/Reiter: Separate internal test runs from normal orders.
-    - (P2) Suchleiste über der Auftragsliste: Add a search bar to the Pi UI to easily find orders.
+    - (P2) Suchleiste über der Auftragsliste: Add a search bar to the Pi UI.
     
     Future Tasks:
     - (P2) Add GPS Support to Kirmeskiste.
@@ -66,91 +39,110 @@ A React/FastAPI/MongoDB application. In this session, a massive amount of bug fi
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
 
 **Completed work in this session**
-- Fixed iOS Capacitor App Login 404 Error ( bug) (DONE)
-- Diagnosed MQTT CGNAT issue and fixed  DB sync & robust service restart (DONE)
-- Added Bezahlvorgang abwickeln button for cancelled Stripe Checkouts (DONE)
-- Fixed Kirmes Event Freigeben button error swallowing (DONE)
-- Hardened Kirmes Abrechnen logic: Prevented accidental closure without invoices, disabled button if  is missing, and added Admin Wieder öffnen (Reopen) feature (DONE)
-- Added dynamic sorting to Finance Table (Date, Event, Amount, Payment urgency) (DONE)
-- Fixed Pi-Command queuing for USB-DSE devices (used  instead of string matching) (DONE)
-- Expanded Admin Zeiterfassung: Added manual time entry creation, inline editing, and deletion (DONE)
-- Added Urlaub, Überstundenabbau, and Krank direct Admin entries with automatic overtime account deductions (DONE)
+- Add Delete Button for Messprotokoll (DONE)
+- Freelancer Role added (assigned orders visible only, 5-day cutoff, no customer details, no fuel receipts, direct routing to orders page) (DONE)
+- Freelancer assignment modal UI refactor (Split into assigned vs add new) (DONE)
+- Mobile Chat input keyboard hidden fix () (DONE)
+- FinTS Banking decoupled pushTAN integration with 90-day persistence (DONE)
+- FinTS Banking UI State Indicator and single IBAN filtering (DONE)
+- HR Verwaltung permissions fix (Hourly wage, overtime, birthdays now properly visible to managers) (DONE)
+- Finance tasks (Mahnungen, FinTS differences) made visible to employees with Abrechnung rights (DONE)
+- Einsatzplanung (Shift Planning): Admins now visible in list, added multi-day assignment (Alle Tage toggle) (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-  None.
+   Issue 1: Genehmigt: 0 Tage (Approved vacation days sum shows 0)
+   - Debug checklist: In  or the frontend HR view, verify how  or the sum of approved vacation is calculated. The user noted the list shows approved days, but the top summary says 0. (This might have been fixed by the RBAC fix, but requires verification).
+   - Why to solve this issue and what will be achieved with this? Accurate HR dashboard for employees/managers.
+   - Should Test frontend/backend/both after fix: both
+   - Is recurring issue? N
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: DSE USB Modbus Sync crashing/freezing.
   - Recurrence count: 2
-  - Status: BLOCKED (Rolled back to stable, mismapped version).
+  - Status: BLOCKED (Awaiting user to setup hardware test environment).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-Sening ESC Protocol parsing, Modbus GenComm Registers, React Hooks (Rules of Hooks), Windows Service Management via PowerShell, MongoDB aggregation.
+React protected routing (), Python  library (v5.x handling of ), PSD2 SCA 90-day persistence (MongoDB ), MongoDB RBAC filters. 
 
 **key DB schema**
-  - : Now stores  for direct HR entries.
-  - : Uses  to identify Pi-based generators vs MQTT gateways.
+  - : Added 
+  - : Stores  (base64) for banking persistence.
+  - : Supports bulk insertion for multi-day events.
+  - :  field used to link tasks to invoices.
 
 **changes in tech stack**
-  - None.
+  - Heavy implementation of  v5.0.0 utilizing decoupled pushTAN polling.
 
 **All files of reference** 
-  -  (Currently modifying parser logic)
-  -  &  (HR features updated)
-  -  (Event billing logic)
-  -  (Broker restart logic)
+  -  (Crucial for pending task auto-close logic)
+  - 
+  - 
+  - 
+  - 
 
 **Areas that need refactoring**: 
-  - : Needs a highly fault-tolerant Modbus reading mechanism that can pull 32-bit registers without crashing the Pi's serial connection.
+  - None immediately, but keep an eye on  as it handles highly sensitive RBAC checks across many endpoints.
 
 **key api endpoints**
-  -  (New)
-  -  (New)
+  - 
+  - 
+  -  (Updated for multi-day)
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- The environment runs on a Windows Server (Backend) and Linux Raspberry Pis (Edge).
-- Do NOT push changes to the  script right now. The user had a production outage because of it and explicitly requested to wait until they set up a test environment next week.
-- You have the raw hex string of a faulty Sening fuel receipt in the history (). Use this locally with  to perfect your  and regex logic before proposing the fix to the user.
+- The user tests on their own live Windows Server environment. They use a script ( / ) to pull code from Github. You MUST instruct them to use Save to Github and run their scripts when deploying fixes. 
+- A yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. is required for any frontend changes to manifest on their live server.
+- The FinTS banking integration uses  5.x. The PSD2 SCA challenge is presented during dialog initialization (), not during the  call. This was successfully handled. Do not revert banking logic.
 
 **documents and test reports created in this job**
-  -  updated.
-  -  verified.
+  -  (Created as a temporary emergency script to reset admin passwords if locked out).
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) Reported update to DSE Pi caused it to stop responding.
- 2. (Agent) Found bug in  queuing logic, fixed it.
- 3. (User) Still not working. Complained values were wrong but system was online prior to update. Provided GenComm manual.
- 4. (Agent) Fixed  to match GenComm 32-bit spec.
- 5. (User) Reported Pi is completely broken now, no data coming in, UI shows 0s.
- 6. (Agent) Diagnosed Modbus 34-register read as too large, split reads.
- 7. (User) Pi went completely offline, LTE dead. Asked to rollback to the 10 AM state.
- 8. (Agent) Rolled back  via git commands. Instructed user how to apply the stable script to the Pi.
- 9. (User) Agreed to move DSE to a test environment later. Brought up a NEW issue: Tankwagen fuel receipt parser is cutting off digits (e.g., 154 L becomes 15 L).
- 10. (Agent) Showed user how to extract the raw hex dump of the receipt from the browser console.
- 11. (User) Provided the hex dump of a 129 L receipt. 
- **PENDING HUMAN MESSAGE**: None. The user has provided the hex dump. The agent must now fix  using this data.
+ 1. (User) Reported Sparkasse FinTS account blocked due to too many retries +  error.
+ 2. (Agent) Explained how to unblock account, deploy code, and provided an emergency password reset script ().
+ 3. (User) yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. hanging on their Windows server.
+ 4. (Agent) Gave instructions to skip yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. temporarily to test the backend.
+ 5. (User) Noted the FinTS tasks successfully showed up in the Hub, but reported a new RBAC bug: HR data (vacation, wages) was blank for managers with Verwaltung permissions.
+ 6. (Agent) Fixed  to use  helper instead of strictly  for 49 checks.
+ 7. (User) Requested that employees with Abrechnung (billing) rights see Finance tasks.
+ 8. (Agent) Updated task creation and retrieval so  employees see Mahnungen and FinTS discrepancies.
+ 9. (User) Reported 2 bugs in Shift Planning: Admin missing from personnel list, and inability to assign personnel to multi-day events easily.
+ 10. (Agent) Fixed user query to include Admins, added a multi-day Alle Tage bulk assignment toggle.
+ 11. (User) **PENDING:** In der Live hab ich die Mahnungen verschickt. dennoch steht das noch als Aufgabe an... ich möchte nicht auf Versenden drücken, da ja evtl. schon einer bezahlt haben kann.
 
 **Project Health Check:**
-- Broken:  (Quantity parsing > 99L fails due to Sening ESC corruption).
-- Broken:  (Rolled back to mis-mapped version to preserve LTE stability).
-- Mocked: None.
+- Broken: None
+- Mocked: None
 
 **3rd Party Integrations** 
+- FinTS / python-fints (Banking) — requires Bank credentials (in )
 - Stripe (Payments) — requires User API Key
 - Ollama (Local AI) — requires local installation
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Heavy hardware-in-the-loop and Windows Server specifics).
-  - Troubleshoot agent used after agent stuck in loop: NO.
-  - Test files created: None.
-  - Known regressions: Modbus mapping remains incorrect intentionally to preserve uptime.
+  - Testing agent used after significant changes: NO (Heavy reliance on manual bash/curl and user testing on live Windows Server).
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None
+  - Known regressions: None
 
 **Credentials to test flow:**
-- Admin:  / 
+- Admin:  /  (Updated via emergency script this session)
+- Freelancer (test): 
 
 **What agent forgot to execute**
-- The agent decoded the hex dump to ASCII but hasn't yet implemented the fix in . You must pick this up immediately.</analysis>
+- Agent applied the fix to auto-close payment reminder tasks on FinTS match, but was interrupted by context limits before verifying the backend execution via curl.
+
+**Debugging checklist for current issue**
+    Issue: Auto-close Payment Reminder tasks on FinTS match
+    Backend files to check:  (lines ~465-480)
+    Steps:
+    1. Verify that  is syntactically correct.
+    2. Check the task model schema to ensure , , and  are the correct fields to update.
+    3. Run  or  to simulate a FinTS match and ensure the task is properly closed.
+    4. Provide the user with instructions to deploy the code and confirm.</analysis>
