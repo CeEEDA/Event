@@ -1969,7 +1969,17 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
 
         diag["stage"] = "connecting"
         with client:
-            # Stage 1: Bank dialog active here
+            # PSD2-SCA: wird bei Sparkassen schon beim Dialog-Aufbau getriggert
+            diag["stage"] = "sca_init"
+            try:
+                from fints_banking import _resolve_sca_after_dialog_start
+                sca_init = _resolve_sca_after_dialog_start(client, max_wait_seconds=120)
+                diag["sca_at_dialog_start"] = sca_init
+            except Exception as ex:
+                diag["sca_init_error"] = str(ex)[:400]
+                raise
+
+            # Stage 1: TAN mechanisms
             diag["stage"] = "tan_mechanisms"
             try:
                 mechanisms = client.get_tan_mechanisms()
@@ -1986,7 +1996,7 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
             except Exception as ex:
                 diag["tan_mechanisms_error"] = str(ex)[:400]
 
-            # Stage 2: Get accounts (this triggers actual SCA on most Sparkassen)
+            # Stage 2: Get accounts (may trigger another SCA if something missing)
             diag["stage"] = "get_accounts"
             from fints_banking import _resolve_decoupled_tan
             accounts_resp = client.get_sepa_accounts()

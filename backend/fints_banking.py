@@ -63,6 +63,27 @@ def _resolve_decoupled_tan(client, response, max_wait_seconds=120, poll_interval
     return response
 
 
+def _resolve_sca_after_dialog_start(client, max_wait_seconds=120, poll_interval=2.0):
+    """Resolver fuer die PSD2-SCA, die python-fints 5.x beim Dialog-Aufbau triggert.
+    Bei Sparkassen mit pushTAN wird die TAN schon im Init-Dialog angefordert
+    (client.init_tan_response). Diese Funktion muss DIREKT nach 'with client:'
+    aufgerufen werden, BEVOR irgendeine Geschaeftsfunktion (get_sepa_accounts etc.)
+    ausgefuehrt wird."""
+    init_resp = getattr(client, "init_tan_response", None)
+    if init_resp is None:
+        return False  # Keine SCA noetig
+    try:
+        from fints.client import NeedRetryResponse
+    except Exception:
+        return False
+    if not isinstance(init_resp, NeedRetryResponse):
+        return False
+    logger.info("FinTS: PSD2-SCA beim Dialog-Aufbau erkannt, starte Polling...")
+    _resolve_decoupled_tan(client, init_resp, max_wait_seconds=max_wait_seconds, poll_interval=poll_interval)
+    logger.info("FinTS: PSD2-SCA erfolgreich abgeschlossen")
+    return True
+
+
 # ── Persistenter Client-State (PSD2 90-Tage-Regel, MoneyMoney-Style) ──
 
 async def _load_fints_state(db) -> bytes | None:
@@ -133,6 +154,10 @@ async def fetch_transactions_persisted(db, days_back: int = 14) -> dict:
     sca_required = False
     try:
         with client:
+            # PSD2-SCA: Bei Sparkassen mit pushTAN wird die TAN bereits
+            # beim Dialog-Aufbau angefordert. Zuerst aufloesen!
+            sca_required = _resolve_sca_after_dialog_start(client)
+
             accounts_resp = client.get_sepa_accounts()
             from fints.client import NeedRetryResponse
             if isinstance(accounts_resp, NeedRetryResponse):
