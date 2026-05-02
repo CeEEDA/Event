@@ -1087,6 +1087,8 @@ class Kirmeskiste8zSetupRequest(BaseModel):
     lte_password: str = ""          # i.d.R. leer bei Telekom M2M
     enable_lte: bool = True
     enable_gps: bool = True
+    lte_uart: bool = True           # Waveshare SIM7600 = UART-Modus
+                                    # (False = USB-PPP via /dev/ttyUSB3)
 
 
 class MeterOffsetUpdate(BaseModel):
@@ -1204,6 +1206,7 @@ name = Zaehler {ch}
     api_url = api_base
     enable_gps = "true" if body.enable_gps else "false"
     enable_lte_str = "true" if body.enable_lte else "false"
+    lte_uart_str = "true" if body.lte_uart else "false"
     lte_apn = body.lte_apn
     lte_pin = body.lte_pin or "0000"
     lte_user = body.lte_user or ""
@@ -1211,6 +1214,11 @@ name = Zaehler {ch}
     # PPP-Auth-Zeilen vorbereiten (kein verschachteltes f-string)
     ppp_user_line = f"user {lte_user}" if lte_user else "noauth"
     ppp_pwd_line = f"password {lte_pwd}" if lte_pwd else ""
+    # Bei UART (Waveshare): PPP ueber /dev/ttyAMA0; bei USB: /dev/ttyUSB3
+    ppp_device = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB3"
+    # AT-Port fuer PIN/CPGS-Befehle:
+    # UART -> selber Port wie PPP; USB -> /dev/ttyUSB2
+    at_port = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
 
     bash_script = f"""#!/bin/bash
 # ==============================================================
@@ -1307,42 +1315,65 @@ sudo chmod 600 /etc/kirmeskiste8z.conf
 
 # ===== LTE (SIM7600 + PPP + Telekom M2M) =====
 if [ "{enable_lte_str}" = "true" ]; then
-    echo "  Konfiguriere LTE (APN={lte_apn}, PIN={lte_pin})..."
+    LTE_DEVICE="{ppp_device}"
+    LTE_UART="{lte_uart_str}"
+    AT_PORT="{at_port}"
+    echo "  Konfiguriere LTE (APN={lte_apn}, PIN={lte_pin}, Device=$LTE_DEVICE)..."
 
-    # ModemManager kann ttyUSB blockieren -> deaktivieren
+    # ModemManager kann blockieren -> hart deaktivieren
     sudo systemctl stop ModemManager 2>/dev/null || true
     sudo systemctl disable ModemManager 2>/dev/null || true
+    sudo systemctl mask ModemManager 2>/dev/null || true
 
     # Pakete fuer PPP + Werkzeuge
     sudo apt-get install -y -qq ppp ifmetric dnsutils
 
-    # SIM7600 einschalten ueber PWRKEY GPIO4 (falls noch nicht da)
-    if command -v pinctrl &>/dev/null; then
-        if ! ls /dev/ttyUSB3 &>/dev/null 2>&1; then
-            echo "    SIM7600 PWRKEY-Puls (GPIO4)..."
-            pinctrl set 4 op dl
-            sleep 0.1
-            pinctrl set 4 op dh
-            sleep 2
-            pinctrl set 4 op dl
-            echo "    Warte 15s auf USB-Enumeration..."
-            sleep 15
-        else
-            echo "    SIM7600 bereits aktiv."
+    # UART-Modus: Pi-UART aktivieren + Console-Login auf serial0 deaktivieren
+    if [ "$LTE_UART" = "true" ]; then
+        BOOT_CFG=/boot/firmware/config.txt
+        [ -f "$BOOT_CFG" ] || BOOT_CFG=/boot/config.txt
+        if [ -f "$BOOT_CFG" ]; then
+            grep -q '^enable_uart=1' "$BOOT_CFG" || echo 'enable_uart=1' | sudo tee -a "$BOOT_CFG" > /dev/null
+            # Bluetooth-UART deaktivieren auf Pi 4/5, damit ttyAMA0 = primary UART
+            grep -q '^dtoverlay=disable-bt' "$BOOT_CFG" || echo 'dtoverlay=disable-bt' | sudo tee -a "$BOOT_CFG" > /dev/null
+        fi
+        # Serial-getty (Console-Login auf UART) abschalten
+        sudo systemctl disable --now serial-getty@ttyAMA0.service 2>/dev/null || true
+        sudo systemctl disable --now serial-getty@serial0.service 2>/dev/null || true
+        # cmdline.txt: console=serial0,... entfernen
+        CMDLINE=/boot/firmware/cmdline.txt
+        [ -f "$CMDLINE" ] || CMDLINE=/boot/cmdline.txt
+        if [ -f "$CMDLINE" ]; then
+            sudo sed -i 's/console=serial0,[0-9]* //g; s/console=ttyAMA0,[0-9]* //g' "$CMDLINE"
         fi
     fi
 
-    # Auf /dev/ttyUSB3 (PPP) warten
-    for i in $(seq 1 30); do
-        [ -e /dev/ttyUSB3 ] && break
-        sleep 1
-    done
+    # SIM7600 einschalten ueber PWRKEY GPIO4
+    if command -v pinctrl &>/dev/null; then
+        echo "    SIM7600 PWRKEY-Puls (GPIO4)..."
+        pinctrl set 4 op dl
+        sleep 0.5
+        pinctrl set 4 op dh
+        sleep 3
+        pinctrl set 4 op dl
+        echo "    Warte bis $LTE_DEVICE bereit (max 60s)..."
+        for i in $(seq 1 60); do
+            [ -e "$LTE_DEVICE" ] && break
+            sleep 1
+        done
+        if [ -e "$LTE_DEVICE" ]; then
+            echo "    OK: $LTE_DEVICE verfuegbar"
+        else
+            echo "    WARNUNG: $LTE_DEVICE nicht da. Prueft USB-Kabel / UART-Jumper / config.txt."
+            echo "    Setup laeuft trotzdem weiter - LTE-Service startet beim naechsten Reboot."
+        fi
+    fi
 
     # PPP + Chat-Skript schreiben (mit SIM-PIN!)
     sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d /etc/ppp/ip-down.d
 
-    sudo tee /etc/ppp/peers/m2m > /dev/null << 'PPPCONF'
-/dev/ttyUSB3
+    sudo tee /etc/ppp/peers/m2m > /dev/null << PPPCONF
+$LTE_DEVICE
 115200
 connect "/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect"
 {ppp_user_line}
@@ -1394,6 +1425,23 @@ PPPHOOK1D
 
     sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route
 
+    # Wait-Helper, der vor pon m2m auf das Device wartet
+    sudo tee /usr/local/sbin/lte-wait-device > /dev/null << WAITSCRIPT
+#!/bin/bash
+DEV="\$1"
+[ -z "\$DEV" ] && DEV="$LTE_DEVICE"
+for i in \$(seq 1 90); do
+    if [ -e "\$DEV" ]; then
+        # Pingt das Modem mit AT, gibt OK wenn antwortet
+        ANS=\$(timeout 3 bash -c "exec 3<>\$DEV; echo -e 'AT\\r' >&3; sleep 1; cat <&3" 2>/dev/null | tr -d '\\r' | grep -c OK)
+        [ "\$ANS" -ge 1 ] && exit 0
+    fi
+    sleep 2
+done
+exit 1
+WAITSCRIPT
+    sudo chmod +x /usr/local/sbin/lte-wait-device
+
     # Systemd-Service fuer LTE
     sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESVC'
 [Unit]
@@ -1403,11 +1451,12 @@ Wants=network-online.target
 
 [Service]
 Type=forking
-ExecStartPre=/bin/sleep 5
+ExecStartPre=/bin/sleep 8
+ExecStartPre=/usr/local/sbin/lte-wait-device
 ExecStart=/usr/bin/pon m2m
 ExecStop=/usr/bin/poff m2m
 Restart=always
-RestartSec=20
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
@@ -1420,15 +1469,19 @@ fi
 
 # ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
 if [ "{enable_gps}" = "true" ]; then
+    AT_PORT="{at_port}"
     echo "  Aktiviere GPS auf SIM7600 (AT+CGPS=1)..."
-    # GPS-Engine im SIM7600 einschalten: Befehl ueber /dev/ttyUSB2 (AT-Port)
-    if [ -e /dev/ttyUSB2 ]; then
-        (echo -e 'AT+CGPS=1,1\\r'; sleep 1) > /dev/ttyUSB2 2>/dev/null || true
+    # GPS-Engine im SIM7600 einschalten
+    if [ -e "$AT_PORT" ]; then
+        (echo -e 'AT+CGPS=1,1\\r'; sleep 1) > "$AT_PORT" 2>/dev/null || true
     fi
 
-    # gpsd fuer NMEA-Stream auf /dev/ttyUSB1
-    GPS_DEV=/dev/ttyUSB1
-    [ -e /dev/ttyAMA0 ] && [ ! -e /dev/ttyUSB1 ] && GPS_DEV=/dev/ttyAMA0
+    # gpsd: NMEA-Stream
+    if [ -e /dev/ttyUSB1 ]; then
+        GPS_DEV=/dev/ttyUSB1
+    else
+        GPS_DEV=/dev/ttyAMA0
+    fi
     sudo tee /etc/default/gpsd > /dev/null << EOF
 START_DAEMON="true"
 GPSD_OPTIONS="-n"
@@ -1443,12 +1496,12 @@ fi
 echo "[7/8] Sequent-Init-Service einrichten..."
 sudo tee /etc/systemd/system/sequent-init.service > /dev/null << 'SEQUENTINIT'
 [Unit]
-Description=Sequent HAT Counter Init (Edge + Interrupt)
+Description=Sequent HAT Counter Init (Edge + Interrupt, Stack auto-discover)
 After=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'for ch in 1 2 3 4 5 6 7 8; do /usr/local/bin/16inpind 0 optedgewr $ch 1; /usr/local/bin/16inpind 0 optintwr $ch 1; done'
+ExecStart=/bin/bash -c 'STACK=0; for s in 0 1 2 3 4 5 6 7; do if /usr/local/bin/16inpind $s optcntrd 1 >/dev/null 2>&1; then STACK=$s; break; fi; done; echo "Sequent HAT auf Stack $STACK"; for ch in 1 2 3 4 5 6 7 8; do /usr/local/bin/16inpind $STACK optedgewr $ch 1; /usr/local/bin/16inpind $STACK optintwr $ch 1; done'
 RemainAfterExit=yes
 
 [Install]

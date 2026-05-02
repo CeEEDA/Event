@@ -135,19 +135,26 @@ async def _run():
             assert "ModemManager" in txt, "ModemManager-Disable fehlt"
             assert "AT+CGPS=1" in txt, "GPS-Aktivierung fehlt"
             assert "lte-connection.service" in txt, "LTE-Service fehlt"
-            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS ({len(txt)} chars)")
+            assert "lte-wait-device" in txt, "LTE-Device-Wait fehlt"
+            # Default = UART
+            assert "/dev/ttyAMA0" in txt, "UART-Default Device fehlt"
+            assert "enable_uart=1" in txt, "UART-Aktivierung in config.txt fehlt"
+            assert "16inpind $STACK" in txt, "Stack-Auto-Discovery in sequent-init fehlt"
+            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/UART/Auto-Stack ({len(txt)} chars)")
 
-            # Custom PIN test
+            # Custom PIN test + USB-Modus
             r8b = await http.post(
                 f"/api/energy-monitoring/devices/{device_id}/kirmeskiste-8z-setup",
                 json={"lte_apn": "internet.m2mportal.de", "lte_pin": "1234",
-                      "enable_gps": True, "enable_lte": True},
+                      "enable_gps": True, "enable_lte": True,
+                      "lte_uart": False},
                 headers=H,
             )
             assert r8b.status_code == 200
-            r8c = await http.get(r8b.json()["download_url"])
-            assert "AT+CPIN=1234" in r8c.text, "Custom PIN nicht uebernommen"
-            print(f"[OK] Custom SIM-PIN wird ins Skript uebernommen")
+            txt_b = (await http.get(r8b.json()["download_url"])).text
+            assert "AT+CPIN=1234" in txt_b, "Custom PIN nicht uebernommen"
+            assert "/dev/ttyUSB3" in txt_b, "USB-PPP-Device fehlt im USB-Modus"
+            print(f"[OK] Custom SIM-PIN + USB-Modus uebernommen")
 
         finally:
             # Cleanup

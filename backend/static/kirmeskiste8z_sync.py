@@ -42,10 +42,11 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
-STACK_LEVEL = 0
+DEFAULT_STACK_LEVEL = 0
+STACK_LEVEL = None  # wird zur Laufzeit per Auto-Discovery gesetzt
 
 
 # ====== Konfiguration ======
@@ -197,12 +198,35 @@ def check_and_apply_update(conf):
 
 # ====== Sequent HAT ======
 
+def hat_discover_stack_level():
+    """Probiert Stack 0..7, gibt den Level zurueck der antwortet."""
+    global STACK_LEVEL
+    if STACK_LEVEL is not None:
+        return STACK_LEVEL
+    for lvl in range(8):
+        try:
+            r = subprocess.run(
+                [SEQUENT_CLI, str(lvl), "optcntrd", "1"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if r.returncode == 0 and r.stdout.strip().isdigit():
+                STACK_LEVEL = lvl
+                log.info(f"Sequent HAT auf Stack-Level {lvl} entdeckt")
+                return lvl
+        except Exception:
+            continue
+    log.error("Kein Sequent HAT auf Stack 0-7 gefunden! Fallback auf Stack 0.")
+    STACK_LEVEL = DEFAULT_STACK_LEVEL
+    return STACK_LEVEL
+
+
 def hat_setup_channel(channel):
     """Edge-Detection (falling) + Counter-Interrupt aktivieren. Muss nach Boot pro Kanal gesetzt werden."""
+    lvl = hat_discover_stack_level()
     try:
-        subprocess.run([SEQUENT_CLI, str(STACK_LEVEL), "optedgewr", str(channel), "1"],
+        subprocess.run([SEQUENT_CLI, str(lvl), "optedgewr", str(channel), "1"],
                        capture_output=True, timeout=3)
-        subprocess.run([SEQUENT_CLI, str(STACK_LEVEL), "optintwr", str(channel), "1"],
+        subprocess.run([SEQUENT_CLI, str(lvl), "optintwr", str(channel), "1"],
                        capture_output=True, timeout=3)
     except Exception as e:
         log.warning(f"HAT-Setup Kanal {channel} fehlgeschlagen: {e}")
@@ -210,9 +234,10 @@ def hat_setup_channel(channel):
 
 def hat_read_counter(channel):
     """Liest den aktuellen Pulse-Counter (UInt32) eines Kanals."""
+    lvl = hat_discover_stack_level()
     try:
         r = subprocess.run(
-            [SEQUENT_CLI, str(STACK_LEVEL), "optcntrd", str(channel)],
+            [SEQUENT_CLI, str(lvl), "optcntrd", str(channel)],
             capture_output=True, text=True, timeout=2,
         )
         return int(r.stdout.strip())
