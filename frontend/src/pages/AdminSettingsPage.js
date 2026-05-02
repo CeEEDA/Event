@@ -1539,14 +1539,27 @@ FINTS_IBAN=DE28576500100098066756`}
             <div className="flex items-center gap-2 font-semibold text-emerald-800">
               <Check className="w-4 h-4" /> FinTS-Login erfolgreich
             </div>
-            <div className="text-xs text-emerald-700">
-              {transactions.accounts_found} Konto(s) gefunden:
-            </div>
-            <ul className="text-xs text-gray-700 ml-4 list-disc">
-              {(transactions.accounts || []).map((a, i) => (
-                <li key={i} className="font-mono">{a.iban} ({a.bic})</li>
-              ))}
-            </ul>
+            {transactions.primary_found ? (
+              <div className="text-xs text-emerald-700">
+                Hauptkonto gefunden:
+                <div className="mt-1 bg-white border border-emerald-200 rounded px-2 py-1 font-mono text-gray-800">
+                  {transactions.primary_iban} ({(transactions.accounts || [])[0]?.bic})
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-amber-700">
+                <strong>Warnung:</strong> Hauptkonto <span className="font-mono">{transactions.primary_iban}</span> nicht gefunden.
+                <div className="mt-1">Verfügbare Konten:</div>
+                <ul className="text-xs text-gray-700 ml-4 list-disc">
+                  {(transactions.accounts || []).map((a, i) => (
+                    <li key={i} className="font-mono">{a.iban} ({a.bic})</li>
+                  ))}
+                </ul>
+                <div className="mt-1 text-gray-600">
+                  Bitte <code>FINTS_IBAN</code> in der <code>.env</code> auf eine dieser IBANs setzen.
+                </div>
+              </div>
+            )}
             <Button size="sm" variant="outline" onClick={loadTransactions} className="text-xs mt-2" data-testid="fints-load-tx-btn">
               Transaktionen der letzten 7 Tage laden
             </Button>

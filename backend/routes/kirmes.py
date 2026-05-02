@@ -2009,10 +2009,31 @@ async def fints_test_connection(user: dict = Depends(_require_staff)):
             except Exception:
                 pass
             accounts = _resolve_decoupled_tan(client, accounts_resp, max_wait_seconds=120)
+            # Primaer-Konto aus FINTS_IBAN (falls gesetzt) hervorheben
+            import os as _os
+            target_iban = _os.environ.get("FINTS_IBAN", "DE28576500100098066756").replace(" ", "")
+            primary = next((a for a in accounts if a.iban == target_iban), None)
+            diag["primary_iban"] = target_iban
+            diag["primary_found"] = primary is not None
             diag["accounts_found"] = len(accounts)
-            diag["accounts"] = [{"iban": a.iban, "bic": a.bic} for a in accounts]
+            # Zeige nur das Primaer-Konto (wenn gefunden), sonst alle
+            if primary:
+                diag["accounts"] = [{"iban": primary.iban, "bic": primary.bic, "primary": True}]
+            else:
+                diag["accounts"] = [{"iban": a.iban, "bic": a.bic, "primary": False} for a in accounts]
             diag["stage"] = "success"
             diag["ok"] = True
+
+        # State nach erfolgreichem Login speichern – damit der Indikator gruen wird
+        try:
+            from fints_banking import _save_fints_state
+            state_bytes = client.deconstruct(including_private=True)
+            if state_bytes:
+                await _save_fints_state(_db, state_bytes)
+                diag["state_saved"] = True
+                diag["state_bytes"] = len(state_bytes)
+        except Exception as ex:
+            diag["state_save_error"] = str(ex)[:300]
 
         return diag
 
