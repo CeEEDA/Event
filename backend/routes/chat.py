@@ -451,14 +451,24 @@ async def list_tasks(token: str = Query(...), filter: str = "mine"):
     user = await _get_user(token)
     uid = user["id"]
 
+    # Mitarbeiter mit Abrechnungs-Freigabe sehen alle Finanz-Aufgaben (Mahnung + FinTS)
+    can_billing = bool((user.get("permissions") or {}).get("can_billing"))
+    finance_or = []
+    if can_billing:
+        finance_or = [
+            {"task_type": "payment_reminder"},
+            {"created_by_name": "FinTS Banking"},
+        ]
+
     if filter == "mine":
-        query = {"assigned_to": uid, "is_deleted": {"$ne": True}}
+        query = {"$or": [{"assigned_to": uid}, *finance_or], "is_deleted": {"$ne": True}} if finance_or \
+                else {"assigned_to": uid, "is_deleted": {"$ne": True}}
     elif filter == "created":
         query = {"created_by": uid, "is_deleted": {"$ne": True}}
     elif filter == "all" and user.get("role") == "admin":
         query = {"is_deleted": {"$ne": True}}
     else:
-        query = {"$or": [{"assigned_to": uid}, {"created_by": uid}], "is_deleted": {"$ne": True}}
+        query = {"$or": [{"assigned_to": uid}, {"created_by": uid}, *finance_or], "is_deleted": {"$ne": True}}
 
     tasks = await db.tasks.find(query, {"_id": 0}).sort([("completed", 1), ("due_date", 1), ("priority_order", 1)]).to_list(500)
     # Calculate unread comment count per user

@@ -2268,9 +2268,16 @@ async def check_overdue_invoices():
             continue
 
         # Alle Admins als Empfaenger
-        admins = await _db.users.find({"role": "admin"}, {"_id": 0, "id": 1, "name": 1}).to_list(50)
-        admin_ids = [a["id"] for a in admins]
-        admin_names = {a["id"]: a["name"] for a in admins}
+        # Zielgruppe: Admins UND Mitarbeiter mit Abrechnungs-Freigabe
+        assignees = await _db.users.find(
+            {"$or": [
+                {"role": "admin"},
+                {"role": "mitarbeiter", "permissions.can_billing": True},
+            ], "is_active": {"$ne": False}},
+            {"_id": 0, "id": 1, "name": 1}
+        ).to_list(50)
+        admin_ids = [a["id"] for a in assignees]
+        admin_names = {a["id"]: a["name"] for a in assignees}
 
         if not admin_ids:
             continue

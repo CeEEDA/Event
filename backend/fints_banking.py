@@ -497,9 +497,16 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
                 "completed": False,
             })
             if not existing:
-                admins = await db.users.find({"role": "admin"}, {"_id": 0, "id": 1, "name": 1}).to_list(50)
-                admin_ids = [a["id"] for a in admins]
-                admin_names = {a["id"]: a["name"] for a in admins}
+                # Zielgruppe: Admins UND Mitarbeiter mit Abrechnungs-Freigabe
+                assignees = await db.users.find(
+                    {"$or": [
+                        {"role": "admin"},
+                        {"role": "mitarbeiter", "permissions.can_billing": True},
+                    ], "is_active": {"$ne": False}},
+                    {"_id": 0, "id": 1, "name": 1}
+                ).to_list(50)
+                admin_ids = [a["id"] for a in assignees]
+                admin_names = {a["id"]: a["name"] for a in assignees}
                 diff = m.get("amount_diff", 0)
                 diff_str = f"{diff:+.2f}".replace(".", ",")
 
