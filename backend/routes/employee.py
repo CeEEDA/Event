@@ -2161,6 +2161,12 @@ async def delete_faq(faq_id: str, token: str = Query(...)):
 
 # ── Einsatzplanung (Shift Planning) ─────────────────
 
+def _iso_week_key(d) -> str:
+    """Erzeugt 'YYYY-WXX' fuer ein date-Objekt."""
+    iso_year, iso_week, _ = d.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+
 @router.get("/shift-plan")
 async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
     """Admin: Get all assignments for a week (e.g. '2026-W15')."""
@@ -2197,11 +2203,62 @@ async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
 
 @router.post("/shift-plan")
 async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...)):
-    """Admin: Create or update a shift assignment."""
+    """Verwaltung: Create or update a shift assignment.
+    Bei 'date_range' (date_from + date_to) werden mehrere Assignments in einem
+    Rutsch angelegt (z.B. 7 Tage fuer ein ADAC 24h-Rennen)."""
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     assignment_id = data.get("id")
+
+    # ── Mehrtages-Modus: date_range statt einzelnem date ──
+    date_from = data.get("date_from")
+    date_to = data.get("date_to")
+    if not assignment_id and date_from and date_to:
+        from datetime import date as _date
+        try:
+            d0 = _date.fromisoformat(date_from)
+            d1 = _date.fromisoformat(date_to)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Ungueltige Datumsangaben")
+        if d1 < d0:
+            raise HTTPException(status_code=400, detail="date_to < date_from")
+        created_ids = []
+        from datetime import timedelta as _td
+        cur = d0
+        user_id = data.get("user_id")
+        order_pk = data.get("order_pk")
+        # Verhindere Doppel-Eintraege: pruefe existierende
+        existing = await db.shift_assignments.find(
+            {"user_id": user_id, "order_pk": order_pk,
+             "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}},
+            {"_id": 0, "date": 1}
+        ).to_list(100)
+        existing_dates = {e.get("date") for e in existing}
+        while cur <= d1:
+            cur_iso = cur.isoformat()
+            if cur_iso not in existing_dates:
+                new_id = str(uuid.uuid4())
+                week_key = _iso_week_key(cur)
+                await db.shift_assignments.insert_one({
+                    "id": new_id,
+                    "user_id": user_id,
+                    "date": cur_iso,
+                    "order_pk": order_pk,
+                    "order_name": data.get("order_name", ""),
+                    "role": data.get("role", ""),
+                    "note": data.get("note", ""),
+                    "start_time": data.get("start_time", ""),
+                    "end_time": data.get("end_time", ""),
+                    "week_key": week_key,
+                    "created_by": caller["id"],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                created_ids.append(new_id)
+            cur = cur + _td(days=1)
+        return {"ok": True, "created": len(created_ids), "skipped_existing": len(existing_dates), "ids": created_ids}
+
     if assignment_id:
         await db.shift_assignments.update_one({"id": assignment_id}, {"$set": {
             "user_id": data.get("user_id"),

@@ -72,7 +72,7 @@ export default function EinsatzplanungPage() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const r = await api.get(`/chat/users?token=${token}`);
+      const r = await api.get(`/users/active`);
       setUsers((r.data || []).filter(u => u.role !== "kunde"));
     } catch {}
   }, [token]);
@@ -204,15 +204,32 @@ export default function EinsatzplanungPage() {
     }
     if (selectedJob) {
       try {
-        await api.post(`/employee/shift-plan?token=${token}`, {
-          user_id: userId, date, week_key: weekKey,
-          order_pk: selectedJob.primary_key,
-          order_name: selectedJob.event || selectedJob.order_no,
-          role: "", note: "",
-          start_time: "", end_time: "",
-        });
-        loadPlan();
-        toast.success(`${selectedJob.event || selectedJob.order_no} zugewiesen`);
+        const jobStart = selectedJob.dispo_start || selectedJob.event_start;
+        const jobEnd = selectedJob.dispo_end || selectedJob.event_end;
+        if (spanWholeJob && jobStart && jobEnd) {
+          // Mehrtages-Zuweisung: gesamte Job-Dauer
+          const resp = await api.post(`/employee/shift-plan?token=${token}`, {
+            user_id: userId,
+            date_from: jobStart, date_to: jobEnd,
+            order_pk: selectedJob.primary_key,
+            order_name: selectedJob.event || selectedJob.order_no,
+            role: "", note: "", start_time: "", end_time: "",
+          });
+          loadPlan();
+          const created = resp.data?.created || 0;
+          const skipped = resp.data?.skipped_existing || 0;
+          toast.success(`${selectedJob.event || selectedJob.order_no} zugewiesen – ${created} Tag(e)${skipped ? `, ${skipped} schon vorhanden` : ""}`);
+        } else {
+          await api.post(`/employee/shift-plan?token=${token}`, {
+            user_id: userId, date, week_key: weekKey,
+            order_pk: selectedJob.primary_key,
+            order_name: selectedJob.event || selectedJob.order_no,
+            role: "", note: "",
+            start_time: "", end_time: "",
+          });
+          loadPlan();
+          toast.success(`${selectedJob.event || selectedJob.order_no} zugewiesen`);
+        }
       } catch { toast.error("Fehler"); }
     } else {
       setEditCell({ userId, date });
@@ -290,7 +307,18 @@ export default function EinsatzplanungPage() {
               <div className="flex items-center gap-2 bg-indigo-100 border border-indigo-300 rounded-lg px-3 py-1.5">
                 <UserPlus className="w-4 h-4 text-indigo-600" />
                 <span className="text-xs font-medium text-indigo-800 max-w-[150px] truncate">{selectedJob.event || selectedJob.order_no}</span>
-                <button onClick={() => setSelectedJob(null)} className="text-indigo-500 hover:text-indigo-700"><X className="w-3.5 h-3.5" /></button>
+                <label className="flex items-center gap-1.5 text-xs text-indigo-800 cursor-pointer select-none ml-1 pl-2 border-l border-indigo-300"
+                  title="Bei Klick auf Mitarbeiter werden alle Tage von Dispo-Start bis Dispo-Ende zugewiesen">
+                  <input
+                    type="checkbox"
+                    checked={spanWholeJob}
+                    onChange={e => setSpanWholeJob(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-indigo-600"
+                    data-testid="span-whole-job-toggle"
+                  />
+                  Alle Tage
+                </label>
+                <button onClick={() => { setSelectedJob(null); setSpanWholeJob(false); }} className="text-indigo-500 hover:text-indigo-700"><X className="w-3.5 h-3.5" /></button>
               </div>
             )}
             {released && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Freigegeben</span>}
