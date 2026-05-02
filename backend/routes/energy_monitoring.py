@@ -1087,8 +1087,8 @@ class Kirmeskiste8zSetupRequest(BaseModel):
     lte_password: str = ""          # i.d.R. leer bei Telekom M2M
     enable_lte: bool = True
     enable_gps: bool = True
-    lte_uart: bool = True           # Waveshare SIM7600 = UART-Modus
-                                    # (False = USB-PPP via /dev/ttyUSB3)
+    lte_uart: bool = False          # Default: USB-Modus wie beim DSE-Setup (ttyUSB3).
+                                    # True nur wenn UART-Pin-Modus ohne USB-Kabel.
 
 
 class MeterOffsetUpdate(BaseModel):
@@ -1425,18 +1425,18 @@ PPPHOOK1D
 
     sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route
 
-    # Wait-Helper, der vor pon m2m auf das Device wartet
+    # Wait-Helper, der vor pon m2m auf das Device wartet (max 30s)
     sudo tee /usr/local/sbin/lte-wait-device > /dev/null << WAITSCRIPT
 #!/bin/bash
 DEV="\$1"
 [ -z "\$DEV" ] && DEV="$LTE_DEVICE"
-for i in \$(seq 1 90); do
+for i in \$(seq 1 30); do
     if [ -e "\$DEV" ]; then
         # Pingt das Modem mit AT, gibt OK wenn antwortet
         ANS=\$(timeout 3 bash -c "exec 3<>\$DEV; echo -e 'AT\\r' >&3; sleep 1; cat <&3" 2>/dev/null | tr -d '\\r' | grep -c OK)
         [ "\$ANS" -ge 1 ] && exit 0
     fi
-    sleep 2
+    sleep 1
 done
 exit 1
 WAITSCRIPT
@@ -1451,12 +1451,13 @@ Wants=network-online.target
 
 [Service]
 Type=forking
+TimeoutStartSec=90
 ExecStartPre=/bin/sleep 8
-ExecStartPre=/usr/local/sbin/lte-wait-device
+ExecStartPre=-/usr/local/sbin/lte-wait-device
 ExecStart=/usr/bin/pon m2m
 ExecStop=/usr/bin/poff m2m
-Restart=always
-RestartSec=30
+Restart=on-failure
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
@@ -1464,7 +1465,10 @@ LTESVC
 
     sudo systemctl daemon-reload
     sudo systemctl enable lte-connection
-    sudo systemctl start lte-connection || echo "    LTE konnte nicht direkt starten - nach Reboot pruefen"
+    # Service nicht-blockierend starten (--no-block), damit Setup nicht haengt
+    # falls das Modem gerade nicht da ist - der Service versucht es ohnehin
+    # alle 60s neu, sobald das ttyUSB3-Device auftaucht.
+    sudo systemctl start --no-block lte-connection || true
 fi
 
 # ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
