@@ -1571,6 +1571,10 @@ echo ""
 echo "  WICHTIG: Anfangs-Zaehlerstaende im Portal eintragen!"
 echo "  (Geraet bearbeiten -> Bereich 'Zaehler' -> kWh eintragen)"
 echo ""
+echo "  System wird in 10 Sekunden neu gestartet (UART-Aktivierung erfordert Reboot)..."
+echo "  (Abbrechen mit Strg+C)"
+sleep 10
+sudo reboot
 """
 
     download_token = secrets.token_urlsafe(32)

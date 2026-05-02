@@ -141,7 +141,8 @@ async def _run():
             assert "enable_uart=1" in txt, "UART-Aktivierung in config.txt fehlt"
             assert "disable-bt" in txt, "Bluetooth-UART-Disable fehlt (sonst belegt BT ttyAMA0)"
             assert "16inpind $STACK" in txt, "Stack-Auto-Discovery in sequent-init fehlt"
-            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/UART/Auto-Stack ({len(txt)} chars)")
+            assert "sudo reboot" in txt, "Auto-Reboot am Ende fehlt"
+            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/UART/Auto-Stack/Auto-Reboot ({len(txt)} chars)")
 
             # Custom PIN test + USB-Modus override
             r8b = await http.post(
