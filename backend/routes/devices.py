@@ -61,6 +61,8 @@ class DeviceCreate(BaseModel):
     # MQTT Gateway fields for DSE890
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
+    # Kirmeskiste variant: "standard" (Live, alte Variante) | "8z" (8 Impulszähler, SIM7600)
+    kirmeskiste_variant: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -108,6 +110,8 @@ class DeviceUpdate(BaseModel):
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
     dse_module_uid: Optional[str] = None
+    # Kirmeskiste variant: "standard" | "8z"
+    kirmeskiste_variant: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -225,6 +229,9 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)
         "pi_notes": data.pi_notes,
         "mqtt_username": data.mqtt_username,
         "mqtt_password": data.mqtt_password,
+        # Kirmeskiste-Variante: nur fuer device_type="kirmeskiste" relevant.
+        # Defaults: bestehende ("standard") bleibt unangetastet, neue Pi-Generation = "8z".
+        "kirmeskiste_variant": (data.kirmeskiste_variant or "standard") if data.device_type == "kirmeskiste" else None,
         "latitude": data.latitude,
         "longitude": data.longitude,
         "created_at": datetime.now(timezone.utc).isoformat(),

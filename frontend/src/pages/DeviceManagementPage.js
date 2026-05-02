@@ -710,6 +710,7 @@ const EMPTY_FORM = {
   mqtt_username: "",
   mqtt_password: "",
   dse_module_uid: "",
+  kirmeskiste_variant: "standard",
   latitude: "",
   longitude: "",
 };
@@ -865,6 +866,7 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
       acquired_date: "",
       portal_link: device.portal_link || "",
       notes: "",
+      kirmeskiste_variant: device.kirmeskiste_variant || "standard",
       copy_image_from: device.image_gridfs_id ? device.id : null,
       copy_docs_from: device.id,
     });
@@ -1171,6 +1173,41 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                     </button>
                   ))}
                 </div>
+            </div>
+          )}
+
+          {/* Kirmeskiste-Variante: Sub-Selektor (nur wenn device_type === "kirmeskiste") */}
+          {formData.device_type === "kirmeskiste" && (
+            <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3">
+              <Label className="text-gray-700 text-sm mb-2 block">Variante</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => update("kirmeskiste_variant", "standard")}
+                  className={`p-3 rounded-lg border text-center text-xs font-medium transition-colors ${
+                    (formData.kirmeskiste_variant || "standard") === "standard"
+                      ? "border-fuchsia-500 bg-white text-fuchsia-700"
+                      : "border-gray-200 bg-white/70 text-gray-500 hover:border-gray-300"
+                  }`}
+                  data-testid="kirmeskiste-variant-standard"
+                >
+                  <div className="font-semibold">Kirmeskiste</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">Bestehende Variante (Live)</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update("kirmeskiste_variant", "8z")}
+                  className={`p-3 rounded-lg border text-center text-xs font-medium transition-colors ${
+                    formData.kirmeskiste_variant === "8z"
+                      ? "border-fuchsia-500 bg-white text-fuchsia-700"
+                      : "border-gray-200 bg-white/70 text-gray-500 hover:border-gray-300"
+                  }`}
+                  data-testid="kirmeskiste-variant-8z"
+                >
+                  <div className="font-semibold">Kirmeskiste 8 Zähler</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">SIM7600 LTE+GPS · HAT · 8 Impuls-Zähler</div>
+                </button>
+              </div>
             </div>
           )}
 
@@ -1606,6 +1643,7 @@ export default function DeviceManagementPage() {
       mqtt_username: device.mqtt_username || "",
       mqtt_password: device.mqtt_password || "",
       dse_module_uid: device.dse_module_uid || "",
+      kirmeskiste_variant: device.kirmeskiste_variant || "standard",
     });
     setModalOpen(true);
   };
@@ -1808,6 +1846,9 @@ export default function DeviceManagementPage() {
                               <TypeIcon className="w-4 h-4 text-fuchsia-500" />
                             )}
                             <span className="text-xs text-gray-500">{TYPE_LABELS[device.device_type] || device.device_type}</span>
+                            {device.device_type === "kirmeskiste" && device.kirmeskiste_variant === "8z" && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700" title="Kirmeskiste 8 Zähler">8Z</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 font-mono font-medium text-gray-900">
