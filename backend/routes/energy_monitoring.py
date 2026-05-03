@@ -1468,13 +1468,10 @@ UDEVRULE
     # PPP + Chat-Skript schreiben (mit SIM-PIN!)
     sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d /etc/ppp/ip-down.d
 
-    # peers-Datei: Device + Baudrate als erste Zeile (Standard pppd-Konvention).
-    # WICHTIG: pppd 2.5.2 liefert eine irrefuehrende "unrecognized option"-
-    # Fehlermeldung, wenn das Device zum Aufrufzeitpunkt NICHT als Character-
-    # Device existiert. Die udev-Symlinks (/dev/sim7600-ppp) werden aber erst
-    # aktiv, sobald der SIM7600 USB-enumeriert ist. Der lte-wait-device-Helper
-    # wartet daher aktiv bis zum Erscheinen des Symlinks.
-    sudo bash -c "printf '%s\n' '{ppp_device} 115200' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
+    # peers-Datei OHNE Device/Baudrate (wird via pppd-CLI im Service uebergeben).
+    # Das ist stabiler als Device in der peers-Datei, weil systemd dann sofort
+    # sieht ob pppd mit dem Device starten konnte (Type=simple).
+    sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
 
     # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
@@ -1527,22 +1524,24 @@ exit 1
 WAITSCRIPT
     sudo chmod +x /usr/local/sbin/lte-wait-device
 
-    # Systemd-Service fuer LTE
-    sudo tee /etc/systemd/system/lte-connection.service > /dev/null << 'LTESVC'
+    # Systemd-Service fuer LTE: Type=simple + direkter pppd-Aufruf.
+    # (pon m2m + Type=forking war unzuverlaessig - systemd hat Start-Success
+    # falsch erkannt. Mit Type=simple sieht systemd sofort wenn pppd crasht.)
+    sudo tee /etc/systemd/system/lte-connection.service > /dev/null << LTESVC
 [Unit]
 Description=LTE PPP Connection (SIM7600 - Telekom M2M)
 After=multi-user.target
 Wants=network-online.target
 
 [Service]
-Type=forking
+Type=simple
 TimeoutStartSec=120
 ExecStartPre=/bin/sleep 8
 ExecStartPre=-/usr/local/sbin/lte-wait-device
-ExecStart=/usr/bin/pon m2m
-ExecStop=/usr/bin/poff m2m
+ExecStart=/usr/sbin/pppd {ppp_device} 115200 call m2m nodetach
+ExecStop=/usr/bin/pkill -f "pppd.*m2m"
 Restart=on-failure
-RestartSec=60
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
