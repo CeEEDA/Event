@@ -1270,7 +1270,7 @@ echo "========================================================"
 # ===== SCHRITT 0: ALTE INSTALLATIONEN AUFRAUMEN =====
 echo ""
 echo "[0/8] Alte Installationen aufraumen..."
-for SVC in kirmeskiste8z_sync sequent-init kirmeskiste_sync emu_sync sim7600-autoboot; do
+for SVC in kirmeskiste8z_sync sequent-init kirmeskiste_sync emu_sync sim7600-autoboot sim7600-gps-enable; do
     if systemctl is-active --quiet "$SVC" 2>/dev/null; then
         echo "  Stoppe Service: $SVC"
         sudo systemctl stop "$SVC" 2>/dev/null || true
@@ -1532,16 +1532,71 @@ LTESVC
 fi
 
 # ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
-# ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
 if [ "{enable_gps}" = "true" ]; then
-    AT_PORT="{at_port}"
-    echo "  Aktiviere GPS auf SIM7600 (AT+CGPS=1)..."
-    # GPS-Engine im SIM7600 einschalten
-    if [ -e "$AT_PORT" ]; then
-        (echo -e 'AT+CGPS=1,1\\r'; sleep 1) > "$AT_PORT" 2>/dev/null || true
-    fi
+    echo "  GPS-Enable-Service einrichten (AT+CGPS=1 bei jedem Boot)..."
 
-    # gpsd: NMEA-Stream
+    # Standalone Script: wartet bis SIM7600 da ist, sendet AT+CGPS=1 auf
+    # ttyUSB3 (ttyUSB2 wird von pppd belegt waehrend LTE aktiv ist)
+    sudo tee /usr/local/sbin/sim7600-gps-enable > /dev/null << 'GPSENABLE'
+#!/bin/bash
+# GPS auf dem SIM7600 bei jedem Boot aktivieren
+# Nutzt ttyUSB3, weil pppd ttyUSB2 haelt wenn LTE aktiv ist.
+set -e
+# Warte bis USB enumeriert ist (max 60s)
+for SEC in $(seq 1 60); do
+    [ -e /dev/ttyUSB3 ] && break
+    sleep 1
+done
+if [ ! -e /dev/ttyUSB3 ]; then
+    # Fallback: ttyUSB2 falls ttyUSB3 fehlt und pppd nicht laeuft
+    if [ -e /dev/ttyUSB2 ]; then
+        PORT=/dev/ttyUSB2
+    else
+        logger -t sim7600-gps-enable "Kein AT-Port gefunden - Abbruch"
+        exit 1
+    fi
+else
+    PORT=/dev/ttyUSB3
+fi
+# Port frei? (lsof-Check, sonst skippen)
+if lsof -t "$PORT" 2>/dev/null | head -1 | grep -q .; then
+    logger -t sim7600-gps-enable "$PORT ist belegt - skip"
+    exit 0
+fi
+# Serial-Port konfigurieren
+stty -F "$PORT" 115200 raw -echo 2>/dev/null || true
+# GPS einschalten (AT+CGPS=1: standalone GPS)
+printf 'AT+CGPS=1\r' > "$PORT" 2>/dev/null || true
+sleep 1
+logger -t sim7600-gps-enable "GPS auf $PORT aktiviert (AT+CGPS=1)"
+exit 0
+GPSENABLE
+    sudo chmod +x /usr/local/sbin/sim7600-gps-enable
+
+    sudo tee /etc/systemd/system/sim7600-gps-enable.service > /dev/null << 'GPSSVC'
+[Unit]
+Description=SIM7600 GPS Aktivierung (AT+CGPS=1 bei jedem Boot)
+After=local-fs.target
+# Wartet NICHT auf pppd - GPS geht ueber eigenen AT-Port ttyUSB3
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sim7600-gps-enable
+RemainAfterExit=yes
+TimeoutStartSec=120
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+GPSSVC
+    sudo systemctl daemon-reload
+    sudo systemctl enable sim7600-gps-enable.service
+
+    # Einmaliger Start jetzt im Setup (damit GPS sofort laeuft)
+    /usr/local/sbin/sim7600-gps-enable || true
+
+    # gpsd: NMEA-Stream von /dev/ttyUSB1 (separater Port fuer NMEA)
     if [ -e /dev/ttyUSB1 ]; then
         GPS_DEV=/dev/ttyUSB1
     else
