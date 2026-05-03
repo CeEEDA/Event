@@ -1382,25 +1382,81 @@ if [ "{enable_lte_str}" = "true" ]; then
         fi
     fi
 
-    # SIM7600 einschalten ueber PWRKEY GPIO4
-    if command -v pinctrl &>/dev/null; then
-        echo "    SIM7600 PWRKEY-Puls (GPIO4)..."
-        pinctrl set 4 op dl
-        sleep 0.5
-        pinctrl set 4 op dh
-        sleep 3
-        pinctrl set 4 op dl
-        echo "    Warte bis $LTE_DEVICE bereit (max 60s)..."
-        for i in $(seq 1 60); do
-            [ -e "$LTE_DEVICE" ] && break
-            sleep 1
-        done
-        if [ -e "$LTE_DEVICE" ]; then
-            echo "    OK: $LTE_DEVICE verfuegbar"
-        else
-            echo "    WARNUNG: $LTE_DEVICE nicht da. Prueft USB-Kabel / UART-Jumper / config.txt."
-            echo "    Setup laeuft trotzdem weiter - LTE-Service startet beim naechsten Reboot."
+    # SIM7600 Auto-Power-On: pulst PWRKEY bei JEDEM Boot automatisch,
+    # damit das Modem ohne manuellen Tastendruck hochfaehrt.
+    # Sequent-HAT blockiert den Pin physisch (Stack), aber Pi kann ihn
+    # softwareseitig weiter ansteuern (GPIO 4 = Pin 7).
+    echo "    SIM7600 Auto-Boot-Service installieren..."
+    sudo tee /usr/local/sbin/sim7600-autoboot > /dev/null << 'AUTOBOOT'
+#!/bin/bash
+# SIM7600 Auto-Power-On via PWRKEY (GPIO4 LOW-Puls 1.5s)
+set -e
+if lsusb 2>/dev/null | grep -qE '1e0e:(9001|9011)'; then
+    logger -t sim7600-autoboot "Modul bereits online - skip"
+    exit 0
+fi
+for ATTEMPT in 1 2 3; do
+    logger -t sim7600-autoboot "PWRKEY-Puls GPIO4, Versuch $ATTEMPT/3"
+    if command -v pinctrl >/dev/null 2>&1; then
+        pinctrl set 4 op dl || true
+        sleep 1.5
+        pinctrl set 4 op dh || true
+    elif command -v gpioset >/dev/null 2>&1; then
+        gpioset --chip 0 --hold-period=1500ms 4=0 2>/dev/null || \
+          gpioset --mode=time --sec=1 --usec=500000 gpiochip0 4=0 2>/dev/null || true
+    else
+        logger -t sim7600-autoboot "Kein pinctrl/gpioset gefunden - Abbruch"
+        exit 1
+    fi
+    # SIM7600 braucht ~20s zum Hochfahren und USB-Enumeration
+    for SEC in $(seq 1 25); do
+        if lsusb 2>/dev/null | grep -qE '1e0e:(9001|9011)'; then
+            logger -t sim7600-autoboot "Modul online nach Versuch $ATTEMPT"
+            exit 0
         fi
+        sleep 1
+    done
+    logger -t sim7600-autoboot "Versuch $ATTEMPT fehlgeschlagen"
+    sleep 5
+done
+logger -t sim7600-autoboot "FEHLER: SIM7600 nicht online nach 3 Versuchen"
+exit 1
+AUTOBOOT
+    sudo chmod +x /usr/local/sbin/sim7600-autoboot
+
+    sudo tee /etc/systemd/system/sim7600-autoboot.service > /dev/null << 'AUTOBOOTSVC'
+[Unit]
+Description=SIM7600 Auto-Power-On (PWRKEY GPIO4 Pulse bei jedem Boot)
+# Muss VOR gps-enable und LTE-Services laufen
+After=local-fs.target
+Before=sim7600-gps-enable.service lte-connection.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sim7600-autoboot
+RemainAfterExit=yes
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+AUTOBOOTSVC
+    sudo systemctl daemon-reload
+    sudo systemctl enable sim7600-autoboot.service
+
+    # Einmaliger Puls JETZT im Setup (damit das Modul sofort hochkommt)
+    echo "    SIM7600 einschalten (PWRKEY-Puls)..."
+    if ! lsusb 2>/dev/null | grep -qE '1e0e:(9001|9011)'; then
+        /usr/local/sbin/sim7600-autoboot || true
+    else
+        echo "      Modul bereits aktiv"
+    fi
+    if [ -e "$LTE_DEVICE" ]; then
+        echo "    OK: $LTE_DEVICE verfuegbar"
+    else
+        echo "    WARNUNG: $LTE_DEVICE nicht da. Prueft USB-Kabel."
+        echo "    Setup laeuft trotzdem weiter - bei naechstem Reboot versucht der Auto-Boot-Service es erneut."
     fi
 
     # USB-Composite-Stack pruefen (Hauptindikator dass Modem voll erkannt ist)
@@ -1632,14 +1688,22 @@ echo "  HAT-Diagnose: i2cdetect -y 1   (sollte 0x20 zeigen)"
 echo ""
 echo "  Service pruefen:"
 echo "    sudo systemctl status kirmeskiste8z_sync"
+echo "    sudo systemctl status sim7600-autoboot   (SIM7600 Auto-Power-On)"
 echo "    sudo journalctl -u kirmeskiste8z_sync -f"
+echo "    sudo journalctl -t sim7600-autoboot -f   (Auto-Boot Log)"
 echo ""
 echo "  WICHTIG: Anfangs-Zaehlerstaende im Portal eintragen!"
 echo "  (Geraet bearbeiten -> Bereich 'Zaehler' -> kWh eintragen)"
 echo ""
-echo "  System wird in 10 Sekunden neu gestartet (UART-Aktivierung erfordert Reboot)..."
+echo "  SIM7600 Auto-Boot: Nach jedem Pi-Start pulst der Service"
+echo "  automatisch den PWRKEY -> Modul bootet ohne manuellen Druck."
+echo ""
+echo "  System wird in 10 Sekunden neu gestartet (finale Aktivierung)..."
 echo "  (Abbrechen mit Strg+C)"
+# WAL-Flushes vor Reboot sicherstellen (sonst SystemD-Service-Race moeglich)
+sync
 sleep 10
+sudo systemctl daemon-reload
 sudo reboot
 """
 
