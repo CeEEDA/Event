@@ -1253,6 +1253,8 @@ name = Zaehler {ch}
     # SIM7600-USB-Composite: ttyUSB0=DIAG, ttyUSB1=NMEA, ttyUSB2=AT/PPP,
     # ttyUSB3=Modem-Daten (Vendor-spezifisch, oft nicht PPP-faehig), ttyUSB4=DEBUG.
     ppp_device = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
+    # pppd 2.5.0 (Debian 13) erwartet Device OHNE /dev/ Prefix.
+    ppp_device_name = ppp_device.replace("/dev/", "", 1)
     # AT-Port fuer PIN/CGPS-Befehle:
     # UART -> selber Port wie PPP; USB -> /dev/ttyUSB2
     at_port = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
@@ -1499,7 +1501,7 @@ Type=forking
 TimeoutStartSec=90
 ExecStartPre=/bin/sleep 8
 ExecStartPre=-/usr/local/sbin/lte-wait-device
-ExecStart=/usr/bin/pon m2m {ppp_device} 115200
+ExecStart=/usr/bin/pon m2m {ppp_device_name} 115200
 ExecStop=/usr/bin/poff m2m
 Restart=on-failure
 RestartSec=60
