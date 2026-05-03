@@ -1,25 +1,30 @@
 <analysis>**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent core tasks involved finalizing the auto-closure of FinTS Mahnung tasks and heavily focusing on building a new hardware integration for a Kirmeskiste 8Z (Raspberry Pi 5 + Waveshare SIM7600 LTE + Sequent 16-LV Digital Inputs HAT to read 8 S0-Pulse counters).
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent core tasks involved building a new hardware integration for a Kirmeskiste 8Z (Raspberry Pi 5 + Waveshare SIM7600 LTE + Sequent 16-LV Digital Inputs HAT to read 8 S0-Pulse counters).
 
 **User's preferred language**: German
 **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, FinTS Banking (auto-matching), and extensive hardware monitoring (Generator/Energy Monitoring). A new variant  has been fully implemented, featuring an OTA-updatable Python sync script, LTE PPP failover configuration, and local SQLite persistence for hardware pulse counting.
+A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, FinTS Banking, and extensive hardware monitoring. The  variant is implemented with an OTA-updatable Python sync script (v1.4.0), local SQLite persistence, real-time power (kW) calculation, systemd services for GPS and Data Sync, and a React frontend showing live health metrics, Z1-Z8 pulse counts, and a Leaflet OpenStreetMap for GPS tracking.
 
 **Last working item**:
-    - Last item agent was working: Fixing a systemd symlink race-condition in the Kirmeskiste 8Z setup bash script that prevented the  service from auto-starting after a fresh installation reboot. The agent also implemented the Pi-Status-Dashboard in the frontend quick-info panel to show live hardware health (LTE IP, signal strength, GPS, HAT Stack Level).
-    - Status: USER VERIFICATION PENDING
-    - Agent Testing Done: Y
-    - Which testing method agent to use? NA (backend tests already passed)
-    - User Testing Done: N (User needs to check the Pi-Status UI after doing a yarn run v1.22.22
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. on their server, and verify the auto-start fix on the next physical Pi installation).
+    - Last item agent was working: Fixing the LTE PPP Failover connection () on Debian 13. The  (v2.5.0) daemon is throwing an  (or ) error. The agent updated the setup generator to write the  file without the device name and pass it as an argument via , but the user's manual tests on the Pi are still failing with syntax/unrecognized option errors.
+    - Status: IN PROGRESS
+    - Agent Testing Done: Y (Setup generator logic tested)
+    - Which testing method agent to use? manual testing by python -c / user testing on hardware
+    - User Testing Done: N (User is currently stuck testing the pppd command)
 
 **All Pending/In progress Issue list**:  
-None currently active.
+  - Issue 1: LTE PPP Failover fails to start due to  syntax error (P0)
+     - Attempted fixes: Removed  from the first line of . Attempted to pass it as an argument via  and . Also tried running  directly. All resulted in  errors.
+     - Next debug checklist: Investigate the exact syntax required by  on Debian 13. The device name might need to be inside the  file but without any trailing hidden characters/CRLF (use strict ), or  might require a specific flag (like  as the very first argument before ). Check  lines ~1490-1510.
+     - Why fix this issue and what will be achieved with the fix? LTE is required as a fallback connection when the Pi loses Ethernet.
+     - Status: IN PROGRESS
+     - Is recurring issue? Y (PPP/LTE connectivity issues have recurred multiple times)
+     - Should Test frontend/backend/both after fix? Backend (Setup script generation) and ask user to test on physical Pi.
 
-**In progress Task List**:
-None.
+**In progress Task List**: 
+None (Besides the P0 Issue above).
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
@@ -33,15 +38,15 @@ None.
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
 
 **Completed work in this session**
-- Verifizierung & Tests für Auto-Close Payment Reminder (Mahnungen) tasks on FinTS match (DONE)
-- Genehmigt: 0 Tage RBAC UI Bug verifiziert (DONE)
-- Kirmeskiste 8Z Variante im Datenmodell und Frontend-Modal (Sub-Selector) (DONE)
-- Kirmeskiste 8Z Backend Setup-Generator () inkl. SIM-PIN, APN, PPP (DONE)
-- Hardware-Konfliktlösung für Raspberry Pi: SIM7600 nutzt USB-Modus (), Sequent HAT Stack-Level Auto-Discovery (DONE)
-- LTE PPP Stabilitäts-Fixes (, ,  Reset) (DONE)
--  Bugfix für IoT Geräte (liest jetzt direkt aus ) (DONE)
-- Pi-Status-Dashboard in der Geräte-Aufklappliste (Health-Daten: Signal, IP, Provider, Stack-Level) (DONE)
-- Systemd Auto-Start Race-Condition Fix ( vor Reboot im Setup-Skript) (DONE)
+- Fixed Zählerstände 0.00 kWh display bug (Backend uses  as fallback, Frontend shows amber pending state) (DONE)
+- Implemented actual  power calculation from pulse delta in Pi sync script v1.3.0 (DONE)
+- Fixed backend bug that falsely applied Watt->kW conversion to 8Z devices (DONE)
+- Fixed blocking  on AT-Port causing sync script to freeze after 1 cycle (updated to v1.4.0) (DONE)
+- Fixed systemd circular dependencies ( vs ) preventing Pi auto-start (DONE)
+- Confirmed hardware Auto-Boot for SIM7600 via Waveshare Jumper (PWR-3V3) and removed messy software auto-boot hacks (DONE)
+- Created  to reliably trigger  at boot (DONE)
+- Added Leaflet OpenStreetMap map to  to visualize live GPS position (DONE)
+- Renamed UI labels K1-K8 to Z1-Z8 (DONE)
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -55,15 +60,15 @@ None.
 
 
 **Key Technical Concepts**
-React protected routing, FastAPI backend, MongoDB aggregation, Bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600) via . I2C communication for Sequent Microsystems HATs. Systemd service management.
+React, FastAPI backend, systemd services, bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600). Leaflet/OSM.
 
 **key DB schema**
-  - : Added  (standard or 8z). Added  object.
-  - : Stores the 8 S0-Pulse counters per device.
-  - : Telemetry data (, , ).
+  - : ,  object.
+  - : Stores pulse counters, .
+  - : Telemetry data (, ).
 
 **changes in tech stack**
-  - Introduction of  running locally as a systemd service on Pi 5, pushing data and health metrics to the cloud.
+  - Added  OpenStreetMap to .
 
 **All files of reference** 
   - 
@@ -72,44 +77,37 @@ React protected routing, FastAPI backend, MongoDB aggregation, Bash script gener
   - 
 
 **Areas that need refactoring**: 
-  -  is getting very large due to multiple huge inline bash scripts (DSE setup, Messkoffer setup, Kirmeskiste 8Z setup). These might need to be extracted into template files eventually.
+  -  is getting very large due to multiple inline bash scripts.
 
 **key api endpoints**
-  - 
   - 
   - 
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- The user deploys to a live Windows Server environment via a custom  script. Any frontend UI changes require the user to run a yarn run v1.22.22
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. on their server before they can see them.
-- **Hardware Context (CRITICAL):** The user stacks a Pi 5 + Waveshare SIM7600 + Sequent 16-LV HAT. The SIM7600 *must* be connected via a physical USB-A to micro-USB cable for LTE to work ( is the AT/PPP port). The Sequent HAT blocks GPIO 4 (PWRKEY), so USB mode is strictly required. Do not revert the setup script to use UART ().
+- The user is executing shell commands you provide directly on a live Raspberry Pi 5.
+- **Hardware Context:** The SIM7600 module is configured to auto-boot via a hardware jumper (PWR to 3V3). It does not need software GPIO pulses. 
+- **PPP Issue:** Debian 13's  (2.5.0+) is strictly rejecting the device name ( or ) with an unrecognized option error. You must figure out the exact correct syntax to pass the device to  (either properly formatted inside the  file, or as a specific command-line argument). 
 
 **documents and test reports created in this job**
   - 
-  - 
-  - 
+  - Updated 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) Live-Test LTE config: Reported timeout error with LTE service.
- 2. (Agent) Switched config to USB mode, instructed user to check USB cable.
- 3. (User) Clarified USB is used for GPS, LTE is on UART pins.
- 4. (Agent) Switched back to UART mode ().
- 5. (User) UART still failing, no modem response.
- 6. (Agent) Suspected hardware conflict (Sequent HAT blocking GPIO 4). Asked user to re-stack or use USB data cable.
- 7. (User) Plugged in proper USB data cable.
- 8. (Agent) Configured PPP to run over  and added  to prevent drops.
- 9. (User) Success! Ping works over LTE (Metric 700). Noted that  in portal isn't updating.
- 10. (Agent) Fixed  logic, built a Pi-Status-Dashboard UI, and fixed a systemd race condition in the setup script. (PENDING USER VERIFICATION).
+ 1. (Agent) Suggested fixing  to pass the device as an argument .
+ 2. (User) Applied the fix. Service failed.
+ 3. (Agent) Suggested running  directly.
+ 4. (User) Ran command. Output: .
+ *(Pending)*: The user is waiting for the correct  syntax to establish the LTE connection.
 
 **Project Health Check:**
-- Broken: None
+- Broken:  generated for Kirmeskiste 8Z fails due to pppd syntax.
 - Mocked: None
 
 **3rd Party Integrations** 
 - Stripe (Payments) — requires User API Key
 - python-fints (Banking) — requires Bank credentials
-- Ollama (Local AI)
+- Leaflet / OpenStreetMap
 
 **Testing status**
   - Testing agent used after significant changes: NO (Heavy reliance on self-written pytest scripts and user E2E testing on physical hardware).
@@ -122,7 +120,12 @@ info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this comm
 - Preview Admin:  / 
 
 **What agent forgot to execute**
-- Nothing. All tasks requested during the session were completed.
+- Nothing. Was actively resolving the LTE failure when the session ended.
 
 **Debugging checklist for current issue**
-    N/A (Awaiting user verification of the Pi-Status-Dashboard and setup script race-condition fix).</analysis>
+    Issue: LTE PPP connection fails with 
+    Backend files to check:  (Lines ~1240-1260 and ~1490-1510)
+    Checklist:
+    - Research Debian 13  2.5.0 syntax for specifying the tty device.
+    - Test if putting  back into  as the *very first line* works, provided there are no hidden spaces/CRLF characters.
+    - Verify  or  command string inside the generated .</analysis>

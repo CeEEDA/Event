@@ -1249,15 +1249,20 @@ name = Zaehler {ch}
     # Fuer printf-basierte Peers-Datei: entweder Zeile oder leer (entfaellt)
     ppp_user_line_quoted = f"'{ppp_user_line}'" if ppp_user_line else ""
     ppp_pwd_line_quoted = f"'{ppp_pwd_line}'" if ppp_pwd_line else ""
-    # Bei UART (Waveshare): PPP ueber /dev/ttyAMA0; bei USB: /dev/ttyUSB2 (AT-Port).
-    # SIM7600-USB-Composite: ttyUSB0=DIAG, ttyUSB1=NMEA, ttyUSB2=AT/PPP,
-    # ttyUSB3=Modem-Daten (Vendor-spezifisch, oft nicht PPP-faehig), ttyUSB4=DEBUG.
-    ppp_device = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
-    # pppd 2.5.0 (Debian 13) erwartet Device OHNE /dev/ Prefix.
-    ppp_device_name = ppp_device.replace("/dev/", "", 1)
+    # Bei UART (Waveshare): PPP ueber /dev/ttyAMA0; bei USB: stabile udev-Symlinks.
+    # SIM7600-USB-Composite (1e0e:9001) hat 5 Interfaces:
+    #   Interface 00 = DIAG     -> /dev/sim7600-diag
+    #   Interface 01 = NMEA/GPS -> /dev/sim7600-nmea
+    #   Interface 02 = AT       -> /dev/sim7600-at
+    #   Interface 03 = PPP/Modem-> /dev/sim7600-ppp  (wird fuer pppd verwendet)
+    #   Interface 04 = Audio    -> /dev/sim7600-audio
+    # Die tatsaechlichen ttyUSBN-Nummern sind NICHT stabil (Kernel kann z.B.
+    # ttyUSB2 ueberspringen). Daher verwenden wir udev-Symlinks nach Interface-Nr.
+    ppp_device = "/dev/ttyAMA0" if body.lte_uart else "/dev/sim7600-ppp"
     # AT-Port fuer PIN/CGPS-Befehle:
-    # UART -> selber Port wie PPP; USB -> /dev/ttyUSB2
-    at_port = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
+    at_port = "/dev/ttyAMA0" if body.lte_uart else "/dev/sim7600-at"
+    # NMEA/GPS-Port:
+    nmea_port = "/dev/ttyAMA0" if body.lte_uart else "/dev/sim7600-nmea"
 
     bash_script = f"""#!/bin/bash
 # ==============================================================
@@ -1367,6 +1372,33 @@ if [ "{enable_lte_str}" = "true" ]; then
     # Pakete fuer PPP + Werkzeuge
     sudo apt-get install -y -qq ppp ifmetric dnsutils
 
+    # ===== udev-Rule: Stabile Symlinks fuer SIM7600 USB-Interfaces =====
+    # Der Linux-Kernel kann ttyUSB-Nummern ueberspringen (z.B. ttyUSB0,1,3,4,5
+    # wenn ttyUSB2 vorher belegt war). Stattdessen binden wir Symlinks an die
+    # bInterfaceNumber des USB-Composite-Devices - das ist stabil.
+    if [ "$LTE_UART" != "true" ]; then
+        echo "    Installiere udev-Rule fuer stabile SIM7600-Symlinks..."
+        sudo tee /etc/udev/rules.d/99-sim7600.rules > /dev/null << 'UDEVRULE'
+# SIM7600 Waveshare HAT - stabile Symlinks nach USB-Interface-Nr
+# Das Modem meldet sich als 1e0e:9001 (Qualcomm/SimTech). bInterfaceNumber
+# ist stabil, ttyUSBN-Enumeration nicht (Kernel kann Nummern ueberspringen).
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="00", SYMLINK+="sim7600-diag", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="01", SYMLINK+="sim7600-nmea", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="02", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="03", SYMLINK+="sim7600-ppp", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="04", SYMLINK+="sim7600-audio", GROUP="dialout", MODE="0660"
+# Auch fuer spaetere SIM7600E-Firmwarevarianten (Product-ID 9011)
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="00", SYMLINK+="sim7600-diag", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="01", SYMLINK+="sim7600-nmea", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="02", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="03", SYMLINK+="sim7600-ppp", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="04", SYMLINK+="sim7600-audio", GROUP="dialout", MODE="0660"
+UDEVRULE
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --subsystem-match=tty 2>/dev/null || true
+        echo "    OK: udev-Symlinks installiert (/dev/sim7600-diag,nmea,at,ppp,audio)"
+    fi
+
     # UART-Modus: Pi-UART aktivieren + Console-Login auf serial0 deaktivieren
     if [ "$LTE_UART" = "true" ]; then
         BOOT_CFG=/boot/firmware/config.txt
@@ -1432,11 +1464,13 @@ if [ "{enable_lte_str}" = "true" ]; then
     # PPP + Chat-Skript schreiben (mit SIM-PIN!)
     sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d /etc/ppp/ip-down.d
 
-    # pppd 2.5.0 (Debian 13) akzeptiert den Device-Pfad NICHT mehr als erste
-    # Zeile im peers-File -> er muss als Kommandozeilen-Argument uebergeben
-    # werden (beim pon-Aufruf im systemd-Service).
-    # Daher schreiben wir die peers-Datei OHNE Device und Baudrate.
-    sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
+    # peers-Datei: Device + Baudrate als erste Zeile (Standard pppd-Konvention).
+    # WICHTIG: pppd 2.5.2 liefert eine irrefuehrende "unrecognized option"-
+    # Fehlermeldung, wenn das Device zum Aufrufzeitpunkt NICHT als Character-
+    # Device existiert. Die udev-Symlinks (/dev/sim7600-ppp) werden aber erst
+    # aktiv, sobald der SIM7600 USB-enumeriert ist. Der lte-wait-device-Helper
+    # wartet daher aktiv bis zum Erscheinen des Symlinks.
+    sudo bash -c "printf '%s\n' '{ppp_device} 115200' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
 
     # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
@@ -1498,10 +1532,10 @@ Wants=network-online.target
 
 [Service]
 Type=forking
-TimeoutStartSec=90
+TimeoutStartSec=120
 ExecStartPre=/bin/sleep 8
 ExecStartPre=-/usr/local/sbin/lte-wait-device
-ExecStart=/usr/bin/pon m2m {ppp_device_name} 115200
+ExecStart=/usr/bin/pon m2m
 ExecStop=/usr/bin/poff m2m
 Restart=on-failure
 RestartSec=60
@@ -1514,11 +1548,11 @@ LTESVC
     sudo systemctl enable lte-connection
     # Service nicht-blockierend starten (--no-block), damit Setup nicht haengt
     # falls das Modem gerade nicht da ist - der Service versucht es ohnehin
-    # alle 60s neu, sobald das ttyUSB3-Device auftaucht.
+    # alle 60s neu, sobald /dev/sim7600-ppp (udev-Symlink) auftaucht.
     sudo systemctl start --no-block lte-connection || true
 fi
 
-# ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
+# ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/sim7600-nmea) =====
 if [ "{enable_gps}" = "true" ]; then
     echo "  GPS-Enable-Service einrichten (AT+CGPS=1 bei jedem Boot)..."
 
@@ -1526,24 +1560,19 @@ if [ "{enable_gps}" = "true" ]; then
     # ttyUSB3 (ttyUSB2 wird von pppd belegt waehrend LTE aktiv ist)
     sudo tee /usr/local/sbin/sim7600-gps-enable > /dev/null << 'GPSENABLE'
 #!/bin/bash
-# GPS auf dem SIM7600 bei jedem Boot aktivieren
-# Nutzt ttyUSB3, weil pppd ttyUSB2 haelt wenn LTE aktiv ist.
+# GPS auf dem SIM7600 bei jedem Boot aktivieren.
+# Nutzt /dev/sim7600-at (udev-Symlink, Interface 02), damit Port-Nummern
+# stabil bleiben - unabhaengig von ttyUSBN-Enumerierung.
 set -e
+PORT=/dev/sim7600-at
 # Warte bis USB enumeriert ist (max 60s)
 for SEC in $(seq 1 60); do
-    [ -e /dev/ttyUSB3 ] && break
+    [ -e "$PORT" ] && break
     sleep 1
 done
-if [ ! -e /dev/ttyUSB3 ]; then
-    # Fallback: ttyUSB2 falls ttyUSB3 fehlt und pppd nicht laeuft
-    if [ -e /dev/ttyUSB2 ]; then
-        PORT=/dev/ttyUSB2
-    else
-        logger -t sim7600-gps-enable "Kein AT-Port gefunden - Abbruch"
-        exit 1
-    fi
-else
-    PORT=/dev/ttyUSB3
+if [ ! -e "$PORT" ]; then
+    logger -t sim7600-gps-enable "AT-Port $PORT nicht gefunden - Abbruch"
+    exit 1
 fi
 # Port frei? (lsof-Check, sonst skippen)
 if lsof -t "$PORT" 2>/dev/null | head -1 | grep -q .; then
@@ -1564,7 +1593,7 @@ GPSENABLE
 [Unit]
 Description=SIM7600 GPS Aktivierung (AT+CGPS=1 bei jedem Boot)
 After=local-fs.target
-# Wartet NICHT auf pppd - GPS geht ueber eigenen AT-Port ttyUSB3
+# Wartet NICHT auf pppd - GPS geht ueber eigenen AT-Port /dev/sim7600-at
 
 [Service]
 Type=oneshot
@@ -1583,11 +1612,13 @@ GPSSVC
     # Einmaliger Start jetzt im Setup (damit GPS sofort laeuft)
     /usr/local/sbin/sim7600-gps-enable || true
 
-    # gpsd: NMEA-Stream von /dev/ttyUSB1 (separater Port fuer NMEA)
-    if [ -e /dev/ttyUSB1 ]; then
-        GPS_DEV=/dev/ttyUSB1
-    else
+    # gpsd: NMEA-Stream von /dev/sim7600-nmea (stabiler udev-Symlink)
+    if [ -e /dev/sim7600-nmea ]; then
+        GPS_DEV=/dev/sim7600-nmea
+    elif [ -e /dev/ttyAMA0 ]; then
         GPS_DEV=/dev/ttyAMA0
+    else
+        GPS_DEV=/dev/sim7600-nmea
     fi
     sudo tee /etc/default/gpsd > /dev/null << EOF
 START_DAEMON="true"

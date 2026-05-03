@@ -199,8 +199,11 @@ async def _run():
             assert "AT+CGPS=1" in txt, "GPS-Aktivierung fehlt"
             assert "lte-connection.service" in txt, "LTE-Service fehlt"
             assert "lte-wait-device" in txt, "LTE-Device-Wait fehlt"
-            # Default = USB-Modus (PPP & AT ueber /dev/ttyUSB2 - der Composite-AT-Port)
-            assert "/dev/ttyUSB2" in txt, "Default USB-PPP-Device (ttyUSB2) fehlt"
+            # Default = USB-Modus mit stabilen udev-Symlinks
+            assert "/dev/sim7600-ppp" in txt, "Default USB-PPP-Device (udev-Symlink) fehlt"
+            assert "/dev/sim7600-at" in txt, "USB-AT-Port (udev-Symlink) fehlt"
+            assert "99-sim7600.rules" in txt, "udev-Rule-Installation fehlt"
+            assert 'ID_USB_INTERFACE_NUM' in txt, "udev-Rule-Pattern (Interface-Nr) fehlt"
             assert "1e0e:9001" in txt, "USB-Stack Sanity-Check (lsusb 1e0e:9001) fehlt"
             assert "noipv6" in txt, "noipv6 (gegen IPV6CP-Timeouts) fehlt"
             assert "lcp-echo-interval" in txt, "LCP-Echo-Watchdog fehlt"
