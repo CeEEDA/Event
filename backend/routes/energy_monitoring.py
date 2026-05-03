@@ -1560,8 +1560,8 @@ fi
 if [ "{enable_gps}" = "true" ]; then
     echo "  GPS-Enable-Service einrichten (AT+CGPS=1 bei jedem Boot)..."
 
-    # Standalone Script: wartet bis SIM7600 da ist, sendet AT+CGPS=1 auf
-    # ttyUSB3 (ttyUSB2 wird von pppd belegt waehrend LTE aktiv ist)
+    # Standalone Script: wartet bis /dev/sim7600-at (udev-Symlink) da ist,
+    # sendet dann AT+CGPS=1. Der AT-Port ist parallel zu PPP nutzbar.
     sudo tee /usr/local/sbin/sim7600-gps-enable > /dev/null << 'GPSENABLE'
 #!/bin/bash
 # GPS auf dem SIM7600 bei jedem Boot aktivieren.
