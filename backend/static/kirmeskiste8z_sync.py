@@ -42,7 +42,7 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.4.0"
+SCRIPT_VERSION = "1.5.0"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
 DEFAULT_STACK_LEVEL = 0
@@ -436,11 +436,12 @@ def collect_pi_health(conf, gps_cache):
     except Exception:
         pass
 
-    # LTE: Signal CSQ + Operator (via /dev/ttyUSB2 falls da)
-    # Bulletproof gegen Blocking: nutzt `timeout` + `cat` mit hartem
-    # 2s-Limit und prueft via lsof, dass der Port frei ist.
-    if os.path.exists("/dev/ttyUSB2"):
-        port = "/dev/ttyUSB2"
+    # LTE: Signal CSQ + Operator
+    # Port-Auswahl: Bevorzugt den stabilen udev-Symlink /dev/sim7600-at.
+    # Fallback auf /dev/ttyUSB2 fuer alte Systeme ohne udev-Rule.
+    at_candidates = ["/dev/sim7600-at", "/dev/ttyUSB2", "/dev/ttyUSB3"]
+    port = next((p for p in at_candidates if os.path.exists(p)), None)
+    if port:
         # Port-Belegung pruefen (PPP, gps-enabler, etc.)
         try:
             lsof = subprocess.run(["lsof", "-t", port], capture_output=True,

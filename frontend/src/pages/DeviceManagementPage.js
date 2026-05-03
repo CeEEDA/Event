@@ -84,12 +84,6 @@ function PiHealthPanel({ health }) {
           }
         />
         <HealthCell label="Provider" value={health.lte_operator ? `${health.lte_operator} ${health.lte_act || ""}`.trim() : "—"} />
-        <HealthCell label="HAT-Stack" value={health.hat_stack !== null && health.hat_stack !== undefined ? `Lvl ${health.hat_stack}` : "—"} mono />
-        <HealthCell label="GPS-Fix" value={
-          health.gps_lat
-            ? `${Number(health.gps_lat).toFixed(4)}, ${Number(health.gps_lon).toFixed(4)} (${health.gps_mode === 3 ? "3D" : health.gps_mode === 2 ? "2D" : "?"})`
-            : "—"
-        } />
         <HealthCell label="Pi-Version" value={health.script_version || "—"} mono />
         <HealthCell label="Hostname" value={health.hostname || "—"} mono />
         <HealthCell label="Pi-ID" value={health.pi_id ? health.pi_id.slice(0, 8) + "…" : "—"} mono />
