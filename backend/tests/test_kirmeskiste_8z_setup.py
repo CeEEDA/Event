@@ -159,6 +159,39 @@ async def _run():
             assert "/dev/ttyAMA0" in txt_b, "UART-Device fehlt im UART-Modus"
             assert "enable_uart=1" in txt_b, "UART-config-Anpassung fehlt im UART-Modus"
             print(f"[OK] Custom SIM-PIN + UART-Modus override")
+            # Note: r8b setup hat einen neuen Key generiert; alten api_key auffrischen
+            api_key = r8b.json()["device_key"]
+
+            # Pi-Health endpoint test
+            health = {
+                "ts_utc": "2026-05-03T11:30:00+00:00",
+                "hostname": "test-pi", "pi_id": "abc-123",
+                "hat_stack": 7, "lte_ip": "10.27.23.227",
+                "lte_csq": 20, "lte_signal_dbm": -73,
+                "lte_operator": "Telekom.de", "lte_act": "LTE",
+                "gps_lat": 49.5, "gps_lon": 8.4, "gps_mode": 3,
+                "script_version": "1.1.0",
+                "meters": [{"meter_id": meters[0]["id"], "channel": 1, "kwh_total": 1234.567}],
+            }
+            r9 = await http.post("/api/energy-monitoring/pi-health",
+                                 json={"api_key": api_key, "device_id": device_id, "health": health})
+            assert r9.status_code == 200, f"pi-health failed: {r9.text}"
+            d_after = await db.devices.find_one({"id": device_id}, {"_id": 0})
+            assert d_after.get("pi_health", {}).get("lte_ip") == "10.27.23.227"
+            assert d_after.get("pi_health", {}).get("hat_stack") == 7
+            print(f"[OK] pi-health endpoint persists health data")
+
+            # Wrong key rejected
+            r9b = await http.post("/api/energy-monitoring/pi-health",
+                                  json={"api_key": "wrong", "device_id": device_id, "health": health})
+            assert r9b.status_code == 401
+            print(f"[OK] pi-health rejects wrong api_key")
+
+            # quick-info returns pi_health
+            r10 = await http.get(f"/api/devices/{device_id}/quick-info", headers=H)
+            assert r10.status_code == 200
+            assert r10.json().get("pi_health", {}).get("lte_ip") == "10.27.23.227"
+            print(f"[OK] quick-info returns pi_health")
 
         finally:
             # Cleanup

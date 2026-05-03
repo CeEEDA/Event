@@ -44,6 +44,82 @@ import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
 import { openExternal } from "../lib/openExternal";
 
+
+// Pi-Health-Panel: LTE-IP, Signal, Provider, HAT-Stack, GPS pro Pi
+function PiHealthPanel({ health }) {
+  if (!health) return null;
+  const csq = health.lte_csq;
+  const dbm = health.lte_signal_dbm;
+  const sigColor =
+    csq == null || csq === 99 ? "bg-gray-200 text-gray-600"
+      : csq >= 20 ? "bg-emerald-100 text-emerald-700"
+      : csq >= 10 ? "bg-amber-100 text-amber-700"
+      : "bg-red-100 text-red-700";
+  const sigLabel = csq == null || csq === 99 ? "—" : `${csq}/31`;
+  const recvSecs = health.received_at
+    ? Math.round((Date.now() - new Date(health.received_at).getTime()) / 1000)
+    : null;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3" data-testid="pi-health-panel">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Pi-Status</p>
+        {recvSecs !== null && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${recvSecs < 120 ? "bg-emerald-100 text-emerald-700" : recvSecs < 600 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+            {recvSecs < 60 ? `${recvSecs}s` : recvSecs < 3600 ? `${Math.round(recvSecs/60)}m` : `${Math.round(recvSecs/3600)}h`} her
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+        <HealthCell label="LTE-IP" value={health.lte_ip || "—"} mono />
+        <HealthCell
+          label="Signal"
+          value={
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${sigColor}`}>
+              {sigLabel}{dbm ? ` (${dbm} dBm)` : ""}
+            </span>
+          }
+        />
+        <HealthCell label="Provider" value={health.lte_operator ? `${health.lte_operator} ${health.lte_act || ""}`.trim() : "—"} />
+        <HealthCell label="HAT-Stack" value={health.hat_stack !== null && health.hat_stack !== undefined ? `Lvl ${health.hat_stack}` : "—"} mono />
+        <HealthCell label="GPS-Fix" value={
+          health.gps_lat
+            ? `${Number(health.gps_lat).toFixed(4)}, ${Number(health.gps_lon).toFixed(4)} (${health.gps_mode === 3 ? "3D" : health.gps_mode === 2 ? "2D" : "?"})`
+            : "—"
+        } />
+        <HealthCell label="Pi-Version" value={health.script_version || "—"} mono />
+        <HealthCell label="Hostname" value={health.hostname || "—"} mono />
+        <HealthCell label="Pi-ID" value={health.pi_id ? health.pi_id.slice(0, 8) + "…" : "—"} mono />
+      </div>
+
+      {Array.isArray(health.meters) && health.meters.length > 0 && (
+        <div className="mt-3 border-t border-gray-200 pt-2">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Live-Zaehlerstaende</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1">
+            {health.meters.map((m) => (
+              <div key={m.meter_id} className="text-[11px] flex items-baseline gap-1.5">
+                <span className="text-gray-500 font-mono">K{m.channel}</span>
+                <span className="font-semibold text-gray-800 font-mono">{Number(m.kwh_total ?? 0).toFixed(3)}</span>
+                <span className="text-[9px] text-gray-400">kWh</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HealthCell({ label, value, mono }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded px-2 py-1">
+      <p className="text-[9px] text-gray-400 uppercase tracking-wider">{label}</p>
+      <p className={`text-[11px] text-gray-800 ${mono ? "font-mono" : "font-medium"} truncate`}>{value}</p>
+    </div>
+  );
+}
+
+
 // Pi Setup Section for Messkoffer / Kirmeskiste (Standard 4-Meter / 8Z S0-Pulse)
 function PiSetupSection({ deviceId, deviceName, deviceType, kirmeskisteVariant }) {
   const [loading, setLoading] = useState(false);
@@ -1722,6 +1798,13 @@ function DeviceExpandedRow({ device, colSpan }) {
                     </div>
                 </div>
               </div>
+              )}
+
+              {/* Pi-Health Dashboard (LTE/GPS/HAT pro Pi) */}
+              {info.pi_health && (
+                <div className="md:col-span-2" data-testid="quick-info-pi-health">
+                  <PiHealthPanel health={info.pi_health} />
+                </div>
               )}
 
               {/* GPS Position */}

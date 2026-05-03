@@ -291,6 +291,17 @@ async def list_devices(user: dict = Depends(require_staff)):
             if g.get("last_seen"):
                 gen_last_seen[g["serial_number"]] = g["last_seen"]
 
+    # Kirmeskiste/Messkoffer/DSE: last_seen aus emu_data ableiten (Pi-Sync-Source-of-Truth)
+    pi_device_ids = [d["id"] for d in devices
+                     if d.get("device_type") in ("kirmeskiste", "messkoffer", "dse")]
+    pi_last_seen = {}
+    for did in pi_device_ids:
+        latest = await db.emu_data.find_one(
+            {"device_id": did}, {"_id": 0, "ts_utc": 1}, sort=[("ts_utc", -1)]
+        )
+        if latest and latest.get("ts_utc"):
+            pi_last_seen[did] = latest["ts_utc"]
+
     # Batch-count documents per device instead of N+1
     device_ids = [d["id"] for d in devices]
     doc_counts = {}
@@ -318,6 +329,11 @@ async def list_devices(user: dict = Depends(require_staff)):
             gen_ls = gen_last_seen.get(d.get("serial_number"))
             if gen_ls:
                 d["last_seen"] = gen_ls
+        # Enrich with Pi-sync last_seen fuer Kirmeskiste/Messkoffer/DSE
+        if d.get("device_type") in ("kirmeskiste", "messkoffer", "dse"):
+            pi_ls = pi_last_seen.get(d["id"])
+            if pi_ls and (not d.get("last_seen") or pi_ls > d["last_seen"]):
+                d["last_seen"] = pi_ls
     return devices
 
 
@@ -700,6 +716,8 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
         "device_id": device_id,
         "last_seen": device.get("last_seen"),
         "device_type": device.get("device_type"),
+        "kirmeskiste_variant": device.get("kirmeskiste_variant"),
+        "pi_health": device.get("pi_health"),
         "readings": [],
     }
 

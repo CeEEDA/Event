@@ -1078,6 +1078,35 @@ echo ""
     }
 
 
+# ============== Pi-Health (Dashboard-Daten von der Pi) ==============
+
+class PiHealthRequest(BaseModel):
+    api_key: str
+    device_id: str
+    health: dict
+
+
+@router.post("/pi-health")
+async def pi_health_push(body: PiHealthRequest):
+    """Pi-Sync-Skript pusht alle 60s LTE/GPS/HAT-Status fuer das Dashboard."""
+    device = await db.devices.find_one({"id": body.device_id}, {"_id": 0})
+    if not device:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+    key_hash = device.get("device_key_hash")
+    if not key_hash or not _verify_key(body.api_key, key_hash):
+        raise HTTPException(status_code=401, detail="Ungueltiger Geraeteschluessel")
+
+    pi_health = dict(body.health or {})
+    pi_health["received_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.devices.update_one(
+        {"id": body.device_id},
+        {"$set": {"pi_health": pi_health,
+                  "pi_health_updated_at": pi_health["received_at"]}}
+    )
+    return {"ok": True}
+
+
 # ============== Kirmeskiste 8 Zaehler (S0-Pulse via Sequent HAT) Setup ==============
 
 class Kirmeskiste8zSetupRequest(BaseModel):

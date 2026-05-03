@@ -411,6 +411,112 @@ def read_gps():
     return {}
 
 
+# ====== Pi-Health (LTE/GPS/HAT-Status fuer Portal-Dashboard) ======
+
+def collect_pi_health(conf, gps_cache):
+    """Sammelt Pi-Statusdaten fuer das Pi-Status-Dashboard im Portal."""
+    health = {
+        "ts_utc": datetime.now(timezone.utc).isoformat(),
+        "hostname": get_hostname(),
+        "pi_id": get_pi_id(),
+        "script_version": SCRIPT_VERSION,
+    }
+    # HAT
+    health["hat_stack"] = STACK_LEVEL if STACK_LEVEL is not None else None
+
+    # LTE: ppp0 IP
+    try:
+        r = subprocess.run(["ip", "-4", "addr", "show", "ppp0"],
+                           capture_output=True, text=True, timeout=2)
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("inet "):
+                health["lte_ip"] = line.split()[1].split("/")[0]
+                break
+    except Exception:
+        pass
+
+    # LTE: Signal CSQ + Operator (via /dev/ttyUSB2 falls da)
+    if os.path.exists("/dev/ttyUSB2"):
+        try:
+            for cmd, key in [("AT+CSQ\r", "csq"), ("AT+COPS?\r", "operator")]:
+                with open("/dev/ttyUSB2", "wb", buffering=0) as f:
+                    f.write(cmd.encode())
+                time.sleep(0.6)
+                with open("/dev/ttyUSB2", "rb", buffering=0) as f:
+                    raw = f.read(512).decode("ascii", errors="ignore")
+                if key == "csq":
+                    for ln in raw.splitlines():
+                        if ln.startswith("+CSQ:"):
+                            try:
+                                rssi = int(ln.split(":")[1].split(",")[0].strip())
+                                health["lte_csq"] = rssi
+                                # 0..31 mapping: 31=very good, 99=unknown
+                                if rssi == 99:
+                                    health["lte_signal_dbm"] = None
+                                else:
+                                    health["lte_signal_dbm"] = -113 + 2 * rssi
+                            except Exception:
+                                pass
+                            break
+                elif key == "operator":
+                    for ln in raw.splitlines():
+                        if ln.startswith("+COPS:"):
+                            parts = ln.split(",")
+                            if len(parts) >= 3:
+                                health["lte_operator"] = parts[2].strip().strip('"').split()[0]
+                            if len(parts) >= 4:
+                                act_map = {"0": "GSM", "2": "UMTS", "7": "LTE", "12": "5G"}
+                                health["lte_act"] = act_map.get(parts[3].strip(), parts[3].strip())
+                            break
+        except Exception:
+            pass
+
+    # GPS aus Cache
+    if gps_cache and gps_cache.get("lat"):
+        health["gps_lat"] = gps_cache["lat"]
+        health["gps_lon"] = gps_cache["lon"]
+        health["gps_mode"] = gps_cache.get("mode")
+
+    # Aktuelle kWh-Staende der Zaehler aus lokaler DB
+    try:
+        con = sqlite3.connect(conf["db_path"])
+        con.row_factory = sqlite3.Row
+        meters = []
+        for row in con.execute(
+            "SELECT meter_id, channel, pulses_per_kwh, counter_offset, "
+            "kwh_offset, last_counter, last_update FROM meter_state ORDER BY channel"
+        ):
+            d = dict(row)
+            ppk = d.get("pulses_per_kwh") or 1000
+            pulses = max(0, (d.get("last_counter") or 0) - (d.get("counter_offset") or 0))
+            d["kwh_total"] = round((d.get("kwh_offset") or 0) + pulses / ppk, 3)
+            meters.append(d)
+        con.close()
+        health["meters"] = meters
+    except Exception:
+        pass
+
+    return health
+
+
+def push_pi_health(conf, health):
+    """Sendet Pi-Health an Portal."""
+    try:
+        resp = requests.post(
+            f"{conf['api_url']}/energy-monitoring/pi-health",
+            json={
+                "api_key": conf["device_key"],
+                "device_id": conf["device_id"],
+                "health": health,
+            },
+            timeout=15,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 # ====== Portal Sync ======
 
 def sync_to_portal(conf):
@@ -560,6 +666,10 @@ def main():
                 synced = sync_to_portal(conf)
                 if synced > 0:
                     log.info(f"Gesamt synchronisiert: {synced} Datensaetze")
+                # Pi-Health-Push (Dashboard)
+                health = collect_pi_health(conf, gps_cache)
+                if push_pi_health(conf, health):
+                    log.debug(f"Pi-Health gepusht: lte_ip={health.get('lte_ip')} csq={health.get('lte_csq')}")
                 last_sync = now
                 cleanup_old(conf["db_path"])
                 check_and_apply_update(conf)
