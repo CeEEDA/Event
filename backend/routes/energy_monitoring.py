@@ -1408,13 +1408,15 @@ lcp-echo-failure 4
 debug
 PPPCONF
 
-    # Chat-Skript: PIN setzen (falls noetig), dann APN waehlen, dann *99# anrufen
+    # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
 ABORT 'BUSY'
 ABORT 'NO CARRIER'
 ABORT 'ERROR'
 ABORT 'NO ANSWER'
 TIMEOUT 30
+'' '\d\d+++'
+'' '\dATH\r'
 '' AT
 OK ATZ
 OK 'AT+CMEE=2'
