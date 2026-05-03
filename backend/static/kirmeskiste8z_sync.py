@@ -42,7 +42,7 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.2.0"
+SCRIPT_VERSION = "1.3.0"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
 DEFAULT_STACK_LEVEL = 0
@@ -333,7 +333,7 @@ def update_meter_state(db_path, meter_id, fields):
     con.close()
 
 
-def store_reading(db_path, meter_id, counter, kwh, gps):
+def store_reading(db_path, meter_id, counter, kwh, p_kw, gps):
     ts_utc = datetime.now(timezone.utc).isoformat()
     record = {
         "ts_utc": ts_utc,
@@ -342,7 +342,7 @@ def store_reading(db_path, meter_id, counter, kwh, gps):
         "I_L1": 0, "I_L2": 0, "I_L3": 0, "I_sum": 0,
         "U_L1": 0, "U_L2": 0, "U_L3": 0,
         "F_Hz": 0,
-        "P_sum_kW": 0, "P_L1_kW": 0, "P_L2_kW": 0, "P_L3_kW": 0,
+        "P_sum_kW": round(p_kw, 3), "P_L1_kW": 0, "P_L2_kW": 0, "P_L3_kW": 0,
         "Q_sum": 0, "Q_L1": 0, "Q_L2": 0, "Q_L3": 0,
         "PF_L1": 0, "PF_L2": 0, "PF_L3": 0,
         "gps_lat": gps.get("lat"), "gps_lon": gps.get("lon"),
@@ -639,6 +639,7 @@ def main():
                     continue
                 state = get_meter_state(conf["db_path"], m["meter_id"]) or {}
                 last_cnt = state.get("last_counter", 0)
+                last_update_iso = state.get("last_update")
                 c_off = state.get("counter_offset", 0)
                 k_off = float(state.get("kwh_offset", 0.0))
                 ppk = m["pulses_per_kwh"]
@@ -648,18 +649,36 @@ def main():
                     pulses_lost = max(0, last_cnt - c_off)
                     k_off = k_off + pulses_lost / ppk
                     c_off = 0
+                    last_cnt = 0  # nach Reset starten wir bei 0 fuer P-Berechnung
                     log.warning(f"  {m['name']}: Counter-Reset erkannt, neuer kWh-Offset: {k_off:.3f}")
 
                 pulses = max(0, cnt - c_off)
                 kwh = k_off + pulses / ppk
 
+                # Momentanleistung aus Pulsdifferenz berechnen
+                # P[kW] = (delta_pulses / ppk) / (delta_t_h)
+                #       = (delta_pulses * 3600) / (ppk * delta_t_s)
+                p_kw = 0.0
+                now_iso = datetime.now(timezone.utc).isoformat()
+                if last_update_iso and cnt >= last_cnt:
+                    try:
+                        last_dt = datetime.fromisoformat(last_update_iso)
+                        delta_t = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                        delta_p = cnt - last_cnt
+                        # Nur sinnvolle Werte (>=2s, <=10min) -- bei zu langem
+                        # Gap (z.B. nach Reboot) keine Phantom-Leistung melden.
+                        if 2.0 <= delta_t <= 600.0 and delta_p >= 0:
+                            p_kw = (delta_p * 3600.0) / (ppk * delta_t)
+                    except Exception:
+                        p_kw = 0.0
+
                 update_meter_state(conf["db_path"], m["meter_id"], {
                     "counter_offset": c_off,
                     "kwh_offset": k_off,
                     "last_counter": cnt,
-                    "last_update": datetime.now(timezone.utc).isoformat(),
+                    "last_update": now_iso,
                 })
-                store_reading(conf["db_path"], m["meter_id"], cnt, kwh, gps_cache)
+                store_reading(conf["db_path"], m["meter_id"], cnt, kwh, p_kw, gps_cache)
 
             # Periodisch zum Portal syncen
             if (now - last_sync) >= conf["sync_interval"]:
