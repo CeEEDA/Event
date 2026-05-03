@@ -42,7 +42,7 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.5.0"
+SCRIPT_VERSION = "1.6.0"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
 DEFAULT_STACK_LEVEL = 0
@@ -437,9 +437,10 @@ def collect_pi_health(conf, gps_cache):
         pass
 
     # LTE: Signal CSQ + Operator
-    # Port-Auswahl: Bevorzugt den stabilen udev-Symlink /dev/sim7600-at.
-    # Fallback auf /dev/ttyUSB2 fuer alte Systeme ohne udev-Rule.
-    at_candidates = ["/dev/sim7600-at", "/dev/ttyUSB2", "/dev/ttyUSB3"]
+    # Port-Auswahl: /dev/sim7600-at2 (Interface 03) ist bei aktivem PPP der
+    # einzige freie AT-Port. /dev/sim7600-at (Interface 02) ist mit PPP geteilt
+    # und bei aktivem pppd blockiert. Fallback auf altes Mapping.
+    at_candidates = ["/dev/sim7600-at2", "/dev/sim7600-at", "/dev/ttyUSB3", "/dev/ttyUSB2"]
     port = next((p for p in at_candidates if os.path.exists(p)), None)
     if port:
         # Port-Belegung pruefen (PPP, gps-enabler, etc.)

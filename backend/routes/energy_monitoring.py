@@ -1384,18 +1384,20 @@ if [ "{enable_lte_str}" = "true" ]; then
         echo "    Installiere udev-Rule fuer stabile SIM7600-Symlinks..."
         sudo tee /etc/udev/rules.d/99-sim7600.rules > /dev/null << 'UDEVRULE'
 # SIM7600 Waveshare HAT - stabile Symlinks nach USB-Interface-Nr
-# Das Modem meldet sich als 1e0e:9001 (Qualcomm/SimTech). bInterfaceNumber
-# ist stabil, ttyUSBN-Enumeration nicht (Kernel kann Nummern ueberspringen).
+# Das Modem meldet sich als 1e0e:9001 (Qualcomm/SimTech).
+# WICHTIG: Bei SIM7600 ist Interface 02 der primary Modem-Port - er ist
+# gleichzeitig AT-Port UND PPP/Data-Port. Interface 03 ist secondary AT
+# (praktisch zum Abfragen von CSQ/COPS parallel zu aktivem PPP-Dial).
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="00", SYMLINK+="sim7600-diag", GROUP="dialout", MODE="0660"
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="01", SYMLINK+="sim7600-nmea", GROUP="dialout", MODE="0660"
-SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="02", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
-SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="03", SYMLINK+="sim7600-ppp", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="02", SYMLINK+="sim7600-ppp", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="03", SYMLINK+="sim7600-at2", GROUP="dialout", MODE="0660"
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9001", ENV{{ID_USB_INTERFACE_NUM}}=="04", SYMLINK+="sim7600-audio", GROUP="dialout", MODE="0660"
 # Auch fuer spaetere SIM7600E-Firmwarevarianten (Product-ID 9011)
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="00", SYMLINK+="sim7600-diag", GROUP="dialout", MODE="0660"
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="01", SYMLINK+="sim7600-nmea", GROUP="dialout", MODE="0660"
-SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="02", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
-SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="03", SYMLINK+="sim7600-ppp", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="02", SYMLINK+="sim7600-ppp", SYMLINK+="sim7600-at", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="03", SYMLINK+="sim7600-at2", GROUP="dialout", MODE="0660"
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1e0e", ATTRS{{idProduct}}=="9011", ENV{{ID_USB_INTERFACE_NUM}}=="04", SYMLINK+="sim7600-audio", GROUP="dialout", MODE="0660"
 UDEVRULE
         sudo udevadm control --reload-rules
@@ -1474,16 +1476,18 @@ UDEVRULE
     sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
 
     # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
+    # Timeout 60s (nach Reboot braucht das Modem bis zu 30s bis es antwortet).
+    # AT mit Retry: wenn erstes AT timeoutet, versuche 2 weitere Male.
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
 ABORT 'BUSY'
 ABORT 'NO CARRIER'
 ABORT 'ERROR'
 ABORT 'NO ANSWER'
-TIMEOUT 30
-'' '\d\d+++'
+TIMEOUT 60
+'' '\d\d\d+++'
 '' '\dATH\r'
 '' AT
-OK ATZ
+OK-AT-OK-AT-OK ATZ
 OK 'AT+CMEE=2'
 OK 'AT+CPIN?'
 OK-AT+CPIN={lte_pin}-OK 'AT+CGDCONT=1,"IP","{lte_apn}"'
@@ -1536,7 +1540,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 TimeoutStartSec=120
-ExecStartPre=/bin/sleep 8
+ExecStartPre=/bin/sleep 25
 ExecStartPre=-/usr/local/sbin/lte-wait-device
 ExecStart=/usr/sbin/pppd {ppp_device} 115200 call m2m nodetach
 ExecStop=/usr/bin/pkill -f "pppd.*m2m"
