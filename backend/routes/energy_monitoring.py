@@ -1577,19 +1577,23 @@ Description=Kirmeskiste 8Z Sync - Eventenergie Portal
 #   wuerde nie starten. Das Skript hat eigene Retry-Logik.
 After=sequent-init.service local-fs.target
 Wants=sequent-init.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 ExecStart=/opt/kirmeskiste8z/venv/bin/python3 /opt/kirmeskiste8z/kirmeskiste8z_sync.py
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=0
 # Watchdog: Wenn der Hauptloop laenger als 5 Min keinen Lebenszeichen
 # gibt, wird der Service hart neu gestartet (verhindert "Pi-Stille-nach-Sync").
 TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 WorkingDirectory=/opt/kirmeskiste8z
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
 
 [Install]
 WantedBy=multi-user.target
