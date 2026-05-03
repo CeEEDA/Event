@@ -1270,7 +1270,7 @@ echo "========================================================"
 # ===== SCHRITT 0: ALTE INSTALLATIONEN AUFRAUMEN =====
 echo ""
 echo "[0/8] Alte Installationen aufraumen..."
-for SVC in kirmeskiste8z_sync sequent-init kirmeskiste_sync emu_sync; do
+for SVC in kirmeskiste8z_sync sequent-init kirmeskiste_sync emu_sync sim7600-autoboot; do
     if systemctl is-active --quiet "$SVC" 2>/dev/null; then
         echo "  Stoppe Service: $SVC"
         sudo systemctl stop "$SVC" 2>/dev/null || true
@@ -1382,81 +1382,36 @@ if [ "{enable_lte_str}" = "true" ]; then
         fi
     fi
 
-    # SIM7600 Auto-Power-On: pulst PWRKEY bei JEDEM Boot automatisch,
-    # damit das Modem ohne manuellen Tastendruck hochfaehrt.
-    # Sequent-HAT blockiert den Pin physisch (Stack), aber Pi kann ihn
-    # softwareseitig weiter ansteuern (GPIO 4 = Pin 7).
-    echo "    SIM7600 Auto-Boot-Service installieren..."
-    sudo tee /usr/local/sbin/sim7600-autoboot > /dev/null << 'AUTOBOOT'
-#!/bin/bash
-# SIM7600 Auto-Power-On via PWRKEY (GPIO4 LOW-Puls 1.5s)
-set -e
-if lsusb 2>/dev/null | grep -qE '1e0e:(9001|9011)'; then
-    logger -t sim7600-autoboot "Modul bereits online - skip"
-    exit 0
-fi
-for ATTEMPT in 1 2 3; do
-    logger -t sim7600-autoboot "PWRKEY-Puls GPIO4, Versuch $ATTEMPT/3"
-    if command -v pinctrl >/dev/null 2>&1; then
-        pinctrl set 4 op dl || true
-        sleep 1.5
-        pinctrl set 4 op dh || true
-    elif command -v gpioset >/dev/null 2>&1; then
-        gpioset --chip 0 --hold-period=1500ms 4=0 2>/dev/null || \
-          gpioset --mode=time --sec=1 --usec=500000 gpiochip0 4=0 2>/dev/null || true
-    else
-        logger -t sim7600-autoboot "Kein pinctrl/gpioset gefunden - Abbruch"
-        exit 1
-    fi
-    # SIM7600 braucht ~20s zum Hochfahren und USB-Enumeration
-    for SEC in $(seq 1 25); do
+    # SIM7600 Auto-Power-On: Wir verlassen uns auf die HARDWARE-Loesung ueber
+    # den PWR-Jumper des Waveshare-HAT (Werkseinstellung: PWR-3V3 = Auto-Boot).
+    # Der GPIO-4-PWRKEY-Puls vom Pi wird durch den Sequent-HAT elektrisch
+    # blockiert und funktioniert nicht. Ein Software-Autoboot-Service ist
+    # damit UEBERFLUESSIG - der SIM7600 faehrt automatisch bei jedem 5V-An-
+    # Zyklus hoch, solange der PWR-Jumper des Boards auf 3V3 gesteckt ist.
+    echo "    INFO: SIM7600 Auto-Boot via Hardware-Jumper PWR-3V3 (Waveshare-Default)"
+    echo "    -> Modul bootet immer, sobald 5V anliegen. Kein GPIO-Puls noetig."
+    echo "    -> Pruefe: PWR-Jumper steht zwischen PWR und 3V3 (NICHT auf D6)"
+
+    # Einmaliger Check ob das Modul hochkommt - wenn nicht, ist Jumper falsch
+    echo "    Warte bis zu 30s auf SIM7600 USB-Enumeration..."
+    for SEC in $(seq 1 30); do
         if lsusb 2>/dev/null | grep -qE '1e0e:(9001|9011)'; then
-            logger -t sim7600-autoboot "Modul online nach Versuch $ATTEMPT"
-            exit 0
+            echo "    OK: SIM7600 online nach $SEC s"
+            break
         fi
         sleep 1
     done
-    logger -t sim7600-autoboot "Versuch $ATTEMPT fehlgeschlagen"
-    sleep 5
-done
-logger -t sim7600-autoboot "FEHLER: SIM7600 nicht online nach 3 Versuchen"
-exit 1
-AUTOBOOT
-    sudo chmod +x /usr/local/sbin/sim7600-autoboot
-
-    sudo tee /etc/systemd/system/sim7600-autoboot.service > /dev/null << 'AUTOBOOTSVC'
-[Unit]
-Description=SIM7600 Auto-Power-On (PWRKEY GPIO4 Pulse bei jedem Boot)
-# Muss VOR gps-enable und LTE-Services laufen
-After=local-fs.target
-Before=sim7600-gps-enable.service lte-connection.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/sim7600-autoboot
-RemainAfterExit=yes
-TimeoutStartSec=180
-Restart=on-failure
-RestartSec=30
-
-[Install]
-WantedBy=multi-user.target
-AUTOBOOTSVC
-    sudo systemctl daemon-reload
-    sudo systemctl enable sim7600-autoboot.service
-
-    # Einmaliger Puls JETZT im Setup (damit das Modul sofort hochkommt)
-    echo "    SIM7600 einschalten (PWRKEY-Puls)..."
     if ! lsusb 2>/dev/null | grep -qE '1e0e:(9001|9011)'; then
-        /usr/local/sbin/sim7600-autoboot || true
-    else
-        echo "      Modul bereits aktiv"
+        echo "    WARNUNG: SIM7600 kommt nicht hoch. Moegliche Ursachen:"
+        echo "      - PWR-Jumper steht nicht auf 3V3 (muss fuer Auto-Boot!)"
+        echo "      - USB-Datenkabel zwischen Pi und HAT fehlt/defekt"
+        echo "      - Board hat keinen Strom (PWR-LED pruefen)"
+        echo "    Setup laeuft weiter - manueller PWRKEY-Druck + neuer Reboot hilft."
     fi
     if [ -e "$LTE_DEVICE" ]; then
         echo "    OK: $LTE_DEVICE verfuegbar"
     else
-        echo "    WARNUNG: $LTE_DEVICE nicht da. Prueft USB-Kabel."
-        echo "    Setup laeuft trotzdem weiter - bei naechstem Reboot versucht der Auto-Boot-Service es erneut."
+        echo "    WARNUNG: $LTE_DEVICE noch nicht da."
     fi
 
     # USB-Composite-Stack pruefen (Hauptindikator dass Modem voll erkannt ist)

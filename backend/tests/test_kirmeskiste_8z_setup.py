@@ -206,11 +206,10 @@ async def _run():
             assert "lcp-echo-interval" in txt, "LCP-Echo-Watchdog fehlt"
             assert "16inpind $STACK" in txt, "Stack-Auto-Discovery in sequent-init fehlt"
             assert "sudo reboot" in txt, "Auto-Reboot am Ende fehlt"
-            assert "sim7600-autoboot" in txt, "SIM7600 Auto-Boot-Service fehlt"
-            assert "PWRKEY" in txt, "PWRKEY-Puls-Logik fehlt"
-            assert "sim7600-autoboot.service" in txt, "Systemd-Service fuer Auto-Boot fehlt"
+            assert "PWR-Jumper" in txt, "SIM7600 Jumper-Hinweis fehlt"
+            assert "sim7600-autoboot" in txt, "Legacy-Autoboot-Cleanup fehlt"
             assert "1e0e:9001" in txt, "USB-Stack Sanity-Check fehlt"
-            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/USB-ttyUSB2/Auto-Stack/Auto-Reboot + SIM7600-AutoBoot ({len(txt)} chars)")
+            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/USB-ttyUSB2/Auto-Stack/Auto-Reboot + Jumper-Hinweis ({len(txt)} chars)")
 
             # UART-Modus override
             r8b = await http.post(
