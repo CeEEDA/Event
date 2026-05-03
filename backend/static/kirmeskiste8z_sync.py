@@ -42,7 +42,7 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.6.0"
+SCRIPT_VERSION = "1.6.1"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
 DEFAULT_STACK_LEVEL = 0
@@ -162,10 +162,13 @@ def check_and_apply_update(conf):
             return False
 
         data = resp.json()
+        repo_hash = data.get("file_hash", "?")[:12]
+        local_hash = get_script_hash()[:12]
         if not data.get("update_available"):
+            log.info(f"OTA: aktuell (Pi={local_hash} == Portal={repo_hash}, v{SCRIPT_VERSION})")
             return False
 
-        log.info(f"OTA Update verfuegbar: {SCRIPT_VERSION} -> ?")
+        log.info(f"OTA: Update verfuegbar (Pi={local_hash} -> Portal={repo_hash})")
 
         dl = requests.get(
             f"{conf['api_url']}/system/ota/pi/{DEVICE_TYPE_OTA}/download",
