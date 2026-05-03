@@ -1217,9 +1217,11 @@ name = Zaehler {ch}
     # PPP-Auth-Zeilen vorbereiten (kein verschachteltes f-string)
     ppp_user_line = f"user {lte_user}" if lte_user else "noauth"
     ppp_pwd_line = f"password {lte_pwd}" if lte_pwd else ""
-    # Bei UART (Waveshare): PPP ueber /dev/ttyAMA0; bei USB: /dev/ttyUSB3
-    ppp_device = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB3"
-    # AT-Port fuer PIN/CPGS-Befehle:
+    # Bei UART (Waveshare): PPP ueber /dev/ttyAMA0; bei USB: /dev/ttyUSB2 (AT-Port).
+    # SIM7600-USB-Composite: ttyUSB0=DIAG, ttyUSB1=NMEA, ttyUSB2=AT/PPP,
+    # ttyUSB3=Modem-Daten (Vendor-spezifisch, oft nicht PPP-faehig), ttyUSB4=DEBUG.
+    ppp_device = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
+    # AT-Port fuer PIN/CGPS-Befehle:
     # UART -> selber Port wie PPP; USB -> /dev/ttyUSB2
     at_port = "/dev/ttyAMA0" if body.lte_uart else "/dev/ttyUSB2"
 
@@ -1393,6 +1395,7 @@ connect "/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect"
 {ppp_pwd_line}
 nodefaultroute
 noipdefault
+noipv6
 novj
 novjccomp
 noccp

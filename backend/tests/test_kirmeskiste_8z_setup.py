@@ -136,12 +136,14 @@ async def _run():
             assert "AT+CGPS=1" in txt, "GPS-Aktivierung fehlt"
             assert "lte-connection.service" in txt, "LTE-Service fehlt"
             assert "lte-wait-device" in txt, "LTE-Device-Wait fehlt"
-            # Default = USB-Modus (PPP ueber /dev/ttyUSB3, AT ueber /dev/ttyUSB2)
-            assert "/dev/ttyUSB3" in txt, "Default USB-PPP-Device fehlt"
+            # Default = USB-Modus (PPP & AT ueber /dev/ttyUSB2 - der Composite-AT-Port)
+            assert "/dev/ttyUSB2" in txt, "Default USB-PPP-Device (ttyUSB2) fehlt"
             assert "1e0e:9001" in txt, "USB-Stack Sanity-Check (lsusb 1e0e:9001) fehlt"
+            assert "noipv6" in txt, "noipv6 (gegen IPV6CP-Timeouts) fehlt"
+            assert "lcp-echo-interval" in txt, "LCP-Echo-Watchdog fehlt"
             assert "16inpind $STACK" in txt, "Stack-Auto-Discovery in sequent-init fehlt"
             assert "sudo reboot" in txt, "Auto-Reboot am Ende fehlt"
-            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/USB-Default/Auto-Stack/Auto-Reboot ({len(txt)} chars)")
+            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/USB-ttyUSB2/Auto-Stack/Auto-Reboot ({len(txt)} chars)")
 
             # UART-Modus override
             r8b = await http.post(

@@ -18,6 +18,20 @@ User language: **German** (Agent must respond in German).
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
 ### Feb 2026 – Current Session (continued)
+- ✅ **Kirmeskiste 8Z – LIVE-DEPLOYMENT erfolgreich!** Nach intensivem Debugging (8 Iterationen):
+  - PPP läuft jetzt über `/dev/ttyUSB2` (statt ttyUSB3 — das ist bei diesem SIM7600-Composite der korrekte AT/PPP-Port)
+  - LTE: `inet 10.27.23.227 peer 10.64.64.64` via Telekom M2M (`internet.m2mportal.de`, PIN `0000`)
+  - Signal: `+CSQ: 20,99` (sehr gut), Provider: `Telekom.de`, Modus: `7=E-UTRAN (LTE)`
+  - 8 S0-Pulse-Counter loggen + syncen ans Portal
+  - Sequent HAT auto-discovers Stack-Level (war hier 0x27 = Stack 7)
+  - **Hardware-Lessons** dauerhaft im Setup-Skript abgefangen:
+    1. USB-Datenkabel zwischen Pi-USB-A und HAT "USB"-Buchse PFLICHT (Setup warnt explizit bei fehlender 1e0e:9001-Erkennung)
+    2. PPP-Default jetzt ttyUSB2 (nicht ttyUSB3)
+    3. `noipv6` gesetzt (Telekom-M2M-APN ist IPv4-only, sonst IPV6CP-Timeout-Loop)
+    4. LCP-Echo (30s/4) für robustes Reconnect
+    5. `+++` / `ATH` Escape im Chat-Skript um Modem aus Data-Mode zu hebeln
+    6. Stack-Level-Auto-Discovery für Sequent HAT (0..7)
+    7. Auto-Reboot am Ende für UART-Aktivierung
 - ✅ **Kirmeskiste 8 Zähler – Pi-Implementation komplett** (Backend + UI + Pi-Sync + OTA):
   - **Backend** (`/app/backend/routes/energy_monitoring.py`):
     - `POST /api/energy-monitoring/devices/{id}/kirmeskiste-8z-setup` – legt 8 Zähler in `emu_meters` an (mit `hat_channel` 1-8, `pulses_per_kwh=1000`, `kwh_offset=0`, `meter_type="ABB D11/D13 (S0 Pulse)"`), generiert Geräte-Key, baut Bash-Setup-Skript (Pi 5 + Sequent 16-LV HAT + SIM7600 LTE/GPS + Telekom-APN + lokale SQLite + Systemd + OTA-Auto-Update + Sequent-Init-Service nach Boot).
