@@ -43,6 +43,9 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
 import { openExternal } from "../lib/openExternal";
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 
 // Pi-Health-Panel: LTE-IP, Signal, Provider, HAT-Stack, GPS pro Pi
@@ -1813,29 +1816,58 @@ function DeviceExpandedRow({ device, colSpan }) {
                 </div>
               )}
 
-              {/* GPS Position */}
+              {/* GPS Position mit OpenStreetMap */}
               {info.gps && info.gps.lat && info.gps.lon && (
-                <div className="flex items-start gap-3 md:col-span-2" data-testid="quick-info-gps">
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">GPS Position</p>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-mono font-semibold text-gray-900">{Number(info.gps.lat).toFixed(6)}, {Number(info.gps.lon).toFixed(6)}</span>
+                <div className="md:col-span-2" data-testid="quick-info-gps">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <MapPin className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">GPS Position</p>
+                        <p className="text-sm font-mono font-semibold text-gray-900">
+                          {Number(info.gps.lat).toFixed(6)}, {Number(info.gps.lon).toFixed(6)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      {info.gps.timestamp && (
+                        <span className="text-gray-400">{formatDate(info.gps.timestamp)}</span>
+                      )}
                       <a
-                        href={`https://www.google.com/maps?q=${info.gps.lat},${info.gps.lon}`}
+                        href={`https://www.openstreetmap.org/?mlat=${info.gps.lat}&mlon=${info.gps.lon}#map=16/${info.gps.lat}/${info.gps.lon}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                        className="text-blue-600 hover:text-blue-800 underline"
                         onClick={e => e.stopPropagation()}
+                        data-testid="gps-osm-link"
                       >
-                        Google Maps
+                        in OSM öffnen
                       </a>
                     </div>
-                    {info.gps.timestamp && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">Stand: {formatDate(info.gps.timestamp)}</p>
-                    )}
+                  </div>
+                  <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 220 }}>
+                    <MapContainer
+                      center={[Number(info.gps.lat), Number(info.gps.lon)]}
+                      zoom={15}
+                      style={{ height: "100%", width: "100%" }}
+                      scrollWheelZoom={false}
+                    >
+                      <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                      />
+                      <Marker
+                        position={[Number(info.gps.lat), Number(info.gps.lon)]}
+                        icon={L.divIcon({
+                          className: "custom-marker",
+                          html: '<div style="width:16px;height:16px;background:#A855F7;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+                          iconSize: [16, 16],
+                          iconAnchor: [8, 8],
+                        })}
+                      />
+                    </MapContainer>
                   </div>
                 </div>
               )}
