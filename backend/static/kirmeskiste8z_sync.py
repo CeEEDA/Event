@@ -42,7 +42,7 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.3.0"
+SCRIPT_VERSION = "1.4.0"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
 DEFAULT_STACK_LEVEL = 0
@@ -437,40 +437,67 @@ def collect_pi_health(conf, gps_cache):
         pass
 
     # LTE: Signal CSQ + Operator (via /dev/ttyUSB2 falls da)
+    # Bulletproof gegen Blocking: nutzt `timeout` + `cat` mit hartem
+    # 2s-Limit und prueft via lsof, dass der Port frei ist.
     if os.path.exists("/dev/ttyUSB2"):
+        port = "/dev/ttyUSB2"
+        # Port-Belegung pruefen (PPP, gps-enabler, etc.)
         try:
-            for cmd, key in [("AT+CSQ\r", "csq"), ("AT+COPS?\r", "operator")]:
-                with open("/dev/ttyUSB2", "wb", buffering=0) as f:
-                    f.write(cmd.encode())
-                time.sleep(0.6)
-                with open("/dev/ttyUSB2", "rb", buffering=0) as f:
-                    raw = f.read(512).decode("ascii", errors="ignore")
-                if key == "csq":
-                    for ln in raw.splitlines():
-                        if ln.startswith("+CSQ:"):
-                            try:
-                                rssi = int(ln.split(":")[1].split(",")[0].strip())
-                                health["lte_csq"] = rssi
-                                # 0..31 mapping: 31=very good, 99=unknown
-                                if rssi == 99:
-                                    health["lte_signal_dbm"] = None
-                                else:
-                                    health["lte_signal_dbm"] = -113 + 2 * rssi
-                            except Exception:
-                                pass
-                            break
-                elif key == "operator":
-                    for ln in raw.splitlines():
-                        if ln.startswith("+COPS:"):
-                            parts = ln.split(",")
-                            if len(parts) >= 3:
-                                health["lte_operator"] = parts[2].strip().strip('"').split()[0]
-                            if len(parts) >= 4:
-                                act_map = {"0": "GSM", "2": "UMTS", "7": "LTE", "12": "5G"}
-                                health["lte_act"] = act_map.get(parts[3].strip(), parts[3].strip())
-                            break
+            lsof = subprocess.run(["lsof", "-t", port], capture_output=True,
+                                  text=True, timeout=2)
+            port_busy = bool(lsof.stdout.strip())
         except Exception:
-            pass
+            port_busy = True  # bei Fehler lieber nicht reinschreiben
+
+        if not port_busy:
+            try:
+                # Serial-Port konfigurieren (raw, kein echo, 115200)
+                subprocess.run(["stty", "-F", port, "115200", "raw", "-echo"],
+                               capture_output=True, timeout=2)
+                for cmd, key in [("AT+CSQ", "csq"), ("AT+COPS?", "operator")]:
+                    # Befehl senden + Response mit hartem timeout lesen
+                    try:
+                        subprocess.run(
+                            ["bash", "-c", f"printf '{cmd}\\r' > {port}"],
+                            capture_output=True, timeout=2,
+                        )
+                        time.sleep(0.4)
+                        r = subprocess.run(
+                            ["timeout", "1.5", "cat", port],
+                            capture_output=True, text=True, timeout=2.5,
+                        )
+                        raw = r.stdout
+                    except subprocess.TimeoutExpired:
+                        continue
+                    except Exception:
+                        continue
+
+                    if key == "csq":
+                        for ln in raw.splitlines():
+                            if ln.startswith("+CSQ:"):
+                                try:
+                                    rssi = int(ln.split(":")[1].split(",")[0].strip())
+                                    health["lte_csq"] = rssi
+                                    # 0..31 mapping: 31=very good, 99=unknown
+                                    if rssi == 99:
+                                        health["lte_signal_dbm"] = None
+                                    else:
+                                        health["lte_signal_dbm"] = -113 + 2 * rssi
+                                except Exception:
+                                    pass
+                                break
+                    elif key == "operator":
+                        for ln in raw.splitlines():
+                            if ln.startswith("+COPS:"):
+                                parts = ln.split(",")
+                                if len(parts) >= 3:
+                                    health["lte_operator"] = parts[2].strip().strip('"').split()[0]
+                                if len(parts) >= 4:
+                                    act_map = {"0": "GSM", "2": "UMTS", "7": "LTE", "12": "5G"}
+                                    health["lte_act"] = act_map.get(parts[3].strip(), parts[3].strip())
+                                break
+            except Exception:
+                pass
 
     # GPS aus Cache
     if gps_cache and gps_cache.get("lat"):
