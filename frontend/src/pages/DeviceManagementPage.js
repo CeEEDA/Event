@@ -98,7 +98,7 @@ function PiHealthPanel({ health }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1">
             {health.meters.map((m) => (
               <div key={m.meter_id} className="text-[11px] flex items-baseline gap-1.5">
-                <span className="text-gray-500 font-mono">K{m.channel}</span>
+                <span className="text-gray-500 font-mono">Z{m.channel}</span>
                 <span className="font-semibold text-gray-800 font-mono">{Number(m.kwh_total ?? 0).toFixed(3)}</span>
                 <span className="text-[9px] text-gray-400">kWh</span>
               </div>
