@@ -1246,6 +1246,9 @@ name = Zaehler {ch}
     # PPP-Auth-Zeilen vorbereiten (kein verschachteltes f-string)
     ppp_user_line = f"user {lte_user}" if lte_user else "noauth"
     ppp_pwd_line = f"password {lte_pwd}" if lte_pwd else ""
+    # Fuer printf-basierte Peers-Datei: entweder Zeile oder leer (entfaellt)
+    ppp_user_line_quoted = f"'{ppp_user_line}'" if ppp_user_line else ""
+    ppp_pwd_line_quoted = f"'{ppp_pwd_line}'" if ppp_pwd_line else ""
     # Bei UART (Waveshare): PPP ueber /dev/ttyAMA0; bei USB: /dev/ttyUSB2 (AT-Port).
     # SIM7600-USB-Composite: ttyUSB0=DIAG, ttyUSB1=NMEA, ttyUSB2=AT/PPP,
     # ttyUSB3=Modem-Daten (Vendor-spezifisch, oft nicht PPP-faehig), ttyUSB4=DEBUG.
@@ -1427,29 +1430,18 @@ if [ "{enable_lte_str}" = "true" ]; then
     # PPP + Chat-Skript schreiben (mit SIM-PIN!)
     sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d /etc/ppp/ip-down.d
 
-    sudo tee /etc/ppp/peers/m2m > /dev/null << PPPCONF
-$LTE_DEVICE
-115200
-connect "/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect"
-{ppp_user_line}
-{ppp_pwd_line}
-nodefaultroute
-noipdefault
-noipv6
-novj
-novjccomp
-noccp
-ipcp-accept-local
-ipcp-accept-remote
-local
-lock
-persist
-maxfail 0
-holdoff 10
-lcp-echo-interval 30
-lcp-echo-failure 4
-debug
-PPPCONF
+    # pppd erwartet: Geraete-Pfad auf Zeile 1 OHNE Whitespace/CRLF davor.
+    # Daher schreiben wir via printf (kein heredoc-Artefakt) und haengen
+    # alle Optionen explizit an.
+    sudo bash -c "printf '%s\n' '$LTE_DEVICE' '115200' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'noauth' 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
+
+    # Sanity: Datei muss mit dem Device-Pfad beginnen (keine leading Whitespace/CRLF)
+    FIRST_LINE=$(head -n 1 /etc/ppp/peers/m2m)
+    if [ "$FIRST_LINE" != "$LTE_DEVICE" ]; then
+        echo "    WARNUNG: peers-Datei scheint korrupt - schreibe neu"
+        sudo rm -f /etc/ppp/peers/m2m
+        sudo bash -c "printf '%s\n' '$LTE_DEVICE' '115200' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' 'noauth' 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
+    fi
 
     # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
