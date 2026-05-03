@@ -1651,10 +1651,6 @@ WorkingDirectory=/opt/kirmeskiste8z
 WantedBy=multi-user.target
 SERVICE
 
-[Install]
-WantedBy=multi-user.target
-SERVICE
-
 # Persistentes Journal aktivieren (sonst sind Logs nach Reboot weg)
 sudo mkdir -p /var/log/journal
 sudo systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
