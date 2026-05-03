@@ -1430,18 +1430,11 @@ if [ "{enable_lte_str}" = "true" ]; then
     # PPP + Chat-Skript schreiben (mit SIM-PIN!)
     sudo mkdir -p /etc/chatscripts /etc/ppp/peers /etc/ppp/ip-up.d /etc/ppp/ip-down.d
 
-    # pppd erwartet: Geraete-Pfad auf Zeile 1 OHNE Whitespace/CRLF davor.
-    # Daher schreiben wir via printf (kein heredoc-Artefakt) und haengen
-    # alle Optionen explizit an.
-    sudo bash -c "printf '%s\n' '$LTE_DEVICE' '115200' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'noauth' 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
-
-    # Sanity: Datei muss mit dem Device-Pfad beginnen (keine leading Whitespace/CRLF)
-    FIRST_LINE=$(head -n 1 /etc/ppp/peers/m2m)
-    if [ "$FIRST_LINE" != "$LTE_DEVICE" ]; then
-        echo "    WARNUNG: peers-Datei scheint korrupt - schreibe neu"
-        sudo rm -f /etc/ppp/peers/m2m
-        sudo bash -c "printf '%s\n' '$LTE_DEVICE' '115200' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' 'noauth' 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
-    fi
+    # pppd 2.5.0 (Debian 13) akzeptiert den Device-Pfad NICHT mehr als erste
+    # Zeile im peers-File -> er muss als Kommandozeilen-Argument uebergeben
+    # werden (beim pon-Aufruf im systemd-Service).
+    # Daher schreiben wir die peers-Datei OHNE Device und Baudrate.
+    sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
 
     # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
@@ -1506,7 +1499,7 @@ Type=forking
 TimeoutStartSec=90
 ExecStartPre=/bin/sleep 8
 ExecStartPre=-/usr/local/sbin/lte-wait-device
-ExecStart=/usr/bin/pon m2m
+ExecStart=/usr/bin/pon m2m {ppp_device} 115200
 ExecStop=/usr/bin/poff m2m
 Restart=on-failure
 RestartSec=60
