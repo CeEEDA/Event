@@ -2399,9 +2399,14 @@ async def ingest_data(data: IngestBatch):
     if not data.records:
         return {"inserted": 0, "message": "Keine Datensätze"}
 
-    # Kirmeskiste EMU Professional II: Modbus-Register liefern Watt statt kW
-    # -> Backend rechnet um, damit die Pi-Skripte nicht aktualisiert werden muessen
-    is_kirmeskiste = device.get("device_type") == "kirmeskiste"
+    # Kirmeskiste EMU Professional II (alte 4-Meter Variante "standard"):
+    # Modbus-Register liefern Watt statt kW -> Backend rechnet um.
+    # Die neue 8Z-Variante (Sequent S0-Pulse) berechnet Leistung lokal in
+    # echten kW -> KEINE Umrechnung!
+    is_kirmeskiste_legacy = (
+        device.get("device_type") == "kirmeskiste"
+        and device.get("kirmeskiste_variant") != "8z"
+    )
 
     # Prepare records for insertion
     docs = []
@@ -2412,7 +2417,7 @@ async def ingest_data(data: IngestBatch):
         p_l3 = r.get("P_L3_kW", 0)
 
         # Kirmeskiste: Watt -> kW (nur wenn Wert plausibel in Watt, d.h. > 1)
-        if is_kirmeskiste:
+        if is_kirmeskiste_legacy:
             if abs(p_sum) > 1:
                 p_sum = round(p_sum / 1000, 4)
             if abs(p_l1) > 1:
