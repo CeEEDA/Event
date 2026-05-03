@@ -1571,14 +1571,19 @@ echo "[8/8] Systemd-Service..."
 sudo tee /etc/systemd/system/kirmeskiste8z_sync.service > /dev/null << 'SERVICE'
 [Unit]
 Description=Kirmeskiste 8Z Sync - Eventenergie Portal
-After=network-online.target sequent-init.service
-Wants=network-online.target sequent-init.service
+# Bewusst KEINE network-online.target Abhaengigkeit:
+# - Auf reinem LTE-Pi wird network-online.target oft nie erreicht
+#   (NetworkManager-wait-online laeuft 90s in Timeout) und der Service
+#   wuerde nie starten. Das Skript hat eigene Retry-Logik.
+After=sequent-init.service local-fs.target
+Wants=sequent-init.service
 
 [Service]
 Type=simple
 ExecStart=/opt/kirmeskiste8z/venv/bin/python3 /opt/kirmeskiste8z/kirmeskiste8z_sync.py
 Restart=always
 RestartSec=10
+StartLimitIntervalSec=0
 StandardOutput=journal
 StandardError=journal
 WorkingDirectory=/opt/kirmeskiste8z
