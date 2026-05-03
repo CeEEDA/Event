@@ -1607,7 +1607,7 @@ echo "[7/8] Sequent-Init-Service einrichten..."
 sudo tee /etc/systemd/system/sequent-init.service > /dev/null << 'SEQUENTINIT'
 [Unit]
 Description=Sequent HAT Counter Init (Edge + Interrupt, Stack auto-discover)
-After=multi-user.target
+After=local-fs.target
 
 [Service]
 Type=oneshot
@@ -1627,12 +1627,11 @@ echo "[8/8] Systemd-Service..."
 sudo tee /etc/systemd/system/kirmeskiste8z_sync.service > /dev/null << 'SERVICE'
 [Unit]
 Description=Kirmeskiste 8Z Sync - Eventenergie Portal
-# Bewusst KEINE network-online.target Abhaengigkeit:
-# - Auf reinem LTE-Pi wird network-online.target oft nie erreicht
-#   (NetworkManager-wait-online laeuft 90s in Timeout) und der Service
-#   wuerde nie starten. Das Skript hat eigene Retry-Logik.
-After=sequent-init.service local-fs.target
-Wants=sequent-init.service
+# Keine harten Abhaengigkeiten: 
+# - network-online.target ist auf LTE-Pi nie erreichbar -> Deadlock
+# - sequent-init ist "Nice-To-Have" (Counter-Interrupts), aber Script
+#   initialisiert den HAT notfalls selbst. Failure dort darf uns nicht blockieren.
+After=local-fs.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -1640,8 +1639,6 @@ Type=simple
 ExecStart=/opt/kirmeskiste8z/venv/bin/python3 /opt/kirmeskiste8z/kirmeskiste8z_sync.py
 Restart=always
 RestartSec=10
-# Watchdog: Wenn der Hauptloop laenger als 5 Min keinen Lebenszeichen
-# gibt, wird der Service hart neu gestartet (verhindert "Pi-Stille-nach-Sync").
 TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
