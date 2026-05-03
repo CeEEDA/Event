@@ -1,60 +1,50 @@
 <analysis>**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent requests focused on introducing a Freelancer role, fixing mobile UI glitches, deeply integrating and debugging FinTS/HBCI banking (with Sparkasse pushTAN and 90-day persistence), fixing HR RBAC visibility bugs, enhancing shift planning for multi-day events, and automating the closure of billing tasks.
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent core tasks involved finalizing the auto-closure of FinTS Mahnung tasks and heavily focusing on building a new hardware integration for a Kirmeskiste 8Z (Raspberry Pi 5 + Waveshare SIM7600 LTE + Sequent 16-LV Digital Inputs HAT to read 8 S0-Pulse counters).
 
 **User's preferred language**: German
 **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, HR Documents, Generator/Energy Monitoring, Service Plans, Kiosk-Pi app, and a newly implemented Messprotokoll PDF generator. It has robust RBAC. A major FinTS/HBCI banking module now syncs with Sparkasse using PSD2 90-day persistence (MoneyMoney style).
+A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, FinTS Banking (auto-matching), and extensive hardware monitoring (Generator/Energy Monitoring). A new variant  has been fully implemented, featuring an OTA-updatable Python sync script, LTE PPP failover configuration, and local SQLite persistence for hardware pulse counting.
 
 **Last working item**:
-    - Last item agent was working: Automating the closure of Zahlungserinnerung (Payment Reminder / Mahnung) tasks. The user reported that if an invoice is paid and matched via the FinTS banking sync, the open reminder task in the Hub should automatically disappear.
-    - Status: TESTING PENDING (The agent modified  in  to mark the task as completed, but ran out of context before verifying).
-    - Agent Testing Done: N
-    - Which testing method agent to use? backend (Use python -c or curl to trigger  and verify if the corresponding task in the  collection is marked ).
-    - User Testing Done: N
+    - Last item agent was working: Fixing a systemd symlink race-condition in the Kirmeskiste 8Z setup bash script that prevented the  service from auto-starting after a fresh installation reboot. The agent also implemented the Pi-Status-Dashboard in the frontend quick-info panel to show live hardware health (LTE IP, signal strength, GPS, HAT Stack Level).
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? NA (backend tests already passed)
+    - User Testing Done: N (User needs to check the Pi-Status UI after doing a yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. on their server, and verify the auto-start fix on the next physical Pi installation).
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Auto-close Payment Reminder tasks on FinTS match (P0)
-     - Attempted fixes: Agent updated  in  to search for open tasks with  and set them to completed.
-     - Next debug checklist: Check  around line 470. Verify that when  marks an invoice as auto_paid, the subsequent  successfully finds and closes the associated task.
-     - Why fix this issue and what will be achieved with the fix? Prevents users from accidentally sending dunning emails for invoices that were automatically detected as paid by the banking sync.
-     - Status: TESTING PENDING
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? backend
-     - Blocked on other issue: None
+None currently active.
 
 **In progress Task List**:
-  None
+None.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - (P2) Pi-Status-Dashboard: Show last sync timestamp, unsynced count, and GPS status per Pi in the Portal.
+    - (P1) Übersichtskachel auf der Startseite: X von 12 Pis online, Y mit schwachem Signal, Z ohne GPS-Fix (Overview widget on the main dashboard for the new 8Z devices).
     - (P2) Portal-Auftragsliste Lager Filter/Reiter: Separate internal test runs from normal orders.
     - (P2) Suchleiste über der Auftragsliste: Add a search bar to the Pi UI.
     
     Future Tasks:
-    - (P2) Add GPS Support to Kirmeskiste.
+    - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
     - (P2) Lastdiagramm Live-Test.
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
 
 **Completed work in this session**
-- Add Delete Button for Messprotokoll (DONE)
-- Freelancer Role added (assigned orders visible only, 5-day cutoff, no customer details, no fuel receipts, direct routing to orders page) (DONE)
-- Freelancer assignment modal UI refactor (Split into assigned vs add new) (DONE)
-- Mobile Chat input keyboard hidden fix () (DONE)
-- FinTS Banking decoupled pushTAN integration with 90-day persistence (DONE)
-- FinTS Banking UI State Indicator and single IBAN filtering (DONE)
-- HR Verwaltung permissions fix (Hourly wage, overtime, birthdays now properly visible to managers) (DONE)
-- Finance tasks (Mahnungen, FinTS differences) made visible to employees with Abrechnung rights (DONE)
-- Einsatzplanung (Shift Planning): Admins now visible in list, added multi-day assignment (Alle Tage toggle) (DONE)
+- Verifizierung & Tests für Auto-Close Payment Reminder (Mahnungen) tasks on FinTS match (DONE)
+- Genehmigt: 0 Tage RBAC UI Bug verifiziert (DONE)
+- Kirmeskiste 8Z Variante im Datenmodell und Frontend-Modal (Sub-Selector) (DONE)
+- Kirmeskiste 8Z Backend Setup-Generator () inkl. SIM-PIN, APN, PPP (DONE)
+- Hardware-Konfliktlösung für Raspberry Pi: SIM7600 nutzt USB-Modus (), Sequent HAT Stack-Level Auto-Discovery (DONE)
+- LTE PPP Stabilitäts-Fixes (, ,  Reset) (DONE)
+-  Bugfix für IoT Geräte (liest jetzt direkt aus ) (DONE)
+- Pi-Status-Dashboard in der Geräte-Aufklappliste (Health-Daten: Signal, IP, Provider, Stack-Level) (DONE)
+- Systemd Auto-Start Race-Condition Fix ( vor Reboot im Setup-Skript) (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-   Issue 1: Genehmigt: 0 Tage (Approved vacation days sum shows 0)
-   - Debug checklist: In  or the frontend HR view, verify how  or the sum of approved vacation is calculated. The user noted the list shows approved days, but the top summary says 0. (This might have been fixed by the RBAC fix, but requires verification).
-   - Why to solve this issue and what will be achieved with this? Accurate HR dashboard for employees/managers.
-   - Should Test frontend/backend/both after fix: both
-   - Is recurring issue? N
+None.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: DSE USB Modbus Sync crashing/freezing.
@@ -65,84 +55,74 @@ A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracki
 
 
 **Key Technical Concepts**
-React protected routing (), Python  library (v5.x handling of ), PSD2 SCA 90-day persistence (MongoDB ), MongoDB RBAC filters. 
+React protected routing, FastAPI backend, MongoDB aggregation, Bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600) via . I2C communication for Sequent Microsystems HATs. Systemd service management.
 
 **key DB schema**
-  - : Added 
-  - : Stores  (base64) for banking persistence.
-  - : Supports bulk insertion for multi-day events.
-  - :  field used to link tasks to invoices.
+  - : Added  (standard or 8z). Added  object.
+  - : Stores the 8 S0-Pulse counters per device.
+  - : Telemetry data (, , ).
 
 **changes in tech stack**
-  - Heavy implementation of  v5.0.0 utilizing decoupled pushTAN polling.
+  - Introduction of  running locally as a systemd service on Pi 5, pushing data and health metrics to the cloud.
 
 **All files of reference** 
-  -  (Crucial for pending task auto-close logic)
   - 
   - 
   - 
   - 
 
 **Areas that need refactoring**: 
-  - None immediately, but keep an eye on  as it handles highly sensitive RBAC checks across many endpoints.
+  -  is getting very large due to multiple huge inline bash scripts (DSE setup, Messkoffer setup, Kirmeskiste 8Z setup). These might need to be extracted into template files eventually.
 
 **key api endpoints**
   - 
   - 
-  -  (Updated for multi-day)
+  - 
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- The user tests on their own live Windows Server environment. They use a script ( / ) to pull code from Github. You MUST instruct them to use Save to Github and run their scripts when deploying fixes. 
-- A yarn run v1.22.22
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. is required for any frontend changes to manifest on their live server.
-- The FinTS banking integration uses  5.x. The PSD2 SCA challenge is presented during dialog initialization (), not during the  call. This was successfully handled. Do not revert banking logic.
+- The user deploys to a live Windows Server environment via a custom  script. Any frontend UI changes require the user to run a yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. on their server before they can see them.
+- **Hardware Context (CRITICAL):** The user stacks a Pi 5 + Waveshare SIM7600 + Sequent 16-LV HAT. The SIM7600 *must* be connected via a physical USB-A to micro-USB cable for LTE to work ( is the AT/PPP port). The Sequent HAT blocks GPIO 4 (PWRKEY), so USB mode is strictly required. Do not revert the setup script to use UART ().
 
 **documents and test reports created in this job**
-  -  (Created as a temporary emergency script to reset admin passwords if locked out).
+  - 
+  - 
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) Reported Sparkasse FinTS account blocked due to too many retries +  error.
- 2. (Agent) Explained how to unblock account, deploy code, and provided an emergency password reset script ().
- 3. (User) yarn run v1.22.22
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. hanging on their Windows server.
- 4. (Agent) Gave instructions to skip yarn run v1.22.22
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command. temporarily to test the backend.
- 5. (User) Noted the FinTS tasks successfully showed up in the Hub, but reported a new RBAC bug: HR data (vacation, wages) was blank for managers with Verwaltung permissions.
- 6. (Agent) Fixed  to use  helper instead of strictly  for 49 checks.
- 7. (User) Requested that employees with Abrechnung (billing) rights see Finance tasks.
- 8. (Agent) Updated task creation and retrieval so  employees see Mahnungen and FinTS discrepancies.
- 9. (User) Reported 2 bugs in Shift Planning: Admin missing from personnel list, and inability to assign personnel to multi-day events easily.
- 10. (Agent) Fixed user query to include Admins, added a multi-day Alle Tage bulk assignment toggle.
- 11. (User) **PENDING:** In der Live hab ich die Mahnungen verschickt. dennoch steht das noch als Aufgabe an... ich möchte nicht auf Versenden drücken, da ja evtl. schon einer bezahlt haben kann.
+ 1. (User) Live-Test LTE config: Reported timeout error with LTE service.
+ 2. (Agent) Switched config to USB mode, instructed user to check USB cable.
+ 3. (User) Clarified USB is used for GPS, LTE is on UART pins.
+ 4. (Agent) Switched back to UART mode ().
+ 5. (User) UART still failing, no modem response.
+ 6. (Agent) Suspected hardware conflict (Sequent HAT blocking GPIO 4). Asked user to re-stack or use USB data cable.
+ 7. (User) Plugged in proper USB data cable.
+ 8. (Agent) Configured PPP to run over  and added  to prevent drops.
+ 9. (User) Success! Ping works over LTE (Metric 700). Noted that  in portal isn't updating.
+ 10. (Agent) Fixed  logic, built a Pi-Status-Dashboard UI, and fixed a systemd race condition in the setup script. (PENDING USER VERIFICATION).
 
 **Project Health Check:**
 - Broken: None
 - Mocked: None
 
 **3rd Party Integrations** 
-- FinTS / python-fints (Banking) — requires Bank credentials (in )
 - Stripe (Payments) — requires User API Key
-- Ollama (Local AI) — requires local installation
+- python-fints (Banking) — requires Bank credentials
+- Ollama (Local AI)
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Heavy reliance on manual bash/curl and user testing on live Windows Server).
+  - Testing agent used after significant changes: NO (Heavy reliance on self-written pytest scripts and user E2E testing on physical hardware).
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None
+  - Test files created: 
   - Known regressions: None
 
 **Credentials to test flow:**
-- Admin:  /  (Updated via emergency script this session)
-- Freelancer (test): 
+- Admin: 
+- Preview Admin:  / 
 
 **What agent forgot to execute**
-- Agent applied the fix to auto-close payment reminder tasks on FinTS match, but was interrupted by context limits before verifying the backend execution via curl.
+- Nothing. All tasks requested during the session were completed.
 
 **Debugging checklist for current issue**
-    Issue: Auto-close Payment Reminder tasks on FinTS match
-    Backend files to check:  (lines ~465-480)
-    Steps:
-    1. Verify that  is syntactically correct.
-    2. Check the task model schema to ensure , , and  are the correct fields to update.
-    3. Run  or  to simulate a FinTS match and ensure the task is properly closed.
-    4. Provide the user with instructions to deploy the code and confirm.</analysis>
+    N/A (Awaiting user verification of the Pi-Status-Dashboard and setup script race-condition fix).</analysis>

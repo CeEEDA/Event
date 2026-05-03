@@ -90,6 +90,69 @@ async def _run():
             assert abs(r4.json()["kwh_offset"] - 1234.567) < 0.001
             print(f"[OK] kWh-offset GET via api_key works (Pi)")
 
+            # Quick-Info zeigt Anfangsstand wenn noch keine Telemetrie da ist
+            r4b = await http.get(f"/api/devices/{device_id}/quick-info", headers=H)
+            assert r4b.status_code == 200, r4b.text
+            qi = r4b.json()
+            tgt_reading = next(
+                (rd for rd in qi.get("readings", []) if rd.get("meter_id") == target_meter["id"]),
+                None,
+            )
+            assert tgt_reading is not None, "Reading fuer Target-Meter fehlt"
+            assert "1234.57 kWh" in tgt_reading["value"], f"Anfangsstand fehlt: {tgt_reading}"
+            assert "Anfangsstand" in tgt_reading["value"]
+            assert tgt_reading.get("pending_offset") is True
+            assert abs(tgt_reading.get("kwh_offset") - 1234.567) < 0.001
+            # Andere Meter (offset=0) zeigen "Keine Daten"
+            other = next(
+                (rd for rd in qi.get("readings", []) if rd.get("meter_id") == meters[0]["id"]),
+                None,
+            )
+            assert other is not None
+            assert other["value"] == "Keine Daten"
+            assert not other.get("pending_offset")
+            # Sortierung: Reihenfolge muss hat_channel 1..8 entsprechen
+            channels_order = [
+                next((m["hat_channel"] for m in meters if m["id"] == rd["meter_id"]), None)
+                for rd in qi["readings"]
+            ]
+            assert channels_order == [1, 2, 3, 4, 5, 6, 7, 8], f"Falsche Reihenfolge: {channels_order}"
+            print(f"[OK] quick-info zeigt Anfangsstand als Fallback + Sortierung K1-K8")
+
+            # Quick-Info: Telemetrie kleiner als Offset -> max(offset, telemetry) wird gezeigt
+            from datetime import datetime, timezone
+            await db.emu_data.insert_one({
+                "device_id": device_id,
+                "meter_id": target_meter["id"],
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "E_imp_kWh": 0.0,
+                "P_sum_kW": 0.0,
+            })
+            r4c = await http.get(f"/api/devices/{device_id}/quick-info", headers=H)
+            qi2 = r4c.json()
+            tgt2 = next(rd for rd in qi2["readings"] if rd.get("meter_id") == target_meter["id"])
+            assert "1234.57 kWh" in tgt2["value"], f"Offset wurde nicht als Fallback verwendet: {tgt2}"
+            assert tgt2.get("pending_offset") is True, "pending_offset sollte True sein"
+            assert tgt2.get("timestamp"), "timestamp sollte gesetzt sein"
+            print(f"[OK] quick-info: max(offset, E_imp_kWh) wenn Pi 0 sendet + pending_offset Flag")
+
+            # Telemetrie groesser als Offset -> echter Wert wird gezeigt, kein Pending mehr
+            await db.emu_data.insert_one({
+                "device_id": device_id,
+                "meter_id": target_meter["id"],
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "E_imp_kWh": 1300.5,
+                "P_sum_kW": 1.2,
+            })
+            r4d = await http.get(f"/api/devices/{device_id}/quick-info", headers=H)
+            qi3 = r4d.json()
+            tgt3 = next(rd for rd in qi3["readings"] if rd.get("meter_id") == target_meter["id"])
+            assert "1300.50 kWh" in tgt3["value"], f"Echter Wert nicht gezeigt: {tgt3}"
+            assert "1.20 kW" in tgt3["value"]
+            assert not tgt3.get("pending_offset")
+            print(f"[OK] quick-info: echter Telemetrie-Wert wenn > Offset, kein Pending-Flag")
+            await db.emu_data.delete_many({"device_id": device_id})
+
             # Wrong api_key should be 401
             r5 = await http.get(
                 f"/api/energy-monitoring/devices/{device_id}/meters/{target_meter['id']}/kwh-offset",

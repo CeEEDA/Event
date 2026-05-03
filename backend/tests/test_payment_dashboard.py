@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://fair-manage.preview.emergentagent.com"
+                "origin_url": "https://iot-dashboard-41.preview.emergentagent.com"
             },
             timeout=30
         )

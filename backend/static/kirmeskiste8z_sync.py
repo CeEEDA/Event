@@ -42,7 +42,7 @@ from pathlib import Path
 import requests
 
 
-SCRIPT_VERSION = "1.1.0"
+SCRIPT_VERSION = "1.2.0"
 DEVICE_TYPE_OTA = "kirmeskiste_8z"
 SEQUENT_CLI = "/usr/local/bin/16inpind"
 DEFAULT_STACK_LEVEL = 0
@@ -666,6 +666,34 @@ def main():
                 synced = sync_to_portal(conf)
                 if synced > 0:
                     log.info(f"Gesamt synchronisiert: {synced} Datensaetze")
+                # kWh-Offset-Abgleich: Falls im Portal nachtraeglich ein neuer
+                # Anfangsstand eingetragen oder geaendert wird, hier uebernehmen
+                # (Delta wird in kwh_offset addiert, counter laeuft normal weiter).
+                for m in active:
+                    portal_off = fetch_kwh_offset_from_portal(conf, m["meter_id"])
+                    if portal_off is None:
+                        continue
+                    state = get_meter_state(conf["db_path"], m["meter_id"]) or {}
+                    local_off = float(state.get("kwh_offset") or 0.0)
+                    last_cnt = state.get("last_counter") or 0
+                    c_off = state.get("counter_offset") or 0
+                    ppk = m["pulses_per_kwh"]
+                    pulses_so_far = max(0, last_cnt - c_off)
+                    local_total = local_off + pulses_so_far / ppk
+                    # Nur uebernehmen, wenn Portal-Wert spuerbar ueber dem
+                    # bereits gemeldeten Stand liegt (>0,01 kWh) -- vermeidet
+                    # Ping-Pong durch Rundung.
+                    if portal_off > local_total + 0.01:
+                        # Aktuellen Counter als neuen Nullpunkt setzen,
+                        # Offset = Portal-Wert.
+                        update_meter_state(conf["db_path"], m["meter_id"], {
+                            "counter_offset": last_cnt,
+                            "kwh_offset": portal_off,
+                        })
+                        log.info(
+                            f"  {m['name']}: kWh-Offset aus Portal aktualisiert "
+                            f"{local_total:.3f} -> {portal_off:.3f}"
+                        )
                 # Pi-Health-Push (Dashboard)
                 health = collect_pi_health(conf, gps_cache)
                 if push_pi_health(conf, health):

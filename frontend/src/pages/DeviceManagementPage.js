@@ -1790,8 +1790,14 @@ function DeviceExpandedRow({ device, colSpan }) {
                         >
                           <span className="text-xs text-gray-500 truncate mr-2">{r.label}</span>
                           <div className="text-right">
-                            <span className="text-xs font-mono font-semibold text-gray-900 whitespace-nowrap">{r.value}</span>
+                            <span className={`text-xs font-mono font-semibold whitespace-nowrap ${r.pending_offset ? "text-amber-600" : "text-gray-900"}`}>{r.value}</span>
                             {r.timestamp && <p className="text-[9px] text-gray-400">{formatDate(r.timestamp)}</p>}
+                            {r.pending_offset && !r.timestamp && (
+                              <p className="text-[9px] text-amber-500">Pi sendet noch nicht – wird beim Sync uebernommen</p>
+                            )}
+                            {r.pending_offset && r.timestamp && (
+                              <p className="text-[9px] text-amber-500">Anfangsstand wird beim naechsten Sync uebernommen</p>
+                            )}
                           </div>
                         </div>
                       ))}

@@ -764,8 +764,9 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
                 result["telemetry_timestamp"] = latest.get("timestamp")
 
     elif dtype in ("messkoffer", "kirmeskiste", "verteiler"):
-        # Get latest EMU meter readings
+        # Sortiere Zaehler nach hat_channel (Kirmeskiste 8Z), dann nach Name
         meters = await db.emu_meters.find({"device_id": device_id}, {"_id": 0}).to_list(20)
+        meters.sort(key=lambda m: (m.get("hat_channel") or 99, m.get("meter_name") or ""))
         readings = []
         for meter in meters:
             latest = await db.emu_data.find_one(
@@ -773,20 +774,34 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
                 {"_id": 0},
                 sort=[("ts_utc", -1)]
             )
+            kwh_offset = float(meter.get("kwh_offset") or 0.0)
             entry = {
                 "label": meter.get("meter_name") or meter.get("meter_ip", "Zähler"),
                 "value": "Keine Daten",
                 "meter_id": meter["id"],
+                "kwh_offset": kwh_offset,
             }
             if latest:
-                # Build a summary using actual field names from emu_data
+                # Telemetrie vorhanden: zeige max(E_imp_kWh, kwh_offset),
+                # damit der Anfangsstand sichtbar bleibt, falls der Pi
+                # ihn noch nicht uebernommen hat.
+                e_imp = latest.get("E_imp_kWh")
+                p_sum = latest.get("P_sum_kW")
+                effective_kwh = e_imp if (e_imp is not None and e_imp >= kwh_offset) else kwh_offset
                 parts = []
-                if latest.get("E_imp_kWh") is not None:
-                    parts.append(f"{latest['E_imp_kWh']:.2f} kWh")
-                if latest.get("P_sum_kW") is not None:
-                    parts.append(f"{latest['P_sum_kW']:.2f} kW")
+                if effective_kwh is not None:
+                    parts.append(f"{effective_kwh:.2f} kWh")
+                if p_sum is not None:
+                    parts.append(f"{p_sum:.2f} kW")
                 entry["value"] = " | ".join(parts) if parts else "Daten vorhanden"
                 entry["timestamp"] = latest.get("ts_utc")
+                # Hinweis falls Pi den Offset noch nicht uebernommen hat
+                if kwh_offset > 0 and e_imp is not None and e_imp < kwh_offset:
+                    entry["pending_offset"] = True
+            elif kwh_offset > 0:
+                # Noch keine Telemetrie: Anfangsstand als Vorschau zeigen
+                entry["value"] = f"{kwh_offset:.2f} kWh (Anfangsstand)"
+                entry["pending_offset"] = True
             readings.append(entry)
         result["readings"] = readings
 

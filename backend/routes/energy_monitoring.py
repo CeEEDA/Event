@@ -1521,6 +1521,7 @@ LTESVC
 fi
 
 # ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
+# ===== GPS (SIM7600 GNSS via AT+CGPS=1, NMEA auf /dev/ttyUSB1) =====
 if [ "{enable_gps}" = "true" ]; then
     AT_PORT="{at_port}"
     echo "  Aktiviere GPS auf SIM7600 (AT+CGPS=1)..."
