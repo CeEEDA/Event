@@ -1403,6 +1403,8 @@ lock
 persist
 maxfail 0
 holdoff 10
+lcp-echo-interval 30
+lcp-echo-failure 4
 debug
 PPPCONF
 
