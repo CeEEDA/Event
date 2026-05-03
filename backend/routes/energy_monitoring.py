@@ -1584,6 +1584,9 @@ ExecStart=/opt/kirmeskiste8z/venv/bin/python3 /opt/kirmeskiste8z/kirmeskiste8z_s
 Restart=always
 RestartSec=10
 StartLimitIntervalSec=0
+# Watchdog: Wenn der Hauptloop laenger als 5 Min keinen Lebenszeichen
+# gibt, wird der Service hart neu gestartet (verhindert "Pi-Stille-nach-Sync").
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 WorkingDirectory=/opt/kirmeskiste8z
@@ -1591,6 +1594,11 @@ WorkingDirectory=/opt/kirmeskiste8z
 [Install]
 WantedBy=multi-user.target
 SERVICE
+
+# Persistentes Journal aktivieren (sonst sind Logs nach Reboot weg)
+sudo mkdir -p /var/log/journal
+sudo systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
+sudo systemctl restart systemd-journald 2>/dev/null || true
 
 sudo systemctl daemon-reload
 sudo systemctl enable kirmeskiste8z_sync
