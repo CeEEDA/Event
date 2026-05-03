@@ -1087,9 +1087,11 @@ class Kirmeskiste8zSetupRequest(BaseModel):
     lte_password: str = ""          # i.d.R. leer bei Telekom M2M
     enable_lte: bool = True
     enable_gps: bool = True
-    lte_uart: bool = True           # Waveshare SIM7600: LTE ueber UART (GPIO-Pins),
-                                    # GPS separat ueber USB-Kabel.
-                                    # False = USB-Modus (PPP ueber /dev/ttyUSB3).
+    lte_uart: bool = False          # Default: USB-Modus via micro-USB-Kabel zum HAT
+                                    # (dort enumeriert das SIM7600 als 1e0e:9001 mit
+                                    # /dev/ttyUSB0..4; PPP laeuft ueber ttyUSB3).
+                                    # True = UART-Modus ueber Pi-GPIO/ttyAMA0
+                                    # (nur wenn KEIN USB-Datenkabel verfuegbar).
 
 
 class MeterOffsetUpdate(BaseModel):
@@ -1368,6 +1370,16 @@ if [ "{enable_lte_str}" = "true" ]; then
             echo "    WARNUNG: $LTE_DEVICE nicht da. Prueft USB-Kabel / UART-Jumper / config.txt."
             echo "    Setup laeuft trotzdem weiter - LTE-Service startet beim naechsten Reboot."
         fi
+    fi
+
+    # USB-Composite-Stack pruefen (Hauptindikator dass Modem voll erkannt ist)
+    if lsusb | grep -qiE '1e0e:9001|simtech|qualcomm/ option'; then
+        echo "    OK: SIM7600 USB-Stack erkannt (lsusb zeigt 1e0e:9001)"
+    else
+        echo "    WARNUNG: SIM7600 USB-Stack NICHT erkannt!"
+        echo "      lsusb zeigt KEIN 1e0e:9001 - das bedeutet das USB-Datenkabel"
+        echo "      zwischen Pi-USB-A-Port und HAT 'USB'-Buchse fehlt oder ist defekt."
+        echo "      Bitte Datenkabel pruefen (Ladekabel ohne Datenleitungen reichen NICHT)."
     fi
 
     # PPP + Chat-Skript schreiben (mit SIM-PIN!)

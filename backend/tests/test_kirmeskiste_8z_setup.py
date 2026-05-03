@@ -136,27 +136,27 @@ async def _run():
             assert "AT+CGPS=1" in txt, "GPS-Aktivierung fehlt"
             assert "lte-connection.service" in txt, "LTE-Service fehlt"
             assert "lte-wait-device" in txt, "LTE-Device-Wait fehlt"
-            # Default = UART (Waveshare SIM7600: LTE ueber GPIO/UART, GPS ueber USB)
-            assert "/dev/ttyAMA0" in txt, "UART-Default Device fehlt"
-            assert "enable_uart=1" in txt, "UART-Aktivierung in config.txt fehlt"
-            assert "disable-bt" in txt, "Bluetooth-UART-Disable fehlt (sonst belegt BT ttyAMA0)"
+            # Default = USB-Modus (PPP ueber /dev/ttyUSB3, AT ueber /dev/ttyUSB2)
+            assert "/dev/ttyUSB3" in txt, "Default USB-PPP-Device fehlt"
+            assert "1e0e:9001" in txt, "USB-Stack Sanity-Check (lsusb 1e0e:9001) fehlt"
             assert "16inpind $STACK" in txt, "Stack-Auto-Discovery in sequent-init fehlt"
             assert "sudo reboot" in txt, "Auto-Reboot am Ende fehlt"
-            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/UART/Auto-Stack/Auto-Reboot ({len(txt)} chars)")
+            print(f"[OK] Setup bash script enthaelt PIN/APN/PPP/GPS/USB-Default/Auto-Stack/Auto-Reboot ({len(txt)} chars)")
 
-            # Custom PIN test + USB-Modus override
+            # UART-Modus override
             r8b = await http.post(
                 f"/api/energy-monitoring/devices/{device_id}/kirmeskiste-8z-setup",
                 json={"lte_apn": "internet.m2mportal.de", "lte_pin": "1234",
                       "enable_gps": True, "enable_lte": True,
-                      "lte_uart": False},
+                      "lte_uart": True},
                 headers=H,
             )
             assert r8b.status_code == 200
             txt_b = (await http.get(r8b.json()["download_url"])).text
             assert "AT+CPIN=1234" in txt_b
-            assert "/dev/ttyUSB3" in txt_b, "USB-Device fehlt im USB-Modus"
-            print(f"[OK] Custom SIM-PIN + USB-Modus override")
+            assert "/dev/ttyAMA0" in txt_b, "UART-Device fehlt im UART-Modus"
+            assert "enable_uart=1" in txt_b, "UART-config-Anpassung fehlt im UART-Modus"
+            print(f"[OK] Custom SIM-PIN + UART-Modus override")
 
         finally:
             # Cleanup
