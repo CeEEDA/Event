@@ -1358,6 +1358,10 @@ CONF
 sudo chmod 600 /etc/kirmeskiste8z.conf
 
 # ===== LTE (SIM7600 + PPP + Telekom M2M) =====
+# LTE als "nice-to-have" - Fehler hier duerfen die kritischen Sync- und
+# Sequent-Init-Services (Schritte 7+8) NICHT blockieren. Deswegen set +e
+# fuer den ganzen LTE-Block.
+set +e
 if [ "{enable_lte_str}" = "true" ]; then
     LTE_DEVICE="{ppp_device}"
     LTE_UART="{lte_uart_str}"
@@ -1629,6 +1633,8 @@ EOF
     sudo systemctl enable gpsd
     sudo systemctl restart gpsd 2>/dev/null || true
 fi
+# LTE+GPS fertig - wieder set -e fuer kritische Schritte
+set -e
 
 # ===== SCHRITT 7: SEQUENT-INIT-SERVICE (Edge+Counter-Interrupt nach Boot) =====
 echo "[7/8] Sequent-Init-Service einrichten..."
