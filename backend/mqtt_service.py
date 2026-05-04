@@ -227,10 +227,16 @@ async def _process_message(msg):
 
 
 async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
-    """Process GPS from a DSE 890 gateway and apply ONLY to devices connected to
-    this specific gateway (matched via gateway UID in the topic).
-    Topic format: dse890/{GATEWAY_UID}/gps - we extract GATEWAY_UID and update
-    only devices with matching dse_gateway_uid OR module_uid containing it."""
+    """Process GPS from a DSE 890 gateway and apply to all generators in the
+    SAME 'Anlage' (same parent topic prefix).
+
+    Topic-Konvention DSE890:
+      Gateway-GPS: eventenergie/{ANLAGE_ID}/{GATEWAY_UID}/gps
+      Module:      eventenergie/{ANLAGE_ID}/{MODULE_UID}/...
+    Wir leiten den Anlagen-Prefix automatisch ab (alles vor dem letzten Segment
+    des Topics, ohne /gps) und updaten alle Generators deren Mappings in
+    derselben Anlage liegen.
+    """
     lat = None
     lng = None
     if isinstance(parsed, dict):
@@ -253,40 +259,56 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
     except (ValueError, TypeError):
         return
 
-    # Extract gateway UID from topic. Format: dse890/{GATEWAY_UID}/gps
-    # Take all topic parts that look like a UID (start with letter, contain digits)
-    topic_parts = [p for p in topic.split("/") if p and p.lower() != "gps"]
-    gateway_uid = None
-    for p in topic_parts:
-        # Heuristic: gateway UIDs are typically alphanumeric, length 6-20, contain digit+letter
-        if 4 <= len(p) <= 32 and any(c.isdigit() for c in p) and any(c.isalpha() for c in p):
-            gateway_uid = p.upper()
-            break
-
-    if not gateway_uid:
-        logger.warning(f"MQTT: Gateway-GPS Topic ohne erkennbare UID: {topic} - GPS NICHT angewendet")
-        return
-
-    # Update only devices that explicitly belong to this gateway
-    gps_update = {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}
-    matched = 0
-    if _devices_cache:
-        for dev in _devices_cache:
-            dev_id = dev.get("id")
-            if not dev_id:
-                continue
-            # Match: device has dse_gateway_uid that matches the topic's gateway UID,
-            # OR device's dse_module_uid contains the gateway UID prefix.
-            dev_gateway = (dev.get("dse_gateway_uid") or "").strip().upper()
-            dev_module = (dev.get("dse_module_uid") or "").strip().upper()
-            if dev_gateway == gateway_uid or (gateway_uid and dev_module.startswith(gateway_uid)):
-                await _db.devices.update_one({"id": dev_id}, {"$set": gps_update})
-                await _db.generators.update_one({"id": f"dev-{dev_id}"}, {"$set": gps_update})
-                matched += 1
-    if matched:
-        logger.info(f"MQTT: Gateway-GPS {lat},{lng} auf {matched} Geraet(e) hinter Gateway {gateway_uid} angewendet")
+    # Gateway-Topic ohne /gps und ohne trailing slash
+    gw_topic = topic[: -len("/gps")] if topic.endswith("/gps") else topic
+    gw_topic = gw_topic.rstrip("/")
+    parts = gw_topic.split("/")
+    if len(parts) < 3:
+        # Zu flach (z.B. "dse890/UID") - keine Anlagen-Hierarchie, kein
+        # Auto-Spread. Nur Generator mit exakt diesem Mapping updaten.
+        parent_prefix = None
     else:
-        logger.info(f"MQTT: Gateway-GPS {lat},{lng} fuer Gateway {gateway_uid} - keine zugeordneten Geraete (kein dse_gateway_uid gesetzt)")
+        # Anlagen-Prefix = alles bis vor das letzte Segment.
+        # z.B. "eventenergie/35072/1922A5D409E1601" -> "eventenergie/35072/"
+        parent_prefix = "/".join(parts[:-1]) + "/"
+
+    gps_update = {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}
+    matched_gen_ids = set()
+
+    if parent_prefix:
+        # Sicherheits-Check: parent_prefix muss mindestens 2 Segmente haben,
+        # sonst zu generisch (z.B. "dse890/" wuerde alles matchen)
+        if parent_prefix.count("/") >= 2:
+            for mapping in _mappings_cache:
+                mp = (mapping.get("topic_prefix") or "").strip()
+                gen_id = mapping.get("generator_id")
+                if not mp or not gen_id:
+                    continue
+                if mp.startswith(parent_prefix):
+                    matched_gen_ids.add(gen_id)
+            for gen in _generators_cache:
+                gp = (gen.get("dse_mqtt_topic_prefix") or "").strip()
+                if gp and gp.startswith(parent_prefix):
+                    matched_gen_ids.add(gen["id"])
+
+    # Apply to all matching generators (real + virtual device-based)
+    for gen_id in matched_gen_ids:
+        await _db.generators.update_one({"id": gen_id}, {"$set": gps_update})
+        if gen_id.startswith("dev-"):
+            await _db.devices.update_one(
+                {"id": gen_id[4:]}, {"$set": gps_update}
+            )
+
+    if matched_gen_ids:
+        logger.info(
+            f"MQTT: Gateway-GPS {lat},{lng} auf {len(matched_gen_ids)} "
+            f"Generator(en) in Anlage '{parent_prefix}' angewendet"
+        )
+    else:
+        logger.info(
+            f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - keine Generators in "
+            f"derselben Anlage gefunden (Anlagen-Prefix='{parent_prefix}')"
+        )
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
