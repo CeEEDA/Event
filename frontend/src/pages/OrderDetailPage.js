@@ -759,23 +759,24 @@ export default function OrderDetailPage() {
                     </button>
                   </div>
                 )}
-                {generators.map((g) => (
+                {generators.map((g) => {
+                  const tel = g.latest_telemetry || {};
+                  const kw = tel.power_kw != null ? Number(tel.power_kw) : null;
+                  const fuel = tel.fuel_level != null ? Number(tel.fuel_level) : null;
+                  return (
                   <div
                     key={g.id}
                     className="p-3 hover:bg-gray-50 transition-colors group"
                     data-testid={`gen-item-${g.id}`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div
-                        className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
-                        onClick={() => navigate(`/generators/${g.id}`)}
-                      >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2 min-w-0 flex-1">
                         <div
-                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5"
                           style={{ backgroundColor: statusColors[g.status] || "#9CA3AF" }}
                         />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <p className="text-sm font-medium text-gray-900 truncate">{g.name}</p>
                             {g.is_manual && (
                               <span className="text-[9px] px-1.5 py-0.5 bg-fuchsia-100 text-fuchsia-700 rounded uppercase tracking-wide font-medium flex-shrink-0">
@@ -784,12 +785,35 @@ export default function OrderDetailPage() {
                             )}
                           </div>
                           <p className="text-xs text-gray-500 truncate">{g.model} · {g.serial_number}</p>
+                          {(kw != null || fuel != null) && (
+                            <div className="flex items-center gap-3 mt-1">
+                              {kw != null && (
+                                <span className="text-xs text-fuchsia-600 font-medium" data-testid={`gen-kw-${g.id}`}>
+                                  {kw.toFixed(1)} kW
+                                </span>
+                              )}
+                              {fuel != null && (
+                                <span className={`text-xs font-medium ${fuel < 20 ? "text-red-500" : fuel < 40 ? "text-amber-500" : "text-emerald-600"}`} data-testid={`gen-fuel-${g.id}`}>
+                                  <Droplets className="w-3 h-3 inline mr-0.5 -mt-0.5" />
+                                  {fuel.toFixed(0)} %
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         {g.distance_km != null && (
                           <span className="text-xs text-gray-400 whitespace-nowrap">{g.distance_km} km</span>
                         )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); window.open(`/generators/${g.id}`, "_blank"); }}
+                          className="p-1 text-gray-300 hover:text-fuchsia-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Generator öffnen (neuer Tab)"
+                          data-testid={`open-gen-${g.id}`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         {g.is_manual && (
                           <button
                             onClick={(e) => { e.stopPropagation(); removeManualGenerator(g.id, g.name); }}
@@ -803,7 +827,7 @@ export default function OrderDetailPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                );})}
               </div>
             </div>
 

@@ -735,6 +735,27 @@ async def get_generators_in_radius(
 
     seen_ids = set()
     nearby = []
+
+    def _enrich_telemetry(snap):
+        """Normalize Pi-ingest fields to standard frontend field names."""
+        if not snap:
+            return None
+        if "power_total_w" in snap and "power_kw" not in snap:
+            snap["power_kw"] = round(snap["power_total_w"] / 1000, 2) if snap.get("power_total_w") else 0
+        if "fuel_level_pct" in snap and "fuel_level" not in snap:
+            snap["fuel_level"] = snap.get("fuel_level_pct")
+        return snap
+
+    async def _get_telemetry(gen_doc, gen_id):
+        latest = gen_doc.get("latest_snapshot") if gen_doc else None
+        if not latest and gen_id.startswith("dev-"):
+            dev = await _db.devices.find_one(
+                {"id": gen_id[4:]}, {"_id": 0, "latest_snapshot": 1}
+            )
+            if dev:
+                latest = dev.get("latest_snapshot")
+        return _enrich_telemetry(latest)
+
     for g in generators:
         gid = g.get("id")
         if not gid:
@@ -764,6 +785,7 @@ async def get_generators_in_radius(
             "distance_km": round(dist, 2) if dist is not None else None,
             "last_seen": g.get("last_seen"),
             "is_manual": is_manual,
+            "latest_telemetry": await _get_telemetry(g, gid),
         })
 
     # Auch device-basierte virtuelle Generatoren (Stromerzeuger/Lichtmast aus
@@ -785,6 +807,7 @@ async def get_generators_in_radius(
                     "distance_km": None,
                     "last_seen": dev.get("last_seen"),
                     "is_manual": True,
+                    "latest_telemetry": _enrich_telemetry(dev.get("latest_snapshot")),
                 })
 
     nearby.sort(key=lambda x: (not x["is_manual"], x.get("distance_km") or 9999))
