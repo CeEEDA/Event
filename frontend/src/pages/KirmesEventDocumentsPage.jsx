@@ -314,7 +314,7 @@ function DocRow({ doc, onDelete, onPreview, onChangeKat, getFileUrl, isImage: ch
   const img = checkImage(doc);
   const pdf = checkPdf(doc);
   return (
-    <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors" data-testid={`doc-${doc.id}`}>
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-white rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors" data-testid={`doc-${doc.id}`}>
       <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => onPreview(doc)}>
         {img ? (
           <img src={`${getFileUrl(doc)}${getFileUrl(doc).includes("?") ? "&" : "?"}thumbnail=1&size=120`} loading="lazy" alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
@@ -323,13 +323,13 @@ function DocRow({ doc, onDelete, onPreview, onChangeKat, getFileUrl, isImage: ch
             <FileText className="w-5 h-5 text-red-500" />
           </div>
         )}
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{doc.original_name}</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-gray-900 break-all" title={doc.original_name}>{doc.original_name}</p>
           <p className="text-[10px] text-gray-400">{fmtSize(doc.size)} · {new Date(doc.uploaded_at).toLocaleDateString("de-DE")} · {doc.uploaded_by}</p>
           {(img || pdf) && <p className="text-[10px] text-fuchsia-500 mt-0.5">Klicken fuer Vorschau</p>}
         </div>
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-auto">
         <select value={doc.kategorie || "sonstiges"} onChange={e => onChangeKat(doc.id, e.target.value)}
           className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 mr-1" data-testid={`kat-select-${doc.id}`}>
           {KATEGORIEN.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
