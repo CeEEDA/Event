@@ -37,6 +37,7 @@ export default function OrderDocumentsPage() {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, name: "", filePct: 0 });
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeFolder, setActiveFolder] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -86,14 +87,23 @@ export default function OrderDocumentsPage() {
 
   const uploadPendingFiles = async () => {
     setUploading(true);
+    setUploadProgress({ current: 0, total: pendingFiles.length, name: "", filePct: 0 });
     let uploaded = 0;
-    for (const pf of pendingFiles) {
+    for (let i = 0; i < pendingFiles.length; i++) {
+      const pf = pendingFiles[i];
+      setUploadProgress({ current: i, total: pendingFiles.length, name: pf.file.name, filePct: 0 });
       try {
         const formData = new FormData();
         formData.append("file", pf.file);
         formData.append("kategorie", pf.kategorie);
         await api.post(`/orders/order-documents/${pk}`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: (e) => {
+            if (e.total) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              setUploadProgress(prev => ({ ...prev, filePct: pct }));
+            }
+          },
         });
         uploaded++;
       } catch (err) {
@@ -106,6 +116,7 @@ export default function OrderDocumentsPage() {
     }
     setPendingFiles([]);
     setUploading(false);
+    setUploadProgress({ current: 0, total: 0, name: "", filePct: 0 });
   };
 
   const handleChangeKategorie = async (docId, newKat) => {
@@ -260,11 +271,39 @@ export default function OrderDocumentsPage() {
                 </div>
               ))}
             </div>
-            <div className="p-4 border-t border-gray-200 flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setPendingFiles([])} disabled={uploading}>Abbrechen</Button>
-              <Button onClick={uploadPendingFiles} disabled={uploading} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="upload-confirm-btn">
-                {uploading ? "Wird hochgeladen..." : `${pendingFiles.length} Datei${pendingFiles.length !== 1 ? "en" : ""} hochladen`}
-              </Button>
+            <div className="p-4 border-t border-gray-200 flex flex-col gap-3">
+              {uploading && uploadProgress.total > 0 && (
+                <div className="space-y-2" data-testid="upload-progress">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-gray-700">
+                      {uploadProgress.current + (uploadProgress.filePct === 100 ? 1 : 0)} / {uploadProgress.total} Dateien
+                    </span>
+                    <span className="text-gray-500">
+                      {Math.round(((uploadProgress.current + uploadProgress.filePct / 100) / uploadProgress.total) * 100)}%
+                    </span>
+                  </div>
+                  {/* Gesamt-Fortschrittsbalken */}
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-fuchsia-600 h-full transition-all duration-200 ease-out"
+                      style={{ width: `${((uploadProgress.current + uploadProgress.filePct / 100) / uploadProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  {/* Aktuelle Datei */}
+                  {uploadProgress.name && (
+                    <div className="flex items-center justify-between text-[11px] text-gray-500">
+                      <span className="truncate flex-1 mr-2">{uploadProgress.name}</span>
+                      <span className="font-mono whitespace-nowrap">{uploadProgress.filePct}%</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setPendingFiles([])} disabled={uploading}>Abbrechen</Button>
+                <Button onClick={uploadPendingFiles} disabled={uploading} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="upload-confirm-btn">
+                  {uploading ? `Wird hochgeladen... (${uploadProgress.current + 1}/${uploadProgress.total})` : `${pendingFiles.length} Datei${pendingFiles.length !== 1 ? "en" : ""} hochladen`}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
