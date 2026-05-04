@@ -253,19 +253,21 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
     # Mitarbeiter mit aktivem Hub-Modul "power_monitoring" sehen alle Geraete
     if user["role"] == "mitarbeiter":
         modules = (user.get("apps") or {}).get("modules") or {}
-        if modules.get("power_monitoring") is not False:
-            generators = await db.generators.find({"is_active": True}, {"_id": 0}).to_list(1000)
-            real_gens = []
-            for g in generators:
-                if g.get("source") == "mqtt_auto" and not g.get("serial_number"):
-                    continue
-                if g.get("type") == "dse5510_pi" and not g.get("serial_number"):
-                    continue
-                real_gens.append(g)
-            return real_gens
-        return []
-
-    if user["role"] == "admin":
+        if modules.get("power_monitoring") is False:
+            return []
+        generators = await db.generators.find({"is_active": True}, {"_id": 0}).to_list(1000)
+        real_gens = []
+        for g in generators:
+            if g.get("source") == "mqtt_auto" and not g.get("serial_number"):
+                continue
+            if g.get("type") == "dse5510_pi" and not g.get("serial_number"):
+                continue
+            real_gens.append(g)
+        generators = real_gens
+        # KEIN early-return: Auto-include Block (ab "# Auto-include Stromerzeuger
+        # /Lichtmast devices") muss auch fuer Mitarbeiter laufen, sonst sehen
+        # sie keine Stromerzeuger-Geraete aus db.devices.
+    elif user["role"] == "admin":
         generators = await db.generators.find(
             {},
             {"_id": 0}
@@ -1002,7 +1004,12 @@ async def simulate_generator_data(admin: dict = Depends(require_admin_user)):
 
 @router.get("/stats/overview")
 async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
-    if user["role"] == "admin":
+    # Mitarbeiter mit aktivem Hub-Modul "power_monitoring" sehen alle Geraete
+    is_mitarbeiter_with_access = (
+        user["role"] == "mitarbeiter"
+        and ((user.get("apps") or {}).get("modules") or {}).get("power_monitoring") is not False
+    )
+    if user["role"] == "admin" or is_mitarbeiter_with_access:
         query = {}
     else:
         apps = user.get("apps", {})
