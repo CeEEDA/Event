@@ -775,6 +775,23 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
             Die USB ID finden Sie im DSE890 Web-Interface unter "Modules Connection" in der Spalte "USB ID". Nicht die Gateway USBID aus dem Status-Tab verwenden!
           </p>
 
+          {/* Gateway USBID - fuer GPS-Zuordnung wichtig wenn mehrere Gateways im Einsatz */}
+          <div className="mt-3 pt-3 border-t border-blue-200">
+            <p className="text-xs text-blue-700 font-medium mb-1.5 flex items-center gap-1.5">
+              <Wifi className="w-3.5 h-3.5" /> Gateway USBID (DSE890) - <span className="font-normal text-blue-600">optional, fuer GPS-Zuordnung</span>
+            </p>
+            <Input
+              value={formData.dse_gateway_uid || ""}
+              onChange={e => update("dse_gateway_uid", e.target.value.trim().toUpperCase())}
+              placeholder="z.B. 6D2CCDC779 (USBID aus DSE890 → Status-Tab)"
+              className="font-mono text-sm"
+              data-testid="dse-gateway-uid-input"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Nur ausfuellen wenn mehrere DSE890-Gateways im Einsatz sind. Sorgt dafuer, dass die GPS-Position dieses Gateways nur den daran angeschlossenen Modulen zugewiesen wird (nicht allen Modulen). Wert ist die "USBID" aus dem DSE890 Status-Tab.
+            </p>
+          </div>
+
           {formData.dse_module_uid ? (
             <div className="mt-3 pt-3 border-t border-blue-200" data-testid="mqtt-clientid-hint">
               <p className="text-xs text-blue-700 font-medium mb-1.5 flex items-center gap-1.5">
@@ -963,6 +980,7 @@ const EMPTY_FORM = {
   mqtt_username: "",
   mqtt_password: "",
   dse_module_uid: "",
+  dse_gateway_uid: "",
   kirmeskiste_variant: "standard",
   latitude: "",
   longitude: "",

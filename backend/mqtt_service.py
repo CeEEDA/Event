@@ -227,7 +227,10 @@ async def _process_message(msg):
 
 
 async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
-    """Process GPS from a DSE 890 gateway and apply to all connected devices/generators."""
+    """Process GPS from a DSE 890 gateway and apply ONLY to devices connected to
+    this specific gateway (matched via gateway UID in the topic).
+    Topic format: dse890/{GATEWAY_UID}/gps - we extract GATEWAY_UID and update
+    only devices with matching dse_gateway_uid OR module_uid containing it."""
     lat = None
     lng = None
     if isinstance(parsed, dict):
@@ -250,15 +253,40 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
     except (ValueError, TypeError):
         return
 
-    # Apply GPS to ALL devices that have dse_module_uid (connected via DSE gateway)
+    # Extract gateway UID from topic. Format: dse890/{GATEWAY_UID}/gps
+    # Take all topic parts that look like a UID (start with letter, contain digits)
+    topic_parts = [p for p in topic.split("/") if p and p.lower() != "gps"]
+    gateway_uid = None
+    for p in topic_parts:
+        # Heuristic: gateway UIDs are typically alphanumeric, length 6-20, contain digit+letter
+        if 4 <= len(p) <= 32 and any(c.isdigit() for c in p) and any(c.isalpha() for c in p):
+            gateway_uid = p.upper()
+            break
+
+    if not gateway_uid:
+        logger.warning(f"MQTT: Gateway-GPS Topic ohne erkennbare UID: {topic} - GPS NICHT angewendet")
+        return
+
+    # Update only devices that explicitly belong to this gateway
     gps_update = {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}
+    matched = 0
     if _devices_cache:
         for dev in _devices_cache:
             dev_id = dev.get("id")
-            if dev_id:
+            if not dev_id:
+                continue
+            # Match: device has dse_gateway_uid that matches the topic's gateway UID,
+            # OR device's dse_module_uid contains the gateway UID prefix.
+            dev_gateway = (dev.get("dse_gateway_uid") or "").strip().upper()
+            dev_module = (dev.get("dse_module_uid") or "").strip().upper()
+            if dev_gateway == gateway_uid or (gateway_uid and dev_module.startswith(gateway_uid)):
                 await _db.devices.update_one({"id": dev_id}, {"$set": gps_update})
                 await _db.generators.update_one({"id": f"dev-{dev_id}"}, {"$set": gps_update})
-        logger.info(f"MQTT: Gateway GPS {lat},{lng} applied to {len(_devices_cache)} devices")
+                matched += 1
+    if matched:
+        logger.info(f"MQTT: Gateway-GPS {lat},{lng} auf {matched} Geraet(e) hinter Gateway {gateway_uid} angewendet")
+    else:
+        logger.info(f"MQTT: Gateway-GPS {lat},{lng} fuer Gateway {gateway_uid} - keine zugeordneten Geraete (kein dse_gateway_uid gesetzt)")
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp):
