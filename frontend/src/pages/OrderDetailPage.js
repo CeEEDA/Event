@@ -316,8 +316,50 @@ export default function OrderDetailPage() {
   }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle]);
 
   useEffect(() => {
-    if (order?.center_lat) fetchGenerators();
+    // fetchGenerators auch ohne center_lat ausfuehren - manuell zugeordnete
+    // Generatoren werden auch angezeigt wenn kein Radius gesetzt ist
+    fetchGenerators();
   }, [order?.center_lat, order?.radius_km, fetchGenerators]);
+
+  // ── Manuelle Generator-Zuordnung ──
+  const [showAddGenModal, setShowAddGenModal] = useState(false);
+  const [allGenerators, setAllGenerators] = useState([]);
+  const [genSearch, setGenSearch] = useState("");
+
+  const openAddGenModal = async () => {
+    setShowAddGenModal(true);
+    if (allGenerators.length === 0) {
+      try {
+        const { data } = await api.get("/generators");
+        setAllGenerators(data || []);
+      } catch {
+        toast.error("Generatoren konnten nicht geladen werden");
+      }
+    }
+  };
+
+  const addManualGenerator = async (genId) => {
+    try {
+      await api.post(`/orders/epirent/${pk}/generators/manual`, { generator_id: genId });
+      toast.success("Generator zugeordnet");
+      setShowAddGenModal(false);
+      setGenSearch("");
+      fetchGenerators();
+    } catch (err) {
+      toast.error("Zuordnung fehlgeschlagen");
+    }
+  };
+
+  const removeManualGenerator = async (genId, name) => {
+    if (!window.confirm(`Generator "${name}" aus diesem Auftrag entfernen?`)) return;
+    try {
+      await api.delete(`/orders/epirent/${pk}/generators/manual/${encodeURIComponent(genId)}`);
+      toast.success("Zuordnung entfernt");
+      fetchGenerators();
+    } catch {
+      toast.error("Entfernen fehlgeschlagen");
+    }
+  };
 
   const saveRadius = async () => {
     const km = parseFloat(radiusInput);
@@ -688,44 +730,145 @@ export default function OrderDetailPage() {
 
             {/* Generator List */}
             <div className="bg-white rounded-lg border border-gray-200" data-testid="generators-panel">
-              <div className="p-3 border-b border-gray-100">
+              <div className="p-3 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <Zap className="w-4 h-4 text-fuchsia-500" />
                   Generatoren im Radius
                   {genLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                 </h2>
+                <button
+                  onClick={openAddGenModal}
+                  className="p-1.5 rounded-md text-fuchsia-600 hover:bg-fuchsia-50 transition-colors"
+                  title="Generator manuell zuordnen"
+                  data-testid="add-manual-generator-btn"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
               <div className="divide-y divide-gray-100 max-h-[380px] overflow-y-auto">
                 {generators.length === 0 && !genLoading && (
                   <div className="p-6 text-center text-gray-400">
                     <Zap className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">Keine Generatoren im Radius</p>
+                    <button
+                      onClick={openAddGenModal}
+                      className="mt-2 text-xs text-fuchsia-600 hover:underline"
+                      data-testid="add-manual-generator-empty-btn"
+                    >
+                      + Manuell zuordnen
+                    </button>
                   </div>
                 )}
                 {generators.map((g) => (
                   <div
                     key={g.id}
-                    className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/generators/${g.id}`)}
+                    className="p-3 hover:bg-gray-50 transition-colors group"
                     data-testid={`gen-item-${g.id}`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                      <div
+                        className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
+                        onClick={() => navigate(`/generators/${g.id}`)}
+                      >
                         <div
                           className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: statusColors[g.status] || "#9CA3AF" }}
                         />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{g.name}</p>
-                          <p className="text-xs text-gray-500">{g.model} · {g.serial_number}</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-medium text-gray-900 truncate">{g.name}</p>
+                            {g.is_manual && (
+                              <span className="text-[9px] px-1.5 py-0.5 bg-fuchsia-100 text-fuchsia-700 rounded uppercase tracking-wide font-medium flex-shrink-0">
+                                Manuell
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">{g.model} · {g.serial_number}</p>
                         </div>
                       </div>
-                      <span className="text-xs text-gray-400 whitespace-nowrap">{g.distance_km} km</span>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                        {g.distance_km != null && (
+                          <span className="text-xs text-gray-400 whitespace-nowrap">{g.distance_km} km</span>
+                        )}
+                        {g.is_manual && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeManualGenerator(g.id, g.name); }}
+                            className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Zuordnung entfernen"
+                            data-testid={`remove-manual-gen-${g.id}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Add Generator Modal */}
+            {showAddGenModal && (
+              <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAddGenModal(false)}>
+                <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()} data-testid="add-gen-modal">
+                  <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-fuchsia-500" />
+                      Generator zuordnen
+                    </h3>
+                    <button onClick={() => setShowAddGenModal(false)} className="text-gray-400 hover:text-gray-700" data-testid="close-add-gen-modal">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="p-4 border-b border-gray-100">
+                    <Input
+                      autoFocus
+                      placeholder="Suchen nach Name, Seriennummer, Modell..."
+                      value={genSearch}
+                      onChange={(e) => setGenSearch(e.target.value)}
+                      className="h-9 text-sm"
+                      data-testid="add-gen-search"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
+                    {(() => {
+                      const assigned = new Set(generators.filter(g => g.is_manual).map(g => g.id));
+                      const q = genSearch.trim().toLowerCase();
+                      const filtered = allGenerators.filter(g => {
+                        if (assigned.has(g.id)) return false;
+                        if (!q) return true;
+                        return (g.name || "").toLowerCase().includes(q) ||
+                               (g.serial_number || "").toLowerCase().includes(q) ||
+                               (g.model || "").toLowerCase().includes(q);
+                      });
+                      if (filtered.length === 0) {
+                        return <div className="p-8 text-center text-sm text-gray-400">Keine passenden Generatoren</div>;
+                      }
+                      return filtered.map((g) => (
+                        <button
+                          key={g.id}
+                          onClick={() => addManualGenerator(g.id)}
+                          className="w-full p-3 text-left hover:bg-fuchsia-50 transition-colors flex items-center justify-between group"
+                          data-testid={`add-gen-option-${g.id}`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: statusColors[g.status] || "#9CA3AF" }}
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{g.name}</p>
+                              <p className="text-xs text-gray-500 truncate">{g.model} · {g.serial_number}</p>
+                            </div>
+                          </div>
+                          <Plus className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-500 flex-shrink-0" />
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Asset Placement Section */}

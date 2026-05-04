@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
@@ -714,46 +714,116 @@ async def get_generators_in_radius(
     order_pk: int,
     user: dict = Depends(_auth_user),
 ):
-    """Find generators within the order's radius."""
+    """Find generators within the order's radius + manually assigned ones."""
     settings = await _db.order_settings.find_one({"order_pk": order_pk}, {"_id": 0})
+    manual_ids = (settings or {}).get("manual_generator_ids") or []
+
     if not settings or not settings.get("center_lat"):
-        return {"generators": []}
+        # Auch wenn kein Radius gesetzt, manuelle Zuordnungen liefern
+        if not manual_ids:
+            return {"generators": []}
+        center_lat = center_lng = None
+        radius_km = 0.0
+    else:
+        center_lat = settings["center_lat"]
+        center_lng = settings["center_lng"]
+        radius_km = settings.get("radius_km", 5.0)
 
-    center_lat = settings["center_lat"]
-    center_lng = settings["center_lng"]
-    radius_km = settings.get("radius_km", 5.0)
+    # Get all generators (with or without GPS, fuer manuell zugeordnete brauchen
+    # wir auch die ohne Koordinaten)
+    generators = await _db.generators.find({}, {"_id": 0}).to_list(2000)
 
-    # Get all generators with GPS coordinates
-    generators = await _db.generators.find(
-        {"latitude": {"$ne": None}, "longitude": {"$ne": None}},
-        {"_id": 0},
-    ).to_list(500)
-
+    seen_ids = set()
     nearby = []
     for g in generators:
+        gid = g.get("id")
+        if not gid:
+            continue
+        is_manual = gid in manual_ids
         lat = g.get("latitude")
         lng = g.get("longitude")
-        if lat is None or lng is None:
+        dist = None
+        in_radius = False
+        if lat is not None and lng is not None and center_lat is not None:
+            try:
+                dist = _haversine_km(center_lat, center_lng, float(lat), float(lng))
+                in_radius = dist <= radius_km
+            except (ValueError, TypeError):
+                dist = None
+        if not in_radius and not is_manual:
             continue
-        try:
-            dist = _haversine_km(center_lat, center_lng, float(lat), float(lng))
-        except (ValueError, TypeError):
-            continue
-        if dist <= radius_km:
-            nearby.append({
-                "id": g.get("id"),
-                "name": g.get("name", ""),
-                "model": g.get("model", ""),
-                "serial_number": g.get("serial_number", ""),
-                "status": g.get("status", "offline"),
-                "latitude": lat,
-                "longitude": lng,
-                "distance_km": round(dist, 2),
-                "last_seen": g.get("last_seen"),
-            })
+        seen_ids.add(gid)
+        nearby.append({
+            "id": gid,
+            "name": g.get("name", ""),
+            "model": g.get("model", ""),
+            "serial_number": g.get("serial_number", ""),
+            "status": g.get("status", "offline"),
+            "latitude": lat,
+            "longitude": lng,
+            "distance_km": round(dist, 2) if dist is not None else None,
+            "last_seen": g.get("last_seen"),
+            "is_manual": is_manual,
+        })
 
-    nearby.sort(key=lambda x: x["distance_km"])
-    return {"generators": nearby, "center_lat": center_lat, "center_lng": center_lng, "radius_km": radius_km}
+    # Auch device-basierte virtuelle Generatoren (Stromerzeuger/Lichtmast aus
+    # db.devices) auflisten, falls in manual_ids referenziert (id-Format: dev-*)
+    for mid in manual_ids:
+        if mid in seen_ids:
+            continue
+        if mid.startswith("dev-"):
+            dev = await _db.devices.find_one({"id": mid[4:]}, {"_id": 0})
+            if dev:
+                nearby.append({
+                    "id": mid,
+                    "name": dev.get("user_field") or dev.get("model") or dev.get("serial_number", ""),
+                    "model": dev.get("controller") or dev.get("model") or "–",
+                    "serial_number": dev.get("serial_number", ""),
+                    "status": dev.get("mqtt_status", "offline"),
+                    "latitude": dev.get("latitude"),
+                    "longitude": dev.get("longitude"),
+                    "distance_km": None,
+                    "last_seen": dev.get("last_seen"),
+                    "is_manual": True,
+                })
+
+    nearby.sort(key=lambda x: (not x["is_manual"], x.get("distance_km") or 9999))
+    return {
+        "generators": nearby,
+        "center_lat": center_lat,
+        "center_lng": center_lng,
+        "radius_km": radius_km,
+    }
+
+
+@router.post("/epirent/{order_pk}/generators/manual")
+async def add_manual_generator(
+    order_pk: int, data: dict = Body(...), user: dict = Depends(_auth_user)
+):
+    """Manuell einen Generator dem Auftrag zuordnen."""
+    generator_id = (data or {}).get("generator_id", "").strip()
+    if not generator_id:
+        raise HTTPException(400, "generator_id fehlt")
+    await _db.order_settings.update_one(
+        {"order_pk": order_pk},
+        {"$addToSet": {"manual_generator_ids": generator_id},
+         "$set": {"order_pk": order_pk, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@router.delete("/epirent/{order_pk}/generators/manual/{generator_id}")
+async def remove_manual_generator(
+    order_pk: int, generator_id: str, user: dict = Depends(_auth_user)
+):
+    """Manuelle Zuordnung wieder entfernen."""
+    await _db.order_settings.update_one(
+        {"order_pk": order_pk},
+        {"$pull": {"manual_generator_ids": generator_id},
+         "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
 
 
 # ── Deployment History ──
