@@ -823,16 +823,58 @@ async def get_generators_in_radius(
 async def add_manual_generator(
     order_pk: int, data: dict = Body(...), user: dict = Depends(_auth_user)
 ):
-    """Manuell einen Generator dem Auftrag zuordnen."""
+    """Manuell einen Generator dem Auftrag zuordnen + automatisch einen offenen
+    Eintrag in der Einsatzhistorie des Generators anlegen."""
     generator_id = (data or {}).get("generator_id", "").strip()
     if not generator_id:
         raise HTTPException(400, "generator_id fehlt")
+
     await _db.order_settings.update_one(
         {"order_pk": order_pk},
         {"$addToSet": {"manual_generator_ids": generator_id},
          "$set": {"order_pk": order_pk, "updated_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True,
     )
+
+    # Auto-Deployment-Eintrag (nur wenn noch nicht vorhanden)
+    existing = await _db.deployment_history.find_one({
+        "order_pk": order_pk,
+        "generator_id": generator_id,
+        "auto_assigned": True,
+    })
+    if not existing:
+        # Generator-Name ermitteln
+        gen_name = ""
+        gen_doc = await _db.generators.find_one({"id": generator_id}, {"_id": 0, "name": 1, "serial_number": 1})
+        if gen_doc:
+            gen_name = gen_doc.get("name") or gen_doc.get("serial_number") or ""
+        elif generator_id.startswith("dev-"):
+            dev = await _db.devices.find_one({"id": generator_id[4:]}, {"_id": 0})
+            if dev:
+                gen_name = dev.get("user_field") or dev.get("model") or dev.get("serial_number", "")
+        # Order-Meta (Name) holen aus orders_cache
+        order_doc = await _db.orders_cache.find_one(
+            {"primary_key": order_pk}, {"_id": 0, "name": 1, "title": 1}
+        ) or await _db.orders_cache.find_one(
+            {"primary_key": str(order_pk)}, {"_id": 0, "name": 1, "title": 1}
+        )
+        order_label = (order_doc or {}).get("name") or (order_doc or {}).get("title") or f"Auftrag #{order_pk}"
+        import uuid as _uuid_h
+        await _db.deployment_history.insert_one({
+            "id": str(_uuid_h.uuid4()),
+            "order_pk": order_pk,
+            "order_label": order_label,
+            "generator_id": generator_id,
+            "generator_name": gen_name,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "stopped_at": None,
+            "operating_hours": None,
+            "kwh_start": None, "kwh_end": None,
+            "faults": None, "notes": "Automatisch zugeordnet",
+            "auto_assigned": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": user.get("name", user.get("email", "")),
+        })
     return {"ok": True}
 
 
@@ -840,12 +882,18 @@ async def add_manual_generator(
 async def remove_manual_generator(
     order_pk: int, generator_id: str, user: dict = Depends(_auth_user)
 ):
-    """Manuelle Zuordnung wieder entfernen."""
+    """Manuelle Zuordnung wieder entfernen + den Auto-Deployment-Eintrag loeschen."""
     await _db.order_settings.update_one(
         {"order_pk": order_pk},
         {"$pull": {"manual_generator_ids": generator_id},
          "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
     )
+    # Nur Auto-Deployments loeschen (manuelle Eintraege nicht antasten)
+    await _db.deployment_history.delete_many({
+        "order_pk": order_pk,
+        "generator_id": generator_id,
+        "auto_assigned": True,
+    })
     return {"ok": True}
 
 

@@ -119,7 +119,14 @@ function DeploymentHistory({ generatorId }) {
                   data-testid={`deployment-${d.id}`}
                 >
                   <td className="px-4 py-2.5 font-medium text-fuchsia-700">
-                    {d.generator_name || `Auftrag #${d.order_pk}`}
+                    <div className="flex items-center gap-1.5">
+                      <span>{d.order_label || d.generator_name || `Auftrag #${d.order_pk}`}</span>
+                      {d.auto_assigned && (
+                        <span className="text-[9px] px-1.5 py-0.5 bg-fuchsia-100 text-fuchsia-700 rounded uppercase tracking-wide font-medium">
+                          Auto
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5 text-gray-600">{fmtDate(d.started_at)}</td>
                   <td className="px-4 py-2.5 text-gray-600">{fmtDate(d.stopped_at)}</td>
