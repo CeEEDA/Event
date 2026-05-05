@@ -134,3 +134,19 @@ User language: **German** (Agent must respond in German).
 - Frontend: React + TailwindCSS + shadcn/ui + lucide-react
 - Pi Kiosk: Python + SQLite (offline cache)
 - Integrations: Stripe (live keys), Ollama (local), python-fints (banking)
+
+
+## Roadmap (offene Tasks)
+
+### P1
+- LTE Failover DNS Fix auf Pi: `usepeerdns` in `/etc/ppp/peers/m2m` + `/etc/ppp/ip-up.d/0000-lte-dns` Hook (Telekom-DNS in `/etc/resolv.conf` wenn LAN ausfällt).
+
+### P2
+- Portal-Auftragsliste "Lager"-Filter / Reiter (interne Testläufe von normalen Aufträgen trennen).
+- Suchleiste über Pi-Auftragsliste (Kiosk-UI).
+- GPS-Support für Legacy-Kirmeskiste (4-meter Variante).
+- Lastdiagramm Live-Test.
+- Chromium "Translate"-Popup auf Raspberry Pi Kiosk global unterdrücken.
+
+### Verworfen / nicht benötigt
+- ~~Übersichtskachel auf der Startseite für 8Z-Pis (X von 12 Pis online, Y mit schwachem Signal, Z ohne GPS-Fix)~~ — vom User als nicht benötigt gestrichen (Mai 2026).
