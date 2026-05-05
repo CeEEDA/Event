@@ -668,6 +668,38 @@ async def clock_in(token: str = Query(...), body: dict = {}):
     return created
 
 
+# ── Pausen-Helper: subtract configured break from raw duration ──
+_WEEKDAY_MAP = {0: "montag", 1: "dienstag", 2: "mittwoch", 3: "donnerstag", 4: "freitag", 5: "samstag", 6: "sonntag"}
+
+
+async def _get_break_min_for_date(user_id: str, date_str: str) -> int:
+    """Return configured break_min for the user's weekday schedule, 0 if none."""
+    if not date_str:
+        return 0
+    try:
+        from datetime import date as _date
+        wd = _date.fromisoformat(date_str).weekday()
+    except Exception:
+        return 0
+    day_name = _WEEKDAY_MAP.get(wd)
+    if not day_name:
+        return 0
+    schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+    day_sched = (schedule or {}).get("days", {}).get(day_name, {}) or {}
+    try:
+        return int(day_sched.get("break_min") or 0)
+    except Exception:
+        return 0
+
+
+def _apply_break_deduction(raw_minutes: float, break_min: int) -> float:
+    """Subtract break only if the worked duration is longer than the break itself
+    (prevents negative durations for very short shifts)."""
+    if break_min and break_min > 0 and raw_minutes > break_min:
+        return raw_minutes - break_min
+    return raw_minutes
+
+
 @router.post("/time/clock-out")
 async def clock_out(token: str = Query(...), body: dict = {}):
     """Clock out with GPS coordinates. Auto-calculates overtime vs. schedule."""
@@ -680,7 +712,12 @@ async def clock_out(token: str = Query(...), body: dict = {}):
     clock_in_time = datetime.fromisoformat(entry["clock_in"])
     if clock_in_time.tzinfo is None:
         clock_in_time = clock_in_time.replace(tzinfo=timezone.utc)
-    duration = (now - clock_in_time).total_seconds() / 60.0
+    raw_duration = (now - clock_in_time).total_seconds() / 60.0
+
+    # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
+    entry_date = entry.get("date") or now.strftime("%Y-%m-%d")
+    break_min = await _get_break_min_for_date(user["id"], entry_date)
+    duration = _apply_break_deduction(raw_duration, break_min)
 
     await db.time_entries.update_one(
         {"id": entry["id"]},
@@ -689,6 +726,7 @@ async def clock_out(token: str = Query(...), body: dict = {}):
             "clock_out_lat": body.get("lat"),
             "clock_out_lng": body.get("lng"),
             "duration_minutes": round(duration, 1),
+            "break_min": break_min,
         }}
     )
 
@@ -707,12 +745,14 @@ async def clock_out(token: str = Query(...), body: dict = {}):
         if day_schedule and day_schedule.get("start") and day_schedule.get("end"):
             sh, sm = map(int, day_schedule["start"].split(":"))
             eh, em = map(int, day_schedule["end"].split(":"))
-            break_min = int(day_schedule.get("break_min") or 0)
-            soll_minutes = (eh * 60 + em) - (sh * 60 + sm) - break_min
+            sched_break = int(day_schedule.get("break_min") or 0)
+            # SOLL = Arbeitszeit-Spanne minus konfigurierte Pause
+            soll_minutes = (eh * 60 + em) - (sh * 60 + sm) - sched_break
         else:
-            # No schedule for this day → all worked time is overtime
+            # Kein Plan für diesen Tag → alle geleistete Zeit zählt als Überstunde
             soll_minutes = 0
 
+        # IST wurde bereits in duration_minutes um die Pause reduziert (s.o.) → kein erneuter Abzug
         ist_minutes = round(duration)
         diff_minutes = ist_minutes - soll_minutes  # positive = overtime, negative = undertime
         diff_hours = round(diff_minutes / 60, 2)
@@ -792,7 +832,14 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
     if clock_out and clock_out <= clock_in:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
-    duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
+    # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
+    raw_duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
+    if raw_duration is not None:
+        break_min = await _get_break_min_for_date(target_user_id, date_str)
+        duration = round(_apply_break_deduction(raw_duration, break_min), 1)
+    else:
+        break_min = 0
+        duration = None
 
     entry = {
         "id": str(uuid.uuid4()),
@@ -805,6 +852,7 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
         "clock_out_lat": None,
         "clock_out_lng": None,
         "duration_minutes": duration,
+        "break_min": break_min,
         "date": date_str,
         "manual": True,
         "manual_by": caller.get("id"),
@@ -836,12 +884,20 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
     clock_out = _parse_local_time_to_utc(date_str, end_str) if end_str else None
     if clock_out and clock_out <= clock_in:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
-    duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
+    raw_duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
+    # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
+    if raw_duration is not None:
+        break_min = await _get_break_min_for_date(entry.get("user_id"), date_str)
+        duration = round(_apply_break_deduction(raw_duration, break_min), 1)
+    else:
+        break_min = 0
+        duration = None
 
     update = {
         "clock_in": clock_in.isoformat(),
         "clock_out": clock_out.isoformat() if clock_out else None,
         "duration_minutes": duration,
+        "break_min": break_min,
         "date": date_str,
         "edited_by": caller.get("id"),
         "edited_by_name": caller.get("name", ""),
