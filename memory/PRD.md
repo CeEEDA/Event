@@ -17,6 +17,14 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **LTE Failover DNS Fix** (P1 vom Backlog erledigt): User berichtete dass HAT-LED am Pi blinkt (LTE up), aber Portal sagt offline; LAN ziehen → Pi offline.
+  - Root cause: `/etc/ppp/peers/m2m` fehlt `usepeerdns`-Direktive UND ip-up.d/20-set-dns Hook. Folge: keine Provider-DNS uebernommen, beim LAN-Ausfall verschwindet der einzige nameserver (192.168.x.1) → keine Namensaufloesung mehr → Portal unerreichbar trotz UP-ppp0.
+  - Fix in `routes/energy_monitoring.py` (Setup-Script-Generator) fuer beide Varianten (8Z + Legacy):
+    - `usepeerdns` zu peers/m2m hinzugefuegt
+    - `ip-up.d/20-set-dns` schreibt `$DNS1 $DNS2 1.1.1.1 8.8.8.8` zusaetzlich in /etc/resolv.conf
+    - `ip-down.d/20-restore-dns` raeumt sauber auf bei Trennung
+  - Hotfix-Script fuer bereits deployten Pi: `/tmp/lte_dns_hotfix.sh` (am Pi via SSH ausfuehrbar), erweitert peers/m2m + erstellt Hooks + reconnected ppp0
+
 - ✅ **iOS-Notch / Dynamic-Island: Zurück-Button war hinter Statusbar versteckt**:
   - Root cause: `viewport-fit=cover` (gesetzt fuer Tastatur-Fix iOS17+) laesst Inhalte edge-to-edge laufen, wodurch der Page-Header unter der translucenten iPhone-Statusbar verschwindet → Zurück-Button war auf iPhones mit Notch nicht erreichbar.
   - Fix global in `index.css`:

@@ -1473,7 +1473,8 @@ UDEVRULE
     # peers-Datei OHNE Device/Baudrate (wird via pppd-CLI im Service uebergeben).
     # Das ist stabiler als Device in der peers-Datei, weil systemd dann sofort
     # sieht ob pppd mit dem Device starten konnte (Type=simple).
-    sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'debug' > /etc/ppp/peers/m2m"
+    # 'usepeerdns' = Provider-DNS-Server uebernehmen (sonst kein DNS wenn LAN weg)
+    sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'usepeerdns' 'debug' > /etc/ppp/peers/m2m"
 
     # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
     # Timeout 60s (nach Reboot braucht das Modem bis zu 30s bis es antwortet).
@@ -1509,7 +1510,38 @@ PPPHOOK1
 ip route del default dev "$IFNAME" 2>/dev/null || true
 PPPHOOK1D
 
-    sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route
+    # DNS-Hook: bei LTE-Verbindung Public-DNS in /etc/resolv.conf eintragen,
+    # damit der Pi auch ohne LAN-Router DNS-Aufloesung machen kann.
+    # 'usepeerdns' (s.o.) liefert idR Telekom-DNS in DNS1/DNS2 ENV-Vars,
+    # zusaetzlich fuegen wir 1.1.1.1 / 8.8.8.8 als Fallback hinzu.
+    sudo tee /etc/ppp/ip-up.d/20-set-dns > /dev/null << 'PPPHOOK2'
+#!/bin/sh
+# Provider-DNS (von 'usepeerdns') sind in $DNS1 / $DNS2 verfuegbar
+{{
+    [ -n "$DNS1" ] && echo "nameserver $DNS1"
+    [ -n "$DNS2" ] && echo "nameserver $DNS2"
+    echo "nameserver 1.1.1.1"
+    echo "nameserver 8.8.8.8"
+}} > /etc/resolv.conf.lte 2>/dev/null
+
+# Bestehende resolv.conf um LTE-DNS ergaenzen (deduplizieren), nicht ersetzen
+if [ -s /etc/resolv.conf.lte ]; then
+    cat /etc/resolv.conf 2>/dev/null /etc/resolv.conf.lte | awk '!seen[$0]++' > /etc/resolv.conf.new
+    mv /etc/resolv.conf.new /etc/resolv.conf
+fi
+PPPHOOK2
+
+    sudo tee /etc/ppp/ip-down.d/20-restore-dns > /dev/null << 'PPPHOOK2D'
+#!/bin/sh
+# Beim Trennen der LTE-Verbindung: aus resolv.conf wieder rausnehmen
+if [ -f /etc/resolv.conf.lte ]; then
+    grep -v -F -f /etc/resolv.conf.lte /etc/resolv.conf > /etc/resolv.conf.new 2>/dev/null || cp /etc/resolv.conf /etc/resolv.conf.new
+    mv /etc/resolv.conf.new /etc/resolv.conf
+    rm -f /etc/resolv.conf.lte
+fi
+PPPHOOK2D
+
+    sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route /etc/ppp/ip-up.d/20-set-dns /etc/ppp/ip-down.d/20-restore-dns
 
     # Wait-Helper, der vor pon m2m auf das Device wartet (max 30s)
     sudo tee /usr/local/sbin/lte-wait-device > /dev/null << WAITSCRIPT
@@ -1880,6 +1912,7 @@ lock
 persist
 maxfail 0
 holdoff 10
+usepeerdns
 debug
 PPPCONF
 
