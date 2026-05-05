@@ -1543,19 +1543,65 @@ PPPHOOK2D
 
     sudo chmod +x /etc/ppp/ip-up.d/10-add-lte-route /etc/ppp/ip-down.d/10-remove-lte-route /etc/ppp/ip-up.d/20-set-dns /etc/ppp/ip-down.d/20-restore-dns
 
-    # Wait-Helper, der vor pon m2m auf das Device wartet (max 30s)
-    sudo tee /usr/local/sbin/lte-wait-device > /dev/null << WAITSCRIPT
+    # Wait-Helper mit Auto-Recovery:
+    # Phase 1: 60s warten bis Modem auf AT antwortet
+    # Phase 2: Wenn nicht -> USB-Reset (unbind/bind des SIM7600 USB-Devices)
+    # Phase 3: 30s warten ob nach Reset AT antwortet
+    # Damit erholt sich der Pi auch nach SIM7600-Firmware-Hang ohne Power-Cycle.
+    sudo tee /usr/local/sbin/lte-wait-device > /dev/null << 'WAITSCRIPT'
 #!/bin/bash
-DEV="\$1"
-[ -z "\$DEV" ] && DEV="$LTE_DEVICE"
-for i in \$(seq 1 30); do
-    if [ -e "\$DEV" ]; then
-        # Pingt das Modem mit AT, gibt OK wenn antwortet
-        ANS=\$(timeout 3 bash -c "exec 3<>\$DEV; echo -e 'AT\\r' >&3; sleep 1; cat <&3" 2>/dev/null | tr -d '\\r' | grep -c OK)
-        [ "\$ANS" -ge 1 ] && exit 0
+DEV="${1:-/dev/sim7600-ppp}"
+LOG=/var/log/lte-wait-device.log
+
+at_test() {
+    # Sendet AT auf Port, gibt 0 zurueck wenn 'OK' empfangen
+    local port="$1"
+    [ -e "$port" ] || return 1
+    timeout 4 bash -c "exec 3<>$port 2>/dev/null; printf 'AT\r\n' >&3 2>/dev/null; sleep 1; cat <&3 2>/dev/null" \
+      | tr -d '\r\0' | grep -q OK
+}
+
+usb_reset_sim7600() {
+    # USB-Device 1e0e:9001 unbinden und rebinden = Soft-Reset
+    local USB_DEV
+    USB_DEV=$(grep -l "^1e0e" /sys/bus/usb/devices/*/idVendor 2>/dev/null | head -1 | xargs -r dirname | xargs -r basename)
+    if [ -n "$USB_DEV" ]; then
+        echo "[$(date)] USB-Reset auf $USB_DEV" >> "$LOG"
+        echo "$USB_DEV" > /sys/bus/usb/drivers/usb/unbind 2>/dev/null
+        sleep 4
+        echo "$USB_DEV" > /sys/bus/usb/drivers/usb/bind 2>/dev/null
+        sleep 20
+        return 0
     fi
-    sleep 1
+    echo "[$(date)] USB-Reset fehlgeschlagen - kein 1e0e-Device gefunden" >> "$LOG"
+    return 1
+}
+
+mkdir -p "$(dirname "$LOG")"
+
+# Phase 1: bis zu 60s warten auf AT-Antwort
+for i in $(seq 1 30); do
+    if at_test "$DEV"; then
+        echo "[$(date)] Modem AT OK (Phase 1, ${i}/30)" >> "$LOG"
+        exit 0
+    fi
+    sleep 2
 done
+
+# Phase 2: Modem antwortet nicht - USB-Reset
+echo "[$(date)] Modem hängt nach 60s - USB-Reset" >> "$LOG"
+usb_reset_sim7600
+
+# Phase 3: 30s warten ob AT nach Reset funktioniert
+for i in $(seq 1 15); do
+    if at_test "$DEV"; then
+        echo "[$(date)] Modem AT OK nach USB-Reset (Phase 3, ${i}/15)" >> "$LOG"
+        exit 0
+    fi
+    sleep 2
+done
+
+echo "[$(date)] Modem antwortet auch nach USB-Reset nicht (Hardware-Power-Cycle nötig)" >> "$LOG"
 exit 1
 WAITSCRIPT
     sudo chmod +x /usr/local/sbin/lte-wait-device
@@ -1563,6 +1609,10 @@ WAITSCRIPT
     # Systemd-Service fuer LTE: Type=simple + direkter pppd-Aufruf.
     # (pon m2m + Type=forking war unzuverlaessig - systemd hat Start-Success
     # falsch erkannt. Mit Type=simple sieht systemd sofort wenn pppd crasht.)
+    # TimeoutStartSec=300: 25s sleep + bis zu 90s Phase 1 + bis zu 30s USB-Reset
+    # + bis zu 30s Phase 3 = max ~175s Wait-Phase. Zur Sicherheit 300s.
+    # ExecStartPre OHNE '-' Prefix: Fail soll den Service crashen lassen, damit
+    # systemd komplett neu startet (= 60s spaeter neuer Versuch von vorne).
     sudo tee /etc/systemd/system/lte-connection.service > /dev/null << LTESVC
 [Unit]
 Description=LTE PPP Connection (SIM7600 - Telekom M2M)
@@ -1571,13 +1621,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-TimeoutStartSec=120
+TimeoutStartSec=300
 ExecStartPre=/bin/sleep 25
-ExecStartPre=-/usr/local/sbin/lte-wait-device
+ExecStartPre=/usr/local/sbin/lte-wait-device
 ExecStart=/usr/sbin/pppd {ppp_device} 115200 call m2m nodetach
 ExecStop=/usr/bin/pkill -f "pppd.*m2m"
-Restart=on-failure
-RestartSec=30
+Restart=always
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
