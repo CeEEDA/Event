@@ -17,6 +17,16 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **GPS-Lock-Picker (WhatsApp-Style) für Artikel-Positionierung**: User berichtete, dass die ungenaue Direkt-Übernahme der GPS-Position oft hunderte Meter daneben lag.
+  - Neue Komponente: `frontend/src/components/GpsLockPicker.jsx` (Modal mit Leaflet-Karte, drag-barer Stecknadel, Live-Genauigkeit-Badge)
+  - Verhalten:
+    - Klick auf "Meine Position" öffnet das Modal statt sofort eine ggf. ungenaue Position zu übernehmen
+    - `watchPosition()` liefert kontinuierlich Updates → Genauigkeit wird live als Badge angezeigt (rot >80m, gelb >30m, grün ≤30m, sehr genau ≤10m)
+    - Pin folgt dem GPS-Fix automatisch — sobald der User ihn manuell verschiebt, bleibt die manuelle Position erhalten ("Auf GPS zurücksetzen"-Button erscheint)
+    - "Position speichern" überträgt Lat/Lng zurück ins Asset-Form
+  - In `OrderDetailPage.js` verdrahtet: `getMyPosition` öffnet jetzt nur noch das Modal, `onGpsPicked` füllt die Felder
+  - Verifiziert per Playwright: Modal lädt, watchPosition fired (50.4286, 7.4630, ±15m), Map mit Pin rendert korrekt, Save überträgt Werte ins Form, Plus Code wird automatisch generiert.
+
 - ✅ **Pausenzeiten werden nun korrekt von der Arbeitszeit abgezogen** (P0):
   - Root cause: Backend hat `break_min` aus dem Wochenplan zwar für die SOLL-Berechnung der Überstunden genutzt, aber **nie von `duration_minutes` abgezogen** → Reports/Listen zeigten die volle Anwesenheitszeit statt der bereinigten Arbeitszeit.
   - Fix in `backend/routes/employee.py`: Helper `_get_break_min_for_date()` + `_apply_break_deduction()`. Wird in `clock_out`, `time/manual` und `PUT time/entries/{id}` angewendet. Die konfigurierte Tagespause wird nur abgezogen wenn die geleistete Zeit > Pause ist (Schutz gegen negative Werte).

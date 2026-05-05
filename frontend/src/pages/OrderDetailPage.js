@@ -59,6 +59,7 @@ L.Icon.Default.mergeOptions({
 import { OpenLocationCode } from "open-location-code";
 import { openExternal } from "../lib/openExternal";
 import MessprotokollDialog from "../components/MessprotokollDialog";
+import GpsLockPicker from "../components/GpsLockPicker";
 
 const olcInstance = new OpenLocationCode();
 
@@ -210,6 +211,7 @@ export default function OrderDetailPage() {
   const [assetLat, setAssetLat] = useState("");
   const [assetLng, setAssetLng] = useState("");
   const [locating, setLocating] = useState(false);
+  const [showGpsPicker, setShowGpsPicker] = useState(false);
   const [addingAsset, setAddingAsset] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState(null);
 
@@ -387,20 +389,15 @@ export default function OrderDetailPage() {
       toast.error("Geolocation nicht verfügbar");
       return;
     }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setAssetLat(pos.coords.latitude.toFixed(6));
-        setAssetLng(pos.coords.longitude.toFixed(6));
-        setLocating(false);
-        toast.success("Position ermittelt");
-      },
-      (err) => {
-        setLocating(false);
-        toast.error("Position konnte nicht ermittelt werden: " + err.message);
-      },
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
+    // WhatsApp-Style: Picker-Modal öffnen, dort live nachverfolgen + Pin manuell platzierbar
+    setShowGpsPicker(true);
+  };
+
+  const onGpsPicked = ({ lat, lng }) => {
+    setAssetLat(lat.toFixed(6));
+    setAssetLng(lng.toFixed(6));
+    setShowGpsPicker(false);
+    toast.success("Position übernommen");
   };
 
   const addAsset = async () => {
@@ -1527,6 +1524,15 @@ export default function OrderDetailPage() {
               onSaved={() => { setShowMessprotokollDialog(false); fetchMessprotokolle(); setDocCount((c) => c + 1); }}
             />
           )}
+
+          {/* GPS Lock Picker (WhatsApp-Style Position-Modal) */}
+          <GpsLockPicker
+            open={showGpsPicker}
+            onClose={() => setShowGpsPicker(false)}
+            onConfirm={onGpsPicked}
+            initialLat={assetLat ? parseFloat(assetLat) : null}
+            initialLng={assetLng ? parseFloat(assetLng) : null}
+          />
 
           {/* Fuel Receipt Modal */}
           {showFuelModal && (
