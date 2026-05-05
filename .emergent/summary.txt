@@ -1,30 +1,43 @@
 <analysis>**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent core tasks involved building a new hardware integration for a Kirmeskiste 8Z (Raspberry Pi 5 + Waveshare SIM7600 LTE + Sequent 16-LV Digital Inputs HAT to read 8 S0-Pulse counters).
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent core tasks involved building and debugging a new hardware integration for a Kirmeskiste 8Z (Raspberry Pi 5 + Waveshare SIM7600 LTE + Sequent 16-LV Digital Inputs HAT to read 8 S0-Pulse counters) and a DSE generator monitoring interface.
 
 **User's preferred language**: German
 **INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, FinTS Banking, and extensive hardware monitoring. The  variant is implemented with an OTA-updatable Python sync script (v1.4.0), local SQLite persistence, real-time power (kW) calculation, systemd services for GPS and Data Sync, and a React frontend showing live health metrics, Z1-Z8 pulse counts, and a Leaflet OpenStreetMap for GPS tracking.
+A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, Document Management, FinTS Banking, and extensive hardware monitoring. The  variant is implemented with an OTA-updatable Python sync script, local SQLite persistence, real-time power (kW) calculation, systemd services for GPS and Data Sync, and complex LTE fallback network routing. It also tracks DSE generator telemetry via MQTT.
 
 **Last working item**:
-    - Last item agent was working: Fixing the LTE PPP Failover connection () on Debian 13. The  (v2.5.0) daemon is throwing an  (or ) error. The agent updated the setup generator to write the  file without the device name and pass it as an argument via , but the user's manual tests on the Pi are still failing with syntax/unrecognized option errors.
+    - Last item agent was working: Fixing an iOS crash (HTTP 422 error) when an employee attempts to view Order Details. The frontend is sending an invalid string (likely  or an object) as  to the  endpoint.
     - Status: IN PROGRESS
-    - Agent Testing Done: Y (Setup generator logic tested)
-    - Which testing method agent to use? manual testing by python -c / user testing on hardware
-    - User Testing Done: N (User is currently stuck testing the pppd command)
+    - Agent Testing Done: N
+    - Which testing method agent to use? Frontend testing agent / manual curl
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  - Issue 1: LTE PPP Failover fails to start due to  syntax error (P0)
-     - Attempted fixes: Removed  from the first line of . Attempted to pass it as an argument via  and . Also tried running  directly. All resulted in  errors.
-     - Next debug checklist: Investigate the exact syntax required by  on Debian 13. The device name might need to be inside the  file but without any trailing hidden characters/CRLF (use strict ), or  might require a specific flag (like  as the very first argument before ). Check  lines ~1490-1510.
-     - Why fix this issue and what will be achieved with the fix? LTE is required as a fallback connection when the Pi loses Ethernet.
+  Issue 1: Employee Order Details crash (P0)
+  Issue 2: LTE Failover DNS Issue (P1)
+  
+  Issues Detail:
+  - Issue 1: Employee Order Details crash
+     - Attempted fixes: Investigated backend logs and identified an HTTP 422  error for . Checked frontend routing in  and .
+     - Next debug checklist: Check the exact  call or  used in the Employee order list/hub views. Determine why  is undefined or malformed when clicked by an employee. 
+     - Why fix this issue and what will be achieved with the fix? Employees are currently blocked from viewing order details on their devices.
      - Status: IN PROGRESS
-     - Is recurring issue? Y (PPP/LTE connectivity issues have recurred multiple times)
-     - Should Test frontend/backend/both after fix? Backend (Setup script generation) and ask user to test on physical Pi.
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Frontend
+     - Blocked on other issue: None
+  - Issue 2: LTE Failover DNS Issue
+     - Attempted fixes: Diagnosed that  defaults to the LAN router (). When LAN is unplugged, DNS resolution fails over LTE. 
+     - Next debug checklist: Add  to  and create an  hook to append the Telekom DNS to . The user postponed this to fix other UI bugs first.
+     - Why fix this issue and what will be achieved with the fix? Ensures the Kirmeskiste 8Z stays connected even when ethernet fails.
+     - Status: BLOCKED (User postponed)
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Backend (Setup script generation)
+     - Blocked on other issue: User requested to prioritize frontend bugs.
 
 **In progress Task List**: 
-None (Besides the P0 Issue above).
+None
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
@@ -38,18 +51,20 @@ None (Besides the P0 Issue above).
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
 
 **Completed work in this session**
-- Fixed Zählerstände 0.00 kWh display bug (Backend uses  as fallback, Frontend shows amber pending state) (DONE)
-- Implemented actual  power calculation from pulse delta in Pi sync script v1.3.0 (DONE)
-- Fixed backend bug that falsely applied Watt->kW conversion to 8Z devices (DONE)
-- Fixed blocking  on AT-Port causing sync script to freeze after 1 cycle (updated to v1.4.0) (DONE)
-- Fixed systemd circular dependencies ( vs ) preventing Pi auto-start (DONE)
-- Confirmed hardware Auto-Boot for SIM7600 via Waveshare Jumper (PWR-3V3) and removed messy software auto-boot hacks (DONE)
-- Created  to reliably trigger  at boot (DONE)
-- Added Leaflet OpenStreetMap map to  to visualize live GPS position (DONE)
-- Renamed UI labels K1-K8 to Z1-Z8 (DONE)
+- Permanent fix for Pi LTE Failover using  in  and udev rules forcing the primary modem onto Interface 02. (DONE)
+- Cleaned up Pi UI tiles by removing HAT-stack and GPS-fix. (DONE)
+- Fixed bash setup script halting completely on LTE failure by wrapping it in . (DONE)
+- Fixed OTA update transparency and logging. (DONE)
+- Fixed Generator visibility so Employees with power monitoring access see the same list as Admins. (DONE)
+- Fixed iOS layout for long document names in Order/Kirmes Event Documents. (DONE)
+- Implemented manual assignment of generators to orders with kW/fuel telemetry display and  sync. (DONE)
+- Fixed DSE 890 Gateway GPS broadcasting by automatically matching devices based on MQTT topic hierarchy. (DONE)
+- Fixed  (Hauptschalter) status extraction in generator snapshots. (DONE)
+- Added an upload progress bar in Order and Kirmes Event document modals. (DONE)
+- Filtered Freelancer search to show only confirmed orders. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-None.
+None (Besides the postponed DNS issue captured in Pending Issues).
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: DSE USB Modbus Sync crashing/freezing.
@@ -60,59 +75,62 @@ None.
 
 
 **Key Technical Concepts**
-React, FastAPI backend, systemd services, bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600). Leaflet/OSM.
+React, FastAPI backend, systemd services, bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600). udev rules, MQTT topic hierarchies, Axios upload progress.
 
 **key DB schema**
-  - : ,  object.
-  - : Stores pulse counters, .
-  - : Telemetry data (, ).
+  - : , .
+  - : , telemetry.
+  - : , , .
+  - : .
 
 **changes in tech stack**
-  - Added  OpenStreetMap to .
+  - None
 
 **All files of reference** 
   - 
   - 
   - 
   - 
+  - 
+  - 
+  - 
 
 **Areas that need refactoring**: 
-  -  is getting very large due to multiple inline bash scripts.
+  -  bash script generation is massive and complex.
 
 **key api endpoints**
+  - 
   - 
   - 
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- The user is executing shell commands you provide directly on a live Raspberry Pi 5.
-- **Hardware Context:** The SIM7600 module is configured to auto-boot via a hardware jumper (PWR to 3V3). It does not need software GPIO pulses. 
-- **PPP Issue:** Debian 13's  (2.5.0+) is strictly rejecting the device name ( or ) with an unrecognized option error. You must figure out the exact correct syntax to pass the device to  (either properly formatted inside the  file, or as a specific command-line argument). 
+- If checking the Kirmeskiste bash generator script, ensure the use of  and  blocks is preserved, as it prevents partial installation failures on physical hardware.
+- The user pushes changes directly to their live environment from this chat via Save to Github.
 
 **documents and test reports created in this job**
-  - 
-  - Updated 
+  - None.
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (Agent) Suggested fixing  to pass the device as an argument .
- 2. (User) Applied the fix. Service failed.
- 3. (Agent) Suggested running  directly.
- 4. (User) Ran command. Output: .
- *(Pending)*: The user is waiting for the correct  syntax to establish the LTE connection.
+ 1. (User) Asked to filter freelancer assignments to confirmed orders only.
+ 2. (Agent) Fixed the filter in .
+ 3. (User) Reported Bug: Employee clicking on Order Details on iOS receives an error. Attached a screenshot.
+ 4. (Agent) Used bash to query the error. Discovered HTTP 422 Unprocessable Entity due to  parsing as a non-integer string.
+ *(Pending)*: Resolve the routing/API calling bug causing  to be malformed for Employees viewing order details.
 
 **Project Health Check:**
-- Broken:  generated for Kirmeskiste 8Z fails due to pppd syntax.
+- Broken: Employee Order Detail view (HTTP 422  error).
 - Mocked: None
 
 **3rd Party Integrations** 
 - Stripe (Payments) — requires User API Key
 - python-fints (Banking) — requires Bank credentials
-- Leaflet / OpenStreetMap
+- MQTT / DSE WebNet
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Heavy reliance on self-written pytest scripts and user E2E testing on physical hardware).
+  - Testing agent used after significant changes: NO (Iterative manual testing)
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: 
+  - Test files created: None
   - Known regressions: None
 
 **Credentials to test flow:**
@@ -120,12 +138,13 @@ React, FastAPI backend, systemd services, bash script generation for physical Ra
 - Preview Admin:  / 
 
 **What agent forgot to execute**
-- Nothing. Was actively resolving the LTE failure when the session ended.
+- The agent was interrupted by the user reporting the iOS crash bug before implementing the LTE DNS failover fix ( and  hook).
 
 **Debugging checklist for current issue**
-    Issue: LTE PPP connection fails with 
-    Backend files to check:  (Lines ~1240-1260 and ~1490-1510)
-    Checklist:
-    - Research Debian 13  2.5.0 syntax for specifying the tty device.
-    - Test if putting  back into  as the *very first line* works, provided there are no hidden spaces/CRLF characters.
-    - Verify  or  command string inside the generated .</analysis>
+    Issue: Employee Order Details view crash (HTTP 422 on )
+    Frontend files to check: 
+      - 
+      - Any Employee specific hub/dashboard that links to order details ( or similar).
+      - Check how  vs  vs  is mapped in the employee's  array.
+    Backend files to check: 
+      -  (specifically endpoints accessed by employees returning order lists).</analysis>
