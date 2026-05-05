@@ -1550,18 +1550,18 @@ PPPHOOK2D
     # Damit erholt sich der Pi auch nach SIM7600-Firmware-Hang ohne Power-Cycle.
     sudo tee /usr/local/sbin/lte-wait-device > /dev/null << 'WAITSCRIPT'
 #!/bin/bash
-DEV="${1:-/dev/sim7600-ppp}"
+DEV="${{1:-/dev/sim7600-ppp}}"
 LOG=/var/log/lte-wait-device.log
 
-at_test() {
+at_test() {{
     # Sendet AT auf Port, gibt 0 zurueck wenn 'OK' empfangen
     local port="$1"
     [ -e "$port" ] || return 1
     timeout 4 bash -c "exec 3<>$port 2>/dev/null; printf 'AT\r\n' >&3 2>/dev/null; sleep 1; cat <&3 2>/dev/null" \
       | tr -d '\r\0' | grep -q OK
-}
+}}
 
-usb_reset_sim7600() {
+usb_reset_sim7600() {{
     # USB-Device 1e0e:9001 unbinden und rebinden = Soft-Reset
     local USB_DEV
     USB_DEV=$(grep -l "^1e0e" /sys/bus/usb/devices/*/idVendor 2>/dev/null | head -1 | xargs -r dirname | xargs -r basename)
@@ -1575,33 +1575,33 @@ usb_reset_sim7600() {
     fi
     echo "[$(date)] USB-Reset fehlgeschlagen - kein 1e0e-Device gefunden" >> "$LOG"
     return 1
-}
+}}
 
 mkdir -p "$(dirname "$LOG")"
 
 # Phase 1: bis zu 60s warten auf AT-Antwort
 for i in $(seq 1 30); do
     if at_test "$DEV"; then
-        echo "[$(date)] Modem AT OK (Phase 1, ${i}/30)" >> "$LOG"
+        echo "[$(date)] Modem AT OK (Phase 1, ${{i}}/30)" >> "$LOG"
         exit 0
     fi
     sleep 2
 done
 
 # Phase 2: Modem antwortet nicht - USB-Reset
-echo "[$(date)] Modem hängt nach 60s - USB-Reset" >> "$LOG"
+echo "[$(date)] Modem haengt nach 60s - USB-Reset" >> "$LOG"
 usb_reset_sim7600
 
 # Phase 3: 30s warten ob AT nach Reset funktioniert
 for i in $(seq 1 15); do
     if at_test "$DEV"; then
-        echo "[$(date)] Modem AT OK nach USB-Reset (Phase 3, ${i}/15)" >> "$LOG"
+        echo "[$(date)] Modem AT OK nach USB-Reset (Phase 3, ${{i}}/15)" >> "$LOG"
         exit 0
     fi
     sleep 2
 done
 
-echo "[$(date)] Modem antwortet auch nach USB-Reset nicht (Hardware-Power-Cycle nötig)" >> "$LOG"
+echo "[$(date)] Modem antwortet auch nach USB-Reset nicht (Hardware-Power-Cycle noetig)" >> "$LOG"
 exit 1
 WAITSCRIPT
     sudo chmod +x /usr/local/sbin/lte-wait-device
