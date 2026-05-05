@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
-import api from "../lib/api";
-import { BACKEND_URL } from "../lib/api";
+import api, { BACKEND_URL, getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -237,6 +236,13 @@ export default function OrderDetailPage() {
   const isFreelancer = currentUser?.role === "freelancer";
 
   const fetchOrder = useCallback(async () => {
+    // Guard against invalid pk (e.g. "undefined", non-numeric, NaN) to avoid 422 + iOS crash
+    const pkNum = parseInt(pk, 10);
+    if (!Number.isFinite(pkNum) || pkNum <= 0) {
+      setLoading(false);
+      setError("Ungültige Auftragsnummer");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -244,7 +250,7 @@ export default function OrderDetailPage() {
       setOrder(data);
       setRadiusInput(String(data.radius_km || 5));
     } catch (err) {
-      setError(err.response?.data?.detail || "Fehler beim Laden");
+      setError(getErrorMsg(err, "Fehler beim Laden"));
     } finally {
       setLoading(false);
     }

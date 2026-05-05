@@ -677,10 +677,12 @@ export default function HubPage() {
                     const d = new Date(a.date + "T00:00:00");
                     const dayName = d.toLocaleDateString("de-DE", { weekday: "short" });
                     const dateStr = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+                    const orderPkNum = a.order_pk != null ? parseInt(a.order_pk, 10) : NaN;
+                    const hasValidOrderPk = Number.isFinite(orderPkNum) && orderPkNum > 0;
                     return (
                       <div key={a.id}
-                        className={`flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 ${a.order_pk ? "cursor-pointer hover:bg-indigo-100 hover:border-indigo-300 transition-colors" : ""}`}
-                        onClick={() => a.order_pk && navigate(`/orders/${a.order_pk}`)}
+                        className={`flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 ${hasValidOrderPk ? "cursor-pointer hover:bg-indigo-100 hover:border-indigo-300 transition-colors" : ""}`}
+                        onClick={() => hasValidOrderPk && navigate(`/orders/${orderPkNum}`)}
                         data-testid={`my-plan-${a.id}`}
                       >
                         <div className="text-center min-w-[44px]">
@@ -693,7 +695,7 @@ export default function HubPage() {
                           {a.note && <p className="text-[10px] text-gray-500 italic truncate">{a.note}</p>}
                           {(a.start_time || a.end_time) && <p className="text-[10px] text-gray-400">{a.start_time || "?"} – {a.end_time || "?"}</p>}
                         </div>
-                        {a.order_pk && <ChevronRight className="w-4 h-4 text-indigo-400 flex-shrink-0" />}
+                        {hasValidOrderPk && <ChevronRight className="w-4 h-4 text-indigo-400 flex-shrink-0" />}
                       </div>
                     );
                   })}

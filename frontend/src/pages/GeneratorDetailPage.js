@@ -111,11 +111,14 @@ function DeploymentHistory({ generatorId }) {
               </tr>
             </thead>
             <tbody>
-              {deployments.map((d) => (
+              {deployments.map((d) => {
+                const orderPkNum = d.order_pk != null ? parseInt(d.order_pk, 10) : NaN;
+                const hasValidOrderPk = Number.isFinite(orderPkNum) && orderPkNum > 0;
+                return (
                 <tr
                   key={d.id}
-                  className="border-b border-gray-100 hover:bg-fuchsia-50/50 cursor-pointer"
-                  onClick={() => d.order_pk && navigate(`/orders/${d.order_pk}`)}
+                  className={`border-b border-gray-100 hover:bg-fuchsia-50/50 ${hasValidOrderPk ? "cursor-pointer" : ""}`}
+                  onClick={() => hasValidOrderPk && navigate(`/orders/${orderPkNum}`)}
                   data-testid={`deployment-${d.id}`}
                 >
                   <td className="px-4 py-2.5 font-medium text-fuchsia-700">
@@ -145,7 +148,8 @@ function DeploymentHistory({ generatorId }) {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
