@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, Download, FileText, Send, ChevronRight,
   TrendingUp, Receipt, CheckCircle, Clock, AlertTriangle,
-  CircleDollarSign, Ban, ArrowUpDown, ArrowUp, ArrowDown,
+  CircleDollarSign, Ban, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,8 +30,33 @@ export default function FinancePage() {
   const [filter, setFilter] = useState("alle");
   const [sortKey, setSortKey] = useState("invoice_date");
   const [sortDir, setSortDir] = useState("desc"); // newest first by default
+  const [repairing, setRepairing] = useState(false);
 
   const canAccess = isAdmin || user?.permissions?.can_billing;
+
+  const repairStripePaid = async () => {
+    if (!window.confirm("Stripe-Zahlungen mit der Rechnungsliste abgleichen?\nFindet Rechnungen, die bei Stripe bezahlt wurden, hier aber noch als 'Fällig' stehen.")) return;
+    setRepairing(true);
+    try {
+      const { data } = await api.post("/payments/repair-stripe-paid-invoices");
+      const total = data.repaired_count || 0;
+      if (total === 0) {
+        toast.info("Alle Stripe-Zahlungen sind bereits korrekt zugeordnet.");
+      } else {
+        const all = [...(data.repaired || []), ...(data.pulled_from_stripe || [])];
+        const numbers = all.map(r => r.invoice_number).filter(Boolean).join(", ");
+        toast.success(`${total} Rechnung(en) als bezahlt markiert: ${numbers}`);
+        loadInvoices();
+      }
+      if ((data.skipped || []).length > 0) {
+        console.warn("[Stripe-Repair] Skipped:", data.skipped);
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler beim Stripe-Abgleich");
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   const loadInvoices = useCallback(async () => {
     try {
@@ -165,7 +190,22 @@ export default function FinancePage() {
             <Receipt className="w-5 h-5 text-emerald-600" />
             <h1 className="text-base font-semibold text-gray-900">Rechnungsverwaltung</h1>
           </div>
-          <Logo size="small" />
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={repairStripePaid}
+                disabled={repairing}
+                className="text-xs h-8"
+                data-testid="repair-stripe-btn"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${repairing ? "animate-spin" : ""}`} />
+                Stripe abgleichen
+              </Button>
+            )}
+            <Logo size="small" />
+          </div>
         </div>
       </header>
 

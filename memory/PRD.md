@@ -17,6 +17,11 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Stripe-Abgleich Button + erweiterter Repair** (Folge des vorherigen Fixes):
+  - Vorheriger Sweep fand nur Transaktionen mit `payment_status="paid"` in unserer DB. Wenn der Stripe-Webhook nie korrekt feuerte (z.B. Webhook-URL nicht in Stripe-Dashboard registriert) UND der User nicht auf die Erfolgs-Seite zurückkam, blieb unsere Transaktion auf `pending` → Sweep ignorierte sie → Live-Rechnung blieb hängen auf "Fällig".
+  - Erweiterung in `/api/payments/repair-stripe-paid-invoices`: Pollt jetzt auch alle `pending`/`initiated` Invoice-Transaktionen direkt bei Stripe nach. Bei `paid` wird die Transaktion aktualisiert UND die Rechnung wird per `_mark_kirmes_invoice_paid()` korrekt verbucht (inkl. Mahnung schließen).
+  - Frontend: Neuer Button **"Stripe abgleichen"** (Admin-only, mit Refresh-Spinner) in der `Rechnungsverwaltung` Header-Leiste. Toast zeigt nach Abgleich an wie viele Rechnungen repariert wurden, mit Liste der Rechnungsnummern.
+
 - ✅ **Stripe-Zahlung wird jetzt korrekt als 'bezahlt' markiert** (P0):
   - Root cause: In `payments.py` Webhook + Status-Polling schrieb der Code in die falsche Collection (`db.invoices` statt `db.kirmes_invoices`) und mit englischem Status (`"paid"` statt deutsch `"bezahlt"`). Außerdem schloss er keine offenen Mahnungs-Tasks. → Stripe-bezahlte Rechnungen blieben fälschlicherweise auf "Fällig" stehen, automatische Mahnungen wurden trotzdem ausgelöst.
   - Fix:

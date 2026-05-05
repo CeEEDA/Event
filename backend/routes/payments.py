@@ -574,20 +574,34 @@ class ManualRefundRequest(BaseModel):
 
 @router.post("/repair-stripe-paid-invoices")
 async def repair_stripe_paid_invoices(user: dict = Depends(_require_admin)):
-    """Einmaliger Sweep: Findet Stripe-Transaktionen mit payment_status='paid', deren
-    Rechnung in kirmes_invoices noch nicht 'bezahlt' ist, und korrigiert sie.
-    Behebt alle Faelle, die durch den vorherigen Bug (falsche Collection/Status) haengen blieben.
+    """Einmaliger Sweep: Findet Stripe-bezahlte Rechnungen, deren Status in
+    `kirmes_invoices` noch nicht 'bezahlt' ist, und korrigiert sie.
+
+    Behebt zwei Faelle:
+    1. payment_transactions ist bereits 'paid', aber kirmes_invoices ist 'offen' → einfach markieren
+    2. payment_transactions ist 'pending', Stripe-Session ist aber 'paid' → bei Stripe nachfragen, updaten, markieren
+       (Ursache: Webhook hat nie gefeuert, weil Webhook-URL nicht in Stripe registriert war,
+       und der User kam nicht zurück auf die Erfolgsseite, sodass das Polling auch nie lief.)
     """
     txs = await _db.payment_transactions.find(
-        {"type": "invoice", "payment_status": "paid"},
+        {"type": "invoice", "payment_status": {"$in": ["paid", "pending", "initiated"]}},
         {"_id": 0},
     ).to_list(2000)
     repaired = []
+    pulled_from_stripe = []
     skipped = []
+
+    # Stripe SDK fuer Session-Lookups
+    stripe_client = None
+    if STRIPE_API_KEY:
+        webhook_url = "https://placeholder/api/payments/webhook/stripe"
+        stripe_client = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+
     for tx in txs:
         inv_id = tx.get("invoice_id")
+        sess_id = tx.get("session_id")
         if not inv_id:
-            skipped.append({"session_id": tx.get("session_id"), "reason": "no invoice_id"})
+            skipped.append({"session_id": sess_id, "reason": "no invoice_id"})
             continue
         inv = await _db.kirmes_invoices.find_one({"id": inv_id}, {"_id": 0, "id": 1, "invoice_number": 1, "payment_status": 1})
         if not inv:
@@ -595,9 +609,46 @@ async def repair_stripe_paid_invoices(user: dict = Depends(_require_admin)):
             continue
         if inv.get("payment_status") == "bezahlt":
             continue  # already correct
-        await _mark_kirmes_invoice_paid(inv_id, tx.get("amount"), source="Stripe-Repair-Sweep")
-        repaired.append({"invoice_id": inv_id, "invoice_number": inv.get("invoice_number"), "amount": tx.get("amount")})
-    return {"repaired": repaired, "repaired_count": len(repaired), "skipped": skipped}
+
+        tx_status = tx.get("payment_status")
+
+        # Fall 1: tx schon auf 'paid', nur Invoice noch nicht synchronisiert
+        if tx_status == "paid":
+            await _mark_kirmes_invoice_paid(inv_id, tx.get("amount"), source="Repair-Sweep (tx=paid)")
+            repaired.append({"invoice_id": inv_id, "invoice_number": inv.get("invoice_number"), "amount": tx.get("amount"), "via": "tx-already-paid"})
+            continue
+
+        # Fall 2: tx pending → Stripe direkt fragen
+        if not sess_id or not stripe_client:
+            skipped.append({"invoice_id": inv_id, "session_id": sess_id, "reason": "no stripe session_id or stripe client"})
+            continue
+        try:
+            checkout_status = await stripe_client.get_checkout_status(sess_id)
+            stripe_paid = checkout_status.payment_status == "paid"
+        except Exception as e:
+            skipped.append({"invoice_id": inv_id, "session_id": sess_id, "reason": f"stripe lookup failed: {str(e)[:100]}"})
+            continue
+
+        if stripe_paid:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await _db.payment_transactions.update_one(
+                {"session_id": sess_id},
+                {"$set": {"payment_status": "paid", "updated_at": now_iso, "repaired_at": now_iso}},
+            )
+            await _mark_kirmes_invoice_paid(inv_id, tx.get("amount"), source="Repair-Sweep (Stripe-confirmed)")
+            pulled_from_stripe.append({"invoice_id": inv_id, "invoice_number": inv.get("invoice_number"), "amount": tx.get("amount"), "via": "stripe-confirmed"})
+        else:
+            skipped.append({
+                "invoice_id": inv_id, "session_id": sess_id,
+                "reason": f"stripe payment_status={checkout_status.payment_status} (not paid)",
+            })
+
+    return {
+        "repaired": repaired,
+        "pulled_from_stripe": pulled_from_stripe,
+        "repaired_count": len(repaired) + len(pulled_from_stripe),
+        "skipped": skipped,
+    }
 
 
 @router.post("/refund/manual")
