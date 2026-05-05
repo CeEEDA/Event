@@ -1,47 +1,35 @@
-<analysis>**original_problem_statement**: 
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts, HR document management, chat, task scheduling, role-based permissions, and automated FinTS banking synchronization. Recent core tasks involved building and debugging a new hardware integration for a Kirmeskiste 8Z (Raspberry Pi 5 + Waveshare SIM7600 LTE + Sequent 16-LV Digital Inputs HAT to read 8 S0-Pulse counters) and a DSE generator monitoring interface.
+<analysis><original_problem_statement>
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts (Tankwagen-Pi), HR document management, chat, task scheduling, role-based permissions, automated FinTS banking synchronization, and complex hardware monitoring (Kirmeskiste 8Z with Raspberry Pi 5, LTE, GPS).
+</original_problem_statement>
 
-**User's preferred language**: German
-**INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY.** (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
+**User's preferred language**: German. 
+INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY. (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB application. Features include Orders, Time Tracking, Document Management, FinTS Banking, and extensive hardware monitoring. The  variant is implemented with an OTA-updatable Python sync script, local SQLite persistence, real-time power (kW) calculation, systemd services for GPS and Data Sync, and complex LTE fallback network routing. It also tracks DSE generator telemetry via MQTT.
+A mature React/FastAPI/MongoDB application with extensive real-world hardware integration. Features include Orders, Shift Planning (Sollstunden), Time Tracking, Document Management, Chat, Stripe Payments, FinTS Banking, and physical IoT Kiosk integrations (Kirmeskiste 8Z, Tankwagen). Device scripts handle OTA updates, PPP/LTE failovers, and serial port reading (Epson TM-U295 emulators, Sening-Parsers).
 
 **Last working item**:
-    - Last item agent was working: Fixing an iOS crash (HTTP 422 error) when an employee attempts to view Order Details. The frontend is sending an invalid string (likely  or an object) as  to the  endpoint.
-    - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? Frontend testing agent / manual curl
-    - User Testing Done: N
+    - Last item agent was working: Debugging a critical LTE connection failure on the second Kirmeskiste Pi. The LTE service () hangs, and the  modem is not responding to AT commands. The agent attempted a hotfix by providing a new DSE-style chatscript (without / reset loops), adding , and reloading the USB modules. However, the systemd service subsequently timed out in .
+    - Status: BLOCKED / IN PROGRESS (Waiting for the user to hard reboot the Pi as the modem is physically hung).
+    - Agent Testing Done: N/A (Diagnostics running directly on user's hardware via SSH).
+    - Which testing method agent to use? bash/curl via User interaction.
+    - User Testing Done: Y (User ran the provided diagnostic scripts).
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Employee Order Details crash (P0)
-  Issue 2: LTE Failover DNS Issue (P1)
-  
-  Issues Detail:
-  - Issue 1: Employee Order Details crash
-     - Attempted fixes: Investigated backend logs and identified an HTTP 422  error for . Checked frontend routing in  and .
-     - Next debug checklist: Check the exact  call or  used in the Employee order list/hub views. Determine why  is undefined or malformed when clicked by an employee. 
-     - Why fix this issue and what will be achieved with the fix? Employees are currently blocked from viewing order details on their devices.
-     - Status: IN PROGRESS
+  Issue 1: LTE Modem Hang on Kirmeskiste Pi (P0)
+     - Attempted fixes: Identified that the chat script was putting the SIM7600 into an unstable loop. Replaced  with a safer script. Attempted to reload USB drivers () to force re-enumeration, but  timed out starting , indicating the modem device didn't come back up on the USB bus.
+     - Next debug checklist: Instruct the user to perform a hard reboot () since the SIM7600 HAT needs a power cycle. After reboot, verify if  ports appear, if  connects, and if internet routing works.
+     - Why fix this issue and what will be achieved with the fix? The second Kirmeskiste currently has no LTE connectivity and falls completely offline if the ethernet cable is unplugged.
+     - Status: BLOCKED (Awaiting User to reboot hardware and provide logs).
      - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Frontend
-     - Blocked on other issue: None
-  - Issue 2: LTE Failover DNS Issue
-     - Attempted fixes: Diagnosed that  defaults to the LAN router (). When LAN is unplugged, DNS resolution fails over LTE. 
-     - Next debug checklist: Add  to  and create an  hook to append the Telekom DNS to . The user postponed this to fix other UI bugs first.
-     - Why fix this issue and what will be achieved with the fix? Ensures the Kirmeskiste 8Z stays connected even when ethernet fails.
-     - Status: BLOCKED (User postponed)
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Backend (Setup script generation)
-     - Blocked on other issue: User requested to prioritize frontend bugs.
+     - Should Test frontend/backend/both after fix? Backend/Bash Setup Script.
+     - Blocked on other issue: None.
 
 **In progress Task List**: 
 None
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - (P1) Übersichtskachel auf der Startseite: X von 12 Pis online, Y mit schwachem Signal, Z ohne GPS-Fix (Overview widget on the main dashboard for the new 8Z devices).
     - (P2) Portal-Auftragsliste Lager Filter/Reiter: Separate internal test runs from normal orders.
     - (P2) Suchleiste über der Auftragsliste: Add a search bar to the Pi UI.
     
@@ -49,22 +37,24 @@ None
     - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
     - (P2) Lastdiagramm Live-Test.
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
+    *(Note: The P1 task for an Overview Widget was rejected/cancelled by the user in this session).*
 
 **Completed work in this session**
-- Permanent fix for Pi LTE Failover using  in  and udev rules forcing the primary modem onto Interface 02. (DONE)
-- Cleaned up Pi UI tiles by removing HAT-stack and GPS-fix. (DONE)
-- Fixed bash setup script halting completely on LTE failure by wrapping it in . (DONE)
-- Fixed OTA update transparency and logging. (DONE)
-- Fixed Generator visibility so Employees with power monitoring access see the same list as Admins. (DONE)
-- Fixed iOS layout for long document names in Order/Kirmes Event Documents. (DONE)
-- Implemented manual assignment of generators to orders with kW/fuel telemetry display and  sync. (DONE)
-- Fixed DSE 890 Gateway GPS broadcasting by automatically matching devices based on MQTT topic hierarchy. (DONE)
-- Fixed  (Hauptschalter) status extraction in generator snapshots. (DONE)
-- Added an upload progress bar in Order and Kirmes Event document modals. (DONE)
-- Filtered Freelancer search to show only confirmed orders. (DONE)
+- Fixed Employee Order Details iOS crash caused by React rendering a Pydantic 422 error object directly (DONE).
+- Fixed iOS Virtual Keyboard covering the Chat text input by using  API (DONE).
+- Fixed iOS Date/Time picker bug in Zeiterfassung & Wartung where tapping Save directly didn't commit the input value (DONE).
+- Fixed Pausenzeiten (break times) not being deducted from  in employee work logs (DONE).
+- Implemented a WhatsApp-style GPS Location Picker modal with draggable pin for accurate asset positioning (DONE).
+- Fixed Chat Auto-scroll constantly forcing users to the bottom while reading old messages (DONE).
+- Fixed Tankbeleg (fuel receipt) heuristic falsely classifying Diesel receipts as Heizöl (DONE).
+- Added Pi-Status Dashboard (LTE/GPS/Version) for Tankwagen devices via the OTA update check-in API (DONE).
+- Refactored Shift Planning (Einsatzplanung) to use Sollstunden (target hours) instead of Start/End times, complete with UI and calculation migration (DONE).
+- Fixed Stripe Payments bug where paid invoices were updated in the wrong DB collection and with English statuses; built a Stripe Repair/Sync button in the UI (DONE).
+- Fixed iOS UI Zurück (Back) button hidden behind the Notch/Dynamic Island using  (DONE).
+- Fixed LTE Failover DNS issue (P1 from previous handoff) by applying  and  hooks (DONE).
 
 **Earlier issues found/mentioned but not fixed**
-None (Besides the postponed DNS issue captured in Pending Issues).
+None.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: DSE USB Modbus Sync crashing/freezing.
@@ -75,16 +65,15 @@ None (Besides the postponed DNS issue captured in Pending Issues).
 
 
 **Key Technical Concepts**
-React, FastAPI backend, systemd services, bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600). udev rules, MQTT topic hierarchies, Axios upload progress.
+React, FastAPI backend, systemd services, bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600). OpenLocationCode, React-Leaflet, iOS Safari quirks (, , DatePicker blurs).
 
 **key DB schema**
-  - : , .
-  - : , telemetry.
-  - : , , .
-  - : .
+  - :  now contain  and  instead of  and .
+  - : Used for Stripe session persistence and sync.
+  - : Payment statuses (, ).
 
 **changes in tech stack**
-  - None
+  - None.
 
 **All files of reference** 
   - 
@@ -96,7 +85,7 @@ React, FastAPI backend, systemd services, bash script generation for physical Ra
   - 
 
 **Areas that need refactoring**: 
-  -  bash script generation is massive and complex.
+  -  bash script generation remains massive and complex.
 
 **key api endpoints**
   - 
@@ -105,21 +94,27 @@ React, FastAPI backend, systemd services, bash script generation for physical Ra
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- If checking the Kirmeskiste bash generator script, ensure the use of  and  blocks is preserved, as it prevents partial installation failures on physical hardware.
-- The user pushes changes directly to their live environment from this chat via Save to Github.
+- The user is actively troubleshooting a live Raspberry Pi setup over SSH through the chat.
+- The LTE SIM Card parameters: APN is , PIN is .
+- The SIM7600 modem is currently hanging. The systemd service  failed because  timed out trying to find the USB TTY ports. A hard reboot is necessary.
 
 **documents and test reports created in this job**
-  - None.
+  -  (Updated extensively with recent fixes)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) Asked to filter freelancer assignments to confirmed orders only.
- 2. (Agent) Fixed the filter in .
- 3. (User) Reported Bug: Employee clicking on Order Details on iOS receives an error. Attached a screenshot.
- 4. (Agent) Used bash to query the error. Discovered HTTP 422 Unprocessable Entity due to  parsing as a non-integer string.
- *(Pending)*: Resolve the routing/API calling bug causing  to be malformed for Employees viewing order details.
+ 1. (User) Reported that the Pi LTE is offline if ethernet is unplugged.
+ 2. (Agent) Found missing DNS hooks, provided  and updated backend bash generation.
+ 3. (User) Asked how to check the route on the Pi.
+ 4. (Agent) Provided a comprehensive bash diagnostic script.
+ 5. (User) Provided the output of the diagnostic script.
+ 6. (Agent) Realized PPP came up but no data flowed. Provided AT diagnostic script.
+ 7. (User) Provided AT diagnostic output showing the modem stopped responding.
+ 8. (Agent) Suspected the chat script / caused a modem crash. Provided a new chat script and a script to reload USB modules.
+ 9. (User) Applied the script, but reported that the service timed out during , and  does not exist.
+ *(Pending)*: Advise the user to execute  as the modem hardware needs a power cycle, and then check .
 
 **Project Health Check:**
-- Broken: Employee Order Detail view (HTTP 422  error).
+- Broken: Second Kirmeskiste Pi LTE Connectivity.
 - Mocked: None
 
 **3rd Party Integrations** 
@@ -128,23 +123,21 @@ React, FastAPI backend, systemd services, bash script generation for physical Ra
 - MQTT / DSE WebNet
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Iterative manual testing)
+  - Testing agent used after significant changes: NO (Iterative manual testing and user verification for physical hardware).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
 
 **Credentials to test flow:**
-- Admin: 
 - Preview Admin:  / 
 
 **What agent forgot to execute**
-- The agent was interrupted by the user reporting the iOS crash bug before implementing the LTE DNS failover fix ( and  hook).
+- Nothing; waiting for the user to hard-reboot their physical Pi.
 
 **Debugging checklist for current issue**
-    Issue: Employee Order Details view crash (HTTP 422 on )
-    Frontend files to check: 
-      - 
-      - Any Employee specific hub/dashboard that links to order details ( or similar).
-      - Check how  vs  vs  is mapped in the employee's  array.
-    Backend files to check: 
-      -  (specifically endpoints accessed by employees returning order lists).</analysis>
+    Issue: LTE Modem SIM7600 unresponsive/hanging (P0)
+    Checklist:
+      - Tell the user: .
+      - After reboot, have the user run:  and .
+      - If it fails, check -- No entries --.
+      - Ensure the new  chatscript with the  and  APN is executed correctly.</analysis>

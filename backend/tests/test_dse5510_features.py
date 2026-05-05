@@ -18,7 +18,7 @@ import os
 import hashlib
 import time
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://pi-energy-hub.preview.emergentagent.com")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kiosk-dashboard-5.preview.emergentagent.com")
 
 # Test credentials from review request
 TEST_DEVICE_ID = "5cf84060-95c2-407d-a5d6-1cbf0f184617"

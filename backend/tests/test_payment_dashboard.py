@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://pi-energy-hub.preview.emergentagent.com"
+                "origin_url": "https://kiosk-dashboard-5.preview.emergentagent.com"
             },
             timeout=30
         )
