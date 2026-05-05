@@ -144,6 +144,11 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
     notes: "",
   });
 
+  // iOS-Fix: Ref auf den aktuellen Form-State, damit handleSave nach blur den
+  // letzten Wert sieht (iOS commit-on-blur des Date/Number-Inputs).
+  const formRef = useRef(form);
+  formRef.current = form;
+
   // Calculate next maintenance preview
   const calcNextMaintenanceMonths = () => {
     if (!form.next_maintenance_months) return "–";
@@ -161,24 +166,31 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
   };
 
   const handleSave = async () => {
-    if (!form.performed_by.trim()) { toast.error("Techniker ist erforderlich"); return; }
-    if (!form.next_maintenance_months) { toast.error("Nächste Wartung in Monaten ist erforderlich"); return; }
-    if (!form.next_maintenance_hours) { toast.error("Nächste Wartung in Stunden ist erforderlich"); return; }
+    // iOS-Fix: erzwinge Commit eines noch offenen Date/Number-Inputs (z.B. type="date")
+    if (typeof document !== "undefined" && document.activeElement && typeof document.activeElement.blur === "function") {
+      document.activeElement.blur();
+    }
+    // Ein Tick warten, damit React den onChange-State aus dem Blur propagiert
+    await new Promise(r => setTimeout(r, 60));
+    const f = formRef.current;
+    if (!f.performed_by.trim()) { toast.error("Techniker ist erforderlich"); return; }
+    if (!f.next_maintenance_months) { toast.error("Nächste Wartung in Monaten ist erforderlich"); return; }
+    if (!f.next_maintenance_hours) { toast.error("Nächste Wartung in Stunden ist erforderlich"); return; }
     setSaving(true);
     try {
       await onSave({
-        performed_by: form.performed_by,
-        performed_at: form.performed_at,
-        hours_at_service: form.hours_at_service ? parseFloat(form.hours_at_service) : null,
-        next_maintenance_months: parseInt(form.next_maintenance_months),
-        next_maintenance_hours: parseInt(form.next_maintenance_hours),
-        checklist_data: { mechanical: form.mechanical, electrical: form.electrical },
-        measurements: form.measurements,
-        load_test: form.load_test,
-        ats_test: { ...form.ats_test, umschaltzeit: form.ats_umschaltzeit },
-        diagnosis: form.diagnosis,
-        remarks: form.remarks,
-        notes: form.notes,
+        performed_by: f.performed_by,
+        performed_at: f.performed_at,
+        hours_at_service: f.hours_at_service ? parseFloat(f.hours_at_service) : null,
+        next_maintenance_months: parseInt(f.next_maintenance_months),
+        next_maintenance_hours: parseInt(f.next_maintenance_hours),
+        checklist_data: { mechanical: f.mechanical, electrical: f.electrical },
+        measurements: f.measurements,
+        load_test: f.load_test,
+        ats_test: { ...f.ats_test, umschaltzeit: f.ats_umschaltzeit },
+        diagnosis: f.diagnosis,
+        remarks: f.remarks,
+        notes: f.notes,
       }, pendingImages);
     } finally { setSaving(false); }
   };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
@@ -65,12 +65,24 @@ export default function AdminZeitDetailPage() {
   const [vacEnd, setVacEnd] = useState("");
   const [vacType, setVacType] = useState("urlaub"); // "urlaub" | "ueberstundenabbau" | "krank"
   const [addingVac, setAddingVac] = useState(false);
+  // iOS-Fix: refs auf vacStart/vacEnd, damit addVacation nach blur den letzten Wert sieht
+  const vacStartRef = useRef("");
+  const vacEndRef = useRef("");
+  vacStartRef.current = vacStart;
+  vacEndRef.current = vacEnd;
 
   // Manual time entry editing (must be declared before any early return — rules-of-hooks)
   const [addRow, setAddRow] = useState({});
   const [addingRow, setAddingRow] = useState(null);
   const [editEntryId, setEditEntryId] = useState(null);
   const [editDraft, setEditDraft] = useState({ date: "", start: "", end: "" });
+
+  // iOS-Fix: Ref auf den aktuellen addRow-State, damit submitAddRow nach blur den
+  // letzten Wert sieht (iOS commit-on-blur des Date/Time-Pickers).
+  const addRowRef = useRef({});
+  addRowRef.current = addRow;
+  const editDraftRef = useRef({ date: "", start: "", end: "" });
+  editDraftRef.current = editDraft;
 
   // Year data
   const [yearEntries, setYearEntries] = useState([]);
@@ -317,20 +329,27 @@ export default function AdminZeitDetailPage() {
   }, [token, userId]);
 
   const addVacation = async () => {
-    if (!vacStart || !vacEnd) { toast.error("Bitte Start- und Enddatum wählen"); return; }
-    if (vacEnd < vacStart) { toast.error("Enddatum muss nach Startdatum liegen"); return; }
+    // iOS-Fix: Picker-Commit erzwingen, dann State aus Ref lesen
+    if (typeof document !== "undefined" && document.activeElement && typeof document.activeElement.blur === "function") {
+      document.activeElement.blur();
+    }
+    await new Promise(r => setTimeout(r, 60));
+    const vStart = vacStartRef.current;
+    const vEnd = vacEndRef.current;
+    if (!vStart || !vEnd) { toast.error("Bitte Start- und Enddatum wählen"); return; }
+    if (vEnd < vStart) { toast.error("Enddatum muss nach Startdatum liegen"); return; }
     setAddingVac(true);
     try {
       if (vacType === "urlaub") {
-        await api.post(`/employee/vacation/${userId}?token=${token}`, { start_date: vacStart, end_date: vacEnd });
+        await api.post(`/employee/vacation/${userId}?token=${token}`, { start_date: vStart, end_date: vEnd });
         toast.success("Urlaub eingetragen");
         loadVacationEntries();
       } else {
         await api.post(`/employee/time-off/admin-create?token=${token}`, {
           user_id: userId,
           type: vacType,
-          start_date: vacStart,
-          end_date: vacEnd,
+          start_date: vStart,
+          end_date: vEnd,
         });
         toast.success(vacType === "ueberstundenabbau" ? "Überstundenabbau eingetragen" : "Krankheit eingetragen");
         reloadTimeOff();
@@ -413,12 +432,18 @@ export default function AdminZeitDetailPage() {
   };
 
   const saveEditEntry = async (entryId) => {
-    if (!editDraft.start) { toast.error("Startzeit erforderlich"); return; }
+    // iOS-Fix: Picker-Commit erzwingen, bevor State gelesen wird
+    if (typeof document !== "undefined" && document.activeElement && typeof document.activeElement.blur === "function") {
+      document.activeElement.blur();
+    }
+    await new Promise(r => setTimeout(r, 60));
+    const draft = editDraftRef.current;
+    if (!draft.start) { toast.error("Startzeit erforderlich"); return; }
     try {
       await api.put(`/employee/time/entries/${entryId}?token=${token}`, {
-        date: editDraft.date,
-        clock_in_time: editDraft.start,
-        clock_out_time: editDraft.end || null,
+        date: draft.date,
+        clock_in_time: draft.start,
+        clock_out_time: draft.end || null,
       });
       toast.success("Eintrag aktualisiert");
       setEditEntryId(null);
@@ -440,7 +465,13 @@ export default function AdminZeitDetailPage() {
   };
 
   const submitAddRow = async (monthKey) => {
-    const row = addRow[monthKey] || {};
+    // iOS-Fix: erzwinge Commit von noch offenem Date/Time-Picker
+    if (typeof document !== "undefined" && document.activeElement && typeof document.activeElement.blur === "function") {
+      document.activeElement.blur();
+    }
+    // Warte einen Tick, damit React den onChange-State aus dem Blur propagiert
+    await new Promise(r => setTimeout(r, 60));
+    const row = addRowRef.current[monthKey] || {};
     if (!row.date || !row.start) { toast.error("Datum und Startzeit erforderlich"); return; }
     if (!row.date.startsWith(monthKey)) { toast.error(`Datum muss im Monat ${monthKey} liegen`); return; }
     setAddingRow(monthKey);
