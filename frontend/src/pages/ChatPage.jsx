@@ -54,6 +54,22 @@ export default function ChatPage() {
   const [threadSending, setThreadSending] = useState(false);
   const [reactionPickerFor, setReactionPickerFor] = useState(null); // msg.id whose reaction bar is shown
 
+  // iOS-Tastatur-Fix: passe Container-Höhe an die VisualViewport an,
+  // damit das Eingabefeld nicht hinter der virtuellen Tastatur verschwindet.
+  const [viewportHeight, setViewportHeight] = useState(null);
+  useEffect(() => {
+    const vp = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vp) return;
+    const update = () => setViewportHeight(vp.height);
+    update();
+    vp.addEventListener("resize", update);
+    vp.addEventListener("scroll", update);
+    return () => {
+      vp.removeEventListener("resize", update);
+      vp.removeEventListener("scroll", update);
+    };
+  }, []);
+
   const loadConversations = useCallback(async () => {
     try {
       const res = await api.get(`/chat/conversations?token=${token}`);
@@ -338,7 +354,11 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-screen h-[100dvh] flex flex-col bg-gray-50" data-testid="chat-page">
+    <div
+      className="flex flex-col bg-gray-50"
+      style={{ height: viewportHeight ? `${viewportHeight}px` : "100dvh" }}
+      data-testid="chat-page"
+    >
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
         <Button variant="ghost" size="sm" onClick={() => navigate("/hub")} className="text-gray-600" data-testid="chat-back-btn">
@@ -683,6 +703,13 @@ export default function ChatPage() {
                 <Input
                   value={newMsg}
                   onChange={e => setNewMsg(e.target.value)}
+                  onFocus={() => {
+                    // iOS: nach dem Aufgehen der Tastatur ans Ende scrollen,
+                    // damit das Eingabefeld sichtbar bleibt.
+                    setTimeout(() => {
+                      messagesEndRef.current?.scrollIntoView({ block: "end" });
+                    }, 250);
+                  }}
                   placeholder="Nachricht schreiben..."
                   className="flex-1 border-0 bg-gray-100 focus-visible:ring-0 text-sm"
                   data-testid="chat-message-input"
