@@ -1891,10 +1891,15 @@ async def set_freelancer_assignments(user_id: str, data: _FreelancerAssignmentUp
 @router.get("/freelancer-search")
 async def search_assignable_orders(q: str = "", limit: int = Query(50, ge=1, le=200),
                                      _admin: dict = Depends(_require_admin)):
-    """Suche im orders_cache fuer die Freelancer-Zuweisungs-Maske."""
+    """Suche im orders_cache fuer die Freelancer-Zuweisungs-Maske.
+    Liefert NUR bestaetigte Auftraege (is_confirmed == True), analog zur
+    Auftragsverwaltung-Default-Ansicht."""
     rows = await _db.orders_cache.find({}, {"_id": 0, "_synced_at": 0}).to_list(1000)
-    # Filter: nicht storniert/archiviert
-    rows = [o for o in rows if not o.get("is_canceled") and not o.get("is_archived")]
+    # Filter: nur bestaetigte, nicht storniert/archiviert
+    rows = [o for o in rows
+            if o.get("is_confirmed") is True
+            and not o.get("is_canceled")
+            and not o.get("is_archived")]
     if q:
         s = q.lower()
         rows = [o for o in rows if
