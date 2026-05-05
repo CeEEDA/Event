@@ -17,6 +17,14 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Stripe-Zahlung wird jetzt korrekt als 'bezahlt' markiert** (P0):
+  - Root cause: In `payments.py` Webhook + Status-Polling schrieb der Code in die falsche Collection (`db.invoices` statt `db.kirmes_invoices`) und mit englischem Status (`"paid"` statt deutsch `"bezahlt"`). Außerdem schloss er keine offenen Mahnungs-Tasks. → Stripe-bezahlte Rechnungen blieben fälschlicherweise auf "Fällig" stehen, automatische Mahnungen wurden trotzdem ausgelöst.
+  - Fix:
+    - Neuer Helper `_mark_kirmes_invoice_paid()` mit korrekter Collection, deutschem Status, `paid_at`, `paid_amount`, und Mahnungs-Task-Closure (gleiche Logik wie der manuelle Mark-as-paid Admin-Endpoint).
+    - Webhook + Status-Polling rufen jetzt diesen Helper.
+    - Idempotent: erneute Aufrufe schreiben nichts wenn bereits "bezahlt".
+  - Bonus-Endpoint: `POST /api/payments/repair-stripe-paid-invoices` (Admin) — einmaliger Sweep, findet alle Stripe-paid-aber-Rechnung-nicht-bezahlt Faelle und repariert sie. Nuetzlich um die durch den Bug haengen gebliebenen Altfaelle zu reparieren.
+
 - ✅ **Wochenplan: Sollzeiten → Sollstunden umgestellt** (Verwaltung > Arbeitszeiterfassung):
   - Vorher: User mussten `Beginn 08:00` + `Ende 17:00` + `Pause 30min` eintragen → System rechnete Spanne minus Pause als SOLL
   - Jetzt: User trägt direkt `Sollstunden 8` + `Pause 30min` ein → das sind die NETTO-Sollstunden, Pause wird zusätzlich von der gemessenen Anwesenheit abgezogen (siehe vorherigen Fix)

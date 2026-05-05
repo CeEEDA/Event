@@ -474,10 +474,7 @@ async def check_payment_status(session_id: str):
         if tx.get("type") == "deposit":
             await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"], session_id=session_id)
         elif tx.get("type") == "invoice":
-            await _db.invoices.update_one(
-                {"id": tx["invoice_id"]},
-                {"$set": {"payment_status": "paid", "paid_at": datetime.now(timezone.utc).isoformat()}},
-            )
+            await _mark_kirmes_invoice_paid(tx.get("invoice_id"), tx.get("amount"), source="Stripe-Status-Polling")
 
     return {
         "status": new_status,
@@ -485,6 +482,43 @@ async def check_payment_status(session_id: str):
         "amount": tx.get("amount"),
         "type": tx.get("type"),
     }
+
+
+async def _mark_kirmes_invoice_paid(invoice_id: str, paid_amount: float = None, source: str = "stripe"):
+    """Marks a Kirmes invoice as paid (German status 'bezahlt'), sets paid_at,
+    and closes any open Mahnungs-Tasks linked to it.
+    Same semantics as PUT /kirmes/invoices/{id}/payment-status with status='bezahlt'
+    and the FinTS auto-match flow.
+    """
+    if not invoice_id:
+        return
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0, "id": 1, "brutto": 1, "payment_status": 1})
+    if not inv:
+        logger.warning(f"[payments] Kirmes invoice {invoice_id} not found - cannot mark paid")
+        return
+    if inv.get("payment_status") == "bezahlt":
+        return  # idempotent
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await _db.kirmes_invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {
+            "payment_status": "bezahlt",
+            "paid_at": now_iso,
+            "paid_amount": paid_amount if paid_amount is not None else inv.get("brutto", 0),
+            "payment_updated_at": now_iso,
+            "payment_updated_by": f"Auto ({source})",
+        }},
+    )
+    # Mahnungs-Tasks dieser Rechnung schliessen
+    closed = await _db.tasks.update_many(
+        {"payment_reminder_invoice_id": invoice_id, "completed": False, "is_deleted": {"$ne": True}},
+        {"$set": {
+            "completed": True,
+            "completed_at": now_iso,
+            "completed_by_name": f"Auto ({source}) - Rechnung bezahlt",
+        }},
+    )
+    logger.info(f"[payments] Kirmes invoice {invoice_id} -> bezahlt via {source}, closed {closed.modified_count} mahnung tasks")
 
 
 # ============== Webhook ==============
@@ -511,10 +545,7 @@ async def stripe_webhook(request: Request):
                 if tx.get("type") == "deposit":
                     await _confirm_deposit_and_send_email(tx["signup_id"], tx["amount"], session_id=event.session_id)
                 elif tx.get("type") == "invoice":
-                    await _db.invoices.update_one(
-                        {"id": tx["invoice_id"]},
-                        {"$set": {"payment_status": "paid", "paid_at": datetime.now(timezone.utc).isoformat()}},
-                    )
+                    await _mark_kirmes_invoice_paid(tx.get("invoice_id"), tx.get("amount"), source="Stripe-Webhook")
     except Exception as e:
         logger.exception(f"[payments] Webhook processing failed: {e}")
 
@@ -539,6 +570,34 @@ class ManualRefundRequest(BaseModel):
     signup_id: str
     amount: Optional[float] = None  # If None: refund full remaining deposit
     reason: Optional[str] = "manual_admin_refund"
+
+
+@router.post("/repair-stripe-paid-invoices")
+async def repair_stripe_paid_invoices(user: dict = Depends(_require_admin)):
+    """Einmaliger Sweep: Findet Stripe-Transaktionen mit payment_status='paid', deren
+    Rechnung in kirmes_invoices noch nicht 'bezahlt' ist, und korrigiert sie.
+    Behebt alle Faelle, die durch den vorherigen Bug (falsche Collection/Status) haengen blieben.
+    """
+    txs = await _db.payment_transactions.find(
+        {"type": "invoice", "payment_status": "paid"},
+        {"_id": 0},
+    ).to_list(2000)
+    repaired = []
+    skipped = []
+    for tx in txs:
+        inv_id = tx.get("invoice_id")
+        if not inv_id:
+            skipped.append({"session_id": tx.get("session_id"), "reason": "no invoice_id"})
+            continue
+        inv = await _db.kirmes_invoices.find_one({"id": inv_id}, {"_id": 0, "id": 1, "invoice_number": 1, "payment_status": 1})
+        if not inv:
+            skipped.append({"invoice_id": inv_id, "reason": "invoice not found"})
+            continue
+        if inv.get("payment_status") == "bezahlt":
+            continue  # already correct
+        await _mark_kirmes_invoice_paid(inv_id, tx.get("amount"), source="Stripe-Repair-Sweep")
+        repaired.append({"invoice_id": inv_id, "invoice_number": inv.get("invoice_number"), "amount": tx.get("amount")})
+    return {"repaired": repaired, "repaired_count": len(repaired), "skipped": skipped}
 
 
 @router.post("/refund/manual")
