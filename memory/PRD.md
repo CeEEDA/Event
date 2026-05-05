@@ -17,6 +17,13 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **PI-STATUS-Panel jetzt auch fuer Tankwagen + alle Pi-Typen** (war vorher nur fuer Kirmeskiste 8Z):
+  - Server (`routes/ota_updates.py`): OTA-Check akzeptiert jetzt zusaetzlich `lte_ip, lte_csq, lte_dbm, lte_operator, lte_act, gps_lat, gps_lon, version, hostname` als Query-Params und persistiert sie in `ota_checkins`.
+  - Server (`routes/devices.py` Quick-Info): Wenn `device.pi_health` leer ist, wird der zugehoerige `ota_checkin` als Fallback angezogen (Match: `device.pi_id` falls gesetzt, sonst einziger aktiver Checkin desselben device_type in den letzten 30 Min).
+  - Pi (`tankbeleg_pi.py`): Neue `_collect_pi_status_for_otacheck()` Helper sammelt LTE-IP via `ip addr show ppp0`, CSQ + Operator via AT-Befehl an SIM7600 (best-effort wenn Port frei), GPS aus gpsd. Wird bei jedem OTA-Check (60s) mitgesendet. `SCRIPT_VERSION = 1.7.0` als Konstante.
+  - Frontend: `PiHealthPanel` rendert bereits unter `{info.pi_health && ...}` → kein Frontend-Change noetig.
+  - Verifiziert per curl: OTA-Check mit Status-Daten persistiert korrekt; Quick-Info des Tankwagens liefert `pi_health` mit LTE-IP, Signal, Provider, Version, Hostname, Pi-ID + GPS.
+
 - ✅ **Tankbeleg-Klassifikation: Diesel wurde als Heizöl erkannt** (P0):
   - Root cause: Die Bitmap-Parser-Heuristik in `tankbeleg_pi.py` matchte den Substring `"hel" in text.lower()`. Da der Sening MultiFlow auf jedem Beleg ALLE konfigurierten Fuel-Typen als Header listet (z.B. "HEL schwefelarm"), wurde **jeder Beleg** — auch echte Diesel-Belege — als `heizoel_leicht` klassifiziert. Außerdem fiel das Default unbedingt auf `heizoel_leicht`.
   - Fix in `backend/static/tankbeleg_pi.py` (parse_receipt_sening Heuristik):

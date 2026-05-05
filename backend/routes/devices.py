@@ -3,7 +3,7 @@ from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 import secrets
 import string
@@ -723,6 +723,51 @@ async def get_device_quick_info(device_id: str, user: dict = Depends(require_sta
     }
 
     dtype = device.get("device_type", "")
+
+    # Pi-Status aus OTA-Checkin als Fallback (fuer Geraete ohne authentifizierten
+    # /pi-health Push, z.B. Tankwagen). Match: explizit verlinkte device.pi_id ODER
+    # einziger aktuell aktiver Checkin desselben Geraetetyps.
+    if not result["pi_health"]:
+        ota_match = None
+        linked_pi_id = device.get("pi_id")
+        if linked_pi_id:
+            ota_match = await db.ota_checkins.find_one({"device_id": linked_pi_id}, {"_id": 0})
+        elif dtype in ("tankwagen", "kirmeskiste"):
+            ota_type = "tankwagen" if dtype == "tankwagen" else "kirmeskiste"
+            # Nur Checkins der letzten 30 Minuten zaehlen als "aktiv"
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+            cursor = db.ota_checkins.find(
+                {"device_type": ota_type, "last_seen": {"$gte": cutoff}},
+                {"_id": 0},
+            ).sort("last_seen", -1).limit(2)
+            active = await cursor.to_list(2)
+            if len(active) == 1:
+                # Genau ein aktiver Pi dieses Typs -> automatisch zuordnen
+                ota_match = active[0]
+            elif len(active) > 1:
+                # Mehrere aktive Pis -> Admin muss device.pi_id setzen,
+                # fallback zum juengsten Checkin damit zumindest etwas angezeigt wird
+                # (markiert als ambiguous fuer das UI, optional)
+                ota_match = None
+        if ota_match:
+            result["pi_health"] = {
+                "lte_ip": ota_match.get("lte_ip"),
+                "lte_csq": ota_match.get("lte_csq"),
+                "lte_signal_dbm": ota_match.get("lte_signal_dbm"),
+                "lte_operator": ota_match.get("lte_operator"),
+                "lte_act": ota_match.get("lte_act"),
+                "script_version": ota_match.get("current_version"),
+                "hostname": ota_match.get("hostname"),
+                "pi_id": ota_match.get("device_id"),
+                "received_at": ota_match.get("last_seen"),
+            }
+            # GPS optional ergaenzen, falls nicht aus anderer Quelle gesetzt
+            if ota_match.get("gps_lat") is not None and ota_match.get("gps_lon") is not None:
+                result.setdefault("gps", {
+                    "lat": ota_match["gps_lat"],
+                    "lon": ota_match["gps_lon"],
+                    "timestamp": ota_match.get("last_seen"),
+                })
 
     if dtype in ("stromerzeuger", "lichtmast"):
         # Get latest generator telemetry (from MQTT)

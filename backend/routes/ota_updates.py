@@ -225,6 +225,34 @@ async def pi_check_update(device_type: str, request: Request):
     if not pi_id:
         raise HTTPException(400, "pi_id Parameter fehlt")
 
+    # Optionale erweiterte Pi-Status-Daten (kommt jeder Pi-Typ ueber OTA-Check)
+    def _opt_float(name):
+        v = request.query_params.get(name)
+        if v in (None, ""):
+            return None
+        try:
+            return float(v)
+        except Exception:
+            return None
+    def _opt_int(name):
+        v = request.query_params.get(name)
+        if v in (None, ""):
+            return None
+        try:
+            return int(v)
+        except Exception:
+            return None
+
+    extra_health = {
+        "lte_ip": request.query_params.get("lte_ip") or None,
+        "lte_csq": _opt_int("lte_csq"),
+        "lte_signal_dbm": _opt_int("lte_dbm"),
+        "lte_operator": request.query_params.get("lte_operator") or None,
+        "lte_act": request.query_params.get("lte_act") or None,
+        "gps_lat": _opt_float("gps_lat"),
+        "gps_lon": _opt_float("gps_lon"),
+    }
+
     repo_hash, file_size = _get_script_hash(device_type)
     if not repo_hash:
         raise HTTPException(404, f"Skript fuer '{device_type}' nicht gefunden")
@@ -241,6 +269,7 @@ async def pi_check_update(device_type: str, request: Request):
             "device_id": pi_id,
             "device_name": device_label,
             "serial": pi_hostname or pi_id,
+            "hostname": pi_hostname or None,
             "device_type": device_type,
             "current_version": current_version,
             "current_hash": current_hash,
@@ -248,6 +277,7 @@ async def pi_check_update(device_type: str, request: Request):
             "needs_update": needs_update,
             "file_size": file_size,
             "last_seen": datetime.now(timezone.utc).isoformat(),
+            **{k: v for k, v in extra_health.items() if v is not None},
         }},
         upsert=True,
     )

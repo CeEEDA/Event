@@ -38,6 +38,11 @@ from datetime import datetime, timezone
 import requests
 
 
+# Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
+# in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
+SCRIPT_VERSION = "1.7.0"
+
+
 # ====== Konfiguration ======
 
 DEFAULT_CONF = {
@@ -1036,6 +1041,85 @@ def _self_script_hash() -> str:
         return ""
 
 
+def _collect_pi_status_for_otacheck(conf: dict) -> dict:
+    """Sammelt LTE/GPS/Signal Status fuer das Portal-Dashboard.
+    Wird bei jedem OTA-Check als URL-Parameter mitgesendet (best-effort, fuer
+    Probleme einfach ignorieren -> Update-Pfad bleibt unbeeintraechtigt).
+    """
+    import subprocess
+    status = {}
+
+    # 1. LTE-IP aus 'ip addr show ppp0'
+    try:
+        r = subprocess.run(["ip", "-4", "addr", "show", "ppp0"],
+                           capture_output=True, text=True, timeout=2)
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("inet "):
+                status["lte_ip"] = line.split()[1].split("/")[0]
+                break
+    except Exception:
+        pass
+
+    # 2. CSQ + Operator via AT-Befehl an SIM7600 (best-effort, falls Port frei)
+    at_candidates = ["/dev/sim7600-at2", "/dev/sim7600-at",
+                     "/dev/ttyUSB3", "/dev/ttyUSB2"]
+    port = next((p for p in at_candidates if os.path.exists(p)), None)
+    if port:
+        try:
+            lsof = subprocess.run(["lsof", "-t", port],
+                                  capture_output=True, text=True, timeout=2)
+            port_busy = bool(lsof.stdout.strip())
+        except Exception:
+            port_busy = True
+        if not port_busy:
+            try:
+                subprocess.run(["stty", "-F", port, "115200", "raw", "-echo"],
+                               capture_output=True, timeout=2)
+                for cmd, key in [("AT+CSQ", "csq"), ("AT+COPS?", "operator")]:
+                    try:
+                        subprocess.run(["bash", "-c", f"printf '{cmd}\\r' > {port}"],
+                                       capture_output=True, timeout=2)
+                        time.sleep(0.4)
+                        r = subprocess.run(
+                            ["bash", "-c", f"timeout 1 cat {port} || true"],
+                            capture_output=True, text=True, timeout=2,
+                        )
+                        out = r.stdout
+                        if key == "csq":
+                            m = re.search(r"\+CSQ:\s*(\d+)", out)
+                            if m:
+                                csq = int(m.group(1))
+                                status["lte_csq"] = csq
+                                # CSQ -> dBm Annaeherung: dBm = -113 + 2*csq
+                                if 0 <= csq <= 31:
+                                    status["lte_dbm"] = -113 + 2 * csq
+                        elif key == "operator":
+                            m = re.search(r'\+COPS:\s*\d+,\d+,"([^"]+)"(?:,(\d+))?', out)
+                            if m:
+                                status["lte_operator"] = m.group(1)
+                                act_map = {"0": "GSM", "2": "UMTS", "7": "LTE", "13": "LTE-NB"}
+                                if m.group(2):
+                                    status["lte_act"] = act_map.get(m.group(2), m.group(2))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    # 3. GPS Position (best-effort)
+    try:
+        lat, lon = get_gps_position(host=conf.get("gps_host", "127.0.0.1"),
+                                    port=int(conf.get("gps_port", 2947)),
+                                    timeout=2)
+        if lat is not None and lon is not None:
+            status["gps_lat"] = f"{lat:.6f}"
+            status["gps_lon"] = f"{lon:.6f}"
+    except Exception:
+        pass
+
+    return status
+
+
 def check_and_apply_ota_update(conf: dict) -> bool:
     """Prueft beim Backend ob ein neueres tankbeleg_pi.py verfuegbar ist.
     Wenn ja: laed es runter, validiert via Hash, ersetzt das laufende Skript
@@ -1054,8 +1138,19 @@ def check_and_apply_ota_update(conf: dict) -> bool:
     except Exception:
         hostname = ""
 
+    # ===== Pi-Status-Daten fuer das Portal-Dashboard mitsenden =====
+    extra_status = _collect_pi_status_for_otacheck(conf)
+
     try:
-        params = {"pi_id": pi_id, "hostname": hostname, "hash": current_hash}
+        params = {
+            "pi_id": pi_id,
+            "hostname": hostname,
+            "hash": current_hash,
+            "version": SCRIPT_VERSION,
+            **extra_status,
+        }
+        # None-Werte rauswerfen, damit URL nicht mit lte_ip= verschmutzt wird
+        params = {k: v for k, v in params.items() if v not in (None, "")}
         resp = requests.get(f"{base}/system/ota/tankwagen/check", params=params, timeout=10)
         if resp.status_code != 200:
             log.debug(f"OTA-Check Fehler {resp.status_code}: {resp.text[:200]}")
