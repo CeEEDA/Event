@@ -31,6 +31,10 @@ export default function ChatPage() {
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [searchUsers, setSearchUsers] = useState("");
   const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [hasNewBelow, setHasNewBelow] = useState(false);
+  const lastMessageCountRef = useRef(0);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const pollRef = useRef(null);
@@ -123,9 +127,45 @@ export default function ChatPage() {
     return () => clearInterval(poll);
   }, [activeConvo, loadConversations, loadMessages]);
 
+  // Auto-Scroll: nur wenn User bereits unten ist. Wenn er hochgescrollt hat,
+  // bleibt seine Position erhalten und es erscheint ein "↓ neue Nachrichten"-Button.
   useEffect(() => {
+    const prevCount = lastMessageCountRef.current;
+    const newCount = messages.length;
+    lastMessageCountRef.current = newCount;
+    if (newCount === 0) return;
+    if (newCount > prevCount && !isAtBottom) {
+      // Neue Nachrichten, aber User schaut weiter oben → nur Indikator zeigen
+      setHasNewBelow(true);
+      return;
+    }
+    if (isAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: prevCount === 0 ? "auto" : "smooth" });
+      setHasNewBelow(false);
+    }
+  }, [messages, isAtBottom]);
+
+  // Wenn der User zur aktiven Konversation wechselt, immer nach unten scrollen
+  useEffect(() => {
+    if (!activeConvo) return;
+    setIsAtBottom(true);
+    setHasNewBelow(false);
+    lastMessageCountRef.current = 0;
+  }, [activeConvo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleMessagesScroll = (e) => {
+    const el = e.currentTarget;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distanceFromBottom < 80; // 80px Toleranz
+    setIsAtBottom(atBottom);
+    if (atBottom) setHasNewBelow(false);
+  };
+
+  const scrollToBottomNow = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    setHasNewBelow(false);
+    setIsAtBottom(true);
+  };
 
   const loadThread = useCallback(async (msgId) => {
     if (!activeConvo || !msgId) return;
@@ -209,6 +249,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setNewMsg("");
+      setIsAtBottom(true); // eigene Nachricht → ans Ende scrollen
       loadMessages(activeConvo.id);
       loadConversations();
     } catch { toast.error("Fehler beim Senden"); }
@@ -225,6 +266,7 @@ export default function ChatPage() {
       await api.post(`/chat/conversations/${activeConvo.id}/messages?token=${token}`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+      setIsAtBottom(true); // eigener Datei-Upload → ans Ende scrollen
       loadMessages(activeConvo.id);
       loadConversations();
     } catch { toast.error("Datei-Upload fehlgeschlagen"); }
@@ -450,8 +492,10 @@ export default function ChatPage() {
 
               {/* Messages */}
               <div
-                className={`flex-1 overflow-y-auto px-4 py-3 space-y-1 transition-colors ${dragOver ? "bg-fuchsia-50/50 ring-2 ring-inset ring-fuchsia-400 ring-dashed" : ""}`}
+                ref={messagesScrollRef}
+                className={`flex-1 overflow-y-auto px-4 py-3 space-y-1 transition-colors relative ${dragOver ? "bg-fuchsia-50/50 ring-2 ring-inset ring-fuchsia-400 ring-dashed" : ""}`}
                 data-testid="messages-area"
+                onScroll={handleMessagesScroll}
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
                 onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) setPendingFile(e.dataTransfer.files[0]); }}
@@ -664,6 +708,19 @@ export default function ChatPage() {
                   );
                 })}
                 <div ref={messagesEndRef} />
+
+                {/* Floating "↓ neue Nachrichten" Button — nur sichtbar wenn User hochgescrollt hat */}
+                {(hasNewBelow || !isAtBottom) && (
+                  <button
+                    type="button"
+                    onClick={scrollToBottomNow}
+                    className={`sticky bottom-3 ml-auto mr-1 flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-lg text-xs font-semibold transition-all ${hasNewBelow ? "bg-fuchsia-600 text-white hover:bg-fuchsia-700 animate-bounce" : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"}`}
+                    data-testid="scroll-to-bottom-btn"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+                    {hasNewBelow ? "Neue Nachrichten" : "Nach unten"}
+                  </button>
+                )}
               </div>
 
               {/* Pending File Preview */}
@@ -705,10 +762,12 @@ export default function ChatPage() {
                   onChange={e => setNewMsg(e.target.value)}
                   onFocus={() => {
                     // iOS: nach dem Aufgehen der Tastatur ans Ende scrollen,
-                    // damit das Eingabefeld sichtbar bleibt.
-                    setTimeout(() => {
-                      messagesEndRef.current?.scrollIntoView({ block: "end" });
-                    }, 250);
+                    // aber NUR wenn der User ohnehin am Ende war (sonst bleibt seine Lese-Position erhalten).
+                    if (isAtBottom) {
+                      setTimeout(() => {
+                        messagesEndRef.current?.scrollIntoView({ block: "end" });
+                      }, 250);
+                    }
                   }}
                   placeholder="Nachricht schreiben..."
                   className="flex-1 border-0 bg-gray-100 focus-visible:ring-0 text-sm"

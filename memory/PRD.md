@@ -17,6 +17,15 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Chat Auto-Scroll-Behavior verbessert**: Vorher wurde bei jedem Poll-Tick (4s) erzwungen ans Ende gescrollt → User konnte beim Lesen alter Nachrichten nicht hochscrollen.
+  - Fix in `ChatPage.jsx`: 
+    - `handleMessagesScroll` tracked `isAtBottom` (Toleranz 80px) via Scroll-Listener auf dem Messages-Container
+    - Auto-Scroll nur noch wenn `isAtBottom === true`. Andernfalls bleibt die Lese-Position erhalten.
+    - Sticky Floating-Button **"Neue Nachrichten"** (lila pulsierend) erscheint, wenn neue Nachrichten reinkommen während User hochgescrollt hat. "Nach unten" als sekundärer Hint, wenn User selbst ohne neue Nachrichten gescrollt hat.
+    - Eigene Nachrichten/Datei-Uploads setzen `isAtBottom = true` → springen automatisch ans Ende.
+    - Konversation-Wechsel → reset auf `isAtBottom = true`.
+    - iOS-Tastatur-onFocus-Scroll: nur noch wenn ohnehin am Ende (kein ungewolltes Hochreißen).
+
 - ✅ **GPS-Lock-Picker (WhatsApp-Style) für Artikel-Positionierung**: User berichtete, dass die ungenaue Direkt-Übernahme der GPS-Position oft hunderte Meter daneben lag.
   - Neue Komponente: `frontend/src/components/GpsLockPicker.jsx` (Modal mit Leaflet-Karte, drag-barer Stecknadel, Live-Genauigkeit-Badge)
   - Verhalten:
