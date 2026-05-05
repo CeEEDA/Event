@@ -231,7 +231,14 @@ export default function AdminZeitDetailPage() {
 
   const calcDayHours = (day) => {
     const d = schedule[day];
-    if (!d?.start || !d?.end) return null;
+    if (!d) return null;
+    // Neue Logik: Sollstunden direkt
+    if (d.soll_hours != null && d.soll_hours !== "") {
+      const h = parseFloat(d.soll_hours);
+      return Number.isFinite(h) && h > 0 ? Math.round(h * 60) : null;
+    }
+    // Rueckwaertskompatibel: alte start/end-Spanne minus Pause
+    if (!d.start || !d.end) return null;
     const [sh, sm] = d.start.split(":").map(Number);
     const [eh, em] = d.end.split(":").map(Number);
     const totalMin = (eh * 60 + em) - (sh * 60 + sm) - (parseInt(d.break_min) || 0);
@@ -697,10 +704,9 @@ export default function AdminZeitDetailPage() {
               <thead>
                 <tr className="text-[10px] text-gray-400 uppercase tracking-wider">
                   <th className="text-left pb-2 pr-2 font-semibold w-28">Tag</th>
-                  <th className="text-left pb-2 px-2 font-semibold">Beginn</th>
-                  <th className="text-left pb-2 px-2 font-semibold">Ende</th>
+                  <th className="text-left pb-2 px-2 font-semibold">Sollstunden</th>
                   <th className="text-left pb-2 px-2 font-semibold">Pause (Min.)</th>
-                  <th className="text-right pb-2 pl-2 font-semibold">Netto</th>
+                  <th className="text-right pb-2 pl-2 font-semibold">Summe</th>
                 </tr>
               </thead>
               <tbody>
@@ -709,16 +715,28 @@ export default function AdminZeitDetailPage() {
                   const mins = calcDayHours(day);
                   const h = mins !== null ? Math.floor(mins / 60) : null;
                   const m = mins !== null ? mins % 60 : null;
+                  // Migrationshilfe: zeige berechnete Stunden aus alter start/end-Logik
+                  // automatisch im neuen Sollstunden-Feld an, wenn der User noch nicht gespeichert hat
+                  const sollDisplay = (d.soll_hours != null && d.soll_hours !== "")
+                    ? d.soll_hours
+                    : (d.start && d.end
+                        ? (((parseInt(d.end.split(":")[0]) * 60 + parseInt(d.end.split(":")[1]))
+                            - (parseInt(d.start.split(":")[0]) * 60 + parseInt(d.start.split(":")[1]))
+                            - (parseInt(d.break_min) || 0)) / 60).toFixed(2).replace(/\.?0+$/, "")
+                        : "");
                   return (
                     <tr key={day} className="border-t border-gray-50">
                       <td className="py-1.5 pr-2 font-medium text-gray-700">{WEEKDAY_LABELS[day]}</td>
                       <td className="py-1.5 px-2">
-                        <input type="time" value={d.start || ""} onChange={e => updateDay(day, "start", e.target.value)}
-                          className="border border-gray-200 rounded px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid={`schedule-${day}-start`} />
-                      </td>
-                      <td className="py-1.5 px-2">
-                        <input type="time" value={d.end || ""} onChange={e => updateDay(day, "end", e.target.value)}
-                          className="border border-gray-200 rounded px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid={`schedule-${day}-end`} />
+                        <input
+                          type="number" min="0" max="24" step="0.25"
+                          value={sollDisplay}
+                          onChange={e => updateDay(day, "soll_hours", e.target.value)}
+                          placeholder="0"
+                          className="border border-gray-200 rounded px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          data-testid={`schedule-${day}-soll-hours`}
+                        />
+                        <span className="text-[10px] text-gray-400 ml-1">h</span>
                       </td>
                       <td className="py-1.5 px-2">
                         <input type="number" min="0" step="5" value={d.break_min || ""} onChange={e => updateDay(day, "break_min", e.target.value)}

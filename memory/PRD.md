@@ -17,6 +17,17 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Wochenplan: Sollzeiten → Sollstunden umgestellt** (Verwaltung > Arbeitszeiterfassung):
+  - Vorher: User mussten `Beginn 08:00` + `Ende 17:00` + `Pause 30min` eintragen → System rechnete Spanne minus Pause als SOLL
+  - Jetzt: User trägt direkt `Sollstunden 8` + `Pause 30min` ein → das sind die NETTO-Sollstunden, Pause wird zusätzlich von der gemessenen Anwesenheit abgezogen (siehe vorherigen Fix)
+  - Backend (`employee.py` Überstundenberechnung): liest jetzt bevorzugt `day_schedule.soll_hours`, fällt für alte Pläne auf `start/end - break_min` zurück → **rückwärtskompatibel**, kein Daten-Migrationsskript nötig
+  - Frontend (`AdminZeitDetailPage.jsx`):
+    - Tabellenspalten: `TAG | SOLLSTUNDEN | PAUSE (MIN.) | SUMME`
+    - Sollstunden = Number-Input mit `step=0.25`
+    - Migrationshilfe: Alte Pläne mit `start/end` zeigen die berechneten Stunden im neuen Sollstunden-Feld an, sodass der User sie nur einmal speichern muss um auf das neue Format umzustellen
+  - `EinsatzplanungPage.jsx` (Soll-Stunden für Einsatzplanung) ebenfalls auf `soll_hours` umgestellt mit Fallback
+  - Verifiziert: Mo=8h direkt, Di=7.5h aus alter `09:00-17:00 -30min` Logik abgeleitet, Mi=4.5h direkt → UI zeigt alle korrekt + Wochensumme 20h
+
 - ✅ **PI-STATUS-Panel jetzt auch fuer Tankwagen + alle Pi-Typen** (war vorher nur fuer Kirmeskiste 8Z):
   - Server (`routes/ota_updates.py`): OTA-Check akzeptiert jetzt zusaetzlich `lte_ip, lte_csq, lte_dbm, lte_operator, lte_act, gps_lat, gps_lon, version, hostname` als Query-Params und persistiert sie in `ota_checkins`.
   - Server (`routes/devices.py` Quick-Info): Wenn `device.pi_health` leer ist, wird der zugehoerige `ota_checkin` als Fallback angezogen (Match: `device.pi_id` falls gesetzt, sonst einziger aktiver Checkin desselben device_type in den letzten 30 Min).

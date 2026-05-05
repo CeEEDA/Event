@@ -742,15 +742,21 @@ async def clock_out(token: str = Query(...), body: dict = {}):
         schedule = await db.work_schedules.find_one({"user_id": user["id"]}, {"_id": 0})
         day_schedule = (schedule or {}).get("days", {}).get(day_name, {})
 
-        if day_schedule and day_schedule.get("start") and day_schedule.get("end"):
-            sh, sm = map(int, day_schedule["start"].split(":"))
-            eh, em = map(int, day_schedule["end"].split(":"))
-            sched_break = int(day_schedule.get("break_min") or 0)
-            # SOLL = Arbeitszeit-Spanne minus konfigurierte Pause
-            soll_minutes = (eh * 60 + em) - (sh * 60 + sm) - sched_break
-        else:
-            # Kein Plan für diesen Tag → alle geleistete Zeit zählt als Überstunde
-            soll_minutes = 0
+        # SOLL: bevorzugt aus 'soll_hours' (neue Sollstunden-Logik), Fallback auf
+        # alte 'start'/'end'-Spanne (rueckwaertskompatibel fuer existierende Plaene).
+        soll_minutes = 0
+        if day_schedule:
+            try:
+                sh_field = day_schedule.get("soll_hours")
+                if sh_field not in (None, ""):
+                    soll_minutes = int(round(float(sh_field) * 60))
+                elif day_schedule.get("start") and day_schedule.get("end"):
+                    sh, sm = map(int, day_schedule["start"].split(":"))
+                    eh, em = map(int, day_schedule["end"].split(":"))
+                    sched_break = int(day_schedule.get("break_min") or 0)
+                    soll_minutes = (eh * 60 + em) - (sh * 60 + sm) - sched_break
+            except (ValueError, TypeError):
+                soll_minutes = 0
 
         # IST wurde bereits in duration_minutes um die Pause reduziert (s.o.) → kein erneuter Abzug
         ist_minutes = round(duration)

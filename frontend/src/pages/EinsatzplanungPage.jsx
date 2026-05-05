@@ -152,7 +152,13 @@ export default function EinsatzplanungPage() {
     if (!sched?.days) return STANDARD_HOURS;
     const dayKeys = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"];
     const day = sched.days[dayKeys[dayIndex]];
-    if (!day?.start || !day?.end) return 0;
+    if (!day) return 0;
+    // Bevorzugt neue Sollstunden, Fallback auf alte start/end-Logik
+    if (day.soll_hours != null && day.soll_hours !== "") {
+      const h = parseFloat(day.soll_hours);
+      return Number.isFinite(h) && h > 0 ? h : 0;
+    }
+    if (!day.start || !day.end) return 0;
     return timeDiffHours(day.start, day.end) - (day.break_min || 0) / 60;
   };
 
