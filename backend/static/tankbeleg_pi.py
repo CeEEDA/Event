@@ -561,16 +561,39 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
         else:
             result["review_reason"] = [reason]
 
-    # Fuel-Type Heuristik (HEL ist der haeufigste)
-    if "HEL" in text or "hel" in text.lower():
-        result["fuel_type"] = "heizoel_leicht"
-    elif "Diesel" in text or "diesel" in text.lower():
-        result["fuel_type"] = "diesel"
-    elif "HVO" in text.upper():
-        result["fuel_type"] = "hvo"
+    # Fuel-Type Heuristik
+    # Sening druckt das tatsaechlich abgegebene Produkt mit fuehrendem * + Whitespace,
+    # waehrend andere konfigurierte Fuels meist NICHT mit * markiert sind. Wir suchen
+    # darum zuerst die "*Marker"-Zeile (wenn der Bitmap-Decoder sie erhalten hat),
+    # erst danach einen reinen Substring-Fallback.
+    fuel_marker = re.search(r"\*\s*(HEL[\s\w]*schwefelarm|Diesel|HVO)\b", text, re.IGNORECASE)
+    if fuel_marker:
+        raw = fuel_marker.group(1).lower()
+        if "hel" in raw:
+            result["fuel_type"] = "heizoel_leicht"
+        elif "diesel" in raw:
+            result["fuel_type"] = "diesel"
+        elif "hvo" in raw:
+            result["fuel_type"] = "hvo"
     else:
-        # Default zum haeufigsten
-        result["fuel_type"] = "heizoel_leicht"
+        # Kein eindeutiger Marker -> manuell pruefen statt blind "HEL" zu matchen
+        # (vorher fuehrte der Header-Eintrag "HEL schwefelarm" auch auf Diesel-Belegen
+        # zu Fehlklassifikation, weil "hel" als Substring vorkam)
+        diesel_only = re.search(r"\bDiesel\b", text, re.IGNORECASE) and not re.search(r"\bHEL\b", text, re.IGNORECASE)
+        hvo_only = re.search(r"\bHVO\b", text) and not re.search(r"\bDiesel\b", text, re.IGNORECASE)
+        if diesel_only:
+            result["fuel_type"] = "diesel"
+        elif hvo_only:
+            result["fuel_type"] = "hvo"
+        else:
+            # Mehrdeutig -> NICHT raten, sondern manuelle Pruefung erzwingen
+            result["fuel_type"] = None
+            reason = "Kraftstoff konnte aus dem Bitmap nicht eindeutig erkannt werden - bitte manuell pruefen."
+            log.warning(f"  [REVIEW] {reason}")
+            if isinstance(result.get("review_reason"), list):
+                result["review_reason"].append(reason)
+            else:
+                result["review_reason"] = [reason]
 
     # Feste Zaehler-Nr aus Config anwenden (falls Parser nur Praefix hatte)
     if fixed_zaehler_nr:

@@ -17,6 +17,20 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg-Klassifikation: Diesel wurde als Heizöl erkannt** (P0):
+  - Root cause: Die Bitmap-Parser-Heuristik in `tankbeleg_pi.py` matchte den Substring `"hel" in text.lower()`. Da der Sening MultiFlow auf jedem Beleg ALLE konfigurierten Fuel-Typen als Header listet (z.B. "HEL schwefelarm"), wurde **jeder Beleg** — auch echte Diesel-Belege — als `heizoel_leicht` klassifiziert. Außerdem fiel das Default unbedingt auf `heizoel_leicht`.
+  - Fix in `backend/static/tankbeleg_pi.py` (parse_receipt_sening Heuristik):
+    - Sucht jetzt zuerst gezielt das mit `*` markierte Produkt (`*Diesel*`, `*HEL schwefelarm*`, `*HVO*`) — das ist die Sening-Konvention für das tatsächlich abgegebene Fuel
+    - Fallback nur wenn der Text **nur eines** der Worte enthält (z.B. nur "Diesel" oder nur "HVO" → eindeutig)
+    - Bei Mehrdeutigkeit (Header listet HEL + Diesel) wird **nicht mehr geraten**, sondern `fuel_type=None` + `needs_review=True` gesetzt — Operator muss manuell bestätigen
+  - Verifiziert mit 5 Test-Cases:
+    - `*HEL*` Marker → heizoel_leicht ✓
+    - `*Diesel*` Marker → diesel ✓ (vorher: heizoel_leicht ✗)
+    - Beide ohne Marker → None + Review ✓
+    - Nur "Diesel" → diesel ✓
+    - Nur "HVO" → hvo ✓
+  - Bestehende Simulator-Tests (`tankbeleg_simulator.py --test`) bestätigen: HEL- und Diesel-Belege werden weiterhin korrekt erkannt.
+
 - ✅ **Chat Auto-Scroll-Behavior verbessert**: Vorher wurde bei jedem Poll-Tick (4s) erzwungen ans Ende gescrollt → User konnte beim Lesen alter Nachrichten nicht hochscrollen.
   - Fix in `ChatPage.jsx`: 
     - `handleMessagesScroll` tracked `isAtBottom` (Toleranz 80px) via Scroll-Listener auf dem Messages-Container
