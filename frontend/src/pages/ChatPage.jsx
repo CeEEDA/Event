@@ -397,7 +397,7 @@ export default function ChatPage() {
 
   return (
     <div
-      className="flex flex-col bg-gray-50"
+      className="flex flex-col bg-gray-50 safe-area-pad"
       style={{ height: viewportHeight ? `${viewportHeight}px` : "100dvh" }}
       data-testid="chat-page"
     >

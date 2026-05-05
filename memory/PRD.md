@@ -17,6 +17,14 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **iOS-Notch / Dynamic-Island: Zurück-Button war hinter Statusbar versteckt**:
+  - Root cause: `viewport-fit=cover` (gesetzt fuer Tastatur-Fix iOS17+) laesst Inhalte edge-to-edge laufen, wodurch der Page-Header unter der translucenten iPhone-Statusbar verschwindet → Zurück-Button war auf iPhones mit Notch nicht erreichbar.
+  - Fix global in `index.css`:
+    - Utility-Klassen `safe-area-pad`, `safe-top`, `safe-bottom` mit `env(safe-area-inset-*)` definiert
+    - Globale Auto-Anwendung: `header.sticky.top-0` und `div.sticky.top-0` bekommen `padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem)` -> auf Desktop unsichtbar (inset=0px), auf iPhone ~47px Padding nach oben -> Back-Button rutscht unter den Notch.
+  - Fix `ChatPage.jsx`: Wrapper-Container `safe-area-pad` (Top/Left/Right/Bottom Inset), weil Chat keinen `sticky top-0` Header nutzt sondern feste Hoehe.
+  - Verifiziert: Desktop-Rendering unveraendert (Finance-Page sieht identisch aus), iPhone wird auf echtem Geraet zu pruefen sein.
+
 - ✅ **Stripe-Abgleich Button + erweiterter Repair** (Folge des vorherigen Fixes):
   - Vorheriger Sweep fand nur Transaktionen mit `payment_status="paid"` in unserer DB. Wenn der Stripe-Webhook nie korrekt feuerte (z.B. Webhook-URL nicht in Stripe-Dashboard registriert) UND der User nicht auf die Erfolgs-Seite zurückkam, blieb unsere Transaktion auf `pending` → Sweep ignorierte sie → Live-Rechnung blieb hängen auf "Fällig".
   - Erweiterung in `/api/payments/repair-stripe-paid-invoices`: Pollt jetzt auch alle `pending`/`initiated` Invoice-Transaktionen direkt bei Stripe nach. Bei `paid` wird die Transaktion aktualisiert UND die Rechnung wird per `_mark_kirmes_invoice_paid()` korrekt verbucht (inkl. Mahnung schließen).

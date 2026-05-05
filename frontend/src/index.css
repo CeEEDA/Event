@@ -11,6 +11,36 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* iOS-Notch / Dynamic-Island Schutz: nutzbar als Klasse `safe-top`/`safe-area`
+   bei Headern / Fullscreen-Layouts, damit der Inhalt nicht hinter Statusbar verschwindet. */
+.safe-area-pad {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+    padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Globale Auto-Anwendung fuer sticky Page-Header: alle `<header class="sticky top-0">`
+   bekommen zusaetzlich Safe-Area-Inset als Padding oben (additiv per Box-Sizing).
+   Auf Desktop ist env(safe-area-inset-top)=0px, also keine Auswirkung.
+   Auf iPhone notch: ~47px werden zusaetzlich oben am Header eingefuegt -> Back-Button
+   rutscht unter die Statusbar. */
+header.sticky.top-0 {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+}
+@supports (padding: env(safe-area-inset-top)) {
+    /* Sticky-Container, die nicht <header> sind (z.B. div.sticky.top-0), bekommen es ebenfalls */
+    div.sticky.top-0 {
+        padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+    }
+}
+
 @layer base {
     :root {
         --background: 0 0% 100%;
