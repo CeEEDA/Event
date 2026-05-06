@@ -277,42 +277,58 @@ def decode_sening_bitmap_digit(four_bytes: bytes):
     """Dekodiert Sening MultiFlow Bitmap-Bytes zu einer Ziffer.
 
     Sening rendert eichgueltige Mengen-Ziffern manchmal als Bitmap statt ASCII.
-    Format: [byte1] [byte2] 0x72 0xd3
+    Format A (1 Bitmap-Ziffer): [byte1] [byte2] 0x72 0xD3
         byte1 = 0x83 + d * 8   (d = Ziffer 0..9, definitive Quelle)
         byte2 = 0x12 - d       (in vielen Drucker-Modi konsistent, aber NICHT
                                 immer - manche Sening-Varianten codieren in
                                 byte2 z.B. eine zweite Stelle oder Schriftgroesse.
                                 byte1 wird daher als Wahrheit genommen.)
+    Format B (2 Bitmap-Ziffern, 4 Bytes): [byte1] [byte2] [byte3] 0xC8
+        byte1 = 0x83 + d1 * 8  (erste Bitmap-Ziffer)
+        byte2 = beliebig       (Plausibilitaets-Byte, ignoriert)
+        byte3 = 0x33 + d2 * 8  (zweite Bitmap-Ziffer, anderes Raster!)
+        byte4 = 0xC8           (Endmarker fuer 2-stelliges Format)
     Beispiele aus echten Belegen:
         a3 0e 72 d3 = Ziffer 4 (Beleg 16943, echt 154 L, ASCII zeigt nur "15")
         b3 0c 72 d3 = Ziffer 6 (Beleg 16944, echt 1296 L, ASCII zeigt nur "129")
         83 0c 72 d3 = Ziffer 0 (Beleg 16,    echt 150 L,  ASCII zeigt nur "15")
-                                 -> byte1 sagt 0, byte2 sagt 6 (mismatch),
-                                    byte1 ist korrekt (Display zeigt 150 L).
+        8b ce 63 c8 = Ziffern "16" (Beleg 16949, echt 1316 L, ASCII zeigt nur "13")
 
     Returns:
-        str(d) wenn byte1 eine gueltige Ziffer 0..9 ergibt, sonst None.
-        byte2 wird nur als Plausibilitaets-Check genutzt (loggt Mismatch,
-        verwirft das Pattern aber nicht).
+        - "X"   wenn Format A erkannt (1 Ziffer)
+        - "XY"  wenn Format B erkannt (2 Ziffern)
+        - None  bei unbekanntem Pattern
     """
     if len(four_bytes) < 4:
         return None
-    if four_bytes[2] != 0x72 or four_bytes[3] != 0xD3:
-        return None
-    b1, b2 = four_bytes[0], four_bytes[1]
-    # Pruefung: byte1 muss 0x83 + d*8 sein -> (b1 - 0x83) % 8 == 0
-    if b1 < 0x83 or b1 > 0xCB:
-        return None
-    if (b1 - 0x83) % 8 != 0:
-        return None
-    d_from_b1 = (b1 - 0x83) // 8
-    if not (0 <= d_from_b1 <= 9):
-        return None
-    # byte2 ist nur ein Plausibilitaets-Check. Bei Beleg 16 widerspricht
-    # byte2 dem byte1 (0x0c = 6 vs. byte1=0x83 = 0), aber byte1 ist nachweislich
-    # korrekt (Display zeigt 150 L, nicht 156 L). byte2 codiert offenbar etwas
-    # anderes (vermutlich zweite Stelle oder Font-Info) - wir vertrauen byte1.
-    return str(d_from_b1)
+    b1, b2, b3, b4 = four_bytes[0], four_bytes[1], four_bytes[2], four_bytes[3]
+
+    # Format A: byte3=0x72, byte4=0xD3 (1 Bitmap-Ziffer)
+    if b3 == 0x72 and b4 == 0xD3:
+        if b1 < 0x83 or b1 > 0xCB or (b1 - 0x83) % 8 != 0:
+            return None
+        d_from_b1 = (b1 - 0x83) // 8
+        if not (0 <= d_from_b1 <= 9):
+            return None
+        return str(d_from_b1)
+
+    # Format B: byte4=0xC8 (2 Bitmap-Ziffern, byte3 codiert zweite Ziffer als 0x33+d*8)
+    if b4 == 0xC8:
+        # Erste Ziffer aus byte1 (gleich wie Format A)
+        if b1 < 0x83 or b1 > 0xCB or (b1 - 0x83) % 8 != 0:
+            return None
+        d1 = (b1 - 0x83) // 8
+        if not (0 <= d1 <= 9):
+            return None
+        # Zweite Ziffer aus byte3 mit Schema 0x33 + d*8
+        if b3 < 0x33 or b3 > 0x33 + 9 * 8 or (b3 - 0x33) % 8 != 0:
+            return None
+        d2 = (b3 - 0x33) // 8
+        if not (0 <= d2 <= 9):
+            return None
+        return f"{d1}{d2}"
+
+    return None
 
 
 def detect_quantity_in_raw(raw: bytes) -> tuple:
