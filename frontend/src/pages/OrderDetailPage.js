@@ -44,6 +44,8 @@ import {
   ClipboardCheck,
   MessageSquare,
   Send,
+  Search,
+  Filter,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -111,11 +113,12 @@ const ASSET_TYPES = [
   { value: "Lichtmast", icon: Lightbulb, color: "#f97316" },
   { value: "Stromerzeuger", icon: Zap, color: "#f97316" },
   { value: "Verteiler", icon: GitFork, color: "#f97316" },
+  { value: "Tank", icon: Fuel, color: "#f97316" },
   { value: "Sonstiges", icon: Box, color: "#f97316" },
 ];
 
 const assetTypeIcon = (type) => {
-  const cfg = ASSET_TYPES.find((t) => t.value === type) || ASSET_TYPES[3];
+  const cfg = ASSET_TYPES.find((t) => t.value === type) || ASSET_TYPES[ASSET_TYPES.length - 1];
   return cfg;
 };
 
@@ -124,6 +127,7 @@ const makeAssetIcon = (type) => {
     Lichtmast: `<circle cx="12" cy="5" r="3" fill="#fff" stroke="#fff" stroke-width="1.5"/><line x1="12" y1="8" x2="12" y2="20" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`,
     Stromerzeuger: `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`,
     Verteiler: `<line x1="12" y1="3" x2="12" y2="15" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><line x1="6" y1="9" x2="12" y2="15" stroke="#fff" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="9" x2="12" y2="15" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="18" r="2.5" fill="#fff"/>`,
+    Tank: `<path d="M3 22V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14M3 22h10M13 12h4l3 3v7M13 22h9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
     Sonstiges: `<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="#fff" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="#fff" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="#fff" stroke-width="2" stroke-linecap="round"/>`,
   };
   const svg = icons[type] || icons.Sonstiges;
@@ -216,6 +220,8 @@ export default function OrderDetailPage() {
   const [showGpsPicker, setShowGpsPicker] = useState(false);
   const [addingAsset, setAddingAsset] = useState(false);
   const [assetComment, setAssetComment] = useState("");
+  const [assetSearch, setAssetSearch] = useState("");
+  const [assetTypeFilter, setAssetTypeFilter] = useState("all");
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
@@ -1057,7 +1063,82 @@ export default function OrderDetailPage() {
             </div>
 
             {/* Assets List */}
-            {assets.length > 0 && (
+            {assets.length > 0 && (() => {
+              // Volltextsuche + Typ-Filter. Wir filtern in einem Memo-Step,
+              // damit beim Tippen kein Re-Render-Sturm entsteht (assets bleibt
+              // unveraendert, nur die Anzeige aendert sich).
+              const q = assetSearch.trim().toLowerCase();
+              const filtered = assets.filter((a) => {
+                if (assetTypeFilter !== "all" && a.asset_type !== assetTypeFilter) return false;
+                if (!q) return true;
+                const haystack = [
+                  a.asset_type, a.label, a.plus_code, a.created_by,
+                  a.latitude?.toFixed?.(5), a.longitude?.toFixed?.(5),
+                  ...(a.comments || []).map(c => c.text),
+                ].filter(Boolean).join(" ").toLowerCase();
+                return haystack.includes(q);
+              });
+              return (
+              <>
+              {/* Such- & Filterleiste */}
+              <div className="px-4 py-3 border-b border-gray-100 bg-white flex flex-wrap items-center gap-2" data-testid="assets-toolbar">
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={assetSearch}
+                    onChange={(e) => setAssetSearch(e.target.value)}
+                    placeholder="Suche: Bezeichnung, Plus Code, Ersteller, Koordinaten oder Kommentar..."
+                    className="w-full h-8 pl-8 pr-8 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200"
+                    data-testid="asset-search-input"
+                  />
+                  {assetSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAssetSearch("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+                      data-testid="asset-search-clear"
+                      aria-label="Suche loeschen"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-gray-400" />
+                  <select
+                    value={assetTypeFilter}
+                    onChange={(e) => setAssetTypeFilter(e.target.value)}
+                    className="h-8 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-orange-400 bg-white px-2"
+                    data-testid="asset-type-filter"
+                  >
+                    <option value="all">Alle Typen ({assets.length})</option>
+                    {ASSET_TYPES.map((t) => {
+                      const count = assets.filter(a => a.asset_type === t.value).length;
+                      if (count === 0) return null;
+                      return <option key={t.value} value={t.value}>{t.value} ({count})</option>;
+                    })}
+                  </select>
+                  {(assetSearch || assetTypeFilter !== "all") && (
+                    <button
+                      type="button"
+                      onClick={() => { setAssetSearch(""); setAssetTypeFilter("all"); }}
+                      className="text-xs text-gray-400 hover:text-orange-600 underline ml-1"
+                      data-testid="asset-filter-reset"
+                    >
+                      Zuruecksetzen
+                    </button>
+                  )}
+                </div>
+                <span className="text-xs text-gray-400 ml-auto" data-testid="asset-filter-count">
+                  {filtered.length === assets.length ? `${assets.length} Artikel` : `${filtered.length} von ${assets.length} angezeigt`}
+                </span>
+              </div>
+              {filtered.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-gray-400" data-testid="assets-empty-filtered">
+                  Keine Artikel passen zu "{assetSearch}"{assetTypeFilter !== "all" ? ` in Typ "${assetTypeFilter}"` : ""}.
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="assets-table">
                   <thead>
@@ -1072,7 +1153,7 @@ export default function OrderDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...assets].sort((a, b) => {
+                    {[...filtered].sort((a, b) => {
                       const aPlaced = (a.status || "placed") === "placed" ? 0 : 1;
                       const bPlaced = (b.status || "placed") === "placed" ? 0 : 1;
                       return aPlaced - bPlaced;
@@ -1146,7 +1227,10 @@ export default function OrderDetailPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )}
+              </>
+              );
+            })()}
           </div>
 
           {/* Asset Detail Modal */}

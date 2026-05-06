@@ -17,7 +17,16 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
-- ✅ **Asset-Kommentarfunktion (Verteiler/Lichtmast/Stromerzeuger)**: User wollte unter den positionierten Artikeln im Auftragsdetail die Moeglichkeit zu kommentieren ("Steht morgen ab", "Defekt", etc.). Implementiert:
+- ✅ **Asset-Liste: Volltextsuche + Typ-Filter + neuer "Tank"-Typ**: User Wunsch:
+  - "Tank" als neuer Artikeltyp ergaenzt (Icon: lucide `Fuel`, Maps-Marker als Tankwagen-SVG)
+  - Volltextsuche-Bar oben in der Asset-Liste: durchsucht Bezeichnung, Plus Code, Ersteller, Koordinaten UND Kommentar-Text (Ein-Klick-X zum Zuruecksetzen)
+  - Typ-Filter-Dropdown rechts neben der Suche: zeigt nur Typen die tatsaechlich vorhanden sind, jeweils mit Count (z.B. "Tank (2)"); Auto-Hide leerer Typen
+  - "Zuruecksetzen"-Link wenn Suche/Filter aktiv
+  - Live-Counter "X von Y angezeigt" rechts
+  - Empty-State wenn Filter nichts findet (zeigt aktive Suche/Typ in der Meldung)
+  - E2E gruen: Typ-Dropdown enthaelt Tank, Filter zeigt Counts, Filter=Tank reduziert Liste, Suche=Suchtest filtert auf 2 Zeilen, Cleanup OK
+
+- ✅ **Asset-Kommentarfunktion (Verteiler/Lichtmast/Stromerzeuger/Tank)**: User wollte unter den positionierten Artikeln im Auftragsdetail die Moeglichkeit zu kommentieren ("Steht morgen ab", "Defekt", etc.). Implementiert:
   - 2 neue Endpoints: `POST /api/orders/epirent/{order_pk}/assets/{asset_id}/comments` (add) und `DELETE …/comments/{comment_id}` (nur Autor oder Admin)
   - Kommentare als embedded Array im `order_assets`-Dokument (1 DB-Read fuer Asset+Comments)
   - Pi-UI im Asset-Detail-Modal: Liste mit Avatar-User-Icon, Zeitstempel, Loesch-Icon (nur eigene/Admin); Eingabe-Textarea (max 2000 Zeichen) mit Enter-zu-senden + Send-Button mit Loader
