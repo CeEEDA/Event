@@ -21,9 +21,10 @@ User language: **German** (Agent must respond in German).
   - 2 neue Endpoints: `POST /api/orders/epirent/{order_pk}/assets/{asset_id}/comments` (add) und `DELETE …/comments/{comment_id}` (nur Autor oder Admin)
   - Kommentare als embedded Array im `order_assets`-Dokument (1 DB-Read fuer Asset+Comments)
   - Pi-UI im Asset-Detail-Modal: Liste mit Avatar-User-Icon, Zeitstempel, Loesch-Icon (nur eigene/Admin); Eingabe-Textarea (max 2000 Zeichen) mit Enter-zu-senden + Send-Button mit Loader
+  - **Direkt beim Anlegen mit-eingebbar**: Kommentar-Textarea im "Artikel positionieren"-Formular, wird automatisch an den frisch angelegten Asset gepostet (1 Action statt 2)
   - Asset-Tabelle zeigt Badge `💬 N` hinter dem Label fuer Assets mit Kommentaren
   - Optimistic UI: neuer Kommentar erscheint sofort ohne Modal-Reload
-  - Smoke-Test E2E ueber Playwright (Login, Asset erstellen, Modal oeffnen, Kommentar posten, Cleanup) - alles gruen
+  - E2E ueber Playwright (Login, Asset+Kommentar in einem Schritt anlegen, Modal oeffnen, Kommentar verifizieren, Cleanup) - alles gruen
 
 - ⏪ **Kraftstoff-Override am Pi rueckgaengig** (Eichrecht-konform): Auf User-Hinweis Pi-UI Buttons + Backend-Sync-Update entfernt. Fahrer darf den vom Sening gemessenen Kraftstoff NICHT manuell aendern (sonst manipulierbar). Parser-Fix (kein silent diesel) bleibt; `default_fuel_type` als Deployment-Konfig bleibt fuer den Fall dass Sening nichts erkennen liess. Fuer die 4 falsch klassifizierten Belege: User schickt morgen einen Hex-Dump, dann erweitere ich den Bitmap-Decoder um automatische HEL-Erkennung.
 

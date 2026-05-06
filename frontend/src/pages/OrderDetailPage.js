@@ -215,6 +215,7 @@ export default function OrderDetailPage() {
   const [locating, setLocating] = useState(false);
   const [showGpsPicker, setShowGpsPicker] = useState(false);
   const [addingAsset, setAddingAsset] = useState(false);
+  const [assetComment, setAssetComment] = useState("");
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
@@ -417,17 +418,31 @@ export default function OrderDetailPage() {
     setAddingAsset(true);
     try {
       const plusCode = encodePlusCode(lat, lng);
-      await api.post(`/orders/epirent/${pk}/assets`, {
+      const { data: created } = await api.post(`/orders/epirent/${pk}/assets`, {
         asset_type: assetType,
         latitude: lat,
         longitude: lng,
         label: assetLabel || assetType,
         plus_code: plusCode,
       });
+      // Falls beim Anlegen direkt ein Kommentar getippt wurde, gleich
+      // hinterherschieben - ein Roundtrip mehr ist akzeptabel und haelt das
+      // Backend-Modell schlank (Kommentare sind unabhaengiger Sub-Resource).
+      const commentText = (assetComment || "").trim();
+      if (commentText && created?.id) {
+        try {
+          await api.post(`/orders/epirent/${pk}/assets/${created.id}/comments`, { text: commentText });
+        } catch (err) {
+          // Asset ist bereits angelegt - Kommentar nur als Warnung loggen,
+          // damit der User trotzdem den Erfolg sieht und manuell nachpflegen kann.
+          toast.warning("Artikel angelegt, aber Kommentar nicht gespeichert");
+        }
+      }
       toast.success("Artikel hinzugefügt");
       setAssetLabel("");
       setAssetLat("");
       setAssetLng("");
+      setAssetComment("");
       fetchAssets();
     } catch {
       toast.error("Fehler beim Hinzufügen");
@@ -1018,6 +1033,21 @@ export default function OrderDetailPage() {
                   {addingAsset ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
                   Hinzufügen
                 </Button>
+              </div>
+              <div className="mt-2.5">
+                <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1.5">
+                  <MessageSquare className="w-3 h-3 text-orange-500" />
+                  Kommentar (optional)
+                </label>
+                <textarea
+                  value={assetComment}
+                  onChange={(e) => setAssetComment(e.target.value)}
+                  placeholder="z.B. 'Hinter dem Container, Schluessel beim Pfoertner'"
+                  rows={2}
+                  maxLength={2000}
+                  className="w-full px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200 resize-none"
+                  data-testid="asset-comment-create-input"
+                />
               </div>
               {assetLat && assetLng && (
                 <p className="mt-2 text-xs text-gray-400 font-mono" data-testid="asset-plus-code">
