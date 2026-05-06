@@ -1284,9 +1284,9 @@ export default function OrderDetailPage() {
           {/* Asset Detail Modal */}
           {selectedAsset && (
             <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4" onClick={() => setSelectedAsset(null)} data-testid="asset-detail-modal">
-              <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-fuchsia-600 to-fuchsia-500">
+              <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                {/* Header (fixed, scrollt nicht mit) */}
+                <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-fuchsia-600 to-fuchsia-500">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
                       <Eye className="w-5 h-5 text-white" />
@@ -1300,6 +1300,11 @@ export default function OrderDetailPage() {
                     <X className="w-5 h-5" />
                   </button>
                 </div>
+
+                {/* Scrollbarer Body: Map + Details + Buttons + Kommentare. Kommentare standen frueher
+                    ausserhalb des sichtbaren Bereichs weil das Wrapper-Div max-h:85vh + overflow:hidden hatte
+                    aber kein overflow:auto fuer den Inhalt. Jetzt mit flex flex-col + flex-1+overflow-y-auto. */}
+                <div className="flex-1 overflow-y-auto" data-testid="asset-modal-body">
 
                 {/* Map */}
                 <div className="h-56 w-full">
@@ -1476,6 +1481,7 @@ export default function OrderDetailPage() {
                       </button>
                     </form>
                   </div>
+                </div>
                 </div>
               </div>
             </div>
