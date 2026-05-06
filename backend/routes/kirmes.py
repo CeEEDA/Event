@@ -3788,6 +3788,26 @@ async def tankbeleg_install_script(device_id: str, key: str):
 
     portal_url = os.environ.get("PORTAL_URL", "https://eventenergie.app")
     device_name = device.get("name", device_id[:12])
+    # Letzten bekannten Belegnummer-Stand aus existierenden Tankbelegen ableiten,
+    # damit der lokale Counter nach Setup-Run weiterzaehlt statt bei 0 zu starten.
+    # Sening MultiFlow druckt die Belegnummer letzte 3 Ziffern als Bitmap, daher
+    # ist der lokale Counter zwingend, sonst sieht man nur "16" statt "16948".
+    last_beleg_nr = 0
+    try:
+        cursor = _db.fuel_receipts.find(
+            {"device_id": device_id, "beleg_nr": {"$regex": "^[0-9]+$"}},
+            {"_id": 0, "beleg_nr": 1},
+        ).sort("created_at", -1).limit(50)
+        async for r in cursor:
+            try:
+                v = int(r.get("beleg_nr", "0"))
+                if v > last_beleg_nr:
+                    last_beleg_nr = v
+            except (ValueError, TypeError):
+                pass
+    except Exception:
+        last_beleg_nr = 0
+    next_beleg_nr_start = last_beleg_nr + 1 if last_beleg_nr > 0 else 0
 
     # Beide Skripte vom Server laden (tankbeleg_pi.py = Drucker-Emulator,
     # tankbeleg_ui.py = Kiosk-Webserver mit Mitarbeiter-Anmeldung).
@@ -3855,6 +3875,7 @@ gps_host = 127.0.0.1
 gps_port = 2947
 fahrer_name =
 ui_port = 8080
+beleg_nr_start = {next_beleg_nr_start}
 CONF
 echo "  Config: /etc/tankbeleg_pi.conf"
 echo "  Device-ID: {device_id}"
