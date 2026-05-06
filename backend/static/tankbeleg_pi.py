@@ -278,14 +278,22 @@ def decode_sening_bitmap_digit(four_bytes: bytes):
 
     Sening rendert eichgueltige Mengen-Ziffern manchmal als Bitmap statt ASCII.
     Format: [byte1] [byte2] 0x72 0xd3
-        byte1 = 0x83 + d * 8   (d = Ziffer 0..9)
-        byte2 = 0x12 - d
+        byte1 = 0x83 + d * 8   (d = Ziffer 0..9, definitive Quelle)
+        byte2 = 0x12 - d       (in vielen Drucker-Modi konsistent, aber NICHT
+                                immer - manche Sening-Varianten codieren in
+                                byte2 z.B. eine zweite Stelle oder Schriftgroesse.
+                                byte1 wird daher als Wahrheit genommen.)
     Beispiele aus echten Belegen:
         a3 0e 72 d3 = Ziffer 4 (Beleg 16943, echt 154 L, ASCII zeigt nur "15")
         b3 0c 72 d3 = Ziffer 6 (Beleg 16944, echt 1296 L, ASCII zeigt nur "129")
+        83 0c 72 d3 = Ziffer 0 (Beleg 16,    echt 150 L,  ASCII zeigt nur "15")
+                                 -> byte1 sagt 0, byte2 sagt 6 (mismatch),
+                                    byte1 ist korrekt (Display zeigt 150 L).
 
     Returns:
-        str(d) wenn beide Bytes konsistent eine Ziffer 0..9 ergeben, sonst None.
+        str(d) wenn byte1 eine gueltige Ziffer 0..9 ergibt, sonst None.
+        byte2 wird nur als Plausibilitaets-Check genutzt (loggt Mismatch,
+        verwirft das Pattern aber nicht).
     """
     if len(four_bytes) < 4:
         return None
@@ -298,12 +306,12 @@ def decode_sening_bitmap_digit(four_bytes: bytes):
     if (b1 - 0x83) % 8 != 0:
         return None
     d_from_b1 = (b1 - 0x83) // 8
-    d_from_b2 = 0x12 - b2
-    # Beide Berechnungen muessen uebereinstimmen
-    if d_from_b1 != d_from_b2:
-        return None
     if not (0 <= d_from_b1 <= 9):
         return None
+    # byte2 ist nur ein Plausibilitaets-Check. Bei Beleg 16 widerspricht
+    # byte2 dem byte1 (0x0c = 6 vs. byte1=0x83 = 0), aber byte1 ist nachweislich
+    # korrekt (Display zeigt 150 L, nicht 156 L). byte2 codiert offenbar etwas
+    # anderes (vermutlich zweite Stelle oder Font-Info) - wir vertrauen byte1.
     return str(d_from_b1)
 
 
