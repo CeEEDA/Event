@@ -3780,8 +3780,22 @@ async def generate_tankbeleg_setup(body: TankbelegSetupRequest, user: dict = Dep
 
 
 @router.get("/tankbeleg-pi/install-script")
-async def tankbeleg_install_script(device_id: str, key: str):
-    """Liefert das komplette Install-Script das auf dem Pi ausgefuehrt wird."""
+async def tankbeleg_install_script(device_id: str, key: str, default_fuel_type: str = ""):
+    """Liefert das komplette Install-Script das auf dem Pi ausgefuehrt wird.
+
+    default_fuel_type: optional ('heizoel_leicht'|'diesel'|'hvo'|'') - landet in
+    /etc/tankbeleg_pi.conf als Fallback, falls der Sening-Parser den Kraftstoff
+    nicht aus dem Belegdruck erkennt (Sening druckt 'HEL schwefelarm' oft als
+    Bitmap, dann hat der Pi sonst keine Information). Frueher fiel der Sync
+    still auf 'diesel' zurueck - das hat HEL-Belege im Portal als Diesel
+    gespeichert. Mit gesetztem Default werden die Belege korrekt klassifiziert
+    und zusaetzlich als 'Review' markiert, damit der Fahrer am Pi-Kiosk noch
+    korrigieren kann falls heute ausnahmsweise was anderes ausgeliefert wurde.
+    """
+    # Nur whitelisted Werte akzeptieren - sonst beliebige Strings wuerden in
+    # die Config wandern und der Backend-Validator wuerde sie spaeter ablehnen.
+    if default_fuel_type and default_fuel_type not in ("heizoel_leicht", "diesel", "hvo"):
+        raise HTTPException(400, "default_fuel_type muss 'heizoel_leicht', 'diesel' oder 'hvo' sein")
     device = await _db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
@@ -3876,6 +3890,7 @@ gps_port = 2947
 fahrer_name =
 ui_port = 8080
 beleg_nr_start = {next_beleg_nr_start}
+default_fuel_type = {default_fuel_type}
 CONF
 echo "  Config: /etc/tankbeleg_pi.conf"
 echo "  Device-ID: {device_id}"

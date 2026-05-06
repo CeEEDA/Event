@@ -40,7 +40,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.2"
+SCRIPT_VERSION = "1.7.3"
 
 
 # ====== Konfiguration ======
@@ -75,6 +75,13 @@ DEFAULT_CONF = {
     # Ende = Pi-Uhrzeit bei Empfang, Start = Ende - (Liter * 12 s + 240 s).
     "abgabe_zeit_pro_liter_sek": 12,
     "abgabe_zeit_einrichtung_sek": 240,
+    # Default-Kraftstoff wenn der Sening-Parser den Typ nicht erkennen kann
+    # (Sening druckt "*HEL schwefelarm*" oft als Bitmap). Der Truck laedt in
+    # der Regel monatelang nur ein Produkt, daher ist ein Deployment-Default
+    # deutlich zuverlaessiger als Rueckfall auf "diesel" - der Wert landet sonst
+    # silent falsch im Portal. Erlaubte Werte: "", "heizoel_leicht", "diesel", "hvo".
+    # Leer = kein Default -> Beleg wird als needs_review markiert.
+    "default_fuel_type": "",
 }
 
 
@@ -692,7 +699,19 @@ def enrich_receipt_with_heuristics(receipt: dict, conf: dict) -> dict:
         except Exception as e:
             log.warning(f"Beleg-Nr-Counter fehlgeschlagen: {e}")
 
-    # 5) Review-Flag bereinigen: Datum ist via NTP gesichert, Zeiten berechnet,
+    # 5) Default-Kraftstoff anwenden wenn Parser nichts erkannt hat.
+    # Sening druckt "*HEL schwefelarm*" oft als Bitmap -> Parser findet nix.
+    # Der Truck fuehrt ueblicherweise monatelang nur ein Produkt; darum ist
+    # der Deployment-Default (z.B. "heizoel_leicht") verlaesslicher als stiller
+    # Rueckfall auf "diesel". Trotzdem als needs_review flaggen, damit der
+    # Fahrer die Zuordnung auf dem Pi-Kiosk noch korrigieren kann falls heute
+    # mal ausnahmsweise Diesel ausgeliefert wurde.
+    default_fuel = (conf.get("default_fuel_type") or "").strip()
+    if not receipt.get("fuel_type") and default_fuel:
+        receipt["fuel_type"] = default_fuel
+        log.info(f"  Kraftstoff aus Default-Config uebernommen: {default_fuel}")
+
+    # 6) Review-Flag bereinigen: Datum ist via NTP gesichert, Zeiten berechnet,
     #    Beleg-Nr per Counter. Nur noch Menge ist Pflicht.
     #    WICHTIG: Bestehende review_reasons (z.B. Bitmap-Suffix-Detection) erhalten!
     existing_reasons = receipt.get("review_reason") or []
@@ -705,6 +724,8 @@ def enrich_receipt_with_heuristics(receipt: dict, conf: dict) -> dict:
     missing = []
     if not receipt.get("menge_liter"):
         missing.append("Menge")
+    if not receipt.get("fuel_type"):
+        missing.append("Kraftstoff")
     if missing:
         existing_reasons.append(", ".join(missing) + " aus Bitmap nicht lesbar")
 
@@ -830,7 +851,10 @@ def parse_receipt(text: str) -> dict:
             "diesel": "diesel",
             "hvo": "hvo",
         }
-        receipt["fuel_type"] = fuel_map.get(fuel_raw.lower(), "diesel")
+        # KEIN stiller Default auf "diesel" - unbekannte Werte = None
+        # (sonst landen HEL-Belege falsch als Diesel im Portal, wenn der Regex
+        # etwas matcht was nicht im Mapping steht).
+        receipt["fuel_type"] = fuel_map.get(fuel_raw.lower())
 
     m = RE_MENGE.search(text)
     if m:
@@ -1260,7 +1284,7 @@ def sync_to_portal(conf):
                 datum = f"{parts[2]}-{parts[1]}-{parts[0]}"
 
         api_receipt = {
-            "fuel_type": row.get("fuel_type") or "diesel",
+            "fuel_type": row.get("fuel_type"),
             "quantity_liters": row.get("menge_liter") or 0,
             "date": datum,
             "time": row.get("zeit") or "",

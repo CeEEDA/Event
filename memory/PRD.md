@@ -17,6 +17,18 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg fuel_type Bug-Fix (v1.7.3)**: Sening-Display zeigte "HEL schwefelarm" → Portal speicherte 4 Belege als "Diesel". Root-Cause: `parse_receipt()` nutzte `fuel_map.get(.., "diesel")` und `sync_to_portal()` `row.get('fuel_type') or 'diesel'` → stiller Default. Fix:
+  - `parse_receipt()`: kein silent diesel-Fallback mehr (None bleibt None)
+  - `sync_to_portal()`: sendet None statt diesel
+  - Neue Config-Option `default_fuel_type` in `/etc/tankbeleg_pi.conf` (User-Wahl per Truck)
+  - `enrich_receipt_with_heuristics()` nutzt Default + setzt `needs_review=True`
+  - Backend `FuelReceiptCreate.fuel_type` jetzt `Optional[str]` (vorher required)
+  - Sync-Update propagiert `fuel_type`-Korrekturen (Pi-UI Override → Portal)
+  - Pi-UI: Kraftstoff-Auswahl-Buttons (HEL/Diesel/HVO) im Zuordnungsformular - Fahrer kann nachtraeglich korrigieren
+  - "Diesel"-Fallback in Pi-UI durch "Unbekannt" ersetzt
+  - 5 Unit-Tests in `/app/backend/tests/test_tankbeleg_fuel_default.py`, alle gruen
+  - kirmes.py install-script akzeptiert Query-Param `default_fuel_type` (whitelist: heizoel_leicht/diesel/hvo)
+
 - ✅ **Tankbeleg `xonxoff` Fix (v1.7.2)**: Version auf 1.7.2 gebumpt, zusaetzliche FLOW-CONTROL Diagnose-Log-Zeile ergaenzt damit per `journalctl -u tankbeleg_pi -f` sofort erkennbar ist, ob der Pi die neue Version mit aktiviertem XON/XOFF geladen hat. User-Test auf Production ausstehend.
 
 - ✅ **LTE Failover DNS Fix** (P1 vom Backlog erledigt): User berichtete dass HAT-LED am Pi blinkt (LTE up), aber Portal sagt offline; LAN ziehen → Pi offline.

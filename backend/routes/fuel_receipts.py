@@ -99,7 +99,12 @@ async def _require_admin_or_staff(credentials: HTTPAuthorizationCredentials = De
 class FuelReceiptCreate(BaseModel):
     order_pk: Optional[str] = None
     order_name: Optional[str] = None
-    fuel_type: str
+    # fuel_type ist optional, weil der Sening-Drucker den Kraftstoff oft als
+    # Bitmap druckt. Pi soll dann None senden + needs_review=True, damit der
+    # Beleg im Portal als "ungeklaert" erscheint statt still als "diesel" zu
+    # landen. Nachtraegliche Korrektur ueber die Pi-UI laeuft auch ueber diesen
+    # Pfad: bei erneutem Sync wird der korrigierte Wert geupdated (siehe sync).
+    fuel_type: Optional[str] = None
     quantity_liters: float
     date: str
     time: str
@@ -221,6 +226,13 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
                         update_fields["fahrer"] = r.fahrer
                     if r.notes and r.notes != existing.get("notes"):
                         update_fields["notes"] = r.notes
+                    # Kraftstoff-Korrektur vom Pi-Touchscreen propagieren.
+                    # Frueher landeten HEL-Belege still als "diesel" weil der
+                    # Sync-Default das so gemacht hat - mit dem neuen Pi-UI-
+                    # Override sendet der Fahrer den korrekten Wert nach.
+                    if r.fuel_type and r.fuel_type in FUEL_TYPES and r.fuel_type != existing.get("fuel_type"):
+                        update_fields["fuel_type"] = r.fuel_type
+                        update_fields["fuel_type_label"] = FUEL_TYPES[r.fuel_type]
                     if update_fields:
                         update_fields["synced_at"] = datetime.now(timezone.utc).isoformat()
                         await _db.fuel_receipts.update_one(
