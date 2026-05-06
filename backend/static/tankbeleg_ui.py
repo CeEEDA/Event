@@ -196,17 +196,13 @@ def get_receipts(db_path, limit=50):
     conn.close(); return [dict(r) for r in rows]
 
 
-def assign_receipt(db_path, local_id, order_pk, order_name, fahrer, notes, fuel_type=None):
-    """Speichert Auftragszuordnung + optional korrigierten Kraftstoff (fuer den Fall
-    dass der Sening-Parser HEL als Diesel oder gar nicht erkannt hat).
-    fuel_type=None laesst den vorhandenen Wert unveraendert."""
+def assign_receipt(db_path, local_id, order_pk, order_name, fahrer, notes):
+    """Speichert Auftragszuordnung. Kraftstoff-Override ist NICHT erlaubt
+    (Eichrecht: Fahrer darf den vom Sening-Drucker gemessenen Kraftstoff
+    NICHT manuell aendern, sonst waere die Messung manipulierbar)."""
     conn = sqlite3.connect(db_path)
-    if fuel_type:
-        conn.execute("UPDATE receipts SET order_pk=?,order_name=?,fahrer=?,notes=?,fuel_type=?,assigned=1,synced=0 WHERE local_id=?",
-                     (order_pk, order_name, fahrer, notes, fuel_type, local_id))
-    else:
-        conn.execute("UPDATE receipts SET order_pk=?,order_name=?,fahrer=?,notes=?,assigned=1,synced=0 WHERE local_id=?",
-                     (order_pk, order_name, fahrer, notes, local_id))
+    conn.execute("UPDATE receipts SET order_pk=?,order_name=?,fahrer=?,notes=?,assigned=1,synced=0 WHERE local_id=?",
+                 (order_pk, order_name, fahrer, notes, local_id))
     conn.commit(); affected = conn.total_changes; conn.close()
     return affected > 0
 
@@ -321,11 +317,6 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 .btn-primary{{background:var(--accent);color:white;box-shadow:0 2px 6px rgba(192,38,211,0.3)}}
 .btn-lager{{background:#f59e0b;color:white;margin-bottom:10px;padding:10px 16px;font-size:14px;box-shadow:0 2px 6px rgba(245,158,11,0.3)}}
 .btn-lager:hover{{background:#d97706}}
-
-.fuel-picker{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}}
-.fuel-btn{{padding:10px 6px;border-radius:8px;border:2px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;transition:all 0.12s}}
-.fuel-btn:active{{transform:scale(0.97)}}
-.fuel-btn.active{{border-color:var(--accent);background:var(--accent-light);color:var(--accent-dark);box-shadow:0 2px 6px var(--accent-light)}}
 
 .order-picker{{display:flex;gap:8px;align-items:stretch}}
 .order-list{{flex:1;background:var(--bg);border:2px solid var(--border);border-radius:10px;max-height:180px;overflow-y:auto;scroll-behavior:smooth}}
@@ -454,14 +445,6 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
             <label>Bemerkung (optional)</label>
             <div class="notes-input" id="notesDisplay" onclick="openKeyboard('notes')">Antippen zum Schreiben...</div>
             <input type="hidden" id="notesValue">
-          </div>
-          <div class="form-group" id="fuelOverrideGroup">
-            <label>Kraftstoff <span style="color:var(--muted);font-size:11px;font-weight:400">(falls falsch erkannt)</span></label>
-            <div class="fuel-picker">
-              <button type="button" class="fuel-btn" data-fuel="heizoel_leicht" onclick="selectFuel('heizoel_leicht')">HEL leicht</button>
-              <button type="button" class="fuel-btn" data-fuel="diesel" onclick="selectFuel('diesel')">Diesel</button>
-              <button type="button" class="fuel-btn" data-fuel="hvo" onclick="selectFuel('hvo')">HVO</button>
-            </div>
           </div>
         </div>
         <div class="form-actions">
@@ -726,14 +709,6 @@ function fuelLabel(ft){{
   return ft;
 }}
 
-let selectedFuel=null;
-function selectFuel(ft){{
-  selectedFuel=ft;
-  document.querySelectorAll('.fuel-btn').forEach(b=>{{
-    b.classList.toggle('active',b.getAttribute('data-fuel')===ft);
-  }});
-}}
-
 function populateOrders(){{
   const list=document.getElementById('orderList');
   list.innerHTML='';
@@ -793,11 +768,6 @@ function selectReceipt(id){{
   else document.getElementById('orderList').scrollTop=0;
   document.getElementById('notesValue').value=selectedReceipt.notes||'';
   document.getElementById('notesDisplay').textContent=selectedReceipt.notes||'Antippen zum Schreiben...';
-  // Fuel-Override-Buttons: aktuellen Wert vorbelegen
-  selectedFuel=selectedReceipt.fuel_type||null;
-  document.querySelectorAll('.fuel-btn').forEach(b=>{{
-    b.classList.toggle('active',b.getAttribute('data-fuel')===selectedFuel);
-  }});
   renderReceipts();
 }}
 
@@ -805,9 +775,7 @@ function clearSelection(){{
   selectedReceipt=null;
   selectedOrderPk='';
   selectedOrderName='';
-  selectedFuel=null;
   document.querySelectorAll('.order-item.selected').forEach(el=>el.classList.remove('selected'));
-  document.querySelectorAll('.fuel-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('noSelection').style.display='';
   document.getElementById('assignForm').style.display='none';
   document.getElementById('selectedNr').textContent='Kein Beleg gewaehlt';
@@ -823,7 +791,7 @@ async function saveAssignment(){{
   const notes=document.getElementById('notesValue').value||'';
   document.getElementById('saveBtn').disabled=true;
   try{{
-    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:selectedOrderPk,order_name:selectedOrderName,fahrer:fahrer,notes:notes,fuel_type:selectedFuel}})}});
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:selectedOrderPk,order_name:selectedOrderName,fahrer:fahrer,notes:notes}})}});
     const d=await r.json();
     if(d.ok){{showToast('Beleg zugeordnet!');clearSelection();loadReceipts()}}
     else showToast('Fehler: '+(d.error||'?'),true);
@@ -840,7 +808,7 @@ async function assignLager(){{
   document.getElementById('lagerBtn').disabled=true;
   document.getElementById('saveBtn').disabled=true;
   try{{
-    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:'LAGER',order_name:'Lager / Testlauf',fahrer:fahrer,notes:notes,fuel_type:selectedFuel}})}});
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:'LAGER',order_name:'Lager / Testlauf',fahrer:fahrer,notes:notes}})}});
     const d=await r.json();
     if(d.ok){{showToast('Beleg auf Lager gebucht!');clearSelection();loadReceipts()}}
     else showToast('Fehler: '+(d.error||'?'),true);
@@ -931,8 +899,7 @@ class KioskHandler(SimpleHTTPRequestHandler):
         body = json.loads(self.rfile.read(length)) if length else {}
         if path == "/api/assign":
             ok = assign_receipt(self.conf["db_path"], body.get("local_id"), body.get("order_pk"),
-                                body.get("order_name", ""), body.get("fahrer", ""), body.get("notes", ""),
-                                fuel_type=body.get("fuel_type"))
+                                body.get("order_name", ""), body.get("fahrer", ""), body.get("notes", ""))
             self._json({"ok": ok})
         elif path == "/api/sync":
             sync_orders_from_backend(self.conf)

@@ -226,13 +226,6 @@ async def sync_fuel_receipts(receipts: List[FuelReceiptCreate]):
                         update_fields["fahrer"] = r.fahrer
                     if r.notes and r.notes != existing.get("notes"):
                         update_fields["notes"] = r.notes
-                    # Kraftstoff-Korrektur vom Pi-Touchscreen propagieren.
-                    # Frueher landeten HEL-Belege still als "diesel" weil der
-                    # Sync-Default das so gemacht hat - mit dem neuen Pi-UI-
-                    # Override sendet der Fahrer den korrekten Wert nach.
-                    if r.fuel_type and r.fuel_type in FUEL_TYPES and r.fuel_type != existing.get("fuel_type"):
-                        update_fields["fuel_type"] = r.fuel_type
-                        update_fields["fuel_type_label"] = FUEL_TYPES[r.fuel_type]
                     if update_fields:
                         update_fields["synced_at"] = datetime.now(timezone.utc).isoformat()
                         await _db.fuel_receipts.update_one(
