@@ -1476,23 +1476,37 @@ UDEVRULE
     # 'usepeerdns' = Provider-DNS-Server uebernehmen (sonst kein DNS wenn LAN weg)
     sudo bash -c "printf '%s\n' 'connect \"/usr/sbin/chat -v -f /etc/chatscripts/m2m-connect\"' {ppp_user_line_quoted} {ppp_pwd_line_quoted} 'nodefaultroute' 'noipdefault' 'noipv6' 'novj' 'novjccomp' 'noccp' 'ipcp-accept-local' 'ipcp-accept-remote' 'local' 'lock' 'persist' 'maxfail 0' 'holdoff 10' 'lcp-echo-interval 30' 'lcp-echo-failure 4' 'usepeerdns' 'debug' > /etc/ppp/peers/m2m"
 
-    # Chat-Skript: aus Data-Mode raushebeln (+++/ATH), dann PIN, APN, Dial *99#
-    # Timeout 60s (nach Reboot braucht das Modem bis zu 30s bis es antwortet).
-    # AT mit Retry: wenn erstes AT timeoutet, versuche 2 weitere Male.
+    # Chat-Skript: KEIN +++/ATH-Hack mehr (das hat das Modem in einen
+    # firmware-Hang gefahren - das +++ braucht laut SIM7600-Spec >1s Guard
+    # Timer ohne weitere Daten, was \d\d\d+++ nicht erfuellt; ATH danach im
+    # Command-Mode ist undefiniert).
+    # Stattdessen: Sauberer Init-Sequenz mit ATE0 (Echo aus, sonst werden
+    # Sende-Befehle als Echo zurueckgespiegelt und verwirren chat-Parser),
+    # ATZ (Reset), AT+CFUN=1 (Voll-Funktion), dann PIN, APN, Dial.
+    # PIN: Conditional - nur senden wenn das Modem '+CPIN: SIM PIN' meldet,
+    # bei '+CPIN: READY' direkt zur APN-Konfig springen.
     sudo tee /etc/chatscripts/m2m-connect > /dev/null << 'CHATSCRIPT'
 ABORT 'BUSY'
 ABORT 'NO CARRIER'
-ABORT 'ERROR'
+ABORT 'NO DIALTONE'
 ABORT 'NO ANSWER'
-TIMEOUT 60
-'' '\d\d\d+++'
-'' '\dATH\r'
+ABORT 'ERROR'
+ABORT 'DELAYED'
+ABORT '+CME ERROR'
+ABORT '+CMS ERROR'
+TIMEOUT 12
 '' AT
-OK-AT-OK-AT-OK ATZ
+OK ATE0
+OK ATZ
 OK 'AT+CMEE=2'
+OK 'AT+CFUN=1'
 OK 'AT+CPIN?'
-OK-AT+CPIN={lte_pin}-OK 'AT+CGDCONT=1,"IP","{lte_apn}"'
+TIMEOUT 30
+'+CPIN: ' \c
+'READY-AT+CPIN={lte_pin}-READY' 'AT+CGDCONT=1,"IP","{lte_apn}"'
+OK 'AT+COPS?'
 OK ATD*99#
+TIMEOUT 60
 CONNECT ''
 CHATSCRIPT
 
@@ -1550,19 +1564,49 @@ PPPHOOK2D
     # Damit erholt sich der Pi auch nach SIM7600-Firmware-Hang ohne Power-Cycle.
     sudo tee /usr/local/sbin/lte-wait-device > /dev/null << 'WAITSCRIPT'
 #!/bin/bash
+# SIM7600 Watchdog: prueft ob das Modem auf AT antwortet, recovered
+# bei Hang via mehrstufiger Eskalation (Software-Reset -> USB-Reset).
+# AT-Port = ttyUSB2 (PPP) ist ggf. von pppd belegt - daher nutzen wir
+# ttyUSB3 (sim7600-at2) fuer Diagnose und Recovery, das ist der zweite
+# AT-Channel der parallel zu PPP nutzbar ist.
 DEV="${{1:-/dev/sim7600-ppp}}"
+AT_PORT=/dev/sim7600-at2
+[ -e "$AT_PORT" ] || AT_PORT="$DEV"
 LOG=/var/log/lte-wait-device.log
 
+at_send() {{
+    # Sendet AT-Befehl auf $AT_PORT, gibt Response zurueck (max 4s)
+    local cmd="$1"
+    timeout 4 bash -c "exec 3<>$AT_PORT 2>/dev/null; printf '%s\r\n' '$cmd' >&3 2>/dev/null; sleep 1.5; cat <&3 2>/dev/null" \
+      | tr -d '\r\0'
+}}
+
 at_test() {{
-    # Sendet AT auf Port, gibt 0 zurueck wenn 'OK' empfangen
-    local port="$1"
-    [ -e "$port" ] || return 1
-    timeout 4 bash -c "exec 3<>$port 2>/dev/null; printf 'AT\r\n' >&3 2>/dev/null; sleep 1; cat <&3 2>/dev/null" \
-      | tr -d '\r\0' | grep -q OK
+    # Returns 0 wenn Modem auf 'AT' mit 'OK' antwortet
+    [ -e "$AT_PORT" ] || return 1
+    at_send "AT" | grep -q OK
+}}
+
+at_test_loop() {{
+    # Wartet $1 Iterationen je 2s auf AT-OK
+    local n="$1"
+    local i
+    for i in $(seq 1 "$n"); do
+        at_test && return 0
+        sleep 2
+    done
+    return 1
+}}
+
+modem_software_reset() {{
+    # AT+CFUN=1,1 = Soft-Reset; Modem reset & USB-Re-Enumeration in ~12s
+    echo "[$(date)] Versuche Modem Soft-Reset (AT+CFUN=1,1) auf $AT_PORT" >> "$LOG"
+    at_send "AT+CFUN=1,1" >> "$LOG" 2>&1
+    sleep 15
 }}
 
 usb_reset_sim7600() {{
-    # USB-Device 1e0e:9001 unbinden und rebinden = Soft-Reset
+    # USB-Device 1e0e:9001 unbinden und rebinden
     local USB_DEV
     USB_DEV=$(grep -l "^1e0e" /sys/bus/usb/devices/*/idVendor 2>/dev/null | head -1 | xargs -r dirname | xargs -r basename)
     if [ -n "$USB_DEV" ]; then
@@ -1578,30 +1622,40 @@ usb_reset_sim7600() {{
 }}
 
 mkdir -p "$(dirname "$LOG")"
+echo "[$(date)] === Watchdog gestartet (AT_PORT=$AT_PORT) ===" >> "$LOG"
 
-# Phase 1: bis zu 60s warten auf AT-Antwort
-for i in $(seq 1 30); do
-    if at_test "$DEV"; then
-        echo "[$(date)] Modem AT OK (Phase 1, ${{i}}/30)" >> "$LOG"
-        exit 0
-    fi
-    sleep 2
-done
+# Phase 1: 30s auf erste AT-Antwort warten
+if at_test_loop 15; then
+    echo "[$(date)] Phase 1: Modem antwortet sofort" >> "$LOG"
+    # ATE0 setzen damit chat-Parser sauber laeuft
+    at_send "ATE0" > /dev/null
+    exit 0
+fi
 
-# Phase 2: Modem antwortet nicht - USB-Reset
-echo "[$(date)] Modem haengt nach 60s - USB-Reset" >> "$LOG"
+# Phase 2: Soft-Reset versuchen
+echo "[$(date)] Phase 1 fail nach 30s - Soft-Reset" >> "$LOG"
+modem_software_reset
+
+if at_test_loop 20; then
+    echo "[$(date)] Phase 2: Modem antwortet nach Soft-Reset" >> "$LOG"
+    at_send "ATE0" > /dev/null
+    exit 0
+fi
+
+# Phase 3: USB-Reset (haerter)
+echo "[$(date)] Phase 2 fail nach 40s - USB-Reset" >> "$LOG"
 usb_reset_sim7600
 
-# Phase 3: 30s warten ob AT nach Reset funktioniert
-for i in $(seq 1 15); do
-    if at_test "$DEV"; then
-        echo "[$(date)] Modem AT OK nach USB-Reset (Phase 3, ${{i}}/15)" >> "$LOG"
-        exit 0
-    fi
-    sleep 2
-done
+# Nach USB-Reset koennte AT_PORT verschwunden sein - neu auswerten
+[ -e /dev/sim7600-at2 ] && AT_PORT=/dev/sim7600-at2 || AT_PORT="$DEV"
 
-echo "[$(date)] Modem antwortet auch nach USB-Reset nicht (Hardware-Power-Cycle noetig)" >> "$LOG"
+if at_test_loop 20; then
+    echo "[$(date)] Phase 3: Modem antwortet nach USB-Reset" >> "$LOG"
+    at_send "ATE0" > /dev/null
+    exit 0
+fi
+
+echo "[$(date)] Modem antwortet auf keinen Recovery-Versuch - Hardware-Power-Cycle noetig" >> "$LOG"
 exit 1
 WAITSCRIPT
     sudo chmod +x /usr/local/sbin/lte-wait-device
