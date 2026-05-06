@@ -40,7 +40,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.0"
+SCRIPT_VERSION = "1.7.1"
 
 
 # ====== Konfiguration ======
@@ -1509,6 +1509,21 @@ def main():
 
     last_sync_time = 0
     consecutive_errors = 0
+
+    # OTA-Check beim Start ausfuehren (damit sich der Pi sofort beim Portal meldet
+    # und im Update-Dashboard erscheint - nicht erst nach erstem sync_interval).
+    if conf.get("api_url"):
+        log.info("OTA-Pruefung beim Start...")
+        try:
+            updated = check_and_apply_ota_update(conf)
+            if updated:
+                # check_and_apply_ota_update() ruft bei Erfolg sys.exit(0) auf,
+                # systemd startet dann mit dem neuen Skript neu. Hier nur safety-net:
+                log.info("Update angewendet - beende fuer systemd-Restart")
+                return
+        except Exception as ota_e:
+            log.warning(f"OTA-Check beim Start fehlgeschlagen: {ota_e}")
+        last_sync_time = time.time()  # Doppel-Check im Loop verhindern
 
     log.info("Warte auf Belegdaten...")
 
