@@ -48,7 +48,8 @@ import {
   Filter,
   ArrowRightLeft,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl, LayerGroup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -223,15 +224,12 @@ export default function OrderDetailPage() {
   const [assetComment, setAssetComment] = useState("");
   const [assetSearch, setAssetSearch] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState("all");
-  const [mapLayer, setMapLayer] = useState(() => localStorage.getItem("orderMapLayer") || "osm");
   // Move-Asset Picker State
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveSearch, setMoveSearch] = useState("");
   const [moveResults, setMoveResults] = useState([]);
   const [moveLoading, setMoveLoading] = useState(false);
   const [moveSubmitting, setMoveSubmitting] = useState(false);
-
-  useEffect(() => { localStorage.setItem("orderMapLayer", mapLayer); }, [mapLayer]);
   // Gefilterte Asset-Liste (Suche + Typ-Filter). Wird sowohl von der Tabelle
   // als auch von den Karten-Markern verwendet, damit Filter konsistent greift.
   const filteredAssets = (() => {
@@ -816,40 +814,7 @@ export default function OrderDetailPage() {
                     style={{ height: "100%", width: "100%" }}
                     scrollWheelZoom={true}
                   >
-                    <LayersControl position="topright">
-                      <LayersControl.BaseLayer checked={mapLayer === "osm"} name="Karte (OSM)">
-                        <TileLayer
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                          eventHandlers={{ add: () => setMapLayer("osm") }}
-                        />
-                      </LayersControl.BaseLayer>
-                      <LayersControl.BaseLayer checked={mapLayer === "sat"} name="Satellit">
-                        {/* Esri World Imagery - frei nutzbar ohne API Key, vergleichbar mit Google Sat */}
-                        <TileLayer
-                          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                          attribution='Tiles &copy; Esri'
-                          maxZoom={19}
-                          eventHandlers={{ add: () => setMapLayer("sat") }}
-                        />
-                      </LayersControl.BaseLayer>
-                      <LayersControl.BaseLayer checked={mapLayer === "hybrid"} name="Hybrid (Sat + Strassen)">
-                        {/* Layer-Group: zwei Tiles uebereinander - Esri Sat + transparente OSM-Labels */}
-                        <LayerGroup>
-                          <TileLayer
-                            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                            attribution='Tiles &copy; Esri'
-                            maxZoom={19}
-                            eventHandlers={{ add: () => setMapLayer("hybrid") }}
-                          />
-                          <TileLayer
-                            url="https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png"
-                            attribution='Map labels &copy; Stamen'
-                            opacity={0.7}
-                          />
-                        </LayerGroup>
-                      </LayersControl.BaseLayer>
-                    </LayersControl>
+                    <MapTileLayer />
                     <RadiusCircle center={center} radiusKm={order?.radius_km || 5} />
                     <FitBounds center={center} generators={generators} assets={filteredAssets} radiusKm={order?.radius_km || 5} />
                     <Marker position={center} icon={centerIcon}>
@@ -1344,10 +1309,7 @@ export default function OrderDetailPage() {
                     style={{ height: "100%", width: "100%" }}
                     scrollWheelZoom={true}
                   >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
+                    <MapTileLayer />
                     <Marker position={[selectedAsset.latitude, selectedAsset.longitude]}>
                       <Popup>{selectedAsset.label || selectedAsset.asset_type}</Popup>
                     </Marker>

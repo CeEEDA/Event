@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import { MapContainer, Marker, useMap } from "react-leaflet";
+import MapTileLayer from "./MapTileLayer";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Button } from "./ui/button";
@@ -161,10 +162,7 @@ export default function GpsLockPicker({ open, onClose, onConfirm, initialLat = n
           )}
           <MapContainer center={center} zoom={zoom} scrollWheelZoom style={{ width: "100%", height: "100%" }}>
             <InvalidateOnMount />
-            <TileLayer
-              attribution='&copy; OpenStreetMap'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <MapTileLayer />
             {lat != null && lng != null && (
               <>
                 <Recenter lat={pinTouched ? null : lat} lng={pinTouched ? null : lng} zoom={hasFix ? 18 : 6} />

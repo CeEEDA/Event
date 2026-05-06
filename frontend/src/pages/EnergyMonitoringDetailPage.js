@@ -28,7 +28,8 @@ import {
 } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, Marker, Popup } from "react-leaflet";
+import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -318,7 +319,7 @@ export default function EnergyMonitoringDetailPage() {
               </div>
               <div style={{ height: "250px" }}>
                 <MapContainer center={[location.gps_lat, location.gps_lon]} zoom={15} style={{ height: "100%", width: "100%" }} scrollWheelZoom={true}>
-                  <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <MapTileLayer />
                   <Marker position={[location.gps_lat, location.gps_lon]} icon={markerIcon}>
                     <Popup>
                       <div className="text-xs">

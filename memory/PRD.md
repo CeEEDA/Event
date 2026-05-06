@@ -17,6 +17,12 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Karten global auf Hybrid + Layer-Switcher in JEDER Karte**: User wollte den Layer-Switcher auch in der Modal-Mini-Map und Hybrid als Default ueber alle Karten. Umsetzung:
+  - Neue Komponente `/app/frontend/src/components/MapTileLayer.jsx` kapselt Tile-Layer + Switcher (OSM/Sat/Hybrid). Auswahl persistiert in `localStorage["mapLayer"]`, Default ist "hybrid".
+  - 7 Stellen umgestellt: OrderDetailPage (grosse Karte + Modal-Mini-Map), GpsLockPicker, EnergyMonitoringPage, GeneratorDetailPage, GeneratorDashboardPage, EnergyMonitoringDetailPage, DeviceManagementPage.
+  - Jede Map hat jetzt automatisch den Layer-Switcher oben rechts und bootet in Hybrid (Esri Sat + transparente Stamen-Strassen-Labels).
+  - E2E gruen (localStorage-Wert "hybrid" verifiziert, Mini-Map im Asset-Modal hat Layer-Control, Sat-Tiles werden geladen).
+
 - ✅ **Karten-Layer (Satellit/Hybrid) + Marker-Klick + Verschieben**: User-Wuensche umgesetzt:
   - **Layer-Switcher** oben rechts auf der Karte: "Karte (OSM)" / "Satellit" (Esri World Imagery - frei, Google-Sat-vergleichbar) / "Hybrid" (Sat + transparente Strassen-Labels). Auswahl wird in localStorage persistiert.
   - **Marker-Klick oeffnet direkt das Asset-Detail-Modal** (statt Popup) - schnellerer Workflow, Modal hat alle Details + Kommentare + Move-Funktion.

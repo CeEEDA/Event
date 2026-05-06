@@ -20,7 +20,8 @@ import {
   MapPin,
 } from "lucide-react";
 import { Input } from "../components/ui/input";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, Marker, Popup } from "react-leaflet";
+import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -275,10 +276,7 @@ export default function EnergyMonitoringPage() {
                   style={{ height: "100%", width: "100%" }}
                   scrollWheelZoom={true}
                 >
-                  <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
+                  <MapTileLayer />
                   {locations.map((loc) => (
                     <Marker
                       key={loc.device_id}

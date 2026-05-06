@@ -44,7 +44,8 @@ import {
   LineChart,
 } from "recharts";
 
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { MapContainer, Marker } from "react-leaflet";
+import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
 import EventLog from "../components/EventLog";
 
@@ -751,7 +752,7 @@ export default function GeneratorDetailPage() {
                 style={{ height: "100%", width: "100%" }}
                 scrollWheelZoom={false}
               >
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OSM' />
+                <MapTileLayer />
                 <Marker
                   position={[generator.latitude, generator.longitude]}
                   icon={L.divIcon({

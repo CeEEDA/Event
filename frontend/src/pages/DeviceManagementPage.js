@@ -43,7 +43,8 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
 import { openExternal } from "../lib/openExternal";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { MapContainer, Marker } from "react-leaflet";
+import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -1848,10 +1849,7 @@ function DeviceExpandedRow({ device, colSpan }) {
                       style={{ height: "100%", width: "100%" }}
                       scrollWheelZoom={false}
                     >
-                      <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                      />
+                      <MapTileLayer />
                       <Marker
                         position={[Number(info.gps.lat), Number(info.gps.lon)]}
                         icon={L.divIcon({
