@@ -384,6 +384,7 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
     decoded_digits = []
     pos = last_end
     has_unknown_bitmap = False
+    unknown_bytes_hex = ""  # Forensik: welche Bytes konnten wir nicht parsen
     while pos + 4 <= len(segment):
         chunk = segment[pos:pos + 4]
         digit = decode_sening_bitmap_digit(chunk)
@@ -399,10 +400,21 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
                     pass  # Whitespace oder " L" (ASCII-Ende)
                 elif first >= 0x80 or (first < 0x20 and first not in (0x09, 0x0A, 0x0D)):
                     has_unknown_bitmap = True
+                    # Logge die naechsten 12 Bytes als Hex damit wir spaeter
+                    # neue Bitmap-Patterns reverse engineeren koennen.
+                    forensic_chunk = segment[pos:min(pos + 12, len(segment))]
+                    unknown_bytes_hex = " ".join(f"{b:02x}" for b in forensic_chunk)
+                    log.warning(
+                        f"BITMAP-PATTERN UNBEKANNT nach ASCII '{last_digits}': {unknown_bytes_hex} "
+                        f"(bitte an Backend melden fuer Decoder-Erweiterung)"
+                    )
             break
         decoded_digits.append(digit)
+        # Format A = 1 Ziffer (4 Bytes), Format B = 2 Ziffern (4 Bytes).
+        # decode_sening_bitmap_digit liefert "X" oder "XY" - bei "XY" sind
+        # bereits beide Ziffern aus diesem Quadrupel extrahiert.
         pos += 4
-        # Sicherheits-Limit: max 5 Bitmap-Digits (= bis 99999 L)
+        # Sicherheits-Limit: max 5 Quadrupel (= bis 10 Bitmap-Ziffern)
         if len(decoded_digits) >= 5:
             break
 
