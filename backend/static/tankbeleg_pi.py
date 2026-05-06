@@ -40,7 +40,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.1"
+SCRIPT_VERSION = "1.7.2"
 
 
 # ====== Konfiguration ======
@@ -1341,6 +1341,11 @@ class SerialReceiptReader:
 
         # dsrdtr=False: Sening MultiFlow uses 3-wire null-modem cable (no DSR/DTR handshake).
         # With dsrdtr=True pyserial blocks writes while DSR is low, which prevents status replies.
+        # xonxoff=True: MultiFlow im TM-U295-Profil sendet mit Software-Flow-Control
+        # (XON/XOFF, 0x11/0x13). Ohne ixon/ixoff laeuft der UART-FIFO (16 Byte) bei
+        # langen Belegen ueber, was die letzten Bytes (z.B. die letzte Mengen-Ziffer)
+        # verschluckt. Das war die wahre Ursache fuer "13 statt 1316" und nicht
+        # primaer ein Bitmap-Decoder-Problem.
         self.ser = serial.Serial(
             port=self.port,
             baudrate=self.baud,
@@ -1348,7 +1353,7 @@ class SerialReceiptReader:
             parity=parity_map.get(self.parity, serial.PARITY_NONE),
             stopbits=stopbits_map.get(self.stopbits, serial.STOPBITS_ONE),
             timeout=0.1,
-            xonxoff=False,
+            xonxoff=True,
             rtscts=False,
             dsrdtr=False,
         )
@@ -1359,6 +1364,13 @@ class SerialReceiptReader:
         except (OSError, IOError):
             log.debug("DTR/RTS nicht unterstuetzt (z.B. virtuelle Ports)")
         log.info(f"Serielle Verbindung geoeffnet: {self.port} @ {self.baud}")
+        # Diagnose-Log: xonxoff muss AKTIV sein, sonst werden lange Belege (>16 Byte UART-FIFO)
+        # mit verschluckten End-Ziffern empfangen. Wenn dieser Wert False ist, wurde der
+        # neue Code NICHT gepulled / Pi laeuft noch auf einer alten Version.
+        try:
+            log.info(f"FLOW-CONTROL: xonxoff={self.ser.xonxoff} rtscts={self.ser.rtscts} dsrdtr={self.ser.dsrdtr}")
+        except (AttributeError, Exception):
+            pass
 
     def close(self):
         if self.ser and self.ser.is_open:

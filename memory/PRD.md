@@ -17,6 +17,8 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg `xonxoff` Fix (v1.7.2)**: Version auf 1.7.2 gebumpt, zusaetzliche FLOW-CONTROL Diagnose-Log-Zeile ergaenzt damit per `journalctl -u tankbeleg_pi -f` sofort erkennbar ist, ob der Pi die neue Version mit aktiviertem XON/XOFF geladen hat. User-Test auf Production ausstehend.
+
 - ✅ **LTE Failover DNS Fix** (P1 vom Backlog erledigt): User berichtete dass HAT-LED am Pi blinkt (LTE up), aber Portal sagt offline; LAN ziehen → Pi offline.
   - Root cause: `/etc/ppp/peers/m2m` fehlt `usepeerdns`-Direktive UND ip-up.d/20-set-dns Hook. Folge: keine Provider-DNS uebernommen, beim LAN-Ausfall verschwindet der einzige nameserver (192.168.x.1) → keine Namensaufloesung mehr → Portal unerreichbar trotz UP-ppp0.
   - Fix in `routes/energy_monitoring.py` (Setup-Script-Generator) fuer beide Varianten (8Z + Legacy):

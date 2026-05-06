@@ -1,27 +1,37 @@
-<analysis><original_problem_statement>
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts (Tankwagen-Pi), HR document management, chat, task scheduling, role-based permissions, automated FinTS banking synchronization, and complex hardware monitoring (Kirmeskiste 8Z with Raspberry Pi 5, LTE, GPS).
+<analysis><handoff summary>
+<original_problem_statement>
+The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts (Tankwagen-Pi), HR document management, chat, task scheduling, role-based permissions, automated FinTS banking synchronization, and complex hardware monitoring (Kirmeskiste 8Z with Raspberry Pi 5, LTE, GPS). Focus in this session was stabilizing the Kirmeskiste LTE connection and fixing RS-232 serial parsing bugs for the Sening MultiFlow meter on the Tankwagen-Pi.
 </original_problem_statement>
 
-**User's preferred language**: German. 
+**User's preferred language**: German.
 INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY. (WICHTIG: Antworte dem User ausschließlich auf Deutsch!)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB application with extensive real-world hardware integration. Features include Orders, Shift Planning (Sollstunden), Time Tracking, Document Management, Chat, Stripe Payments, FinTS Banking, and physical IoT Kiosk integrations (Kirmeskiste 8Z, Tankwagen). Device scripts handle OTA updates, PPP/LTE failovers, and serial port reading (Epson TM-U295 emulators, Sening-Parsers).
+A mature React/FastAPI/MongoDB application with extensive real-world hardware integration. The backend generates bash setup scripts that configure Raspberry Pis for Kiosk mode, LTE connectivity, and serial hardware interfaces. The Tankwagen-Pi runs a Python serial parser () for EPSON TM-U295 ESC/POS data and a local UI server () for employee login.
 
 **Last working item**:
-    - Last item agent was working: Debugging a critical LTE connection failure on the second Kirmeskiste Pi. The LTE service () hangs, and the  modem is not responding to AT commands. The agent attempted a hotfix by providing a new DSE-style chatscript (without / reset loops), adding , and reloading the USB modules. However, the systemd service subsequently timed out in .
-    - Status: BLOCKED / IN PROGRESS (Waiting for the user to hard reboot the Pi as the modem is physically hung).
-    - Agent Testing Done: N/A (Diagnostics running directly on user's hardware via SSH).
-    - Which testing method agent to use? bash/curl via User interaction.
-    - User Testing Done: Y (User ran the provided diagnostic scripts).
+    - Last item agent was working: Fixing missing end-digits in the Tankwagen fuel receipts. The Sening MultiFlow meter was sending data faster than the Pi could process it, causing the 16-byte UART FIFO buffer to overflow and drop the last digits (which were falsely assumed to be complex bitmap encodings). The agent enabled  (Software Flow Control) in  to fix this buffer overrun.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y (Python syntax/unit tests on parser logic).
+    - Which testing method agent to use? User interaction (Physical hardware test required).
+    - User Testing Done: N (User needs to deploy the code to production and trigger a real print on the Sening MultiFlow).
 
 **All Pending/In progress Issue list**:  
-  Issue 1: LTE Modem Hang on Kirmeskiste Pi (P0)
-     - Attempted fixes: Identified that the chat script was putting the SIM7600 into an unstable loop. Replaced  with a safer script. Attempted to reload USB drivers () to force re-enumeration, but  timed out starting , indicating the modem device didn't come back up on the USB bus.
-     - Next debug checklist: Instruct the user to perform a hard reboot () since the SIM7600 HAT needs a power cycle. After reboot, verify if  ports appear, if  connects, and if internet routing works.
-     - Why fix this issue and what will be achieved with the fix? The second Kirmeskiste currently has no LTE connectivity and falls completely offline if the ethernet cable is unplugged.
-     - Status: BLOCKED (Awaiting User to reboot hardware and provide logs).
+  Issue 1: Tankwagen-Pi Serial Buffer Overrun (P0)
+     - Attempted fixes: Reverse-engineered Sening bitmap logic for hours, but the root cause was actually a UART buffer overrun because RS-232 Software Flow Control was disabled. Added  to  initialization in .
+     - Next debug checklist: Ask user if the GitHub deployment to production is complete and if a new fuel receipt (Tankbeleg) parses correctly with all digits intact.
+     - Why fix this issue and what will be achieved with the fix? Fuel amounts (e.g., 1316 L) were being truncated (e.g., to 13 L) causing severe billing errors.
+     - Status: USER VERIFICATION PENDING
      - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Backend/Hardware.
+     - Blocked on other issue: None.
+
+  Issue 2: LTE Modem Hang on Kirmeskiste Pi (P1)
+     - Attempted fixes: Identified that the chat script () contained a destructive  sequence that caused the SIM7600 firmware to hang. Rewrote the chat script to use a clean  sequence. Implemented a 3-stage recovery watchdog () that attempts software and USB resets before failing.
+     - Next debug checklist: The Kirmeskiste Pi requires a HARD power cycle (unplug for 30s) to clear the current hardware hang. After reboot, the user must run the updated setup script to install the new watchdog.
+     - Why fix this issue and what will be achieved with the fix? Ensures the Pi recovers automatically from LTE drops instead of requiring a manual reboot.
+     - Status: BLOCKED (Awaiting User to physically power cycle the Pi and run the new setup script).
+     - Is recurring issue? Y (Previous attempts failed due to bad AT commands).
      - Should Test frontend/backend/both after fix? Backend/Bash Setup Script.
      - Blocked on other issue: None.
 
@@ -37,21 +47,14 @@ None
     - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
     - (P2) Lastdiagramm Live-Test.
     - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
-    *(Note: The P1 task for an Overview Widget was rejected/cancelled by the user in this session).*
 
 **Completed work in this session**
-- Fixed Employee Order Details iOS crash caused by React rendering a Pydantic 422 error object directly (DONE).
-- Fixed iOS Virtual Keyboard covering the Chat text input by using  API (DONE).
-- Fixed iOS Date/Time picker bug in Zeiterfassung & Wartung where tapping Save directly didn't commit the input value (DONE).
-- Fixed Pausenzeiten (break times) not being deducted from  in employee work logs (DONE).
-- Implemented a WhatsApp-style GPS Location Picker modal with draggable pin for accurate asset positioning (DONE).
-- Fixed Chat Auto-scroll constantly forcing users to the bottom while reading old messages (DONE).
-- Fixed Tankbeleg (fuel receipt) heuristic falsely classifying Diesel receipts as Heizöl (DONE).
-- Added Pi-Status Dashboard (LTE/GPS/Version) for Tankwagen devices via the OTA update check-in API (DONE).
-- Refactored Shift Planning (Einsatzplanung) to use Sollstunden (target hours) instead of Start/End times, complete with UI and calculation migration (DONE).
-- Fixed Stripe Payments bug where paid invoices were updated in the wrong DB collection and with English statuses; built a Stripe Repair/Sync button in the UI (DONE).
-- Fixed iOS UI Zurück (Back) button hidden behind the Notch/Dynamic Island using  (DONE).
-- Fixed LTE Failover DNS issue (P1 from previous handoff) by applying  and  hooks (DONE).
+- Fixed Kirmeskiste LTE Watchdog: Added a robust 3-stage recovery (AT check ->  -> USB Reset) and removed destructive  from chatscripts (DONE).
+- Fixed Tankwagen OTA: Placed  at script startup so the Pi immediately registers with the portal upon boot (DONE).
+- Fixed Tankwagen Setup Generator: Setup now correctly downloads and configures BOTH  (parser) and  (ADR employee login kiosk), which was previously missing (DONE).
+- Fixed Tankwagen  Counter: Setup script now queries the database for the last receipt number and injects  into the config file so receipt numbers increment correctly (e.g., 16948) instead of sticking at 16 (DONE).
+- Fixed Tankwagen Bitmap Decoder: Improved  to trust  as the definitive source and ignore  mismatches. Added support for 2-digit bitmap sequences (Format B) (DONE).
+- Fixed Tankwagen Serial Drop: Enabled XON/XOFF software flow control in  to prevent the 16-byte UART FIFO from overflowing during large ESC/POS bursts (DONE).
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -65,56 +68,48 @@ None.
 
 
 **Key Technical Concepts**
-React, FastAPI backend, systemd services, bash script generation for physical Raspberry Pi 5s. PPP/chatscripts for LTE Modems (Waveshare SIM7600). OpenLocationCode, React-Leaflet, iOS Safari quirks (, , DatePicker blurs).
+FastAPI backend, Bash script generation for physical Raspberry Pi 5s. Serial RS-232 communication (Software Flow Control XON/XOFF, ESC/POS parsing). SIM7600 LTE Modem initialization and watchdog recovery.
 
 **key DB schema**
-  - :  now contain  and  instead of  and .
-  - : Used for Stripe session persistence and sync.
-  - : Payment statuses (, ).
+  - : Tracks hardware heartbeat.
+  - : Stores parsed Tankbeleg data.
+  - : Global configuration defaults.
 
 **changes in tech stack**
   - None.
 
 **All files of reference** 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
+  -  (Updated extensively: Serial config, OTA startup, Bitmap Decoder)
+  -  (Updated Tankwagen setup generator to include UI and Beleg-Counter)
+  -  (Updated Kirmeskiste LTE Watchdog Bash-generator)
 
 **Areas that need refactoring**: 
-  -  bash script generation remains massive and complex.
+  - Bash script generation inside python routes (, ) is massive and hard to maintain/debug.
 
 **key api endpoints**
-  - 
   - 
   - 
 
 **Critical Info for New Agent** 
 - **RESPOND IN GERMAN ONLY.**
-- The user is actively troubleshooting a live Raspberry Pi setup over SSH through the chat.
-- The LTE SIM Card parameters: APN is , PIN is .
-- The SIM7600 modem is currently hanging. The systemd service  failed because  timed out trying to find the USB TTY ports. A hard reboot is necessary.
+- **ENVIRONMENT DEPLOYMENT GAP:** The agent works in the Preview environment. The user frequently tests on their physical hardware connecting to their *Production* environment (). When you make fixes in the backend/setup scripts, the user must manually push those changes via GitHub to their Production server before their physical Pis can pull the updates. Always remind the user if a fix needs to be pushed to production.
+- The  script now has . This was the ultimate fix for the truncated receipt quantities.
 
 **documents and test reports created in this job**
-  -  (Updated extensively with recent fixes)
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) Reported that the Pi LTE is offline if ethernet is unplugged.
- 2. (Agent) Found missing DNS hooks, provided  and updated backend bash generation.
- 3. (User) Asked how to check the route on the Pi.
- 4. (Agent) Provided a comprehensive bash diagnostic script.
- 5. (User) Provided the output of the diagnostic script.
- 6. (Agent) Realized PPP came up but no data flowed. Provided AT diagnostic script.
- 7. (User) Provided AT diagnostic output showing the modem stopped responding.
- 8. (Agent) Suspected the chat script / caused a modem crash. Provided a new chat script and a script to reload USB modules.
- 9. (User) Applied the script, but reported that the service timed out during , and  does not exist.
- *(Pending)*: Advise the user to execute  as the modem hardware needs a power cycle, and then check .
+ 1. (User) Reverts focus back to the Tankwagen, noting another receipt parsed incorrectly (1316L became 13L).
+ 2. (Agent) Reverse-engineers a new 2-digit bitmap pattern and implements Format B decoding.
+ 3. (User) Suggests changing the physical Sening printer to ASCII mode to avoid bitmaps.
+ 4. (Agent) Agrees, but provides instructions to capture a raw serial dump first.
+ 5. (User) States the hardware cannot be changed due to authority (Amt) regulations. User provides research indicating the missing digits are likely a UART Buffer Overrun because XON/XOFF Software Flow Control is disabled in Python, causing the FIFO to drop the ends of long streams.
+ 6. (Agent) Confirms this is highly likely. Checks the code and sees .
+ 7. (Agent) Modifies  to enable  to fix the buffer overrun, runs tests, and finishes the task.
+ *(Pending)*: Confirm with the user if the XON/XOFF fix has been deployed to production and if the Sening MultiFlow is now parsing receipts without dropping the last digits.
 
 **Project Health Check:**
-- Broken: Second Kirmeskiste Pi LTE Connectivity.
+- Broken: None (Pending verification of XON/XOFF fix and Kirmeskiste LTE Power cycle).
 - Mocked: None
 
 **3rd Party Integrations** 
@@ -123,7 +118,7 @@ React, FastAPI backend, systemd services, bash script generation for physical Ra
 - MQTT / DSE WebNet
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Iterative manual testing and user verification for physical hardware).
+  - Testing agent used after significant changes: NO (Fixes pertained to physical RS-232 hardware behavior).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -132,12 +127,12 @@ React, FastAPI backend, systemd services, bash script generation for physical Ra
 - Preview Admin:  / 
 
 **What agent forgot to execute**
-- Nothing; waiting for the user to hard-reboot their physical Pi.
+- Nothing. Waiting on user physical hardware verification.
 
 **Debugging checklist for current issue**
-    Issue: LTE Modem SIM7600 unresponsive/hanging (P0)
+    Issue: Tankwagen-Pi Receipt Digits Dropped (P0)
     Checklist:
-      - Tell the user: .
-      - After reboot, have the user run:  and .
-      - If it fails, check -- No entries --.
-      - Ensure the new  chatscript with the  and  APN is executed correctly.</analysis>
+      - Ask the user to ensure the latest  (with ) is deployed to Production.
+      - Ask the user to print a real receipt on the Sening MultiFlow.
+      - Check if the quantity and receipt number parse cleanly without missing digits.
+</handoff summary></analysis>

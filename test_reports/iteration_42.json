@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://kiosk-dashboard-5.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://kiosk-dashboard-5.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://kiosk-dashboard-5.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://lte-watchdog.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://lte-watchdog.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://lte-watchdog.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }
