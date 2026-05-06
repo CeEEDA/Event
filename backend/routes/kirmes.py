@@ -3789,8 +3789,10 @@ async def tankbeleg_install_script(device_id: str, key: str):
     portal_url = os.environ.get("PORTAL_URL", "https://eventenergie.app")
     device_name = device.get("name", device_id[:12])
 
-    # Hauptskript vom Server laden (tankbeleg_pi.py)
+    # Beide Skripte vom Server laden (tankbeleg_pi.py = Drucker-Emulator,
+    # tankbeleg_ui.py = Kiosk-Webserver mit Mitarbeiter-Anmeldung).
     script_url = f"{portal_url}/api/download/tankbeleg-pi-script"
+    ui_script_url = f"{portal_url}/api/download/tankbeleg-ui-script"
 
     bash_script = f"""#!/bin/bash
 # ==============================================================
@@ -3812,26 +3814,29 @@ echo "========================================================"
 
 # ===== 1. System aktualisieren =====
 echo ""
-echo "[1/5] System aktualisieren..."
+echo "[1/6] System aktualisieren..."
 apt-get update -qq
-apt-get install -y -qq python3-pip python3-venv gpsd gpsd-clients 2>/dev/null || true
+apt-get install -y -qq python3-pip python3-venv python3-bcrypt python3-requests gpsd gpsd-clients 2>/dev/null || true
 
 # ===== 2. Verzeichnis anlegen =====
 echo ""
-echo "[2/5] Verzeichnisse anlegen..."
+echo "[2/6] Verzeichnisse anlegen..."
 mkdir -p /opt/tankbeleg
 mkdir -p /var/lib/tankbeleg
 
-# ===== 3. Hauptskript herunterladen =====
+# ===== 3. Tankbeleg-Skripte herunterladen =====
 echo ""
-echo "[3/5] Tankbeleg-Script herunterladen..."
-curl -sL "{script_url}" -o /opt/tankbeleg/tankbeleg_pi.py
+echo "[3/6] Tankbeleg-Skripte herunterladen..."
+curl -fsSL "{script_url}" -o /opt/tankbeleg/tankbeleg_pi.py
 chmod +x /opt/tankbeleg/tankbeleg_pi.py
 echo "  tankbeleg_pi.py installiert"
+curl -fsSL "{ui_script_url}" -o /opt/tankbeleg/tankbeleg_ui.py
+chmod +x /opt/tankbeleg/tankbeleg_ui.py
+echo "  tankbeleg_ui.py installiert (Kiosk-UI mit Mitarbeiter-Anmeldung)"
 
 # ===== 4. Konfiguration erstellen =====
 echo ""
-echo "[4/5] Konfiguration erstellen..."
+echo "[4/6] Konfiguration erstellen..."
 tee /etc/tankbeleg_pi.conf > /dev/null << 'CONF'
 [tankbeleg]
 api_url = {portal_url}/api
@@ -3849,13 +3854,14 @@ gps_enabled = true
 gps_host = 127.0.0.1
 gps_port = 2947
 fahrer_name =
+ui_port = 8080
 CONF
 echo "  Config: /etc/tankbeleg_pi.conf"
 echo "  Device-ID: {device_id}"
 
-# ===== 5. Systemd-Service erstellen =====
+# ===== 5. Systemd-Services erstellen =====
 echo ""
-echo "[5/5] Service installieren..."
+echo "[5/6] Services installieren..."
 tee /etc/systemd/system/tankbeleg_pi.service > /dev/null << 'SERVICE'
 [Unit]
 Description=Tankbeleg Pi - Eventenergie Drucker-Emulator
@@ -3875,18 +3881,54 @@ WorkingDirectory=/opt/tankbeleg
 WantedBy=multi-user.target
 SERVICE
 
+tee /etc/systemd/system/tankbeleg_ui.service > /dev/null << 'UISERVICE'
+[Unit]
+Description=Tankbeleg UI - Kiosk Webserver (Mitarbeiter-Anmeldung)
+After=network.target tankbeleg_pi.service
+Wants=tankbeleg_pi.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/tankbeleg/tankbeleg_ui.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/tankbeleg
+
+[Install]
+WantedBy=multi-user.target
+UISERVICE
+
 systemctl daemon-reload
 systemctl enable tankbeleg_pi.service
-systemctl start tankbeleg_pi.service
-echo "  Service gestartet"
+systemctl enable tankbeleg_ui.service
+systemctl restart tankbeleg_pi.service
+systemctl restart tankbeleg_ui.service
+echo "  Services gestartet (tankbeleg_pi + tankbeleg_ui)"
+
+# ===== 6. Status =====
+echo ""
+echo "[6/6] Status pruefen..."
+sleep 3
+systemctl is-active tankbeleg_pi.service && echo "  tankbeleg_pi: aktiv" || echo "  tankbeleg_pi: FEHLER"
+systemctl is-active tankbeleg_ui.service && echo "  tankbeleg_ui: aktiv (Kiosk: http://localhost:8080)" || echo "  tankbeleg_ui: FEHLER"
 
 # ===== Fertig =====
 echo ""
 echo "========================================================"
 echo "  Setup abgeschlossen!"
 echo "  Geraet: {device_name}"
-echo "  Status: sudo systemctl status tankbeleg_pi"
-echo "  Logs:   sudo journalctl -u tankbeleg_pi -f"
+echo ""
+echo "  Drucker-Emulator:"
+echo "    Status: sudo systemctl status tankbeleg_pi"
+echo "    Logs:   sudo journalctl -u tankbeleg_pi -f"
+echo ""
+echo "  Kiosk-UI (Mitarbeiter-Anmeldung mit Geburtsdatum):"
+echo "    URL:    http://localhost:8080"
+echo "    Status: sudo systemctl status tankbeleg_ui"
+echo "    Logs:   sudo journalctl -u tankbeleg_ui -f"
+echo ""
 echo "  Config: /etc/tankbeleg_pi.conf"
 echo "========================================================"
 """
