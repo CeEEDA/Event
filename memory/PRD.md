@@ -17,6 +17,8 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Asset-Filter wirkt jetzt auch auf der Karte**: User-Wunsch nach der Suchen/Filter-Optimierung. Wenn man "Tank" filtert oder nach "Bühne" sucht, werden nur die passenden Marker auf der Map angezeigt; FitBounds zoomt automatisch auf die gefilterten Positionen. Tabelle und Map nutzen jetzt eine gemeinsame `filteredAssets`-Quelle - keine doppelte Filter-Logik. E2E gruen (Filter=all → 6 Marker, Filter=Tank → 4 Marker bei gleichem Datenstand).
+
 - ✅ **Asset-Liste: Volltextsuche + Typ-Filter + neuer "Tank"-Typ**: User Wunsch:
   - "Tank" als neuer Artikeltyp ergaenzt (Icon: lucide `Fuel`, Maps-Marker als Tankwagen-SVG)
   - Volltextsuche-Bar oben in der Asset-Liste: durchsucht Bezeichnung, Plus Code, Ersteller, Koordinaten UND Kommentar-Text (Ein-Klick-X zum Zuruecksetzen)

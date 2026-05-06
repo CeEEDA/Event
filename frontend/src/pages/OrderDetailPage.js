@@ -222,6 +222,21 @@ export default function OrderDetailPage() {
   const [assetComment, setAssetComment] = useState("");
   const [assetSearch, setAssetSearch] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState("all");
+  // Gefilterte Asset-Liste (Suche + Typ-Filter). Wird sowohl von der Tabelle
+  // als auch von den Karten-Markern verwendet, damit Filter konsistent greift.
+  const filteredAssets = (() => {
+    const q = assetSearch.trim().toLowerCase();
+    return assets.filter((a) => {
+      if (assetTypeFilter !== "all" && a.asset_type !== assetTypeFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        a.asset_type, a.label, a.plus_code, a.created_by,
+        a.latitude?.toFixed?.(5), a.longitude?.toFixed?.(5),
+        ...(a.comments || []).map(c => c.text),
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  })();
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
@@ -756,7 +771,7 @@ export default function OrderDetailPage() {
                       attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
                     />
                     <RadiusCircle center={center} radiusKm={order?.radius_km || 5} />
-                    <FitBounds center={center} generators={generators} assets={assets} radiusKm={order?.radius_km || 5} />
+                    <FitBounds center={center} generators={generators} assets={filteredAssets} radiusKm={order?.radius_km || 5} />
                     <Marker position={center} icon={centerIcon}>
                       <Popup>
                         <strong>Lieferanschrift</strong><br />
@@ -772,7 +787,7 @@ export default function OrderDetailPage() {
                         </Popup>
                       </Marker>
                     ))}
-                    {assets.map((a) => (
+                    {filteredAssets.map((a) => (
                       <Marker key={a.id} position={[a.latitude, a.longitude]} icon={makeAssetIcon(a.asset_type)}>
                         <Popup>
                           <strong>{a.label || a.asset_type}</strong><br />
@@ -1063,22 +1078,7 @@ export default function OrderDetailPage() {
             </div>
 
             {/* Assets List */}
-            {assets.length > 0 && (() => {
-              // Volltextsuche + Typ-Filter. Wir filtern in einem Memo-Step,
-              // damit beim Tippen kein Re-Render-Sturm entsteht (assets bleibt
-              // unveraendert, nur die Anzeige aendert sich).
-              const q = assetSearch.trim().toLowerCase();
-              const filtered = assets.filter((a) => {
-                if (assetTypeFilter !== "all" && a.asset_type !== assetTypeFilter) return false;
-                if (!q) return true;
-                const haystack = [
-                  a.asset_type, a.label, a.plus_code, a.created_by,
-                  a.latitude?.toFixed?.(5), a.longitude?.toFixed?.(5),
-                  ...(a.comments || []).map(c => c.text),
-                ].filter(Boolean).join(" ").toLowerCase();
-                return haystack.includes(q);
-              });
-              return (
+            {assets.length > 0 && (
               <>
               {/* Such- & Filterleiste */}
               <div className="px-4 py-3 border-b border-gray-100 bg-white flex flex-wrap items-center gap-2" data-testid="assets-toolbar">
@@ -1131,10 +1131,10 @@ export default function OrderDetailPage() {
                   )}
                 </div>
                 <span className="text-xs text-gray-400 ml-auto" data-testid="asset-filter-count">
-                  {filtered.length === assets.length ? `${assets.length} Artikel` : `${filtered.length} von ${assets.length} angezeigt`}
+                  {filteredAssets.length === assets.length ? `${assets.length} Artikel` : `${filteredAssets.length} von ${assets.length} angezeigt`}
                 </span>
               </div>
-              {filtered.length === 0 ? (
+              {filteredAssets.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-gray-400" data-testid="assets-empty-filtered">
                   Keine Artikel passen zu "{assetSearch}"{assetTypeFilter !== "all" ? ` in Typ "${assetTypeFilter}"` : ""}.
                 </div>
@@ -1153,7 +1153,7 @@ export default function OrderDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...filtered].sort((a, b) => {
+                    {[...filteredAssets].sort((a, b) => {
                       const aPlaced = (a.status || "placed") === "placed" ? 0 : 1;
                       const bPlaced = (b.status || "placed") === "placed" ? 0 : 1;
                       return aPlaced - bPlaced;
@@ -1229,8 +1229,7 @@ export default function OrderDetailPage() {
               </div>
               )}
               </>
-              );
-            })()}
+            )}
           </div>
 
           {/* Asset Detail Modal */}
