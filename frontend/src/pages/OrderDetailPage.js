@@ -42,6 +42,8 @@ import {
   FolderOpen,
   ChevronRight,
   ClipboardCheck,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -214,6 +216,11 @@ export default function OrderDetailPage() {
   const [showGpsPicker, setShowGpsPicker] = useState(false);
   const [addingAsset, setAddingAsset] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
+
+  // Reset Kommentar-Entwurf wenn ein anderes Asset geoeffnet wird oder das Modal schliesst.
+  useEffect(() => { setCommentDraft(""); }, [selectedAsset?.id]);
 
   // Tankbelege
   const [fuelReceipts, setFuelReceipts] = useState([]);
@@ -447,6 +454,41 @@ export default function OrderDetailPage() {
       fetchAssets();
     } catch {
       toast.error("Fehler beim Statuswechsel");
+    }
+  };
+
+  const addAssetComment = async () => {
+    if (!selectedAsset) return;
+    const text = commentDraft.trim();
+    if (!text) return;
+    setCommentSaving(true);
+    try {
+      const { data: comment } = await api.post(
+        `/orders/epirent/${pk}/assets/${selectedAsset.id}/comments`,
+        { text },
+      );
+      // Optimistically merge into selectedAsset so the comment appears
+      // without a full reload (also keeps the modal open & scrolled).
+      setSelectedAsset((prev) => prev ? { ...prev, comments: [...(prev.comments || []), comment] } : prev);
+      setCommentDraft("");
+      // Refresh the asset list in the background so the badge counter updates.
+      fetchAssets();
+    } catch (err) {
+      toast.error(getErrorMsg(err) || "Kommentar konnte nicht gespeichert werden");
+    } finally {
+      setCommentSaving(false);
+    }
+  };
+
+  const deleteAssetComment = async (commentId) => {
+    if (!selectedAsset) return;
+    if (!window.confirm("Kommentar wirklich loeschen?")) return;
+    try {
+      await api.delete(`/orders/epirent/${pk}/assets/${selectedAsset.id}/comments/${commentId}`);
+      setSelectedAsset((prev) => prev ? { ...prev, comments: (prev.comments || []).filter(c => c.id !== commentId) } : prev);
+      fetchAssets();
+    } catch (err) {
+      toast.error(getErrorMsg(err) || "Kommentar konnte nicht geloescht werden");
     }
   };
 
@@ -1024,7 +1066,17 @@ export default function OrderDetailPage() {
                               {a.asset_type}
                             </span>
                           </td>
-                          <td className="px-4 py-2.5 font-medium text-gray-900">{a.label || "—"}</td>
+                          <td className="px-4 py-2.5 font-medium text-gray-900">
+                            <div className="flex items-center gap-1.5">
+                              <span>{a.label || "—"}</span>
+                              {a.comments?.length > 0 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700 text-[10px] font-semibold" title={`${a.comments.length} Kommentar${a.comments.length === 1 ? "" : "e"}`} data-testid={`asset-comment-count-${a.id}`}>
+                                  <MessageSquare className="w-2.5 h-2.5" />
+                                  {a.comments.length}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{a.plus_code || "—"}</td>
                           <td className="px-4 py-2.5 font-mono text-xs text-gray-500">
                             {a.latitude.toFixed(5)}, {a.longitude.toFixed(5)}
@@ -1171,6 +1223,91 @@ export default function OrderDetailPage() {
                     <MapPin className="w-4 h-4" />
                     In Google Maps öffnen
                   </a>
+
+                  {/* Kommentare */}
+                  <div className="pt-2 border-t border-gray-100" data-testid="asset-comments-section">
+                    <div className="flex items-center gap-2 mb-3">
+                      <MessageSquare className="w-4 h-4 text-fuchsia-500" />
+                      <h4 className="text-sm font-semibold text-gray-800">
+                        Kommentare
+                        {selectedAsset.comments?.length > 0 && (
+                          <span className="ml-1.5 text-xs text-gray-400 font-normal">({selectedAsset.comments.length})</span>
+                        )}
+                      </h4>
+                    </div>
+
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {(selectedAsset.comments || []).length === 0 ? (
+                        <p className="text-xs text-gray-400 italic py-2" data-testid="asset-comments-empty">
+                          Noch keine Kommentare. Schreib den ersten unten.
+                        </p>
+                      ) : (
+                        (selectedAsset.comments || []).map((c) => {
+                          const myName = currentUser?.name || currentUser?.email || "";
+                          const myId = currentUser?.id || currentUser?.user_id || currentUser?.email || "";
+                          const isMine = c.created_by_id === myId || c.created_by === myName;
+                          const canDelete = isMine || isAdmin;
+                          return (
+                            <div key={c.id} className="bg-gray-50 rounded-lg p-2.5 border border-gray-100" data-testid={`asset-comment-${c.id}`}>
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <User className="w-3 h-3 text-fuchsia-400 shrink-0" />
+                                  <span className="text-[11px] font-medium text-gray-700 truncate">{c.created_by || "—"}</span>
+                                  <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                                    · {c.created_at ? new Date(c.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+                                  </span>
+                                </div>
+                                {canDelete && (
+                                  <button
+                                    onClick={() => deleteAssetComment(c.id)}
+                                    className="text-gray-300 hover:text-red-500 transition-colors shrink-0 p-0.5"
+                                    title="Kommentar loeschen"
+                                    data-testid={`asset-comment-delete-${c.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-700 whitespace-pre-wrap break-words leading-relaxed pl-4">{c.text}</p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Eingabe-Form */}
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); addAssetComment(); }}
+                      className="mt-3 flex items-end gap-2"
+                    >
+                      <textarea
+                        value={commentDraft}
+                        onChange={(e) => setCommentDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          // Cmd/Ctrl+Enter oder Enter (ohne Shift) sendet ab
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            addAssetComment();
+                          }
+                        }}
+                        placeholder="Kommentar schreiben..."
+                        rows={2}
+                        maxLength={2000}
+                        className="flex-1 text-xs px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-400 focus:ring-1 focus:ring-fuchsia-200 resize-none"
+                        data-testid="asset-comment-input"
+                        disabled={commentSaving}
+                      />
+                      <button
+                        type="submit"
+                        disabled={commentSaving || !commentDraft.trim()}
+                        className="shrink-0 flex items-center justify-center w-9 h-9 bg-fuchsia-500 text-white rounded-lg hover:bg-fuchsia-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        title="Senden (Enter)"
+                        data-testid="asset-comment-submit"
+                      >
+                        {commentSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      </button>
+                    </form>
+                  </div>
                 </div>
               </div>
             </div>

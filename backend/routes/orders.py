@@ -330,6 +330,10 @@ class OrderAssetCreate(BaseModel):
     plus_code: Optional[str] = ""
 
 
+class AssetCommentCreate(BaseModel):
+    text: str
+
+
 def _haversine_km(lat1, lng1, lat2, lng2):
     """Calculate distance between two GPS points in km."""
     R = 6371.0
@@ -1007,6 +1011,69 @@ async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(
     result = await _db.order_assets.delete_one({"id": asset_id, "order_pk": order_pk})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
+    return {"ok": True}
+
+
+# ── Asset Comments ──
+# Kommentare werden als eingebettetes Array im Asset-Dokument gespeichert.
+# Vorteil: ein einziger DB-Read in /assets liefert alle Kommentare gleich mit,
+# kein zusaetzlicher Roundtrip pro Asset noetig. Loeschen ist nur fuer den
+# Autor des Kommentars erlaubt (bzw. fuer Admins, falls noetig).
+
+@router.post("/epirent/{order_pk}/assets/{asset_id}/comments")
+async def add_asset_comment(
+    order_pk: int, asset_id: str, data: AssetCommentCreate,
+    user: dict = Depends(_auth_user),
+):
+    """Append a comment to an asset. Returns the new comment object."""
+    text = (data.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Kommentar darf nicht leer sein")
+    if len(text) > 2000:
+        raise HTTPException(status_code=400, detail="Kommentar zu lang (max. 2000 Zeichen)")
+    asset = await _db.order_assets.find_one({"id": asset_id, "order_pk": order_pk}, {"_id": 0, "id": 1})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset nicht gefunden")
+    import uuid
+    comment = {
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user.get("name") or user.get("email") or "",
+        "created_by_id": user.get("id") or user.get("user_id") or user.get("email") or "",
+    }
+    await _db.order_assets.update_one(
+        {"id": asset_id, "order_pk": order_pk},
+        {"$push": {"comments": comment}},
+    )
+    return comment
+
+
+@router.delete("/epirent/{order_pk}/assets/{asset_id}/comments/{comment_id}")
+async def delete_asset_comment(
+    order_pk: int, asset_id: str, comment_id: str,
+    user: dict = Depends(_auth_user),
+):
+    """Delete a comment. Only the author or an admin/staff can delete."""
+    asset = await _db.order_assets.find_one(
+        {"id": asset_id, "order_pk": order_pk}, {"_id": 0, "comments": 1},
+    )
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset nicht gefunden")
+    comments = asset.get("comments") or []
+    target = next((c for c in comments if c.get("id") == comment_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Kommentar nicht gefunden")
+    user_id = user.get("id") or user.get("user_id") or user.get("email") or ""
+    user_role = (user.get("role") or "").lower()
+    is_author = target.get("created_by_id") == user_id or target.get("created_by") == (user.get("name") or user.get("email") or "")
+    is_privileged = user_role in ("admin", "staff", "manager")
+    if not (is_author or is_privileged):
+        raise HTTPException(status_code=403, detail="Nur Autor oder Admin darf Kommentare loeschen")
+    await _db.order_assets.update_one(
+        {"id": asset_id, "order_pk": order_pk},
+        {"$pull": {"comments": {"id": comment_id}}},
+    )
     return {"ok": True}
 
 

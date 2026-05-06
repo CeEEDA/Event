@@ -17,6 +17,16 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Asset-Kommentarfunktion (Verteiler/Lichtmast/Stromerzeuger)**: User wollte unter den positionierten Artikeln im Auftragsdetail die Moeglichkeit zu kommentieren ("Steht morgen ab", "Defekt", etc.). Implementiert:
+  - 2 neue Endpoints: `POST /api/orders/epirent/{order_pk}/assets/{asset_id}/comments` (add) und `DELETE …/comments/{comment_id}` (nur Autor oder Admin)
+  - Kommentare als embedded Array im `order_assets`-Dokument (1 DB-Read fuer Asset+Comments)
+  - Pi-UI im Asset-Detail-Modal: Liste mit Avatar-User-Icon, Zeitstempel, Loesch-Icon (nur eigene/Admin); Eingabe-Textarea (max 2000 Zeichen) mit Enter-zu-senden + Send-Button mit Loader
+  - Asset-Tabelle zeigt Badge `💬 N` hinter dem Label fuer Assets mit Kommentaren
+  - Optimistic UI: neuer Kommentar erscheint sofort ohne Modal-Reload
+  - Smoke-Test E2E ueber Playwright (Login, Asset erstellen, Modal oeffnen, Kommentar posten, Cleanup) - alles gruen
+
+- ⏪ **Kraftstoff-Override am Pi rueckgaengig** (Eichrecht-konform): Auf User-Hinweis Pi-UI Buttons + Backend-Sync-Update entfernt. Fahrer darf den vom Sening gemessenen Kraftstoff NICHT manuell aendern (sonst manipulierbar). Parser-Fix (kein silent diesel) bleibt; `default_fuel_type` als Deployment-Konfig bleibt fuer den Fall dass Sening nichts erkennen liess. Fuer die 4 falsch klassifizierten Belege: User schickt morgen einen Hex-Dump, dann erweitere ich den Bitmap-Decoder um automatische HEL-Erkennung.
+
 - ✅ **Tankbeleg fuel_type Bug-Fix (v1.7.3)**: Sening-Display zeigte "HEL schwefelarm" → Portal speicherte 4 Belege als "Diesel". Root-Cause: `parse_receipt()` nutzte `fuel_map.get(.., "diesel")` und `sync_to_portal()` `row.get('fuel_type') or 'diesel'` → stiller Default. Fix:
   - `parse_receipt()`: kein silent diesel-Fallback mehr (None bleibt None)
   - `sync_to_portal()`: sendet None statt diesel
