@@ -334,6 +334,10 @@ class AssetCommentCreate(BaseModel):
     text: str
 
 
+class AssetMove(BaseModel):
+    target_order_pk: int
+
+
 def _haversine_km(lat1, lng1, lat2, lng2):
     """Calculate distance between two GPS points in km."""
     R = 6371.0
@@ -1012,6 +1016,82 @@ async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
     return {"ok": True}
+
+
+@router.patch("/epirent/{order_pk}/assets/{asset_id}/move")
+async def move_order_asset(
+    order_pk: int, asset_id: str, data: AssetMove,
+    user: dict = Depends(_auth_user),
+):
+    """Verschiebt einen Artikel in einen anderen Auftrag.
+    Anwendungsfall: Beim Aufbau wurde ein Lichtmast versehentlich auf Auftrag A
+    gebucht statt auf Auftrag B (gleicher Termin, andere Kostenstelle). Statt
+    loeschen + neu anlegen kann der User den Eintrag direkt umhaengen - dabei
+    bleiben Kommentare, Position und Status erhalten. Audit-Spur als Kommentar.
+    """
+    if data.target_order_pk == order_pk:
+        raise HTTPException(400, "Ziel-Auftrag muss vom aktuellen Auftrag verschieden sein")
+    target = await _db.orders_cache.find_one(
+        {"primary_key": data.target_order_pk}, {"_id": 0, "primary_key": 1, "event": 1, "order_no": 1, "address": 1}
+    )
+    if not target:
+        raise HTTPException(404, "Ziel-Auftrag nicht gefunden")
+    asset = await _db.order_assets.find_one(
+        {"id": asset_id, "order_pk": order_pk}, {"_id": 0, "id": 1}
+    )
+    if not asset:
+        raise HTTPException(404, "Asset nicht gefunden")
+    # Audit-Kommentar mit Quell-Auftrag, damit nachvollziehbar bleibt warum
+    # der Artikel hier auftaucht.
+    import uuid
+    audit = {
+        "id": str(uuid.uuid4()),
+        "text": f"Verschoben aus Auftrag #{order_pk} nach #{data.target_order_pk}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user.get("name") or user.get("email") or "System",
+        "created_by_id": user.get("id") or user.get("user_id") or user.get("email") or "",
+        "kind": "system",
+    }
+    await _db.order_assets.update_one(
+        {"id": asset_id, "order_pk": order_pk},
+        {"$set": {"order_pk": data.target_order_pk}, "$push": {"comments": audit}},
+    )
+    return {"ok": True, "target": target}
+
+
+@router.get("/epirent-search/quick")
+async def quick_search_orders(
+    q: str = Query("", description="Suchstring (Event/Auftragsnr/Kunde)"),
+    exclude_pk: Optional[int] = Query(None),
+    limit: int = 20,
+    user: dict = Depends(_auth_user),
+):
+    """Schlanker Auftrags-Search-Endpoint fuer Asset-Move-Picker.
+    Gibt nur die Felder zurueck die der Picker braucht (event, order_no, primary_key).
+    Lebt hier statt im Haupt-Listen-Endpoint, damit das Filter-Setup dort nicht
+    mit-kompliziert wird; der Picker braucht eine eigene, fokussierte Query.
+    """
+    qf = (q or "").strip()
+    mongo_q = {}
+    if exclude_pk is not None:
+        mongo_q["primary_key"] = {"$ne": exclude_pk}
+    if qf:
+        # Case-insensitive Suche ueber Event-Name + Auftragsnummer + Kundenname
+        rx = {"$regex": qf, "$options": "i"}
+        mongo_q["$or"] = [
+            {"event": rx}, {"order_no": rx}, {"customer_name": rx},
+            {"address": rx},
+        ]
+        # Wenn rein numerisch, auch nach primary_key matchen
+        if qf.isdigit():
+            existing_or = mongo_q["$or"]
+            existing_or.append({"primary_key": int(qf)})
+    cursor = _db.orders_cache.find(
+        mongo_q,
+        {"_id": 0, "primary_key": 1, "event": 1, "order_no": 1, "customer_name": 1, "address": 1, "start_date": 1},
+    ).sort("start_date", -1).limit(limit)
+    items = await cursor.to_list(length=limit)
+    return {"orders": items}
 
 
 # ── Asset Comments ──

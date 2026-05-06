@@ -46,8 +46,9 @@ import {
   Send,
   Search,
   Filter,
+  ArrowRightLeft,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl, LayerGroup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -222,6 +223,15 @@ export default function OrderDetailPage() {
   const [assetComment, setAssetComment] = useState("");
   const [assetSearch, setAssetSearch] = useState("");
   const [assetTypeFilter, setAssetTypeFilter] = useState("all");
+  const [mapLayer, setMapLayer] = useState(() => localStorage.getItem("orderMapLayer") || "osm");
+  // Move-Asset Picker State
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveSearch, setMoveSearch] = useState("");
+  const [moveResults, setMoveResults] = useState([]);
+  const [moveLoading, setMoveLoading] = useState(false);
+  const [moveSubmitting, setMoveSubmitting] = useState(false);
+
+  useEffect(() => { localStorage.setItem("orderMapLayer", mapLayer); }, [mapLayer]);
   // Gefilterte Asset-Liste (Suche + Typ-Filter). Wird sowohl von der Tabelle
   // als auch von den Karten-Markern verwendet, damit Filter konsistent greift.
   const filteredAssets = (() => {
@@ -528,6 +538,46 @@ export default function OrderDetailPage() {
     }
   };
 
+  // ── Asset in anderen Auftrag verschieben ──
+  // Wir laden die Auftragsliste server-seitig (debounced 300ms), damit der
+  // Picker auch bei 1000+ Auftraegen schnell bleibt - nicht alles in den Browser ziehen.
+  useEffect(() => {
+    if (!moveDialogOpen) return;
+    const timer = setTimeout(async () => {
+      setMoveLoading(true);
+      try {
+        const { data } = await api.get(`/orders/epirent-search/quick`, {
+          params: { q: moveSearch, exclude_pk: pk, limit: 25 },
+        });
+        setMoveResults(data.orders || []);
+      } catch {
+        setMoveResults([]);
+      } finally {
+        setMoveLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [moveSearch, moveDialogOpen, pk]);
+
+  const moveAssetToOrder = async (targetOrderPk, targetLabel) => {
+    if (!selectedAsset) return;
+    if (!window.confirm(`Artikel "${selectedAsset.label || selectedAsset.asset_type}" wirklich nach "${targetLabel}" verschieben?\n\nKommentare und Position bleiben erhalten.`)) return;
+    setMoveSubmitting(true);
+    try {
+      await api.patch(`/orders/epirent/${pk}/assets/${selectedAsset.id}/move`, {
+        target_order_pk: targetOrderPk,
+      });
+      toast.success(`Verschoben nach ${targetLabel}`);
+      setMoveDialogOpen(false);
+      setSelectedAsset(null);
+      fetchAssets();
+    } catch (err) {
+      toast.error(getErrorMsg(err) || "Verschieben fehlgeschlagen");
+    } finally {
+      setMoveSubmitting(false);
+    }
+  };
+
   const confirmFuelReceipt = async (id) => {
     try {
       await api.post(`/fuel-receipts/${id}/confirm`);
@@ -766,10 +816,40 @@ export default function OrderDetailPage() {
                     style={{ height: "100%", width: "100%" }}
                     scrollWheelZoom={true}
                   >
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                    />
+                    <LayersControl position="topright">
+                      <LayersControl.BaseLayer checked={mapLayer === "osm"} name="Karte (OSM)">
+                        <TileLayer
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                          eventHandlers={{ add: () => setMapLayer("osm") }}
+                        />
+                      </LayersControl.BaseLayer>
+                      <LayersControl.BaseLayer checked={mapLayer === "sat"} name="Satellit">
+                        {/* Esri World Imagery - frei nutzbar ohne API Key, vergleichbar mit Google Sat */}
+                        <TileLayer
+                          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                          attribution='Tiles &copy; Esri'
+                          maxZoom={19}
+                          eventHandlers={{ add: () => setMapLayer("sat") }}
+                        />
+                      </LayersControl.BaseLayer>
+                      <LayersControl.BaseLayer checked={mapLayer === "hybrid"} name="Hybrid (Sat + Strassen)">
+                        {/* Layer-Group: zwei Tiles uebereinander - Esri Sat + transparente OSM-Labels */}
+                        <LayerGroup>
+                          <TileLayer
+                            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                            attribution='Tiles &copy; Esri'
+                            maxZoom={19}
+                            eventHandlers={{ add: () => setMapLayer("hybrid") }}
+                          />
+                          <TileLayer
+                            url="https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png"
+                            attribution='Map labels &copy; Stamen'
+                            opacity={0.7}
+                          />
+                        </LayerGroup>
+                      </LayersControl.BaseLayer>
+                    </LayersControl>
                     <RadiusCircle center={center} radiusKm={order?.radius_km || 5} />
                     <FitBounds center={center} generators={generators} assets={filteredAssets} radiusKm={order?.radius_km || 5} />
                     <Marker position={center} icon={centerIcon}>
@@ -788,13 +868,17 @@ export default function OrderDetailPage() {
                       </Marker>
                     ))}
                     {filteredAssets.map((a) => (
-                      <Marker key={a.id} position={[a.latitude, a.longitude]} icon={makeAssetIcon(a.asset_type)}>
-                        <Popup>
-                          <strong>{a.label || a.asset_type}</strong><br />
-                          <span className="text-xs">{a.asset_type}</span><br />
-                          {a.plus_code && <span className="text-xs font-mono">{a.plus_code}</span>}
-                        </Popup>
-                      </Marker>
+                      <Marker
+                        key={a.id}
+                        position={[a.latitude, a.longitude]}
+                        icon={makeAssetIcon(a.asset_type)}
+                        eventHandlers={{
+                          // Klick auf Asset-Marker oeffnet direkt das Detail-Modal
+                          // (Doppel-Workflow: Popup wird nicht mehr angezeigt, Modal hat
+                          // die Karten-Ansicht, Status, Kommentare und Move-Funktion).
+                          click: () => setSelectedAsset(a),
+                        }}
+                      />
                     ))}
                   </MapContainer>
                 </div>
@@ -1325,7 +1409,16 @@ export default function OrderDetailPage() {
                     </div>
                   </div>
 
-                  {/* Open in Google Maps */}
+                  {/* Verschieben + Open in Google Maps */}
+                  <button
+                    type="button"
+                    onClick={() => { setMoveSearch(""); setMoveDialogOpen(true); }}
+                    className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-amber-50 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-100 transition-colors"
+                    data-testid="asset-move-btn"
+                  >
+                    <ArrowRightLeft className="w-4 h-4" />
+                    In anderen Auftrag verschieben
+                  </button>
                   <a
                     href={`https://www.google.com/maps?q=${selectedAsset.latitude},${selectedAsset.longitude}`}
                     target="_blank"
@@ -1421,6 +1514,76 @@ export default function OrderDetailPage() {
                       </button>
                     </form>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Move-Asset Picker (eigener Layer ueber dem Asset-Modal damit es nicht uebermalt wird) */}
+          {moveDialogOpen && selectedAsset && (
+            <div className="fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4" onClick={() => setMoveDialogOpen(false)} data-testid="asset-move-dialog">
+              <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ArrowRightLeft className="w-4 h-4 text-amber-500" />
+                    <h3 className="text-base font-semibold text-gray-900">Artikel verschieben</h3>
+                  </div>
+                  <button onClick={() => setMoveDialogOpen(false)} className="text-gray-400 hover:text-gray-600 p-1" data-testid="asset-move-close">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="px-5 py-3 bg-amber-50/50 border-b border-amber-100 text-xs text-amber-900">
+                  <strong>{selectedAsset.label || selectedAsset.asset_type}</strong> wird in einen anderen Auftrag verschoben. Position, Status und Kommentare bleiben erhalten — ein Audit-Eintrag wird automatisch ergaenzt.
+                </div>
+                <div className="px-5 py-3 border-b border-gray-100">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={moveSearch}
+                      onChange={(e) => setMoveSearch(e.target.value)}
+                      placeholder="Auftrag suchen: Event-Name, Auftrags-Nr. oder Kunde..."
+                      className="w-full h-9 pl-8 pr-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200"
+                      data-testid="asset-move-search"
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto px-2 py-2">
+                  {moveLoading ? (
+                    <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" /> Suche...
+                    </div>
+                  ) : moveResults.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-gray-400" data-testid="asset-move-empty">
+                      {moveSearch.trim() ? `Keine Auftraege passen zu "${moveSearch}"` : "Tippe um Auftraege zu suchen"}
+                    </div>
+                  ) : (
+                    <ul className="space-y-1">
+                      {moveResults.map((o) => (
+                        <li key={o.primary_key}>
+                          <button
+                            type="button"
+                            onClick={() => moveAssetToOrder(o.primary_key, o.event || o.order_no || `#${o.primary_key}`)}
+                            disabled={moveSubmitting}
+                            className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-amber-50 hover:border-amber-200 border border-transparent transition-colors disabled:opacity-50"
+                            data-testid={`asset-move-target-${o.primary_key}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-900 truncate">{o.event || "—"}</p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  <span className="font-mono">{o.order_no || `#${o.primary_key}`}</span>
+                                  {o.address && <span> · {o.address}</span>}
+                                </p>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             </div>

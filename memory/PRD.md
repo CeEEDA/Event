@@ -17,6 +17,12 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Karten-Layer (Satellit/Hybrid) + Marker-Klick + Verschieben**: User-Wuensche umgesetzt:
+  - **Layer-Switcher** oben rechts auf der Karte: "Karte (OSM)" / "Satellit" (Esri World Imagery - frei, Google-Sat-vergleichbar) / "Hybrid" (Sat + transparente Strassen-Labels). Auswahl wird in localStorage persistiert.
+  - **Marker-Klick oeffnet direkt das Asset-Detail-Modal** (statt Popup) - schnellerer Workflow, Modal hat alle Details + Kommentare + Move-Funktion.
+  - **Asset in anderen Auftrag verschieben**: Neuer Button im Modal "In anderen Auftrag verschieben" oeffnet Picker-Dialog. Live-Suche (debounced 300ms) ueber Event-Name/Auftragsnr/Kundenname/Adresse. Auswahl + Bestaetigung verschiebt den Eintrag, behaelt Position/Status/Kommentare und ergaenzt automatisch einen `kind:'system'`-Audit-Kommentar.
+  - Backend: 2 neue Endpoints `PATCH /assets/{id}/move`, `GET /epirent-search/quick` (Quick-Order-Search, exclude_pk Param). E2E gruen: Asset auf Auftrag #3 angelegt → verschoben nach #19 → in #19 wiedergefunden inkl. Audit-Kommentar → Cleanup.
+
 - ✅ **Asset-Filter wirkt jetzt auch auf der Karte**: User-Wunsch nach der Suchen/Filter-Optimierung. Wenn man "Tank" filtert oder nach "Bühne" sucht, werden nur die passenden Marker auf der Map angezeigt; FitBounds zoomt automatisch auf die gefilterten Positionen. Tabelle und Map nutzen jetzt eine gemeinsame `filteredAssets`-Quelle - keine doppelte Filter-Logik. E2E gruen (Filter=all → 6 Marker, Filter=Tank → 4 Marker bei gleichem Datenstand).
 
 - ✅ **Asset-Liste: Volltextsuche + Typ-Filter + neuer "Tank"-Typ**: User Wunsch:
