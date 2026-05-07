@@ -84,9 +84,13 @@ if "tankbeleg" not in cp:
     cp["tankbeleg"] = {}
 sec = cp["tankbeleg"]
 sec["api_url"] = url
-# Test-Defaults setzen, falls noch nicht vorhanden
+# Test-Defaults setzen.
+# sening_reply_byte: SETZEN (nicht setdefault) - der TM-U295-spec-konforme
+# Wert 0x12 (Bit1+4 fixed ON laut Spec). Vorher war hier 0x00, was die
+# Spec-Invariante verletzt - bei Update auf v1.7.8 muessen Bestands-Pis
+# auf 0x12 gehoben werden.
+sec["sening_reply_byte"] = "0x12"
 sec.setdefault("ftdi_latency_ms", "1")
-sec.setdefault("sening_reply_byte", "0x00")
 sec.setdefault("sync_interval", "30")  # in Test schneller pollen
 # Live-Raw-Stream einschalten - kann im Portal unter /tankwagen/live-stream
 # beobachtet werden. In Live AUS lassen (Datenschutz/Bandbreite).
