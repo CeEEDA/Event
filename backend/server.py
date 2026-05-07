@@ -1699,6 +1699,19 @@ async def download_tankbeleg_pi_switch_test():
         headers={"Content-Disposition": 'attachment; filename="switch_tankbeleg_pi_to_test.sh"'}
     )
 
+@api_router.get("/download/tankbeleg-login-check")
+async def download_tankbeleg_login_check():
+    """Login-Diagnose-Skript fuer den Tankwagen-Pi: prueft bcrypt,
+    listet den lokalen drivers_cache, holt frischen Sync, validiert
+    optional einen PIN-Versuch direkt gegen den Backend-Hash."""
+    path = os.path.join(STATIC_DIR, "tankbeleg_login_check.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/x-python",
+        headers={"Content-Disposition": 'attachment; filename="tankbeleg_login_check.py"'}
+    )
+
 @api_router.get("/download/tankbeleg-minimal")
 async def download_tankbeleg_minimal():
     """Minimal-Diagnose-Skript: liest /dev/ttyUSB0, antwortet jedem
