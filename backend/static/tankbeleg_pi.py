@@ -435,8 +435,23 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
         idx = raw.find(b"M+")
         if idx < 0:
             return None, None, False
-    end = raw.find(b"\x1b\x4a", idx + 2)
-    if end < 0:
+    # Segment-Ende: zuerst nach \x1b\x4a (Form Feed), dann Sening-Line-End-
+    # Marker \x1b\x0b\x0c\x60\xc3\x21 (Print-Engine-Reset). Letzteres ist
+    # WICHTIG, weil Sening direkt nach diesem Marker oft Bytes wie ...\x31
+    # (= ASCII '1') sendet, die sonst faelschlich als Mengen-Ziffer interpretiert
+    # werden und den Bitmap-Decoder vom richtigen Suffix wegziehen.
+    # Beleg 16980 (31 L Diesel): Sening-Reset bei +37 enthielt '\x31\xc0',
+    # was die '1' nach hinten verschoben und den '3' + Bitmap-'1' Decode brach.
+    end_candidates = []
+    e1 = raw.find(b"\x1b\x4a", idx + 2)
+    if e1 > 0:
+        end_candidates.append(e1)
+    e2 = raw.find(b"\x1b\x0b\x0c\x60\xc3\x21", idx + 2)
+    if e2 > 0:
+        end_candidates.append(e2)
+    if end_candidates:
+        end = min(end_candidates)
+    else:
         end = idx + 100
     segment = raw[idx:end]
 
