@@ -139,16 +139,23 @@ curl_dl() {
 curl_dl "$API_BASE/api/download/tankbeleg-pi-script"   /opt/tankbeleg_pi.py
 chmod +x /opt/tankbeleg_pi.py
 
+# UI-Skript (Touch-Kiosk auf Port 8080) - braucht der Tankwagen-Pi um
+# Beleg/Auftragszuordnung zu machen. Wurde in Phase 2 mit-geloescht.
+curl_dl "$API_BASE/api/download/tankbeleg-ui-script"   /opt/tankbeleg_ui.py
+chmod +x /opt/tankbeleg_ui.py
+
 # tankbeleg_minimal.py fuer manuelle Diagnose
 curl_dl "$API_BASE/api/download/tankbeleg-minimal"     /opt/tankbeleg_minimal.py
 chmod +x /opt/tankbeleg_minimal.py
 
-# Fresh service-unit + conf-Vorlage
+# Fresh service-units + conf-Vorlage
 curl_dl "$API_BASE/api/download/tankbeleg-pi-service"  /tmp/tankbeleg_pi.service
+curl_dl "$API_BASE/api/download/tankbeleg-ui-service"  /tmp/tankbeleg_ui.service
 curl_dl "$API_BASE/api/download/tankbeleg-pi-config"   /tmp/tankbeleg_pi.conf
 
 sed "s/User=pi/User=$REAL_USER/g; s/Group=pi/Group=$REAL_GROUP/g" \
     /tmp/tankbeleg_pi.service > "$SERVICE_PI"
+cp /tmp/tankbeleg_ui.service "$SERVICE_UI"
 
 # Konfig: alten Backup-Wert NICHT verwenden, weil wir sauber starten wollen.
 cp /tmp/tankbeleg_pi.conf "$CONF"
@@ -238,10 +245,11 @@ fi
 # Phase 7 : SERVICE AKTIVIEREN + STARTEN
 # ============================================================
 echo ""
-echo "[7/9] tankbeleg_pi.service aktivieren + starten..."
+echo "[7/9] tankbeleg_pi.service + tankbeleg_ui.service aktivieren + starten..."
 systemctl daemon-reload
-systemctl enable tankbeleg_pi
+systemctl enable tankbeleg_pi tankbeleg_ui
 systemctl restart tankbeleg_pi
+systemctl restart tankbeleg_ui
 sleep 2
 
 if systemctl is-active --quiet tankbeleg_pi; then
@@ -249,6 +257,12 @@ if systemctl is-active --quiet tankbeleg_pi; then
 else
     echo "      tankbeleg_pi: NICHT aktiv - Logs pruefen!"
     journalctl -u tankbeleg_pi -n 20 --no-pager || true
+fi
+if systemctl is-active --quiet tankbeleg_ui; then
+    echo "      tankbeleg_ui: AKTIV (Port 8080)"
+else
+    echo "      tankbeleg_ui: NICHT aktiv - Logs pruefen!"
+    journalctl -u tankbeleg_ui -n 20 --no-pager || true
 fi
 
 # ============================================================
