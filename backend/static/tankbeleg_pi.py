@@ -66,7 +66,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.15"
+SCRIPT_VERSION = "1.7.16"
 
 # Zeitzone fuer Belegzeitstempel. Der Pi laeuft systemd-seitig oft auf UTC, der
 # Sening-Tankwagen und der Disponent denken aber in lokaler Zeit. Wir erzwingen
@@ -127,9 +127,11 @@ DEFAULT_CONF = {
     # hier hinterlegten Startwert. Bei jedem Beleg +1.
     "beleg_nr_start": "",
     # Abgabezeit-Heuristik (da Minuten aus Bitmap unlesbar):
-    # Ende = Pi-Uhrzeit bei Empfang, Start = Ende - (Liter * 12 s + 240 s).
-    "abgabe_zeit_pro_liter_sek": 12,
-    "abgabe_zeit_einrichtung_sek": 240,
+    # Ende = Pi-Uhrzeit bei Empfang, Start = Ende - (Liter * 4 s + 60 s).
+    # Werte basieren auf Live-Messung am Tankwagen (07.05.2026):
+    # 104 L in ~8 min → ~4 sec/L Pumpenrate, ~60 sec Einrichtung.
+    "abgabe_zeit_pro_liter_sek": 4,
+    "abgabe_zeit_einrichtung_sek": 60,
     # Default-Kraftstoff wenn der Sening-Parser den Typ nicht erkennen kann
     # (Sening druckt "*HEL schwefelarm*" oft als Bitmap). Der Truck laedt in
     # der Regel monatelang nur ein Produkt, daher ist ein Deployment-Default
