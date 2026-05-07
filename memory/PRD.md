@@ -17,6 +17,9 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg-Pi v1.7.7 — DSR/DTR Bug behoben (FINAL FIX für Sening "Drucker nicht erreichbar")**: Live-Diagnose vom User hat bewiesen: Sening MultiFlow nutzt 3-Wire Null-Modem-Kabel. `DSR=False, CTS=False, CD=False, RI=False`. Mit `dsrdtr=True` (v1.7.5/v1.7.6) hat pyserial deshalb auf DSR=High vor jedem write() gewartet → ALLE Status-Replies blockiert → Sening lief in Timeout. Fix: zurück auf `dsrdtr=False, xonxoff=False, rtscts=False`. Manueller Test des Users zeigt korrektes RX (`1b b3 ff` Polls alle ~600ms). 26/26 Tests grün.
+- ✅ **Sening Reply-Byte-Cycler Diagnose-Tool**: `static/sening_reply_cycler.py` (Download `/api/download/sening-reply-cycler`). Probiert systematisch 13 Kandidaten-Bytes (0x00, 0x12, 0x14, 0x16, 0x10, 0x18, 0x1A, 0x06, 0x90, 0x80, 0x40, 0x7F, 0xFF) durch und meldet welcher Wert den Sening dazu bringt einen Druckjob zu senden (Treffer-Heuristik: >50 Bytes nach Reply). Manuelles Workaround falls 0x00 nach v1.7.7 immer noch nicht reicht.
+
 - ✅ **Tankwagen Live-Raw-Stream (v1.7.6)**: Live-Debug-Helper. Pi pusht alle empfangenen UND gesendeten Bytes (RX/TX) batched zum Backend, neue Frontend-Seite `/tankwagen/live-stream` (Admin-only) tail't mit 1s-Polling.
   - **Backend**: Neuer Routes-Modul `routes/tankwagen_raw_stream.py` mit `POST /push` (anonym/pi_id-auth), `GET /tail` (since_ts long-poll-light), `DELETE` (clear). MongoDB-Collection mit TTL-Index 24h + max 5000 Eintraege/Pi. Lazy index-init (motor-async kompatibel).
   - **Pi-Side**: Neue `RawStreamPusher`-Klasse (Daemon-Thread, batched flush). Hooks in `read_receipt()` (RX) und neuer `_reply()`-Helper in `_handle_status_queries` (TX). Konfig-Keys `raw_stream_enabled`, `raw_stream_flush_sek`, `raw_stream_max_batch`. Default OFF.

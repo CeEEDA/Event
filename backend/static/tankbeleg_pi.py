@@ -22,11 +22,15 @@ Status pruefen:
   sudo journalctl -u tankbeleg_pi -f
 
 Changelog:
-  v1.7.5  - Hardware-Handshake (dsrdtr=True) zurueck, FTDI-Latency-Timer
-            auf 1ms gegen 16-Byte FIFO-Overrun (Fix fuer "1316 L -> 13 L").
-            Erweiterte Status-Antworten (DLE EOT, DLE ENQ, ESC v, ESC u,
-            GS r) damit Sening den Pi sicher als Drucker erkennt und nicht
-            mehr "Papier einlegen" meldet.
+  v1.7.7  - dsrdtr=False (zurueck): Sening MultiFlow nutzt 3-Wire Null-Modem
+            Kabel und treibt DSR/CTS NIE. dsrdtr=True hat pyserial blockiert,
+            wodurch unsere Status-Replies nie ankamen -> "Drucker nicht
+            erreichbar". Bewiesen durch Live-Diagnose: DSR=False, CTS=False,
+            Sening pollt nur '1b b3 ff' wiederholt.
+  v1.7.6  - Live-Raw-Stream RX/TX an /api/system/tankwagen/raw-stream/push.
+  v1.7.5  - Hardware-Handshake (dsrdtr=True) Versuch + FTDI-Latency-Timer
+            auf 1ms (FIFO-Overrun-Fix). dsrdtr=True war FALSCH bei 3-Wire
+            (siehe v1.7.7).
   v1.7.4  - Timestamp-basierter Buffer-Flush (Sening-Polls verhinderten Flush).
 """
 
@@ -48,7 +52,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.6"
+SCRIPT_VERSION = "1.7.7"
 
 
 # ====== Konfiguration ======
@@ -1555,22 +1559,24 @@ class SerialReceiptReader:
         parity_map = {'N': serial.PARITY_NONE, 'E': serial.PARITY_EVEN, 'O': serial.PARITY_ODD}
         stopbits_map = {1: serial.STOPBITS_ONE, 2: serial.STOPBITS_TWO}
 
-        # Flow-Control-Strategie v1.7.5 (nach gescheitertem xonxoff=True Versuch):
-        #   xonxoff=False    -> Software-Flow ist AUS. Vorheriger Versuch
-        #                       (xonxoff=True) hat den Sening eingefroren mit
-        #                       "Drucker antwortet nicht" / "Papier einlegen".
-        #                       Der Sening sendet 0x11/0x13 als normale Daten,
-        #                       nicht als XON/XOFF, was pyserial faelschlich
-        #                       als "STOP" interpretiert hat -> Schreibblockade.
-        #   dsrdtr=True      -> Hardware-Handshake aktiv. Sening MultiFlow setzt
-        #                       DSR auf HIGH wenn der Drucker bereit sein soll.
-        #                       Erst dann sendet er den Druckjob. Ohne dsrdtr
-        #                       gar keinen Druckauftrag (Polls aber moeglich).
-        #   rtscts=False     -> RTS wird statisch high gehalten (3-Wire-Modus
-        #                       zum Sening reicht). Echtes RTS/CTS-Handshake
-        #                       wuerde der MultiFlow nicht bedienen.
-        # Den 16-Byte UART-FIFO Overrun loesen wir nicht via xonxoff sondern
-        # via FTDI-Latency-Timer = 1 ms (siehe _set_ftdi_latency_timer).
+        # Flow-Control-Strategie v1.7.7 (final, durch Live-Diagnose bestaetigt):
+        #   xonxoff=False    -> Software-Flow AUS. Sening sendet 0x11/0x13 als
+        #                       reine Datenbytes, NICHT als XON/XOFF. Mit
+        #                       xonxoff=True hat pyserial das missverstanden
+        #                       und Schreibvorgaenge blockiert -> Sening:
+        #                       "Drucker antwortet nicht".
+        #   dsrdtr=False     -> Hardware-Flow AUS. Beweis: Live-Diagnose hat
+        #                       DSR=False, CTS=False, CD=False, RI=False
+        #                       gezeigt - Sening nutzt 3-Wire Null-Modem-Kabel
+        #                       (nur TXD/RXD/GND). Mit dsrdtr=True wartet
+        #                       pyserial auf DSR=High vor jedem write() und
+        #                       blockiert deshalb dauerhaft -> unsere
+        #                       Status-Replies kamen nie an -> Sening:
+        #                       "Drucker nicht erreichbar".
+        #   rtscts=False     -> RTS/CTS-Handshake AUS, gleicher Grund.
+        # DTR und RTS werden trotzdem manuell auf HIGH gesetzt (siehe unten)
+        # damit der Sening-Empfangsstrom nicht durch RS-232-Floating gestoert
+        # wird. FIFO-Overrun loesen wir via FTDI-Latency-Timer = 1 ms.
         self.ser = serial.Serial(
             port=self.port,
             baudrate=self.baud,
@@ -1580,7 +1586,7 @@ class SerialReceiptReader:
             timeout=0.1,
             xonxoff=False,
             rtscts=False,
-            dsrdtr=True,
+            dsrdtr=False,
         )
         # DTR und RTS dauerhaft auf HIGH (MultiFlow erwartet beide Handshake-Leitungen)
         try:
@@ -1591,9 +1597,10 @@ class SerialReceiptReader:
         # FTDI Latency-Timer auf 1 ms setzen -> kein FIFO-Overrun bei Burst-Druck
         self._set_ftdi_latency_timer()
         log.info(f"Serielle Verbindung geoeffnet: {self.port} @ {self.baud}")
-        # Diagnose-Log: Erwartet sind xonxoff=False, dsrdtr=True. Wenn nicht,
-        # laeuft auf dem Pi noch eine alte Skript-Version (OTA hat noch nicht
-        # gegriffen oder das Update wurde abgelehnt).
+        # Diagnose-Log: Erwartet sind xonxoff=False, dsrdtr=False, rtscts=False
+        # (3-Wire Sening MultiFlow). Wenn dsrdtr=True hier auftaucht laeuft
+        # noch eine alte Version - dann blockieren writes -> Sening sieht
+        # "Drucker nicht erreichbar".
         try:
             log.info(f"FLOW-CONTROL: xonxoff={self.ser.xonxoff} rtscts={self.ser.rtscts} dsrdtr={self.ser.dsrdtr}")
         except (AttributeError, Exception):

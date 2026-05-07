@@ -1699,6 +1699,18 @@ async def download_tankbeleg_pi_switch_test():
         headers={"Content-Disposition": 'attachment; filename="switch_tankbeleg_pi_to_test.sh"'}
     )
 
+@api_router.get("/download/sening-reply-cycler")
+async def download_sening_reply_cycler():
+    """Diagnose-Tool: probiert systematisch verschiedene Reply-Bytes auf
+    den Sening-Poll durch und zeigt welcher Wert den Druckjob ausloest."""
+    path = os.path.join(STATIC_DIR, "sening_reply_cycler.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/x-python",
+        headers={"Content-Disposition": 'attachment; filename="sening_reply_cycler.py"'}
+    )
+
 # ============== Mosquitto MQTT Broker Downloads ==============
 
 @api_router.get("/download/mosquitto-config")
