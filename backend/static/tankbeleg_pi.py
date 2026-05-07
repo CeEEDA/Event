@@ -20,6 +20,14 @@ Konfiguration:
 Status pruefen:
   sudo systemctl status tankbeleg_pi
   sudo journalctl -u tankbeleg_pi -f
+
+Changelog:
+  v1.7.5  - Hardware-Handshake (dsrdtr=True) zurueck, FTDI-Latency-Timer
+            auf 1ms gegen 16-Byte FIFO-Overrun (Fix fuer "1316 L -> 13 L").
+            Erweiterte Status-Antworten (DLE EOT, DLE ENQ, ESC v, ESC u,
+            GS r) damit Sening den Pi sicher als Drucker erkennt und nicht
+            mehr "Papier einlegen" meldet.
+  v1.7.4  - Timestamp-basierter Buffer-Flush (Sening-Polls verhinderten Flush).
 """
 
 import serial
@@ -40,7 +48,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.4"
+SCRIPT_VERSION = "1.7.5"
 
 
 # ====== Konfiguration ======
@@ -63,6 +71,12 @@ DEFAULT_CONF = {
     # If MultiFlow still reports 'paper out', try 0x01, 0x10, 0x12, 0x7F.
     # Override via /etc/tankbeleg_pi.conf key 'sening_reply_byte' (hex, e.g. 0x00).
     "sening_reply_byte": "0x00",
+    # FTDI Latency-Timer in Millisekunden. Standard im Linux-Kernel ist 16 ms,
+    # was zusammen mit dem 16-Byte UART-FIFO bei langen Sening-Belegen zum
+    # Verlust der letzten Ziffer fuehrt (z.B. 1316 L -> 13 L). Wert 1 ms
+    # leert den FIFO 16x schneller -> kein Overrun mehr. Bei nicht-FTDI
+    # Adaptern wird der Wert ignoriert (nur Log-Hinweis).
+    "ftdi_latency_ms": 1,
     # Zaehler-Nr. ist fest und koennte nicht 100% aus Bitmap gelesen werden.
     # Wenn der Parser nur ein Praefix erkennt (z.B. '1146'), wird die hier
     # hinterlegte vollstaendige Nummer genommen (z.B. '11461').
@@ -104,6 +118,10 @@ def load_config():
             conf["sync_interval"] = int(conf["sync_interval"])
             conf["retry_delay"] = int(conf["retry_delay"])
             conf["gps_port"] = int(conf["gps_port"])
+            try:
+                conf["ftdi_latency_ms"] = int(conf["ftdi_latency_ms"])
+            except (ValueError, TypeError):
+                conf["ftdi_latency_ms"] = 1
 
     # Env overrides
     conf["api_url"] = os.environ.get("TANKBELEG_API_URL", conf["api_url"])
@@ -1342,13 +1360,14 @@ def sync_to_portal(conf):
 class SerialReceiptReader:
     """Liest serielle Daten und erkennt vollstaendige Belege."""
 
-    def __init__(self, port, baud=9600, bytesize=8, parity='N', stopbits=1, sening_reply_byte=0x00):
+    def __init__(self, port, baud=9600, bytesize=8, parity='N', stopbits=1, sening_reply_byte=0x00, ftdi_latency_ms=1):
         self.port = port
         self.baud = baud
         self.bytesize = bytesize
         self.parity = parity
         self.stopbits = stopbits
         self.sening_reply_byte = sening_reply_byte
+        self.ftdi_latency_ms = ftdi_latency_ms
         self.ser = None
         self.buffer = bytearray()
         # Holds incomplete status-query prefixes across chunked serial reads
@@ -1358,18 +1377,84 @@ class SerialReceiptReader:
         self.receipt_timeout = 3.0
         self.last_data_time = 0
 
+    def _set_ftdi_latency_timer(self):
+        """Setzt den FTDI USB-Serial Latency-Timer auf wenige ms.
+
+        Hintergrund: Der FTDI-Treiber im Linux-Kernel verwendet per Default
+        einen Latency-Timer von 16 ms, d.h. der Chip wartet bis zu 16 ms bevor
+        er den USB-Bulk-Endpoint flusht. Zusammen mit dem 16-Byte UART-FIFO
+        bedeutet das: kommen mehr als 16 Bytes in <16 ms (durchaus normal bei
+        9600 Baud Burst-Druck), laeuft der FIFO ueber und einzelne Bytes
+        gehen verloren. Symptom: "Menge bei 15 C" wird statt 1316 L nur als
+        13 L empfangen, weil die letzten Ziffern (Bitmap-encoded) beim Flush
+        verloren gingen.
+
+        Fix: latency_timer auf 1 ms setzen -> der Chip flusht praktisch sofort,
+        FIFO bleibt nie voll. Erfordert root oder passende udev-Rule
+        (siehe install_tankwagen_pi.sh).
+
+        Best-effort: Wenn der Adapter kein FTDI ist, gibt es keinen
+        latency_timer-Pfad. Dann nur Hinweis im Log, kein Fehler.
+        """
+        if not self.ftdi_latency_ms:
+            return
+        try:
+            # Resolve /dev/ttyUSB0 -> /sys/class/tty/ttyUSB0/device
+            tty_name = os.path.basename(os.path.realpath(self.port))
+            sysfs_device = f"/sys/class/tty/{tty_name}/device"
+            if not os.path.exists(sysfs_device):
+                log.info(f"FTDI-Latency: kein sysfs-device fuer {self.port} (kein FTDI?)")
+                return
+            # FTDI latency_timer liegt direkt im device-Dir
+            latency_path = os.path.join(sysfs_device, "latency_timer")
+            if not os.path.exists(latency_path):
+                # Manche Kernel haengen es eine Stufe tiefer (../driver/...) -> probieren
+                alt = os.path.realpath(os.path.join(sysfs_device, "..", "latency_timer"))
+                if os.path.exists(alt):
+                    latency_path = alt
+                else:
+                    log.info(f"FTDI-Latency: kein latency_timer-Knoten unter {sysfs_device} - vermutlich kein FTDI-Adapter")
+                    return
+            with open(latency_path, "w") as f:
+                f.write(str(int(self.ftdi_latency_ms)))
+            # Verifizieren
+            try:
+                with open(latency_path, "r") as f:
+                    actual = f.read().strip()
+                log.info(f"FTDI-Latency-Timer: {latency_path} = {actual} ms (Soll {self.ftdi_latency_ms} ms)")
+            except OSError:
+                log.info(f"FTDI-Latency-Timer auf {self.ftdi_latency_ms} ms gesetzt ({latency_path})")
+        except PermissionError:
+            log.warning(
+                f"FTDI-Latency-Timer nicht setzbar (Permission denied). "
+                f"Bitte als root ausfuehren oder udev-Rule installieren: "
+                f"echo 'SUBSYSTEM==\"usb-serial\", DRIVER==\"ftdi_sio\", ATTR{{latency_timer}}=\"{self.ftdi_latency_ms}\"' "
+                f"> /etc/udev/rules.d/50-ftdi-latency.rules"
+            )
+        except Exception as e:
+            log.debug(f"FTDI-Latency-Setzen fehlgeschlagen (ignoriert): {e}")
+
     def connect(self):
         """Oeffnet die serielle Verbindung."""
         parity_map = {'N': serial.PARITY_NONE, 'E': serial.PARITY_EVEN, 'O': serial.PARITY_ODD}
         stopbits_map = {1: serial.STOPBITS_ONE, 2: serial.STOPBITS_TWO}
 
-        # dsrdtr=False: Sening MultiFlow uses 3-wire null-modem cable (no DSR/DTR handshake).
-        # With dsrdtr=True pyserial blocks writes while DSR is low, which prevents status replies.
-        # xonxoff=True: MultiFlow im TM-U295-Profil sendet mit Software-Flow-Control
-        # (XON/XOFF, 0x11/0x13). Ohne ixon/ixoff laeuft der UART-FIFO (16 Byte) bei
-        # langen Belegen ueber, was die letzten Bytes (z.B. die letzte Mengen-Ziffer)
-        # verschluckt. Das war die wahre Ursache fuer "13 statt 1316" und nicht
-        # primaer ein Bitmap-Decoder-Problem.
+        # Flow-Control-Strategie v1.7.5 (nach gescheitertem xonxoff=True Versuch):
+        #   xonxoff=False    -> Software-Flow ist AUS. Vorheriger Versuch
+        #                       (xonxoff=True) hat den Sening eingefroren mit
+        #                       "Drucker antwortet nicht" / "Papier einlegen".
+        #                       Der Sening sendet 0x11/0x13 als normale Daten,
+        #                       nicht als XON/XOFF, was pyserial faelschlich
+        #                       als "STOP" interpretiert hat -> Schreibblockade.
+        #   dsrdtr=True      -> Hardware-Handshake aktiv. Sening MultiFlow setzt
+        #                       DSR auf HIGH wenn der Drucker bereit sein soll.
+        #                       Erst dann sendet er den Druckjob. Ohne dsrdtr
+        #                       gar keinen Druckauftrag (Polls aber moeglich).
+        #   rtscts=False     -> RTS wird statisch high gehalten (3-Wire-Modus
+        #                       zum Sening reicht). Echtes RTS/CTS-Handshake
+        #                       wuerde der MultiFlow nicht bedienen.
+        # Den 16-Byte UART-FIFO Overrun loesen wir nicht via xonxoff sondern
+        # via FTDI-Latency-Timer = 1 ms (siehe _set_ftdi_latency_timer).
         self.ser = serial.Serial(
             port=self.port,
             baudrate=self.baud,
@@ -1377,9 +1462,9 @@ class SerialReceiptReader:
             parity=parity_map.get(self.parity, serial.PARITY_NONE),
             stopbits=stopbits_map.get(self.stopbits, serial.STOPBITS_ONE),
             timeout=0.1,
-            xonxoff=True,
+            xonxoff=False,
             rtscts=False,
-            dsrdtr=False,
+            dsrdtr=True,
         )
         # DTR und RTS dauerhaft auf HIGH (MultiFlow erwartet beide Handshake-Leitungen)
         try:
@@ -1387,10 +1472,12 @@ class SerialReceiptReader:
             self.ser.rts = True
         except (OSError, IOError):
             log.debug("DTR/RTS nicht unterstuetzt (z.B. virtuelle Ports)")
+        # FTDI Latency-Timer auf 1 ms setzen -> kein FIFO-Overrun bei Burst-Druck
+        self._set_ftdi_latency_timer()
         log.info(f"Serielle Verbindung geoeffnet: {self.port} @ {self.baud}")
-        # Diagnose-Log: xonxoff muss AKTIV sein, sonst werden lange Belege (>16 Byte UART-FIFO)
-        # mit verschluckten End-Ziffern empfangen. Wenn dieser Wert False ist, wurde der
-        # neue Code NICHT gepulled / Pi laeuft noch auf einer alten Version.
+        # Diagnose-Log: Erwartet sind xonxoff=False, dsrdtr=True. Wenn nicht,
+        # laeuft auf dem Pi noch eine alte Skript-Version (OTA hat noch nicht
+        # gegriffen oder das Update wurde abgelehnt).
         try:
             log.info(f"FLOW-CONTROL: xonxoff={self.ser.xonxoff} rtscts={self.ser.rtscts} dsrdtr={self.ser.dsrdtr}")
         except (AttributeError, Exception):
@@ -1466,14 +1553,19 @@ class SerialReceiptReader:
         """Parse incoming bytes for Epson DLE EOT status queries and respond to them.
         Returns the bytes WITHOUT the status queries (so they don't land in the receipt).
 
-        Epson TM-U295 status bytes (respond 'online, no errors, paper OK'):
+        Unterstuetzte Status-Anfragen (TM-U295 / Sening kompatibel):
           DLE EOT n  (0x10 0x04 n)  n = 1..4
             n=1: printer status   -> 0x12  (online, drawer OK, cover closed, no feed)
             n=2: offline status   -> 0x12  (no offline conditions)
             n=3: error status     -> 0x12  (no errors, no auto-recoverable error)
             n=4: paper sensor     -> 0x12  (paper OK / slip inserted)
-
-        Also handles ESC/POS Real-time status requests.
+          DLE ENQ n  (0x10 0x05 n)  -> 0x00 (real-time response, ok)
+          ESC v       (0x1B 0x76)    -> 0x00 (legacy paper sensor: paper present, no near-end)
+          GS r n      (0x1D 0x72 n)
+            n=1/49: paper roll status -> 0x00 (paper adequate)
+            n=2/50: drawer kick status -> 0x00 (drawer closed)
+          ESC u       (0x1B 0x75)    -> 0x00 (peripheral status, peripheral ok)
+          Sening proprietary ESC B3 n (0x1B 0xB3 n) -> sening_reply_byte
         """
         STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 4: 0x12}
 
@@ -1490,10 +1582,21 @@ class SerialReceiptReader:
 
             # Partial status-query prefixes at the tail of the chunk: buffer them
             # for the next read instead of leaking into the receipt buffer.
+            #   DLE EOT/ENQ n : 3 bytes -> wenn remaining < 3 und Praefix passt, puffern
+            #   ESC B3 n      : 3 bytes -> wenn remaining < 3, puffern
+            #   GS r n        : 3 bytes -> wenn remaining < 3, puffern
+            #   ESC v / ESC u : 2 bytes -> nur puffern wenn remaining < 2
             if b == 0x10 and remaining < 3 and (remaining < 2 or data[i + 1] in (0x04, 0x05)):
                 self.pending_prefix.extend(data[i:])
                 return bytes(out)
-            if b == 0x1B and remaining < 3 and (remaining < 2 or data[i + 1] == 0xB3):
+            if b == 0x1B and remaining < 3 and remaining >= 2 and data[i + 1] == 0xB3:
+                self.pending_prefix.extend(data[i:])
+                return bytes(out)
+            if b == 0x1B and remaining < 2:
+                # ESC am Ende des Chunks ohne Folgebyte -> noch nicht entscheidbar
+                self.pending_prefix.extend(data[i:])
+                return bytes(out)
+            if b == 0x1D and remaining < 3 and (remaining < 2 or data[i + 1] == 0x72):
                 self.pending_prefix.extend(data[i:])
                 return bytes(out)
 
@@ -1504,20 +1607,52 @@ class SerialReceiptReader:
                     try:
                         self.ser.write(bytes([STATUS_OK[n]]))
                         self.ser.flush()
-                        log.debug(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X}")
+                        log.info(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X} (Paper OK / online)")
                     except (OSError, IOError) as e:
                         log.warning(f"Status-Antwort fehlgeschlagen: {e}")
                     i += 3
                     continue
-            # Check for DLE ENQ n (real-time status request, 0x10 0x05 n)
+            # DLE ENQ n (real-time status request, 0x10 0x05 n)
             if b == 0x10 and remaining >= 3 and data[i + 1] == 0x05:
-                # Respond with 'no error' status byte
                 try:
                     self.ser.write(bytes([0x00]))
                     self.ser.flush()
-                    log.debug("Realtime ENQ -> 0x00 (ok)")
+                    log.debug(f"Realtime ENQ n={data[i+2]} -> 0x00 (ok)")
                 except (OSError, IOError):
                     pass
+                i += 3
+                continue
+            # ESC v (0x1B 0x76) - legacy paper sensor status (TM-U295 spec)
+            # Reply: bit0=0 paper present, bit2=0 paper not near-end -> 0x00
+            if b == 0x1B and remaining >= 2 and data[i + 1] == 0x76:
+                try:
+                    self.ser.write(bytes([0x00]))
+                    self.ser.flush()
+                    log.info("Status-Query ESC v -> 0x00 (paper present, not near-end)")
+                except (OSError, IOError) as e:
+                    log.warning(f"ESC v Antwort fehlgeschlagen: {e}")
+                i += 2
+                continue
+            # ESC u (0x1B 0x75) - peripheral device status
+            if b == 0x1B and remaining >= 2 and data[i + 1] == 0x75:
+                try:
+                    self.ser.write(bytes([0x00]))
+                    self.ser.flush()
+                    log.info("Status-Query ESC u -> 0x00 (peripheral ok)")
+                except (OSError, IOError):
+                    pass
+                i += 2
+                continue
+            # GS r n (0x1D 0x72 n) - transmit status
+            if b == 0x1D and remaining >= 3 and data[i + 1] == 0x72:
+                n = data[i + 2]
+                # n=1/49 paper roll, n=2/50 drawer -> always 0x00 = OK
+                try:
+                    self.ser.write(bytes([0x00]))
+                    self.ser.flush()
+                    log.info(f"Status-Query GS r {n} -> 0x00 (ok)")
+                except (OSError, IOError) as e:
+                    log.warning(f"GS r Antwort fehlgeschlagen: {e}")
                 i += 3
                 continue
             # Sening MultiFlow proprietary poll:  ESC (0x1B) 0xB3 <n>
@@ -1535,6 +1670,14 @@ class SerialReceiptReader:
                     log.warning(f"Sening-Reply fehlgeschlagen: {e}")
                 i += 3
                 continue
+            # Unbekannte ESC-Sequenzen: Loggen damit wir neue Polls erkennen
+            # koennen (Sening hat z.T. undokumentierte Varianten je Firmware).
+            # Wir loggen nur den Header, lassen die Bytes aber im Buffer
+            # damit der Parser den eigentlichen Beleg-Inhalt nicht verliert.
+            if b == 0x1B and remaining >= 2 and data[i + 1] not in (0xB3, 0x76, 0x75):
+                # Sammle naechste 4 Bytes fuer Forensik-Log
+                preview = data[i:min(i + 6, len(data))]
+                log.debug(f"ESC-Sequenz unbekannt (kein Status-Query, weiter im Print-Stream): {preview.hex(' ')}")
             out.append(b)
             i += 1
         return bytes(out)
@@ -1580,6 +1723,7 @@ def main():
         parity=conf["serial_parity"],
         stopbits=conf["serial_stopbits"],
         sening_reply_byte=reply_byte,
+        ftdi_latency_ms=int(conf.get("ftdi_latency_ms", 1) or 1),
     )
 
     try:

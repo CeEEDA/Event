@@ -17,6 +17,21 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg-Pi v1.7.5 für Test-Umgebung**: Sening Handshake & FIFO-Overrun fix.
+  - **Flow-Control zurück**: `xonxoff=False, dsrdtr=True, rtscts=False`. Vorheriger v1.7.4-Versuch mit `xonxoff=True` hat den Sening eingefroren ("Drucker antwortet nicht" / "Papier einlegen") weil 0x11/0x13 als reguläre Datenbytes vom Sening kamen, von pyserial aber als XON/XOFF interpretiert wurden → Schreibblockade.
+  - **FTDI Latency-Timer Fix**: Neuer Helper `_set_ftdi_latency_timer()` setzt `/sys/class/tty/ttyUSBx/device/latency_timer` auf 1ms (statt Kernel-Default 16ms). Löst den 16-Byte UART-FIFO-Overrun (Symptom "1316L → 13L") ohne Software-Flow-Control. Konfigurierbar via `ftdi_latency_ms` in `/etc/tankbeleg_pi.conf`.
+  - **Erweiterte Epson-Status-Antworten** im `_handle_status_queries`:
+    - `DLE EOT n` (n=1..4) → `0x12` (online, paper OK) [vorher schon vorhanden]
+    - `DLE ENQ n` → `0x00`
+    - `ESC v` (TM-U295 legacy paper sensor) → `0x00` (paper present, not near-end) **NEU**
+    - `ESC u` (peripheral status) → `0x00` **NEU**
+    - `GS r n` (transmit status, paper roll/drawer) → `0x00` **NEU**
+    - `ESC B3 n` (Sening proprietary poll) → `sening_reply_byte` (default `0x00`)
+    - Partial-Prefix-Buffering korrigiert (ESC v/u sind 2 Bytes, DLE/GS/ESC B3 sind 3 Bytes)
+  - **Logging**: FTDI-Latency-Verifikation, Flow-Control-State, unbekannte ESC-Sequenzen mit Hex-Preview.
+  - 14/14 neue Unit-Tests grün (`test_tankbeleg_status_replies.py`), bestehende 5 Fuel-Default-Tests weiterhin grün.
+  - OTA liefert v1.7.5 (79.490 Bytes) am `/api/system/ota/pi/tankwagen/download` aus → bereit für Test-Pi-Flash.
+
 - ✅ **Karten global auf Hybrid + Layer-Switcher in JEDER Karte**: User wollte den Layer-Switcher auch in der Modal-Mini-Map und Hybrid als Default ueber alle Karten. Umsetzung:
   - Neue Komponente `/app/frontend/src/components/MapTileLayer.jsx` kapselt Tile-Layer + Switcher (OSM/Sat/Hybrid). Auswahl persistiert in `localStorage["mapLayer"]`, Default ist "hybrid".
   - 7 Stellen umgestellt: OrderDetailPage (grosse Karte + Modal-Mini-Map), GpsLockPicker, EnergyMonitoringPage, GeneratorDetailPage, GeneratorDashboardPage, EnergyMonitoringDetailPage, DeviceManagementPage.
