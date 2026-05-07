@@ -184,18 +184,41 @@ def get_all_drivers(db_path):
 
 def verify_driver_pin(db_path, driver_id, pin):
     """Prueft den eingegebenen 6-stelligen PIN gegen den gecachten bcrypt-Hash.
-    Funktioniert offline. Gibt True zurueck, wenn PIN korrekt."""
-    if not driver_id or not pin or not bcrypt:
+    Funktioniert offline. Gibt True zurueck, wenn PIN korrekt.
+
+    Loggt bei Fehler genau warum der Versuch nicht akzeptiert wurde,
+    damit Login-Probleme im Feld nachvollziehbar sind (driver_id falsch?
+    pin_hash leer? bcrypt-Mismatch?).
+    """
+    short_id = (driver_id or "")[:8]
+    pin_len = len(pin or "")
+    if not driver_id:
+        log.warning(f"PIN-Verify: driver_id leer (pin_len={pin_len})")
+        return False
+    if not pin:
+        log.warning(f"PIN-Verify {short_id}: PIN leer")
+        return False
+    if not bcrypt:
+        log.error("PIN-Verify: bcrypt-Modul nicht installiert!")
         return False
     conn = sqlite3.connect(db_path); conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT pin_hash FROM drivers_cache WHERE id=?", (driver_id,)).fetchone()
+    row = conn.execute("SELECT name, pin_hash FROM drivers_cache WHERE id=?", (driver_id,)).fetchone()
     conn.close()
-    if not row or not row["pin_hash"]:
+    if not row:
+        log.warning(f"PIN-Verify {short_id}: driver_id NICHT im Cache (Sync laeuft? pin_len={pin_len})")
+        return False
+    if not row["pin_hash"]:
+        log.warning(f"PIN-Verify {short_id} ({row['name']}): pin_hash LEER im Cache (date_of_birth im Backend gesetzt? pin_len={pin_len})")
         return False
     try:
-        return bcrypt.checkpw(pin.encode("utf-8"), row["pin_hash"].encode("utf-8"))
+        ok = bcrypt.checkpw(pin.encode("utf-8"), row["pin_hash"].encode("utf-8"))
+        if ok:
+            log.info(f"PIN-Verify {short_id} ({row['name']}): OK")
+        else:
+            log.warning(f"PIN-Verify {short_id} ({row['name']}): PIN FALSCH (eingegeben={pin_len} Ziffern, erwartet=6 Ziffern Format TTMMJJ)")
+        return ok
     except Exception as e:
-        log.error(f"PIN-Verify Fehler: {e}")
+        log.error(f"PIN-Verify {short_id}: Exception {e}")
         return False
 
 
