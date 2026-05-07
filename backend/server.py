@@ -1711,6 +1711,19 @@ async def download_sening_reply_cycler():
         headers={"Content-Disposition": 'attachment; filename="sening_reply_cycler.py"'}
     )
 
+@api_router.get("/system/ota/pi/tankwagen/download-v171")
+async def download_tankbeleg_pi_v171_rollback():
+    """ROLLBACK auf v1.7.1 vom 06.05.2026 18:09 CET (commit 7b40e8b).
+    Letzte Version vor den FTDI-Latency-/Live-Stream-/Bitmap-Decoder-Aenderungen.
+    Nur fuer Diagnose-Zwecke wenn aktuelle Version Sening-Probleme hat."""
+    path = os.path.join(STATIC_DIR, "tankbeleg_pi_v1.7.1_rollback.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/x-python",
+        headers={"Content-Disposition": 'attachment; filename="tankbeleg_pi.py"'}
+    )
+
 # ============== Mosquitto MQTT Broker Downloads ==============
 
 @api_router.get("/download/mosquitto-config")
