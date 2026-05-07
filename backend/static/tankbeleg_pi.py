@@ -48,7 +48,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.5"
+SCRIPT_VERSION = "1.7.6"
 
 
 # ====== Konfiguration ======
@@ -96,6 +96,17 @@ DEFAULT_CONF = {
     # silent falsch im Portal. Erlaubte Werte: "", "heizoel_leicht", "diesel", "hvo".
     # Leer = kein Default -> Beleg wird als needs_review markiert.
     "default_fuel_type": "",
+    # Live Raw-Stream zum Backend. Wenn 'true', pusht der Pi alle empfangenen
+    # UND gesendeten Bytes (RX/TX) batched in den Tankwagen-Raw-Stream-Endpoint
+    # damit man im Portal live mitlesen kann was der Sening sendet und was der
+    # Pi antwortet. Default AUS (Datenschutz/Bandbreite); fuer Test-Pis einschalten.
+    "raw_stream_enabled": "false",
+    # Batch-Flush-Intervall fuer den Raw-Stream. Kuerzer = naeher an Echtzeit
+    # aber mehr HTTP-Overhead. 1.5 s ist ein guter Kompromiss bei 9600 Baud.
+    "raw_stream_flush_sek": 1.5,
+    # Maximale Chunks pro Push - schuetzt vor Endlos-Wachstum des Buffers wenn
+    # das Backend mal nicht erreichbar ist.
+    "raw_stream_max_batch": 200,
 }
 
 
@@ -1357,10 +1368,114 @@ def sync_to_portal(conf):
 
 # ====== Serielle Schnittstelle ======
 
+class RawStreamPusher:
+    """Async-Pusher: sammelt RX/TX-Bytes mit Timestamp und sendet sie batched
+    an den Backend-Endpoint /api/system/tankwagen/raw-stream/push.
+
+    Best-effort: Wenn das Backend nicht erreichbar ist, wird der Buffer
+    irgendwann gekappt (max_batch * 5 Eintraege gespeichert), Pi-Hauptlogik
+    laeuft trotzdem unbeeintraechtigt weiter.
+
+    Threading: ein einzelner Daemon-Thread tut den Flush. Push() ist nicht
+    blockierend - es haengt nur an die in-memory Liste an.
+    """
+
+    def __init__(self, conf: dict, pi_id: str, hostname: str):
+        self.conf = conf
+        self.pi_id = pi_id
+        self.hostname = hostname
+        self.enabled = str(conf.get("raw_stream_enabled", "false")).strip().lower() in ("1", "true", "yes", "ja", "on")
+        try:
+            self.flush_sek = float(conf.get("raw_stream_flush_sek", 1.5))
+        except (TypeError, ValueError):
+            self.flush_sek = 1.5
+        try:
+            self.max_batch = int(conf.get("raw_stream_max_batch", 200))
+        except (TypeError, ValueError):
+            self.max_batch = 200
+        self.max_buffer = self.max_batch * 5  # ~1000 Eintraege als Hard-Limit
+
+        import threading
+        self._lock = threading.Lock()
+        self._buf = []  # type: list[dict]
+        self._stop = threading.Event()
+        self._thread = None
+        if self.enabled:
+            self._thread = threading.Thread(target=self._run, daemon=True, name="RawStreamPusher")
+            self._thread.start()
+            log.info(f"RawStream aktiv -> {_api_base(conf)}/system/tankwagen/raw-stream/push (flush={self.flush_sek}s)")
+        else:
+            log.info("RawStream deaktiviert (raw_stream_enabled=false)")
+
+    def push(self, data: bytes, direction: str, note: str = None):
+        """Nicht-blockierend: schiebe einen Chunk in den Buffer.
+        direction: 'rx' = vom Sening empfangen, 'tx' = vom Pi gesendet.
+        """
+        if not self.enabled or not data:
+            return
+        entry = {
+            "ts": time.time(),
+            "direction": direction,
+            "hex": data.hex(),
+        }
+        if note:
+            entry["note"] = note
+        with self._lock:
+            self._buf.append(entry)
+            # Hard-Cap: bei dauerhaft offline Backend nicht unendlich wachsen
+            if len(self._buf) > self.max_buffer:
+                drop = len(self._buf) - self.max_buffer
+                self._buf = self._buf[drop:]
+
+    def _drain(self) -> list:
+        with self._lock:
+            if not self._buf:
+                return []
+            batch = self._buf[: self.max_batch]
+            self._buf = self._buf[self.max_batch:]
+            return batch
+
+    def _run(self):
+        while not self._stop.is_set():
+            time.sleep(self.flush_sek)
+            try:
+                batch = self._drain()
+                if not batch:
+                    continue
+                base = _api_base(self.conf)
+                if not base:
+                    continue
+                payload = {
+                    "pi_id": self.pi_id,
+                    "hostname": self.hostname,
+                    "chunks": batch,
+                }
+                r = requests.post(
+                    f"{base}/system/tankwagen/raw-stream/push",
+                    json=payload,
+                    timeout=5,
+                )
+                if r.status_code != 200:
+                    log.debug(f"RawStream push HTTP {r.status_code}: {r.text[:120]}")
+                    # Bei Fehler: Batch zurueck in den Buffer (am Anfang) -
+                    # aber nur wenn dadurch nicht das Hard-Cap gerissen wird,
+                    # sonst lieber verwerfen damit der Hauptbetrieb laeuft.
+                    with self._lock:
+                        if len(self._buf) + len(batch) <= self.max_buffer:
+                            self._buf = batch + self._buf
+            except requests.RequestException as e:
+                log.debug(f"RawStream push exception: {e}")
+            except Exception as e:
+                log.debug(f"RawStream Fehler: {e}")
+
+    def stop(self):
+        self._stop.set()
+
+
 class SerialReceiptReader:
     """Liest serielle Daten und erkennt vollstaendige Belege."""
 
-    def __init__(self, port, baud=9600, bytesize=8, parity='N', stopbits=1, sening_reply_byte=0x00, ftdi_latency_ms=1):
+    def __init__(self, port, baud=9600, bytesize=8, parity='N', stopbits=1, sening_reply_byte=0x00, ftdi_latency_ms=1, raw_stream=None):
         self.port = port
         self.baud = baud
         self.bytesize = bytesize
@@ -1368,6 +1483,7 @@ class SerialReceiptReader:
         self.stopbits = stopbits
         self.sening_reply_byte = sening_reply_byte
         self.ftdi_latency_ms = ftdi_latency_ms
+        self.raw_stream = raw_stream  # RawStreamPusher | None
         self.ser = None
         self.buffer = bytearray()
         # Holds incomplete status-query prefixes across chunked serial reads
@@ -1503,6 +1619,9 @@ class SerialReceiptReader:
             data = self.ser.read(256)
             if data:
                 log.info(f"SERIAL RX ({len(data)} bytes): {data.hex(' ')}")
+                # Live-Stream: kompletten RX-Chunk an das Backend pushen
+                if self.raw_stream:
+                    self.raw_stream.push(data, "rx")
                 # Status-Queries INLINE beantworten, aus dem Print-Stream entfernen
                 data = self._handle_status_queries(data)
                 if data:
@@ -1548,6 +1667,19 @@ class SerialReceiptReader:
                 )
             except Exception as e:
                 log.debug(f"Handshake-Status nicht lesbar: {e}")
+
+    def _reply(self, data: bytes, note: str = None):
+        """Sendet eine Antwort an den Sening und streamt sie zugleich an das
+        Backend (best-effort). Konsolidiert ser.write + flush + raw_stream.push.
+        """
+        try:
+            self.ser.write(data)
+            self.ser.flush()
+        except (OSError, IOError) as e:
+            log.warning(f"Status-Antwort fehlgeschlagen: {e}")
+            return
+        if self.raw_stream:
+            self.raw_stream.push(data, "tx", note=note)
 
     def _handle_status_queries(self, data: bytes) -> bytes:
         """Parse incoming bytes for Epson DLE EOT status queries and respond to them.
@@ -1604,55 +1736,36 @@ class SerialReceiptReader:
             if b == 0x10 and remaining >= 3 and data[i + 1] == 0x04:
                 n = data[i + 2]
                 if n in STATUS_OK:
-                    try:
-                        self.ser.write(bytes([STATUS_OK[n]]))
-                        self.ser.flush()
-                        log.info(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X} (Paper OK / online)")
-                    except (OSError, IOError) as e:
-                        log.warning(f"Status-Antwort fehlgeschlagen: {e}")
+                    reply = bytes([STATUS_OK[n]])
+                    self._reply(reply, note=f"DLE EOT {n} -> 0x{STATUS_OK[n]:02X}")
+                    log.info(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X} (Paper OK / online)")
                     i += 3
                     continue
             # DLE ENQ n (real-time status request, 0x10 0x05 n)
             if b == 0x10 and remaining >= 3 and data[i + 1] == 0x05:
-                try:
-                    self.ser.write(bytes([0x00]))
-                    self.ser.flush()
-                    log.debug(f"Realtime ENQ n={data[i+2]} -> 0x00 (ok)")
-                except (OSError, IOError):
-                    pass
+                self._reply(b"\x00", note=f"DLE ENQ {data[i+2]} -> 0x00")
+                log.debug(f"Realtime ENQ n={data[i+2]} -> 0x00 (ok)")
                 i += 3
                 continue
             # ESC v (0x1B 0x76) - legacy paper sensor status (TM-U295 spec)
             # Reply: bit0=0 paper present, bit2=0 paper not near-end -> 0x00
             if b == 0x1B and remaining >= 2 and data[i + 1] == 0x76:
-                try:
-                    self.ser.write(bytes([0x00]))
-                    self.ser.flush()
-                    log.info("Status-Query ESC v -> 0x00 (paper present, not near-end)")
-                except (OSError, IOError) as e:
-                    log.warning(f"ESC v Antwort fehlgeschlagen: {e}")
+                self._reply(b"\x00", note="ESC v -> 0x00 (paper present)")
+                log.info("Status-Query ESC v -> 0x00 (paper present, not near-end)")
                 i += 2
                 continue
             # ESC u (0x1B 0x75) - peripheral device status
             if b == 0x1B and remaining >= 2 and data[i + 1] == 0x75:
-                try:
-                    self.ser.write(bytes([0x00]))
-                    self.ser.flush()
-                    log.info("Status-Query ESC u -> 0x00 (peripheral ok)")
-                except (OSError, IOError):
-                    pass
+                self._reply(b"\x00", note="ESC u -> 0x00 (peripheral ok)")
+                log.info("Status-Query ESC u -> 0x00 (peripheral ok)")
                 i += 2
                 continue
             # GS r n (0x1D 0x72 n) - transmit status
             if b == 0x1D and remaining >= 3 and data[i + 1] == 0x72:
                 n = data[i + 2]
                 # n=1/49 paper roll, n=2/50 drawer -> always 0x00 = OK
-                try:
-                    self.ser.write(bytes([0x00]))
-                    self.ser.flush()
-                    log.info(f"Status-Query GS r {n} -> 0x00 (ok)")
-                except (OSError, IOError) as e:
-                    log.warning(f"GS r Antwort fehlgeschlagen: {e}")
+                self._reply(b"\x00", note=f"GS r {n} -> 0x00")
+                log.info(f"Status-Query GS r {n} -> 0x00 (ok)")
                 i += 3
                 continue
             # Sening MultiFlow proprietary poll:  ESC (0x1B) 0xB3 <n>
@@ -1662,12 +1775,9 @@ class SerialReceiptReader:
             # Configurable via /etc/tankbeleg_pi.conf key 'sening_reply_byte'.
             if b == 0x1B and remaining >= 3 and data[i + 1] == 0xB3:
                 zone = data[i + 2]
-                try:
-                    self.ser.write(bytes([self.sening_reply_byte]))
-                    self.ser.flush()
-                    log.info(f"Sening-Poll ESC B3 {zone:02X} -> 0x{self.sening_reply_byte:02X}")
-                except (OSError, IOError) as e:
-                    log.warning(f"Sening-Reply fehlgeschlagen: {e}")
+                reply = bytes([self.sening_reply_byte])
+                self._reply(reply, note=f"ESC B3 {zone:02X} -> 0x{self.sening_reply_byte:02X}")
+                log.info(f"Sening-Poll ESC B3 {zone:02X} -> 0x{self.sening_reply_byte:02X}")
                 i += 3
                 continue
             # Unbekannte ESC-Sequenzen: Loggen damit wir neue Polls erkennen
@@ -1716,6 +1826,17 @@ def main():
     except (ValueError, TypeError):
         reply_byte = 0x00
     log.info(f"  Sening-Reply: 0x{reply_byte:02X}")
+
+    # Live-Raw-Stream Pusher (best-effort, default off). Erlaubt Live-Debug
+    # via /api/system/tankwagen/raw-stream/tail im Portal.
+    try:
+        import socket
+        _hostname = socket.gethostname()
+    except Exception:
+        _hostname = ""
+    pi_id_for_stream = _get_or_create_pi_id(conf["db_path"])
+    raw_stream = RawStreamPusher(conf, pi_id_for_stream, _hostname)
+
     reader = SerialReceiptReader(
         port=conf["serial_port"],
         baud=conf["serial_baud"],
@@ -1724,6 +1845,7 @@ def main():
         stopbits=conf["serial_stopbits"],
         sening_reply_byte=reply_byte,
         ftdi_latency_ms=int(conf.get("ftdi_latency_ms", 1) or 1),
+        raw_stream=raw_stream,
     )
 
     try:

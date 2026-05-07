@@ -17,6 +17,13 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankwagen Live-Raw-Stream (v1.7.6)**: Live-Debug-Helper. Pi pusht alle empfangenen UND gesendeten Bytes (RX/TX) batched zum Backend, neue Frontend-Seite `/tankwagen/live-stream` (Admin-only) tail't mit 1s-Polling.
+  - **Backend**: Neuer Routes-Modul `routes/tankwagen_raw_stream.py` mit `POST /push` (anonym/pi_id-auth), `GET /tail` (since_ts long-poll-light), `DELETE` (clear). MongoDB-Collection mit TTL-Index 24h + max 5000 Eintraege/Pi. Lazy index-init (motor-async kompatibel).
+  - **Pi-Side**: Neue `RawStreamPusher`-Klasse (Daemon-Thread, batched flush). Hooks in `read_receipt()` (RX) und neuer `_reply()`-Helper in `_handle_status_queries` (TX). Konfig-Keys `raw_stream_enabled`, `raw_stream_flush_sek`, `raw_stream_max_batch`. Default OFF.
+  - **Frontend**: `TankwagenLiveStreamPage.js` mit Pi-Filter, Richtungs-Filter, Auto-Scroll, Live-Stats (RX/TX Counts + Bytes), Pause/Play, Export als .log, Clear-Button. Heuristische Annotation bekannter Sequenzen (Sening-Poll ESC B3, DLE EOT, ESC v, GS r, ESC u). Dark Terminal-Optik mit Hex+ASCII Spalten.
+  - **Switch-Skript** ergaenzt: setzt `raw_stream_enabled=true` automatisch beim Switch zur Test-Umgebung.
+  - 7 neue E2E-Tests (`test_tankwagen_raw_stream.py`) gegen die laufende Backend-Instanz, alle gruen. Gesamttests Tankbeleg: 26/26 gruen.
+
 - ✅ **Tankbeleg-Pi v1.7.5 für Test-Umgebung**: Sening Handshake & FIFO-Overrun fix.
   - **Flow-Control zurück**: `xonxoff=False, dsrdtr=True, rtscts=False`. Vorheriger v1.7.4-Versuch mit `xonxoff=True` hat den Sening eingefroren ("Drucker antwortet nicht" / "Papier einlegen") weil 0x11/0x13 als reguläre Datenbytes vom Sening kamen, von pyserial aber als XON/XOFF interpretiert wurden → Schreibblockade.
   - **FTDI Latency-Timer Fix**: Neuer Helper `_set_ftdi_latency_timer()` setzt `/sys/class/tty/ttyUSBx/device/latency_timer` auf 1ms (statt Kernel-Default 16ms). Löst den 16-Byte UART-FIFO-Overrun (Symptom "1316L → 13L") ohne Software-Flow-Control. Konfigurierbar via `ftdi_latency_ms` in `/etc/tankbeleg_pi.conf`.

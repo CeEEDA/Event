@@ -46,6 +46,7 @@ def _make_reader():
     reader.ser = FakeSerial()
     reader.sening_reply_byte = 0x00
     reader.pending_prefix = bytearray()
+    reader.raw_stream = None
     return reader
 
 
@@ -153,9 +154,9 @@ def test_partial_esc_v_buffered():
     assert bytes(reader.ser.written) == b"\x00"
 
 
-def test_script_version_is_175():
+def test_script_version_is_176():
     mod = _load_module()
-    assert mod.SCRIPT_VERSION == "1.7.5", f"SCRIPT_VERSION sollte 1.7.5 sein, ist {mod.SCRIPT_VERSION}"
+    assert mod.SCRIPT_VERSION == "1.7.6", f"SCRIPT_VERSION sollte 1.7.6 sein, ist {mod.SCRIPT_VERSION}"
 
 
 def test_default_ftdi_latency_ms_is_1():

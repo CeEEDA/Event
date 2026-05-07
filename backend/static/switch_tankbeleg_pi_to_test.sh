@@ -88,12 +88,17 @@ sec["api_url"] = url
 sec.setdefault("ftdi_latency_ms", "1")
 sec.setdefault("sening_reply_byte", "0x00")
 sec.setdefault("sync_interval", "30")  # in Test schneller pollen
+# Live-Raw-Stream einschalten - kann im Portal unter /tankwagen/live-stream
+# beobachtet werden. In Live AUS lassen (Datenschutz/Bandbreite).
+sec["raw_stream_enabled"] = "true"
+sec.setdefault("raw_stream_flush_sek", "1.5")
 with open(path, "w") as f:
     cp.write(f)
-print(f"      api_url        = {sec['api_url']}")
-print(f"      ftdi_latency_ms= {sec['ftdi_latency_ms']}")
-print(f"      sening_reply   = {sec['sening_reply_byte']}")
-print(f"      sync_interval  = {sec['sync_interval']} s")
+print(f"      api_url           = {sec['api_url']}")
+print(f"      ftdi_latency_ms   = {sec['ftdi_latency_ms']}")
+print(f"      sening_reply      = {sec['sening_reply_byte']}")
+print(f"      sync_interval     = {sec['sync_interval']} s")
+print(f"      raw_stream_enabled= {sec['raw_stream_enabled']}  (Live-Stream im Portal aktiv)")
 PYEOF
 
 # --- 3. udev-Regel fuer FTDI-Latency ---
@@ -142,10 +147,14 @@ systemctl is-active --quiet tankbeleg_pi && echo "      tankbeleg_pi: aktiv" || 
 # --- 6. Live-Logs ---
 echo ""
 echo "=============================================="
-echo "  Erwartete Log-Zeilen (v1.7.5):"
+echo "  Erwartete Log-Zeilen (v1.7.6):"
 echo "    FTDI-Latency-Timer: ... = 1 ms"
 echo "    FLOW-CONTROL: xonxoff=False rtscts=False dsrdtr=True"
+echo "    RawStream aktiv -> .../system/tankwagen/raw-stream/push"
 echo "    Status-Query DLE EOT 4 -> 0x12  (oder)  Sening-Poll ESC B3 FF -> 0x00"
+echo ""
+echo "  Live-Stream im Portal:"
+echo "    -> https://<test-portal>/tankwagen/live-stream"
 echo "=============================================="
 echo "  Live-Logs (Strg+C zum Beenden):"
 echo ""

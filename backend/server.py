@@ -1960,6 +1960,10 @@ from routes.fuel_receipts import router as fuel_receipts_router, init_fuel_recei
 init_fuel_receipt_routes(db, decode_jwt_token)
 app.include_router(fuel_receipts_router)
 
+from routes.tankwagen_raw_stream import router as tankwagen_raw_stream_router, init_tankwagen_raw_stream_routes
+init_tankwagen_raw_stream_routes(db, decode_jwt_token)
+app.include_router(tankwagen_raw_stream_router)
+
 from routes.verbandsbuch import router as verbandsbuch_router, init_verbandsbuch_routes
 init_verbandsbuch_routes(db, decode_jwt_token)
 app.include_router(verbandsbuch_router)

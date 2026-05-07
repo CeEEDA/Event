@@ -15,6 +15,7 @@ import SharedFilePage from "./pages/SharedFilePage";
 import GeneratorDashboardPage from "./pages/GeneratorDashboardPage";
 import GeneratorDetailPage from "./pages/GeneratorDetailPage";
 import DeviceManagementPage from "./pages/DeviceManagementPage";
+import TankwagenLiveStreamPage from "./pages/TankwagenLiveStreamPage";
 import ServiceplanPage from "./pages/ServiceplanPage";
 import MqttConfigPage from "./pages/MqttConfigPage";
 import EnergyMonitoringPage from "./pages/EnergyMonitoringPage";
@@ -375,6 +376,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MeterDiagnosticsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/tankwagen/live-stream"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <TankwagenLiveStreamPage />
           </ProtectedRoute>
         }
       />
