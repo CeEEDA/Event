@@ -21,7 +21,21 @@ import os
 import argparse
 from datetime import datetime
 
-DB_PATH_DEFAULT = "/var/lib/tankbeleg_pi/receipts.sqlite"
+DB_PATH_DEFAULT = "/var/lib/tankbeleg/tankbeleg.sqlite"
+# Fallback-Pfade, falls der Default nicht existiert (alte Installationen):
+DB_PATH_FALLBACKS = [
+    "/var/lib/tankbeleg/tankbeleg.sqlite",
+    "/var/lib/tankbeleg_pi/receipts.sqlite",
+    "/var/lib/tankbeleg/receipts.sqlite",
+    "/opt/tankbeleg/tankbeleg.sqlite",
+]
+
+
+def autodetect_db():
+    for p in DB_PATH_FALLBACKS:
+        if os.path.exists(p):
+            return p
+    return DB_PATH_FALLBACKS[0]
 
 
 def hex_dump(raw_bytes, width=16):
@@ -78,17 +92,20 @@ def find_fuel_markers(raw_bytes):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", default=DB_PATH_DEFAULT, help="Pfad zur SQLite-DB")
+    parser.add_argument("--db", default=None, help="Pfad zur SQLite-DB (Auto-Detect wenn weggelassen)")
     parser.add_argument("--limit", type=int, default=1, help="Anzahl Belege rueckwaerts (Default: 1)")
     parser.add_argument("--output", default="/tmp/tankbeleg_dump.txt", help="Datei in die der Dump geschrieben wird")
     args = parser.parse_args()
 
-    if not os.path.exists(args.db):
-        print(f"ERROR: SQLite-DB nicht gefunden: {args.db}")
-        print("Pfad pruefen mit: ls -la /var/lib/tankbeleg_pi/")
+    db_path = args.db or autodetect_db()
+
+    if not os.path.exists(db_path):
+        print(f"ERROR: SQLite-DB nicht gefunden: {db_path}")
+        print(f"Auto-Detect Versuche: {DB_PATH_FALLBACKS}")
+        print("Pfad pruefen mit: sudo find /var/lib /opt -name '*.sqlite' 2>/dev/null")
         sys.exit(1)
 
-    conn = sqlite3.connect(args.db)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM receipts ORDER BY id DESC LIMIT ?", (args.limit,)
@@ -102,7 +119,7 @@ def main():
     output_lines = []
     output_lines.append("=" * 78)
     output_lines.append(f"Tankbeleg-Diagnostik · {datetime.now().isoformat()}")
-    output_lines.append(f"DB: {args.db} · {len(rows)} Beleg(e)")
+    output_lines.append(f"DB: {db_path} · {len(rows)} Beleg(e)")
     output_lines.append("=" * 78)
 
     for i, r in enumerate(rows, 1):
