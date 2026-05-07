@@ -1684,6 +1684,21 @@ async def download_tankbeleg_pi_setup():
         headers={"Content-Disposition": 'attachment; filename="setup_tankbeleg_pi.sh"'}
     )
 
+@api_router.get("/download/tankbeleg-pi-switch-test")
+async def download_tankbeleg_pi_switch_test():
+    """Schaltet einen bereits installierten Tankbeleg-Pi auf die Test-Umgebung um.
+
+    Voraussetzung: Pi wurde bereits via setup_tankbeleg_pi.sh installiert.
+    Setzt api_url, installiert FTDI-udev-Regel, rotiert pi_id, restartet Service.
+    """
+    path = os.path.join(STATIC_DIR, "switch_tankbeleg_pi_to_test.sh")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="application/x-sh",
+        headers={"Content-Disposition": 'attachment; filename="switch_tankbeleg_pi_to_test.sh"'}
+    )
+
 # ============== Mosquitto MQTT Broker Downloads ==============
 
 @api_router.get("/download/mosquitto-config")
