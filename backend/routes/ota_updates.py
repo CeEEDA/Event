@@ -37,7 +37,7 @@ DEVICE_SCRIPTS = {
     "tankwagen": "tankbeleg_pi.py",            # OTA-faehig ueber anonymen Endpoint
 }
 
-STATIC_DIR = Path("/app/backend/static")
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def _get_db():
