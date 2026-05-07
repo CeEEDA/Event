@@ -89,7 +89,7 @@ sec["api_url"] = url
 # Wert 0x12 (Bit1+4 fixed ON laut Spec). Vorher war hier 0x00, was die
 # Spec-Invariante verletzt - bei Update auf v1.7.8 muessen Bestands-Pis
 # auf 0x12 gehoben werden.
-sec["sening_reply_byte"] = "0x12"
+sec["sening_reply_byte"] = "0x00"
 sec.setdefault("ftdi_latency_ms", "1")
 sec.setdefault("sync_interval", "30")  # in Test schneller pollen
 # Live-Raw-Stream einschalten - kann im Portal unter /tankwagen/live-stream

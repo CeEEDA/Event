@@ -196,10 +196,12 @@ def test_script_version_is_178():
     assert mod.SCRIPT_VERSION == "1.7.8", f"SCRIPT_VERSION sollte 1.7.8 sein, ist {mod.SCRIPT_VERSION}"
 
 
-def test_default_sening_reply_byte_is_0x12():
-    """Spec-konformer Default 0x12 (Bit1+4 fixed ON laut TM-U295)."""
+def test_default_sening_reply_byte_is_0x00():
+    """Empirisch validierter Default 0x00 fuer Sening 3.56[3.57]DE.
+    0x12 wuerde TM-U295-Spec entsprechen, funktioniert hier aber NICHT
+    weil ESC B3 nicht in der Spec ist (Sening-proprietaer)."""
     mod = _load_module()
-    assert mod.DEFAULT_CONF["sening_reply_byte"] == "0x12"
+    assert mod.DEFAULT_CONF["sening_reply_byte"] == "0x00"
 
 
 def test_default_ftdi_latency_ms_is_1():

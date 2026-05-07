@@ -78,13 +78,13 @@ DEFAULT_CONF = {
     "gps_port": 2947,
     "fahrer_name": "",
     # Sening MultiFlow proprietary poll response.
-    # Default 0x12 = TM-U295-konformer "Online + Paper OK" Status-Byte
-    # (Bit 1 = fixed ON laut Spec, Bit 4 = fixed ON, Rest 0 = online,
-    # kein Fehler, drawer LOW). Vorher war 0x00 - das verletzt aber die
-    # in der TM-U295-Spec festgelegten "fixed ON"-Bits 1 und 4 und kann
-    # vom Sening als "ungueltige Antwort / Drucker offline" gewertet werden.
+    # Default 0x00 (empirisch validiert mit Sening Firmware 3.56[3.57]DE).
+    # 0x00 ist KORREKT obwohl die TM-U295-Spec fuer DLE EOT 0x12 verlangt -
+    # ESC B3 ist nicht in der TM-U295-Spec, sondern proprietaer Sening.
+    # Test 12:45:31 mit 0x00 -> 237-Byte-Druckjob kam durch.
+    # Test mit 0x12         -> "Drucker antwortet nicht".
     # Override via /etc/tankbeleg_pi.conf key 'sening_reply_byte' (hex).
-    "sening_reply_byte": "0x12",
+    "sening_reply_byte": "0x00",
     # FTDI Latency-Timer in Millisekunden. Standard im Linux-Kernel ist 16 ms,
     # was zusammen mit dem 16-Byte UART-FIFO bei langen Sening-Belegen zum
     # Verlust der letzten Ziffer fuehrt (z.B. 1316 L -> 13 L). Wert 1 ms
