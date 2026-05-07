@@ -55,11 +55,15 @@ def list_recent_receipts(db_path, limit=8):
     if not os.path.exists(db_path):
         return []
     conn = sqlite3.connect(db_path); conn.row_factory = sqlite3.Row
+    # local_id ist eine UUID -> nicht zeitlich sortierbar.
+    # 'id' ist das AUTOINCREMENT Integer, also der einzige verlaessliche
+    # Indikator fuer die juengsten Belege.
     rows = conn.execute(
-        "SELECT local_id, beleg_nr, menge_liter, fuel_type, datum, zeit, "
-        "       LENGTH(raw_receipt_hex) AS hex_len "
-        "FROM receipts WHERE beleg_nr IS NOT NULL AND beleg_nr <> '' "
-        "ORDER BY local_id DESC LIMIT ?",
+        "SELECT id, local_id, beleg_nr, menge_liter, fuel_type, datum, zeit, "
+        "       LENGTH(raw_receipt_hex) AS hex_len, "
+        "       COALESCE(synced, 0) AS synced, "
+        "       COALESCE(assigned, 0) AS assigned "
+        "FROM receipts ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
     conn.close()
@@ -122,10 +126,11 @@ def main():
         receipts = list_recent_receipts(conf["db_path"])
         if not receipts:
             sys.exit("Keine Belege in der lokalen DB - erst tanken!")
-        print("Letzte Belege:")
-        print(f"  {'#':<3} {'BELEG_NR':<10} {'LITER':<8} {'KRAFTSTOFF':<10} {'DATUM':<12} {'ZEIT':<10} {'HEX':<7}")
+        print("Letzte Belege (ID DESC = juengste oben):")
+        print(f"  {'#':<3} {'ID':<5} {'BELEG_NR':<10} {'LITER':<8} {'KRAFTSTOFF':<14} {'DATUM':<12} {'ZEIT':<10} {'HEX':<6} {'A/S':<5}")
         for i, r in enumerate(receipts, 1):
-            print(f"  {i:<3} {str(r['beleg_nr']):<10} {str(r.get('menge_liter') or 0):<8} {str(r.get('fuel_type') or '-'):<10} {str(r.get('datum') or '-'):<12} {str(r.get('zeit') or '-'):<10} {(r['hex_len'] or 0)//2}B")
+            asg = ('A' if r.get('assigned') else '-') + ('S' if r.get('synced') else '-')
+            print(f"  {i:<3} {str(r.get('id') or '?'):<5} {str(r.get('beleg_nr') or '?'):<10} {str(r.get('menge_liter') or 0):<8} {str(r.get('fuel_type') or '-'):<14} {str(r.get('datum') or '-'):<12} {str(r.get('zeit') or '-'):<10} {(r['hex_len'] or 0)//2}B {asg:<5}")
         sel = input("\nWelche Nummer (1-N) oder direkt Beleg-Nr [Enter=1]: ").strip() or "1"
         if sel.isdigit() and 1 <= int(sel) <= len(receipts):
             beleg = str(receipts[int(sel)-1]["beleg_nr"])
