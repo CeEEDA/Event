@@ -700,6 +700,96 @@ def _apply_break_deduction(raw_minutes: float, break_min: int) -> float:
     return raw_minutes
 
 
+async def _soll_minutes_for_weekday(user_id: str, weekday: int) -> int:
+    """Berechne die Sollarbeitszeit (Minuten) eines Wochentags aus dem Wochenplan.
+    Bevorzugt 'soll_hours', faellt zurueck auf start/end-Spanne minus break."""
+    day_name = _WEEKDAY_MAP.get(weekday)
+    if not day_name:
+        return 0
+    schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+    day_sched = (schedule or {}).get("days", {}).get(day_name, {}) or {}
+    if not day_sched:
+        return 0
+    try:
+        sh_field = day_sched.get("soll_hours")
+        if sh_field not in (None, ""):
+            return int(round(float(sh_field) * 60))
+        if day_sched.get("start") and day_sched.get("end"):
+            sh, sm = map(int, day_sched["start"].split(":"))
+            eh, em = map(int, day_sched["end"].split(":"))
+            sched_break = int(day_sched.get("break_min") or 0)
+            return max(0, (eh * 60 + em) - (sh * 60 + sm) - sched_break)
+    except (ValueError, TypeError):
+        return 0
+    return 0
+
+
+async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
+    """Berechne Ueberstunden eines Jahres komplett neu aus allen time_entries
+    + work_schedule. Schreibt das Ergebnis in hr_data.overtime_hours.
+    Wird nach JEDEM Schreib-Vorgang an time_entries gerufen (clock_out,
+    manuelle Erfassung, Edit, Delete), damit Stand immer konsistent ist
+    auch wenn Eintraege rueckwirkend geaendert werden.
+    """
+    from datetime import date as _date
+    # Vorhandenen hr_data-Eintrag holen (oder anlegen)
+    hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0})
+    # Sammle alle time_entries des Jahres mit Datum
+    cursor = db.time_entries.find(
+        {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
+        {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
+    )
+    total_diff_minutes = 0
+    async for e in cursor:
+        # Manuelle Sondereintraege wie 'urlaub'/'krank'/'ueberstundenabbau'
+        # zaehlen NICHT als Ist-Stunden (werden separat im hr_data verbucht).
+        if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
+            continue
+        try:
+            wd = _date.fromisoformat(e["date"]).weekday()
+        except Exception:
+            continue
+        soll = await _soll_minutes_for_weekday(user_id, wd)
+        if soll <= 0:
+            # Kein Soll fuer diesen Wochentag (z.B. Sonntag) -> alle Ist-Minuten
+            # zaehlen voll als Ueberstunden.
+            soll = 0
+        ist = float(e.get("duration_minutes") or 0)
+        total_diff_minutes += (ist - soll)
+    new_overtime = round(total_diff_minutes / 60.0, 2)
+    # Kompensation aus 'ueberstundenabbau'-Antraegen behalten: wir verrechnen
+    # diese in einem zweiten Durchlauf (Antraege liegen in 'absences').
+    abs_cursor = db.absences.find(
+        {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
+         "date": {"$regex": f"^{year}-"}},
+        {"_id": 0, "hours_deducted": 1}
+    )
+    deduction = 0.0
+    async for a in abs_cursor:
+        try:
+            deduction += float(a.get("hours_deducted") or 0)
+        except (TypeError, ValueError):
+            continue
+    new_overtime = round(new_overtime - deduction, 2)
+
+    update = {"overtime_hours": new_overtime, "updated_at": datetime.now(timezone.utc).isoformat()}
+    if not hr:
+        await db.hr_data.insert_one({
+            "user_id": user_id, "year": year,
+            "overtime_hours": new_overtime,
+            "vacation_days_total": 0, "vacation_days_used": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **update,
+        })
+    else:
+        await db.hr_data.update_one(
+            {"user_id": user_id, "year": year},
+            {"$set": update},
+        )
+    logger.info(f"Overtime recompute: user={user_id} year={year} → {new_overtime}h (deduction={deduction}h)")
+    return new_overtime
+
+
 @router.post("/time/clock-out")
 async def clock_out(token: str = Query(...), body: dict = {}):
     """Clock out with GPS coordinates. Auto-calculates overtime vs. schedule."""
@@ -730,52 +820,15 @@ async def clock_out(token: str = Query(...), body: dict = {}):
         }}
     )
 
-    # ── Overtime calculation based on work schedule ──
+    # ── Overtime calculation: REKONSTRUIERE den Jahresstand komplett neu
+    # damit auch manuelle Edits/Deletes konsistent sind.
     try:
-        weekday_map = {0: "montag", 1: "dienstag", 2: "mittwoch", 3: "donnerstag", 4: "freitag", 5: "samstag", 6: "sonntag"}
-        # Use local Berlin time for weekday determination
         import zoneinfo
         berlin = zoneinfo.ZoneInfo("Europe/Berlin")
         local_now = now.astimezone(berlin)
-        day_name = weekday_map.get(local_now.weekday())
-
-        schedule = await db.work_schedules.find_one({"user_id": user["id"]}, {"_id": 0})
-        day_schedule = (schedule or {}).get("days", {}).get(day_name, {})
-
-        # SOLL: bevorzugt aus 'soll_hours' (neue Sollstunden-Logik), Fallback auf
-        # alte 'start'/'end'-Spanne (rueckwaertskompatibel fuer existierende Plaene).
-        soll_minutes = 0
-        if day_schedule:
-            try:
-                sh_field = day_schedule.get("soll_hours")
-                if sh_field not in (None, ""):
-                    soll_minutes = int(round(float(sh_field) * 60))
-                elif day_schedule.get("start") and day_schedule.get("end"):
-                    sh, sm = map(int, day_schedule["start"].split(":"))
-                    eh, em = map(int, day_schedule["end"].split(":"))
-                    sched_break = int(day_schedule.get("break_min") or 0)
-                    soll_minutes = (eh * 60 + em) - (sh * 60 + sm) - sched_break
-            except (ValueError, TypeError):
-                soll_minutes = 0
-
-        # IST wurde bereits in duration_minutes um die Pause reduziert (s.o.) → kein erneuter Abzug
-        ist_minutes = round(duration)
-        diff_minutes = ist_minutes - soll_minutes  # positive = overtime, negative = undertime
-        diff_hours = round(diff_minutes / 60, 2)
-
-        if diff_minutes != 0:
-            year = local_now.year
-            hr = await db.hr_data.find_one({"user_id": user["id"], "year": year})
-            current_overtime = hr.get("overtime_hours", 0) if hr else 0
-            new_overtime = round(current_overtime + diff_hours, 2)
-            await db.hr_data.update_one(
-                {"user_id": user["id"], "year": year},
-                {"$set": {"overtime_hours": new_overtime}},
-                upsert=True,
-            )
-            logger.info(f"Overtime update: {user.get('name','')} IST={ist_minutes}m SOLL={soll_minutes}m diff={diff_hours}h → new total={new_overtime}h")
+        await _recompute_overtime_for_year(user["id"], local_now.year)
     except Exception as e:
-        logger.error(f"Overtime calc error: {e}")
+        logger.error(f"Overtime recompute error: {e}")
 
     updated = await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
     return updated
@@ -867,6 +920,14 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.time_entries.insert_one(entry)
+    # Ueberstunden neu berechnen damit der manuell erfasste Eintrag sofort
+    # im hr_data.overtime_hours-Konto sichtbar wird.
+    try:
+        from datetime import date as _date
+        year = _date.fromisoformat(date_str).year
+        await _recompute_overtime_for_year(target_user_id, year)
+    except Exception as e:
+        logger.error(f"Overtime recompute (manual create) error: {e}")
     return await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
 
 
@@ -912,6 +973,15 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
     if "note" in body:
         update["manual_note"] = body.get("note") or ""
     await db.time_entries.update_one({"id": entry_id}, {"$set": update})
+    # Ueberstunden neu berechnen - falls Datum geaendert wurde auch fuer das alte Jahr.
+    try:
+        from datetime import date as _date
+        new_year = _date.fromisoformat(date_str).year
+        old_year = _date.fromisoformat(entry.get("date") or date_str).year if entry.get("date") else new_year
+        for y in {new_year, old_year}:
+            await _recompute_overtime_for_year(entry.get("user_id"), y)
+    except Exception as e:
+        logger.error(f"Overtime recompute (edit) error: {e}")
     return await db.time_entries.find_one({"id": entry_id}, {"_id": 0})
 
 
@@ -921,9 +991,19 @@ async def delete_time_entry(entry_id: str, token: str = Query(...)):
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
+    # Vor Loeschen Datum + user_id merken, damit wir die Ueberstunden danach
+    # neu rechnen koennen (sonst bleibt der Diff im hr_data-Konto stehen).
+    entry = await db.time_entries.find_one({"id": entry_id}, {"_id": 0, "date": 1, "user_id": 1})
     res = await db.time_entries.delete_one({"id": entry_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    if entry:
+        try:
+            from datetime import date as _date
+            year = _date.fromisoformat(entry.get("date") or "").year
+            await _recompute_overtime_for_year(entry.get("user_id"), year)
+        except Exception as e:
+            logger.error(f"Overtime recompute (delete) error: {e}")
     return {"ok": True}
 
 
