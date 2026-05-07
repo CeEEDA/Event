@@ -149,8 +149,8 @@ sec["api_url"] = url
 # 2) Pumpen-Schluessel (v1.7.16 - empirisch gemessen 07.05.2026)
 #    Diese Werte werden EXPLIZIT gesetzt, damit auch nach OTA-Pull eines
 #    aelteren Skripts oder bei Konfig-Reset die korrekten Defaults bleiben.
-sec["abgabe_zeit_pro_liter_sek"]  = "4"
-sec["abgabe_zeit_einrichtung_sek"] = "60"
+sec["abgabe_zeit_pro_liter_sek"]  = "0.5"
+sec["abgabe_zeit_einrichtung_sek"] = "420"
 
 # 3) Default-Kraftstoff (Tankwagen liefert aktuell HEL)
 sec["default_fuel_type"] = "heizoel_leicht"
