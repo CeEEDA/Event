@@ -1699,6 +1699,34 @@ async def download_tankbeleg_pi_switch_test():
         headers={"Content-Disposition": 'attachment; filename="switch_tankbeleg_pi_to_test.sh"'}
     )
 
+@api_router.get("/download/tankbeleg-minimal")
+async def download_tankbeleg_minimal():
+    """Minimal-Diagnose-Skript: liest /dev/ttyUSB0, antwortet jedem
+    Sening-Poll mit 0x00 und speichert kompletten Druckstrom als
+    raw_*.bin nach /var/lib/tankbeleg/. Wird von clean_install
+    automatisch nach /opt/ kopiert."""
+    path = os.path.join(STATIC_DIR, "tankbeleg_minimal.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/x-python",
+        headers={"Content-Disposition": 'attachment; filename="tankbeleg_minimal.py"'}
+    )
+
+@api_router.get("/download/tankbeleg-clean-install")
+async def download_tankbeleg_clean_install():
+    """CLEAN-INSTALL Skript: stoppt alle alten Services, raeumt
+    /dev/ttyUSB0-Konflikte ab, zieht frische Skripte aus dem
+    Test-Backend, installiert FTDI-udev-Regel und beweist mit
+    einem TX-Selbsttest dass der Pi tatsaechlich Bytes sendet."""
+    path = os.path.join(STATIC_DIR, "clean_install_tankbeleg_pi.sh")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="application/x-sh",
+        headers={"Content-Disposition": 'attachment; filename="clean_install_tankbeleg_pi.sh"'}
+    )
+
 @api_router.get("/download/sening-reply-cycler")
 async def download_sening_reply_cycler():
     """Diagnose-Tool: probiert systematisch verschiedene Reply-Bytes auf
