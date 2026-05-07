@@ -56,13 +56,31 @@ import uuid
 import configparser
 from pathlib import Path
 from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:  # pragma: no cover - Pi laeuft mind. Py3.9
+    ZoneInfo = None  # type: ignore
 
 import requests
 
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.12"
+SCRIPT_VERSION = "1.7.13"
+
+# Zeitzone fuer Belegzeitstempel. Der Pi laeuft systemd-seitig oft auf UTC, der
+# Sening-Tankwagen und der Disponent denken aber in lokaler Zeit. Wir erzwingen
+# darum 'Europe/Berlin' fuer alle datum/abgabe_*-Felder, damit weder Winter-
+# noch Sommerzeit-Sprung zu -1h-/-2h-Verschiebungen auf dem Beleg fuehrt.
+BERLIN_TZ = ZoneInfo("Europe/Berlin") if ZoneInfo else None
+
+
+def now_berlin() -> datetime:
+    """Aktuelle Zeit in Europe/Berlin (CET/CEST)."""
+    if BERLIN_TZ is not None:
+        return datetime.now(BERLIN_TZ)
+    # Fallback ohne zoneinfo: nehme Lokalzeit des Pi
+    return datetime.now()
 
 # Cloudflare blockt User-Agent "Python-urllib/X.Y" hart (Error 1010). Wir setzen
 # einen sprechenden UA, der eindeutig als Pi erkennbar ist und gleichzeitig nicht
@@ -117,8 +135,10 @@ DEFAULT_CONF = {
     # der Regel monatelang nur ein Produkt, daher ist ein Deployment-Default
     # deutlich zuverlaessiger als Rueckfall auf "diesel" - der Wert landet sonst
     # silent falsch im Portal. Erlaubte Werte: "", "heizoel_leicht", "diesel", "hvo".
-    # Leer = kein Default -> Beleg wird als needs_review markiert.
-    "default_fuel_type": "",
+    # Default = "heizoel_leicht" weil der Tankwagen aktuell ausschliesslich HEL
+    # schwefelarm ausliefert. Bei Produktwechsel ueber /etc/tankbeleg_pi.conf
+    # umstellen ODER per Pi-Kiosk-UI fuer die Schicht ueberschreiben.
+    "default_fuel_type": "heizoel_leicht",
     # Live Raw-Stream zum Backend. Wenn 'true', pusht der Pi alle empfangenen
     # UND gesendeten Bytes (RX/TX) batched in den Tankwagen-Raw-Stream-Endpoint
     # damit man im Portal live mitlesen kann was der Sening sendet und was der
@@ -666,6 +686,11 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
     # waehrend andere konfigurierte Fuels meist NICHT mit * markiert sind. Wir suchen
     # darum zuerst die "*Marker"-Zeile (wenn der Bitmap-Decoder sie erhalten hat),
     # erst danach einen reinen Substring-Fallback.
+    # WICHTIG: NIEMALS blind auf "Diesel" fallen wenn der *-Marker fehlt - der
+    # Sening-Header kann das Wort "Diesel" als Geraete-Bezeichnung enthalten
+    # auch wenn aktuell HEL ausgeliefert wird. Bei Mehrdeutigkeit lassen wir
+    # fuel_type = None und vertrauen dem Config-Default (default_fuel_type),
+    # der pro Tankwagen-Deployment auf das tatsaechliche Produkt gesetzt ist.
     fuel_marker = re.search(r"\*\s*(HEL[\s\w]*schwefelarm|Diesel|HVO)\b", text, re.IGNORECASE)
     if fuel_marker:
         raw = fuel_marker.group(1).lower()
@@ -676,24 +701,15 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
         elif "hvo" in raw:
             result["fuel_type"] = "hvo"
     else:
-        # Kein eindeutiger Marker -> manuell pruefen statt blind "HEL" zu matchen
-        # (vorher fuehrte der Header-Eintrag "HEL schwefelarm" auch auf Diesel-Belegen
-        # zu Fehlklassifikation, weil "hel" als Substring vorkam)
-        diesel_only = re.search(r"\bDiesel\b", text, re.IGNORECASE) and not re.search(r"\bHEL\b", text, re.IGNORECASE)
-        hvo_only = re.search(r"\bHVO\b", text) and not re.search(r"\bDiesel\b", text, re.IGNORECASE)
-        if diesel_only:
-            result["fuel_type"] = "diesel"
-        elif hvo_only:
-            result["fuel_type"] = "hvo"
-        else:
-            # Mehrdeutig -> NICHT raten, sondern manuelle Pruefung erzwingen
-            result["fuel_type"] = None
-            reason = "Kraftstoff konnte aus dem Bitmap nicht eindeutig erkannt werden - bitte manuell pruefen."
-            log.warning(f"  [REVIEW] {reason}")
-            if isinstance(result.get("review_reason"), list):
-                result["review_reason"].append(reason)
-            else:
-                result["review_reason"] = [reason]
+        # Kein eindeutiger *-Marker erkannt -> NICHT raten. Lass den Config-
+        # Default in enrich_receipt_with_heuristics greifen. Frueher hat hier
+        # ein blinder "Diesel"-Match alle Heizoel-Belege als Diesel markiert
+        # (Header-Zeile "Diesel" als Geraete-Typ), das ist jetzt entfernt.
+        result["fuel_type"] = None
+        log.info(
+            "  Kein '*HEL/Diesel/HVO'-Marker im Klartext - fuel_type bleibt offen, "
+            "Config-Default wird angewendet."
+        )
 
     # Feste Zaehler-Nr aus Config anwenden (falls Parser nur Praefix hatte)
     if fixed_zaehler_nr:
@@ -715,8 +731,8 @@ def enrich_receipt_with_heuristics(receipt: dict, conf: dict) -> dict:
     - abgabe_start = Ende minus (Liter*Sek/L + Einrichtung)
     - beleg_nr = Auto-Counter ab Startwert
     """
-    now = datetime.now()
-    # 1) Datum immer = heute (Pi-NTP)
+    now = now_berlin()
+    # 1) Datum immer = heute (Pi-NTP, Europe/Berlin)
     receipt["datum"] = now.strftime("%d.%m.%Y")
 
     # 2) Abgabe-Ende = jetzt (falls nicht oder nur partial aus Bitmap)
@@ -735,9 +751,9 @@ def enrich_receipt_with_heuristics(receipt: dict, conf: dict) -> dict:
     except (TypeError, ValueError):
         menge_f = 0
     duration_sek = int(menge_f * sek_pro_l + einrichtung)
-    start_dt = now.timestamp() - duration_sek
-    from datetime import datetime as _dt
-    receipt["abgabe_start"] = _dt.fromtimestamp(start_dt).strftime("%H:%M:%S")
+    from datetime import timedelta as _td
+    start_dt = now - _td(seconds=duration_sek)
+    receipt["abgabe_start"] = start_dt.strftime("%H:%M:%S")
 
     # 4) Beleg-Nr als Counter (aus DB ableiten)
     try:
@@ -1025,7 +1041,7 @@ def store_receipt(db_path, receipt, gps_lat, gps_lon, fahrer, raw_bytes=None, bi
     import base64 as _b64
     local_id = str(uuid.uuid4())
     # Zeit aus abgabe_start oder aktueller Zeit
-    zeit = receipt.get("abgabe_start", datetime.now().strftime("%H:%M:%S"))
+    zeit = receipt.get("abgabe_start", now_berlin().strftime("%H:%M:%S"))
     raw_hex = raw_bytes.hex() if raw_bytes else None
     png_b64 = _b64.b64encode(bitmap_png).decode("ascii") if bitmap_png else None
 
@@ -2059,7 +2075,11 @@ def main():
                         # Test-/Selbsttestdruck enthaelt zwar Sening-Header, aber
                         # keine Mengenangabe - der wuerde sonst als "0L-Geist"
                         # mit neuer Counter-Beleg-Nr im UI auftauchen.
-                        has_menge_digits = False
+                        # v1.7.13: Strikter - die ASCII-Ziffernfolge nach M+
+                        # muss eine Zahl > 0 ergeben. Ein '0' oder ' 00.0 ' ist
+                        # ein Probedruck, kein echter Beleg.
+                        has_real_menge = False
+                        m_plus_value = 0.0
                         if is_plausible_print:
                             mp = raw.find(b"M+")
                             if mp >= 0:
@@ -2067,13 +2087,26 @@ def main():
                                 if end < 0:
                                     end = mp + 80
                                 seg = raw[mp:end]
-                                # Zaehle ASCII-Ziffernlaeufe >= 1 Stelle in dieser Region
                                 import re as _re
-                                digits = _re.findall(rb"\d+", seg)
-                                # >= 1 Ziffer (auch "0") OK, aber NICHT komplett ohne Ziffern
-                                # Echte 0-Liter-Drucke ("Probedruck") haben keinerlei Ziffer
-                                # nach "M+", weil Sening dort nur den Trenner setzt.
-                                has_menge_digits = len(digits) > 0
+                                # Suche nach allen Zahlen (auch Dezimal) und nimm
+                                # die groesste - das ist die echte Menge.
+                                nums = _re.findall(rb"\d+(?:[.,]\d+)?", seg)
+                                for n in nums:
+                                    try:
+                                        v = float(n.replace(b",", b"."))
+                                        if v > m_plus_value:
+                                            m_plus_value = v
+                                    except (ValueError, TypeError):
+                                        continue
+                                has_real_menge = m_plus_value > 0.0
+
+                        # v1.7.13: zusaetzliche letzte Pruefung - menge_liter aus
+                        # parse_receipt_sening MUSS > 0 sein. Sonst kein Stub.
+                        parsed_menge = receipt.get("menge_liter")
+                        try:
+                            parsed_menge_f = float(parsed_menge) if parsed_menge is not None else 0.0
+                        except (TypeError, ValueError):
+                            parsed_menge_f = 0.0
 
                         if not is_plausible_print:
                             log.info(
@@ -2081,11 +2114,18 @@ def main():
                                 f"({len(raw)} Bytes, kein Sening-Header) - kein Stub angelegt."
                             )
                             consecutive_errors = 0
-                        elif not has_menge_digits:
+                        elif not has_real_menge:
                             log.info(
                                 f"PHANTOM-FILTER: Sening-Header vorhanden ({len(raw)} B), "
-                                f"aber keine Mengen-Ziffern im *M+-Bereich gefunden -> "
-                                f"Test-/Probedruck, kein Stub angelegt."
+                                f"aber Mengen-Wert im *M+-Bereich = {m_plus_value} L "
+                                f"(<=0) -> Test-/Probedruck, kein Stub angelegt."
+                            )
+                            consecutive_errors = 0
+                        elif parsed_menge_f <= 0.0:
+                            log.info(
+                                f"PHANTOM-FILTER: M+-Region hat Menge {m_plus_value} L, "
+                                f"aber parse_receipt_sening lieferte menge_liter={parsed_menge} "
+                                f"-> kein Stub, sonst landet 0L-Geist im UI."
                             )
                             consecutive_errors = 0
                         else:
@@ -2093,14 +2133,15 @@ def main():
                             # Druckstrom nicht verlieren - sonst kann man den Parser
                             # nicht nachtraeglich fixen. Markiere als needs_review.
                             try:
+                                _now_b = now_berlin()
                                 stub = {
                                     "beleg_nr": receipt.get("beleg_nr") or f"INCOMPLETE_{int(time.time())}",
-                                    "datum": receipt.get("datum") or time.strftime("%d.%m.%Y"),
+                                    "datum": receipt.get("datum") or _now_b.strftime("%d.%m.%Y"),
                                     "abgabe_start": receipt.get("abgabe_start") or "",
-                                    "abgabe_ende": receipt.get("abgabe_ende") or time.strftime("%H:%M:%S"),
+                                    "abgabe_ende": receipt.get("abgabe_ende") or _now_b.strftime("%H:%M:%S"),
                                     "zaehler_nr": receipt.get("zaehler_nr") or "",
                                     "zaehler_vor_start": receipt.get("zaehler_vor_start"),
-                                    "menge_liter": receipt.get("menge_liter") or 0.0,
+                                    "menge_liter": parsed_menge_f,
                                     "fuel_type": receipt.get("fuel_type"),
                                     "needs_review": True,
                                     "review_reason": f"Unvollstaendiger Beleg - fehlende Felder: {', '.join(missing)}. {len(raw)} Bytes RAW gespeichert. Hex-Dump an Entwickler senden.",

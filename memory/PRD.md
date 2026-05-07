@@ -17,6 +17,13 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg-Pi v1.7.13 — 0L-Phantom-Filter, Timezone & Heizöl-Default** (Antwort auf User-Bugreport zu Belegen 16974/16975 + -1h Verschiebung + Diesel/Heizöl):
+  - **Timezone-Fix**: `now_berlin()`-Helper mit `ZoneInfo("Europe/Berlin")` ersetzt alle `datetime.now()`-Aufrufe für Belegzeitstempel. Pi auf UTC liefert jetzt korrekte CEST/CET-Zeiten (DST automatisch). Behebt -1h-Offset auf den Belegen.
+  - **0L-Phantom-Filter verschärft (v1.7.13)**: Stub wird nur noch erstellt wenn (1) Sening-Header vorhanden, (2) M+-Region enthält Zahlenwert > 0, UND (3) `parse_receipt_sening` lieferte `menge_liter > 0`. Probedrucke mit "0" oder "00.0" als Mengenangabe werden nicht mehr in der DB gespeichert. Behebt Geister-Belege wie 16974/16975.
+  - **Heizöl statt Diesel**: `default_fuel_type` in DEFAULT_CONF + ausgelieferter `tankbeleg_pi.conf` von "" auf `"heizoel_leicht"` umgestellt. Blinder `\bDiesel\b`-Fallback in `parse_receipt_sening` entfernt — bei mehrdeutigem Bitmap bleibt fuel_type=None und der Config-Default greift in `enrich_receipt_with_heuristics`.
+  - OTA-Auslieferung verifiziert: `/api/download/tankbeleg-pi-script` zeigt v1.7.13 + neue Funktionen, `/api/download/tankbeleg-pi-config` enthält `default_fuel_type = heizoel_leicht`.
+  - Pi zieht Update beim nächsten OTA-Tick (≤60s) automatisch.
+
 - ✅ **Tankbeleg-Pi v1.7.8 — TM-U295-Spec-Konform (offizielles PDF abgearbeitet)**: User hat `https://www.jarltech.com/.../TM-U295_spc_I.pdf` geliefert. Kompletter Status-Reply-Code dagegen verifiziert.
   - **Fix 1**: `DLE EOT n=4` entfernt (existiert NICHT in TM-U295, war TM-U220 receipt-Drucker). Stattdessen `n=5` (Slip Paper Status) hinzugefuegt.
   - **Fix 2**: `sening_reply_byte` Default von `0x00` → `0x12`. TM-U295-Spec definiert Bit 1+4 als FIXED ON in jedem Status-Byte (`00010010 = 0x12`). `0x00` verletzt diese Invarianten und wird vom Sening wahrscheinlich als "Drucker offline" gewertet.
