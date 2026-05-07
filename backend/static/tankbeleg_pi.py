@@ -1914,6 +1914,7 @@ def main():
     log.info("=" * 60)
     log.info("  Tankbeleg Pi - Eventenergie Portal")
     log.info("  Epson TM-U295 Drucker-Emulator")
+    log.info(f"  Skript-Version: {SCRIPT_VERSION}")
     log.info("=" * 60)
     log.info(f"  Server:        {conf['api_url']}")
     log.info(f"  Seriell:       {conf['serial_port']} @ {conf['serial_baud']}")
