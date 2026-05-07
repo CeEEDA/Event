@@ -700,6 +700,39 @@ def _apply_break_deduction(raw_minutes: float, break_min: int) -> float:
     return raw_minutes
 
 
+def _legal_minimum_break(raw_minutes: float) -> int:
+    """Gesetzliche Mindestpause nach §4 ArbZG basierend auf Anwesenheit.
+    - Anwesenheit <= 6h:        0 min  (keine Pflichtpause)
+    - 6h < Anwesenheit <= 9h30m: 30 min (Arbeitszeit > 6h, <= 9h)
+    - Anwesenheit > 9h30m:       45 min (Arbeitszeit > 9h)
+    Die Schwelle 9h30m ergibt sich aus 9h Arbeit + 30 min Mindestpause.
+    """
+    if raw_minutes is None or raw_minutes <= 360:    # <= 6h
+        return 0
+    if raw_minutes <= 570:                            # <= 9h30m
+        return 30
+    return 45
+
+
+def _enforce_legal_break_minimum(raw_minutes: float, planned_break_min: int) -> int:
+    """Pausen-Logik nach §4 ArbZG + Wochenplan:
+    - Anwesenheit <= 6h: KEINE Pause abziehen, auch wenn der Wochenplan
+      eine Pause vorsieht. (Bei einem kurzen Dienst von z.B. 5h wird die
+      geplante Mittagspause typisch nicht genommen, daher kein Abzug.)
+    - Anwesenheit > 6h:  max(geplante Pause, gesetzliche Mindestpause).
+      Laengere Pausen aus dem Wochenplan (z.B. 60 min Mittag) bleiben
+      unangetastet, kuerzere werden auf 30/45 hochgesetzt."""
+    legal = _legal_minimum_break(raw_minutes)
+    if legal == 0:
+        # Kurzer Dienst (<= 6h) -> keine Pflichtpause + kein Plan-Abzug
+        return 0
+    try:
+        planned = int(planned_break_min or 0)
+    except (TypeError, ValueError):
+        planned = 0
+    return max(planned, legal)
+
+
 async def _soll_minutes_for_weekday(user_id: str, weekday: int) -> int:
     """Berechne die Sollarbeitszeit (Minuten) eines Wochentags aus dem Wochenplan.
     Bevorzugt 'soll_hours', faellt zurueck auf start/end-Spanne minus break."""
@@ -807,6 +840,7 @@ async def clock_out(token: str = Query(...), body: dict = {}):
     # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
     entry_date = entry.get("date") or now.strftime("%Y-%m-%d")
     break_min = await _get_break_min_for_date(user["id"], entry_date)
+    break_min = _enforce_legal_break_minimum(raw_duration, break_min)
     duration = _apply_break_deduction(raw_duration, break_min)
 
     await db.time_entries.update_one(
@@ -895,6 +929,7 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
     raw_duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
     if raw_duration is not None:
         break_min = await _get_break_min_for_date(target_user_id, date_str)
+        break_min = _enforce_legal_break_minimum(raw_duration, break_min)
         duration = round(_apply_break_deduction(raw_duration, break_min), 1)
     else:
         break_min = 0
@@ -955,6 +990,7 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
     # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
     if raw_duration is not None:
         break_min = await _get_break_min_for_date(entry.get("user_id"), date_str)
+        break_min = _enforce_legal_break_minimum(raw_duration, break_min)
         duration = round(_apply_break_deduction(raw_duration, break_min), 1)
     else:
         break_min = 0
