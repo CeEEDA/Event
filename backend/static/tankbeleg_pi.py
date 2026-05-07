@@ -66,7 +66,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.14"
+SCRIPT_VERSION = "1.7.15"
 
 # Zeitzone fuer Belegzeitstempel. Der Pi laeuft systemd-seitig oft auf UTC, der
 # Sening-Tankwagen und der Disponent denken aber in lokaler Zeit. Wir erzwingen
