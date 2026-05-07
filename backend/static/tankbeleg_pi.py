@@ -40,7 +40,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.3"
+SCRIPT_VERSION = "1.7.4"
 
 
 # ====== Konfiguration ======
@@ -1421,17 +1421,27 @@ class SerialReceiptReader:
                 if data:
                     self.buffer.extend(data)
                     self.last_data_time = time.time()
-            elif self.buffer and (time.time() - self.last_data_time) > self.receipt_timeout:
-                # Timeout - Buffer verarbeiten
+
+            # WICHTIG: Timeout-Check IMMER ausfuehren, NICHT als elif!
+            # Sening pollt alle ~1.5s mit ESC B3 FF. Ein elif wuerde bedeuten:
+            # solange Polls reinkommen ist data nicht-leer und der Timeout-Branch
+            # wird NIE erreicht -> Buffer-Flush passiert nicht -> Beleg geht
+            # verloren obwohl er komplett im Buffer steht. Genau dieser Bug
+            # hat den 1153 L Beleg im Mai 2026 verschluckt.
+            if self.buffer and (time.time() - self.last_data_time) > self.receipt_timeout:
                 raw = bytes(self.buffer)
                 self.buffer.clear()
                 text = strip_escpos(raw)
+                log.info(f"BUFFER-FLUSH nach {self.receipt_timeout}s Stille: {len(raw)} Bytes")
                 return raw, text
-            elif not self.buffer:
-                # Kein Buffer, nichts zu tun
+
+            if not data and not self.buffer:
+                # Kein Buffer, nichts zu tun -> kurz schlafen und raus, damit
+                # die main loop andere Tasks (OTA, Sync) bedienen kann.
                 return None, None
-            else:
-                # Buffer vorhanden, noch kein Timeout
+
+            if not data:
+                # Buffer vorhanden, noch kein Timeout - kurz warten
                 time.sleep(0.05)
 
     def _dump_handshake_state(self):
