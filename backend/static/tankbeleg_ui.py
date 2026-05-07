@@ -528,7 +528,7 @@ select:focus,.notes-input:focus{{border-color:var(--accent);box-shadow:0 0 0 3px
 <script>
 let selectedReceipt=null, lastReceiptCount=-1, orders=[], receipts=[], selectedOrderPk='', selectedOrderName='';
 let kbdTarget=null, kbdValue='', kbdShift=false;
-let verifiedDriver='', driversMap={{}}, pinDriverId='', pinDriverName='', pinValue='';
+let verifiedDriver='', verifiedDriverId='', verifiedPin='', driversMap={{}}, pinDriverId='', pinDriverName='', pinValue='';
 
 const ROWS=[['1','2','3','4','5','6','7','8','9','0'],['q','w','e','r','t','z','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['y','x','c','v','b','n','m']];
 const ROWS_SHIFT=[['!','@','#','$','%','&','/','(',')','+'],['Q','W','E','R','T','Z','U','I','O','P'],['A','S','D','F','G','H','J','K','L'],['Y','X','C','V','B','N','M']];
@@ -623,7 +623,7 @@ async function loadDrivers(){{
 function onDriverChange(){{
   const sel=document.getElementById('driverSelect');
   const name=sel.value;
-  if(!name){{ verifiedDriver=''; return; }}
+  if(!name){{ verifiedDriver=''; verifiedDriverId=''; verifiedPin=''; return; }}
   if(name===verifiedDriver) return; // bereits angemeldet
   // PIN-Eingabe oeffnen
   openPinDialog(name);
@@ -672,6 +672,8 @@ async function verifyPin(){{
     const d=await r.json();
     if(d.ok){{
       verifiedDriver=pinDriverName;
+      verifiedDriverId=pinDriverId;
+      verifiedPin=pinValue;
       document.getElementById('pinOverlay').classList.remove('show');
       showToast('Angemeldet: '+pinDriverName);
     }}else{{ showPinError(); }}
@@ -784,6 +786,16 @@ function updateStats(s){{
 }}
 
 function selectReceipt(id){{
+  // Gate: kein Beleg-Detail/Zuordnung ohne PIN-Anmeldung. Eichrechtlich
+  // muss klar dokumentiert sein, WER einen Beleg einem Auftrag zugeordnet hat.
+  if(!verifiedDriver){{
+    showToast('Bitte zuerst oben Mitarbeiter waehlen + PIN eingeben',true);
+    const sel=document.getElementById('driverSelect');
+    const name=sel.value;
+    if(name && driversMap[name]) openPinDialog(name);
+    else sel.focus();
+    return;
+  }}
   selectedReceipt=receipts.find(r=>r.local_id===id)||null;
   if(!selectedReceipt) return;
   document.getElementById('noSelection').style.display='none';
@@ -819,11 +831,12 @@ async function saveAssignment(){{
   const fahrer=document.getElementById('driverSelect').value;
   if(!fahrer){{showToast('Bitte Mitarbeiter oben waehlen',true);return}}
   if(fahrer!==verifiedDriver){{showToast('PIN-Verifikation fehlt',true);openPinDialog(fahrer);return}}
+  if(!verifiedDriverId||!verifiedPin){{showToast('PIN-Verifikation fehlt',true);openPinDialog(fahrer);return}}
   if(!selectedOrderPk){{showToast('Bitte Auftrag aus Liste waehlen',true);return}}
   const notes=document.getElementById('notesValue').value||'';
   document.getElementById('saveBtn').disabled=true;
   try{{
-    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:selectedOrderPk,order_name:selectedOrderName,fahrer:fahrer,notes:notes}})}});
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:selectedOrderPk,order_name:selectedOrderName,fahrer:fahrer,driver_id:verifiedDriverId,pin:verifiedPin,notes:notes}})}});
     const d=await r.json();
     if(d.ok){{showToast('Beleg zugeordnet!');clearSelection();loadReceipts()}}
     else showToast('Fehler: '+(d.error||'?'),true);
@@ -930,8 +943,21 @@ class KioskHandler(SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length)) if length else {}
         if path == "/api/assign":
+            # Server-side Gate: Beleg darf nur zugewiesen werden, wenn der
+            # Fahrername in der lokalen drivers_cache existiert UND ein
+            # frischer PIN-Verify im Body mitgegeben wurde. Das verhindert,
+            # dass jemand mit curl/Devtools die UI umgeht.
+            fahrer = (body.get("fahrer") or "").strip()
+            pin = (body.get("pin") or "").strip()
+            driver_id = (body.get("driver_id") or "").strip()
+            if not fahrer or not driver_id or not pin:
+                log.warning(f"/api/assign abgelehnt: fahrer/driver_id/pin fehlt (lid={body.get('local_id')})")
+                self._json({"ok": False, "error": "Anmeldung erforderlich"}); return
+            if not verify_driver_pin(self.conf["db_path"], driver_id, pin):
+                log.warning(f"/api/assign abgelehnt: PIN-Verify fehlgeschlagen ({fahrer})")
+                self._json({"ok": False, "error": "PIN ungueltig"}); return
             ok = assign_receipt(self.conf["db_path"], body.get("local_id"), body.get("order_pk"),
-                                body.get("order_name", ""), body.get("fahrer", ""), body.get("notes", ""))
+                                body.get("order_name", ""), fahrer, body.get("notes", ""))
             self._json({"ok": ok})
         elif path == "/api/sync":
             sync_orders_from_backend(self.conf)
