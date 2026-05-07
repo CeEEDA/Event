@@ -66,7 +66,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.13"
+SCRIPT_VERSION = "1.7.14"
 
 # Zeitzone fuer Belegzeitstempel. Der Pi laeuft systemd-seitig oft auf UTC, der
 # Sening-Tankwagen und der Disponent denken aber in lokaler Zeit. Wir erzwingen
@@ -682,25 +682,28 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
             result["review_reason"] = [reason]
 
     # Fuel-Type Heuristik
-    # Stufe 1 (Binaer-Marker, eindeutig validiert anhand 15 Live-Belegen Mai 2026):
-    #   Sening druckt im Roh-Stream einen "*X+"-Code wo X den Kraftstoff bezeichnet:
-    #     *H+   -> HEL (Heizoel) - bestaetigt durch alle 15 Heizoel-Belege heute
-    #     *D+   -> mutmasslich Diesel (noch nicht live verifiziert; Sening-Konvention)
-    #     *V+   -> mutmasslich HVO (Sening-Konvention)
-    #   Diese Marker stehen IMMER im Stream, auch wenn die "HEL schwefelarm"-Zeile
-    #   nur als Bitmap (nicht als ASCII) gedruckt wird. Darum hier zuerst pruefen.
-    has_h_plus = b"*H+" in raw
-    has_d_plus = b"*D+" in raw
-    has_v_plus = b"*V+" in raw
-    if has_h_plus and not has_d_plus and not has_v_plus:
-        result["fuel_type"] = "heizoel_leicht"
-        log.info("  Sening-Binary-Marker '*H+' gefunden -> fuel_type=heizoel_leicht")
-    elif has_d_plus and not has_h_plus and not has_v_plus:
-        result["fuel_type"] = "diesel"
-        log.info("  Sening-Binary-Marker '*D+' gefunden -> fuel_type=diesel")
-    elif has_v_plus and not has_h_plus and not has_d_plus:
-        result["fuel_type"] = "hvo"
-        log.info("  Sening-Binary-Marker '*V+' gefunden -> fuel_type=hvo")
+    # Stufe 1 (Binaer-Marker, validiert anhand Live-Belegen Mai 2026):
+    #   Sening druckt im Roh-Stream einen "*X..."-Code wo X den Kraftstoff
+    #   bezeichnet, gefolgt von einer Bitmap-Sequenz mit dem Produktnamen:
+    #     *H+...    -> HEL (Heizoel) - bestaetigt durch 15 Heizoel-Belege
+    #     *DKV...   -> Diesel - bestaetigt durch Beleg 16979 (42L Diesel-Test)
+    #                 ("DKV" = vermutl. DKV-Tankkarten-Brand-Praefix)
+    #     *V+...    -> mutmasslich HVO (Sening-Konvention, noch nicht verifiziert)
+    #   Andere *-Marker im Stream (*Z, *B+, *M+) sind KEINE Kraftstoff-Marker.
+    #   Robuste Regex: '*' + (H|D|V) + (Buchstabe ODER '+'), so dass weder *Z
+    #   (Zaehler) noch *B+ (Beleg) noch *M+ (Menge) faelschlich greifen.
+    fuel_match = re.search(rb"\*(H|D|V)[A-Z+]", raw)
+    if fuel_match:
+        c = fuel_match.group(1)
+        if c == b"H":
+            result["fuel_type"] = "heizoel_leicht"
+            log.info(f"  Sening-Binary-Marker '*H{chr(raw[fuel_match.end()-1])}' gefunden -> fuel_type=heizoel_leicht")
+        elif c == b"D":
+            result["fuel_type"] = "diesel"
+            log.info(f"  Sening-Binary-Marker '*D{chr(raw[fuel_match.end()-1])}' gefunden -> fuel_type=diesel")
+        elif c == b"V":
+            result["fuel_type"] = "hvo"
+            log.info(f"  Sening-Binary-Marker '*V{chr(raw[fuel_match.end()-1])}' gefunden -> fuel_type=hvo")
     else:
         # Stufe 2 (ASCII-Marker im Klartext): *HEL/Diesel/HVO via Bitmap-Decode.
         # Sening druckt das tatsaechlich abgegebene Produkt mit fuehrendem * + Whitespace,
@@ -722,7 +725,7 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
             # Kein eindeutiger Marker -> Config-Default greift in enrich_receipt_*.
             result["fuel_type"] = None
             log.info(
-                "  Kein '*H+/*D+/*V+'-Binary-Marker und kein '*HEL/Diesel/HVO'-Klartext "
+                "  Kein '*H?/*D?/*V?'-Binary-Marker und kein '*HEL/Diesel/HVO'-Klartext "
                 "gefunden - fuel_type bleibt offen, Config-Default wird angewendet."
             )
 
