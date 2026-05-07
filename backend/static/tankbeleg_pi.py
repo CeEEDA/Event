@@ -62,7 +62,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.10"
+SCRIPT_VERSION = "1.7.11"
 
 # Cloudflare blockt User-Agent "Python-urllib/X.Y" hart (Error 1010). Wir setzen
 # einen sprechenden UA, der eindeutig als Pi erkennbar ist und gleichzeitig nicht
@@ -2040,31 +2040,50 @@ def main():
                                    if receipt.get(f) is None]
                         log.warning(f"Unvollstaendiger Beleg, fehlende Felder: {', '.join(missing)}")
                         log.debug(f"Geparste Felder: {receipt}")
-                        # WICHTIG: Roh-Bytes trotzdem speichern damit wir den
-                        # Druckstrom nicht verlieren - sonst kann man den Parser
-                        # nicht nachtraeglich fixen. Markiere als needs_review.
-                        try:
-                            stub = {
-                                "beleg_nr": receipt.get("beleg_nr") or f"INCOMPLETE_{int(time.time())}",
-                                "datum": receipt.get("datum") or time.strftime("%d.%m.%Y"),
-                                "abgabe_start": receipt.get("abgabe_start") or "",
-                                "abgabe_ende": receipt.get("abgabe_ende") or time.strftime("%H:%M:%S"),
-                                "zaehler_nr": receipt.get("zaehler_nr") or "",
-                                "zaehler_vor_start": receipt.get("zaehler_vor_start"),
-                                "menge_liter": receipt.get("menge_liter") or 0.0,
-                                "fuel_type": receipt.get("fuel_type"),
-                                "needs_review": True,
-                                "review_reason": f"Unvollstaendiger Beleg - fehlende Felder: {', '.join(missing)}. {len(raw)} Bytes RAW gespeichert. Hex-Dump an Entwickler senden.",
-                            }
-                            store_receipt(
-                                conf["db_path"], stub, gps_lat, gps_lon,
-                                conf["fahrer_name"], raw_bytes=raw,
-                                bitmap_png=None,
+
+                        # Plausibilitaets-Filter gegen Phantom-Belege:
+                        # Sening-Eichbelege sind ca. 500-700 Bytes lang und enthalten
+                        # ein charakteristisches Init-Pattern (1b 03 b7 d8 cc 9a 30 db
+                        # bzw. die generelle 1b 0b 0c 60 c3 21 Sequenz vom Sening-
+                        # Print-Engine). Kurze Status-/Polling-Bursts darunter
+                        # unterscheiden wir um keine 0-Liter-Geister-Belege mit
+                        # neuer Counter-Nummer zu erzeugen.
+                        is_plausible_print = (
+                            len(raw) >= 200
+                            and (b"\x1b\x0b\x0c\x60\xc3\x21" in raw or b"\x1b\x03\xb7\xd8" in raw)
+                        )
+                        if not is_plausible_print:
+                            log.info(
+                                f"PHANTOM-FILTER: Ignoriere kurzen/atypischen Stream "
+                                f"({len(raw)} Bytes, kein Sening-Header) - kein Stub angelegt."
                             )
-                            log.info(f"INCOMPLETE: Roh-Bytes ({len(raw)}) trotzdem in DB gespeichert fuer spaetere Analyse")
-                        except Exception as e:
-                            log.error(f"INCOMPLETE: Store fehlgeschlagen: {e}", exc_info=True)
-                        consecutive_errors = 0
+                            consecutive_errors = 0
+                        else:
+                            # WICHTIG: Roh-Bytes trotzdem speichern damit wir den
+                            # Druckstrom nicht verlieren - sonst kann man den Parser
+                            # nicht nachtraeglich fixen. Markiere als needs_review.
+                            try:
+                                stub = {
+                                    "beleg_nr": receipt.get("beleg_nr") or f"INCOMPLETE_{int(time.time())}",
+                                    "datum": receipt.get("datum") or time.strftime("%d.%m.%Y"),
+                                    "abgabe_start": receipt.get("abgabe_start") or "",
+                                    "abgabe_ende": receipt.get("abgabe_ende") or time.strftime("%H:%M:%S"),
+                                    "zaehler_nr": receipt.get("zaehler_nr") or "",
+                                    "zaehler_vor_start": receipt.get("zaehler_vor_start"),
+                                    "menge_liter": receipt.get("menge_liter") or 0.0,
+                                    "fuel_type": receipt.get("fuel_type"),
+                                    "needs_review": True,
+                                    "review_reason": f"Unvollstaendiger Beleg - fehlende Felder: {', '.join(missing)}. {len(raw)} Bytes RAW gespeichert. Hex-Dump an Entwickler senden.",
+                                }
+                                store_receipt(
+                                    conf["db_path"], stub, gps_lat, gps_lon,
+                                    conf["fahrer_name"], raw_bytes=raw,
+                                    bitmap_png=None,
+                                )
+                                log.info(f"INCOMPLETE: Roh-Bytes ({len(raw)}) trotzdem in DB gespeichert fuer spaetere Analyse")
+                            except Exception as e:
+                                log.error(f"INCOMPLETE: Store fehlgeschlagen: {e}", exc_info=True)
+                            consecutive_errors = 0
 
             # Periodisch zum Portal syncen
             now = time.time()
