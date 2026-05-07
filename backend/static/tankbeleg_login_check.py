@@ -32,6 +32,9 @@ import urllib.request
 from datetime import datetime, timezone
 
 CONF_PATH = "/etc/tankbeleg_pi.conf"
+# Cloudflare blockt User-Agent "Python-urllib/X.Y" mit Error 1010.
+# Wir maskieren uns als requests-Client damit der Pi-Endpoint durchgeht.
+HTTP_HEADERS = {"User-Agent": "TankbelegPi-Diag/1.0 python-requests/2.32"}
 
 def err(msg, code=1):
     print(f"FEHLER: {msg}", file=sys.stderr)
@@ -102,7 +105,11 @@ def main():
     else:
         print(f"[4/5] Frischer Sync von {api_url}/fuel-receipts/pi/drivers ...")
         try:
-            with urllib.request.urlopen(f"{api_url}/fuel-receipts/pi/drivers", timeout=10) as r:
+            req = urllib.request.Request(
+                f"{api_url}/fuel-receipts/pi/drivers",
+                headers=HTTP_HEADERS,
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
                 payload = json.load(r)
         except Exception as e:
             err(f"Sync fehlgeschlagen: {e}")

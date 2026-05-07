@@ -62,7 +62,12 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.9"
+SCRIPT_VERSION = "1.7.10"
+
+# Cloudflare blockt User-Agent "Python-urllib/X.Y" hart (Error 1010). Wir setzen
+# einen sprechenden UA, der eindeutig als Pi erkennbar ist und gleichzeitig nicht
+# auf der CF-Default-Bot-Liste steht.
+PI_HEADERS = {"User-Agent": f"TankbelegPi/{SCRIPT_VERSION} (eventenergie-deutschland)"}
 
 
 # ====== Konfiguration ======
@@ -1258,7 +1263,7 @@ def check_and_apply_ota_update(conf: dict) -> bool:
         }
         # None-Werte rauswerfen, damit URL nicht mit lte_ip= verschmutzt wird
         params = {k: v for k, v in params.items() if v not in (None, "")}
-        resp = requests.get(f"{base}/system/ota/tankwagen/check", params=params, timeout=10)
+        resp = requests.get(f"{base}/system/ota/tankwagen/check", params=params, timeout=10, headers=PI_HEADERS)
         if resp.status_code != 200:
             log.debug(f"OTA-Check Fehler {resp.status_code}: {resp.text[:200]}")
             return False
@@ -1269,7 +1274,7 @@ def check_and_apply_ota_update(conf: dict) -> bool:
         log.info(f"OTA: Update verfuegbar (neuer Hash {info.get('file_hash','?')[:12]})")
 
         # Download
-        resp2 = requests.get(f"{base}/system/ota/tankwagen/download", params={"pi_id": pi_id}, timeout=30)
+        resp2 = requests.get(f"{base}/system/ota/tankwagen/download", params={"pi_id": pi_id}, timeout=30, headers=PI_HEADERS)
         if resp2.status_code != 200:
             log.warning(f"OTA-Download Fehler {resp2.status_code}")
             return False
@@ -1365,6 +1370,7 @@ def sync_to_portal(conf):
             sync_url,
             json=api_receipts,
             timeout=30,
+            headers=PI_HEADERS,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -1472,6 +1478,7 @@ class RawStreamPusher:
                     f"{base}/system/tankwagen/raw-stream/push",
                     json=payload,
                     timeout=5,
+                    headers=PI_HEADERS,
                 )
                 if r.status_code != 200:
                     log.debug(f"RawStream push HTTP {r.status_code}: {r.text[:120]}")

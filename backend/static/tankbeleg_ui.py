@@ -26,6 +26,11 @@ try:
 except ImportError:
     requests = None
 
+# Cloudflare blockt User-Agent "Python-urllib/X.Y" mit Error 1010, "python-requests/X"
+# kommt aktuell durch - wir setzen aber trotzdem einen sprechenden UA, damit der
+# Sync auch ueberlebt falls CF die Default-UA spaeter mitblockt.
+PI_HEADERS = {"User-Agent": "TankbelegPi-UI/1.0 (eventenergie-deutschland)"}
+
 try:
     import bcrypt
 except ImportError:
@@ -109,7 +114,7 @@ def sync_orders_from_backend(conf):
         return 0
     base = _api_base(conf)
     try:
-        resp = requests.get(f"{base}/fuel-receipts/pi/orders", timeout=15)
+        resp = requests.get(f"{base}/fuel-receipts/pi/orders", timeout=15, headers=PI_HEADERS)
         if resp.status_code == 200:
             orders = resp.json().get("orders", [])
             conn = sqlite3.connect(conf["db_path"])
@@ -124,6 +129,8 @@ def sync_orders_from_backend(conf):
             conn.commit(); conn.close()
             log.info(f"Auftraege synchronisiert: {len(orders)}")
             return len(orders)
+        else:
+            log.warning(f"Auftrags-Sync HTTP {resp.status_code}: {resp.text[:200]}")
     except requests.ConnectionError:
         log.warning("Backend nicht erreichbar")
     except Exception as e:
@@ -136,7 +143,7 @@ def sync_drivers_from_backend(conf):
         return 0
     base = _api_base(conf)
     try:
-        resp = requests.get(f"{base}/fuel-receipts/pi/drivers", timeout=15)
+        resp = requests.get(f"{base}/fuel-receipts/pi/drivers", timeout=15, headers=PI_HEADERS)
         if resp.status_code == 200:
             drivers = resp.json().get("drivers", [])
             conn = sqlite3.connect(conf["db_path"])
@@ -150,6 +157,8 @@ def sync_drivers_from_backend(conf):
             conn.commit(); conn.close()
             log.info(f"Fahrer synchronisiert: {len(drivers)}")
             return len(drivers)
+        else:
+            log.warning(f"Fahrer-Sync HTTP {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
         log.error(f"Fahrer-Sync Fehler: {e}")
     return 0
@@ -234,7 +243,7 @@ def background_sync(conf):
                 if conf.get("api_url") and requests:
                     base = _api_base(conf)
                     try:
-                        r = requests.get(f"{base}/health", timeout=5)
+                        r = requests.get(f"{base}/health", timeout=5, headers=PI_HEADERS)
                         _backend_online = r.status_code == 200
                         if _backend_online:
                             _last_sync_ok = datetime.now(timezone.utc).isoformat()
