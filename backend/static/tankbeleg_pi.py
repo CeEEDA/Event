@@ -682,34 +682,49 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
             result["review_reason"] = [reason]
 
     # Fuel-Type Heuristik
-    # Sening druckt das tatsaechlich abgegebene Produkt mit fuehrendem * + Whitespace,
-    # waehrend andere konfigurierte Fuels meist NICHT mit * markiert sind. Wir suchen
-    # darum zuerst die "*Marker"-Zeile (wenn der Bitmap-Decoder sie erhalten hat),
-    # erst danach einen reinen Substring-Fallback.
-    # WICHTIG: NIEMALS blind auf "Diesel" fallen wenn der *-Marker fehlt - der
-    # Sening-Header kann das Wort "Diesel" als Geraete-Bezeichnung enthalten
-    # auch wenn aktuell HEL ausgeliefert wird. Bei Mehrdeutigkeit lassen wir
-    # fuel_type = None und vertrauen dem Config-Default (default_fuel_type),
-    # der pro Tankwagen-Deployment auf das tatsaechliche Produkt gesetzt ist.
-    fuel_marker = re.search(r"\*\s*(HEL[\s\w]*schwefelarm|Diesel|HVO)\b", text, re.IGNORECASE)
-    if fuel_marker:
-        raw = fuel_marker.group(1).lower()
-        if "hel" in raw:
-            result["fuel_type"] = "heizoel_leicht"
-        elif "diesel" in raw:
-            result["fuel_type"] = "diesel"
-        elif "hvo" in raw:
-            result["fuel_type"] = "hvo"
+    # Stufe 1 (Binaer-Marker, eindeutig validiert anhand 15 Live-Belegen Mai 2026):
+    #   Sening druckt im Roh-Stream einen "*X+"-Code wo X den Kraftstoff bezeichnet:
+    #     *H+   -> HEL (Heizoel) - bestaetigt durch alle 15 Heizoel-Belege heute
+    #     *D+   -> mutmasslich Diesel (noch nicht live verifiziert; Sening-Konvention)
+    #     *V+   -> mutmasslich HVO (Sening-Konvention)
+    #   Diese Marker stehen IMMER im Stream, auch wenn die "HEL schwefelarm"-Zeile
+    #   nur als Bitmap (nicht als ASCII) gedruckt wird. Darum hier zuerst pruefen.
+    has_h_plus = b"*H+" in raw
+    has_d_plus = b"*D+" in raw
+    has_v_plus = b"*V+" in raw
+    if has_h_plus and not has_d_plus and not has_v_plus:
+        result["fuel_type"] = "heizoel_leicht"
+        log.info("  Sening-Binary-Marker '*H+' gefunden -> fuel_type=heizoel_leicht")
+    elif has_d_plus and not has_h_plus and not has_v_plus:
+        result["fuel_type"] = "diesel"
+        log.info("  Sening-Binary-Marker '*D+' gefunden -> fuel_type=diesel")
+    elif has_v_plus and not has_h_plus and not has_d_plus:
+        result["fuel_type"] = "hvo"
+        log.info("  Sening-Binary-Marker '*V+' gefunden -> fuel_type=hvo")
     else:
-        # Kein eindeutiger *-Marker erkannt -> NICHT raten. Lass den Config-
-        # Default in enrich_receipt_with_heuristics greifen. Frueher hat hier
-        # ein blinder "Diesel"-Match alle Heizoel-Belege als Diesel markiert
-        # (Header-Zeile "Diesel" als Geraete-Typ), das ist jetzt entfernt.
-        result["fuel_type"] = None
-        log.info(
-            "  Kein '*HEL/Diesel/HVO'-Marker im Klartext - fuel_type bleibt offen, "
-            "Config-Default wird angewendet."
-        )
+        # Stufe 2 (ASCII-Marker im Klartext): *HEL/Diesel/HVO via Bitmap-Decode.
+        # Sening druckt das tatsaechlich abgegebene Produkt mit fuehrendem * + Whitespace,
+        # waehrend andere konfigurierte Fuels meist NICHT mit * markiert sind.
+        # WICHTIG: NIEMALS blind auf "Diesel" fallen wenn der *-Marker fehlt - der
+        # Sening-Header kann das Wort "Diesel" als Geraete-Bezeichnung enthalten
+        # auch wenn aktuell HEL ausgeliefert wird. Bei Mehrdeutigkeit lassen wir
+        # fuel_type = None und vertrauen dem Config-Default (default_fuel_type).
+        fuel_marker = re.search(r"\*\s*(HEL[\s\w]*schwefelarm|Diesel|HVO)\b", text, re.IGNORECASE)
+        if fuel_marker:
+            fm_raw = fuel_marker.group(1).lower()
+            if "hel" in fm_raw:
+                result["fuel_type"] = "heizoel_leicht"
+            elif "diesel" in fm_raw:
+                result["fuel_type"] = "diesel"
+            elif "hvo" in fm_raw:
+                result["fuel_type"] = "hvo"
+        else:
+            # Kein eindeutiger Marker -> Config-Default greift in enrich_receipt_*.
+            result["fuel_type"] = None
+            log.info(
+                "  Kein '*H+/*D+/*V+'-Binary-Marker und kein '*HEL/Diesel/HVO'-Klartext "
+                "gefunden - fuel_type bleibt offen, Config-Default wird angewendet."
+            )
 
     # Feste Zaehler-Nr aus Config anwenden (falls Parser nur Praefix hatte)
     if fixed_zaehler_nr:
