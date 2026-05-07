@@ -1623,6 +1623,15 @@ async def download_tankbeleg_reply_tuner():
     content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
     return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="tankbeleg_reply_tuner.py"'})
 
+
+@api_router.get("/download/tankbeleg-dump-last")
+async def download_tankbeleg_dump_last():
+    """Diagnostik-Script. Liegt anonym damit der Tankwagen-Pi es ueber curl
+    direkt von der Production ziehen kann ohne Auth-Token zu hinterlegen."""
+    path = os.path.join(STATIC_DIR, "dump_last_receipt.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(io.BytesIO(content.encode("utf-8")), media_type="text/x-python", headers={"Content-Disposition": 'attachment; filename="dump_last_receipt.py"'})
+
 @api_router.get("/download/tankbeleg-capture")
 async def download_tankbeleg_capture():
     path = os.path.join(STATIC_DIR, "tankbeleg_capture.py")
