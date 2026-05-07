@@ -849,11 +849,12 @@ async function assignLager(){{
   const fahrer=document.getElementById('driverSelect').value;
   if(!fahrer){{showToast('Bitte Mitarbeiter oben waehlen',true);return}}
   if(fahrer!==verifiedDriver){{showToast('PIN-Verifikation fehlt',true);openPinDialog(fahrer);return}}
+  if(!verifiedDriverId||!verifiedPin){{showToast('PIN-Verifikation fehlt',true);openPinDialog(fahrer);return}}
   const notes=document.getElementById('notesValue').value||'';
   document.getElementById('lagerBtn').disabled=true;
   document.getElementById('saveBtn').disabled=true;
   try{{
-    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:'LAGER',order_name:'Lager / Testlauf',fahrer:fahrer,notes:notes}})}});
+    const r=await fetch('/api/assign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{local_id:selectedReceipt.local_id,order_pk:'LAGER',order_name:'Lager / Testlauf',fahrer:fahrer,driver_id:verifiedDriverId,pin:verifiedPin,notes:notes}})}});
     const d=await r.json();
     if(d.ok){{showToast('Beleg auf Lager gebucht!');clearSelection();loadReceipts()}}
     else showToast('Fehler: '+(d.error||'?'),true);
