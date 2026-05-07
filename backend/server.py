@@ -1754,6 +1754,20 @@ async def download_tankbeleg_clean_install():
         headers={"Content-Disposition": 'attachment; filename="clean_install_tankbeleg_pi.sh"'}
     )
 
+@api_router.get("/download/tankbeleg-switch-to-live")
+async def download_tankbeleg_switch_to_live():
+    """Switch-Skript: bringt einen Test-Pi zurueck in die LIVE-Umgebung.
+    Setzt api_url, behaelt die v1.7.16-Defaults (Pumpenrate 4 sec/L,
+    Heizoel-Default, Sening-Reply 0x00) und schaltet den Raw-Stream aus.
+    Warnt vor OTA-Regression falls das Live-Backend eine aeltere Version hat."""
+    path = os.path.join(STATIC_DIR, "switch_tankbeleg_pi_to_live.sh")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="application/x-sh",
+        headers={"Content-Disposition": 'attachment; filename="switch_tankbeleg_pi_to_live.sh"'}
+    )
+
 @api_router.get("/download/sening-reply-cycler")
 async def download_sening_reply_cycler():
     """Diagnose-Tool: probiert systematisch verschiedene Reply-Bytes auf
