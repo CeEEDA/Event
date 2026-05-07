@@ -62,7 +62,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.11"
+SCRIPT_VERSION = "1.7.12"
 
 # Cloudflare blockt User-Agent "Python-urllib/X.Y" hart (Error 1010). Wir setzen
 # einen sprechenden UA, der eindeutig als Pi erkennbar ist und gleichzeitig nicht
@@ -2052,10 +2052,40 @@ def main():
                             len(raw) >= 200
                             and (b"\x1b\x0b\x0c\x60\xc3\x21" in raw or b"\x1b\x03\xb7\xd8" in raw)
                         )
+
+                        # Zweite Stufe gegen Sening-Test-/Diagnose-Drucke:
+                        # Ein echter Tankbeleg hat im *M+-Bereich mindestens eine
+                        # mehrstellige ASCII-Zahl (= Mengenanzeige). Ein leerer
+                        # Test-/Selbsttestdruck enthaelt zwar Sening-Header, aber
+                        # keine Mengenangabe - der wuerde sonst als "0L-Geist"
+                        # mit neuer Counter-Beleg-Nr im UI auftauchen.
+                        has_menge_digits = False
+                        if is_plausible_print:
+                            mp = raw.find(b"M+")
+                            if mp >= 0:
+                                end = raw.find(b"\x1b\x4a", mp + 2)
+                                if end < 0:
+                                    end = mp + 80
+                                seg = raw[mp:end]
+                                # Zaehle ASCII-Ziffernlaeufe >= 1 Stelle in dieser Region
+                                import re as _re
+                                digits = _re.findall(rb"\d+", seg)
+                                # >= 1 Ziffer (auch "0") OK, aber NICHT komplett ohne Ziffern
+                                # Echte 0-Liter-Drucke ("Probedruck") haben keinerlei Ziffer
+                                # nach "M+", weil Sening dort nur den Trenner setzt.
+                                has_menge_digits = len(digits) > 0
+
                         if not is_plausible_print:
                             log.info(
                                 f"PHANTOM-FILTER: Ignoriere kurzen/atypischen Stream "
                                 f"({len(raw)} Bytes, kein Sening-Header) - kein Stub angelegt."
+                            )
+                            consecutive_errors = 0
+                        elif not has_menge_digits:
+                            log.info(
+                                f"PHANTOM-FILTER: Sening-Header vorhanden ({len(raw)} B), "
+                                f"aber keine Mengen-Ziffern im *M+-Bereich gefunden -> "
+                                f"Test-/Probedruck, kein Stub angelegt."
                             )
                             consecutive_errors = 0
                         else:
