@@ -22,6 +22,10 @@ Status pruefen:
   sudo journalctl -u tankbeleg_pi -f
 
 Changelog:
+  v1.7.9  - Unvollstaendige Belege werden TROTZDEM in DB gespeichert (als
+            stub mit needs_review=True). Vorher gingen die Roh-Bytes verloren
+            wenn der Parser beleg_nr/datum/menge nicht fand -> Parser konnte
+            nicht nachtraeglich gefixt werden weil keine Beweisdaten da waren.
   v1.7.8  - TM-U295-Spec-Konform: Status-Antworten gemaess offizieller Epson
             TM-U295 Spec ueberprueft. Korrekturen:
               - DLE EOT n=4 entfernt (gibt es im TM-U295 nicht; war TM-U220),
@@ -58,7 +62,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.8"
+SCRIPT_VERSION = "1.7.9"
 
 
 # ====== Konfiguration ======
@@ -2029,6 +2033,31 @@ def main():
                                    if receipt.get(f) is None]
                         log.warning(f"Unvollstaendiger Beleg, fehlende Felder: {', '.join(missing)}")
                         log.debug(f"Geparste Felder: {receipt}")
+                        # WICHTIG: Roh-Bytes trotzdem speichern damit wir den
+                        # Druckstrom nicht verlieren - sonst kann man den Parser
+                        # nicht nachtraeglich fixen. Markiere als needs_review.
+                        try:
+                            stub = {
+                                "beleg_nr": receipt.get("beleg_nr") or f"INCOMPLETE_{int(time.time())}",
+                                "datum": receipt.get("datum") or time.strftime("%d.%m.%Y"),
+                                "abgabe_start": receipt.get("abgabe_start") or "",
+                                "abgabe_ende": receipt.get("abgabe_ende") or time.strftime("%H:%M:%S"),
+                                "zaehler_nr": receipt.get("zaehler_nr") or "",
+                                "zaehler_vor_start": receipt.get("zaehler_vor_start"),
+                                "menge_liter": receipt.get("menge_liter") or 0.0,
+                                "fuel_type": receipt.get("fuel_type"),
+                                "needs_review": True,
+                                "review_reason": f"Unvollstaendiger Beleg - fehlende Felder: {', '.join(missing)}. {len(raw)} Bytes RAW gespeichert. Hex-Dump an Entwickler senden.",
+                            }
+                            store_receipt(
+                                conf["db_path"], stub, gps_lat, gps_lon,
+                                conf["fahrer_name"], raw_bytes=raw,
+                                bitmap_png=None,
+                            )
+                            log.info(f"INCOMPLETE: Roh-Bytes ({len(raw)}) trotzdem in DB gespeichert fuer spaetere Analyse")
+                        except Exception as e:
+                            log.error(f"INCOMPLETE: Store fehlgeschlagen: {e}", exc_info=True)
+                        consecutive_errors = 0
 
             # Periodisch zum Portal syncen
             now = time.time()

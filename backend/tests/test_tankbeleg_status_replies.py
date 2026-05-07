@@ -192,9 +192,9 @@ def test_partial_esc_v_buffered():
     assert bytes(reader.ser.written) == b"\x00"
 
 
-def test_script_version_is_178():
+def test_script_version_is_179():
     mod = _load_module()
-    assert mod.SCRIPT_VERSION == "1.7.8", f"SCRIPT_VERSION sollte 1.7.8 sein, ist {mod.SCRIPT_VERSION}"
+    assert mod.SCRIPT_VERSION == "1.7.9", f"SCRIPT_VERSION sollte 1.7.9 sein, ist {mod.SCRIPT_VERSION}"
 
 
 def test_default_sening_reply_byte_is_0x00():
