@@ -1699,6 +1699,20 @@ async def download_tankbeleg_pi_switch_test():
         headers={"Content-Disposition": 'attachment; filename="switch_tankbeleg_pi_to_test.sh"'}
     )
 
+@api_router.get("/download/tankbeleg-label")
+async def download_tankbeleg_label():
+    """Ground-Truth Sniffer/Labeler: User tippt nach jedem Tankvorgang die
+    am Sening-Display abgelesene Liter-Zahl ein, das Backend speichert sie
+    zusammen mit dem urspruenglichen Hex-Dump - Trainings-Datensatz fuer
+    den Sening-Bitmap-Parser."""
+    path = os.path.join(STATIC_DIR, "tankbeleg_label.py")
+    content = open(path, "r", encoding="utf-8").read().replace("\r\n", "\n")
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/x-python",
+        headers={"Content-Disposition": 'attachment; filename="tankbeleg_label.py"'}
+    )
+
 @api_router.get("/download/tankbeleg-login-check")
 async def download_tankbeleg_login_check():
     """Login-Diagnose-Skript fuer den Tankwagen-Pi: prueft bcrypt,

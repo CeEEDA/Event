@@ -834,3 +834,86 @@ async def pi_heartbeat():
     aktiven Tankwagen-Geraete, damit der Portal-Status 'Online' bleibt."""
     await _touch_tankwagen_last_seen()
     return {"ok": True, "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+# ===== Parser-Trainingsdaten =====
+# Wenn der Sening Ziffern als Bitmap statt ASCII druckt, kann der Pi-Parser
+# sie nicht zuverlaessig extrahieren. Diese Endpoints sammeln Ground-Truth-
+# Werte (Beleg-Nr -> tatsaechliche Liter), damit wir den Parser gegen echte
+# Hex-Dumps tunen koennen.
+
+class GroundTruthLabel(BaseModel):
+    actual_liters: float
+    actual_fuel_type: Optional[str] = "diesel"
+    actual_beleg_nr: Optional[str] = None  # Falls Pi die Beleg-Nr falsch erkannt hat
+    note: Optional[str] = None
+    pi_id: Optional[str] = None
+
+
+@router.post("/label/{beleg_nr}")
+async def label_receipt(beleg_nr: str, body: GroundTruthLabel):
+    """Setzt Ground-Truth-Werte fuer einen Beleg (anonymer Pi-Endpoint).
+    Wird von tankbeleg_label.py genutzt: User tippt nach jedem Tankvorgang
+    den am Sening-Display abgelesenen Liter-Wert ein, das Backend speichert
+    ihn als `actual_quantity_liters` zusammen mit dem urspruenglichen Hex-Dump.
+    """
+    receipt = await _db.fuel_receipts.find_one({"beleg_nr": beleg_nr})
+    if not receipt:
+        raise HTTPException(404, f"Beleg {beleg_nr} nicht im Backend.")
+
+    update = {
+        "actual_quantity_liters": float(body.actual_liters),
+        "actual_fuel_type": body.actual_fuel_type or "diesel",
+        "ground_truth_set_at": datetime.now(timezone.utc),
+        "ground_truth_pi_id": body.pi_id or "",
+        "ground_truth_note": body.note or "",
+    }
+    if body.actual_beleg_nr and body.actual_beleg_nr != beleg_nr:
+        update["actual_beleg_nr"] = body.actual_beleg_nr
+
+    await _db.fuel_receipts.update_one(
+        {"beleg_nr": beleg_nr},
+        {"$set": update},
+    )
+
+    parsed = float(receipt.get("quantity_liters") or 0)
+    delta = abs(parsed - float(body.actual_liters))
+    return {
+        "ok": True,
+        "beleg_nr": beleg_nr,
+        "parsed_liters": parsed,
+        "actual_liters": float(body.actual_liters),
+        "delta": delta,
+        "match": delta < 0.5,
+        "raw_hex_bytes": len(bytes.fromhex(receipt.get("raw_receipt_hex") or "")),
+    }
+
+
+@router.get("/training/labeled")
+async def list_labeled_receipts(limit: int = 50):
+    """Liste aller Belege mit Ground-Truth - Parser-Trainings-Datensatz.
+    Antwortet mit raw_receipt_hex damit wir lokal den Parser tunen koennen.
+    """
+    cursor = _db.fuel_receipts.find(
+        {"actual_quantity_liters": {"$exists": True}},
+        {
+            "_id": 0,
+            "beleg_nr": 1,
+            "quantity_liters": 1,
+            "actual_quantity_liters": 1,
+            "actual_fuel_type": 1,
+            "actual_beleg_nr": 1,
+            "fuel_type": 1,
+            "date": 1,
+            "time": 1,
+            "raw_receipt_hex": 1,
+            "ground_truth_set_at": 1,
+            "ground_truth_note": 1,
+        },
+    ).sort("ground_truth_set_at", -1).limit(int(limit))
+    items = await cursor.to_list(length=limit)
+    for it in items:
+        ts = it.get("ground_truth_set_at")
+        if hasattr(ts, "isoformat"):
+            it["ground_truth_set_at"] = ts.isoformat()
+    return {"items": items, "count": len(items)}
