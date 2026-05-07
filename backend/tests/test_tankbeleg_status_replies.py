@@ -68,12 +68,13 @@ def test_dle_eot_all_n_values_reply_0x12():
         assert bytes(reader.ser.written) == b"\x12", f"DLE EOT {n} sollte 0x12 antworten"
 
 
-def test_dle_eot_n4_no_reply_tm_u295_doesnt_have_it():
-    """TM-U295 Spec definiert kein n=4 - wir antworten nicht aber konsumieren die Bytes."""
+def test_dle_eot_n4_replies_0x12_safety_net():
+    """TM-U295 Spec hat kein n=4 - aber Sening 3.56[3.57]DE schickt es eventuell
+    aus altem TM-U220-Profil. Safety-Reply 0x12."""
     reader = _make_reader()
     out = reader._handle_status_queries(b"\x10\x04\x04")
     assert out == b"", "n=4 muss aus dem Buffer entfernt werden"
-    assert bytes(reader.ser.written) == b"", "n=4 darf KEINE Antwort senden (TM-U295 hat das nicht)"
+    assert bytes(reader.ser.written) == b"\x12", "n=4 Safety-Reply 0x12"
 
 
 def test_dle_enq_replies_0x00():

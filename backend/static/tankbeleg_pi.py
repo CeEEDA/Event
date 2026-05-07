@@ -1740,7 +1740,10 @@ class SerialReceiptReader:
         # Spec-konforme TM-U295-Status-Antworten. Bit 1 (0x02) und Bit 4 (0x10)
         # sind laut Spec FIXED ON in jeder DLE EOT Antwort - daher 0x12 als
         # Mindest-Wert. Weitere Bits sind 0 = "alles ok".
-        STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 5: 0x12}
+        # n=4 ist im TM-U295-Spec NICHT definiert (war TM-U220 receipt printer)
+        # aber Sening 3.56[3.57]DE schickt das eventuell trotzdem aus alten
+        # TM-U220-Profilen. Wir antworten safety-wise mit 0x12 fuer alle vier.
+        STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 4: 0x12, 5: 0x12}
 
         # Prepend any leftover status-query prefix from a previous read.
         if self.pending_prefix:
