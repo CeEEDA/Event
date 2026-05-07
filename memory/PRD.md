@@ -17,6 +17,14 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Tankbeleg-Pi v1.7.8 — TM-U295-Spec-Konform (offizielles PDF abgearbeitet)**: User hat `https://www.jarltech.com/.../TM-U295_spc_I.pdf` geliefert. Kompletter Status-Reply-Code dagegen verifiziert.
+  - **Fix 1**: `DLE EOT n=4` entfernt (existiert NICHT in TM-U295, war TM-U220 receipt-Drucker). Stattdessen `n=5` (Slip Paper Status) hinzugefuegt.
+  - **Fix 2**: `sening_reply_byte` Default von `0x00` → `0x12`. TM-U295-Spec definiert Bit 1+4 als FIXED ON in jedem Status-Byte (`00010010 = 0x12`). `0x00` verletzt diese Invarianten und wird vom Sening wahrscheinlich als "Drucker offline" gewertet.
+  - **Fix 3**: `ESC c 3 n` / `ESC c 4 n` (4-Byte Paper-Sensor-Konfig vom Sening) werden jetzt silent konsumiert statt im Beleg-Buffer zu landen → keine Mistdaten mehr im Beleg.
+  - **Fix 4**: `ESC u` ist 3 Bytes (mit drawer-Parameter), nicht 2.
+  - **Fix 5**: Erweiterte Logs mit Spec-Referenzen damit man bei Problemen direkt im Code sieht welcher Spec-Eintrag gemeint ist.
+  - 31/31 Tests grün (5 neue Tests für DLE EOT n=5, n=4-no-reply, ESC c 3/4 silent-consume, ESC c partial buffering).
+
 - ✅ **Tankbeleg-Pi v1.7.7 — DSR/DTR Bug behoben (FINAL FIX für Sening "Drucker nicht erreichbar")**: Live-Diagnose vom User hat bewiesen: Sening MultiFlow nutzt 3-Wire Null-Modem-Kabel. `DSR=False, CTS=False, CD=False, RI=False`. Mit `dsrdtr=True` (v1.7.5/v1.7.6) hat pyserial deshalb auf DSR=High vor jedem write() gewartet → ALLE Status-Replies blockiert → Sening lief in Timeout. Fix: zurück auf `dsrdtr=False, xonxoff=False, rtscts=False`. Manueller Test des Users zeigt korrektes RX (`1b b3 ff` Polls alle ~600ms). 26/26 Tests grün.
 - ✅ **Sening Reply-Byte-Cycler Diagnose-Tool**: `static/sening_reply_cycler.py` (Download `/api/download/sening-reply-cycler`). Probiert systematisch 13 Kandidaten-Bytes (0x00, 0x12, 0x14, 0x16, 0x10, 0x18, 0x1A, 0x06, 0x90, 0x80, 0x40, 0x7F, 0xFF) durch und meldet welcher Wert den Sening dazu bringt einen Druckjob zu senden (Treffer-Heuristik: >50 Bytes nach Reply). Manuelles Workaround falls 0x00 nach v1.7.7 immer noch nicht reicht.
 

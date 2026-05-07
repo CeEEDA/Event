@@ -52,19 +52,28 @@ def _make_reader():
 
 def test_dle_eot_paper_status_replies_0x12():
     reader = _make_reader()
-    # DLE EOT n=4 ist die Paper-Sensor-Abfrage - kritisch fuer Sening
-    out = reader._handle_status_queries(b"\x10\x04\x04")
+    # DLE EOT n=5 ist die Slip-Paper-Sensor-Abfrage (TM-U295) - kritisch fuer Sening
+    out = reader._handle_status_queries(b"\x10\x04\x05")
     assert out == b"", "Status-Query darf nicht im Print-Buffer landen"
-    assert bytes(reader.ser.written) == b"\x12", f"Paper-Status muss 0x12 antworten, war {reader.ser.written.hex()}"
+    assert bytes(reader.ser.written) == b"\x12", f"Slip-Paper-Status muss 0x12 antworten, war {reader.ser.written.hex()}"
 
 
 def test_dle_eot_all_n_values_reply_0x12():
+    """TM-U295 hat n=1, 2, 3, 5 - n=4 existiert NICHT (war TM-U220)."""
     reader = _make_reader()
-    for n in (1, 2, 3, 4):
+    for n in (1, 2, 3, 5):
         reader.ser.written.clear()
         out = reader._handle_status_queries(bytes([0x10, 0x04, n]))
         assert out == b""
         assert bytes(reader.ser.written) == b"\x12", f"DLE EOT {n} sollte 0x12 antworten"
+
+
+def test_dle_eot_n4_no_reply_tm_u295_doesnt_have_it():
+    """TM-U295 Spec definiert kein n=4 - wir antworten nicht aber konsumieren die Bytes."""
+    reader = _make_reader()
+    out = reader._handle_status_queries(b"\x10\x04\x04")
+    assert out == b"", "n=4 muss aus dem Buffer entfernt werden"
+    assert bytes(reader.ser.written) == b"", "n=4 darf KEINE Antwort senden (TM-U295 hat das nicht)"
 
 
 def test_dle_enq_replies_0x00():
@@ -83,10 +92,38 @@ def test_esc_v_paper_sensor_replies_0x00():
 
 
 def test_esc_u_peripheral_status_replies_0x00():
+    """TM-U295 ESC u 0 ist 3 Bytes (drawer status)."""
     reader = _make_reader()
-    out = reader._handle_status_queries(b"\x1b\x75")
+    out = reader._handle_status_queries(b"\x1b\x75\x00")
     assert out == b""
     assert bytes(reader.ser.written) == b"\x00"
+
+
+def test_esc_c_3_silently_consumed():
+    """ESC c 3 n (Paper-Sensor-Auswahl) muss aus dem Buffer raus, keine Antwort."""
+    reader = _make_reader()
+    out = reader._handle_status_queries(b"\x1b\x63\x33\x30HELLO")
+    assert out == b"HELLO", "Druckdaten nach ESC c 3 muessen erhalten bleiben"
+    assert reader.ser.written == b"", "ESC c 3 darf keine Antwort senden"
+
+
+def test_esc_c_4_silently_consumed():
+    """ESC c 4 n (Stop-on-Paper-End) muss aus dem Buffer raus, keine Antwort."""
+    reader = _make_reader()
+    out = reader._handle_status_queries(b"\x1b\x63\x34\x20WORLD")
+    assert out == b"WORLD"
+    assert reader.ser.written == b""
+
+
+def test_esc_c_partial_buffered():
+    """ESC c am Chunk-Ende mit < 4 Bytes muss vorgehalten werden."""
+    reader = _make_reader()
+    out1 = reader._handle_status_queries(b"data\x1b\x63\x33")
+    assert out1 == b"data"
+    assert reader.ser.written == b""
+    out2 = reader._handle_status_queries(b"\x30more")
+    assert out2 == b"more"
+    assert reader.ser.written == b""
 
 
 def test_gs_r_paper_roll_replies_0x00():
@@ -124,7 +161,7 @@ def test_print_data_passes_through():
 def test_mixed_status_and_print_data():
     """Status-Query gefolgt von Print-Daten gefolgt von noch einer Status-Query."""
     reader = _make_reader()
-    payload = b"\x10\x04\x04" + b"PRINT" + b"\x10\x04\x01"
+    payload = b"\x10\x04\x05" + b"PRINT" + b"\x10\x04\x01"
     out = reader._handle_status_queries(payload)
     assert out == b"PRINT"
     assert bytes(reader.ser.written) == b"\x12\x12"
@@ -138,8 +175,8 @@ def test_partial_status_query_buffered_across_reads():
     out1 = reader._handle_status_queries(b"DATA\x10\x04")
     assert out1 == b"DATA"
     assert reader.ser.written == b"", "Noch keine Antwort - Sequenz unvollstaendig"
-    # Zweites Chunk liefert das fehlende n=4
-    out2 = reader._handle_status_queries(b"\x04MORE")
+    # Zweites Chunk liefert das fehlende n=5 (TM-U295 slip paper status)
+    out2 = reader._handle_status_queries(b"\x05MORE")
     assert out2 == b"MORE"
     assert bytes(reader.ser.written) == b"\x12"
 
@@ -154,9 +191,15 @@ def test_partial_esc_v_buffered():
     assert bytes(reader.ser.written) == b"\x00"
 
 
-def test_script_version_is_177():
+def test_script_version_is_178():
     mod = _load_module()
-    assert mod.SCRIPT_VERSION == "1.7.7", f"SCRIPT_VERSION sollte 1.7.7 sein, ist {mod.SCRIPT_VERSION}"
+    assert mod.SCRIPT_VERSION == "1.7.8", f"SCRIPT_VERSION sollte 1.7.8 sein, ist {mod.SCRIPT_VERSION}"
+
+
+def test_default_sening_reply_byte_is_0x12():
+    """Spec-konformer Default 0x12 (Bit1+4 fixed ON laut TM-U295)."""
+    mod = _load_module()
+    assert mod.DEFAULT_CONF["sening_reply_byte"] == "0x12"
 
 
 def test_default_ftdi_latency_ms_is_1():

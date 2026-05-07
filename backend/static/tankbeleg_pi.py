@@ -22,16 +22,22 @@ Status pruefen:
   sudo journalctl -u tankbeleg_pi -f
 
 Changelog:
+  v1.7.8  - TM-U295-Spec-Konform: Status-Antworten gemaess offizieller Epson
+            TM-U295 Spec ueberprueft. Korrekturen:
+              - DLE EOT n=4 entfernt (gibt es im TM-U295 nicht; war TM-U220),
+                stattdessen n=5 (Slip Paper Status) hinzugefuegt.
+              - ESC u jetzt 3 Bytes (ESC u 0 = peripheral status, drawer).
+              - ESC c 3 / ESC c 4 (4-Byte Paper-Sensor-Konfig) werden silent
+                konsumiert damit sie nicht in den Beleg-Buffer landen.
+              - sening_reply_byte Default von 0x00 -> 0x12 (TM-U295-konformer
+                "Online + Paper OK", Bit1+4 fixed ON laut Spec).
+              - Erweiterte Logs mit Spec-Referenzen.
   v1.7.7  - dsrdtr=False (zurueck): Sening MultiFlow nutzt 3-Wire Null-Modem
-            Kabel und treibt DSR/CTS NIE. dsrdtr=True hat pyserial blockiert,
-            wodurch unsere Status-Replies nie ankamen -> "Drucker nicht
-            erreichbar". Bewiesen durch Live-Diagnose: DSR=False, CTS=False,
-            Sening pollt nur '1b b3 ff' wiederholt.
+            Kabel und treibt DSR/CTS NIE. Bewiesen durch Live-Diagnose.
   v1.7.6  - Live-Raw-Stream RX/TX an /api/system/tankwagen/raw-stream/push.
   v1.7.5  - Hardware-Handshake (dsrdtr=True) Versuch + FTDI-Latency-Timer
-            auf 1ms (FIFO-Overrun-Fix). dsrdtr=True war FALSCH bei 3-Wire
-            (siehe v1.7.7).
-  v1.7.4  - Timestamp-basierter Buffer-Flush (Sening-Polls verhinderten Flush).
+            auf 1ms (FIFO-Overrun-Fix).
+  v1.7.4  - Timestamp-basierter Buffer-Flush.
 """
 
 import serial
@@ -52,7 +58,7 @@ import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet, damit Admins
 # in der Geraete-Uebersicht sehen ob ein Pi noch eine alte Version laeuft.
-SCRIPT_VERSION = "1.7.7"
+SCRIPT_VERSION = "1.7.8"
 
 
 # ====== Konfiguration ======
@@ -71,10 +77,14 @@ DEFAULT_CONF = {
     "gps_host": "127.0.0.1",
     "gps_port": 2947,
     "fahrer_name": "",
-    # Sening MultiFlow poll response. 0x00 = "all flags OK / paper present".
-    # If MultiFlow still reports 'paper out', try 0x01, 0x10, 0x12, 0x7F.
-    # Override via /etc/tankbeleg_pi.conf key 'sening_reply_byte' (hex, e.g. 0x00).
-    "sening_reply_byte": "0x00",
+    # Sening MultiFlow proprietary poll response.
+    # Default 0x12 = TM-U295-konformer "Online + Paper OK" Status-Byte
+    # (Bit 1 = fixed ON laut Spec, Bit 4 = fixed ON, Rest 0 = online,
+    # kein Fehler, drawer LOW). Vorher war 0x00 - das verletzt aber die
+    # in der TM-U295-Spec festgelegten "fixed ON"-Bits 1 und 4 und kann
+    # vom Sening als "ungueltige Antwort / Drucker offline" gewertet werden.
+    # Override via /etc/tankbeleg_pi.conf key 'sening_reply_byte' (hex).
+    "sening_reply_byte": "0x12",
     # FTDI Latency-Timer in Millisekunden. Standard im Linux-Kernel ist 16 ms,
     # was zusammen mit dem 16-Byte UART-FIFO bei langen Sening-Belegen zum
     # Verlust der letzten Ziffer fuehrt (z.B. 1316 L -> 13 L). Wert 1 ms
@@ -1689,24 +1699,48 @@ class SerialReceiptReader:
             self.raw_stream.push(data, "tx", note=note)
 
     def _handle_status_queries(self, data: bytes) -> bytes:
-        """Parse incoming bytes for Epson DLE EOT status queries and respond to them.
-        Returns the bytes WITHOUT the status queries (so they don't land in the receipt).
+        """Parst eingehende Bytes und beantwortet Epson TM-U295 Status-Queries.
+        Gibt die Bytes ZURUECK ohne die Status-Queries (damit sie nicht im
+        Print-Buffer / Beleg landen).
 
-        Unterstuetzte Status-Anfragen (TM-U295 / Sening kompatibel):
-          DLE EOT n  (0x10 0x04 n)  n = 1..4
-            n=1: printer status   -> 0x12  (online, drawer OK, cover closed, no feed)
-            n=2: offline status   -> 0x12  (no offline conditions)
-            n=3: error status     -> 0x12  (no errors, no auto-recoverable error)
-            n=4: paper sensor     -> 0x12  (paper OK / slip inserted)
-          DLE ENQ n  (0x10 0x05 n)  -> 0x00 (real-time response, ok)
-          ESC v       (0x1B 0x76)    -> 0x00 (legacy paper sensor: paper present, no near-end)
-          GS r n      (0x1D 0x72 n)
-            n=1/49: paper roll status -> 0x00 (paper adequate)
-            n=2/50: drawer kick status -> 0x00 (drawer closed)
-          ESC u       (0x1B 0x75)    -> 0x00 (peripheral status, peripheral ok)
-          Sening proprietary ESC B3 n (0x1B 0xB3 n) -> sening_reply_byte
+        Status-Antworten gemaess offizieller TM-U295-Spec
+        (https://www.jarltech.com/.../TM-U295_spc_I.pdf):
+
+          DLE EOT n  (0x10 0x04 n) - Real-time Status Transmission:
+            n=1 (printer status)   -> 0x12 (Bit1+4 fixed=ON, online, drawer LOW)
+            n=2 (offline status)   -> 0x12 (Bit1+4 fixed=ON, kein paper-end, kein error)
+            n=3 (error status)     -> 0x12 (Bit1+4 fixed=ON, kein unrecoverable error)
+            n=5 (slip paper status)-> 0x12 (Bit1+4 fixed=ON, slip selected & detected
+                                            durch BOF+TOF Sensoren)
+            HINWEIS: TM-U295 hat KEIN n=4 (das war TM-U220 receipt printer).
+                     n=5 ist Slip-spezifisch fuer TM-U295.
+
+          DLE ENQ n  (0x10 0x05 n) - Realtime Request -> 0x00 (no error)
+
+          ESC v       (0x1B 0x76)  - Transmit Paper Sensor Status:
+            -> 0x00 (Bit0=BOF detected, Bit1=TOF detected = paper present;
+                     Bit4+7 fixed=OFF; rest undefined)
+
+          ESC u 0     (0x1B 0x75 0x00) - Transmit Peripheral Device Status (drawer)
+            -> 0x00 (drawer pin 3 LOW)
+
+          GS r n      (0x1D 0x72 n):
+            n=1, 49 -> 0x00 (paper sensor status, identisch ESC v)
+            n=2, 50 -> 0x00 (drawer kick-out connector status)
+
+          ESC c 3 n / ESC c 4 n (4 bytes):
+            Konfigurationsbefehle vom Sening fuer Paper-Sensor-Auswahl. KEINE
+            Antwort erforderlich, aber Bytes muessen aus dem Print-Stream
+            entfernt werden damit sie nicht in den Beleg landen.
+
+          Sening proprietary  ESC B3 n  (0x1B 0xB3 n) - 3 bytes:
+            -> sening_reply_byte (default 0x12, konfigurierbar)
+            Nicht in TM-U295-Spec. Sening pollt damit "ist Drucker bereit?".
         """
-        STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 4: 0x12}
+        # Spec-konforme TM-U295-Status-Antworten. Bit 1 (0x02) und Bit 4 (0x10)
+        # sind laut Spec FIXED ON in jeder DLE EOT Antwort - daher 0x12 als
+        # Mindest-Wert. Weitere Bits sind 0 = "alles ok".
+        STATUS_OK = {1: 0x12, 2: 0x12, 3: 0x12, 5: 0x12}
 
         # Prepend any leftover status-query prefix from a previous read.
         if self.pending_prefix:
@@ -1723,12 +1757,17 @@ class SerialReceiptReader:
             # for the next read instead of leaking into the receipt buffer.
             #   DLE EOT/ENQ n : 3 bytes -> wenn remaining < 3 und Praefix passt, puffern
             #   ESC B3 n      : 3 bytes -> wenn remaining < 3, puffern
+            #   ESC c 3/4 n   : 4 bytes -> wenn remaining < 4, puffern
             #   GS r n        : 3 bytes -> wenn remaining < 3, puffern
             #   ESC v / ESC u : 2 bytes -> nur puffern wenn remaining < 2
             if b == 0x10 and remaining < 3 and (remaining < 2 or data[i + 1] in (0x04, 0x05)):
                 self.pending_prefix.extend(data[i:])
                 return bytes(out)
             if b == 0x1B and remaining < 3 and remaining >= 2 and data[i + 1] == 0xB3:
+                self.pending_prefix.extend(data[i:])
+                return bytes(out)
+            if b == 0x1B and remaining >= 2 and data[i + 1] == 0x63 and remaining < 4:
+                # ESC c 3 / ESC c 4 ist 4 Bytes lang
                 self.pending_prefix.extend(data[i:])
                 return bytes(out)
             if b == 0x1B and remaining < 2:
@@ -1745,7 +1784,12 @@ class SerialReceiptReader:
                 if n in STATUS_OK:
                     reply = bytes([STATUS_OK[n]])
                     self._reply(reply, note=f"DLE EOT {n} -> 0x{STATUS_OK[n]:02X}")
-                    log.info(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X} (Paper OK / online)")
+                    log.info(f"Status-Query DLE EOT {n} -> 0x{STATUS_OK[n]:02X} (TM-U295 spec, online/paper OK)")
+                    i += 3
+                    continue
+                else:
+                    # Unbekannter n-Wert - log + skip (nicht in Buffer)
+                    log.info(f"DLE EOT {n} -> KEINE Antwort (n nicht in TM-U295 Spec)")
                     i += 3
                     continue
             # DLE ENQ n (real-time status request, 0x10 0x05 n)
@@ -1754,32 +1798,49 @@ class SerialReceiptReader:
                 log.debug(f"Realtime ENQ n={data[i+2]} -> 0x00 (ok)")
                 i += 3
                 continue
-            # ESC v (0x1B 0x76) - legacy paper sensor status (TM-U295 spec)
-            # Reply: bit0=0 paper present, bit2=0 paper not near-end -> 0x00
+            # ESC v (0x1B 0x76) - Transmit Paper Sensor Status (TM-U295 Spec)
+            # Reply Bit 0=BOF detected (paper), Bit 1=TOF detected (paper),
+            # Bit 4+7 fixed OFF -> 0x00 = "Slip paper present at both sensors"
             if b == 0x1B and remaining >= 2 and data[i + 1] == 0x76:
-                self._reply(b"\x00", note="ESC v -> 0x00 (paper present)")
-                log.info("Status-Query ESC v -> 0x00 (paper present, not near-end)")
+                self._reply(b"\x00", note="ESC v -> 0x00 (paper present BOF+TOF)")
+                log.info("Status-Query ESC v -> 0x00 (slip paper present at BOF+TOF)")
                 i += 2
                 continue
-            # ESC u (0x1B 0x75) - peripheral device status
-            if b == 0x1B and remaining >= 2 and data[i + 1] == 0x75:
-                self._reply(b"\x00", note="ESC u -> 0x00 (peripheral ok)")
-                log.info("Status-Query ESC u -> 0x00 (peripheral ok)")
-                i += 2
-                continue
-            # GS r n (0x1D 0x72 n) - transmit status
-            if b == 0x1D and remaining >= 3 and data[i + 1] == 0x72:
-                n = data[i + 2]
-                # n=1/49 paper roll, n=2/50 drawer -> always 0x00 = OK
-                self._reply(b"\x00", note=f"GS r {n} -> 0x00")
-                log.info(f"Status-Query GS r {n} -> 0x00 (ok)")
+            # ESC u 0 (0x1B 0x75 0x00) - Peripheral Device Status (drawer)
+            # Reply: Bit 0=0 (drawer pin 3 LOW = drawer closed)
+            if b == 0x1B and remaining >= 3 and data[i + 1] == 0x75:
+                self._reply(b"\x00", note="ESC u -> 0x00 (drawer closed)")
+                log.info("Status-Query ESC u -> 0x00 (drawer pin 3 LOW)")
                 i += 3
                 continue
+            # GS r n (0x1D 0x72 n) - Transmit Status (TM-U295 Spec)
+            # n=1 oder 49 -> paper sensor status (identisch ESC v) -> 0x00
+            # n=2 oder 50 -> drawer kick-out connector status -> 0x00
+            if b == 0x1D and remaining >= 3 and data[i + 1] == 0x72:
+                n = data[i + 2]
+                self._reply(b"\x00", note=f"GS r {n} -> 0x00")
+                if n in (1, 49):
+                    log.info(f"Status-Query GS r {n} -> 0x00 (paper sensor: BOF+TOF detected)")
+                elif n in (2, 50):
+                    log.info(f"Status-Query GS r {n} -> 0x00 (drawer pin 3 LOW)")
+                else:
+                    log.info(f"Status-Query GS r {n} -> 0x00 (unbekanntes n, default ok)")
+                i += 3
+                continue
+            # ESC c 3 n / ESC c 4 n (0x1B 0x63 0x33|0x34 n) - Paper-Sensor Config
+            # Diese 4-Byte-Commands setzen welche Sensoren paper-end signal
+            # ausgeben bzw. Druck stoppen. KEINE Antwort - aber raus aus dem
+            # Print-Buffer damit sie nicht in den Beleg landen.
+            if b == 0x1B and remaining >= 4 and data[i + 1] == 0x63 and data[i + 2] in (0x33, 0x34):
+                cmd = "ESC c 3" if data[i + 2] == 0x33 else "ESC c 4"
+                n = data[i + 3]
+                log.info(f"Sening Config {cmd} n=0x{n:02X} (Paper-Sensor-Auswahl, no reply)")
+                i += 4
+                continue
             # Sening MultiFlow proprietary poll:  ESC (0x1B) 0xB3 <n>
-            # Observed every ~550ms as '1b b3 ff'. MultiFlow waits for a status reply
-            # before it will transmit the slip print job. The reply byte controls whether
-            # MultiFlow thinks the printer is ready (paper present) or reports an error.
-            # Configurable via /etc/tankbeleg_pi.conf key 'sening_reply_byte'.
+            # NICHT in TM-U295-Spec dokumentiert - Sening-spezifisch.
+            # Sehr wahrscheinlich ein "Hallo Drucker, bist du da?" Probe.
+            # Default-Antwort 0x12 = TM-U295 "online + paper OK" status byte.
             if b == 0x1B and remaining >= 3 and data[i + 1] == 0xB3:
                 zone = data[i + 2]
                 reply = bytes([self.sening_reply_byte])
@@ -1791,7 +1852,7 @@ class SerialReceiptReader:
             # koennen (Sening hat z.T. undokumentierte Varianten je Firmware).
             # Wir loggen nur den Header, lassen die Bytes aber im Buffer
             # damit der Parser den eigentlichen Beleg-Inhalt nicht verliert.
-            if b == 0x1B and remaining >= 2 and data[i + 1] not in (0xB3, 0x76, 0x75):
+            if b == 0x1B and remaining >= 2 and data[i + 1] not in (0xB3, 0x76, 0x75, 0x63):
                 # Sammle naechste 4 Bytes fuer Forensik-Log
                 preview = data[i:min(i + 6, len(data))]
                 log.debug(f"ESC-Sequenz unbekannt (kein Status-Query, weiter im Print-Stream): {preview.hex(' ')}")
