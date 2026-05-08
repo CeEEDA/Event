@@ -74,6 +74,7 @@ async def _resolve_generator(generator_id: str):
                 "location_name": device.get("user_field", ""),
                 "latitude": device.get("latitude"),
                 "longitude": device.get("longitude"),
+                "last_gps_update": device.get("last_gps_update"),
                 "status": dev_status,
                 "is_active": True,
                 "device_id": device["id"],
@@ -682,6 +683,23 @@ async def ingest_telemetry(generator_id: str, data: TelemetryPayload):
     if data.engine_running is not None:
         status_update["status"] = "running" if data.engine_running else "standby"
 
+    # Live-GPS-Position auf den Generator-Master-Record schreiben.
+    # Sonst zeigt das Frontend (GeneratorDetailPage liest generator.latitude/longitude)
+    # entweder die Position aus der ERSTREGISTRIERUNG oder gar keine -
+    # auch wenn das Geraet seit Tagen frische GPS-Daten sendet.
+    # Plausibilitaetscheck: GPS muss innerhalb der gueltigen Wertebereiche sein
+    # und nicht 0/0 (null-Insel) - Geraete senden manchmal 0/0 vor dem ersten Fix.
+    try:
+        if data.gps_lat is not None and data.gps_lng is not None:
+            lat_f = float(data.gps_lat)
+            lng_f = float(data.gps_lng)
+            if -90.0 <= lat_f <= 90.0 and -180.0 <= lng_f <= 180.0 and not (lat_f == 0.0 and lng_f == 0.0):
+                status_update["latitude"] = lat_f
+                status_update["longitude"] = lng_f
+                status_update["last_gps_update"] = ts
+    except (TypeError, ValueError):
+        pass
+
     # Check for alarms
     if data.alarms:
         status_update["status"] = "alarm"
@@ -1140,9 +1158,24 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         "mqtt_status": device_status,
         "updated_at": now_iso,
     }
-    if payload.latitude is not None and payload.longitude is not None:
-        update_fields["latitude"] = payload.latitude
-        update_fields["longitude"] = payload.longitude
+    # Live-GPS-Position auf das Device + den virtuellen Generator schreiben.
+    # Plausibilitaetscheck: GPS muss innerhalb gueltiger Wertebereiche sein
+    # und nicht 0/0 (null-Insel) - Geraete senden manchmal 0/0 vor erstem Fix.
+    valid_gps_lat = None
+    valid_gps_lng = None
+    try:
+        if payload.latitude is not None and payload.longitude is not None:
+            lat_f = float(payload.latitude)
+            lng_f = float(payload.longitude)
+            if -90.0 <= lat_f <= 90.0 and -180.0 <= lng_f <= 180.0 and not (lat_f == 0.0 and lng_f == 0.0):
+                valid_gps_lat = lat_f
+                valid_gps_lng = lng_f
+    except (TypeError, ValueError):
+        pass
+    if valid_gps_lat is not None and valid_gps_lng is not None:
+        update_fields["latitude"] = valid_gps_lat
+        update_fields["longitude"] = valid_gps_lng
+        update_fields["last_gps_update"] = now_iso
 
     # Build latest_snapshot from the most recent record
     if payload.records:
@@ -1185,9 +1218,10 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
 
     # Update virtual generator status too
     gen_update = {"last_seen": now_iso, "mqtt_status": device_status, "updated_at": now_iso}
-    if payload.latitude is not None and payload.longitude is not None:
-        gen_update["latitude"] = payload.latitude
-        gen_update["longitude"] = payload.longitude
+    if valid_gps_lat is not None and valid_gps_lng is not None:
+        gen_update["latitude"] = valid_gps_lat
+        gen_update["longitude"] = valid_gps_lng
+        gen_update["last_gps_update"] = now_iso
     await db.generators.update_one(
         {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
         {"$set": gen_update}
