@@ -2009,6 +2009,11 @@ from routes.devices import router as device_router, init_device_routes
 init_device_routes(db, decode_jwt_token, fs)
 app.include_router(device_router)
 
+# Admin GPS Diagnose/Reset
+from routes.admin_gps import router as admin_gps_router, init_admin_gps_routes
+init_admin_gps_routes(db, decode_jwt_token)
+app.include_router(admin_gps_router)
+
 # Service Plan routes
 from routes.serviceplan import router as serviceplan_router, init_serviceplan_routes
 init_serviceplan_routes(db, decode_jwt_token, fs)

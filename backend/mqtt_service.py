@@ -165,7 +165,7 @@ async def _process_message(msg):
         if topic_prefix and topic.startswith(topic_prefix):
             logger.info(f"MQTT: Matched via gateway mapping (prefix='{topic_prefix}', gen={generator_id})")
             if topic.endswith("/gps"):
-                await _process_gps(generator_id, payload_str, parsed, timestamp)
+                await _process_gps(generator_id, payload_str, parsed, timestamp, topic=topic)
                 return
             if topic.endswith("/status"):
                 await _process_status(generator_id, payload_str, timestamp)
@@ -182,7 +182,7 @@ async def _process_message(msg):
         if prefix and topic.startswith(prefix):
             logger.info(f"MQTT: Matched via generator prefix (prefix='{prefix}', gen={gen['id']})")
             if topic.endswith("/gps"):
-                await _process_gps(gen["id"], payload_str, parsed, timestamp)
+                await _process_gps(gen["id"], payload_str, parsed, timestamp, topic=topic)
                 return
             if topic.endswith("/status"):
                 await _process_status(gen["id"], payload_str, timestamp)
@@ -202,7 +202,7 @@ async def _process_message(msg):
             device_id = dev["id"]
             logger.info(f"MQTT: Matched device {device_id} via module_uid {uid}")
             if topic.endswith("/gps"):
-                await _process_gps_device(device_id, payload_str, parsed, timestamp)
+                await _process_gps_device(device_id, payload_str, parsed, timestamp, topic=topic)
                 return
             if topic.endswith("/status"):
                 # JSON payload = telemetry data (e.g. run hours), text = online/offline status
@@ -224,6 +224,50 @@ async def _process_message(msg):
 
     stored_uids = [d.get("dse_module_uid", "") for d in _devices_cache] if _devices_cache else []
     logger.debug(f"MQTT: Unmatched topic '{topic}' | stored_uids={stored_uids}")
+
+
+async def _log_gps_event(topic, lat, lng, route, applied_to, raw_payload=None):
+    """Schreibt jedes verarbeitete GPS-Event in mqtt_gps_log fuer Admin-Diagnose.
+
+    route:      "per_generator" | "per_device" | "gateway_fallback" | "rejected"
+    applied_to: Liste der Generator-IDs (oder Device-IDs als dev-<id>), die
+                tatsaechlich upgedated wurden.
+    """
+    if _db is None:
+        return
+    try:
+        doc = {
+            "id": str(uuid.uuid4()),
+            "topic": topic,
+            "lat": lat,
+            "lng": lng,
+            "route": route,
+            "applied_to": list(applied_to) if applied_to else [],
+            "match_count": len(applied_to) if applied_to else 0,
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "raw_preview": (str(raw_payload)[:300] if raw_payload else None),
+        }
+        await _db.mqtt_gps_log.insert_one(doc)
+        # Begrenze auf die letzten 1000 Eintraege (kein TTL-Index noetig)
+        global _raw_msg_counter
+        _raw_msg_counter += 1
+        if _raw_msg_counter % 200 == 0:
+            try:
+                cnt = await _db.mqtt_gps_log.count_documents({})
+                if cnt > 1000:
+                    # Alteste 200 loeschen
+                    oldest = await _db.mqtt_gps_log.find(
+                        {}, {"_id": 0, "id": 1}, sort=[("ts", 1)]
+                    ).to_list(cnt - 1000)
+                    if oldest:
+                        old_ids = [o["id"] for o in oldest]
+                        await _db.mqtt_gps_log.delete_many({"id": {"$in": old_ids}})
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"_log_gps_event failed: {e}")
+
+
 
 
 async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
@@ -313,14 +357,16 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
             f"MQTT: Gateway-GPS {lat},{lng} auf {len(matched_gen_ids)} "
             f"Generator(en) am Gateway '{gw_topic}' angewendet"
         )
+        await _log_gps_event(topic, lat, lng, "gateway_fallback", matched_gen_ids, raw_payload)
     else:
         logger.info(
             f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - kein Generator/Device "
             f"an Gateway '{gw_topic}' zugeordnet"
         )
+        await _log_gps_event(topic, lat, lng, "rejected", [], raw_payload)
 
 
-async def _process_gps(generator_id, raw_payload, parsed, timestamp):
+async def _process_gps(generator_id, raw_payload, parsed, timestamp, topic=""):
     """Process GPS data from DSE890 gateway (Function 10 format).
     DSE890 GPS JSON format: {"UID":{"LAT": 54.176182,"LON": -0.311576}}
     """
@@ -351,6 +397,7 @@ async def _process_gps(generator_id, raw_payload, parsed, timestamp):
                     {"$set": {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}}
                 )
                 logger.info(f"MQTT: GPS updated for generator {generator_id}: {lat}, {lng}")
+                await _log_gps_event(topic, lat, lng, "per_generator", [generator_id], raw_payload)
             else:
                 logger.debug(f"MQTT: GPS invalid coordinates for {generator_id}: {lat}, {lng}")
         except (ValueError, TypeError):
@@ -556,7 +603,7 @@ async def _process_alarm(generator_id, raw_payload, parsed, timestamp):
             logger.info(f"MQTT: Function-4 alarms resolved for {generator_id}")
 
 
-async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
+async def _process_gps_device(device_id, raw_payload, parsed, timestamp, topic=""):
     """Process GPS data for a device (same logic as generators)."""
     lat, lng = None, None
     if isinstance(parsed, dict):
@@ -605,6 +652,7 @@ async def _process_gps_device(device_id, raw_payload, parsed, timestamp):
                         {"$set": gps_update}
                     )
                 logger.info(f"MQTT: GPS updated for device {device_id}: {lat}, {lng}")
+                await _log_gps_event(topic, lat, lng, "per_device", [f"dev-{device_id}"], raw_payload)
         except (ValueError, TypeError):
             pass
 
