@@ -29,7 +29,7 @@ const STATUS_COLORS = {
 const PAYMENT_LABELS = {
   ausstehend: "Ausstehend", reserviert: "Reserviert", bezahlt: "Bezahlt", erstattet: "Erstattet",
   pending_payment: "Ausstehend", abgerechnet: "Abgerechnet", paid: "Bezahlt",
-  auf_rechnung: "Auf Rechnung",
+  auf_rechnung: "Rechnung",
 };
 const PAYMENT_COLORS = {
   ausstehend: "text-amber-600", reserviert: "text-blue-600", bezahlt: "text-emerald-600", erstattet: "text-gray-500",
@@ -39,13 +39,18 @@ const PAYMENT_COLORS = {
 
 /**
  * Effektiver Zahlungsstatus fuer die Liste:
+ * - 0-EUR-Anschluesse (z.B. Wohnwagen bei stadt-gefoerderten Veranstaltungen)
+ *   gelten automatisch als "Bezahlt", da es nichts zu zahlen gibt und somit
+ *   auch keine Stripe-Bestaetigung kommen kann.
  * - Wenn die Anmeldung explizit auf "Rechnung" laeuft ODER der Schausteller
- *   die Rechnungsfreigabe hat UND der Status noch "Ausstehend" ist -> "Auf Rechnung".
+ *   die Rechnungsfreigabe hat UND der Status noch "Ausstehend" ist -> "Rechnung".
  * - Bereits bezahlte/abgerechnete/erstattete Anmeldungen behalten ihren Status.
  */
 function effectivePaymentStatus(signup) {
   const raw = signup?.payment_status || "ausstehend";
   if (raw === "bezahlt" || raw === "paid" || raw === "abgerechnet" || raw === "erstattet") return raw;
+  // 0-EUR-Anmeldungen: keine Zahlung notwendig
+  if ((Number(signup?.price) || 0) <= 0) return "bezahlt";
   const onInvoice =
     signup?.payment_method === "rechnung" ||
     signup?.schausteller?.kauf_auf_rechnung === true;

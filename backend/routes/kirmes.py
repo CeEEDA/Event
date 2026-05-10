@@ -1040,7 +1040,17 @@ async def signup_for_event(data: EventSignup):
     # Determine if upfront payment is required
     # "rechnung" (purchase on account) = immediate confirmation
     # "kreditkarte" / "paypal" = pending until payment confirmed
-    requires_payment = data.payment_method != "rechnung"
+    # Sonderfall: price == 0 (z.B. Wohnwagen-Anschluss bei stadt-gefoerderten
+    # Veranstaltungen) -> direkt 'bezahlt', weil es nichts zu zahlen gibt und
+    # somit kein Stripe-Checkout erstellt wird, der den Status spaeter aktualisieren
+    # koennte. Sonst haengt der Eintrag ewig auf "Ausstehend".
+    requires_payment = data.payment_method != "rechnung" and price > 0
+    if price <= 0:
+        initial_payment_status = "bezahlt"
+    elif requires_payment:
+        initial_payment_status = "pending_payment"
+    else:
+        initial_payment_status = "ausstehend"
 
     signup_id = str(uuid.uuid4())
     signup_doc = {
@@ -1052,7 +1062,7 @@ async def signup_for_event(data: EventSignup):
         "connection_type": data.connection_type,
         "price": price,
         "payment_method": data.payment_method,
-        "payment_status": "pending_payment" if requires_payment else "ausstehend",
+        "payment_status": initial_payment_status,
         "deposit_amount": 0.0,
         "meter_id": None,
         "meter_start": None,
