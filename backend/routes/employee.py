@@ -758,24 +758,33 @@ async def _soll_minutes_for_weekday(user_id: str, weekday: int) -> int:
 
 
 async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
-    """Berechne Ueberstunden eines Jahres komplett neu aus allen time_entries
-    + work_schedule. Schreibt das Ergebnis in hr_data.overtime_hours.
-    Wird nach JEDEM Schreib-Vorgang an time_entries gerufen (clock_out,
-    manuelle Erfassung, Edit, Delete), damit Stand immer konsistent ist
-    auch wenn Eintraege rueckwirkend geaendert werden.
+    """Berechne Ueberstunden eines Jahres aus Baseline + time_entries + Abbau-Antraegen.
+
+    Pattern:
+      overtime_hours = overtime_baseline + sum(ist-soll fuer alle time_entries)
+                       - sum(hours_deducted aus genehmigten ueberstundenabbau-Antraegen)
+
+    'overtime_baseline' ist der manuell vom Admin eingetragene Anfangsbestand
+    (z.B. "Mitarbeiter X hatte beim Start 35h aus altem System"). Ohne diese
+    Baseline-Spalte wuerde der Recompute den Anfangsbestand vergessen.
+
+    SICHERHEITS-MIGRATION: Wenn ein User noch KEINE overtime_baseline hat aber
+    bereits ein overtime_hours-Wert in der DB, ist das mit hoher Wahrscheinlich-
+    keit ein historisch gewachsener Bestand. In dem Fall berechnen wir die
+    Baseline rueckwaerts so, dass der angezeigte Wert ERHALTEN bleibt:
+       baseline := current_overtime_hours - sum(ist-soll) + sum(deductions)
+    Damit fuehrt der Recompute NICHT zu einer ploetzlichen Aenderung.
     """
     from datetime import date as _date
-    # Vorhandenen hr_data-Eintrag holen (oder anlegen)
-    hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0})
-    # Sammle alle time_entries des Jahres mit Datum
+    hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0}) or {}
+
+    # 1) Diff aus time_entries
     cursor = db.time_entries.find(
         {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
         {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
     )
     total_diff_minutes = 0
     async for e in cursor:
-        # Manuelle Sondereintraege wie 'urlaub'/'krank'/'ueberstundenabbau'
-        # zaehlen NICHT als Ist-Stunden (werden separat im hr_data verbucht).
         if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
             continue
         try:
@@ -783,15 +792,11 @@ async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
         except Exception:
             continue
         soll = await _soll_minutes_for_weekday(user_id, wd)
-        if soll <= 0:
-            # Kein Soll fuer diesen Wochentag (z.B. Sonntag) -> alle Ist-Minuten
-            # zaehlen voll als Ueberstunden.
-            soll = 0
         ist = float(e.get("duration_minutes") or 0)
         total_diff_minutes += (ist - soll)
-    new_overtime = round(total_diff_minutes / 60.0, 2)
-    # Kompensation aus 'ueberstundenabbau'-Antraegen behalten: wir verrechnen
-    # diese in einem zweiten Durchlauf (Antraege liegen in 'absences').
+    diff_hours = round(total_diff_minutes / 60.0, 2)
+
+    # 2) Genehmigte ueberstundenabbau-Antraege
     abs_cursor = db.absences.find(
         {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
          "date": {"$regex": f"^{year}-"}},
@@ -803,13 +808,32 @@ async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
             deduction += float(a.get("hours_deducted") or 0)
         except (TypeError, ValueError):
             continue
-    new_overtime = round(new_overtime - deduction, 2)
+
+    # 3) Baseline ermitteln - falls noch nicht gesetzt, rueckwaerts so berechnen
+    # dass der aktuell angezeigte overtime_hours-Wert erhalten bleibt.
+    baseline = hr.get("overtime_baseline")
+    if baseline is None:
+        current_total = float(hr.get("overtime_hours") or 0)
+        # current_total = baseline + diff_hours - deduction  =>  baseline = current_total - diff_hours + deduction
+        baseline = round(current_total - diff_hours + deduction, 2)
+        # Baseline persistent ablegen - so dass naechste Recomputes konsistent bleiben.
+        await db.hr_data.update_one(
+            {"user_id": user_id, "year": year},
+            {"$set": {"overtime_baseline": baseline,
+                       "overtime_baseline_set_at": datetime.now(timezone.utc).isoformat(),
+                       "overtime_baseline_reason": "auto-migration: erhalten was vorher im overtime_hours stand"}},
+            upsert=True,
+        )
+        logger.info(f"Overtime baseline AUTO-SET: user={user_id} year={year} baseline={baseline}h (preserves displayed {current_total}h)")
+
+    new_overtime = round(float(baseline) + diff_hours - deduction, 2)
 
     update = {"overtime_hours": new_overtime, "updated_at": datetime.now(timezone.utc).isoformat()}
     if not hr:
         await db.hr_data.insert_one({
             "user_id": user_id, "year": year,
             "overtime_hours": new_overtime,
+            "overtime_baseline": baseline,
             "vacation_days_total": 0, "vacation_days_used": 0,
             "created_at": datetime.now(timezone.utc).isoformat(),
             **update,
@@ -819,7 +843,7 @@ async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
             {"user_id": user_id, "year": year},
             {"$set": update},
         )
-    logger.info(f"Overtime recompute: user={user_id} year={year} → {new_overtime}h (deduction={deduction}h)")
+    logger.info(f"Overtime recompute: user={user_id} year={year} baseline={baseline}h + diff={diff_hours}h - deduction={deduction}h = {new_overtime}h")
     return new_overtime
 
 
@@ -1114,8 +1138,45 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
 
     year = datetime.now(timezone.utc).year
     update = {}
+    # Wenn der Admin overtime_hours direkt setzt, muessen wir gleichzeitig die
+    # overtime_baseline so anpassen, dass der gesetzte Wert auch nach dem naechsten
+    # Recompute erhalten bleibt. Ohne diesen Schritt wuerde der Recompute den
+    # Wert beim naechsten Time-Edit ueberschreiben (baseline+diff-deduction).
     if "overtime_hours" in data:
-        update["overtime_hours"] = float(data["overtime_hours"])
+        new_value = float(data["overtime_hours"])
+        update["overtime_hours"] = new_value
+        # Diff aus time_entries des Jahres + Deductions berechnen, um baseline zu setzen
+        from datetime import date as _date
+        cursor = db.time_entries.find(
+            {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
+            {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
+        )
+        diff_min = 0
+        async for e in cursor:
+            if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
+                continue
+            try:
+                wd = _date.fromisoformat(e["date"]).weekday()
+            except Exception:
+                continue
+            soll = await _soll_minutes_for_weekday(user_id, wd)
+            ist = float(e.get("duration_minutes") or 0)
+            diff_min += (ist - soll)
+        diff_h = round(diff_min / 60.0, 2)
+        abs_cursor = db.absences.find(
+            {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
+             "date": {"$regex": f"^{year}-"}},
+            {"_id": 0, "hours_deducted": 1}
+        )
+        deduction = 0.0
+        async for a in abs_cursor:
+            try:
+                deduction += float(a.get("hours_deducted") or 0)
+            except (TypeError, ValueError):
+                continue
+        update["overtime_baseline"] = round(new_value - diff_h + deduction, 2)
+        update["overtime_baseline_set_at"] = datetime.now(timezone.utc).isoformat()
+        update["overtime_baseline_reason"] = "admin-manuell gesetzt"
     if "vacation_days_total" in data:
         update["vacation_days_total"] = int(data["vacation_days_total"])
     if "vacation_days_used" in data:
