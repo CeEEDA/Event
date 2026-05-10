@@ -21,6 +21,7 @@ import MqttConfigPage from "./pages/MqttConfigPage";
 import EnergyMonitoringPage from "./pages/EnergyMonitoringPage";
 import EnergyMonitoringDetailPage from "./pages/EnergyMonitoringDetailPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
+import AdminGpsDiagnosePage from "./pages/AdminGpsDiagnosePage";
 import KiTrainingPage from "./pages/KiTrainingPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
@@ -207,6 +208,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/gps-diagnose"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminGpsDiagnosePage />
           </ProtectedRoute>
         }
       />

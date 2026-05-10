@@ -17,6 +17,13 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **GPS-Diagnose-UI fuer Admin** (`/admin/gps-diagnose`) (Feb 2026): Drei Tabs
+  - **Status & Duplikate**: Liste aller Devices + Generators mit Koordinaten, Alter (Min/h/Tage farblich kodiert), Duplikat-Warnung wenn mehrere Eintraege dieselbe Position teilen.
+  - **Live-Log**: zeigt die letzten 200 MQTT-GPS-Events mit Topic, Route (`per_generator`/`per_device`/`gateway_fallback`/`rejected`) und welches Geraet getroffen wurde. "0 Events" Warnung wenn aktuell nichts reinkommt.
+  - **Reset**: Stundenfilter ("Aelter als N Stunden"), loescht stale `latitude`/`longitude`/`last_gps_update` damit beim naechsten echten Telegramm die korrekte Position pro Geraet neu geschrieben wird.
+  - Backend: `routes/admin_gps.py` mit `GET /api/admin/gps/status`, `GET /api/admin/gps/log`, `POST /api/admin/gps/reset`. Admin-Only via JWT.
+  - Logging: jedes verarbeitete GPS-Event landet in `mqtt_gps_log` (max 1000 Eintraege Auto-Pruning).
+
 - ✅ **P0 Frontend-Crash Fix (React-Leaflet "lat is null")** (Feb 2026):
   - `OrderDetailPage.js`: Generators + Assets mit null/undefined Koordinaten werden vor `<Marker position={[lat, lng]}>` herausgefiltert (`Number.isFinite` Check). `FitBounds` ignoriert ungueltige Punkte. Asset-Modal-Map zeigt Fallback "Keine GPS-Position vorhanden".
   - `EnergyMonitoringPage.js`: Map-Block rendert nur Standorte mit gueltigen `gps_lat`/`gps_lon`. MapContainer-Center nutzt den ersten validierten Standort.
