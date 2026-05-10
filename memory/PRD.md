@@ -17,6 +17,18 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **P0 Frontend-Crash Fix (React-Leaflet "lat is null")** (Feb 2026):
+  - `OrderDetailPage.js`: Generators + Assets mit null/undefined Koordinaten werden vor `<Marker position={[lat, lng]}>` herausgefiltert (`Number.isFinite` Check). `FitBounds` ignoriert ungueltige Punkte. Asset-Modal-Map zeigt Fallback "Keine GPS-Position vorhanden".
+  - `EnergyMonitoringPage.js`: Map-Block rendert nur Standorte mit gueltigen `gps_lat`/`gps_lon`. MapContainer-Center nutzt den ersten validierten Standort.
+  - `EnergyMonitoringDetailPage.js`: Map-Block gegated auf `Number.isFinite(location.gps_lat) && Number.isFinite(location.gps_lon)`.
+  - Verifiziert per Screenshot: Auftrag 260095-01 mit DSE L401-Generator laedt ohne Crash. Lint clean.
+
+- ✅ **MQTT-GPS-Fix: Gateway-genaue Zuordnung statt Anlagen-Spreizung** (Feb 2026):
+  - **Bug**: `_process_gateway_gps` hat GPS-Updates auf den **Anlagen-Prefix** (z.B. `eventenergie/35072/`) gespreizt. Bei mehreren DSE890-Gateways mit eigenen GPS-Antennen unter derselben Anlage haben sich die Positionen gegenseitig ueberschrieben → "alle auf einer Position".
+  - **Fix**: `_process_gateway_gps` matcht jetzt streng auf den vollen Gateway-Topic (inkl. UID, z.B. `eventenergie/35072/1922A5D409E1601`). Mappings/Generators/Devices werden nur dann beruehrt, wenn ihr Topic-Prefix mit diesem Gateway uebereinstimmt. Zusaetzlicher Fallback: wenn nichts gefunden wird, sucht der Service Devices mit passender `dse_module_uid` aus dem letzten Topic-Segment.
+  - **Bonus**: `_process_gps_device` propagiert GPS jetzt auch auf den verknuepften virtuellen Generator (`dev-<id>`) UND auf einen echten Generator-Eintrag mit gleicher `serial_number`, sodass `list_generators` direkt die neue Position zurueckgibt.
+  - Lint clean, Backend startet sauber. **User-Test auf Live ausstehend.**
+
 - ✅ **Tankbeleg-Pi v1.7.13 — 0L-Phantom-Filter, Timezone & Heizöl-Default** (Antwort auf User-Bugreport zu Belegen 16974/16975 + -1h Verschiebung + Diesel/Heizöl):
   - **Timezone-Fix**: `now_berlin()`-Helper mit `ZoneInfo("Europe/Berlin")` ersetzt alle `datetime.now()`-Aufrufe für Belegzeitstempel. Pi auf UTC liefert jetzt korrekte CEST/CET-Zeiten (DST automatisch). Behebt -1h-Offset auf den Belegen.
   - **0L-Phantom-Filter verschärft (v1.7.13)**: Stub wird nur noch erstellt wenn (1) Sening-Header vorhanden, (2) M+-Region enthält Zahlenwert > 0, UND (3) `parse_receipt_sening` lieferte `menge_liter > 0`. Probedrucke mit "0" oder "00.0" als Mengenangabe werden nicht mehr in der DB gespeichert. Behebt Geister-Belege wie 16974/16975.
