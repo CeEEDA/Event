@@ -29,11 +29,29 @@ const STATUS_COLORS = {
 const PAYMENT_LABELS = {
   ausstehend: "Ausstehend", reserviert: "Reserviert", bezahlt: "Bezahlt", erstattet: "Erstattet",
   pending_payment: "Ausstehend", abgerechnet: "Abgerechnet", paid: "Bezahlt",
+  auf_rechnung: "Auf Rechnung",
 };
 const PAYMENT_COLORS = {
   ausstehend: "text-amber-600", reserviert: "text-blue-600", bezahlt: "text-emerald-600", erstattet: "text-gray-500",
   pending_payment: "text-amber-600", abgerechnet: "text-fuchsia-600", paid: "text-emerald-600",
+  auf_rechnung: "text-indigo-600",
 };
+
+/**
+ * Effektiver Zahlungsstatus fuer die Liste:
+ * - Wenn die Anmeldung explizit auf "Rechnung" laeuft ODER der Schausteller
+ *   die Rechnungsfreigabe hat UND der Status noch "Ausstehend" ist -> "Auf Rechnung".
+ * - Bereits bezahlte/abgerechnete/erstattete Anmeldungen behalten ihren Status.
+ */
+function effectivePaymentStatus(signup) {
+  const raw = signup?.payment_status || "ausstehend";
+  if (raw === "bezahlt" || raw === "paid" || raw === "abgerechnet" || raw === "erstattet") return raw;
+  const onInvoice =
+    signup?.payment_method === "rechnung" ||
+    signup?.schausteller?.kauf_auf_rechnung === true;
+  if (onInvoice && (raw === "ausstehend" || raw === "pending_payment")) return "auf_rechnung";
+  return raw;
+}
 
 export default function KirmesEventDetailPage() {
   const { id } = useParams();
@@ -719,8 +737,8 @@ export default function KirmesEventDetailPage() {
                             <span className="inline-flex items-center gap-0.5 text-[10px] bg-fuchsia-50 text-fuchsia-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                               <Zap className="w-2.5 h-2.5" /> {signup.connection_type}
                             </span>
-                            <span className={`text-[10px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
-                              {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
+                            <span className={`text-[10px] font-medium ${PAYMENT_COLORS[effectivePaymentStatus(signup)] || "text-gray-500"}`}>
+                              {PAYMENT_LABELS[effectivePaymentStatus(signup)] || signup.payment_status}
                             </span>
                             {signup.deposit_paid && (
                               <span className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-50 text-emerald-700 px-1 py-0.5 rounded-full whitespace-nowrap" title="Kaution wurde per Kreditkarte bezahlt">
@@ -1083,9 +1101,14 @@ export default function KirmesEventDetailPage() {
                       <td className="px-1.5 py-2 text-right font-mono text-xs">{(signup.price || 0).toFixed(2)} €</td>
                       <td className="px-1.5 py-2">
                         <div className="flex flex-col gap-0.5">
-                          <span className={`text-[11px] font-medium ${PAYMENT_COLORS[signup.payment_status] || "text-gray-500"}`}>
-                            {PAYMENT_LABELS[signup.payment_status] || signup.payment_status}
-                          </span>
+                          {(() => {
+                            const effStatus = effectivePaymentStatus(signup);
+                            return (
+                              <span className={`text-[11px] font-medium ${PAYMENT_COLORS[effStatus] || "text-gray-500"}`}>
+                                {PAYMENT_LABELS[effStatus] || effStatus}
+                              </span>
+                            );
+                          })()}
                           {signup.deposit_paid && (
                             <span className="text-[9px] text-emerald-700" title="Kaution per Kreditkarte bezahlt">
                               Kaution {(signup.deposit_amount || 0).toFixed(2)}€
