@@ -77,9 +77,9 @@
       "download-mosquitto_eventenergie-conf"
     ],
     "frontend_download_hrefs": [
-      "https://fuel-parser-debug.preview.emergentagent.com/api/download/mosquitto-bundle",
-      "https://fuel-parser-debug.preview.emergentagent.com/api/download/mosquitto-setup",
-      "https://fuel-parser-debug.preview.emergentagent.com/api/download/mosquitto-config"
+      "https://tankwagen-pi.preview.emergentagent.com/api/download/mosquitto-bundle",
+      "https://tankwagen-pi.preview.emergentagent.com/api/download/mosquitto-setup",
+      "https://tankwagen-pi.preview.emergentagent.com/api/download/mosquitto-config"
     ]
   }
 }

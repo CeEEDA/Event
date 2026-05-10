@@ -262,8 +262,13 @@ export default function EnergyMonitoringPage() {
             </div>
           </div>
 
-          {/* Map */}
-          {locations.length > 0 && (
+          {/* Map - nur Standorte mit gueltigen GPS-Koordinaten anzeigen */}
+          {(() => {
+            const validLocations = (locations || []).filter(
+              (l) => Number.isFinite(Number(l.gps_lat)) && Number.isFinite(Number(l.gps_lon))
+            );
+            if (validLocations.length === 0) return null;
+            return (
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="energy-map">
               <div className="p-4 border-b border-gray-200 flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-fuchsia-600" />
@@ -271,13 +276,13 @@ export default function EnergyMonitoringPage() {
               </div>
               <div style={{ height: "350px" }}>
                 <MapContainer
-                  center={[locations[0].gps_lat, locations[0].gps_lon]}
+                  center={[validLocations[0].gps_lat, validLocations[0].gps_lon]}
                   zoom={12}
                   style={{ height: "100%", width: "100%" }}
                   scrollWheelZoom={true}
                 >
                   <MapTileLayer />
-                  {locations.map((loc) => (
+                  {validLocations.map((loc) => (
                     <Marker
                       key={loc.device_id}
                       position={[loc.gps_lat, loc.gps_lon]}
@@ -306,7 +311,8 @@ export default function EnergyMonitoringPage() {
                 </MapContainer>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Search + Actions */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">

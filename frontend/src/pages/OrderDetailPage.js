@@ -172,8 +172,16 @@ function FitBounds({ center, generators, assets, radiusKm }) {
   useEffect(() => {
     if (!center || !center[0]) return;
     const points = [[center[0], center[1]]];
-    generators.forEach((g) => points.push([g.latitude, g.longitude]));
-    assets.forEach((a) => points.push([a.latitude, a.longitude]));
+    generators.forEach((g) => {
+      if (Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude))) {
+        points.push([g.latitude, g.longitude]);
+      }
+    });
+    assets.forEach((a) => {
+      if (Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude))) {
+        points.push([a.latitude, a.longitude]);
+      }
+    });
     const latOffset = radiusKm / 111;
     points.push([center[0] + latOffset, center[1]]);
     points.push([center[0] - latOffset, center[1]]);
@@ -823,7 +831,9 @@ export default function OrderDetailPage() {
                         {order?.address || "Auftrag"}
                       </Popup>
                     </Marker>
-                    {generators.map((g) => (
+                    {generators
+                      .filter((g) => Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude)))
+                      .map((g) => (
                       <Marker key={g.id} position={[g.latitude, g.longitude]} icon={genIcon}>
                         <Popup>
                           <strong>{g.name}</strong><br />
@@ -832,7 +842,9 @@ export default function OrderDetailPage() {
                         </Popup>
                       </Marker>
                     ))}
-                    {filteredAssets.map((a) => (
+                    {filteredAssets
+                      .filter((a) => Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude)))
+                      .map((a) => (
                       <Marker
                         key={a.id}
                         position={[a.latitude, a.longitude]}
@@ -1306,7 +1318,8 @@ export default function OrderDetailPage() {
                     aber kein overflow:auto fuer den Inhalt. Jetzt mit flex flex-col + flex-1+overflow-y-auto. */}
                 <div className="flex-1 overflow-y-auto" data-testid="asset-modal-body">
 
-                {/* Map */}
+                {/* Map - nur wenn GPS verfuegbar */}
+                {Number.isFinite(Number(selectedAsset.latitude)) && Number.isFinite(Number(selectedAsset.longitude)) ? (
                 <div className="h-56 w-full">
                   <MapContainer
                     center={[selectedAsset.latitude, selectedAsset.longitude]}
@@ -1320,6 +1333,11 @@ export default function OrderDetailPage() {
                     </Marker>
                   </MapContainer>
                 </div>
+                ) : (
+                <div className="h-56 w-full flex items-center justify-center bg-gray-50 text-gray-400 text-xs">
+                  Keine GPS-Position vorhanden
+                </div>
+                )}
 
                 {/* Details */}
                 <div className="p-5 space-y-3">
