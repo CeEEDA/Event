@@ -388,9 +388,17 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
         if new_lng is not None:
             gen_update["longitude"] = new_lng
         if gen_update:
-            serial = update_data.get("serial_number", device.get("serial_number"))
+            # WICHTIG: gezielte Verknuepfung ueber device_id (oder virtuellen
+            # generator_id 'dev-<device_id>'), NICHT ueber serial_number.
+            # Beim Match per serial_number wuerden mehrere Generators mit
+            # gleicher oder leerer Seriennummer faelschlich alle dieselbe
+            # Position bekommen ("die hatten alle die Position vom ersten").
             await db.generators.update_many(
-                {"serial_number": serial},
+                {"$or": [
+                    {"device_id": device_id},
+                    {"id": f"dev-{device_id}"},
+                    {"generator_id": f"dev-{device_id}"},
+                ]},
                 {"$set": gen_update}
             )
 

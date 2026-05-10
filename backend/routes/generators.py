@@ -1159,20 +1159,35 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         "updated_at": now_iso,
     }
     # Live-GPS-Position auf das Device + den virtuellen Generator schreiben.
+    # Quellen-Reihenfolge: Top-Level payload.latitude/longitude bevorzugt,
+    # ansonsten als Fallback der NEUESTE Record mit gps_lat/gps_lng. Beim Pi-DSE
+    # kommt GPS naemlich oft pro Record (Fahrtverfolgung) statt auf Payload-Ebene.
     # Plausibilitaetscheck: GPS muss innerhalb gueltiger Wertebereiche sein
     # und nicht 0/0 (null-Insel) - Geraete senden manchmal 0/0 vor erstem Fix.
     valid_gps_lat = None
     valid_gps_lng = None
-    try:
-        if payload.latitude is not None and payload.longitude is not None:
-            lat_f = float(payload.latitude)
-            lng_f = float(payload.longitude)
+
+    def _try_gps(lat_v, lng_v):
+        try:
+            if lat_v is None or lng_v is None:
+                return None
+            lat_f = float(lat_v)
+            lng_f = float(lng_v)
             if -90.0 <= lat_f <= 90.0 and -180.0 <= lng_f <= 180.0 and not (lat_f == 0.0 and lng_f == 0.0):
-                valid_gps_lat = lat_f
-                valid_gps_lng = lng_f
-    except (TypeError, ValueError):
-        pass
-    if valid_gps_lat is not None and valid_gps_lng is not None:
+                return (lat_f, lng_f)
+        except (TypeError, ValueError):
+            return None
+        return None
+
+    gps_pair = _try_gps(payload.latitude, payload.longitude)
+    if gps_pair is None:
+        # Fallback: letzter Record mit gueltigen gps_lat/gps_lng
+        for rec in reversed(payload.records or []):
+            gps_pair = _try_gps(rec.get("gps_lat"), rec.get("gps_lng"))
+            if gps_pair is not None:
+                break
+    if gps_pair is not None:
+        valid_gps_lat, valid_gps_lng = gps_pair
         update_fields["latitude"] = valid_gps_lat
         update_fields["longitude"] = valid_gps_lng
         update_fields["last_gps_update"] = now_iso
@@ -1278,6 +1293,9 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
             "dse_mode_raw": record.get("dse_mode_raw"),
             "generator_available": record.get("generator_available"),
             "breaker_closed": record.get("breaker_closed"),
+            # GPS pro Record (Fahrt-Verfolgung)
+            "gps_lat": record.get("gps_lat"),
+            "gps_lng": record.get("gps_lng"),
         }
         # Remove None values to keep documents clean
         telemetry_doc = {k: v for k, v in telemetry_doc.items() if v is not None}
