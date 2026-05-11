@@ -315,6 +315,13 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
 
     gps_update = {"latitude": lat, "longitude": lng, "last_gps_update": timestamp}
     matched_gen_ids = set()
+    matched_device_ids = set()
+
+    # UID-Kandidat = letztes Segment des Gateway-Topics (typische DSE890-Konvention)
+    uid_candidate = gw_topic.rsplit("/", 1)[-1].strip()
+    uid_candidate_upper = uid_candidate.upper()
+    # Auch die anderen Segmente fuer Substring-Match aufbereiten
+    topic_segments_upper = [p.strip().upper() for p in gw_topic.split("/") if p.strip()]
 
     # 1) Mappings deren topic_prefix im gleichen Gateway liegt
     #    (mp == gw_topic ODER mp beginnt mit gw_topic + "/").
@@ -323,7 +330,7 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
         gen_id = mapping.get("generator_id")
         if not mp or not gen_id:
             continue
-        if mp == gw_topic or mp.startswith(gw_prefix):
+        if mp == gw_topic or mp.startswith(gw_prefix) or mp.lower() == gw_topic.lower():
             matched_gen_ids.add(gen_id)
 
     # 2) Generators mit dse_mqtt_topic_prefix im gleichen Gateway
@@ -331,18 +338,42 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
         gp = (gen.get("dse_mqtt_topic_prefix") or "").strip().rstrip("/")
         if not gp:
             continue
-        if gp == gw_topic or gp.startswith(gw_prefix):
+        if gp == gw_topic or gp.startswith(gw_prefix) or gp.lower() == gw_topic.lower():
             matched_gen_ids.add(gen["id"])
 
-    # 3) Fallback: Devices, deren dse_module_uid im Gateway-Topic
-    #    vorkommt (typischer DSE890-Aufbau: letztes Segment = UID)
-    if not matched_gen_ids:
-        uid_candidate = gw_topic.rsplit("/", 1)[-1].strip()
-        if uid_candidate:
-            for dev in (_devices_cache or []):
-                dev_uid = (dev.get("dse_module_uid") or "").strip()
-                if dev_uid and dev_uid == uid_candidate:
-                    matched_gen_ids.add(f"dev-{dev['id']}")
+    # 3) Fallback Devices via dse_module_uid: case-insensitive Match
+    #    (gleiche Logik wie das normale Telemetrie-Routing in _on_mqtt_message)
+    if not matched_gen_ids and uid_candidate:
+        for dev in (_devices_cache or []):
+            dev_uid = (dev.get("dse_module_uid") or "").strip()
+            if not dev_uid:
+                continue
+            # Exakter case-insensitive Match auf UID-Segment
+            if dev_uid.upper() == uid_candidate_upper:
+                matched_device_ids.add(dev["id"])
+                continue
+            # Substring-Match: UID des Device kommt im Topic vor (Hex-Casing-Varianten)
+            if dev_uid.upper() in topic_segments_upper:
+                matched_device_ids.add(dev["id"])
+
+    # 4) Tiefer Fallback: Live-DB-Suche, falls Devices-Cache stale/unvollstaendig
+    if not matched_gen_ids and not matched_device_ids and uid_candidate:
+        # Case-insensitive regex auf dse_module_uid (DSE890 UIDs sind Hex)
+        import re
+        try:
+            esc = re.escape(uid_candidate)
+            db_devs = await _db.devices.find(
+                {"dse_module_uid": {"$regex": f"^{esc}$", "$options": "i"}},
+                {"_id": 0, "id": 1}
+            ).to_list(10)
+            for d in db_devs:
+                matched_device_ids.add(d["id"])
+        except Exception as e:
+            logger.debug(f"Gateway-GPS DB-fallback lookup failed: {e}")
+
+    # Devices auf gen_ids erweitern (dev-<id> Schema)
+    for dev_id in matched_device_ids:
+        matched_gen_ids.add(f"dev-{dev_id}")
 
     # Apply to all matching generators (real + virtual device-based)
     for gen_id in matched_gen_ids:
@@ -355,13 +386,15 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
     if matched_gen_ids:
         logger.info(
             f"MQTT: Gateway-GPS {lat},{lng} auf {len(matched_gen_ids)} "
-            f"Generator(en) am Gateway '{gw_topic}' angewendet"
+            f"Generator(en) am Gateway '{gw_topic}' angewendet "
+            f"(UID-Kandidat='{uid_candidate}')"
         )
         await _log_gps_event(topic, lat, lng, "gateway_fallback", matched_gen_ids, raw_payload)
     else:
-        logger.info(
+        logger.warning(
             f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - kein Generator/Device "
-            f"an Gateway '{gw_topic}' zugeordnet"
+            f"an Gateway '{gw_topic}' zugeordnet. UID-Kandidat='{uid_candidate}'. "
+            f"Pruefe: dse_module_uid auf einem Device gesetzt? Oder Mapping in mqtt_gateway_mappings?"
         )
         await _log_gps_event(topic, lat, lng, "rejected", [], raw_payload)
 
