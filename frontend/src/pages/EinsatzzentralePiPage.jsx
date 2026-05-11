@@ -62,6 +62,8 @@ if (typeof window !== "undefined"
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const SS_TOKEN = "einsatzzentrale_token";
 const SS_USER = "einsatzzentrale_user";
+const SS_PHASE = "einsatzzentrale_phase";
+const SS_ORDER = "einsatzzentrale_order";
 
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -708,14 +710,22 @@ export default function EinsatzzentralePiPage() {
   const [user, setUser] = useState(null);
   const [order, setOrder] = useState(null);
 
+  // Restore Session bei Page-Reload
   useEffect(() => {
     try {
       const t = sessionStorage.getItem(SS_TOKEN);
       const u = sessionStorage.getItem(SS_USER);
+      const p = sessionStorage.getItem(SS_PHASE);
+      const o = sessionStorage.getItem(SS_ORDER);
       if (t && u) {
         setToken(t);
         setUser(JSON.parse(u));
-        setPhase("order_select");
+        if (p === "workspace" && o) {
+          setOrder(JSON.parse(o));
+          setPhase("workspace");
+        } else {
+          setPhase("order_select");
+        }
       }
     } catch { /* ignore */ }
   }, []);
@@ -726,8 +736,19 @@ export default function EinsatzzentralePiPage() {
     try {
       sessionStorage.setItem(SS_TOKEN, data.token);
       sessionStorage.setItem(SS_USER, JSON.stringify(data.user));
+      sessionStorage.setItem(SS_PHASE, "order_select");
+      sessionStorage.removeItem(SS_ORDER);
     } catch { /* ignore */ }
     setPhase("order_select");
+  }, []);
+
+  const handlePickOrder = useCallback((o) => {
+    setOrder(o);
+    try {
+      sessionStorage.setItem(SS_ORDER, JSON.stringify(o));
+      sessionStorage.setItem(SS_PHASE, "workspace");
+    } catch { /* ignore */ }
+    setPhase("workspace");
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -738,6 +759,8 @@ export default function EinsatzzentralePiPage() {
     try {
       sessionStorage.removeItem(SS_TOKEN);
       sessionStorage.removeItem(SS_USER);
+      sessionStorage.removeItem(SS_PHASE);
+      sessionStorage.removeItem(SS_ORDER);
     } catch { /* ignore */ }
     setPhase("user_select");
   }, []);
@@ -759,7 +782,7 @@ export default function EinsatzzentralePiPage() {
       <OrderSelect
         token={token}
         user={user}
-        onPick={(o) => { setOrder(o); setPhase("workspace"); }}
+        onPick={handlePickOrder}
         onLogout={handleLogout}
       />
     );
