@@ -2,26 +2,24 @@
 # ============================================================================
 # Eventenergie - Einsatzzentrale Pi Kiosk Installer
 # ============================================================================
-# Installiert Chromium-Kiosk fuer die Einsatzzentrale auf Raspberry Pi OS.
+# Funktioniert auf:
+#   - Raspberry Pi OS (Desktop)  -> Bookworm / Bullseye
+#   - Raspberry Pi OS Lite       -> minimaler X11+openbox+lightdm wird
+#                                   automatisch nachinstalliert
 #
 # Was passiert:
-#   - Chromium wird (falls noetig) installiert
-#   - Autostart-Snippet wird angelegt (Wayland labwc/wayfire ODER X11/LXDE)
-#   - Screen-Blanking + Power-Management werden deaktiviert
-#   - Chromium startet bei Boot im Kiosk-Modus auf der konfigurierten URL
-#   - Translate-Popup, Erste-Schritte-Wizard, Password-Manager, Crash-Bubbles
-#     werden unterdrueckt
-#
-# Voraussetzungen:
-#   - Raspberry Pi OS (Bookworm oder neuer; Bullseye funktioniert auch)
-#   - Desktop-Variante mit Autologin aktiviert (raspi-config -> System -> Boot
-#     -> Desktop Autologin)
-#   - Internet-Verbindung
+#   - Falls noetig: minimaler Desktop-Stack (xserver, openbox, lightdm,
+#     chromium) wird installiert
+#   - Autologin wird per lightdm.conf konfiguriert (User pi/admin/SUDO_USER)
+#   - Kiosk-Launcher startet Chromium im Vollbild, mit Watchdog-Restart
+#   - Translate-Popup, Erste-Schritte-Wizard, Password-Manager,
+#     Crash-Bubbles, Update-Prompts werden unterdrueckt
+#   - Screen-Blanking + DPMS deaktiviert
 #
 # Benutzung:
 #   sudo bash install_einsatzzentrale_kiosk.sh https://dein-portal.de/einsatzzentrale
 #
-# Deinstallation:
+# Deinstallation (nur Kiosk-Teile, OS-Pakete bleiben):
 #   sudo bash install_einsatzzentrale_kiosk.sh --uninstall
 # ============================================================================
 
@@ -30,12 +28,12 @@ set -euo pipefail
 # ---------- Konfiguration ----------------------------------------------------
 DEFAULT_URL="https://dein-portal.example/einsatzzentrale"
 KIOSK_USER="${SUDO_USER:-pi}"
-KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
+KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6 || true)"
+[[ -z "$KIOSK_HOME" ]] && KIOSK_HOME="/home/$KIOSK_USER"
 KIOSK_PROFILE_DIR="$KIOSK_HOME/.config/einsatzzentrale-chromium"
 KIOSK_LAUNCH_SCRIPT="$KIOSK_HOME/.local/bin/einsatzzentrale-kiosk.sh"
 KIOSK_URL_FILE="$KIOSK_HOME/.config/einsatzzentrale-url"
 
-# Farben
 C_GREEN="\033[1;32m"; C_YELLOW="\033[1;33m"; C_RED="\033[1;31m"; C_NC="\033[0m"
 log()  { echo -e "${C_GREEN}[+]${C_NC} $*"; }
 warn() { echo -e "${C_YELLOW}[!]${C_NC} $*"; }
@@ -46,24 +44,21 @@ if [[ $EUID -ne 0 ]]; then
   err "Bitte mit sudo ausfuehren."
   exit 1
 fi
-if [[ -z "$KIOSK_HOME" || ! -d "$KIOSK_HOME" ]]; then
-  err "Home-Verzeichnis fuer User '$KIOSK_USER' nicht gefunden."
+if [[ ! -d "$KIOSK_HOME" ]]; then
+  err "Home-Verzeichnis fuer User '$KIOSK_USER' nicht gefunden ($KIOSK_HOME)."
   exit 1
 fi
 
 # ---------- Uninstall --------------------------------------------------------
 if [[ "${1:-}" == "--uninstall" ]]; then
   log "Deinstalliere Einsatzzentrale Kiosk..."
-  rm -f  "$KIOSK_LAUNCH_SCRIPT"
-  rm -f  "$KIOSK_URL_FILE"
+  rm -f  "$KIOSK_LAUNCH_SCRIPT" "$KIOSK_URL_FILE"
   rm -rf "$KIOSK_PROFILE_DIR"
   rm -f  "$KIOSK_HOME/.config/autostart/einsatzzentrale-kiosk.desktop"
-  # Wayland labwc autostart Eintrag entfernen
-  for f in "$KIOSK_HOME/.config/wayfire.ini" "$KIOSK_HOME/.config/labwc/autostart"; do
-    [[ -f "$f" ]] && sed -i '/einsatzzentrale-kiosk\.sh/d' "$f" || true
-  done
-  # X11 LXDE Autostart
-  for f in "$KIOSK_HOME/.config/lxsession/LXDE-pi/autostart" \
+  rm -f  "$KIOSK_HOME/.config/openbox/autostart"
+  for f in "$KIOSK_HOME/.config/wayfire.ini" \
+           "$KIOSK_HOME/.config/labwc/autostart" \
+           "$KIOSK_HOME/.config/lxsession/LXDE-pi/autostart" \
            "/etc/xdg/lxsession/LXDE-pi/autostart"; do
     [[ -f "$f" ]] && sed -i '/einsatzzentrale-kiosk\.sh/d' "$f" || true
   done
@@ -84,21 +79,72 @@ fi
 log "Kiosk-URL:   $URL"
 log "Kiosk-User:  $KIOSK_USER ($KIOSK_HOME)"
 
-# ---------- Chromium installieren -------------------------------------------
-if command -v chromium-browser >/dev/null 2>&1; then
-  CHROMIUM_BIN="$(command -v chromium-browser)"
-elif command -v chromium >/dev/null 2>&1; then
-  CHROMIUM_BIN="$(command -v chromium)"
-else
-  log "Chromium nicht gefunden - installiere..."
-  apt-get update
-  apt-get install -y --no-install-recommends chromium-browser || apt-get install -y --no-install-recommends chromium
-  CHROMIUM_BIN="$(command -v chromium-browser || command -v chromium)"
+# ---------- Desktop-Detection ------------------------------------------------
+HAS_DESKTOP=false
+if command -v startx >/dev/null 2>&1 || dpkg -s xserver-xorg >/dev/null 2>&1; then
+  HAS_DESKTOP=true
 fi
-log "Chromium:    $CHROMIUM_BIN"
 
-# Hilfstools (xset, unclutter optional, jq)
-apt-get install -y --no-install-recommends unclutter xdotool x11-xserver-utils 2>/dev/null || true
+# Apt-Update einmal vorab
+export DEBIAN_FRONTEND=noninteractive
+log "apt-get update..."
+apt-get update -y
+
+# ---------- Fall A: Pi OS Lite -> minimalen Stack installieren --------------
+if [[ "$HAS_DESKTOP" == "false" ]]; then
+  log "Pi OS Lite erkannt - installiere minimalen X11-Kiosk-Stack..."
+  apt-get install -y --no-install-recommends \
+    xserver-xorg xserver-xorg-legacy xserver-xorg-input-libinput \
+    xinit x11-xserver-utils \
+    openbox \
+    lightdm \
+    chromium-browser \
+    unclutter \
+    fonts-dejavu-core \
+    libgl1-mesa-dri \
+    plymouth plymouth-themes
+  # Anyone may start X (sonst startx als non-root nicht erlaubt)
+  if [[ -f /etc/X11/Xwrapper.config ]]; then
+    sed -i 's/^allowed_users=.*/allowed_users=anybody/' /etc/X11/Xwrapper.config
+  else
+    echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
+  fi
+fi
+
+# ---------- Chromium sicherstellen -------------------------------------------
+if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+  apt-get install -y --no-install-recommends chromium-browser || apt-get install -y --no-install-recommends chromium
+fi
+CHROMIUM_BIN="$(command -v chromium-browser || command -v chromium || true)"
+log "Chromium:    ${CHROMIUM_BIN:-(noch nicht installiert)}"
+
+apt-get install -y --no-install-recommends unclutter x11-xserver-utils openbox 2>/dev/null || true
+
+# ---------- LightDM Autologin konfigurieren ---------------------------------
+if command -v lightdm >/dev/null 2>&1; then
+  log "Konfiguriere lightdm Autologin fuer '$KIOSK_USER'..."
+  install -d /etc/lightdm/lightdm.conf.d
+  cat > /etc/lightdm/lightdm.conf.d/50-einsatzzentrale.conf <<LIGHTDM_EOF
+[Seat:*]
+autologin-user=$KIOSK_USER
+autologin-user-timeout=0
+user-session=openbox
+LIGHTDM_EOF
+  systemctl enable lightdm.service 2>/dev/null || true
+  systemctl set-default graphical.target 2>/dev/null || true
+fi
+
+# ---------- Openbox Autostart (Pi OS Lite) ----------------------------------
+install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/openbox"
+OPENBOX_AS="$KIOSK_HOME/.config/openbox/autostart"
+touch "$OPENBOX_AS"
+chown "$KIOSK_USER":"$KIOSK_USER" "$OPENBOX_AS"
+if ! grep -q "einsatzzentrale-kiosk.sh" "$OPENBOX_AS" 2>/dev/null; then
+  cat >> "$OPENBOX_AS" <<EOF
+# Einsatzzentrale Kiosk
+$KIOSK_LAUNCH_SCRIPT &
+EOF
+fi
 
 # ---------- Kiosk-Skript anlegen --------------------------------------------
 log "Schreibe Launch-Skript $KIOSK_LAUNCH_SCRIPT ..."
@@ -109,7 +155,7 @@ chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_URL_FILE"
 
 cat > "$KIOSK_LAUNCH_SCRIPT" <<'LAUNCHER_EOF'
 #!/usr/bin/env bash
-# Einsatzzentrale Kiosk - wird bei Login/Boot automatisch gestartet.
+# Einsatzzentrale Kiosk Launcher
 set -u
 
 URL="$(cat "$HOME/.config/einsatzzentrale-url" 2>/dev/null || echo "")"
@@ -119,10 +165,9 @@ if [[ -z "$URL" ]]; then
 fi
 
 PROFILE="$HOME/.config/einsatzzentrale-chromium"
-mkdir -p "$PROFILE"
+mkdir -p "$PROFILE/Default"
 
 # Translate-Popup, Erste-Schritte, Default-Browser-Frage etc. unterdruecken
-mkdir -p "$PROFILE/Default"
 cat > "$PROFILE/Default/Preferences" <<JSON_EOF
 {
   "browser": { "check_default_browser": false, "show_home_button": false },
@@ -137,7 +182,7 @@ cat > "$PROFILE/Default/Preferences" <<JSON_EOF
 }
 JSON_EOF
 
-# Screen-Blanking deaktivieren (nur unter X11)
+# Screen-Blanking deaktivieren (X11)
 if command -v xset >/dev/null 2>&1; then
   xset s off 2>/dev/null || true
   xset -dpms 2>/dev/null || true
@@ -148,7 +193,6 @@ if command -v unclutter >/dev/null 2>&1; then
   unclutter -idle 1 -root &
 fi
 
-# Chromium bestimmen
 CHROMIUM="$(command -v chromium-browser || command -v chromium)"
 if [[ -z "$CHROMIUM" ]]; then
   echo "Chromium nicht installiert." >&2
@@ -183,11 +227,10 @@ LAUNCHER_EOF
 chmod +x "$KIOSK_LAUNCH_SCRIPT"
 chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_LAUNCH_SCRIPT"
 
-# ---------- Autostart-Eintrag ------------------------------------------------
-# Pi OS Bookworm nutzt standardmaessig Wayland (labwc oder wayfire).
-# Pi OS Bullseye / aelter nutzt X11 + LXDE. Wir decken beide ab.
+# ---------- Zusaetzliche Autostarts (Wayland / LXDE Desktop) ----------------
+# Falls Pi OS Desktop installiert war (oder spaeter wird), funktioniert es auch dort.
 
-# 1) XDG-Autostart (funktioniert sowohl X11 als auch Wayland sessions)
+# XDG-Autostart
 install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/autostart"
 cat > "$KIOSK_HOME/.config/autostart/einsatzzentrale-kiosk.desktop" <<DESKTOP_EOF
 [Desktop Entry]
@@ -197,39 +240,33 @@ Comment=Chromium Kiosk fuer Einsatzzentrale
 Exec=$KIOSK_LAUNCH_SCRIPT
 Terminal=false
 X-GNOME-Autostart-enabled=true
-X-LXQt-Need-Tray=false
 NoDisplay=false
 DESKTOP_EOF
 chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_HOME/.config/autostart/einsatzzentrale-kiosk.desktop"
 
-# 2) Wayland labwc Autostart (Pi OS Bookworm Default)
-if [[ -d "$KIOSK_HOME/.config/labwc" ]] || command -v labwc >/dev/null 2>&1; then
+# Wayland labwc (Bookworm Desktop Default)
+if command -v labwc >/dev/null 2>&1; then
   install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/labwc"
   AS="$KIOSK_HOME/.config/labwc/autostart"
-  touch "$AS"
-  chown "$KIOSK_USER":"$KIOSK_USER" "$AS"
+  touch "$AS"; chown "$KIOSK_USER":"$KIOSK_USER" "$AS"
   if ! grep -q "einsatzzentrale-kiosk.sh" "$AS" 2>/dev/null; then
     echo "$KIOSK_LAUNCH_SCRIPT &" >> "$AS"
   fi
 fi
-
-# 3) X11 LXDE Autostart (Pi OS Bullseye / aelter)
-if [[ -d "$KIOSK_HOME/.config/lxsession/LXDE-pi" ]] || [[ -d "/etc/xdg/lxsession/LXDE-pi" ]]; then
+# X11 LXDE
+if [[ -d "/etc/xdg/lxsession/LXDE-pi" ]]; then
   install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/lxsession/LXDE-pi"
   AS="$KIOSK_HOME/.config/lxsession/LXDE-pi/autostart"
-  if [[ ! -f "$AS" && -f "/etc/xdg/lxsession/LXDE-pi/autostart" ]]; then
-    cp "/etc/xdg/lxsession/LXDE-pi/autostart" "$AS"
+  if [[ ! -f "$AS" ]]; then
+    cp "/etc/xdg/lxsession/LXDE-pi/autostart" "$AS" 2>/dev/null || touch "$AS"
     chown "$KIOSK_USER":"$KIOSK_USER" "$AS"
   fi
-  touch "$AS"
-  chown "$KIOSK_USER":"$KIOSK_USER" "$AS"
   if ! grep -q "einsatzzentrale-kiosk.sh" "$AS" 2>/dev/null; then
     echo "@$KIOSK_LAUNCH_SCRIPT" >> "$AS"
   fi
 fi
 
-# ---------- Energiesparen global aus ----------------------------------------
-# raspi-config ueber CLI: Screen-Blanking aus
+# ---------- Screen-Blanking aus via raspi-config -----------------------------
 if command -v raspi-config >/dev/null 2>&1; then
   raspi-config nonint do_blanking 1 || true
 fi
@@ -239,17 +276,20 @@ log ""
 log "================================================================"
 log "  Installation abgeschlossen."
 log "================================================================"
-log "  URL:         $URL"
-log "  User:        $KIOSK_USER"
-log "  Launcher:    $KIOSK_LAUNCH_SCRIPT"
-log "  URL-Datei:   $KIOSK_URL_FILE   (zum spaeteren Aendern)"
+log "  URL:        $URL"
+log "  User:       $KIOSK_USER"
+log "  Launcher:   $KIOSK_LAUNCH_SCRIPT"
+log "  URL-Datei:  $KIOSK_URL_FILE   (zum spaeteren Aendern)"
 log ""
-log "  Naechste Schritte:"
-log "    1. Pruefe: raspi-config -> System -> Boot -> Desktop Autologin"
-log "    2. Neustart:    sudo reboot"
-log "    3. URL aendern: echo 'NEUE_URL' > $KIOSK_URL_FILE && sudo reboot"
-log "    4. Deinstall:   sudo bash $0 --uninstall"
+log "  Naechster Schritt:   sudo reboot"
 log ""
-log "  Hinweis: Bei Bookworm+ kann Wayland (labwc) oder X11 aktiv sein."
-log "  Wir haben beide Autostarts hinterlegt - es passt von selbst."
+log "  Nach dem Reboot bootet der Pi automatisch in den Kiosk-Modus,"
+log "  startet lightdm + openbox, loggt '$KIOSK_USER' automatisch ein"
+log "  und oeffnet Chromium im Vollbild auf der hinterlegten URL."
+log ""
+log "  URL spaeter aendern:"
+log "     echo 'NEUE_URL' > $KIOSK_URL_FILE && sudo reboot"
+log ""
+log "  Deinstall:"
+log "     sudo bash $0 --uninstall"
 log "================================================================"
