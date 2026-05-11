@@ -16,6 +16,7 @@ import {
   Clock,
   Link2,
   HelpCircle,
+  Server,
 } from "lucide-react";
 
 function fmtCoord(v) {
@@ -48,6 +49,19 @@ export default function AdminGpsDiagnosePage() {
   const [unknownGateways, setUnknownGateways] = useState(null);
   const [linkTarget, setLinkTarget] = useState({}); // {gwUid: {target_type, target_id}}
   const [linking, setLinking] = useState({}); // {gwUid: bool}
+  const [piStatus, setPiStatus] = useState(null);
+
+  const fetchPiStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/admin/gps/pi-status");
+      setPiStatus(res.data);
+    } catch (err) {
+      toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const fetchUnknown = useCallback(async () => {
     setLoading(true);
@@ -120,10 +134,10 @@ export default function AdminGpsDiagnosePage() {
     if (tab === "log") fetchLog();
     if (tab === "unknown") {
       fetchUnknown();
-      // Status laden falls nicht da (fuer Device/Generator-Liste im Dropdown)
       if (!status) fetchStatus();
     }
-  }, [tab, fetchStatus, fetchLog, fetchUnknown, status]);
+    if (tab === "pi") fetchPiStatus();
+  }, [tab, fetchStatus, fetchLog, fetchUnknown, fetchPiStatus, status]);
 
   const handleReset = async () => {
     const h = parseInt(resetHours, 10);
@@ -188,6 +202,7 @@ export default function AdminGpsDiagnosePage() {
               { key: "status", label: "Status & Duplikate", icon: MapPin },
               { key: "log", label: "Live-Log", icon: FileText },
               { key: "unknown", label: "Unbekannte Gateways", icon: HelpCircle },
+              { key: "pi", label: "Pi-Webhook Status", icon: Server },
               { key: "reset", label: "Reset", icon: Trash2 },
             ].map((t) => {
               const Icon = t.icon;
@@ -536,6 +551,109 @@ export default function AdminGpsDiagnosePage() {
                 wird hier gesammelt. Waehle das passende Geraet/Generator aus dem Dropdown und klicke
                 auf <Link2 className="inline w-3 h-3" />. Beim naechsten GPS-Telegramm wird die Position
                 automatisch auf dieses Geraet geschrieben — keine weitere Konfiguration noetig.
+              </div>
+            </div>
+          )}
+
+          {/* PI STATUS Tab */}
+          {tab === "pi" && (
+            <div className="space-y-4" data-testid="pi-tab">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-2 flex-wrap">
+                  <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    Total: <strong>{piStatus?.total ?? "—"}</strong>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm">
+                    Online: <strong className="text-emerald-700">{piStatus?.stats?.online ?? "—"}</strong>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
+                    Recent (&lt;6h): <strong className="text-blue-700">{piStatus?.stats?.recent ?? "—"}</strong>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm">
+                    Stale (&lt;48h): <strong className="text-amber-700">{piStatus?.stats?.stale ?? "—"}</strong>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm">
+                    Offline: <strong className="text-red-700">{piStatus?.stats?.offline ?? "—"}</strong>
+                  </div>
+                  {piStatus?.stats?.no_device_key > 0 && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-sm">
+                      ⚠️ Ohne Key: <strong className="text-purple-700">{piStatus.stats.no_device_key}</strong>
+                    </div>
+                  )}
+                </div>
+                <Button size="sm" variant="outline" onClick={fetchPiStatus} disabled={loading} data-testid="refresh-pi-btn">
+                  <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+
+              {(!piStatus || piStatus.total === 0) ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                  <p className="text-sm font-semibold text-gray-800">Keine Pi-Geraete konfiguriert</p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left p-2 font-semibold">Status</th>
+                        <th className="text-left p-2 font-semibold">Geraet</th>
+                        <th className="text-left p-2 font-semibold">Typ</th>
+                        <th className="text-left p-2 font-semibold">API-Key</th>
+                        <th className="text-left p-2 font-semibold">Letzter Webhook</th>
+                        <th className="text-left p-2 font-semibold">Alter</th>
+                        <th className="text-left p-2 font-semibold">Letzte GPS-Position</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(piStatus.devices || []).map((d) => {
+                        const colorMap = {
+                          online: "bg-emerald-100 text-emerald-700",
+                          recent: "bg-blue-100 text-blue-700",
+                          stale: "bg-amber-100 text-amber-700",
+                          offline: "bg-red-100 text-red-700",
+                          no_data: "bg-gray-100 text-gray-500",
+                        };
+                        return (
+                          <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50" data-testid={`pi-row-${d.id}`}>
+                            <td className="p-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${colorMap[d.status] || "bg-gray-100"}`}>
+                                {d.status}
+                              </span>
+                            </td>
+                            <td className="p-2 font-medium">{d.name}</td>
+                            <td className="p-2 text-gray-500">{d.device_type || "—"}</td>
+                            <td className="p-2 font-mono text-[10px]">
+                              {d.has_device_key ? (
+                                <span className="text-emerald-600">{d.device_key_prefix || "—"}…</span>
+                              ) : (
+                                <span className="text-red-600 font-semibold">FEHLT</span>
+                              )}
+                            </td>
+                            <td className="p-2 font-mono text-[10px] text-gray-500 whitespace-nowrap">
+                              {d.last_seen ? new Date(d.last_seen).toLocaleString("de-DE") : "—"}
+                            </td>
+                            <td className={`p-2 ${ageColor(d.last_seen_age_hours)} font-medium`}>
+                              {fmtAge(d.last_seen_age_hours)}
+                            </td>
+                            <td className="p-2 font-mono text-[10px] whitespace-nowrap">
+                              {d.latitude != null ? `${fmtCoord(d.latitude)} / ${fmtCoord(d.longitude)}` : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>Fehlersuche bei Pi-Geraeten ohne Daten:</strong>
+                <ol className="list-decimal ml-4 mt-1 space-y-0.5">
+                  <li><b>API-Key FEHLT?</b> &rarr; Im Energy-Monitoring-Tab API-Key generieren und auf dem Pi eintragen.</li>
+                  <li><b>Status "offline"?</b> &rarr; Auf dem Pi <code>systemctl status dse5510-sync</code> pruefen. Logs unter <code>/var/log/syslog</code>.</li>
+                  <li><b>Status "no_data"?</b> &rarr; Pi hat noch nie gesendet. API-URL pruefen (REACT_APP_BACKEND_URL muss korrekt sein) und Service neu starten.</li>
+                  <li><b>Daten kommen aber keine GPS?</b> &rarr; SIM7600 GPS-Antenne pruefen oder USB-GPS via gpsd. Im Live-Log Tab nach <code>pi_ingest</code> Route filtern.</li>
+                </ol>
               </div>
             </div>
           )}

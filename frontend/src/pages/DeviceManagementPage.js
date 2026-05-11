@@ -812,6 +812,25 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
               </p>
             </div>
           )}
+
+          {/* Gateway-UID fuer GPS-Zuordnung */}
+          <div className="mt-3 pt-3 border-t border-blue-200" data-testid="dse-gateway-uid-section">
+            <p className="text-xs text-blue-700 font-medium mb-2 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5" /> Gateway USB ID (für GPS-Zuordnung)
+            </p>
+            <Input
+              value={formData.dse_gateway_uid || ""}
+              onChange={e => update("dse_gateway_uid", e.target.value.trim())}
+              placeholder="z.B. 1922B6D4F40BF7C (15-stellige Gateway USB ID)"
+              className="font-mono text-sm"
+              data-testid="dse-gateway-uid-input"
+            />
+            <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+              Die <b>Gateway USB ID</b> findest du im DSE890 Web-Interface unter <b>Status → USB ID</b> (15-stellig).
+              Diese UID wird vom Gateway als JSON-Key im GPS-Payload mitgesendet. Sobald hier eingetragen, werden
+              eingehende GPS-Telegramme automatisch diesem Gerät zugeordnet — keine weitere Konfiguration nötig.
+            </p>
+          </div>
         </div>
       )}
 
@@ -964,6 +983,7 @@ const EMPTY_FORM = {
   mqtt_username: "",
   mqtt_password: "",
   dse_module_uid: "",
+  dse_gateway_uid: "",
   kirmeskiste_variant: "standard",
   latitude: "",
   longitude: "",
@@ -1941,6 +1961,7 @@ export default function DeviceManagementPage() {
       mqtt_username: device.mqtt_username || "",
       mqtt_password: device.mqtt_password || "",
       dse_module_uid: device.dse_module_uid || "",
+      dse_gateway_uid: device.dse_gateway_uid || "",
       kirmeskiste_variant: device.kirmeskiste_variant || "standard",
     });
     setModalOpen(true);

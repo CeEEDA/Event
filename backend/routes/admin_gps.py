@@ -281,3 +281,77 @@ async def gps_unknown_delete(gateway_uid: str,
         f"GPS-Unknown-Delete durch {admin.get('email','?')}: gateway_uid={gateway_uid}"
     )
     return {"message": "Eintrag geloescht", "gateway_uid": gateway_uid}
+
+
+@router.get("/pi-status")
+async def gps_pi_status(admin: dict = Depends(require_admin)):
+    """Diagnose-Endpoint fuer Pi-basierte Geraete (DSE5510 + USB):
+    Zeigt fuer jedes Pi-Device wann es zuletzt via /api/generators/ingest
+    Daten geliefert hat (Webhook-Heartbeat). Hilft bei Fehlersuche
+    wenn der User sagt "Pi sendet nicht mehr".
+    """
+    now = datetime.now(timezone.utc)
+    pi_devs = await db.devices.find(
+        {"$or": [
+            {"device_type": "messkoffer"},
+            {"device_key_hash": {"$exists": True, "$nin": ["", None]}},
+        ]},
+        {"_id": 0, "id": 1, "name": 1, "serial_number": 1, "device_type": 1,
+         "last_seen": 1, "mqtt_status": 1, "latitude": 1, "longitude": 1,
+         "last_gps_update": 1, "pi_hostname": 1, "pi_ip": 1,
+         "device_key_hash": 1, "device_key_prefix": 1}
+    ).to_list(200)
+
+    rows = []
+    for d in pi_devs:
+        last_seen = d.get("last_seen")
+        age_h = None
+        status = "no_data"
+        if last_seen:
+            try:
+                dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+                age_h = (now - dt).total_seconds() / 3600.0
+                if age_h < 0.5:
+                    status = "online"
+                elif age_h < 6:
+                    status = "recent"
+                elif age_h < 48:
+                    status = "stale"
+                else:
+                    status = "offline"
+            except Exception:
+                pass
+        rows.append({
+            "id": d["id"],
+            "name": d.get("name") or d.get("serial_number") or d["id"][:8],
+            "serial_number": d.get("serial_number"),
+            "device_type": d.get("device_type"),
+            "has_device_key": bool(d.get("device_key_hash")),
+            "device_key_prefix": d.get("device_key_prefix"),
+            "pi_hostname": d.get("pi_hostname"),
+            "pi_ip": d.get("pi_ip"),
+            "last_seen": last_seen,
+            "last_seen_age_hours": round(age_h, 2) if age_h is not None else None,
+            "status": status,
+            "latitude": d.get("latitude"),
+            "longitude": d.get("longitude"),
+            "last_gps_update": d.get("last_gps_update"),
+        })
+    rows.sort(key=lambda r: r.get("last_seen_age_hours") or 1e9)
+
+    # Aggregate-Stats
+    online = sum(1 for r in rows if r["status"] == "online")
+    recent = sum(1 for r in rows if r["status"] == "recent")
+    stale = sum(1 for r in rows if r["status"] == "stale")
+    offline = sum(1 for r in rows if r["status"] == "offline")
+    no_data = sum(1 for r in rows if r["status"] == "no_data")
+    no_key = sum(1 for r in rows if not r["has_device_key"])
+
+    return {
+        "total": len(rows),
+        "stats": {
+            "online": online, "recent": recent, "stale": stale,
+            "offline": offline, "no_data": no_data, "no_device_key": no_key
+        },
+        "devices": rows,
+    }

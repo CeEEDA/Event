@@ -62,6 +62,7 @@ class DeviceCreate(BaseModel):
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
     dse_module_uid: Optional[str] = None
+    dse_gateway_uid: Optional[str] = None
     # Kirmeskiste variant: "standard" (Live, alte Variante) | "8z" (8 Impulszähler, SIM7600)
     kirmeskiste_variant: Optional[str] = None
     latitude: Optional[float] = None
@@ -111,6 +112,7 @@ class DeviceUpdate(BaseModel):
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
     dse_module_uid: Optional[str] = None
+    dse_gateway_uid: Optional[str] = None
     # Kirmeskiste variant: "standard" | "8z"
     kirmeskiste_variant: Optional[str] = None
     latitude: Optional[float] = None
