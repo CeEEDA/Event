@@ -115,8 +115,44 @@ def test_trupp_auto_naming():
     requests.delete(f"{api}/api/orders/{pk}/trupps/{r2.json()['id']}", headers=h, timeout=10)
 
 
+def test_trupp_inactive_toggle():
+    api = _api_url()
+    token = _token()
+    h = {"Authorization": f"Bearer {token}"}
+    pk = _order_pk()
+    # Cleanup PYTEST trupps
+    existing = requests.get(f"{api}/api/orders/{pk}/trupps", headers=h, timeout=10).json()
+    for t in existing.get("trupps", []):
+        if "PYTEST" in t.get("name", ""):
+            requests.delete(f"{api}/api/orders/{pk}/trupps/{t['id']}", headers=h, timeout=10)
+
+    # Neu anlegen -> default is_active=True
+    r = requests.post(f"{api}/api/orders/{pk}/trupps",
+                      json={"name": "PYTEST Pause", "members": []}, headers=h, timeout=10)
+    assert r.status_code == 200
+    t = r.json()
+    assert t["is_active"] is True
+    tid = t["id"]
+
+    # Pause setzen
+    r = requests.put(f"{api}/api/orders/{pk}/trupps/{tid}",
+                     json={"is_active": False}, headers=h, timeout=10)
+    assert r.status_code == 200
+    assert r.json()["is_active"] is False
+
+    # Reaktivieren
+    r = requests.put(f"{api}/api/orders/{pk}/trupps/{tid}",
+                     json={"is_active": True}, headers=h, timeout=10)
+    assert r.json()["is_active"] is True
+
+    # Cleanup
+    requests.delete(f"{api}/api/orders/{pk}/trupps/{tid}", headers=h, timeout=10)
+
+
 if __name__ == "__main__":
     test_trupp_crud_and_busy_status()
     print("CRUD/Busy OK")
     test_trupp_auto_naming()
     print("Auto-Naming OK")
+    test_trupp_inactive_toggle()
+    print("Inactive Toggle OK")

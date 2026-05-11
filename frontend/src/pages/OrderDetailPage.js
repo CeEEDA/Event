@@ -262,7 +262,7 @@ export default function OrderDetailPage() {
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
 
-  // Reset Kommentar-Entwurf wenn ein anderes Asset geoeffnet wird oder das Modal schliesst.
+  // Reset Kommentar-Entwurf wenn ein anderes Asset geöffnet wird oder das Modal schliesst.
   useEffect(() => { setCommentDraft(""); }, [selectedAsset?.id]);
 
   // Tankbelege
@@ -437,8 +437,8 @@ export default function OrderDetailPage() {
     try {
       await api.delete(`/orders/${pk}/trupps/${truppId}`);
       await fetchTrupps();
-      await fetchDiary(); // Eintraege koennen geaendert sein
-      toast.success("Trupp geloescht");
+      await fetchDiary(); // Einträge koennen geändert sein
+      toast.success("Trupp gelöscht");
     } catch (err) {
       toast.error("Fehler: " + (err.response?.data?.detail || err.message));
     }
@@ -663,7 +663,7 @@ export default function OrderDetailPage() {
       setSelectedAsset((prev) => prev ? { ...prev, comments: (prev.comments || []).filter(c => c.id !== commentId) } : prev);
       fetchAssets();
     } catch (err) {
-      toast.error(getErrorMsg(err) || "Kommentar konnte nicht geloescht werden");
+      toast.error(getErrorMsg(err) || "Kommentar konnte nicht gelöscht werden");
     }
   };
 
@@ -746,9 +746,9 @@ export default function OrderDetailPage() {
     if (!window.confirm("Projektbericht wirklich loeschen?")) return;
     try {
       await api.delete(`/project-reports/${id}`);
-      toast.success("Projektbericht geloescht");
+      toast.success("Projektbericht gelöscht");
       fetchProjectReports();
-    } catch { toast.error("Fehler beim Loeschen"); }
+    } catch { toast.error("Fehler beim Löschen"); }
   };
 
   const saveAddress = async () => {
@@ -1174,7 +1174,7 @@ export default function OrderDetailPage() {
                   { key: "reports", label: "Projektberichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
                   { key: "fuel", label: "Tankbelege", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
                   { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
-                  { key: "diary", label: "Einsatztagebuch", desc: "Stoerungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
+                  { key: "diary", label: "Einsatztagebuch", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
                 ].filter(t => !t.hideForFreelancer || !isFreelancer).map((t) => {
                   const colorMap = {
                     orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
@@ -1250,7 +1250,11 @@ export default function OrderDetailPage() {
                   Trupps
                   {trupps.length > 0 && (
                     <span className="text-xs text-gray-500 font-normal">
-                      ({trupps.filter(t => !t.is_busy).length} verfügbar / {trupps.filter(t => t.is_busy).length} unterwegs)
+                      ({trupps.filter(t => !t.is_busy && t.is_active !== false).length} verfügbar
+                      {" / "}{trupps.filter(t => t.is_busy).length} unterwegs
+                      {trupps.filter(t => t.is_active === false).length > 0 && (
+                        <> / {trupps.filter(t => t.is_active === false).length} inaktiv</>
+                      )})
                     </span>
                   )}
                 </h3>
@@ -1275,29 +1279,35 @@ export default function OrderDetailPage() {
                   {trupps.map((t) => {
                     const isEditing = editingTruppId === t.id;
                     const busy = t.is_busy;
+                    const inactive = t.is_active === false;
+                    // Priorität: Unterwegs > Inaktiv > Verfügbar
+                    const stateLabel = busy ? "Unterwegs" : (inactive ? "Inaktiv (Pause)" : "Verfügbar");
+                    const stateDotClass = busy
+                      ? "bg-red-500 animate-pulse"
+                      : (inactive ? "bg-gray-400" : "bg-emerald-500");
+                    const stateTextClass = busy
+                      ? "text-red-700"
+                      : (inactive ? "text-gray-600" : "text-emerald-700");
+                    const cardBg = busy
+                      ? "bg-red-50 border-red-400 shadow-sm"
+                      : (inactive
+                          ? "bg-gray-100 border-gray-300 opacity-90"
+                          : "bg-emerald-50 border-emerald-400");
                     return (
                       <div
                         key={t.id}
-                        className={`relative border-2 rounded-lg p-3 transition-all ${
-                          busy
-                            ? "bg-red-50 border-red-400 shadow-sm"
-                            : "bg-emerald-50 border-emerald-400"
-                        }`}
+                        className={`relative border-2 rounded-lg p-3 transition-all ${cardBg}`}
                         data-testid={`trupp-card-${t.id}`}
                       >
                         {/* Status-Indikator-Punkt */}
                         <div className="absolute top-2 right-2 flex items-center gap-1">
                           <span
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              busy ? "bg-red-500 animate-pulse" : "bg-emerald-500"
-                            }`}
+                            className={`w-2.5 h-2.5 rounded-full ${stateDotClass}`}
                             data-testid={`trupp-status-dot-${t.id}`}
-                            title={busy ? "Unterwegs" : "Verfügbar"}
+                            title={stateLabel}
                           />
-                          <span className={`text-[10px] font-bold uppercase ${
-                            busy ? "text-red-700" : "text-emerald-700"
-                          }`}>
-                            {busy ? "Unterwegs" : "Verfügbar"}
+                          <span className={`text-[10px] font-bold uppercase ${stateTextClass}`}>
+                            {stateLabel}
                           </span>
                         </div>
 
@@ -1346,7 +1356,9 @@ export default function OrderDetailPage() {
                           </div>
                         ) : (
                           <div className="pt-5">
-                            <h4 className={`text-sm font-bold mb-1.5 ${busy ? "text-red-900" : "text-emerald-900"}`}>
+                            <h4 className={`text-sm font-bold mb-1.5 ${
+                              busy ? "text-red-900" : (inactive ? "text-gray-700" : "text-emerald-900")
+                            }`}>
                               {t.name}
                             </h4>
                             {t.members && t.members.length > 0 ? (
@@ -1361,7 +1373,34 @@ export default function OrderDetailPage() {
                             ) : (
                               <p className="text-[11px] text-gray-400 italic mb-2">Keine Mitglieder</p>
                             )}
-                            <div className="flex gap-1 mt-2 pt-2 border-t border-gray-200/60">
+                            <div className="flex gap-1 mt-2 pt-2 border-t border-gray-200/60 flex-wrap">
+                              {/* Pause/Aktiv-Toggle - nicht erlaubt wenn unterwegs */}
+                              {!busy && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await api.put(`/orders/${pk}/trupps/${t.id}`, { is_active: inactive });
+                                      await fetchTrupps();
+                                      toast.success(inactive ? "Trupp wieder aktiv" : "Trupp pausiert");
+                                    } catch (err) {
+                                      toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+                                    }
+                                  }}
+                                  className={`text-[11px] flex items-center gap-1 px-1.5 py-0.5 rounded ${
+                                    inactive
+                                      ? "text-emerald-700 hover:bg-emerald-100"
+                                      : "text-gray-600 hover:bg-gray-200"
+                                  }`}
+                                  data-testid={`trupp-toggle-active-${t.id}`}
+                                  title={inactive ? "Wieder aktivieren" : "Pause / Inaktiv setzen"}
+                                >
+                                  {inactive ? (
+                                    <><CheckCircle2 className="w-3 h-3" /> Aktivieren</>
+                                  ) : (
+                                    <><Clock className="w-3 h-3" /> Pause</>
+                                  )}
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setEditingTruppId(t.id);
@@ -1480,7 +1519,7 @@ export default function OrderDetailPage() {
                 <textarea
                   value={assetComment}
                   onChange={(e) => setAssetComment(e.target.value)}
-                  placeholder="z.B. 'Hinter dem Container, Schluessel beim Pfoertner'"
+                  placeholder="z.B. 'Hinter dem Container, Schlüssel beim Pförtner'"
                   rows={2}
                   maxLength={2000}
                   className="w-full px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200 resize-none"
@@ -1973,7 +2012,7 @@ export default function OrderDetailPage() {
             {projectReports.length === 0 && !projectReportsLoading ? (
               <div className="p-8 text-center text-gray-400">
                 <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">Keine Projektberichte fuer diesen Auftrag</p>
+                <p className="text-sm">Keine Projektberichte für diesen Auftrag</p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -2000,7 +2039,7 @@ export default function OrderDetailPage() {
                           )}
                           {r.work_log?.length > 0 && (
                             <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" /> {r.work_log.length} Eintraege
+                              <Clock className="w-3 h-3" /> {r.work_log.length} Einträge
                             </span>
                           )}
                           <span>erstellt von {r.created_by}</span>
@@ -2043,7 +2082,7 @@ export default function OrderDetailPage() {
                           <button
                             onClick={() => deleteProjectReport(r.id)}
                             className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400"
-                            title="Loeschen"
+                            title="Löschen"
                             data-testid={`report-delete-${r.id}`}
                           >
                             <Trash2 className="w-4 h-4" />
@@ -2159,7 +2198,7 @@ export default function OrderDetailPage() {
                           <FileDown className="w-4 h-4" />
                         </button>
                         {isAdmin && (
-                          <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Loeschen" data-testid={`fuel-delete-${r.id}`}>
+                          <button onClick={() => deleteFuelReceipt(r.id)} className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400" title="Löschen" data-testid={`fuel-delete-${r.id}`}>
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
@@ -2285,7 +2324,7 @@ export default function OrderDetailPage() {
                 <Input
                   value={diarySearchQ}
                   onChange={(e) => setDiarySearchQ(e.target.value)}
-                  placeholder="Suchen: Anrufer, Telefon, Standort, Grund (auftragsuebergreifend) ..."
+                  placeholder="Suchen: Anrufer, Telefon, Standort, Grund (auftragsübergreifend) ..."
                   className="pl-9 pr-9"
                   data-testid="diary-search-input"
                 />
@@ -2304,7 +2343,7 @@ export default function OrderDetailPage() {
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-blue-800">
                       <Search className="w-3 h-3 inline mr-1" />
-                      {diarySearchResults.length} Treffer auftragsuebergreifend
+                      {diarySearchResults.length} Treffer auftragsübergreifend
                       {diarySearchResults.length === 50 && " (Max. 50 angezeigt)"}
                     </p>
                   </div>
@@ -2356,7 +2395,7 @@ export default function OrderDetailPage() {
               )}
             </div>
 
-            {/* Eingabe-Formular fuer neue Stoerungsmeldung */}
+            {/* Eingabe-Formular fuer neue Störungsmeldung */}
             <form
               data-testid="diary-form"
               onSubmit={async (e) => {
@@ -2368,7 +2407,7 @@ export default function OrderDetailPage() {
                 setDiarySubmitting(true);
                 try {
                   await api.post(`/orders/${pk}/diary`, diaryForm);
-                  toast.success("Stoerung eingetragen");
+                  toast.success("Störung eingetragen");
                   setDiaryForm({ caller_name: "", caller_phone: "", reason: "", location: "", is_nachtrag: false, assigned_trupp_ids: [] });
                   fetchDiary();
                   fetchTrupps();
@@ -2380,7 +2419,7 @@ export default function OrderDetailPage() {
               }}
               className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-5"
             >
-              <p className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">Neue Stoerungsmeldung</p>
+              <p className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">Neue Störungsmeldung</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Anrufer (Name)</label>
@@ -2403,7 +2442,7 @@ export default function OrderDetailPage() {
                 </div>
               </div>
               <div className="mb-3">
-                <label className="text-xs text-gray-600 mb-1 block">Standort der Stoerung</label>
+                <label className="text-xs text-gray-600 mb-1 block">Standort der Störung</label>
                 <Input
                   value={diaryForm.location}
                   onChange={(e) => setDiaryForm({ ...diaryForm, location: e.target.value })}
@@ -2416,7 +2455,7 @@ export default function OrderDetailPage() {
                 <textarea
                   value={diaryForm.reason}
                   onChange={(e) => setDiaryForm({ ...diaryForm, reason: e.target.value })}
-                  placeholder="z.B. Generator springt nicht an, FI-Schutzschalter ausgeloest"
+                  placeholder="z.B. Generator springt nicht an, FI-Schutzschalter ausgelöst"
                   rows={3}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
                   data-testid="diary-input-reason"
@@ -2433,11 +2472,15 @@ export default function OrderDetailPage() {
                   <div className="flex flex-wrap gap-1.5">
                     {trupps.map((t) => {
                       const isSelected = (diaryForm.assigned_trupp_ids || []).includes(t.id);
+                      const inactive = t.is_active === false;
+                      const disabled = inactive && !isSelected;
                       return (
                         <button
                           key={t.id}
                           type="button"
+                          disabled={disabled}
                           onClick={() => {
+                            if (disabled) return;
                             const cur = diaryForm.assigned_trupp_ids || [];
                             const next = isSelected ? cur.filter((x) => x !== t.id) : [...cur, t.id];
                             setDiaryForm({ ...diaryForm, assigned_trupp_ids: next });
@@ -2445,17 +2488,21 @@ export default function OrderDetailPage() {
                           className={`text-xs px-2.5 py-1 rounded-full border-2 transition-all flex items-center gap-1.5 ${
                             isSelected
                               ? "bg-indigo-600 text-white border-indigo-600"
+                              : inactive
+                              ? "bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed"
                               : t.is_busy
                               ? "bg-red-50 text-red-700 border-red-300 hover:border-red-400"
                               : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:border-emerald-400"
                           }`}
                           data-testid={`diary-trupp-chip-${t.id}`}
+                          title={inactive ? "Trupp pausiert — bitte erst aktivieren" : ""}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full ${
-                            isSelected ? "bg-white" : t.is_busy ? "bg-red-500" : "bg-emerald-500"
+                            isSelected ? "bg-white" : inactive ? "bg-gray-400" : t.is_busy ? "bg-red-500" : "bg-emerald-500"
                           }`} />
                           {t.name}
-                          {t.is_busy && !isSelected && <span className="text-[9px]">(unterwegs)</span>}
+                          {inactive && !isSelected && <span className="text-[9px]">(Pause)</span>}
+                          {!inactive && t.is_busy && !isSelected && <span className="text-[9px]">(unterwegs)</span>}
                         </button>
                       );
                     })}
@@ -2473,7 +2520,7 @@ export default function OrderDetailPage() {
                   data-testid="diary-input-nachtrag"
                 />
                 <span className="text-sm text-gray-800">
-                  <strong>Nachtrag</strong> <span className="text-xs text-gray-500">— gehoert nicht zum urspruenglichen Auftrag, wird zusaetzlich abgerechnet</span>
+                  <strong>Nachtrag</strong> <span className="text-xs text-gray-500">— gehört nicht zum ursprünglichen Auftrag, wird zusätzlich abgerechnet</span>
                 </span>
               </label>
               <div className="flex items-center justify-between">
@@ -2487,15 +2534,15 @@ export default function OrderDetailPage() {
                   className="bg-slate-600 hover:bg-slate-700 text-white"
                   data-testid="diary-submit-btn"
                 >
-                  {diarySubmitting ? "Speichere..." : "Stoerung eintragen"}
+                  {diarySubmitting ? "Speichere..." : "Störung eintragen"}
                 </Button>
               </div>
             </form>
 
-            {/* Liste der Eintraege */}
+            {/* Liste der Einträge */}
             {diaryEntries.length === 0 ? (
               <div className="text-center py-8 text-sm text-gray-400">
-                Noch keine Eintraege in diesem Einsatztagebuch.
+                Noch keine Einträge in diesem Einsatztagebuch.
               </div>
             ) : (
               <div className="space-y-2" data-testid="diary-list">
@@ -2594,7 +2641,7 @@ export default function OrderDetailPage() {
                                   await api.post(`/orders/${pk}/diary/${e.id}/reopen`);
                                   fetchDiary();
                                   fetchTrupps();
-                                  toast.success("Eintrag wieder geoeffnet");
+                                  toast.success("Eintrag wieder geöffnet");
                                 } catch (err) {
                                   toast.error("Fehler: " + (err.response?.data?.detail || err.message));
                                 }
@@ -2632,7 +2679,7 @@ export default function OrderDetailPage() {
                                   await api.delete(`/orders/${pk}/diary/${e.id}`);
                                   fetchDiary();
                                   fetchTrupps();
-                                  toast.success("Geloescht");
+                                  toast.success("Gelöscht");
                                 } catch (err) {
                                   toast.error("Fehler: " + (err.response?.data?.detail || err.message));
                                 }
@@ -2640,7 +2687,7 @@ export default function OrderDetailPage() {
                               className="text-[10px] text-red-500 hover:text-red-700 px-2 py-1"
                               data-testid={`diary-delete-${e.id}`}
                             >
-                              <Trash2 className="w-3 h-3 inline" /> Loeschen
+                              <Trash2 className="w-3 h-3 inline" /> Löschen
                             </button>
                           )}
                         </div>
@@ -2941,7 +2988,7 @@ function GpsMapModal({ receipt, onClose }) {
           >
             In Google Maps oeffnen
           </Button>
-          <Button size="sm" variant="outline" onClick={onClose} className="text-xs">Schliessen</Button>
+          <Button size="sm" variant="outline" onClick={onClose} className="text-xs">Schließen</Button>
         </div>
       </div>
     </div>

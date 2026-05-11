@@ -100,7 +100,7 @@ def _user_display(user: dict) -> str:
 async def list_diary(order_pk: str, user: dict = Depends(_auth_user)):
     """Liste aller Tagebuch-Eintraege zu einem Auftrag (chronologisch, neueste oben)."""
     if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Auftrag")
+        raise HTTPException(status_code=403, detail="Keine Berechtigung für diesen Auftrag")
     rows = await _db.order_diary_entries.find(
         {"order_pk": str(order_pk)}, {"_id": 0}
     ).sort([("created_at", -1)]).to_list(500)
@@ -118,9 +118,9 @@ async def list_diary(order_pk: str, user: dict = Depends(_auth_user)):
 async def create_diary_entry(order_pk: str,
                               payload: DiaryEntryCreate,
                               user: dict = Depends(_auth_user)):
-    """Neue Stoerungsmeldung anlegen."""
+    """Neue Störungsmeldung anlegen."""
     if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Auftrag")
+        raise HTTPException(status_code=403, detail="Keine Berechtigung für diesen Auftrag")
     if not (payload.reason or "").strip():
         raise HTTPException(status_code=400, detail="Grund/Beschreibung ist erforderlich")
 
@@ -222,7 +222,7 @@ async def update_diary_entry(order_pk: str, entry_id: str,
     if payload.assigned_trupp_ids is not None:
         upd["assigned_trupp_ids"] = [str(t) for t in payload.assigned_trupp_ids if t]
     if not upd:
-        raise HTTPException(status_code=400, detail="Keine Aenderungen")
+        raise HTTPException(status_code=400, detail="Keine Änderungen")
     if "reason" in upd and not upd["reason"]:
         raise HTTPException(status_code=400, detail="Grund darf nicht leer sein")
     res = await _db.order_diary_entries.update_one(
@@ -253,7 +253,7 @@ async def delete_diary_entry(order_pk: str, entry_id: str,
     await _db.order_diary_entries.delete_one(
         {"id": entry_id, "order_pk": str(order_pk)}
     )
-    return {"message": "Eintrag geloescht", "id": entry_id}
+    return {"message": "Eintrag gelöscht", "id": entry_id}
 
 
 # ----------------------------------------------------------------------------
@@ -389,6 +389,7 @@ async def export_diary_csv(order_pk: str, user: dict = Depends(_auth_user)):
 class TruppPayload(BaseModel):
     name: Optional[str] = None
     members: Optional[List[str]] = None  # max 4
+    is_active: Optional[bool] = None  # False = Pause / inaktiv
 
 
 def _trupp_doc_to_response(d: dict, busy_ids: set) -> dict:
@@ -397,6 +398,7 @@ def _trupp_doc_to_response(d: dict, busy_ids: set) -> dict:
         "order_pk": d["order_pk"],
         "name": d.get("name") or "",
         "members": [(m or "").strip() for m in (d.get("members") or [])],
+        "is_active": bool(d.get("is_active", True)),
         "is_busy": d["id"] in busy_ids,
         "created_at": d.get("created_at"),
     }
@@ -419,7 +421,7 @@ async def _compute_busy_trupps(order_pk: str) -> set:
 async def list_trupps(order_pk: str, user: dict = Depends(_auth_user)):
     """Liste aller Trupps zu einem Auftrag (inkl. aktueller Status: verfuegbar/unterwegs)."""
     if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Auftrag")
+        raise HTTPException(status_code=403, detail="Keine Berechtigung für diesen Auftrag")
     rows = await _db.order_trupps.find(
         {"order_pk": str(order_pk)}, {"_id": 0}
     ).sort([("created_at", 1)]).to_list(200)
@@ -436,7 +438,7 @@ async def create_trupp(order_pk: str,
                         user: dict = Depends(_auth_user)):
     """Neuen Trupp anlegen. Wenn kein Name angegeben, wird 'Trupp N' automatisch vergeben."""
     if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Auftrag")
+        raise HTTPException(status_code=403, detail="Keine Berechtigung für diesen Auftrag")
     name = (payload.name or "").strip()
     if not name:
         # Auto-Nummerierung: zaehle bestehende Trupps zu diesem Auftrag
@@ -448,6 +450,7 @@ async def create_trupp(order_pk: str,
         "order_pk": str(order_pk),
         "name": name,
         "members": members,
+        "is_active": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by_user_id": user["id"],
     }
@@ -471,8 +474,10 @@ async def update_trupp(order_pk: str, trupp_id: str,
         upd["name"] = n
     if payload.members is not None:
         upd["members"] = [(m or "").strip() for m in payload.members][:4]
+    if payload.is_active is not None:
+        upd["is_active"] = bool(payload.is_active)
     if not upd:
-        raise HTTPException(status_code=400, detail="Keine Aenderungen")
+        raise HTTPException(status_code=400, detail="Keine Änderungen")
     res = await _db.order_trupps.update_one(
         {"id": trupp_id, "order_pk": str(order_pk)},
         {"$set": upd}
@@ -502,4 +507,4 @@ async def delete_trupp(order_pk: str, trupp_id: str,
         {"order_pk": str(order_pk), "assigned_trupp_ids": trupp_id},
         {"$pull": {"assigned_trupp_ids": trupp_id}}
     )
-    return {"message": "Trupp geloescht", "id": trupp_id}
+    return {"message": "Trupp gelöscht", "id": trupp_id}
