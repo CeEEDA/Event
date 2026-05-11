@@ -18,6 +18,47 @@ import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Logo } from "../components/Logo";
 
+// ----------------------------------------------------------------------------
+// KIOSK-MODE: Live-Reload (Webpack-Dev-Server) deaktivieren.
+// Cloudflare-Tunnel timeouted WebSocket-Verbindung alle 10s -> Reload-Loop.
+// Diese Page MUSS dauerhaft stabil bleiben da der Pi keine User-Eingabe
+// erlaubt um manuell zu reloaden.
+// Nur aktiv wenn Pfad mit /einsatzzentrale startet (sonst stoert es Dev-Workflow).
+// ----------------------------------------------------------------------------
+if (typeof window !== "undefined"
+    && window.location.pathname.startsWith("/einsatzzentrale")
+    && !window.__kioskReloadBlocked) {
+  window.__kioskReloadBlocked = true;
+  try {
+    const noop = () => { console.log("[Kiosk] reload blocked"); };
+    Object.defineProperty(window.location, "reload", {
+      configurable: true, writable: false, value: noop,
+    });
+  } catch (e) { /* manche Browser blockieren das - ok */ }
+  try {
+    if (window.__webpack_dev_server__) {
+      window.__webpack_dev_server__.reloadApp = () => { console.log("[Kiosk] WDS reload blocked"); };
+    }
+  } catch (e) { /* ignore */ }
+  // WDS-Client wird ueber import.meta / window-Events getriggert - WS einfach killen
+  try {
+    const OrigWS = window.WebSocket;
+    window.WebSocket = function (url, ...rest) {
+      if (typeof url === "string" && (url.includes("/ws") || url.includes("sockjs") || url.includes("webpack"))) {
+        console.log("[Kiosk] dev-server WS blocked:", url);
+        // Dummy-Objekt zurueckgeben das nie connected ist
+        return { readyState: 3, close: () => {}, send: () => {}, addEventListener: () => {}, removeEventListener: () => {} };
+      }
+      return new OrigWS(url, ...rest);
+    };
+    window.WebSocket.prototype = OrigWS.prototype;
+    window.WebSocket.CONNECTING = 0;
+    window.WebSocket.OPEN = 1;
+    window.WebSocket.CLOSING = 2;
+    window.WebSocket.CLOSED = 3;
+  } catch (e) { /* ignore */ }
+}
+
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const SS_TOKEN = "einsatzzentrale_token";
 const SS_USER = "einsatzzentrale_user";
