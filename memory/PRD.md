@@ -404,6 +404,13 @@ User language: **German** (Agent must respond in German).
   - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
   - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
   - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Artikelliste-Tile (read-only)** (Feb 2026):
+  - Vier-Spalten-Layout: Karte links + Liste rechts, Toolbar oben (Suche/Typ-Filter/Status-Filter)
+  - Live-Suche ueber Bezeichnung/Typ/Plus-Code/Anleger
+  - Karten-Marker farbcodiert nach Typ (Stromerzeuger=orange, Verteiler=gruen, Lichtmast=gelb), Klick oeffnet Detail
+  - Detail-Modal mit Plus-Code, GPS (Google-Maps-Link), Anleger, Datum, Kommentaren
+  - Read-only: keine Loesch-/Edit-Buttons (das macht weiterhin nur die React-App)
+  - Wiederverwendet `/api/orders/epirent/{pk}/assets` (kein neuer Endpoint noetig)
 - **Workspace mit Regenradar + Stunden-Forecast** (Feb 2026):
   - 2-Spalten-Layout (links: Tiles + 7-Tage-Wetter, rechts: Regenradar + 24h-Stunden-Prognose)
   - **Auto-Geocoding** im Backend: Auftragsadresse -> lat/lng via Open-Meteo Geocoding-API (kein vor-Detail-Oeffnen mehr noetig)

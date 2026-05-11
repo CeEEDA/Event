@@ -195,6 +195,44 @@ input { font-family: inherit; }
 .hourly-sum { display: flex; gap: 14px; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 8px; }
 .hourly-sum b { color: var(--text); font-weight: 700; }
 
+/* ========== ARTIKELLISTE (Read-only) =============================== */
+.art-toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+.art-toolbar .kiosk-search { margin:0; flex:1; min-width:220px; max-width:420px; }
+.art-toolbar select { height:44px; padding:0 14px; border:1px solid var(--border); border-radius:10px; background:var(--card); font-size:14px; font-family:inherit; outline:none; cursor:pointer; }
+.art-toolbar select:focus { border-color:var(--fuchsia); }
+.art-toolbar .count { margin-left:auto; font-size:13px; color:var(--text-muted); }
+
+.art-layout { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+@media (max-width: 1100px) { .art-layout { grid-template-columns: 1fr; } }
+.art-map { width:100%; height:520px; background:#e0e7ef; border-radius:14px; overflow:hidden; border:1px solid var(--border); z-index:0; }
+.art-list { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; max-height:520px; display:flex; flex-direction:column; }
+.art-list-head { padding:10px 14px; border-bottom:1px solid var(--border); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); background:#fafbfc; }
+.art-list-body { flex:1; overflow:auto; }
+.art-row { display:flex; align-items:center; gap:12px; padding:12px 14px; border-bottom:1px solid #f3f4f6; cursor:pointer; transition:background .12s; }
+.art-row:hover { background:#fafbfc; }
+.art-row.dismantled { opacity:.55; }
+.art-type-icon { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.art-type-icon.generator { background:#fed7aa; color:#9a3412; }
+.art-type-icon.verteiler { background:#bbf7d0; color:#166534; }
+.art-type-icon.lichtmast { background:#fef08a; color:#854d0e; }
+.art-type-icon.other { background:#e5e7eb; color:#4b5563; }
+.art-row-text { flex:1; min-width:0; }
+.art-row-label { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.art-row-meta { font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap; margin-top:2px; }
+.art-status-badge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:2px 7px; border-radius:999px; flex-shrink:0; }
+.art-status-badge.placed { background:var(--emerald-bg); color:#047857; }
+.art-status-badge.dismantled { background:#e5e7eb; color:#6b7280; }
+
+.art-detail { padding:8px 0; }
+.art-detail .row { display:flex; gap:10px; padding:6px 0; font-size:14px; }
+.art-detail .row .k { color:var(--text-muted); min-width:120px; font-size:12px; padding-top:2px; }
+.art-detail .row .v { flex:1; word-break:break-word; }
+.art-comments { margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+.art-comments h4 { margin:0 0 10px; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
+.art-cmt { background:#fafbfc; border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px; }
+.art-cmt .meta { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+.art-cmt .txt { font-size:13px; white-space:pre-wrap; word-break:break-word; }
+
 /* ========== DIARY (Einsatztagebuch) ============================== */
 .diary-stats { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
 .diary-stat { flex:1; min-width:120px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
@@ -628,7 +666,7 @@ var TILES = [
   { key:"maschinen", label:"Maschinenliste", desc:"Generatoren, Verteiler, Lichtmasten", icon:"⚙️", cls:"tile-bg-emerald" },
   { key:"diary",     label:"Einsatztagebuch", desc:"Störungen & Verlauf",                  icon:"📓", cls:"tile-bg-slate" },
   { key:"plaene",    label:"Pläne",           desc:"Lagepläne, Dokumente, PDFs",           icon:"📄", cls:"tile-bg-blue" },
-  { key:"standorte", label:"Standortliste",   desc:"Alle GPS-Positionen",                  icon:"📍", cls:"tile-bg-fuchsia" }
+  { key:"artikel",   label:"Artikelliste",    desc:"Alle positionierten Artikel ansehen",  icon:"📍", cls:"tile-bg-fuchsia" }
 ];
 
 function renderWorkspace() {
@@ -843,6 +881,7 @@ function renderTilePanel() {
   var t = TILES.find(function(x){return x.key === state.activeTile;});
   var o = state.order; if (!t || !o) { state.phase = "workspace"; render(); return; }
   if (state.activeTile === "diary") { return renderDiaryPanel(); }
+  if (state.activeTile === "artikel") { return renderArtikelPanel(); }
   // Platzhalter fuer die noch-nicht-implementierten Tiles
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
@@ -859,6 +898,189 @@ function renderTilePanel() {
   ));
   attachLogout();
   document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+}
+
+// ============================================================================
+// ARTIKELLISTE (Read-only) - Stromerzeuger, Verteiler, Lichtmasten etc.
+// ============================================================================
+var artikelState = { items: [], filterType: "all", filterStatus: "all", search: "", map: null, markers: [] };
+
+function _artikelIcon(type) {
+  var t = (type || "").toLowerCase();
+  if (t.indexOf("stromerz") > -1 || t.indexOf("generator") > -1) return { cls: "generator", icon: "🔋" };
+  if (t.indexOf("verteiler") > -1) return { cls: "verteiler", icon: "⚡" };
+  if (t.indexOf("lichtmast") > -1 || t.indexOf("licht") > -1) return { cls: "lichtmast", icon: "💡" };
+  return { cls: "other", icon: "📦" };
+}
+
+function renderArtikelPanel() {
+  var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
+  var root = document.getElementById("root"); root.innerHTML = "";
+  root.appendChild($(
+    '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · Artikelliste") +
+    '<main class="kiosk-main">' +
+      '<div class="art-toolbar">' +
+        '<button id="tile-back" class="btn">← Zurück</button>' +
+        '<div class="kiosk-search">' +
+          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" stroke-linecap="round" d="m20 20-3-3"/></svg>' +
+          '<input id="art-search" placeholder="Suchen: Bezeichnung, Plus-Code…" autocomplete="off" />' +
+        '</div>' +
+        '<select id="art-type"><option value="all">Alle Typen</option></select>' +
+        '<select id="art-status">' +
+          '<option value="all">Alle Status</option>' +
+          '<option value="placed">Gestellt</option>' +
+          '<option value="dismantled">Abgebaut</option>' +
+        '</select>' +
+        '<div class="count" id="art-count"></div>' +
+      '</div>' +
+      '<div class="art-layout">' +
+        '<div id="art-map" class="art-map"></div>' +
+        '<div class="art-list">' +
+          '<div class="art-list-head" id="art-list-head">Lade Artikel…</div>' +
+          '<div class="art-list-body" id="art-list-body"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+        '</div>' +
+      '</div>' +
+    '</main></div>'
+  ));
+  attachLogout();
+  document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+  document.getElementById("art-search").addEventListener("input", function(e){ artikelState.search = e.target.value; paintArtikel(); });
+  document.getElementById("art-type").addEventListener("change", function(e){ artikelState.filterType = e.target.value; paintArtikel(); });
+  document.getElementById("art-status").addEventListener("change", function(e){ artikelState.filterStatus = e.target.value; paintArtikel(); });
+
+  // Karte aufbauen (zentriert auf Auftrag)
+  setTimeout(function() {
+    var mapEl = document.getElementById("art-map"); if (!mapEl) return;
+    if (artikelState.map) { try { artikelState.map.remove(); } catch(e){} }
+    artikelState.map = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([51.0, 10.0], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(artikelState.map);
+  }, 50);
+
+  loadArtikel();
+}
+
+function loadArtikel() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/epirent/" + pk + "/assets").then(function(data) {
+    artikelState.items = data.assets || [];
+    // Typ-Filter befüllen
+    var types = {};
+    artikelState.items.forEach(function(a){ if (a.asset_type) types[a.asset_type] = (types[a.asset_type] || 0) + 1; });
+    var sel = document.getElementById("art-type"); if (sel) {
+      sel.innerHTML = '<option value="all">Alle Typen (' + artikelState.items.length + ')</option>' +
+        Object.keys(types).sort().map(function(t){ return '<option value="' + esc(t) + '">' + esc(t) + ' (' + types[t] + ')</option>'; }).join("");
+    }
+    paintArtikel();
+  }).catch(function(ex) {
+    document.getElementById("art-list-body").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
+  });
+}
+
+function paintArtikel() {
+  var q = (artikelState.search || "").trim().toLowerCase();
+  var items = artikelState.items.filter(function(a) {
+    if (artikelState.filterType !== "all" && a.asset_type !== artikelState.filterType) return false;
+    if (artikelState.filterStatus !== "all" && (a.status || "placed") !== artikelState.filterStatus) return false;
+    if (q) {
+      var hay = [a.label, a.asset_type, a.plus_code, a.created_by].filter(Boolean).join(" ").toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+
+  // Liste
+  var head = document.getElementById("art-list-head");
+  var body = document.getElementById("art-list-body");
+  var countEl = document.getElementById("art-count");
+  if (countEl) countEl.textContent = items.length + " von " + artikelState.items.length + " Artikeln";
+  if (head) head.textContent = items.length + " Artikel" + (items.length !== artikelState.items.length ? " (gefiltert von " + artikelState.items.length + ")" : "");
+  if (!items.length) {
+    body.innerHTML = '<div class="empty" style="padding:32px;">Keine Artikel gefunden.</div>';
+  } else {
+    body.innerHTML = items.map(function(a) {
+      var ic = _artikelIcon(a.asset_type);
+      var status = a.status || "placed";
+      var statusLbl = status === "dismantled" ? "Abgebaut" : "Gestellt";
+      var cmtCount = (a.comments || []).length;
+      return '<div class="art-row ' + (status === "dismantled" ? "dismantled" : "") + '" data-asset-id="' + esc(a.id) + '">' +
+               '<div class="art-type-icon ' + ic.cls + '">' + ic.icon + '</div>' +
+               '<div class="art-row-text">' +
+                 '<div class="art-row-label">' + esc(a.label || "(ohne Bezeichnung)") + '</div>' +
+                 '<div class="art-row-meta">' +
+                   '<span>' + esc(a.asset_type || "Typ?") + '</span>' +
+                   (a.plus_code ? '<span>📍 ' + esc(a.plus_code) + '</span>' : '') +
+                   (cmtCount ? '<span>💬 ' + cmtCount + '</span>' : '') +
+                 '</div>' +
+               '</div>' +
+               '<div class="art-status-badge ' + status + '">' + statusLbl + '</div>' +
+             '</div>';
+    }).join("");
+    body.querySelectorAll(".art-row").forEach(function(row) {
+      row.addEventListener("click", function() {
+        var a = artikelState.items.find(function(x){return x.id === row.dataset.assetId;});
+        if (a) openArtikelDetail(a);
+      });
+    });
+  }
+
+  // Karten-Marker neu rendern
+  if (artikelState.map) {
+    artikelState.markers.forEach(function(m){ try { artikelState.map.removeLayer(m); } catch(e){} });
+    artikelState.markers = [];
+    var bounds = [];
+    items.forEach(function(a) {
+      if (a.latitude == null || a.longitude == null) return;
+      var ic = _artikelIcon(a.asset_type);
+      var color = ic.cls === "generator" ? "#ea580c" : ic.cls === "verteiler" ? "#16a34a" : ic.cls === "lichtmast" ? "#ca8a04" : "#6b7280";
+      var m = L.circleMarker([a.latitude, a.longitude], {
+        radius: 9, color: color, fillColor: color, fillOpacity: 0.85, weight: 2
+      }).addTo(artikelState.map);
+      m.bindTooltip('<b>' + esc(a.label || "?") + '</b><br>' + esc(a.asset_type || ""), { direction: "top" });
+      m.on("click", function(){ openArtikelDetail(a); });
+      artikelState.markers.push(m);
+      bounds.push([a.latitude, a.longitude]);
+    });
+    if (bounds.length) {
+      try { artikelState.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 }); } catch (e) {}
+    }
+  }
+}
+
+function openArtikelDetail(a) {
+  var ic = _artikelIcon(a.asset_type);
+  var status = a.status || "placed";
+  var modal = $(
+    '<div class="modal-bg"><div class="modal-card" style="max-width:620px;">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">' +
+        '<div class="art-type-icon ' + ic.cls + '" style="width:48px;height:48px;font-size:22px;">' + ic.icon + '</div>' +
+        '<div style="flex:1;">' +
+          '<h3 style="margin:0;">' + esc(a.label || "(ohne Bezeichnung)") + '</h3>' +
+          '<div style="font-size:13px;color:var(--text-muted);">' + esc(a.asset_type || "Typ?") + '</div>' +
+        '</div>' +
+        '<div class="art-status-badge ' + status + '">' + (status === "dismantled" ? "Abgebaut" : "Gestellt") + '</div>' +
+      '</div>' +
+      '<div class="art-detail">' +
+        (a.plus_code ? '<div class="row"><div class="k">Plus-Code</div><div class="v"><code>' + esc(a.plus_code) + '</code></div></div>' : '') +
+        (a.latitude != null ? '<div class="row"><div class="k">GPS</div><div class="v">' + esc(a.latitude.toFixed(6)) + ', ' + esc(a.longitude.toFixed(6)) +
+          ' &nbsp;<a href="https://www.google.com/maps?q=' + a.latitude + ',' + a.longitude + '" target="_blank" rel="noopener" style="color:var(--fuchsia);font-size:12px;">Karte öffnen ↗</a></div></div>' : '') +
+        (a.created_by ? '<div class="row"><div class="k">Angelegt von</div><div class="v">' + esc(a.created_by) + '</div></div>' : '') +
+        (a.created_at ? '<div class="row"><div class="k">Angelegt am</div><div class="v">' + esc(fmtDateTime(a.created_at)) + '</div></div>' : '') +
+      '</div>' +
+      ((a.comments && a.comments.length) ? (
+        '<div class="art-comments"><h4>Kommentare (' + a.comments.length + ')</h4>' +
+        a.comments.map(function(c) {
+          return '<div class="art-cmt">' +
+                   '<div class="meta">' + esc(c.author || c.created_by || "?") + ' &middot; ' + esc(fmtDateTime(c.created_at)) + '</div>' +
+                   '<div class="txt">' + esc(c.text) + '</div>' +
+                 '</div>';
+        }).join("") + '</div>'
+      ) : '<div class="art-comments"><h4>Kommentare</h4><div style="font-size:13px;color:#9ca3af;">Keine Kommentare vorhanden.</div></div>') +
+      '<div class="actions"><button class="btn primary" id="art-close">Schließen</button></div>' +
+    '</div></div>'
+  );
+  document.body.appendChild(modal);
+  modal.querySelector("#art-close").addEventListener("click", function(){ modal.remove(); });
+  modal.addEventListener("click", function(e){ if (e.target === modal) modal.remove(); });
 }
 
 // ============================================================================
