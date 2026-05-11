@@ -29,6 +29,48 @@
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
         <title>Eventenergie Portal</title>
+        <script>
+            // KIOSK-MODE: Pre-runtime override fuer /einsatzzentrale
+            // Laeuft VOR Webpack/React damit WDS-Live-Reload nicht zuschlaegt.
+            (function () {
+                try {
+                    if (!window.location.pathname.startsWith("/einsatzzentrale")) return;
+                    var noop = function () { try { console.log("[Kiosk] reload blocked"); } catch (e) {} };
+                    // window.location.reload abdrehen
+                    try {
+                        Object.defineProperty(window.location, "reload", {
+                            configurable: true, writable: false, value: noop
+                        });
+                    } catch (e) {}
+                    // WDS-Sockets neutralisieren
+                    try {
+                        var OrigWS = window.WebSocket;
+                        var FakeWS = function (url) {
+                            if (typeof url === "string" && (url.indexOf("/ws") !== -1 || url.indexOf("sockjs") !== -1 || url.indexOf("webpack") !== -1)) {
+                                try { console.log("[Kiosk] dev-server WS blocked:", url); } catch (e) {}
+                                return { readyState: 3, close: function(){}, send: function(){}, addEventListener: function(){}, removeEventListener: function(){} };
+                            }
+                            return new OrigWS(url);
+                        };
+                        FakeWS.prototype = OrigWS.prototype;
+                        FakeWS.CONNECTING = 0; FakeWS.OPEN = 1; FakeWS.CLOSING = 2; FakeWS.CLOSED = 3;
+                        window.WebSocket = FakeWS;
+                    } catch (e) {}
+                    // EventSource (SSE) ebenfalls blocken falls WDS das nutzt
+                    try {
+                        var OrigES = window.EventSource;
+                        window.EventSource = function (url) {
+                            if (typeof url === "string" && (url.indexOf("/ws") !== -1 || url.indexOf("/sockjs") !== -1)) {
+                                try { console.log("[Kiosk] dev-server SSE blocked:", url); } catch (e) {}
+                                return { close: function(){}, addEventListener: function(){}, removeEventListener: function(){} };
+                            }
+                            return new OrigES(url);
+                        };
+                    } catch (e) {}
+                    window.__kioskReloadBlocked = true;
+                } catch (e) { /* niemals fail */ }
+            })();
+        </script>
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
