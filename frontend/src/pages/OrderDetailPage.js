@@ -2387,6 +2387,31 @@ export default function OrderDetailPage() {
                           <div className="text-[10px] text-gray-500 mt-0.5">
                             {[r.caller_name, r.caller_phone, r.location].filter(Boolean).join(" · ")}
                           </div>
+                          {r.status === "resolved" && r.resolved_at && (
+                            <div className="text-[10px] text-emerald-700 mt-1 flex items-center gap-1" data-testid={`diary-search-result-resolved-${r.id}`}>
+                              <CheckCircle2 className="w-2.5 h-2.5" />
+                              <span className="font-semibold">Zurück:</span>
+                              <span className="font-mono">{new Date(r.resolved_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}</span>
+                              {(() => {
+                                try {
+                                  const start = new Date(r.created_at).getTime();
+                                  const end = new Date(r.resolved_at).getTime();
+                                  const minutes = Math.max(0, Math.round((end - start) / 60000));
+                                  if (!Number.isFinite(minutes)) return null;
+                                  const h = Math.floor(minutes / 60);
+                                  const m = minutes % 60;
+                                  return (
+                                    <span className="text-gray-500 ml-1">
+                                      (Dauer: {h > 0 ? `${h}h ` : ""}{m}min)
+                                    </span>
+                                  );
+                                } catch { return null; }
+                              })()}
+                              {r.resolved_by_name && (
+                                <span className="text-gray-500 ml-1">· durch {r.resolved_by_name}</span>
+                              )}
+                            </div>
+                          )}
                         </button>
                       ))}
                     </div>
