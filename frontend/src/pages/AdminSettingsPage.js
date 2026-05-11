@@ -733,7 +733,16 @@ function EinsatzzentralePiSection() {
         pi_name: piName.trim(),
         standort: standort.trim() || null,
       });
-      setSetupCmd(res.data.setup_command);
+      // Setup-Befehl im Frontend zusammenbauen mit der bekannten echten
+      // Backend-URL (REACT_APP_BACKEND_URL). Das ist robuster als die URL
+      // vom Backend zu nehmen - hinter K8s-Ingress kann der Origin-Header
+      // auf eine interne cluster-URL zeigen, die von ausserhalb nicht
+      // erreichbar ist (HTTP 403 vom Cloudflare-Layer).
+      const portalUrl = (process.env.REACT_APP_BACKEND_URL || window.location.origin).replace(/\/$/, "");
+      const kioskUrl = `${portalUrl}/api/einsatzzentrale/kiosk-page?pi_id=${res.data.pi_id}&key=${res.data.plain_key}`;
+      const installUrl = `${portalUrl}/api/einsatzzentrale/install-script`;
+      const cmd = `curl -sL "${installUrl}" | sudo bash -s -- "${kioskUrl}"`;
+      setSetupCmd(cmd);
       setPiName(""); setStandort("");
       toast.success("Setup-Befehl generiert");
       loadPis();

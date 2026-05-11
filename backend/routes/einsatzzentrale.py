@@ -612,6 +612,7 @@ async def generate_pi_setup(body: PiSetupRequest, request: "Request", user: dict
         "setup_command": setup_command,
         "kiosk_url": kiosk_url,
         "portal_url": portal_url,
+        "plain_key": plain_key,  # nur in der Antwort - wird im Frontend zum Befehl-Bauen verwendet
         "key_prefix": plain_key[:8],
     }
 
