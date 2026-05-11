@@ -234,6 +234,20 @@ rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSoc
 CRASH_COUNT=0
 LAST_CRASH=0
 while true; do
+  # ----- WICHTIG -----
+  # "Opening in existing browser session" -> Chromium denkt es laeuft schon
+  # eine Instanz und beendet sich sofort wieder (Exit 0). Ursache: residuale
+  # Chromium-Prozesse oder Stale-Locks im default ODER kiosk-Profile.
+  # Daher VOR jedem Start aggressiv aufraeumen.
+  pkill -9 -f chromium 2>/dev/null || true
+  pkill -9 -f chrome 2>/dev/null || true
+  sleep 0.5
+  rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket" 2>/dev/null || true
+  rm -f "$PROFILE/Default/SingletonLock" "$PROFILE/Default/SingletonCookie" "$PROFILE/Default/SingletonSocket" 2>/dev/null || true
+  rm -f "$HOME/.config/chromium/SingletonLock" "$HOME/.config/chromium/SingletonCookie" "$HOME/.config/chromium/SingletonSocket" 2>/dev/null || true
+  rm -f "$HOME/.config/chromium/Default/SingletonLock" "$HOME/.config/chromium/Default/SingletonCookie" "$HOME/.config/chromium/Default/SingletonSocket" 2>/dev/null || true
+  rm -f "$HOME/.config/chromium-browser/SingletonLock" "$HOME/.config/chromium-browser/SingletonCookie" "$HOME/.config/chromium-browser/SingletonSocket" 2>/dev/null || true
+
   echo "[$(date '+%F %T')] Starte Chromium auf $URL (scale=$SCALE)" >> "$LOGFILE"
   "$CHROMIUM" \
     --kiosk \
