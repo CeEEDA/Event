@@ -508,3 +508,156 @@ async def delete_trupp(order_pk: str, trupp_id: str,
         {"$pull": {"assigned_trupp_ids": trupp_id}}
     )
     return {"message": "Trupp gelöscht", "id": trupp_id}
+
+
+# ============================================================================
+# AUSWERTUNG (Statistik ueber alle Diary-Eintraege)
+# ============================================================================
+
+@router.get("/diary/auswertung")
+async def diary_auswertung(user: dict = Depends(_auth_user)):
+    """Liefert Statistik ueber alle Auftraege mit Einsatztagebuch-Eintraegen.
+
+    Antwort:
+      summary: Gesamtzahlen ueber alle Auftraege (total, resolved, open, avg/total min)
+      orders:  Pro-Auftrag-Aggregation, sortiert nach letzter Aktivitaet (neueste zuerst)
+               Jeder Eintrag enthaelt zusaetzlich `callers`: pro Anrufer/Gast die Anzahl.
+    """
+    # Freelancer sehen nur eigene Auftraege
+    allowed_filter = {}
+    if _is_freelancer(user):
+        allowed = [str(x) for x in (user.get("freelancer_orders") or [])]
+        if not allowed:
+            return {"summary": _empty_summary(), "orders": []}
+        allowed_filter = {"order_pk": {"$in": allowed}}
+
+    rows = await _db.order_diary_entries.find(
+        allowed_filter, {"_id": 0}
+    ).to_list(20000)
+
+    if not rows:
+        return {"summary": _empty_summary(), "orders": []}
+
+    # Pro-Auftrag-Aggregation
+    by_order: dict = {}
+    for r in rows:
+        pk = str(r.get("order_pk"))
+        bucket = by_order.setdefault(pk, {
+            "order_pk": pk,
+            "total": 0,
+            "open": 0,
+            "resolved": 0,
+            "nachtrag_count": 0,
+            "durations_min": [],   # nur fuer resolved-Entries
+            "last_entry_at": None,
+            "callers": {},          # name|phone -> {name, phone, count}
+        })
+        bucket["total"] += 1
+        if r.get("status") == "resolved":
+            bucket["resolved"] += 1
+        else:
+            bucket["open"] += 1
+        if r.get("is_nachtrag"):
+            bucket["nachtrag_count"] += 1
+        # Dauer in Minuten (nur wenn resolved + beide Zeitstempel vorhanden)
+        ca, ra = r.get("created_at"), r.get("resolved_at")
+        if r.get("status") == "resolved" and ca and ra:
+            try:
+                t0 = datetime.fromisoformat(str(ca).replace("Z", "+00:00"))
+                t1 = datetime.fromisoformat(str(ra).replace("Z", "+00:00"))
+                diff = (t1 - t0).total_seconds() / 60.0
+                if diff >= 0:
+                    bucket["durations_min"].append(diff)
+            except Exception:
+                pass
+        # last activity
+        latest = r.get("resolved_at") or r.get("created_at")
+        if latest and (bucket["last_entry_at"] is None or latest > bucket["last_entry_at"]):
+            bucket["last_entry_at"] = latest
+        # Caller-Aggregation
+        name = (r.get("caller_name") or "").strip()
+        phone = (r.get("caller_phone") or "").strip()
+        key = (name.lower() + "|" + phone.lower()) if (name or phone) else ""
+        if key:
+            entry = bucket["callers"].setdefault(key, {"name": name, "phone": phone, "count": 0})
+            entry["count"] += 1
+
+    # Auftrags-Metadaten anreichern (order_no, contact_name, address)
+    order_pks = list(by_order.keys())
+    pk_filter: list = []
+    try:
+        ints = [int(p) for p in order_pks if str(p).isdigit()]
+        if ints:
+            pk_filter.append({"primary_key": {"$in": ints}})
+    except Exception:
+        pass
+    pk_filter.append({"primary_key": {"$in": order_pks}})
+    orders_meta = await _db.orders_cache.find(
+        {"$or": pk_filter} if pk_filter else {},
+        {"_id": 0, "primary_key": 1, "order_no": 1, "address": 1,
+         "contact_name": 1, "event": 1}
+    ).to_list(2000) if pk_filter else []
+    meta_map = {str(o.get("primary_key")): o for o in orders_meta}
+
+    out_orders = []
+    summary_total = summary_open = summary_resolved = 0
+    summary_durations: list = []
+
+    for pk, b in by_order.items():
+        meta = meta_map.get(pk, {})
+        durations = b["durations_min"]
+        avg = (sum(durations) / len(durations)) if durations else None
+        total_min = sum(durations) if durations else 0
+        # Callers sortiert nach Haeufigkeit
+        callers_list = sorted(
+            b["callers"].values(), key=lambda x: (-x["count"], x["name"].lower())
+        )
+        recurring = [c for c in callers_list if c["count"] > 1]
+        out_orders.append({
+            "order_pk": pk,
+            "order_no": meta.get("order_no") or "",
+            "contact_name": meta.get("contact_name") or "",
+            "address": meta.get("address") or "",
+            "event": meta.get("event") or "",
+            "total": b["total"],
+            "open": b["open"],
+            "resolved": b["resolved"],
+            "nachtrag_count": b["nachtrag_count"],
+            "avg_duration_minutes": round(avg, 1) if avg is not None else None,
+            "total_minutes": round(total_min, 1),
+            "last_entry_at": b["last_entry_at"],
+            "unique_callers": len(callers_list),
+            "recurring_callers_count": len(recurring),
+            "callers": callers_list[:20],   # Top 20
+        })
+        summary_total += b["total"]
+        summary_open += b["open"]
+        summary_resolved += b["resolved"]
+        summary_durations.extend(durations)
+
+    # Sortiere Auftraege nach letzter Aktivitaet (neueste zuerst)
+    out_orders.sort(key=lambda x: x.get("last_entry_at") or "", reverse=True)
+
+    summary_avg = (sum(summary_durations) / len(summary_durations)) if summary_durations else None
+    return {
+        "summary": {
+            "total_orders": len(by_order),
+            "total_entries": summary_total,
+            "total_open": summary_open,
+            "total_resolved": summary_resolved,
+            "avg_duration_minutes": round(summary_avg, 1) if summary_avg is not None else None,
+            "total_minutes": round(sum(summary_durations), 1),
+        },
+        "orders": out_orders,
+    }
+
+
+def _empty_summary() -> dict:
+    return {
+        "total_orders": 0,
+        "total_entries": 0,
+        "total_open": 0,
+        "total_resolved": 0,
+        "avg_duration_minutes": None,
+        "total_minutes": 0,
+    }

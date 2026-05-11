@@ -149,6 +149,27 @@ def test_trupp_inactive_toggle():
     requests.delete(f"{api}/api/orders/{pk}/trupps/{tid}", headers=h, timeout=10)
 
 
+def test_diary_auswertung_endpoint():
+    """Aggregations-Endpoint fuer Auswertungs-Page."""
+    api = _api_url()
+    token = _token()
+    h = {"Authorization": f"Bearer {token}"}
+    r = requests.get(f"{api}/api/orders/diary/auswertung", headers=h, timeout=15)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert "summary" in d
+    assert "orders" in d
+    s = d["summary"]
+    for key in ("total_orders", "total_entries", "total_open", "total_resolved",
+                "avg_duration_minutes", "total_minutes"):
+        assert key in s, f"summary fehlt {key}"
+    # Wenn Orders zurueckkommen, pruefe Pflichtfelder
+    for o in d["orders"]:
+        for key in ("order_pk", "total", "open", "resolved", "callers",
+                    "unique_callers", "recurring_callers_count"):
+            assert key in o, f"order fehlt {key}"
+
+
 if __name__ == "__main__":
     test_trupp_crud_and_busy_status()
     print("CRUD/Busy OK")
@@ -156,3 +177,5 @@ if __name__ == "__main__":
     print("Auto-Naming OK")
     test_trupp_inactive_toggle()
     print("Inactive Toggle OK")
+    test_diary_auswertung_endpoint()
+    print("Auswertung Endpoint OK")

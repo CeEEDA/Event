@@ -24,6 +24,20 @@ User language: **German** (Agent must respond in German).
   - Resultat: **7/7 PASS**. User bekommt Deploy-Freigabe fuer mqtt_service.py.
 
 
+
+### Feb 2026 – Einsatztagebuch Auswertungs-Seite
+- ✅ **Neuer Backend-Endpoint** `GET /api/orders/diary/auswertung`:
+  - Aggregiert alle Diary-Eintraege pro Auftrag (nur Auftraege mit >=1 Eintrag).
+  - Pro Auftrag: total/open/resolved/nachtrag_count, avg_duration_minutes, total_minutes, unique_callers, recurring_callers_count, callers-Liste (sortiert nach Anruf-Haeufigkeit).
+  - Summary: total_orders, total_entries, total_open, total_resolved, Ø-Bearbeitungszeit, Gesamtzeit.
+  - Freelancer-Filter: nur eigene Auftraege.
+- ✅ **Neue Frontend-Seite** `/verwaltung/auswertung/einsatztagebuch` (`AuswertungEinsatztagebuchPage.jsx`):
+  - 6 Stat-Cards oben (Auftraege/Stoerungen/Behoben/Offen/Ø-Dauer/Gesamtzeit).
+  - Volltextsuche (Auftrag-Nr, Kunde, Adresse, Event).
+  - Auftrags-Liste: jeder Eintrag aufklappbar, zeigt Anrufer-Statistik mit Wiederholungstaeter-Badge, Nachtrag-Hinweis, "Oeffnen"-Link.
+- ✅ **Tile** im AuswertungIndexPage hinzugefuegt (slate-farbig, BookOpen-Icon).
+- ✅ Test in `test_order_trupps.py` ergaenzt — Auswertung-Endpoint laeuft 4/4 PASS.
+
 ### Feb 2026 – Einsatztagebuch: Trupp-Management (pro Auftrag)
 - ✅ **Trupp-CRUD pro Auftrag** (`/app/backend/routes/order_diary.py`, neue Collection `order_trupps`):
   - Endpunkte: `GET/POST /api/orders/{pk}/trupps`, `PUT/DELETE /api/orders/{pk}/trupps/{tid}`.

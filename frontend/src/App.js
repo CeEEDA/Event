@@ -47,6 +47,7 @@ import ProfilePage from "./pages/ProfilePage";
 import EmployeeAdminPage from "./pages/EmployeeAdminPage";
 import AuswertungPage from "./pages/AuswertungPage";
 import AuswertungIndexPage from "./pages/AuswertungIndexPage";
+import AuswertungEinsatztagebuchPage from "./pages/AuswertungEinsatztagebuchPage";
 import ArbeitszeitPage from "./pages/ArbeitszeitPage";
 import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
@@ -481,6 +482,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredModule="verwaltung">
             <MaschinenAuswertungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/auswertung/einsatztagebuch"
+        element={
+          <ProtectedRoute requiredModule="verwaltung">
+            <AuswertungEinsatztagebuchPage />
           </ProtectedRoute>
         }
       />

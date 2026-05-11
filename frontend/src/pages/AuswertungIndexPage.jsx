@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench, Heart, ClockIcon } from "lucide-react";
+import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench, Heart, ClockIcon, BookOpen } from "lucide-react";
 
 const subPages = [
   {
@@ -43,6 +43,14 @@ const subPages = [
     color: "red",
     path: "/verwaltung/maschinen-auswertung",
   },
+  {
+    key: "einsatztagebuch",
+    label: "Einsatztagebuch",
+    description: "Statistik & Bearbeitungszeiten aller geführten Einsatztagebücher",
+    icon: BookOpen,
+    color: "slate",
+    path: "/verwaltung/auswertung/einsatztagebuch",
+  },
 ];
 
 const colorClasses = {
@@ -51,6 +59,7 @@ const colorClasses = {
   green: { bg: "bg-green-100", text: "text-green-600", hoverBorder: "hover:border-green-400", hoverIcon: "group-hover:bg-green-600" },
   amber: { bg: "bg-amber-100", text: "text-amber-600", hoverBorder: "hover:border-amber-400", hoverIcon: "group-hover:bg-amber-600" },
   red: { bg: "bg-red-100", text: "text-red-600", hoverBorder: "hover:border-red-400", hoverIcon: "group-hover:bg-red-600" },
+  slate: { bg: "bg-slate-100", text: "text-slate-600", hoverBorder: "hover:border-slate-400", hoverIcon: "group-hover:bg-slate-600" },
 };
 
 export default function AuswertungIndexPage() {
