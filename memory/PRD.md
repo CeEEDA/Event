@@ -25,6 +25,16 @@ User language: **German** (Agent must respond in German).
 
 
 
+### Feb 2026 – Einsatzzentrale Pi-Kiosk (Workspace komplett)
+- ✅ **Workspace-Maske** auf dem Pi nach Auftrags-Auswahl:
+  - **Projekt-Header** (Auftrag-Nr, Event, Kunde, Adresse, Event-/Dispo-Zeitraum, Bearbeiter) aus EpiRent.
+  - **Wetter-Widget**: Open-Meteo-Forecast fuer den Veranstaltungszeitraum (max. 16 Tage in die Zukunft). Pro Tag: Code+Emoji, Min/Max-Temp, Niederschlag mm + Wahrscheinlichkeit, Wind-Boeen. KEIN API-Key noetig.
+  - **4 Tiles**: Maschinenliste (Cog/emerald), Einsatztagebuch (BookOpen/slate), Plaene (FileText/blue), Standortliste (MapPinned/fuchsia). Klick oeffnet Tile-Panel-Vollbild (aktuell Platzhalter).
+- ✅ **Backend** neue Endpoints:
+  - `GET /api/einsatzzentrale/orders/{pk}` — Auftrags-Kurzbeschreibung inkl. center_lat/lng aus order_settings.
+  - `GET /api/einsatzzentrale/weather?lat=&lng=&start=&end=` — Open-Meteo-Proxy (forecast + archive), liefert deutsche Labels + Emojis. Daily-Felder: temp_max/min, precipitation_sum, precipitation_probability_max, wind_speed/gusts, sunrise/sunset, weather_code.
+- ✅ Smoke-Test mit Anna Weber: Login -> Order-Filter -> Tile-Grid sichtbar.
+
 ### Feb 2026 – Einsatzzentrale Pi-Kiosk
 - ✅ **Backend** `routes/einsatzzentrale.py`:
   - `GET /api/einsatzzentrale/users` (PUBLIC, kein Auth) — liefert nur Mitarbeiter+Freelancer (id, name, role; KEINE Emails/Telefon).

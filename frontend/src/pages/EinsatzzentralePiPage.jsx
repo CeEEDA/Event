@@ -14,7 +14,7 @@
  */
 import { useEffect, useState, useCallback, useMemo } from "react";
 import axios from "axios";
-import { Users, LogOut, ChevronLeft, Search, Calendar, MapPin, User as UserIcon, Loader2, AlertCircle, ArrowRight, Building2, ClipboardList } from "lucide-react";
+import { Users, LogOut, ChevronLeft, Search, Calendar, MapPin, User as UserIcon, Loader2, AlertCircle, ArrowRight, Building2, ClipboardList, Cog, BookOpen, FileText, MapPinned, CloudSun, Wind, CloudRain, Thermometer, Sunrise, Sunset } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 
@@ -341,32 +341,56 @@ function OrderSelect({ token, user, onPick, onLogout }) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4: WORKSPACE (Platzhalter — Inhalt kommt vom User)
+// Phase 4: WORKSPACE — Projekt-Header + Wetter + 4 Kacheln
 // ---------------------------------------------------------------------------
-function Workspace({ user, order, onLogout }) {
+function Workspace({ user, order, token, onLogout }) {
+  const [activeTile, setActiveTile] = useState(null);
+
+  if (activeTile) {
+    return (
+      <WorkspaceTilePanel
+        tileKey={activeTile}
+        order={order}
+        user={user}
+        token={token}
+        onLogout={onLogout}
+        onBack={() => setActiveTile(null)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col" data-testid="ez-workspace">
       <KioskHeader
         user={user}
         onLogout={onLogout}
-        subtitle={`Auftrag #${order.order_no || order.primary_key} · ${order.event || ""}`}
+        subtitle={`Auftrag #${order.order_no || order.primary_key}`}
       />
-      <main className="flex-1 px-6 py-8 max-w-6xl mx-auto w-full">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
-          <ClipboardList className="w-14 h-14 mx-auto text-fuchsia-400 mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Arbeitsmaske bereit</h2>
-          <p className="text-slate-400 max-w-md mx-auto mb-6">
-            Die Inhalte dieser Maske werden gleich definiert. Aktuell siehst du hier den
-            ausgewählten Auftrag und den angemeldeten User.
-          </p>
-          <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 text-left max-w-lg mx-auto text-sm space-y-1">
-            <p><span className="text-slate-500">User:</span> <span className="font-mono">{user.name} ({user.role})</span></p>
-            <p><span className="text-slate-500">Auftrag:</span> <span className="font-mono">#{order.order_no || order.primary_key}</span></p>
-            <p><span className="text-slate-500">Kunde:</span> {order.contact_name || "—"}</p>
-            <p><span className="text-slate-500">Adresse:</span> {order.address || "—"}</p>
-            <p><span className="text-slate-500">Event:</span> {order.event || "—"} · {fmtRange(order.event_start, order.event_end)}</p>
+      <main className="flex-1 px-6 py-6 max-w-6xl mx-auto w-full space-y-6">
+        <ProjectHeader orderPk={order.primary_key} token={token} fallback={order} />
+        <WeatherWidget orderPk={order.primary_key} token={token} fallback={order} />
+        <section data-testid="ez-tile-grid">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Bereiche</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {WORKSPACE_TILES.map(t => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTile(t.key)}
+                  className="bg-slate-900 hover:bg-slate-800 border-2 border-slate-800 hover:border-fuchsia-500 rounded-2xl p-6 text-left transition-all group"
+                  data-testid={`ez-tile-${t.key}`}
+                >
+                  <div className={`w-14 h-14 rounded-2xl ${t.bg} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                    <Icon className={`w-7 h-7 ${t.text}`} />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-1">{t.label}</h3>
+                  <p className="text-xs text-slate-400">{t.desc}</p>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </section>
       </main>
     </div>
   );
@@ -403,6 +427,231 @@ function KioskHeader({ user, subtitle, onLogout }) {
         </Button>
       </div>
     </header>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Tile-Definitionen
+// ---------------------------------------------------------------------------
+const WORKSPACE_TILES = [
+  { key: "maschinen", label: "Maschinenliste", desc: "Generatoren, Verteiler, Lichtmasten",
+    icon: Cog, bg: "bg-emerald-500/20", text: "text-emerald-400" },
+  { key: "diary", label: "Einsatztagebuch", desc: "Störungen & Verlauf",
+    icon: BookOpen, bg: "bg-slate-500/20", text: "text-slate-300" },
+  { key: "plaene", label: "Pläne", desc: "Lagepläne, Dokumente, PDFs",
+    icon: FileText, bg: "bg-blue-500/20", text: "text-blue-400" },
+  { key: "standorte", label: "Standortliste", desc: "Alle GPS-Positionen",
+    icon: MapPinned, bg: "bg-fuchsia-500/20", text: "text-fuchsia-400" },
+];
+
+// ---------------------------------------------------------------------------
+// Projekt-Header (Kurzbeschreibung aus EpiRent)
+// ---------------------------------------------------------------------------
+function ProjectHeader({ orderPk, token, fallback }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await axios.get(`${BACKEND}/api/einsatzzentrale/orders/${orderPk}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cancelled) setData(data);
+      } catch {
+        if (!cancelled) setData(fallback);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orderPk, token, fallback]);
+
+  const o = data || fallback;
+  return (
+    <section
+      className="bg-gradient-to-br from-fuchsia-900/40 via-slate-900 to-slate-900 border border-fuchsia-700/30 rounded-2xl p-6"
+      data-testid="ez-project-header"
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold uppercase tracking-wider text-fuchsia-400 mb-1">
+            Auftrag #{o.order_no || o.primary_key}
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-white" data-testid="ez-project-event">
+            {o.event || "Veranstaltung"}
+          </h2>
+          {o.contact_name && (
+            <p className="text-base text-slate-200 mt-1 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-fuchsia-400" /> {o.contact_name}
+            </p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm text-slate-300">
+            {o.address && (
+              <p className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5 text-slate-500" /> {o.address}</p>
+            )}
+            <p className="flex items-center gap-2">
+              <Calendar className="w-3.5 h-3.5 text-slate-500" />
+              {fmtRange(o.event_start, o.event_end)}
+            </p>
+            {(o.dispo_start || o.dispo_end) && (
+              <p className="flex items-center gap-2 text-xs text-slate-400 sm:col-span-2">
+                <span className="font-semibold">Dispo:</span>
+                {fmtRange(o.dispo_start, o.dispo_end)}
+              </p>
+            )}
+            {o.editor_name && (
+              <p className="flex items-center gap-2 text-xs text-slate-400">
+                <UserIcon className="w-3 h-3" /> Bearbeiter: {o.editor_name}
+              </p>
+            )}
+          </div>
+        </div>
+        {loading && <Loader2 className="w-5 h-5 animate-spin text-fuchsia-400" />}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Wetter-Widget (Open-Meteo, Veranstaltungszeitraum)
+// ---------------------------------------------------------------------------
+function WeatherWidget({ orderPk, token, fallback }) {
+  const [orderDetail, setOrderDetail] = useState(null);
+  const [weather, setWeather] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // 1) Order-Detail fuer Coords + Datumsbereich
+        const { data: order } = await axios.get(`${BACKEND}/api/einsatzzentrale/orders/${orderPk}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled) return;
+        setOrderDetail(order);
+
+        const lat = order.center_lat;
+        const lng = order.center_lng;
+        if (lat == null || lng == null) {
+          setError("Keine GPS-Koordinaten zum Auftrag hinterlegt");
+          setLoading(false);
+          return;
+        }
+        const params = new URLSearchParams({ lat, lng });
+        if (order.event_start) params.set("start", order.event_start);
+        if (order.event_end) params.set("end", order.event_end);
+        const { data: w } = await axios.get(`${BACKEND}/api/einsatzzentrale/weather?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!cancelled) setWeather(w);
+      } catch (err) {
+        if (!cancelled) setError(err?.response?.data?.detail || "Wetter nicht verfügbar");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orderPk, token]);
+
+  return (
+    <section data-testid="ez-weather">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+          <CloudSun className="w-4 h-4" /> Wetter-Prognose
+        </h2>
+        {weather && (
+          <span className="text-[10px] text-slate-500 font-mono">
+            {weather.source} · {weather.start} … {weather.end}
+          </span>
+        )}
+      </div>
+      {loading ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex items-center gap-3 text-slate-400">
+          <Loader2 className="w-5 h-5 animate-spin" /> Lade Wetterdaten…
+        </div>
+      ) : error ? (
+        <div className="bg-amber-900/20 border border-amber-700/40 rounded-2xl p-4 flex items-center gap-3 text-amber-200 text-sm" data-testid="ez-weather-error">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{error} — bitte Auftrag zuerst auf der Detail-Seite öffnen, damit GPS geocodiert wird.</span>
+        </div>
+      ) : !weather || !weather.days?.length ? (
+        <p className="text-slate-400 text-sm">Keine Wetterdaten verfügbar.</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="ez-weather-days">
+          {weather.days.map((d) => (
+            <div
+              key={d.date}
+              className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center"
+              data-testid={`ez-weather-day-${d.date}`}
+            >
+              <p className="text-xs font-semibold text-slate-300">
+                {new Date(d.date).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}
+              </p>
+              <p className="text-3xl my-1" title={d.weather_label}>{d.weather_emoji}</p>
+              <p className="text-[10px] text-slate-400 mb-2 truncate" title={d.weather_label}>{d.weather_label}</p>
+              <p className="text-sm font-bold text-white">
+                <span className="text-red-400">{Math.round(d.temp_max)}°</span>
+                <span className="text-slate-500 mx-1">/</span>
+                <span className="text-blue-300">{Math.round(d.temp_min)}°</span>
+              </p>
+              {d.precipitation_mm != null && (
+                <p className="text-[10px] text-blue-300 mt-1 flex items-center justify-center gap-0.5">
+                  <CloudRain className="w-2.5 h-2.5" />
+                  {d.precipitation_mm.toFixed(1)} mm
+                  {d.precipitation_prob != null && <span className="text-slate-500"> · {d.precipitation_prob}%</span>}
+                </p>
+              )}
+              {d.wind_gust_kmh != null && (
+                <p className="text-[10px] text-slate-400 flex items-center justify-center gap-0.5">
+                  <Wind className="w-2.5 h-2.5" /> Böen {Math.round(d.wind_gust_kmh)} km/h
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tile-Panel (Vollbild-Detail eines Tiles)
+// ---------------------------------------------------------------------------
+function WorkspaceTilePanel({ tileKey, order, user, token, onLogout, onBack }) {
+  const tile = WORKSPACE_TILES.find(t => t.key === tileKey);
+  const Icon = tile?.icon || ClipboardList;
+  return (
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col" data-testid={`ez-panel-${tileKey}`}>
+      <KioskHeader user={user} onLogout={onLogout} subtitle={`Auftrag #${order.order_no || order.primary_key}`} />
+      <div className="max-w-6xl mx-auto w-full px-6 pt-4">
+        <button
+          onClick={onBack}
+          className="text-slate-400 hover:text-white flex items-center gap-2 text-sm"
+          data-testid="ez-panel-back"
+        >
+          <ChevronLeft className="w-4 h-4" /> Zurück zu den Bereichen
+        </button>
+      </div>
+      <main className="flex-1 px-6 py-5 max-w-6xl mx-auto w-full">
+        <div className={`bg-slate-900 border-2 border-slate-800 rounded-2xl p-8 text-center`}>
+          <div className={`w-16 h-16 rounded-2xl ${tile?.bg || "bg-slate-700"} flex items-center justify-center mx-auto mb-4`}>
+            <Icon className={`w-8 h-8 ${tile?.text || "text-white"}`} />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">{tile?.label}</h2>
+          <p className="text-slate-400 max-w-md mx-auto">
+            Inhalt für „{tile?.label}" wird gebaut, sobald du mir sagst was hier konkret rein soll.
+          </p>
+          <p className="text-xs text-slate-500 mt-4">
+            (Backend-Daten verfügbar — Layout & Filter folgen nach deinen Vorgaben.)
+          </p>
+        </div>
+      </main>
+    </div>
   );
 }
 
@@ -474,7 +723,7 @@ export default function EinsatzzentralePiPage() {
     );
   }
   if (phase === "workspace" && user && order) {
-    return <Workspace user={user} order={order} onLogout={handleLogout} />;
+    return <Workspace user={user} order={order} token={token} onLogout={handleLogout} />;
   }
   // Fallback
   return <UserSelect onPick={(u) => { setPickedUser(u); setPhase("password"); }} />;
