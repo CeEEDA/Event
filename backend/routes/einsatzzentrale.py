@@ -64,7 +64,7 @@ async def list_kiosk_users():
     """
     cursor = _db.users.find(
         {
-            "role": {"$in": ["mitarbeiter", "freelancer"]},
+            "role": {"$in": ["mitarbeiter", "freelancer", "admin"]},
             "$or": [{"is_active": True}, {"is_active": {"$exists": False}}],
         },
         {"_id": 0, "id": 1, "name": 1, "role": 1}
@@ -94,8 +94,8 @@ async def kiosk_login(payload: KioskLoginRequest):
     user = await _db.users.find_one({"id": payload.user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Ungültige Anmeldedaten")
-    if user.get("role") not in ("mitarbeiter", "freelancer"):
-        raise HTTPException(status_code=403, detail="Nur Mitarbeiter/Freelancer dürfen den Kiosk nutzen")
+    if user.get("role") not in ("mitarbeiter", "freelancer", "admin"):
+        raise HTTPException(status_code=403, detail="Nur Mitarbeiter/Freelancer/Admin dürfen den Kiosk nutzen")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Konto deaktiviert")
     if not _verify_password(payload.password, user["password_hash"]):
