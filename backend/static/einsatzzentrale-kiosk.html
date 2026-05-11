@@ -141,6 +141,70 @@ input { font-family: inherit; }
 .tile-bg-slate { background: #f1f5f9; color: #475569; }
 .tile-bg-blue { background: var(--blue-bg); color: var(--blue); }
 .tile-bg-fuchsia { background: var(--fuchsia-bg); color: var(--fuchsia-dark); }
+
+/* ========== DIARY (Einsatztagebuch) ============================== */
+.diary-stats { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+.diary-stat { flex:1; min-width:120px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+.diary-stat .lbl { font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); letter-spacing:.06em; }
+.diary-stat .val { font-size:28px; font-weight:700; margin-top:4px; }
+.diary-stat.open .val { color:#dc2626; }
+.diary-stat.resolved .val { color:var(--emerald); }
+.diary-stat.total .val { color:var(--text); }
+
+.diary-section-h { display:flex; align-items:center; justify-content:space-between; margin:24px 0 12px; }
+.diary-section-h h3 { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:0; }
+.diary-section-h .right { display:flex; gap:8px; }
+
+.diary-entry { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:10px; transition:border-color .15s; }
+.diary-entry.open { border-left:4px solid #dc2626; }
+.diary-entry.resolved { border-left:4px solid var(--emerald); opacity:.85; }
+.diary-entry .e-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; flex-wrap:wrap; }
+.diary-entry .e-time { font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+.diary-entry .badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:3px 8px; border-radius:999px; }
+.badge.bg-red { background:var(--red-bg); color:#991b1b; }
+.badge.bg-emerald { background:var(--emerald-bg); color:#047857; }
+.badge.bg-amber { background:var(--amber-bg); color:#92400e; }
+.badge.bg-fuchsia { background:var(--fuchsia-bg); color:var(--fuchsia-dark); }
+.badge.bg-blue { background:var(--blue-bg); color:#1e40af; }
+.diary-entry .e-reason { font-size:16px; font-weight:600; color:var(--text); margin:4px 0 8px; white-space:pre-wrap; word-break:break-word; }
+.diary-entry .e-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:6px 16px; font-size:13px; color:var(--text-muted); margin-bottom:10px; }
+.diary-entry .e-meta .row { display:flex; align-items:center; gap:6px; }
+.diary-entry .e-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.diary-entry .e-resolved-info { font-size:12px; color:var(--emerald); margin-top:6px; }
+
+.btn.sm { height:34px; padding:0 12px; font-size:13px; }
+.btn.success { background:var(--emerald); color:white; border-color:var(--emerald); }
+.btn.success:hover { background:#059669; border-color:#059669; }
+.btn.warn { background:var(--amber); color:white; border-color:var(--amber); }
+.btn.warn:hover { background:#d97706; border-color:#d97706; }
+
+.trupp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+.trupp-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px; position:relative; }
+.trupp-card.busy { border-color:#fde68a; background:var(--amber-bg); }
+.trupp-card.inactive { opacity:.45; background:#f9fafb; }
+.trupp-card .t-name { font-weight:600; font-size:15px; }
+.trupp-card .t-members { font-size:12px; color:var(--text-muted); margin-top:4px; }
+.trupp-card .t-status { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-top:6px; display:inline-block; padding:2px 8px; border-radius:999px; }
+.trupp-card .t-status.free { background:var(--emerald-bg); color:#047857; }
+.trupp-card .t-status.busy { background:var(--amber-bg); color:#92400e; }
+.trupp-card .t-status.paused { background:#e5e7eb; color:#6b7280; }
+.trupp-card .t-actions { display:flex; gap:6px; margin-top:8px; }
+
+/* Modal */
+.modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto; backdrop-filter:blur(2px); }
+.modal-card { background:white; border-radius:16px; padding:24px; max-width:560px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,.2); }
+.modal-card h3 { margin:0 0 16px; font-size:20px; }
+.modal-card label { display:block; font-size:13px; font-weight:600; margin:12px 0 6px; color:var(--text); }
+.modal-card input[type=text], .modal-card input[type=tel], .modal-card textarea { width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:10px; font-size:15px; font-family:inherit; outline:none; }
+.modal-card input:focus, .modal-card textarea:focus { border-color:var(--fuchsia); }
+.modal-card textarea { min-height:90px; resize:vertical; }
+.modal-card .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
+.modal-card .checkbox-row { display:flex; align-items:center; gap:10px; padding:10px 0; cursor:pointer; }
+.modal-card .checkbox-row input { width:18px; height:18px; }
+.trupp-pick { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.trupp-pick button { padding:8px 14px; border:1px solid var(--border); border-radius:999px; background:var(--card); font-size:13px; cursor:pointer; transition:all .12s; }
+.trupp-pick button.on { background:var(--fuchsia); color:white; border-color:var(--fuchsia); }
+.trupp-pick button.busy { opacity:.6; }
 </style>
 </head>
 <body>
@@ -583,11 +647,13 @@ function renderWorkspace() {
 }
 
 // ============================================================================
-// PHASE 5: TILE PANEL (Platzhalter)
+// PHASE 5: TILE PANEL (Router)
 // ============================================================================
 function renderTilePanel() {
   var t = TILES.find(function(x){return x.key === state.activeTile;});
   var o = state.order; if (!t || !o) { state.phase = "workspace"; render(); return; }
+  if (state.activeTile === "diary") { return renderDiaryPanel(); }
+  // Platzhalter fuer die noch-nicht-implementierten Tiles
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
     '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · " + t.label) +
@@ -603,6 +669,328 @@ function renderTilePanel() {
   ));
   attachLogout();
   document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+}
+
+// ============================================================================
+// EINSATZTAGEBUCH (Diary) - vollwertige Implementierung
+// ============================================================================
+var diaryState = { entries: [], trupps: [], loading: false };
+
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    var d = new Date(iso);
+    return d.toLocaleString("de-DE", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  } catch (e) { return iso; }
+}
+function fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return "—";
+  try {
+    var ms = new Date(endIso) - new Date(startIso);
+    if (ms < 0) return "—";
+    var m = Math.round(ms / 60000);
+    if (m < 60) return m + " Min";
+    var h = Math.floor(m / 60), rem = m % 60;
+    return h + "h " + (rem<10?"0":"") + rem + "m";
+  } catch (e) { return "—"; }
+}
+
+function renderDiaryPanel() {
+  var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
+  var pk = encodeURIComponent(o.primary_key);
+  var root = document.getElementById("root"); root.innerHTML = "";
+  root.appendChild($(
+    '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · Einsatztagebuch") +
+    '<main class="kiosk-main">' +
+      '<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">' +
+        '<button id="tile-back" class="btn">← Zurück</button>' +
+        '<button id="diary-new-btn" class="btn primary" style="height:44px;font-size:14px;padding:0 18px;">+ Neue Störung</button>' +
+        '<button id="diary-csv-btn" class="btn">⤓ CSV-Export</button>' +
+        '<div style="flex:1;"></div>' +
+        '<div class="kiosk-search" style="margin:0;flex:1;min-width:200px;max-width:340px;">' +
+          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" stroke-linecap="round" d="m20 20-3-3"/></svg>' +
+          '<input id="diary-filter" placeholder="Filter: Anrufer, Grund, Ort..." autocomplete="off" />' +
+        '</div>' +
+      '</div>' +
+      '<div id="diary-stats"></div>' +
+      '<div class="diary-section-h"><h3>Trupps</h3>' +
+        '<div class="right"><button id="trupp-new-btn" class="btn sm">+ Trupp anlegen</button></div></div>' +
+      '<div id="trupp-area"><div class="empty">Lade Trupps…</div></div>' +
+      '<div class="diary-section-h"><h3>Einträge</h3></div>' +
+      '<div id="diary-area"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+    '</main></div>'
+  ));
+  attachLogout();
+  document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+  document.getElementById("diary-new-btn").addEventListener("click", function(){ openEntryModal(null); });
+  document.getElementById("trupp-new-btn").addEventListener("click", function(){ openTruppModal(null); });
+  document.getElementById("diary-csv-btn").addEventListener("click", function(){ exportDiaryCsv(); });
+  document.getElementById("diary-filter").addEventListener("input", function(e){ paintDiary(e.target.value); });
+
+  loadDiary();
+  loadTrupps();
+}
+
+function loadDiary() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/diary").then(function(data) {
+    diaryState.entries = data.entries || [];
+    paintStats(data);
+    paintDiary(document.getElementById("diary-filter") ? document.getElementById("diary-filter").value : "");
+  }).catch(function(err) {
+    var area = document.getElementById("diary-area");
+    if (area) area.innerHTML = '<div class="alert error">' + esc(err.message) + '</div>';
+  });
+}
+
+function loadTrupps() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/trupps").then(function(data) {
+    diaryState.trupps = data.trupps || [];
+    paintTrupps();
+  }).catch(function(err) {
+    var area = document.getElementById("trupp-area");
+    if (area) area.innerHTML = '<div class="alert error">' + esc(err.message) + '</div>';
+  });
+}
+
+function paintStats(data) {
+  var el = document.getElementById("diary-stats"); if (!el) return;
+  el.innerHTML =
+    '<div class="diary-stats">' +
+      '<div class="diary-stat open"><div class="lbl">Offen</div><div class="val">' + (data.open || 0) + '</div></div>' +
+      '<div class="diary-stat resolved"><div class="lbl">Behoben</div><div class="val">' + (data.resolved || 0) + '</div></div>' +
+      '<div class="diary-stat total"><div class="lbl">Gesamt</div><div class="val">' + (data.total || 0) + '</div></div>' +
+    '</div>';
+}
+
+function paintTrupps() {
+  var area = document.getElementById("trupp-area"); if (!area) return;
+  if (!diaryState.trupps.length) {
+    area.innerHTML = '<div class="empty" style="padding:24px;">Noch keine Trupps angelegt. Tippe oben rechts auf „+ Trupp anlegen".</div>';
+    return;
+  }
+  var html = '<div class="trupp-grid">';
+  diaryState.trupps.forEach(function(t) {
+    var cls = !t.is_active ? "inactive" : (t.is_busy ? "busy" : "");
+    var statusCls = !t.is_active ? "paused" : (t.is_busy ? "busy" : "free");
+    var statusLbl = !t.is_active ? "Pause" : (t.is_busy ? "Unterwegs" : "Verfügbar");
+    var members = (t.members || []).filter(Boolean).join(", ");
+    html += '<div class="trupp-card ' + cls + '" data-trupp-id="' + esc(t.id) + '">' +
+              '<div class="t-name">' + esc(t.name) + '</div>' +
+              (members ? '<div class="t-members">👥 ' + esc(members) + '</div>' : '<div class="t-members" style="font-style:italic;color:#9ca3af;">Keine Mitglieder</div>') +
+              '<div class="t-status ' + statusCls + '">' + statusLbl + '</div>' +
+              '<div class="t-actions">' +
+                '<button class="btn sm trupp-edit-btn" data-id="' + esc(t.id) + '">Bearbeiten</button>' +
+                '<button class="btn sm trupp-pause-btn" data-id="' + esc(t.id) + '">' + (t.is_active ? "Pause" : "Aktivieren") + '</button>' +
+                '<button class="btn sm danger trupp-del-btn" data-id="' + esc(t.id) + '">Löschen</button>' +
+              '</div>' +
+            '</div>';
+  });
+  html += '</div>';
+  area.innerHTML = html;
+  area.querySelectorAll(".trupp-edit-btn").forEach(function(b){ b.addEventListener("click", function(){ var t = diaryState.trupps.find(function(x){return x.id===b.dataset.id;}); openTruppModal(t); }); });
+  area.querySelectorAll(".trupp-pause-btn").forEach(function(b){ b.addEventListener("click", function(){ var t = diaryState.trupps.find(function(x){return x.id===b.dataset.id;}); toggleTruppActive(t); }); });
+  area.querySelectorAll(".trupp-del-btn").forEach(function(b){ b.addEventListener("click", function(){ var t = diaryState.trupps.find(function(x){return x.id===b.dataset.id;}); deleteTrupp(t); }); });
+}
+
+function paintDiary(filter) {
+  var area = document.getElementById("diary-area"); if (!area) return;
+  var q = (filter || "").trim().toLowerCase();
+  var truppMap = {}; diaryState.trupps.forEach(function(t){ truppMap[t.id] = t; });
+  var entries = q ? diaryState.entries.filter(function(e){
+    return [e.caller_name, e.caller_phone, e.reason, e.location, e.created_by_name].filter(Boolean)
+      .some(function(v){ return String(v).toLowerCase().indexOf(q)>-1; });
+  }) : diaryState.entries;
+  if (!entries.length) {
+    area.innerHTML = '<div class="empty" style="padding:32px;">' + (q ? "Keine Einträge passen zum Filter." : "Noch keine Störungsmeldungen.") + '</div>';
+    return;
+  }
+  var html = "";
+  entries.forEach(function(e) {
+    var cls = e.status === "resolved" ? "resolved" : "open";
+    var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : "?"; }).filter(Boolean);
+    html += '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '">' +
+              '<div class="e-top">' +
+                '<div class="e-time">🕐 ' + esc(fmtDateTime(e.created_at)) + (e.created_by_name ? ' &middot; <span style="font-style:italic;">' + esc(e.created_by_name) + '</span>' : '') + '</div>' +
+                '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                  (e.status === "resolved"
+                     ? '<span class="badge bg-emerald">✓ Behoben</span>'
+                     : '<span class="badge bg-red">● Offen</span>') +
+                  (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
+                '</div>' +
+              '</div>' +
+              '<div class="e-reason">' + esc(e.reason) + '</div>' +
+              '<div class="e-meta">' +
+                (e.caller_name ? '<div class="row">👤 ' + esc(e.caller_name) + '</div>' : '') +
+                (e.caller_phone ? '<div class="row">📞 ' + esc(e.caller_phone) + '</div>' : '') +
+                (e.location ? '<div class="row">📍 ' + esc(e.location) + '</div>' : '') +
+                (truppNames.length ? '<div class="row">👥 ' + esc(truppNames.join(", ")) + '</div>' : '') +
+              '</div>' +
+              (e.status === "resolved" && e.resolved_at
+                ? '<div class="e-resolved-info">✓ Behoben am ' + esc(fmtDateTime(e.resolved_at)) +
+                  (e.resolved_by_name ? ' von ' + esc(e.resolved_by_name) : '') +
+                  ' &middot; Dauer: ' + esc(fmtDuration(e.created_at, e.resolved_at)) + '</div>'
+                : '') +
+              '<div class="e-actions">' +
+                (e.status === "open"
+                  ? '<button class="btn sm success entry-resolve-btn" data-id="' + esc(e.id) + '">✓ Als behoben markieren</button>'
+                  : '<button class="btn sm warn entry-reopen-btn" data-id="' + esc(e.id) + '">↺ Wieder öffnen</button>') +
+                '<button class="btn sm entry-edit-btn" data-id="' + esc(e.id) + '">Bearbeiten</button>' +
+                '<button class="btn sm danger entry-del-btn" data-id="' + esc(e.id) + '">Löschen</button>' +
+              '</div>' +
+            '</div>';
+  });
+  area.innerHTML = html;
+  area.querySelectorAll(".entry-resolve-btn").forEach(function(b){ b.addEventListener("click", function(){ resolveEntry(b.dataset.id); }); });
+  area.querySelectorAll(".entry-reopen-btn").forEach(function(b){ b.addEventListener("click", function(){ reopenEntry(b.dataset.id); }); });
+  area.querySelectorAll(".entry-edit-btn").forEach(function(b){ b.addEventListener("click", function(){ var e = diaryState.entries.find(function(x){return x.id===b.dataset.id;}); openEntryModal(e); }); });
+  area.querySelectorAll(".entry-del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteEntry(b.dataset.id); }); });
+}
+
+// ---- Entry CRUD --------------------------------------------------------
+function openEntryModal(entry) {
+  var isEdit = !!entry;
+  var sel = new Set(entry ? (entry.assigned_trupp_ids || []) : []);
+  var modal = $(
+    '<div class="modal-bg"><div class="modal-card">' +
+      '<h3>' + (isEdit ? "Eintrag bearbeiten" : "Neue Störung anlegen") + '</h3>' +
+      '<label>Anrufer/Gast</label><input type="text" id="m-name" value="' + esc(entry ? entry.caller_name : "") + '" placeholder="Name" />' +
+      '<label>Telefon</label><input type="tel" id="m-phone" value="' + esc(entry ? entry.caller_phone : "") + '" placeholder="Telefonnummer" />' +
+      '<label>Standort / Position</label><input type="text" id="m-loc" value="' + esc(entry ? entry.location : "") + '" placeholder="z.B. Verteiler 3, Festzelt..." />' +
+      '<label>Grund / Beschreibung *</label><textarea id="m-reason" placeholder="Was ist passiert?" required>' + esc(entry ? entry.reason : "") + '</textarea>' +
+      (diaryState.trupps.length
+        ? '<label>Trupp zuweisen</label><div class="trupp-pick" id="m-trupps"></div>'
+        : '') +
+      '<label class="checkbox-row"><input type="checkbox" id="m-nachtrag" ' + (entry && entry.is_nachtrag ? "checked" : "") + ' /> Als Nachtrag markieren (rückwirkend)</label>' +
+      '<div id="m-err"></div>' +
+      '<div class="actions">' +
+        '<button class="btn" id="m-cancel">Abbrechen</button>' +
+        '<button class="btn primary" id="m-save">' + (isEdit ? "Speichern" : "Anlegen") + '</button>' +
+      '</div>' +
+    '</div></div>'
+  );
+  document.body.appendChild(modal);
+  if (diaryState.trupps.length) {
+    var pickEl = modal.querySelector("#m-trupps");
+    diaryState.trupps.forEach(function(t) {
+      var b = document.createElement("button");
+      b.textContent = t.name + (t.is_busy ? " (unterwegs)" : "");
+      if (!t.is_active) return; // pausierte Trupps nicht auswaehlbar
+      if (sel.has(t.id)) b.classList.add("on");
+      if (t.is_busy) b.classList.add("busy");
+      b.addEventListener("click", function() {
+        if (sel.has(t.id)) { sel.delete(t.id); b.classList.remove("on"); }
+        else { sel.add(t.id); b.classList.add("on"); }
+      });
+      pickEl.appendChild(b);
+    });
+  }
+  modal.querySelector("#m-cancel").addEventListener("click", function(){ modal.remove(); });
+  modal.querySelector("#m-save").addEventListener("click", function() {
+    var reason = modal.querySelector("#m-reason").value.trim();
+    var err = modal.querySelector("#m-err");
+    if (!reason) { err.innerHTML = '<div class="alert error">Grund/Beschreibung ist erforderlich.</div>'; return; }
+    var payload = {
+      caller_name: modal.querySelector("#m-name").value,
+      caller_phone: modal.querySelector("#m-phone").value,
+      location: modal.querySelector("#m-loc").value,
+      reason: reason,
+      is_nachtrag: modal.querySelector("#m-nachtrag").checked,
+      assigned_trupp_ids: Array.from(sel)
+    };
+    var pk = encodeURIComponent(state.order.primary_key);
+    var url = "/api/orders/" + pk + "/diary" + (isEdit ? "/" + encodeURIComponent(entry.id) : "");
+    var method = isEdit ? "PUT" : "POST";
+    api(url, { method: method, body: payload }).then(function(){ modal.remove(); loadDiary(); loadTrupps(); })
+      .catch(function(ex){ err.innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>'; });
+  });
+  setTimeout(function(){ var r = modal.querySelector("#m-reason"); if (r) r.focus(); }, 50);
+}
+
+function resolveEntry(id) {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id) + "/resolve", { method: "POST" })
+    .then(function(){ loadDiary(); loadTrupps(); })
+    .catch(function(ex){ alert("Fehler: " + ex.message); });
+}
+function reopenEntry(id) {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id) + "/reopen", { method: "POST" })
+    .then(function(){ loadDiary(); loadTrupps(); })
+    .catch(function(ex){ alert("Fehler: " + ex.message); });
+}
+function deleteEntry(id) {
+  if (!confirm("Diesen Eintrag wirklich löschen?")) return;
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id), { method: "DELETE" })
+    .then(function(){ loadDiary(); loadTrupps(); })
+    .catch(function(ex){ alert("Fehler: " + ex.message); });
+}
+
+// ---- Trupp CRUD --------------------------------------------------------
+function openTruppModal(trupp) {
+  var isEdit = !!trupp;
+  var members = isEdit ? (trupp.members || []).slice() : [];
+  while (members.length < 4) members.push("");
+  var modal = $(
+    '<div class="modal-bg"><div class="modal-card">' +
+      '<h3>' + (isEdit ? "Trupp bearbeiten" : "Neuen Trupp anlegen") + '</h3>' +
+      '<label>Name (leer = Auto-Nummerierung)</label>' +
+      '<input type="text" id="t-name" value="' + esc(isEdit ? trupp.name : "") + '" placeholder="z.B. Trupp 1, Lager-Team..." />' +
+      '<label>Mitglieder (max. 4)</label>' +
+      [0,1,2,3].map(function(i){
+        return '<input type="text" id="t-m'+i+'" value="' + esc(members[i] || "") + '" placeholder="Mitglied ' + (i+1) + '" style="margin-bottom:6px;" />';
+      }).join("") +
+      '<div id="t-err"></div>' +
+      '<div class="actions">' +
+        '<button class="btn" id="t-cancel">Abbrechen</button>' +
+        '<button class="btn primary" id="t-save">' + (isEdit ? "Speichern" : "Anlegen") + '</button>' +
+      '</div>' +
+    '</div></div>'
+  );
+  document.body.appendChild(modal);
+  modal.querySelector("#t-cancel").addEventListener("click", function(){ modal.remove(); });
+  modal.querySelector("#t-save").addEventListener("click", function() {
+    var name = modal.querySelector("#t-name").value.trim();
+    var ms = [0,1,2,3].map(function(i){ return modal.querySelector("#t-m"+i).value.trim(); }).filter(Boolean);
+    var pk = encodeURIComponent(state.order.primary_key);
+    var url = "/api/orders/" + pk + "/trupps" + (isEdit ? "/" + encodeURIComponent(trupp.id) : "");
+    var method = isEdit ? "PUT" : "POST";
+    var payload = { members: ms };
+    if (isEdit || name) payload.name = name;
+    api(url, { method: method, body: payload })
+      .then(function(){ modal.remove(); loadTrupps(); })
+      .catch(function(ex){ modal.querySelector("#t-err").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>'; });
+  });
+}
+function toggleTruppActive(t) {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/trupps/" + encodeURIComponent(t.id), { method: "PUT", body: { is_active: !t.is_active } })
+    .then(loadTrupps)
+    .catch(function(ex){ alert("Fehler: " + ex.message); });
+}
+function deleteTrupp(t) {
+  if (!confirm("Trupp „" + t.name + "\" wirklich löschen? Er wird aus allen Einträgen entfernt.")) return;
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/" + pk + "/trupps/" + encodeURIComponent(t.id), { method: "DELETE" })
+    .then(function(){ loadTrupps(); loadDiary(); })
+    .catch(function(ex){ alert("Fehler: " + ex.message); });
+}
+
+// ---- CSV Export --------------------------------------------------------
+function exportDiaryCsv() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  var url = BACKEND + "/api/orders/" + pk + "/diary/export.csv";
+  fetch(url, { headers: { "Authorization": "Bearer " + state.token } })
+    .then(function(r){ if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+    .then(function(blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "einsatztagebuch_" + state.order.primary_key + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+    })
+    .catch(function(ex){ alert("CSV-Export fehlgeschlagen: " + ex.message); });
 }
 
 // ============================================================================

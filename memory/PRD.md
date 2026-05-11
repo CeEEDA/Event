@@ -397,14 +397,24 @@ User language: **German** (Agent must respond in German).
 ## Roadmap (offene Tasks)
 
 ### Recently Completed (Feb 2026)
-- **Einsatzzentrale Pi-Kiosk Reload-Loop endgültig gefixt**:
-  - React-Route `/einsatzzentrale` macht jetzt einen synchronen Hard-Redirect (vor React-Render) auf die Vanilla-JS-Standalone-HTML `/api/einsatzzentrale/kiosk-page` → kein HMR, kein WebSocket, kein 10-Sekunden-Reload mehr.
-  - Logo-Bild in der Standalone-HTML eingebaut (`customer-assets.../35th6vn9_cropped-logo.webp`) mit Text-Fallback.
-  - `window.location.reload` als no-op überschrieben (Defense-in-Depth gegen fremde Reload-Skripte).
-  - Install-Script-Default-URL auf `/api/einsatzzentrale/kiosk-page` umgestellt.
+- **Einsatzzentrale Pi-Kiosk Reload-Loop endgültig gefixt** (mehrere Iterationen):
+  - Pre-Bundle Inline-Skript-Redirect in `public/index.html`: `/einsatzzentrale` redirected synchron VOR React-Bundle-Laden zu `/api/einsatzzentrale/kiosk-page` (kein WDS-HMR-Flacker mehr).
+  - Logo-Bild + Text-Fallback in der Standalone-HTML.
+  - `window.location.reload` als no-op überschrieben, WebSocket-Hijack-Block für `/ws`-Verbindungen.
+  - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
+  - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
+  - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Einsatztagebuch-Tile** in Standalone-HTML komplett funktionsfähig:
+  - Liste aller Diary-Einträge mit Status-Badge (offen/behoben), Filter-Suche
+  - Stats-Header (offen / behoben / gesamt)
+  - „+ Neue Störung"-Modal mit Anrufer/Tel/Ort/Grund/Nachtrag/Trupp-Zuweisung
+  - Resolve/Reopen/Edit/Delete pro Eintrag
+  - Trupp-Sektion mit Anlegen/Bearbeiten/Pause/Löschen + Live-Status (verfügbar/unterwegs/Pause)
+  - CSV-Export Button (lädt direkt vom Backend)
+  - Touch-optimiert (44px+ Buttons, große Modal-Inputs)
 
 ### P1
-- Workspace-Tiles in der Standalone-HTML mit echten Daten füllen (Maschinenliste, Einsatztagebuch, Pläne, Standortliste) — aktuell Platzhalter.
+- Workspace-Tiles in der Standalone-HTML mit echten Daten füllen (Maschinenliste, Pläne, Standortliste) — Einsatztagebuch ✅ fertig.
 - EpiRent „Lieferscheine" PDF-Generierung (wartet auf Layout-Feedback vom User).
 - LTE Failover DNS Fix auf Pi: `usepeerdns` in `/etc/ppp/peers/m2m` + `/etc/ppp/ip-up.d/0000-lte-dns` Hook (Telekom-DNS in `/etc/resolv.conf` wenn LAN ausfällt).
 
