@@ -16,6 +16,13 @@ _mqtt_thread = None
 _db = None
 _loop = None
 
+# MQTT Worker-Pool: vermeidet Event-Loop-Saturation bei vielen Telegrammen
+_mqtt_queue = None              # asyncio.Queue (max 500)
+_mqtt_workers = []              # List[asyncio.Task]
+_MQTT_WORKER_COUNT = 4          # Parallele Verarbeiter
+_MQTT_QUEUE_MAX = 500           # Drop wenn voll (Backpressure)
+_mqtt_dropped_counter = 0       # Zaehler verworfener Messages
+
 # Deduplication: prevent processing same message twice (overlapping subscriptions)
 _dedup_cache = {}  # topic -> (timestamp, payload_hash)
 _dedup_ttl = 2.0   # seconds
@@ -81,10 +88,51 @@ def _on_message(client, userdata, msg):
         for k in expired:
             del _dedup_cache[k]
     logger.info(f"MQTT: Message on '{msg.topic}' ({len(msg.payload)} bytes)")
+    # In Queue legen (statt direkt im Event-Loop dispatchen), damit Bursts
+    # nicht den Event-Loop saturieren. Worker-Pool verarbeitet seriell mit
+    # kontrollierter Parallelitaet.
+    global _mqtt_dropped_counter
+    if _mqtt_queue is None or _loop is None:
+        return
     try:
-        asyncio.run_coroutine_threadsafe(_process_message(msg), _loop)
+        # call_soon_threadsafe sicher vom MQTT-Thread aus
+        def _enqueue():
+            try:
+                _mqtt_queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                global _mqtt_dropped_counter
+                _mqtt_dropped_counter += 1
+                if _mqtt_dropped_counter % 50 == 1:
+                    logger.warning(
+                        f"MQTT: Queue voll (max={_MQTT_QUEUE_MAX}), "
+                        f"verworfen={_mqtt_dropped_counter}"
+                    )
+        _loop.call_soon_threadsafe(_enqueue)
     except Exception as e:
-        logger.error(f"MQTT: Error dispatching message: {e}")
+        logger.error(f"MQTT: Error queueing message: {e}")
+
+
+async def _mqtt_worker(worker_id: int):
+    """Worker-Task: Liest Messages aus _mqtt_queue und verarbeitet sie.
+    Mehrere Worker laufen parallel, aber jeder seriell - damit ist die
+    Last auf dem Event-Loop kontrollierbar.
+    """
+    logger.info(f"MQTT-Worker {worker_id} gestartet")
+    while True:
+        try:
+            msg = await _mqtt_queue.get()
+        except asyncio.CancelledError:
+            logger.info(f"MQTT-Worker {worker_id} beendet")
+            return
+        try:
+            await _process_message(msg)
+        except Exception as e:
+            logger.error(f"MQTT-Worker {worker_id} Fehler: {e}", exc_info=True)
+        finally:
+            try:
+                _mqtt_queue.task_done()
+            except ValueError:
+                pass
 
 
 async def _update_connection_status(status, message=""):
@@ -826,7 +874,12 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                 except (ValueError, TypeError):
                     pass
             else:
-                gencomm_data = _parse_gencomm_registers(parsed, topic)
+                # CPU-intensive Parsing in ThreadPool offloaden (vermeidet
+                # Event-Loop-Blockierung bei Bursts).
+                _loop_eo = asyncio.get_running_loop()
+                gencomm_data = await _loop_eo.run_in_executor(
+                    None, _parse_gencomm_registers, parsed, topic
+                )
                 if gencomm_data:
                     telemetry_data = gencomm_data
 
@@ -1090,7 +1143,10 @@ async def _ingest_telemetry(generator_id, topic, raw_payload, parsed, timestamp)
 
     if isinstance(parsed, dict):
         # Check if this is DSE Gencomm register format: {"UID":{"P004":{"R000":val,...}}}
-        gencomm_data = _parse_gencomm_registers(parsed, topic)
+        _loop_eo2 = asyncio.get_running_loop()
+        gencomm_data = await _loop_eo2.run_in_executor(
+            None, _parse_gencomm_registers, parsed, topic
+        )
         if gencomm_data:
             telemetry.update(gencomm_data)
         else:
@@ -1415,9 +1471,23 @@ async def _check_stale_devices():
 
 async def start_mqtt_client(db_instance, loop):
     """Start the MQTT client as a background service."""
-    global _mqtt_client, _mqtt_thread, _db, _loop
+    global _mqtt_client, _mqtt_thread, _db, _loop, _mqtt_queue, _mqtt_workers
     _db = db_instance
     _loop = loop
+
+    # Index fuer GPS-Log Pruning (sort auf ts)
+    try:
+        await _db.mqtt_gps_log.create_index([("ts", 1)])
+    except Exception as e:
+        logger.debug(f"GPS-Log Index existiert bereits: {e}")
+
+    # MQTT Worker-Pool starten: vermeidet Event-Loop-Saturation bei Bursts
+    _mqtt_queue = asyncio.Queue(maxsize=_MQTT_QUEUE_MAX)
+    _mqtt_workers = [
+        asyncio.create_task(_mqtt_worker(i), name=f"mqtt-worker-{i}")
+        for i in range(_MQTT_WORKER_COUNT)
+    ]
+    logger.info(f"MQTT: {_MQTT_WORKER_COUNT} Worker-Tasks gestartet (Queue max={_MQTT_QUEUE_MAX})")
 
     config = await _db.mqtt_config.find_one({}, {"_id": 0})
 

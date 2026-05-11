@@ -34,7 +34,14 @@ load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(
+    mongo_url,
+    maxPoolSize=100,        # default 100 — fuer Burst-Telemetrie ausreichend
+    minPoolSize=10,         # warme Connections, vermeidet Cold-Start-Latenz
+    maxIdleTimeMS=30000,
+    waitQueueTimeoutMS=5000,
+    serverSelectionTimeoutMS=10000,
+)
 db = client[os.environ['DB_NAME']]
 fs = AsyncIOMotorGridFSBucket(db)
 
