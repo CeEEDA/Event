@@ -51,7 +51,8 @@ export default function MapTileLayer({ position = "topright", storageKey = "mapL
         />
       </LayersControl.BaseLayer>
       <LayersControl.BaseLayer checked={layer === "hybrid"} name="Hybrid">
-        {/* Layer-Group: zwei Tiles uebereinander - Esri Sat + transparente Strassen-/Labels-Overlay */}
+        {/* Layer-Group: Satellit + Esri-Labels (Strassen, Orte, Grenzen).
+           Stamen-Tiles wurden Ende 2023 eingestellt - jetzt durchgehend Esri. */}
         <LayerGroup>
           <TileLayer
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -60,9 +61,14 @@ export default function MapTileLayer({ position = "topright", storageKey = "mapL
             eventHandlers={{ add: () => setLayer("hybrid") }}
           />
           <TileLayer
-            url="https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png"
-            attribution="Map labels &copy; Stamen"
-            opacity={0.7}
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+            attribution=""
+            maxZoom={19}
+          />
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+            attribution="Labels &copy; Esri"
+            maxZoom={19}
           />
         </LayerGroup>
       </LayersControl.BaseLayer>
