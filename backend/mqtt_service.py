@@ -869,16 +869,60 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
             )
             await _log_gps_event(topic, lat, lng, route_used,
                                  matched_gen_ids, raw_payload, module_uid=module_uid)
+            # Wenn dieses Gateway in mqtt_unknown_gateways stand: aufraeumen
+            if module_uid:
+                try:
+                    await _db.mqtt_unknown_gateways.delete_one(
+                        {"gateway_uid": module_uid}
+                    )
+                except Exception:
+                    pass
         else:
             reject_route = "rejected_no_module_match" if module_uid else "rejected_no_prefix_match"
             logger.warning(
                 f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - kein Match. "
                 f"module_uid={module_uid}, gw_topic={gw_topic}. "
-                f"Hinweis: Telemetrie eines Devices via diesen Gateway noetig, "
-                f"um Auto-Learn von dse_gateway_topic_prefix zu triggern."
+                f"Hinweis: Bitte dse_gateway_uid am Device/Generator pflegen "
+                f"oder im Admin-GPS-Diagnose UI verknuepfen."
             )
             await _log_gps_event(topic, lat, lng, reject_route,
                                  [], raw_payload, module_uid=module_uid)
+            # Auto-Discovery: speichere unbekannte Gateway-UID als Stub, damit
+            # der Admin sie im UI per 1-Klick einem Device/Generator zuordnen kann.
+            await _upsert_unknown_gateway(topic, module_uid, lat, lng)
+
+
+async def _upsert_unknown_gateway(topic, module_uid, lat, lng):
+    """Speichere ein unbekanntes Gateway als Stub in mqtt_unknown_gateways.
+    Im Admin-UI kann es spaeter zugeordnet werden. Idempotent via gateway_uid.
+    """
+    if _db is None or not module_uid:
+        return
+    parts = topic.split("/")
+    anlage_id = parts[1] if len(parts) > 1 else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        await _db.mqtt_unknown_gateways.update_one(
+            {"gateway_uid": module_uid},
+            {
+                "$set": {
+                    "gateway_uid": module_uid,
+                    "anlage_id": anlage_id,
+                    "last_topic": topic,
+                    "last_lat": lat,
+                    "last_lng": lng,
+                    "last_seen": now_iso,
+                },
+                "$setOnInsert": {
+                    "id": str(uuid.uuid4()),
+                    "first_seen": now_iso,
+                },
+                "$inc": {"event_count": 1},
+            },
+            upsert=True,
+        )
+    except Exception as e:
+        logger.debug(f"_upsert_unknown_gateway failed: {e}")
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp, topic=""):

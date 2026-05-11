@@ -14,6 +14,8 @@ import {
   FileText,
   CheckCircle2,
   Clock,
+  Link2,
+  HelpCircle,
 } from "lucide-react";
 
 function fmtCoord(v) {
@@ -43,6 +45,51 @@ export default function AdminGpsDiagnosePage() {
   const [loading, setLoading] = useState(false);
   const [resetHours, setResetHours] = useState("6");
   const [resetting, setResetting] = useState(false);
+  const [unknownGateways, setUnknownGateways] = useState(null);
+  const [linkTarget, setLinkTarget] = useState({}); // {gwUid: {target_type, target_id}}
+  const [linking, setLinking] = useState({}); // {gwUid: bool}
+
+  const fetchUnknown = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/admin/gps/unknown");
+      setUnknownGateways(res.data);
+    } catch (err) {
+      toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleLink = async (gwUid) => {
+    const target = linkTarget[gwUid];
+    if (!target?.target_id) {
+      toast.error("Bitte Ziel auswaehlen");
+      return;
+    }
+    setLinking((s) => ({ ...s, [gwUid]: true }));
+    try {
+      const res = await api.post(`/admin/gps/unknown/${gwUid}/link`, target);
+      toast.success(`Verknuepft: ${res.data.target_name}`);
+      fetchUnknown();
+      fetchStatus();
+    } catch (err) {
+      toast.error("Verknuepfen fehlgeschlagen: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setLinking((s) => ({ ...s, [gwUid]: false }));
+    }
+  };
+
+  const handleDeleteUnknown = async (gwUid) => {
+    if (!window.confirm(`Eintrag ${gwUid} wirklich loeschen? (Bei naechstem GPS-Event wird er neu erstellt)`)) return;
+    try {
+      await api.delete(`/admin/gps/unknown/${gwUid}`);
+      toast.success("Eintrag geloescht");
+      fetchUnknown();
+    } catch (err) {
+      toast.error("Loeschen fehlgeschlagen: " + (err.response?.data?.detail || err.message));
+    }
+  };
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -71,7 +118,12 @@ export default function AdminGpsDiagnosePage() {
   useEffect(() => {
     if (tab === "status") fetchStatus();
     if (tab === "log") fetchLog();
-  }, [tab, fetchStatus, fetchLog]);
+    if (tab === "unknown") {
+      fetchUnknown();
+      // Status laden falls nicht da (fuer Device/Generator-Liste im Dropdown)
+      if (!status) fetchStatus();
+    }
+  }, [tab, fetchStatus, fetchLog, fetchUnknown, status]);
 
   const handleReset = async () => {
     const h = parseInt(resetHours, 10);
@@ -135,6 +187,7 @@ export default function AdminGpsDiagnosePage() {
             {[
               { key: "status", label: "Status & Duplikate", icon: MapPin },
               { key: "log", label: "Live-Log", icon: FileText },
+              { key: "unknown", label: "Unbekannte Gateways", icon: HelpCircle },
               { key: "reset", label: "Reset", icon: Trash2 },
             ].map((t) => {
               const Icon = t.icon;
@@ -363,6 +416,127 @@ export default function AdminGpsDiagnosePage() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* UNKNOWN GATEWAYS Tab */}
+          {tab === "unknown" && (
+            <div className="space-y-4" data-testid="unknown-tab">
+              <div className="flex items-center justify-between">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-sm text-amber-800 flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4" />
+                  <span>
+                    <strong>{unknownGateways?.count ?? "—"}</strong> unbekannte Gateway-UIDs gesendet GPS,
+                    aber sind keinem Device/Generator zugeordnet.
+                  </span>
+                </div>
+                <Button size="sm" variant="outline" onClick={fetchUnknown} disabled={loading} data-testid="refresh-unknown-btn">
+                  <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+
+              {(!unknownGateways || unknownGateways.count === 0) ? (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-6 text-center">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-emerald-800">Alles sauber verknuepft</p>
+                  <p className="text-xs text-emerald-700 mt-1">
+                    Keine unbekannten Gateway-UIDs. Falls neue GPS-Events ohne Match reinkommen,
+                    erscheinen sie automatisch hier.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left p-2 font-semibold">Gateway-UID</th>
+                        <th className="text-left p-2 font-semibold">Anlage</th>
+                        <th className="text-left p-2 font-semibold">Letzte Position</th>
+                        <th className="text-left p-2 font-semibold">Events</th>
+                        <th className="text-left p-2 font-semibold">Erstmals</th>
+                        <th className="text-left p-2 font-semibold w-[480px]">Verknuepfen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(unknownGateways.unknown_gateways || []).map((gw) => (
+                        <tr key={gw.gateway_uid} className="border-b border-gray-100 hover:bg-gray-50 align-top" data-testid={`unknown-row-${gw.gateway_uid}`}>
+                          <td className="p-2 font-mono text-[11px] text-amber-800 font-semibold">{gw.gateway_uid}</td>
+                          <td className="p-2 font-mono text-[10px]">{gw.anlage_id || "—"}</td>
+                          <td className="p-2 font-mono text-[10px] whitespace-nowrap">
+                            {fmtCoord(gw.last_lat)} / {fmtCoord(gw.last_lng)}
+                          </td>
+                          <td className="p-2 text-center font-semibold">{gw.event_count || 0}</td>
+                          <td className="p-2 text-[10px] text-gray-500 whitespace-nowrap">
+                            {gw.first_seen ? new Date(gw.first_seen).toLocaleString("de-DE") : "—"}
+                          </td>
+                          <td className="p-2">
+                            <div className="flex items-center gap-1">
+                              <select
+                                className="border border-gray-300 rounded px-1 py-0.5 text-[10px] flex-1 min-w-0"
+                                data-testid={`select-${gw.gateway_uid}`}
+                                value={linkTarget[gw.gateway_uid]?.target_id
+                                  ? `${linkTarget[gw.gateway_uid].target_type}:${linkTarget[gw.gateway_uid].target_id}`
+                                  : ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (!v) {
+                                    setLinkTarget((s) => ({ ...s, [gw.gateway_uid]: null }));
+                                    return;
+                                  }
+                                  const [target_type, target_id] = v.split(":");
+                                  setLinkTarget((s) => ({ ...s, [gw.gateway_uid]: { target_type, target_id } }));
+                                }}
+                              >
+                                <option value="">— Ziel auswaehlen —</option>
+                                <optgroup label="Generatoren">
+                                  {(status?.generators || []).map((g) => (
+                                    <option key={`g-${g.id}`} value={`generator:${g.id}`}>
+                                      {g.name || g.serial_number || g.id}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="Geraete">
+                                  {(status?.devices || []).map((d) => (
+                                    <option key={`d-${d.id}`} value={`device:${d.id}`}>
+                                      {d.name || d.serial_number || d.id}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              </select>
+                              <Button
+                                size="sm"
+                                onClick={() => handleLink(gw.gateway_uid)}
+                                disabled={linking[gw.gateway_uid]}
+                                className="h-7 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700"
+                                data-testid={`link-btn-${gw.gateway_uid}`}
+                              >
+                                {linking[gw.gateway_uid] ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteUnknown(gw.gateway_uid)}
+                                className="h-7 px-2 text-[10px] text-red-600 hover:bg-red-50"
+                                data-testid={`delete-unknown-${gw.gateway_uid}`}
+                                title="Stub loeschen"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>So funktioniert's:</strong> Jede GPS-Nachricht mit unbekannter Gateway-UID
+                wird hier gesammelt. Waehle das passende Geraet/Generator aus dem Dropdown und klicke
+                auf <Link2 className="inline w-3 h-3" />. Beim naechsten GPS-Telegramm wird die Position
+                automatisch auf dieses Geraet geschrieben — keine weitere Konfiguration noetig.
+              </div>
             </div>
           )}
 

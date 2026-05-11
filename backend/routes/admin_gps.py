@@ -202,3 +202,82 @@ async def gps_reset(older_than_hours: Optional[int] = Query(default=None, ge=0),
         "generators_reset": generators_reset,
         "hint": "Beim naechsten echten GPS-Telegramm aus MQTT/Pi-Ingest wird die korrekte Position pro Geraet neu geschrieben.",
     }
+
+
+@router.get("/unknown")
+async def gps_unknown_list(admin: dict = Depends(require_admin)):
+    """Liste der unbekannten Gateway-UIDs, die GPS senden aber zu keinem
+    Device/Generator zugeordnet sind. Wird vom MQTT-Service bei jedem
+    rejected_no_module_match Event in mqtt_unknown_gateways upserted.
+    """
+    rows = await db.mqtt_unknown_gateways.find(
+        {}, {"_id": 0}
+    ).sort([("last_seen", -1)]).to_list(500)
+    return {"count": len(rows), "unknown_gateways": rows}
+
+
+@router.post("/unknown/{gateway_uid}/link")
+async def gps_unknown_link(gateway_uid: str,
+                            payload: dict,
+                            admin: dict = Depends(require_admin)):
+    """Verknuepfe eine unbekannte Gateway-UID mit einem bestehenden
+    Device/Generator. Setzt dse_gateway_uid und entfernt den Stub.
+
+    Body: { "target_type": "device"|"generator", "target_id": "<id>" }
+    """
+    gateway_uid = (gateway_uid or "").strip()
+    if not gateway_uid:
+        raise HTTPException(status_code=400, detail="gateway_uid fehlt")
+    target_type = (payload.get("target_type") or "").strip().lower()
+    target_id = (payload.get("target_id") or "").strip()
+    if target_type not in ("device", "generator") or not target_id:
+        raise HTTPException(
+            status_code=400,
+            detail="target_type muss 'device'|'generator' sein, target_id ist erforderlich"
+        )
+    coll = db.devices if target_type == "device" else db.generators
+    target = await coll.find_one({"id": target_id},
+                                  {"_id": 0, "id": 1, "name": 1, "serial_number": 1})
+    if not target:
+        raise HTTPException(status_code=404,
+                            detail=f"{target_type} '{target_id}' nicht gefunden")
+    # Konflikt-Pruefung: ist UID schon woanders zugeordnet?
+    existing = await db.devices.find_one(
+        {"dse_gateway_uid": gateway_uid, "id": {"$ne": target_id}},
+        {"_id": 0, "id": 1, "name": 1}
+    ) or await db.generators.find_one(
+        {"dse_gateway_uid": gateway_uid, "id": {"$ne": target_id}},
+        {"_id": 0, "id": 1, "name": 1}
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Gateway-UID '{gateway_uid}' bereits zugeordnet zu "
+                   f"{existing.get('name')} ({existing.get('id')}). Dort zuerst entfernen."
+        )
+    await coll.update_one({"id": target_id},
+                          {"$set": {"dse_gateway_uid": gateway_uid}})
+    await db.mqtt_unknown_gateways.delete_one({"gateway_uid": gateway_uid})
+    logger.info(
+        f"GPS-Unknown-Link durch {admin.get('email','?')}: "
+        f"gateway_uid={gateway_uid} -> {target_type}:{target_id}"
+    )
+    return {
+        "message": "Gateway erfolgreich verknuepft",
+        "gateway_uid": gateway_uid,
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_name": target.get("name") or target.get("serial_number"),
+    }
+
+
+@router.delete("/unknown/{gateway_uid}")
+async def gps_unknown_delete(gateway_uid: str,
+                              admin: dict = Depends(require_admin)):
+    res = await db.mqtt_unknown_gateways.delete_one({"gateway_uid": gateway_uid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    logger.info(
+        f"GPS-Unknown-Delete durch {admin.get('email','?')}: gateway_uid={gateway_uid}"
+    )
+    return {"message": "Eintrag geloescht", "gateway_uid": gateway_uid}
