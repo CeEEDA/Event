@@ -404,6 +404,19 @@ User language: **German** (Agent must respond in German).
   - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
   - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
   - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Einsatzzentrale Pi-Setup-Generator + Offline-Mode (Option B)** (Feb 2026):
+  - **Admin -> Einstellungen -> Einsatzzentrale Pi-Kioske** (fuchsia Section): Pi-Name + Standort eingeben -> One-Liner-Befehl + Pi-Liste (mit Heartbeat-Status, Key-Prefix, Loeschen)
+  - Backend: `POST /api/einsatzzentrale/pis/generate-setup` (anlegen+Key), `GET /pis` (Liste), `DELETE /pis/{id}`, `POST /pis/{id}/heartbeat`, `GET /pi-service.py` (Code-Download)
+  - DB-Collection: `einsatzzentrale_pis` mit `{id, name, standort, device_key_hash, last_seen, status}`
+  - **Lokaler Pi-Service** (`/app/scripts/einsatzzentrale-pi/pi_service.py`, Python+FastAPI+SQLite, laeuft als systemd auf Port 8001):
+    - Smart-Proxy fuer `/api/*` Routes: GETs aggressiv cached, POST/PUT/PATCH/DELETE bei Online durchgereicht / bei Offline in Outbox-Queue
+    - Sync-Worker alle 2 Min: pollt aktive Auftrag-Daten (Orders, Diary, Trupps, Assets, Generatoren, Documents) und cached sie in SQLite
+    - Outbox-Flush: gequeuete Mutationen werden beim naechsten Online-Zyklus zur Cloud nachgesendet
+    - Retention: Cache-Eintraege & abgearbeitete Outbox-Items aelter als 90 Tage werden taeglich geloescht
+    - Heartbeat alle 2 Min an Cloud `/pis/{id}/heartbeat` damit Portal sieht ob Pi online ist
+    - Liefert kiosk-page lokal aus (`/kiosk` -> bei Erstinstall aus Cloud gezogen + lokal gecached)
+    - `/pi-status` Endpoint fuer Debug (Cache-Count, Outbox-Pending, Online-Flag)
+  - **Install-Skript** parst `pi_id` und `key` aus der URL und erstellt `/etc/einsatzzentrale-pi.conf`, installiert Python-venv + Service-Code in `/usr/local/lib/einsatzzentrale-pi/`, registriert systemd-Service `einsatzzentrale-pi.service`, stellt Chromium auf `http://localhost:8001/kiosk` um -> Pi laeuft komplett offline-faehig.
 - **Maschinenliste-Tile** (Feb 2026):
   - Liefert die "Generatoren im Radius" (selbe Quelle wie React `OrderDetailPage`: `GET /api/orders/epirent/{pk}/generators`)
   - Name (z.B. `ML_252`) gross zuerst, darunter Serien-Nr + Modell, Status-Punkt rechts oben

@@ -83,6 +83,20 @@ fi
 log "Kiosk-URL:   $URL"
 log "Kiosk-User:  $KIOSK_USER ($KIOSK_HOME)"
 
+# ---------- Pi-ID + Key aus URL extrahieren ---------------------------------
+# Falls die URL Parameter pi_id=&key= enthaelt (Setup-Generator im Portal),
+# verwenden wir diese fuer den lokalen Pi-Service. CLOUD_URL = origin der URL.
+CLOUD_URL=""; PI_ID=""; PI_KEY=""
+if [[ "$URL" =~ ^(https?://[^/]+) ]]; then CLOUD_URL="${BASH_REMATCH[1]}"; fi
+if [[ "$URL" == *"pi_id="* ]]; then
+  PI_ID="$(echo "$URL" | sed -n 's/.*[?&]pi_id=\([^&]*\).*/\1/p')"
+fi
+if [[ "$URL" == *"key="* ]]; then
+  PI_KEY="$(echo "$URL" | sed -n 's/.*[?&]key=\([^&]*\).*/\1/p')"
+fi
+log "Cloud-URL:   ${CLOUD_URL:-<nicht erkannt>}"
+[[ -n "$PI_ID" ]] && log "Pi-ID:       ${PI_ID:0:8}..."
+
 # ---------- Desktop-Detection ------------------------------------------------
 HAS_DESKTOP=false
 if command -v startx >/dev/null 2>&1 || dpkg -s xserver-xorg >/dev/null 2>&1; then
@@ -123,6 +137,87 @@ CHROMIUM_BIN="$(command -v chromium-browser || command -v chromium || true)"
 log "Chromium:    ${CHROMIUM_BIN:-(noch nicht installiert)}"
 
 apt-get install -y --no-install-recommends unclutter x11-xserver-utils openbox 2>/dev/null || true
+
+# ============================================================================
+# LOKALER PI-SERVICE (Offline-Cache + 2-Min-Sync + 3-Monats-Retention)
+# ============================================================================
+# Python3 + Abhaengigkeiten
+log "Installiere Python3 + Pi-Service-Abhaengigkeiten..."
+apt-get install -y --no-install-recommends python3 python3-pip python3-venv curl ca-certificates
+
+PI_SERVICE_DIR="/usr/local/lib/einsatzzentrale-pi"
+PI_SERVICE_VENV="$PI_SERVICE_DIR/venv"
+PI_SERVICE_CONF="/etc/einsatzzentrale-pi.conf"
+PI_SERVICE_DATA="/var/lib/einsatzzentrale-pi"
+PI_SERVICE_LOG="/var/log/einsatzzentrale-pi.log"
+
+install -d "$PI_SERVICE_DIR" "$PI_SERVICE_DATA" "$(dirname "$PI_SERVICE_LOG")"
+touch "$PI_SERVICE_LOG"
+
+# venv anlegen + Pakete (fastapi, uvicorn, httpx)
+if [[ ! -x "$PI_SERVICE_VENV/bin/python" ]]; then
+  log "Erstelle Python-venv unter $PI_SERVICE_VENV ..."
+  python3 -m venv "$PI_SERVICE_VENV"
+fi
+"$PI_SERVICE_VENV/bin/pip" install --upgrade pip wheel >/dev/null
+"$PI_SERVICE_VENV/bin/pip" install "fastapi>=0.110" "uvicorn[standard]>=0.27" "httpx>=0.26" >/dev/null
+
+# Pi-Service-Code holen (aus dem Portal selbst, oder via base64-Embedded)
+if [[ -n "$CLOUD_URL" ]]; then
+  log "Lade Pi-Service-Skript vom Portal..."
+  curl -fsSL -o "$PI_SERVICE_DIR/pi_service.py" "$CLOUD_URL/api/einsatzzentrale/pi-service.py" || \
+    warn "Pi-Service-Download fehlgeschlagen - lokal weiterversuchen"
+  # Kiosk-HTML lokal cachen damit Boot ohne Internet moeglich ist
+  curl -fsSL -o "$PI_SERVICE_DIR/kiosk.html" "$CLOUD_URL/api/einsatzzentrale/kiosk-page" || \
+    warn "Kiosk-HTML-Download fehlgeschlagen"
+fi
+
+# Config
+cat > "$PI_SERVICE_CONF" <<PICONF_EOF
+# Einsatzzentrale Pi-Service - automatisch generiert
+CLOUD_URL=$CLOUD_URL
+PI_ID=$PI_ID
+PI_KEY=$PI_KEY
+SYNC_INTERVAL_SEC=120
+RETENTION_DAYS=90
+PICONF_EOF
+chmod 640 "$PI_SERVICE_CONF"
+
+# systemd-Service
+cat > /etc/systemd/system/einsatzzentrale-pi.service <<SYSD_EOF
+[Unit]
+Description=Einsatzzentrale Pi-Service (Offline-Cache + Sync)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=$PI_SERVICE_CONF
+Environment=PI_CONFIG=$PI_SERVICE_CONF
+Environment=PI_DATA_DIR=$PI_SERVICE_DATA
+Environment=PI_LOG=$PI_SERVICE_LOG
+Environment=PI_KIOSK_HTML=$PI_SERVICE_DIR/kiosk.html
+ExecStart=$PI_SERVICE_VENV/bin/python $PI_SERVICE_DIR/pi_service.py
+Restart=always
+RestartSec=5
+StandardOutput=append:$PI_SERVICE_LOG
+StandardError=append:$PI_SERVICE_LOG
+
+[Install]
+WantedBy=multi-user.target
+SYSD_EOF
+
+systemctl daemon-reload
+systemctl enable einsatzzentrale-pi.service
+systemctl restart einsatzzentrale-pi.service || warn "Pi-Service-Start fehlgeschlagen - siehe $PI_SERVICE_LOG"
+
+# Chromium soll JETZT auf den lokalen Service zeigen statt zur Cloud
+# (sofern wir die Cloud-URL kennen, also die Setup-Variante)
+if [[ -n "$CLOUD_URL" ]]; then
+  log "Stelle Chromium auf lokalen Pi-Service (localhost:8001) um"
+  URL="http://localhost:8001/kiosk"
+fi
+# ============================================================================
 
 # ---------- LightDM Autologin konfigurieren ---------------------------------
 if command -v lightdm >/dev/null 2>&1; then

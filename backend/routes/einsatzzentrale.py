@@ -634,3 +634,20 @@ async def pi_heartbeat(pi_id: str, key: str):
     return {"ok": True, "server_time": now}
 
 
+# --- Pi-Service Code-Download (wird vom Install-Skript geholt) -------------
+_PI_SERVICE_PATH = _Path(__file__).resolve().parent.parent.parent / "scripts" / "einsatzzentrale-pi" / "pi_service.py"
+
+
+@router.get("/pi-service.py")
+async def pi_service_script():
+    """Liefert den aktuellen pi_service.py-Code. Wird vom Install-Skript per
+    curl gezogen und lokal als systemd-Service registriert."""
+    if not _PI_SERVICE_PATH.exists():
+        raise HTTPException(status_code=404, detail="Pi-Service-Skript nicht verfuegbar")
+    return PlainTextResponse(
+        content=_PI_SERVICE_PATH.read_text(encoding="utf-8"),
+        media_type="text/x-python; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="pi_service.py"'},
+    )
+
+
