@@ -228,6 +228,38 @@ def _learn_anlage_uids(topic: str):
     return anlage_id, new_gw, new_mod
 
 
+def _try_extract_dse890_pairing(topic: str):
+    """Extrahiere ein Gateway-UID <-> Module-UID Pair direkt aus einem
+    DSE890-konformen Telemetrie-Topic, falls beide UIDs darin enthalten sind.
+
+    DSE890-Standard-Topic-Schema (5+ Segmente):
+       eventenergie/<ANLAGE_ID>/<GATEWAY_UID>/<MODULE_UID>/<sub>
+
+    - GATEWAY_UID: 14-16 Hex-Zeichen (USB-ID des DSE890 Gateways)
+    - MODULE_UID:  10 Hex-Zeichen (USB-ID des DSE Bediendisplays)
+
+    Returns: dict {anlage_id, gateway_uid, module_uid} oder None.
+    """
+    import re as _re
+    if not topic:
+        return None
+    parts = topic.split("/")
+    if len(parts) < 5 or parts[0] != "eventenergie":
+        return None
+    anlage = parts[1].strip()
+    gw = parts[2].strip()
+    mod = parts[3].strip()
+    if not (_re.fullmatch(r"[A-Fa-f0-9]+", gw) and 14 <= len(gw) <= 16):
+        return None
+    if not (_re.fullmatch(r"[A-Fa-f0-9]+", mod) and len(mod) == 10):
+        return None
+    return {
+        "anlage_id": anlage,
+        "gateway_uid": gw.upper(),
+        "module_uid": mod.upper(),
+    }
+
+
 async def _persist_anlage_pairing(anlage_id, gateway_uid, module_uid):
     """Speichere ein neues Anlage-Pairing in der DB (idempotent + best-effort).
     Wird genutzt fuer Audit/Reporting im Admin-GPS-Diagnose UI.
@@ -326,6 +358,18 @@ async def _process_message(msg):
     # Anlage-Index lernen: pro Anlage-ID, welche Gateway- und Module-UIDs
     # sehen wir? Wird spaeter genutzt um die DSE890 Bruecke zu schlagen.
     _learn_anlage_uids(topic)
+
+    # DSE890-Bridge (USB-ID <-> Gateway-ID) aus Topic-Struktur extrahieren.
+    # Wenn das Topic dem Schema eventenergie/<anlage>/<gw>/<mod>/<sub>
+    # folgt -> persistiere das Pairing sofort. Damit kennt das System
+    # die Bruecke OHNE Telemetrie verarbeiten zu muessen.
+    dse890_pair = _try_extract_dse890_pairing(topic)
+    if dse890_pair:
+        await _persist_anlage_pairing(
+            dse890_pair["anlage_id"],
+            dse890_pair["gateway_uid"],
+            dse890_pair["module_uid"],
+        )
 
     # Try to parse JSON payload
     parsed = None
@@ -670,61 +714,139 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                     except Exception as e:
                         logger.debug(f"GPS DB-fallback (gateway_uid) failed: {e}")
 
+        # TERTIAER-B (DSE890-Bruecke via mqtt_anlage_pairing):
+        # Wir haben aus Telemetrie-Topics im DSE890-Schema
+        # eventenergie/<anlage>/<gateway_uid>/<module_uid>/<sub>
+        # bereits ein persistentes Pairing gespeichert. Wenn das GPS-Topic
+        # die Gateway-UID enthaelt, finden wir hier direkt die zugehoerige
+        # Module-UID und matchen auf das Device/Generator mit dieser UID.
+        if not matched_device_ids and not matched_gen_ids and _db is not None:
+            gw_uid_candidate = _extract_first_hex_uid(gw_topic.split("/"))
+            if gw_uid_candidate:
+                try:
+                    pair = await _db.mqtt_anlage_pairing.find_one(
+                        {"gateway_uid": gw_uid_candidate.upper()},
+                        {"_id": 0, "module_uid": 1, "anlage_id": 1}
+                    )
+                    if pair:
+                        mod_target = pair["module_uid"]
+                        # Suche Device/Generator mit dieser Module-UID
+                        # und schreibe gleichzeitig dse_gateway_uid darauf
+                        # damit naechste GPS-Pakete direkt tertiaer matchen
+                        for dev in (_devices_cache or []):
+                            if (dev.get("dse_module_uid") or "").upper() == mod_target:
+                                matched_device_ids.add(dev["id"])
+                                if dev.get("dse_gateway_uid") != gw_uid_candidate:
+                                    await _db.devices.update_one(
+                                        {"id": dev["id"]},
+                                        {"$set": {"dse_gateway_uid": gw_uid_candidate}}
+                                    )
+                                    dev["dse_gateway_uid"] = gw_uid_candidate
+                                    logger.info(
+                                        f"MQTT: DSE890-Bridge (Pairing-Tabelle): "
+                                        f"Gateway-UID {gw_uid_candidate} -> "
+                                        f"Module-UID {mod_target} -> "
+                                        f"Device {dev['id']} verlinkt."
+                                    )
+                        for gen in (_generators_cache or []):
+                            if (gen.get("dse_module_uid") or "").upper() == mod_target:
+                                matched_gen_ids.add(gen["id"])
+                                if gen.get("dse_gateway_uid") != gw_uid_candidate:
+                                    await _db.generators.update_one(
+                                        {"id": gen["id"]},
+                                        {"$set": {"dse_gateway_uid": gw_uid_candidate}}
+                                    )
+                                    gen["dse_gateway_uid"] = gw_uid_candidate
+                                    logger.info(
+                                        f"MQTT: DSE890-Bridge (Pairing-Tabelle): "
+                                        f"Gateway-UID {gw_uid_candidate} -> "
+                                        f"Module-UID {mod_target} -> "
+                                        f"Generator {gen['id']} verlinkt."
+                                    )
+                        # DB-Fallback wenn Cache stale
+                        if not matched_device_ids and not matched_gen_ids:
+                            db_devs = await _db.devices.find(
+                                {"dse_module_uid": mod_target},
+                                {"_id": 0, "id": 1}
+                            ).to_list(10)
+                            for d in db_devs:
+                                matched_device_ids.add(d["id"])
+                                await _db.devices.update_one(
+                                    {"id": d["id"]},
+                                    {"$set": {"dse_gateway_uid": gw_uid_candidate}}
+                                )
+                            db_gens = await _db.generators.find(
+                                {"dse_module_uid": mod_target},
+                                {"_id": 0, "id": 1}
+                            ).to_list(10)
+                            for g in db_gens:
+                                matched_gen_ids.add(g["id"])
+                                await _db.generators.update_one(
+                                    {"id": g["id"]},
+                                    {"$set": {"dse_gateway_uid": gw_uid_candidate}}
+                                )
+                except Exception as e:
+                    logger.debug(f"DSE890-Bridge Pairing-Lookup failed: {e}")
+
         # QUARTAER (DSE890-Bruecke): Anlagen-ID-Pairing.
-        # GPS kommt vom Gateway (Topic enthaelt Gateway-UID).
-        # Telemetrie kommt vom Bediendisplay (Topic enthaelt Module-UID).
-        # Wenn beide UIDs unter derselben ANLAGE_ID (Topic-Segment 2)
-        # gesehen wurden -> sie gehoeren zum gleichen physischen Setup.
-        # Wir paaren sie automatisch und persistieren das Pairing.
+        # Nur EINDEUTIG: greift nur wenn unter dieser Anlage GENAU EIN
+        # Gateway UND GENAU EIN Module gesehen wurden. Bei mehreren
+        # DSE890-Setups in derselben Anlage waere das Pairing sonst
+        # mehrdeutig und wuerde falsche Geraete miteinander verbinden.
         if not matched_device_ids and not matched_gen_ids:
             parts = topic.split("/")
             if len(parts) >= 3 and parts[0] == "eventenergie":
                 anlage_id = parts[1].strip()
                 entry = _anlage_index.get(anlage_id)
-                if entry and entry.get("mod"):
-                    # GPS-Gateway-UID aus Topic (= erstes 15-Hex Segment)
+                if (entry and len(entry.get("mod", set())) == 1
+                        and len(entry.get("gw", set())) <= 1):
                     gw_uid_for_topic = _extract_first_hex_uid(parts[2:])
+                    mod_uid_upper = next(iter(entry["mod"]))
                     if gw_uid_for_topic:
-                        for mod_uid_upper in list(entry["mod"]):
-                            # Suche Device mit dieser Module-UID
-                            for dev in (_devices_cache or []):
-                                dev_mod = (dev.get("dse_module_uid") or "").strip().upper()
-                                if dev_mod and dev_mod == mod_uid_upper:
-                                    # Brueckenschlag: speichere Gateway-UID
-                                    if dev.get("dse_gateway_uid") != gw_uid_for_topic:
-                                        await _db.devices.update_one(
-                                            {"id": dev["id"]},
-                                            {"$set": {"dse_gateway_uid": gw_uid_for_topic}}
-                                        )
-                                        dev["dse_gateway_uid"] = gw_uid_for_topic
-                                        logger.info(
-                                            f"MQTT: Anlage-Pairing (Anlage {anlage_id}): "
-                                            f"Device {dev['id']} mod={mod_uid_upper} <-> "
-                                            f"Gateway-UID {gw_uid_for_topic} gepaart."
-                                        )
-                                    matched_device_ids.add(dev["id"])
-                                    await _persist_anlage_pairing(
-                                        anlage_id, gw_uid_for_topic, mod_uid_upper
+                        for dev in (_devices_cache or []):
+                            dev_mod = (dev.get("dse_module_uid") or "").strip().upper()
+                            if dev_mod and dev_mod == mod_uid_upper:
+                                if dev.get("dse_gateway_uid") != gw_uid_for_topic:
+                                    await _db.devices.update_one(
+                                        {"id": dev["id"]},
+                                        {"$set": {"dse_gateway_uid": gw_uid_for_topic}}
                                     )
-                            # Auch echte Generators mit dieser Module-UID
-                            for gen in (_generators_cache or []):
-                                gen_mod = (gen.get("dse_module_uid") or "").strip().upper()
-                                if gen_mod and gen_mod == mod_uid_upper:
-                                    if gen.get("dse_gateway_uid") != gw_uid_for_topic:
-                                        await _db.generators.update_one(
-                                            {"id": gen["id"]},
-                                            {"$set": {"dse_gateway_uid": gw_uid_for_topic}}
-                                        )
-                                        gen["dse_gateway_uid"] = gw_uid_for_topic
-                                        logger.info(
-                                            f"MQTT: Anlage-Pairing (Anlage {anlage_id}): "
-                                            f"Generator {gen['id']} mod={mod_uid_upper} <-> "
-                                            f"Gateway-UID {gw_uid_for_topic} gepaart."
-                                        )
-                                    matched_gen_ids.add(gen["id"])
-                                    await _persist_anlage_pairing(
-                                        anlage_id, gw_uid_for_topic, mod_uid_upper
+                                    dev["dse_gateway_uid"] = gw_uid_for_topic
+                                    logger.info(
+                                        f"MQTT: Anlage-Pairing (Anlage {anlage_id}, EINDEUTIG): "
+                                        f"Device {dev['id']} mod={mod_uid_upper} <-> "
+                                        f"Gateway-UID {gw_uid_for_topic} gepaart."
                                     )
+                                matched_device_ids.add(dev["id"])
+                                await _persist_anlage_pairing(
+                                    anlage_id, gw_uid_for_topic, mod_uid_upper
+                                )
+                        for gen in (_generators_cache or []):
+                            gen_mod = (gen.get("dse_module_uid") or "").strip().upper()
+                            if gen_mod and gen_mod == mod_uid_upper:
+                                if gen.get("dse_gateway_uid") != gw_uid_for_topic:
+                                    await _db.generators.update_one(
+                                        {"id": gen["id"]},
+                                        {"$set": {"dse_gateway_uid": gw_uid_for_topic}}
+                                    )
+                                    gen["dse_gateway_uid"] = gw_uid_for_topic
+                                    logger.info(
+                                        f"MQTT: Anlage-Pairing (Anlage {anlage_id}, EINDEUTIG): "
+                                        f"Generator {gen['id']} mod={mod_uid_upper} <-> "
+                                        f"Gateway-UID {gw_uid_for_topic} gepaart."
+                                    )
+                                matched_gen_ids.add(gen["id"])
+                                await _persist_anlage_pairing(
+                                    anlage_id, gw_uid_for_topic, mod_uid_upper
+                                )
+                elif entry and (len(entry.get("mod", set())) > 1
+                                or len(entry.get("gw", set())) > 1):
+                    logger.warning(
+                        f"MQTT: Anlage-Pairing (Anlage {anlage_id}) NICHT moeglich: "
+                        f"mehrdeutig (mod={len(entry.get('mod', set()))}, "
+                        f"gw={len(entry.get('gw', set()))}). Bitte dse_gateway_uid "
+                        f"manuell pflegen oder eindeutigeres Topic-Schema einrichten."
+                    )
 
         # Devices auf gen_ids erweitern (dev-<id> Schema)
         for dev_id in matched_device_ids:

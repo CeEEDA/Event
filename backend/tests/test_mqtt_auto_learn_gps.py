@@ -358,6 +358,48 @@ def test_gateway_gps_tertiary_match_via_topic_hex_uid():
     assert dev.get("latitude") == 50.0, f"Tertiary-Match fehlgeschlagen: {dev}"
 
 
+def test_dse890_5segment_bridge_persists_pairing():
+    """Echte DSE890 Bridge: Telemetrie-Topic mit 5 Segmenten
+       eventenergie/<anlage>/<gateway_uid>/<module_uid>/<sub>
+    persistiert das Gateway-UID <-> Module-UID Pairing sofort.
+    GPS-Topic mit gleicher Gateway-UID matcht dann via Pairing-Tabelle
+    auf das richtige Device, OHNE Cache oder Anlage-Index zu brauchen.
+    """
+    db = FakeDB()
+    db.devices.docs.append({
+        "id": "dev-dse890-1",
+        "dse_module_uid": "6D2B5CDE5F",
+    })
+    _reset_state(db)
+    mqtt_service._anlage_index.clear()
+    mqtt_service._anlage_pair_persist.clear()
+
+    # SCHRITT 1: DSE890 Telemetrie-Topic (5 Segmente) kommt rein.
+    # Bridge wird sofort persistiert.
+    tele_msg = FakeMsg(
+        "eventenergie/35072/1912C50541E3D25/6D2B5CDE5F/engine",
+        '{"6D2B5CDE5F":{"P004":{"R000":1}}}',
+    )
+    asyncio.run(mqtt_service._process_message(tele_msg))
+
+    pair = next(iter(db._collections["mqtt_anlage_pairing"].docs), None)
+    assert pair is not None, "Pairing nicht persistiert!"
+    assert pair["gateway_uid"] == "1912C50541E3D25"
+    assert pair["module_uid"] == "6D2B5CDE5F"
+
+    # SCHRITT 2: GPS kommt mit dieser Gateway-UID.
+    # Tertiaer-B Match via Pairing-Tabelle -> Device wird gefunden.
+    gps_msg = FakeMsg(
+        "eventenergie/35072/1912C50541E3D25/gps",
+        '{"1912C50541E3D25":{"lat":50.372563,"lon":6.930362}}',
+    )
+    asyncio.run(mqtt_service._process_message(gps_msg))
+
+    dev = next(d for d in db.devices.docs if d["id"] == "dev-dse890-1")
+    assert dev.get("latitude") == 50.372563, f"GPS nicht via Bridge angewendet: {dev}"
+    assert dev.get("dse_gateway_uid") == "1912C50541E3D25", f"dse_gateway_uid nicht gespeichert: {dev}"
+
+
 def test_anlage_pairing_dse890_bridge():
     """Kern-Fix: DSE890 Bruecke ueber Anlage-ID.
     Szenario: 
@@ -475,6 +517,7 @@ if __name__ == "__main__":
         test_gateway_gps_routes_via_learned_gateway_uid_to_device,
         test_gateway_gps_routes_via_module_uid_payload_key,
         test_gateway_gps_tertiary_match_via_topic_hex_uid,
+        test_dse890_5segment_bridge_persists_pairing,
         test_anlage_pairing_dse890_bridge,
         test_anlage_pairing_second_gps_uses_persisted_link,
         test_no_match_logs_rejected,
