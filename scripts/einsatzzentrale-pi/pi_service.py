@@ -213,7 +213,7 @@ SYNC_URLS = [
 
 
 _sync_lock = asyncio.Lock()
-_online: bool = False
+_online: bool = True  # optimistisch starten - faellt bei erstem Fehler auf False
 
 
 async def _heartbeat(client: httpx.AsyncClient) -> None:
@@ -319,9 +319,34 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.get("/")
 @app.get("/kiosk")
 async def kiosk_root():
+    """Liefert die Kiosk-HTML aus.
+
+    Strategie:
+      1. Wenn online: live vom Cloud-Backend holen + lokal cachen (so kommen
+         HTML-Updates sofort an, der Pi muss nicht neu installiert werden).
+      2. Wenn offline: lokal gecachte HTML verwenden.
+      3. Bei Erstaufruf ohne Cache: Redirect zur Cloud.
+    """
+    if CLOUD_URL and _online:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{CLOUD_URL}/api/einsatzzentrale/kiosk-page")
+            if 200 <= r.status_code < 300 and r.content:
+                # Lokale Kopie aktualisieren (fuer Offline-Fallback)
+                try:
+                    KIOSK_HTML_PATH.write_bytes(r.content)
+                except Exception as ex:
+                    log.warning(f"Konnte kiosk.html nicht lokal cachen: {ex}")
+                return Response(content=r.content, media_type="text/html")
+        except Exception as ex:
+            log.warning(f"Cloud kiosk-page Fetch fehlgeschlagen: {ex}")
+    # Offline-Fallback: lokale Kopie
     if KIOSK_HTML_PATH.exists():
         return FileResponse(KIOSK_HTML_PATH, media_type="text/html")
-    return RedirectResponse(f"{CLOUD_URL}/api/einsatzzentrale/kiosk-page")
+    if CLOUD_URL:
+        return RedirectResponse(f"{CLOUD_URL}/api/einsatzzentrale/kiosk-page")
+    return Response(content="<h1>Pi-Service: weder Cloud noch lokaler Cache verfuegbar</h1>",
+                    status_code=503, media_type="text/html")
 
 
 @app.get("/pi-status")
