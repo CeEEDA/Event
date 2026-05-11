@@ -537,3 +537,100 @@ async def install_script():
         headers={"Content-Disposition": 'attachment; filename="install_einsatzzentrale_kiosk.sh"'},
     )
 
+
+# ============================================================================
+# PI-SETUP-GENERATOR (Mehrere Pi-Kioske registrieren & verwalten)
+# ============================================================================
+import os as _os_setup
+import hashlib as _hashlib_setup
+import uuid as _uuid_setup
+
+
+class PiSetupRequest(BaseModel):
+    pi_name: str
+    standort: Optional[str] = None  # z.B. "Bauwagen", "Buero", "Lager"
+
+
+async def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    payload = _decode_jwt_token(credentials.credentials)
+    u = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not u or u.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    return u
+
+
+@router.get("/pis")
+async def list_pis(user: dict = Depends(_require_admin)):
+    pis = await _db.einsatzzentrale_pis.find({}, {"_id": 0, "device_key_hash": 0}).sort("created_at", -1).to_list(200)
+    return {"pis": pis}
+
+
+@router.post("/pis/generate-setup")
+async def generate_pi_setup(body: PiSetupRequest, user: dict = Depends(_require_admin)):
+    """Registriert einen neuen Pi-Kiosk und liefert den One-Liner-Befehl
+    fuer das Setup auf dem Pi."""
+    pi_name = (body.pi_name or "").strip()
+    if not pi_name:
+        raise HTTPException(status_code=400, detail="Pi-Name erforderlich")
+
+    pi_id = str(_uuid_setup.uuid4())
+    plain_key = str(_uuid_setup.uuid4()).replace("-", "") + str(_uuid_setup.uuid4()).replace("-", "")[:16]
+    key_hash = _hashlib_setup.sha256(plain_key.encode()).hexdigest()
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": pi_id,
+        "name": pi_name,
+        "standort": (body.standort or "").strip(),
+        "device_key_hash": key_hash,
+        "device_key_prefix": plain_key[:8],
+        "created_at": now,
+        "created_by": user.get("name") or user.get("email"),
+        "last_seen": None,
+        "last_sync": None,
+        "status": "registriert",  # registriert | online | offline
+    }
+    await _db.einsatzzentrale_pis.insert_one(doc)
+
+    # Portal-URL aus env oder vom Request ableiten
+    portal_url = _os_setup.environ.get("PORTAL_URL", "https://eventenergie.app").rstrip("/")
+    # One-Liner: laed das Install-Script und uebergibt direkt die Kiosk-URL
+    kiosk_url = f"{portal_url}/api/einsatzzentrale/kiosk-page?pi_id={pi_id}&key={plain_key}"
+    install_url = f"{portal_url}/api/einsatzzentrale/install-script"
+    setup_command = (
+        f'curl -sL "{install_url}" | sudo bash -s -- "{kiosk_url}"'
+    )
+
+    return {
+        "pi_id": pi_id,
+        "pi_name": pi_name,
+        "setup_command": setup_command,
+        "kiosk_url": kiosk_url,
+        "key_prefix": plain_key[:8],
+    }
+
+
+@router.delete("/pis/{pi_id}")
+async def delete_pi(pi_id: str, user: dict = Depends(_require_admin)):
+    res = await _db.einsatzzentrale_pis.delete_one({"id": pi_id})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Pi nicht gefunden")
+    return {"message": "Pi entfernt"}
+
+
+@router.post("/pis/{pi_id}/heartbeat")
+async def pi_heartbeat(pi_id: str, key: str):
+    """Wird vom Pi alle paar Minuten aufgerufen damit das Portal sieht,
+    dass der Pi online ist. Authentifizierung via device_key (kein JWT)."""
+    pi = await _db.einsatzzentrale_pis.find_one({"id": pi_id}, {"_id": 0})
+    if not pi:
+        raise HTTPException(status_code=404, detail="Pi nicht registriert")
+    if _hashlib_setup.sha256(key.encode()).hexdigest() != pi.get("device_key_hash"):
+        raise HTTPException(status_code=401, detail="Ungueltiger Key")
+    now = datetime.now(timezone.utc).isoformat()
+    await _db.einsatzzentrale_pis.update_one(
+        {"id": pi_id},
+        {"$set": {"last_seen": now, "status": "online"}}
+    )
+    return {"ok": True, "server_time": now}
+
+

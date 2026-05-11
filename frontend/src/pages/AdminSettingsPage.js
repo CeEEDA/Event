@@ -705,6 +705,163 @@ function UpdatePackageSection() {
   );
 }
 
+/* ───── Einsatzzentrale Pi-Kioske - Setup & Verwaltung ───── */
+function EinsatzzentralePiSection() {
+  const [pis, setPis] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [piName, setPiName] = useState("");
+  const [standort, setStandort] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [setupCmd, setSetupCmd] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const loadPis = async () => {
+    try {
+      const res = await api.get("/einsatzzentrale/pis");
+      setPis(res.data.pis || []);
+    } catch (e) {
+      toast.error("Pi-Liste konnte nicht geladen werden: " + (e.response?.data?.detail || e.message));
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { loadPis(); }, []);
+
+  const generateSetup = async () => {
+    if (!piName.trim()) { toast.error("Bitte Pi-Namen eingeben"); return; }
+    setGenerating(true);
+    try {
+      const res = await api.post("/einsatzzentrale/pis/generate-setup", {
+        pi_name: piName.trim(),
+        standort: standort.trim() || null,
+      });
+      setSetupCmd(res.data.setup_command);
+      setPiName(""); setStandort("");
+      toast.success("Setup-Befehl generiert");
+      loadPis();
+    } catch (e) {
+      toast.error("Fehler: " + (e.response?.data?.detail || e.message));
+    } finally { setGenerating(false); }
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(setupCmd);
+    setCopied(true);
+    toast.success("In Zwischenablage kopiert");
+    setTimeout(() => setCopied(false), 3000);
+  };
+
+  const deletePi = async (pi) => {
+    if (!window.confirm(`Pi "${pi.name}" wirklich entfernen?`)) return;
+    try {
+      await api.delete(`/einsatzzentrale/pis/${pi.id}`);
+      toast.success("Pi entfernt");
+      loadPis();
+    } catch (e) {
+      toast.error("Fehler: " + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const fmtSeen = (iso) => {
+    if (!iso) return "noch nie";
+    const d = new Date(iso); const now = new Date();
+    const min = Math.round((now - d) / 60000);
+    if (min < 1) return "gerade eben";
+    if (min < 60) return `vor ${min} Min`;
+    if (min < 1440) return `vor ${Math.round(min / 60)} h`;
+    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="einsatzzentrale-pi-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-fuchsia-600 to-purple-600">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Cpu className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Einsatzzentrale Pi-Kioske</h3>
+            <p className="text-[10px] text-fuchsia-100">Raspberry Pi für TV-Wandanzeige in der Einsatzzentrale</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Generiert einen One-Liner für jeden neuen Pi. Mehrere Pis möglich (z.B. Bauwagen, Büro, Lager).
+          Der Pi installiert automatisch Chromium-Kiosk + meldet sich beim Portal an.
+        </p>
+
+        <div className="flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-xs font-medium text-gray-700 mb-1 block">Pi-Name *</label>
+            <Input value={piName} onChange={e => setPiName(e.target.value)} placeholder="z.B. EZ-Bauwagen-01" className="text-sm" data-testid="ez-pi-name" />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="text-xs font-medium text-gray-700 mb-1 block">Standort (optional)</label>
+            <Input value={standort} onChange={e => setStandort(e.target.value)} placeholder="Bauwagen, Büro..." className="text-sm" data-testid="ez-pi-standort" />
+          </div>
+          <Button onClick={generateSetup} disabled={generating} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="ez-pi-generate-btn">
+            {generating ? "Generiere..." : "Setup generieren"}
+          </Button>
+        </div>
+
+        {setupCmd && (
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-gray-700">Diesen Befehl auf dem Pi einfügen:</label>
+            <div className="relative">
+              <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap break-all select-all">{setupCmd}</pre>
+              <button onClick={copyToClipboard} className={`absolute top-2 right-2 px-2 py-1 text-[10px] rounded ${copied ? "bg-green-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`} data-testid="ez-copy-setup-cmd">
+                {copied ? "Kopiert!" : "Kopieren"}
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-400">
+              Nach ca. 2 Minuten ist der Pi bereit und erscheint unten in der Liste.
+            </p>
+          </div>
+        )}
+
+        {/* Pi-Liste */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-semibold text-gray-700">Registrierte Pis ({pis.length})</h4>
+            <button onClick={loadPis} className="text-[10px] text-fuchsia-600 hover:underline" data-testid="ez-pi-reload">↻ Aktualisieren</button>
+          </div>
+          {loading ? (
+            <div className="text-center py-4 text-xs text-gray-400">Lade…</div>
+          ) : !pis.length ? (
+            <div className="text-center py-6 text-xs text-gray-400">Noch keine Pis registriert. Generiere oben einen Setup-Befehl.</div>
+          ) : (
+            <div className="space-y-2" data-testid="ez-pi-list">
+              {pis.map(p => (
+                <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200" data-testid={`ez-pi-row-${p.id}`}>
+                  <div className={`w-2.5 h-2.5 rounded-full ${p.status === "online" ? "bg-green-500" : "bg-gray-400"}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900">{p.name}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {p.standort && <span>{p.standort} · </span>}
+                      Zuletzt online: {fmtSeen(p.last_seen)}
+                      {" · "}
+                      Key: <code className="text-gray-400">{p.device_key_prefix}…</code>
+                    </div>
+                  </div>
+                  <button onClick={() => deletePi(p)} className="px-2 py-1 text-[10px] text-red-600 hover:bg-red-50 rounded" data-testid={`ez-pi-del-${p.id}`}>Entfernen</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-700 rounded text-[10px] font-medium">Chromium Kiosk</span>
+          <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-700 rounded text-[10px] font-medium">Auto-Start</span>
+          <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-700 rounded text-[10px] font-medium">Mehrfach-Setup</span>
+          <span className="px-1.5 py-0.5 bg-fuchsia-50 text-fuchsia-700 rounded text-[10px] font-medium">Auto-Heartbeat</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ───── Tankbeleg Pi - One-Liner Setup Generator ───── */
 function TankbelegPiSection() {
   const [deviceName, setDeviceName] = useState("");
@@ -2058,6 +2215,8 @@ export default function AdminSettingsPage() {
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
 
+          {/* Einsatzzentrale Pi-Kioske */}
+          <EinsatzzentralePiSection />
           {/* Hilfsmittel */}
           <div id="hilfsmittel-section">
             <HilfsmittelSection />
