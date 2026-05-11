@@ -404,6 +404,9 @@ User language: **German** (Agent must respond in German).
   - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
   - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
   - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Multiansicht-Tile** (Feb 2026): Split-Screen mit Einsatztagebuch links + Artikelliste rechts, beide live mit Auto-Refresh 30s. Volle Bildschirmbreite (`max-width: none`).
+- **Geocoding-Verbesserung** (Feb 2026): Nominatim (OpenStreetMap) als priorisierter Geocoder fuer deutsche Adressen, Open-Meteo Geocoding als Fallback. Strategie: Volle Adresse -> PLZ+Ort -> nur Ort. Adressen wie "Nürburgring", "Vallendar", "Randersacker" werden jetzt zuverlaessig geocoded (vorher: alle KEIN TREFFER bei Open-Meteo). Re-geocoded automatisch alle 32 bestehenden Auftraege.
+- **Workspace Bildschirmnutzung** (Feb 2026): `kiosk-main` max-width auf 1920px erweitert, im Tile-Mode `fullscreen` (none).
 - **Einsatzzentrale Pi-Setup-Generator + Offline-Mode (Option B)** (Feb 2026):
   - **Admin -> Einstellungen -> Einsatzzentrale Pi-Kioske** (fuchsia Section): Pi-Name + Standort eingeben -> One-Liner-Befehl + Pi-Liste (mit Heartbeat-Status, Key-Prefix, Loeschen)
   - Backend: `POST /api/einsatzzentrale/pis/generate-setup` (anlegen+Key), `GET /pis` (Liste), `DELETE /pis/{id}`, `POST /pis/{id}/heartbeat`, `GET /pi-service.py` (Code-Download)

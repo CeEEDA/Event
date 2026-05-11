@@ -145,7 +145,7 @@ input { font-family: inherit; }
 .tile-bg-fuchsia { background: var(--fuchsia-bg); color: var(--fuchsia-dark); }
 
 /* ========== WORKSPACE 2-Spalten-Layout ============================ */
-.ws-main { max-width: 1800px; padding: 16px 24px; }
+.ws-main { max-width: none; padding: 16px 28px; }
 .section-title.compact { margin: 12px 0 8px; }
 
 .proj-strip { background: linear-gradient(135deg, var(--fuchsia-bg), white);
@@ -757,7 +757,8 @@ var TILES = [
   { key:"maschinen", label:"Maschinenliste", desc:"Generatoren, Verteiler, Lichtmasten", icon:"⚙️", cls:"tile-bg-emerald" },
   { key:"diary",     label:"Einsatztagebuch", desc:"Störungen & Verlauf",                  icon:"📓", cls:"tile-bg-slate" },
   { key:"docs",      label:"Dokumentenablage",desc:"Pläne, Fotos, Messprotokolle",         icon:"📂", cls:"tile-bg-blue" },
-  { key:"artikel",   label:"Artikelliste",    desc:"Alle positionierten Artikel ansehen",  icon:"📍", cls:"tile-bg-fuchsia" }
+  { key:"artikel",   label:"Artikelliste",    desc:"Alle positionierten Artikel ansehen",  icon:"📍", cls:"tile-bg-fuchsia" },
+  { key:"multi",     label:"Multiansicht",    desc:"Einsatztagebuch + Artikelliste parallel", icon:"⊞", cls:"tile-bg-amber" }
 ];
 
 function renderWorkspace() {
@@ -975,6 +976,7 @@ function renderTilePanel() {
   if (state.activeTile === "artikel") { return renderArtikelPanel(); }
   if (state.activeTile === "docs") { return renderDocsPanel(); }
   if (state.activeTile === "maschinen") { return renderMaschinenPanel(); }
+  if (state.activeTile === "multi") { return renderMultiPanel(); }
   // Platzhalter fuer die noch-nicht-implementierten Tiles
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
@@ -991,6 +993,193 @@ function renderTilePanel() {
   ));
   attachLogout();
   document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+}
+
+// ============================================================================
+// MULTIANSICHT - Diary + Artikelliste parallel
+// ============================================================================
+function renderMultiPanel() {
+  var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
+  var root = document.getElementById("root"); root.innerHTML = "";
+  root.appendChild($(
+    '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · Multiansicht") +
+    '<main class="kiosk-main fullscreen">' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">' +
+        '<button id="multi-back" class="btn">← Zurück</button>' +
+        '<div style="flex:1;font-size:13px;color:var(--text-muted);">Einsatztagebuch und Artikelliste parallel — ideal für den Überblick auf dem TV</div>' +
+      '</div>' +
+      '<div class="multi-grid">' +
+        '<div class="multi-pane">' +
+          '<div class="multi-pane-h">' +
+            '<div class="tile-icon tile-bg-slate" style="width:32px;height:32px;font-size:16px;border-radius:8px;">📓</div>' +
+            '<h3>Einsatztagebuch</h3>' +
+            '<span class="badge-cnt" id="multi-diary-cnt">…</span>' +
+            '<button id="multi-diary-new" class="btn primary sm">+ Störung</button>' +
+            '<button id="multi-diary-trupp" class="btn sm">+ Trupp</button>' +
+          '</div>' +
+          '<div class="multi-pane-body">' +
+            '<div id="multi-diary-trupps"></div>' +
+            '<div id="multi-diary-entries"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="multi-pane">' +
+          '<div class="multi-pane-h">' +
+            '<div class="tile-icon tile-bg-fuchsia" style="width:32px;height:32px;font-size:16px;border-radius:8px;">📍</div>' +
+            '<h3>Artikelliste</h3>' +
+            '<span class="badge-cnt" id="multi-art-cnt">…</span>' +
+            '<div class="kiosk-search" style="margin:0;max-width:200px;">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" stroke-linecap="round" d="m20 20-3-3"/></svg>' +
+              '<input id="multi-art-search" placeholder="Suchen…" style="height:32px;font-size:12px;" />' +
+            '</div>' +
+          '</div>' +
+          '<div class="multi-pane-body">' +
+            '<div id="multi-art-list"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</main></div>'
+  ));
+  attachLogout();
+  document.getElementById("multi-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+  document.getElementById("multi-diary-new").addEventListener("click", function(){ openEntryModal(null); });
+  document.getElementById("multi-diary-trupp").addEventListener("click", function(){ openTruppModal(null); });
+  document.getElementById("multi-art-search").addEventListener("input", function(e){
+    artikelState.search = e.target.value; paintMultiArt();
+  });
+
+  // Initial-Loads
+  loadMultiDiary();
+  loadMultiArtikel();
+
+  // Auto-Refresh alle 30s (live Updates für TV-Wand)
+  if (window._multiRefresh) clearInterval(window._multiRefresh);
+  window._multiRefresh = setInterval(function() {
+    if (state.activeTile === "multi") { loadMultiDiary(true); loadMultiArtikel(true); }
+    else { clearInterval(window._multiRefresh); window._multiRefresh = null; }
+  }, 30000);
+}
+
+function loadMultiDiary() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  Promise.all([
+    api("/api/orders/" + pk + "/diary"),
+    api("/api/orders/" + pk + "/trupps")
+  ]).then(function(res) {
+    diaryState.entries = res[0].entries || [];
+    diaryState.trupps = res[1].trupps || [];
+    paintMultiDiary(res[0]);
+  }).catch(function(ex) {
+    document.getElementById("multi-diary-entries").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
+  });
+}
+
+function paintMultiDiary(data) {
+  var cntEl = document.getElementById("multi-diary-cnt");
+  if (cntEl) cntEl.textContent = (data.open || 0) + " offen · " + (data.resolved || 0) + " behoben";
+
+  // Trupps kompakt (Pills)
+  var ta = document.getElementById("multi-diary-trupps");
+  if (diaryState.trupps.length) {
+    ta.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">' +
+      diaryState.trupps.map(function(t) {
+        var color = !t.is_active ? "background:#e5e7eb;color:#6b7280" :
+                    t.is_busy ? "background:" + "var(--amber-bg)" + ";color:#92400e" :
+                    "background:" + "var(--emerald-bg)" + ";color:#047857";
+        return '<button class="multi-trupp-pill" data-id="' + esc(t.id) + '" style="' + color +
+               ';border:none;font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600;">' +
+               esc(t.name) + (t.is_busy ? " ●" : "") + '</button>';
+      }).join("") + '</div>';
+    ta.querySelectorAll(".multi-trupp-pill").forEach(function(b) {
+      b.addEventListener("click", function() {
+        var t = diaryState.trupps.find(function(x){return x.id === b.dataset.id;});
+        if (t) openTruppModal(t);
+      });
+    });
+  } else { ta.innerHTML = ""; }
+
+  // Diary-Entries kompakter (für Split-View)
+  var truppMap = {}; diaryState.trupps.forEach(function(t){ truppMap[t.id] = t; });
+  var entries = diaryState.entries;
+  var area = document.getElementById("multi-diary-entries");
+  if (!entries.length) {
+    area.innerHTML = '<div class="empty" style="padding:24px;">Noch keine Einträge.</div>';
+    return;
+  }
+  area.innerHTML = entries.map(function(e) {
+    var cls = e.status === "resolved" ? "resolved" : "open";
+    var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : "?"; }).filter(Boolean);
+    return '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '" style="padding:10px 12px;margin-bottom:8px;">' +
+              '<div class="e-top" style="margin-bottom:4px;">' +
+                '<div class="e-time" style="font-size:11px;">🕐 ' + esc(fmtDateTime(e.created_at)) + '</div>' +
+                (e.status === "resolved" ? '<span class="badge bg-emerald">✓</span>' : '<span class="badge bg-red">●</span>') +
+              '</div>' +
+              '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + esc(e.reason) + '</div>' +
+              '<div style="font-size:11px;color:var(--text-muted);display:flex;gap:8px;flex-wrap:wrap;">' +
+                (e.caller_name ? '<span>👤 ' + esc(e.caller_name) + '</span>' : '') +
+                (e.location ? '<span>📍 ' + esc(e.location) + '</span>' : '') +
+                (truppNames.length ? '<span>👥 ' + esc(truppNames.join(", ")) + '</span>' : '') +
+              '</div>' +
+              '<div style="display:flex;gap:6px;margin-top:6px;">' +
+                (e.status === "open"
+                  ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">✓ Behoben</button>'
+                  : '<button class="btn sm warn multi-e-reopen" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">↺ Öffnen</button>') +
+                '<button class="btn sm multi-e-edit" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">Bearbeiten</button>' +
+              '</div>' +
+            '</div>';
+  }).join("");
+  area.querySelectorAll(".multi-e-resolve").forEach(function(b){ b.addEventListener("click", function(){ resolveEntry(b.dataset.id).then(loadMultiDiary).catch(function(){}); }); });
+  area.querySelectorAll(".multi-e-reopen").forEach(function(b){ b.addEventListener("click", function(){ reopenEntry(b.dataset.id).then(loadMultiDiary).catch(function(){}); }); });
+  area.querySelectorAll(".multi-e-edit").forEach(function(b){ b.addEventListener("click", function(){
+    var e = diaryState.entries.find(function(x){return x.id === b.dataset.id;});
+    if (e) openEntryModal(e);
+  }); });
+}
+
+function loadMultiArtikel() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/epirent/" + pk + "/assets").then(function(data) {
+    artikelState.items = data.assets || [];
+    paintMultiArt();
+  }).catch(function(ex) {
+    document.getElementById("multi-art-list").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
+  });
+}
+
+function paintMultiArt() {
+  var q = (artikelState.search || "").trim().toLowerCase();
+  var items = q ? artikelState.items.filter(function(a) {
+    return [a.label, a.asset_type, a.plus_code].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
+  }) : artikelState.items;
+  var cntEl = document.getElementById("multi-art-cnt");
+  if (cntEl) cntEl.textContent = items.length + " von " + artikelState.items.length;
+  var area = document.getElementById("multi-art-list");
+  if (!items.length) {
+    area.innerHTML = '<div class="empty" style="padding:24px;">' + (q ? "Keine Treffer." : "Keine Artikel.") + '</div>';
+    return;
+  }
+  area.innerHTML = items.map(function(a) {
+    var ic = _artikelIcon(a.asset_type);
+    var status = a.status || "placed";
+    var statusLbl = status === "dismantled" ? "Abgebaut" : "Gestellt";
+    return '<div class="art-row ' + (status === "dismantled" ? "dismantled" : "") + '" data-asset-id="' + esc(a.id) + '" style="padding:8px 4px;">' +
+             '<div class="art-type-icon ' + ic.cls + '" style="width:32px;height:32px;font-size:14px;border-radius:8px;">' + ic.icon + '</div>' +
+             '<div class="art-row-text">' +
+               '<div class="art-row-label" style="font-size:13px;">' + esc(a.label || "?") + '</div>' +
+               '<div class="art-row-meta" style="font-size:10px;">' +
+                 '<span>' + esc(a.asset_type || "") + '</span>' +
+                 (a.plus_code ? '<span>📍 ' + esc(a.plus_code) + '</span>' : '') +
+                 ((a.comments || []).length ? '<span>💬 ' + a.comments.length + '</span>' : '') +
+               '</div>' +
+             '</div>' +
+             '<div class="art-status-badge ' + status + '">' + statusLbl + '</div>' +
+           '</div>';
+  }).join("");
+  area.querySelectorAll(".art-row").forEach(function(row) {
+    row.addEventListener("click", function() {
+      var a = artikelState.items.find(function(x){return x.id === row.dataset.assetId;});
+      if (a) openArtikelDetail(a);
+    });
+  });
 }
 
 // ============================================================================
@@ -1725,21 +1914,33 @@ function renderDiaryPanel() {
 
 function loadDiary() {
   var pk = encodeURIComponent(state.order.primary_key);
-  api("/api/orders/" + pk + "/diary").then(function(data) {
+  return api("/api/orders/" + pk + "/diary").then(function(data) {
     diaryState.entries = data.entries || [];
-    paintStats(data);
-    paintDiary(document.getElementById("diary-filter") ? document.getElementById("diary-filter").value : "");
+    if (document.getElementById("diary-stats")) paintStats(data);
+    if (document.getElementById("diary-area")) {
+      var filt = document.getElementById("diary-filter");
+      paintDiary(filt ? filt.value : "");
+    }
+    // Falls Multi-Panel aktiv ist, dort auch neu zeichnen
+    if (document.getElementById("multi-diary-entries")) paintMultiDiary(data);
   }).catch(function(err) {
-    var area = document.getElementById("diary-area");
+    var area = document.getElementById("diary-area") || document.getElementById("multi-diary-entries");
     if (area) area.innerHTML = '<div class="alert error">' + esc(err.message) + '</div>';
   });
 }
 
 function loadTrupps() {
   var pk = encodeURIComponent(state.order.primary_key);
-  api("/api/orders/" + pk + "/trupps").then(function(data) {
+  return api("/api/orders/" + pk + "/trupps").then(function(data) {
     diaryState.trupps = data.trupps || [];
-    paintTrupps();
+    if (document.getElementById("trupp-area")) paintTrupps();
+    // Falls Multi-Panel aktiv ist, dort die Trupp-Pills neu zeichnen
+    if (document.getElementById("multi-diary-trupps")) {
+      // re-paint nur die Pills, Entries bleiben
+      api("/api/orders/" + pk + "/diary").then(function(dd) {
+        diaryState.entries = dd.entries || []; paintMultiDiary(dd);
+      });
+    }
   }).catch(function(err) {
     var area = document.getElementById("trupp-area");
     if (area) area.innerHTML = '<div class="alert error">' + esc(err.message) + '</div>';
@@ -1902,15 +2103,15 @@ function openEntryModal(entry) {
 
 function resolveEntry(id) {
   var pk = encodeURIComponent(state.order.primary_key);
-  api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id) + "/resolve", { method: "POST" })
+  return api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id) + "/resolve", { method: "POST" })
     .then(function(){ loadDiary(); loadTrupps(); })
-    .catch(function(ex){ alert("Fehler: " + ex.message); });
+    .catch(function(ex){ alert("Fehler: " + ex.message); throw ex; });
 }
 function reopenEntry(id) {
   var pk = encodeURIComponent(state.order.primary_key);
-  api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id) + "/reopen", { method: "POST" })
+  return api("/api/orders/" + pk + "/diary/" + encodeURIComponent(id) + "/reopen", { method: "POST" })
     .then(function(){ loadDiary(); loadTrupps(); })
-    .catch(function(ex){ alert("Fehler: " + ex.message); });
+    .catch(function(ex){ alert("Fehler: " + ex.message); throw ex; });
 }
 function deleteEntry(id) {
   if (!confirm("Diesen Eintrag wirklich löschen?")) return;

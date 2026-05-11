@@ -298,29 +298,62 @@ import httpx as _httpx  # noqa: E402
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OPEN_METEO_GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
+NOMINATIM_GEOCODE = "https://nominatim.openstreetmap.org/search"
 
 
 async def _geocode_address(address: str) -> Optional[tuple]:
-    """Geocode eine Adresse via Open-Meteo Geocoding-API.
+    """Geocode eine Adresse.
 
-    Nimmt die erste Strasse + Ort fuer den Lookup. Liefert (lat, lng) oder None.
+    Strategie:
+      1. Nominatim (OpenStreetMap) ZUERST - findet deutsche Adressen sehr zuverlaessig.
+      2. Open-Meteo Geocoding als Fallback (weltweit, aber schwach bei DE-Stra-Suchen).
+      3. Bei Misserfolg: Adresse runterkuerzen (nur PLZ+Ort, nur Ort).
+
+    Liefert (lat, lng) oder None.
     """
-    if not address:
+    if not address or not address.strip():
         return None
-    # Strategie: Probiere zuerst die volle Adresse, dann nur den Ort.
-    # Adresse meist Format: "Strasse 1, 12345 Stadt" oder "Strasse 1 12345 Stadt"
-    parts = [p.strip() for p in address.replace(",", " ").split() if p.strip()]
-    # Versuche zuerst die volle Adresse, dann reduziert
-    candidates = [address]
-    # Ort allein als Fallback (letztes Token-Paar)
-    if len(parts) >= 2:
-        # finde PLZ + Ort: 5-stellige Zahl
-        for i, p in enumerate(parts):
-            if p.isdigit() and len(p) == 5 and i + 1 < len(parts):
-                candidates.append(" ".join(parts[i:]))
-                candidates.append(" ".join(parts[i + 1:]))
-                break
-    async with _httpx.AsyncClient(timeout=8.0) as client:
+
+    # Adress-Varianten generieren (von voll nach minimal)
+    a = address.strip()
+    parts = [p.strip() for p in a.replace(",", " ").split() if p.strip()]
+    candidates = [a]
+    # PLZ + Ort extrahieren falls vorhanden
+    for i, p in enumerate(parts):
+        if p.isdigit() and len(p) == 5 and i + 1 < len(parts):
+            # "PLZ Ort1 Ort2"
+            candidates.append(" ".join(parts[i:i + 3]))
+            candidates.append(" ".join(parts[i + 1:i + 3]))  # nur Ort
+            break
+    # Letztes Token allein (oft Ortsname)
+    if parts and parts[-1] not in candidates:
+        candidates.append(parts[-1])
+
+    headers = {"User-Agent": "Eventenergie-Portal/1.0 (info@eventenergie.app)"}
+
+    async with _httpx.AsyncClient(timeout=8.0, headers=headers) as client:
+        # 1) Nominatim probieren
+        for q in candidates:
+            try:
+                r = await client.get(NOMINATIM_GEOCODE,
+                                     params={"q": q, "format": "json", "limit": 1,
+                                              "countrycodes": "de,at,ch,lu,fr,be,nl",
+                                              "addressdetails": 0})
+                r.raise_for_status()
+                data = r.json()
+                if data and isinstance(data, list) and data:
+                    hit = data[0]
+                    lat = hit.get("lat"); lon = hit.get("lon")
+                    if lat is not None and lon is not None:
+                        try:
+                            logger.info(f"Geocoded via Nominatim: '{q}' -> {lat},{lon}")
+                            return (float(lat), float(lon))
+                        except ValueError:
+                            continue
+            except Exception as ex:
+                logger.debug(f"Nominatim '{q}': {ex}")
+
+        # 2) Open-Meteo als Fallback
         for q in candidates:
             try:
                 r = await client.get(OPEN_METEO_GEOCODE,
@@ -333,6 +366,7 @@ async def _geocode_address(address: str) -> Optional[tuple]:
                     lat = hit.get("latitude")
                     lng = hit.get("longitude")
                     if lat is not None and lng is not None:
+                        logger.info(f"Geocoded via Open-Meteo: '{q}' -> {lat},{lng}")
                         return (float(lat), float(lng))
             except Exception:
                 continue
