@@ -28,7 +28,7 @@ import {
   Square,
   ToggleLeft,
 } from "lucide-react";
-import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, Tooltip, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -382,16 +382,38 @@ export default function GeneratorDashboardPage() {
               {filtered.filter(g => g.latitude && g.longitude).map((gen) => {
                 const s = statusConfig[gen.status] || statusConfig.offline;
                 const t = gen.latest_telemetry;
+                const tooltipLabel = gen.name || gen.serial_number || "Gerät";
+                const tooltipMeta = [gen.model, s.label].filter(Boolean).join(" · ");
                 return (
                   <Marker
                     key={gen.id}
                     position={[gen.latitude, gen.longitude]}
                     icon={getMarkerIcon(gen.status)}
-                    eventHandlers={{ click: () => navigate(`/generators/${gen.id}`) }}
                   >
+                    {/* Hover-Tooltip: schneller Blick auf Geraet */}
+                    <Tooltip
+                      direction="top"
+                      offset={[0, -36]}
+                      opacity={1}
+                      sticky={false}
+                      className="generator-map-tooltip"
+                    >
+                      <div className="font-semibold text-xs">{tooltipLabel}</div>
+                      {tooltipMeta && (
+                        <div className="text-[10px] text-gray-500 mt-0.5">{tooltipMeta}</div>
+                      )}
+                      {t?.power_kw != null && (
+                        <div className="text-[10px] mt-0.5">{Math.round(t.power_kw)} kW</div>
+                      )}
+                    </Tooltip>
+
+                    {/* Klick-Popup: volle Details + Link */}
                     <Popup>
                       <div className="min-w-[180px]">
-                        <p className="font-semibold text-sm">{gen.serial_number || gen.name}</p>
+                        <p className="font-semibold text-sm">{gen.name || gen.serial_number}</p>
+                        {gen.serial_number && gen.name && (
+                          <p className="text-[11px] text-gray-500 font-mono">{gen.serial_number}</p>
+                        )}
                         <p className="text-xs text-gray-500">{gen.model}</p>
                         <p className="text-xs mt-1">
                           <span className={`inline-block w-2 h-2 rounded-full ${s.color} mr-1`}></span>
@@ -403,6 +425,13 @@ export default function GeneratorDashboardPage() {
                           </div>
                         )}
                         {gen.location_name && <p className="text-xs text-gray-400 mt-1">{gen.location_name}</p>}
+                        <button
+                          onClick={() => navigate(`/generators/${gen.id}`)}
+                          className="mt-2 w-full text-xs font-medium text-fuchsia-600 hover:text-fuchsia-700 hover:underline text-left"
+                          data-testid={`map-popup-details-${gen.id}`}
+                        >
+                          → Details öffnen
+                        </button>
                       </div>
                     </Popup>
                   </Marker>
