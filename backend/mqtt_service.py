@@ -201,6 +201,29 @@ async def _process_message(msg):
         if uid and uid.upper() in topic_parts_upper:
             device_id = dev["id"]
             logger.info(f"MQTT: Matched device {device_id} via module_uid {uid}")
+            # AUTO-LEARN: Gateway-Topic-Prefix merken, damit /gps-Telegramme
+            # die OHNE Module-UID im Payload kommen trotzdem zugeordnet werden
+            # koennen. DSE890 publiziert GPS oft unter Gateway-UID, wir kennen
+            # aber nur die Module-UID. Mit dem gelernten Prefix klappt der Match.
+            try:
+                # Index der Module-UID finden -> alles davor ist der Gateway-Prefix
+                idx = topic_parts_upper.index(uid.upper())
+                if idx > 0:
+                    learned_prefix = "/".join(topic_parts[:idx])
+                    # Nur speichern wenn neu/anders (vermeide DB-Spam)
+                    cur = dev.get("dse_gateway_topic_prefix")
+                    if cur != learned_prefix:
+                        await _db.devices.update_one(
+                            {"id": device_id},
+                            {"$set": {"dse_gateway_topic_prefix": learned_prefix}}
+                        )
+                        dev["dse_gateway_topic_prefix"] = learned_prefix
+                        logger.info(
+                            f"MQTT: Auto-learned gateway prefix '{learned_prefix}' "
+                            f"for device {device_id} (module_uid={uid})"
+                        )
+            except (ValueError, Exception) as e:
+                logger.debug(f"Auto-learn gateway prefix failed: {e}")
             if topic.endswith("/gps"):
                 await _process_gps_device(device_id, payload_str, parsed, timestamp, topic=topic)
                 return
@@ -386,6 +409,28 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                 if module_uid and module_uid.upper() in gp.upper():
                     matched_gen_ids.add(gen["id"])
 
+        # TERTIAER (Auto-Learn-Fallback): Match via gelerntem Gateway-Prefix.
+        # Greift wenn KEINE Modul-UID im Payload ist (DSE890 sendet GPS oft als
+        # flaches {LAT, LON} unter Gateway-Topic). Beim Telemetrie-Routing wurde
+        # per dse_module_uid das gw_topic dem Device als dse_gateway_topic_prefix
+        # zugeordnet -> jetzt einfach matchen.
+        if not matched_device_ids and not matched_gen_ids:
+            for dev in (_devices_cache or []):
+                dgp = (dev.get("dse_gateway_topic_prefix") or "").strip().rstrip("/")
+                if dgp and dgp.lower() == gw_topic.lower():
+                    matched_device_ids.add(dev["id"])
+            # DB-Fallback
+            if not matched_device_ids:
+                try:
+                    db_devs = await _db.devices.find(
+                        {"dse_gateway_topic_prefix": {"$regex": f"^{gw_topic.replace('.', chr(92)+'.')}$", "$options": "i"}},
+                        {"_id": 0, "id": 1}
+                    ).to_list(20)
+                    for d in db_devs:
+                        matched_device_ids.add(d["id"])
+                except Exception as e:
+                    logger.debug(f"Auto-learn gateway prefix DB lookup failed: {e}")
+
         # Devices auf gen_ids erweitern (dev-<id> Schema)
         for dev_id in matched_device_ids:
             matched_gen_ids.add(f"dev-{dev_id}")
@@ -400,18 +445,22 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
             total_matched.add(gen_id)
 
         if matched_gen_ids:
+            route_used = "gateway_module_match" if module_uid else "gateway_prefix_match"
             logger.info(
-                f"MQTT: Gateway-GPS {lat},{lng} Modul-UID='{module_uid}' "
-                f"auf {len(matched_gen_ids)} Geraet(e) angewendet ({topic})"
+                f"MQTT: Gateway-GPS {lat},{lng} module_uid='{module_uid}' "
+                f"auf {len(matched_gen_ids)} Geraet(e) angewendet ({topic}, route={route_used})"
             )
-            await _log_gps_event(topic, lat, lng, "gateway_module_match",
+            await _log_gps_event(topic, lat, lng, route_used,
                                  matched_gen_ids, raw_payload, module_uid=module_uid)
         else:
+            reject_route = "rejected_no_module_match" if module_uid else "rejected_no_prefix_match"
             logger.warning(
-                f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - kein Device mit "
-                f"dse_module_uid='{module_uid}' im Portal gefunden"
+                f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - kein Match. "
+                f"module_uid={module_uid}, gw_topic={gw_topic}. "
+                f"Hinweis: Telemetrie eines Devices via diesen Gateway noetig, "
+                f"um Auto-Learn von dse_gateway_topic_prefix zu triggern."
             )
-            await _log_gps_event(topic, lat, lng, "rejected_no_module_match",
+            await _log_gps_event(topic, lat, lng, reject_route,
                                  [], raw_payload, module_uid=module_uid)
 
 
