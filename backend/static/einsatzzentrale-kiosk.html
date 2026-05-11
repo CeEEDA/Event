@@ -195,6 +195,42 @@ input { font-family: inherit; }
 .hourly-sum { display: flex; gap: 14px; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 8px; }
 .hourly-sum b { color: var(--text); font-weight: 700; }
 
+/* ========== MASCHINENLISTE (Generatoren) ========================== */
+.masch-toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+.masch-toolbar .kiosk-search { margin:0; flex:1; min-width:220px; max-width:380px; }
+.masch-toolbar select { height:44px; padding:0 14px; border:1px solid var(--border); border-radius:10px;
+  background:var(--card); font-size:14px; font-family:inherit; outline:none; cursor:pointer; }
+.masch-toolbar select:focus { border-color:var(--fuchsia); }
+.masch-toolbar .count { margin-left:auto; font-size:13px; color:var(--text-muted); }
+
+.masch-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.masch-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px;
+  cursor:pointer; transition:all .12s; }
+.masch-card:hover { border-color:var(--fuchsia); transform:translateY(-1px); }
+.masch-card.offline { opacity:0.6; }
+.masch-top { display:flex; align-items:flex-start; gap:10px; justify-content:space-between; }
+.masch-name { font-size:20px; font-weight:700; letter-spacing:-0.02em; word-break:break-word; }
+.masch-status-dot { width:10px; height:10px; border-radius:50%; margin-top:8px; flex-shrink:0; }
+.masch-status-dot.online { background:var(--emerald); box-shadow:0 0 0 3px rgba(16,185,129,0.2); }
+.masch-status-dot.offline { background:#9ca3af; }
+.masch-sub { font-size:12px; color:var(--text-muted); margin-top:4px; word-break:break-word; }
+.masch-tags { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.masch-tag { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  padding:2px 8px; border-radius:999px; background:var(--fuchsia-bg); color:var(--fuchsia-dark); }
+.masch-tag.dist { background:#f3f4f6; color:#475569; }
+.masch-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; padding-top:10px; border-top:1px solid #f3f4f6; }
+.masch-met { display:flex; flex-direction:column; }
+.masch-met .lbl { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
+.masch-met .val { font-size:18px; font-weight:700; margin-top:2px; }
+.masch-met.fuel .val.fuel-high { color:var(--emerald); }
+.masch-met.fuel .val.fuel-mid { color:var(--amber); }
+.masch-met.fuel .val.fuel-low { color:#dc2626; }
+.fuel-bar { height:4px; background:#e5e7eb; border-radius:999px; margin-top:4px; overflow:hidden; }
+.fuel-bar > div { height:100%; transition:width .3s; }
+.fuel-bar > div.fuel-high { background:var(--emerald); }
+.fuel-bar > div.fuel-mid { background:var(--amber); }
+.fuel-bar > div.fuel-low { background:#dc2626; }
+
 /* ========== DOKUMENTENABLAGE ====================================== */
 .docs-toolbar { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
 .docs-toolbar h2 { margin:0; font-size:24px; }
@@ -938,6 +974,7 @@ function renderTilePanel() {
   if (state.activeTile === "diary") { return renderDiaryPanel(); }
   if (state.activeTile === "artikel") { return renderArtikelPanel(); }
   if (state.activeTile === "docs") { return renderDocsPanel(); }
+  if (state.activeTile === "maschinen") { return renderMaschinenPanel(); }
   // Platzhalter fuer die noch-nicht-implementierten Tiles
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
@@ -954,6 +991,209 @@ function renderTilePanel() {
   ));
   attachLogout();
   document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+}
+
+// ============================================================================
+// MASCHINENLISTE (Generatoren im Radius) - read-only mit Sortierung
+// ============================================================================
+var maschState = { items: [], search: "", filterStatus: "all", sort: "name_asc" };
+
+function _fuelClass(pct) {
+  if (pct == null) return "";
+  if (pct >= 50) return "fuel-high";
+  if (pct >= 25) return "fuel-mid";
+  return "fuel-low";
+}
+
+function renderMaschinenPanel() {
+  var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
+  var root = document.getElementById("root"); root.innerHTML = "";
+  root.appendChild($(
+    '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · Maschinenliste") +
+    '<main class="kiosk-main">' +
+      '<div class="masch-toolbar">' +
+        '<button id="tile-back" class="btn">← Zurück</button>' +
+        '<div class="kiosk-search">' +
+          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" stroke-linecap="round" d="m20 20-3-3"/></svg>' +
+          '<input id="masch-search" placeholder="Suchen: Name, Modell, Serien-Nr…" autocomplete="off" />' +
+        '</div>' +
+        '<select id="masch-status">' +
+          '<option value="all">Alle Status</option>' +
+          '<option value="online">Online</option>' +
+          '<option value="offline">Offline</option>' +
+        '</select>' +
+        '<select id="masch-sort">' +
+          '<option value="name_asc">Name ↑ (A–Z)</option>' +
+          '<option value="name_desc">Name ↓ (Z–A)</option>' +
+          '<option value="fuel_asc">Tankstand ↑ (niedrig zuerst)</option>' +
+          '<option value="fuel_desc">Tankstand ↓ (voll zuerst)</option>' +
+          '<option value="power_desc">Leistung ↓ (höchste zuerst)</option>' +
+          '<option value="dist_asc">Distanz ↑ (nächste zuerst)</option>' +
+          '<option value="status">Online zuerst</option>' +
+        '</select>' +
+        '<div class="count" id="masch-count">…</div>' +
+      '</div>' +
+      '<div id="masch-area"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+    '</main></div>'
+  ));
+  attachLogout();
+  document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+  document.getElementById("masch-search").addEventListener("input", function(e){ maschState.search = e.target.value; paintMaschinen(); });
+  document.getElementById("masch-status").addEventListener("change", function(e){ maschState.filterStatus = e.target.value; paintMaschinen(); });
+  document.getElementById("masch-sort").addEventListener("change", function(e){ maschState.sort = e.target.value; paintMaschinen(); });
+  document.getElementById("masch-sort").value = maschState.sort;
+
+  loadMaschinen();
+  // Auto-Refresh alle 30s (Telemetrie ist live)
+  if (maschState.autoRefresh) clearInterval(maschState.autoRefresh);
+  maschState.autoRefresh = setInterval(function() {
+    if (state.activeTile === "maschinen") loadMaschinen(true);
+    else { clearInterval(maschState.autoRefresh); maschState.autoRefresh = null; }
+  }, 30000);
+}
+
+function loadMaschinen(silent) {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/epirent/" + pk + "/generators").then(function(data) {
+    maschState.items = data.generators || [];
+    paintMaschinen();
+  }).catch(function(ex) {
+    if (!silent) document.getElementById("masch-area").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
+  });
+}
+
+function paintMaschinen() {
+  var q = (maschState.search || "").trim().toLowerCase();
+  var items = maschState.items.filter(function(g) {
+    if (maschState.filterStatus === "online" && g.status !== "online") return false;
+    if (maschState.filterStatus === "offline" && g.status === "online") return false;
+    if (q) {
+      var hay = [g.name, g.model, g.serial_number].filter(Boolean).join(" ").toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+
+  // Sortieren
+  var s = maschState.sort;
+  items.sort(function(a, b) {
+    var fa = (a.latest_telemetry && a.latest_telemetry.fuel_level);
+    var fb = (b.latest_telemetry && b.latest_telemetry.fuel_level);
+    var pa = (a.latest_telemetry && a.latest_telemetry.power_kw) || 0;
+    var pb = (b.latest_telemetry && b.latest_telemetry.power_kw) || 0;
+    var da = a.distance_km == null ? 9999 : a.distance_km;
+    var db = b.distance_km == null ? 9999 : b.distance_km;
+    if (s === "name_asc")  return (a.name || "").localeCompare(b.name || "", "de", {numeric:true});
+    if (s === "name_desc") return (b.name || "").localeCompare(a.name || "", "de", {numeric:true});
+    if (s === "fuel_asc")  return (fa == null ? 999 : fa) - (fb == null ? 999 : fb);
+    if (s === "fuel_desc") return (fb == null ? -1 : fb) - (fa == null ? -1 : fa);
+    if (s === "power_desc") return pb - pa;
+    if (s === "dist_asc") return da - db;
+    if (s === "status") {
+      var ao = a.status === "online" ? 0 : 1, bo = b.status === "online" ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      return (a.name || "").localeCompare(b.name || "", "de", {numeric:true});
+    }
+    return 0;
+  });
+
+  var area = document.getElementById("masch-area");
+  var countEl = document.getElementById("masch-count");
+  if (countEl) countEl.textContent = items.length + " von " + maschState.items.length + " Maschinen";
+
+  if (!items.length) {
+    area.innerHTML = '<div class="empty" style="padding:48px;">' +
+      (maschState.items.length === 0 ? "Keine Generatoren im Radius zugeordnet. Im React-Portal Radius prüfen oder manuell zuordnen." : "Keine Treffer für aktuellen Filter.") +
+      '</div>';
+    return;
+  }
+
+  area.innerHTML = '<div class="masch-grid">' + items.map(function(g) {
+    var tel = g.latest_telemetry || {};
+    var fuel = tel.fuel_level;
+    var power = tel.power_kw;
+    var fuelCls = _fuelClass(fuel);
+    var online = g.status === "online";
+    return '<div class="masch-card ' + (online ? "" : "offline") + '" data-gen-id="' + esc(g.id) + '">' +
+             '<div class="masch-top">' +
+               '<div style="flex:1;min-width:0;">' +
+                 '<div class="masch-name">' + esc(g.name || "(ohne Name)") + '</div>' +
+                 '<div class="masch-sub">' +
+                   (g.serial_number ? esc(g.serial_number) : "") +
+                   (g.serial_number && g.model ? " · " : "") +
+                   (g.model ? esc(g.model) : "") +
+                 '</div>' +
+                 '<div class="masch-tags">' +
+                   (g.is_manual ? '<span class="masch-tag">Manuell</span>' : '') +
+                   (g.distance_km != null ? '<span class="masch-tag dist">' + g.distance_km.toFixed(1) + ' km entfernt</span>' : '') +
+                 '</div>' +
+               '</div>' +
+               '<div class="masch-status-dot ' + (online ? "online" : "offline") + '" title="' + (online ? "Online" : "Offline") + '"></div>' +
+             '</div>' +
+             '<div class="masch-metrics">' +
+               '<div class="masch-met fuel">' +
+                 '<div class="lbl">Tankstand</div>' +
+                 (fuel == null
+                   ? '<div class="val" style="color:#9ca3af;">— %</div>'
+                   : '<div class="val ' + fuelCls + '">' + Math.round(fuel) + ' %</div>' +
+                     '<div class="fuel-bar"><div class="' + fuelCls + '" style="width:' + Math.max(0, Math.min(100, fuel)) + '%;"></div></div>') +
+               '</div>' +
+               '<div class="masch-met">' +
+                 '<div class="lbl">Leistung</div>' +
+                 (power != null ? '<div class="val">' + power.toFixed(1) + ' kW</div>' : '<div class="val" style="color:#9ca3af;">— kW</div>') +
+               '</div>' +
+             '</div>' +
+           '</div>';
+  }).join("") + '</div>';
+
+  area.querySelectorAll(".masch-card").forEach(function(card) {
+    card.addEventListener("click", function() {
+      var g = maschState.items.find(function(x){return x.id === card.dataset.genId;});
+      if (g) openMaschinenDetail(g);
+    });
+  });
+}
+
+function openMaschinenDetail(g) {
+  var tel = g.latest_telemetry || {};
+  function row(k, v) { return v == null || v === "" ? "" : '<div class="row"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>'; }
+  var fuel = tel.fuel_level; var fuelCls = _fuelClass(fuel);
+  var modal = $(
+    '<div class="modal-bg"><div class="modal-card" style="max-width:620px;">' +
+      '<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">' +
+        '<div style="flex:1;">' +
+          '<h3 style="margin:0;font-size:24px;">' + esc(g.name || "(ohne Name)") + '</h3>' +
+          '<div style="font-size:13px;color:var(--text-muted);margin-top:2px;">' +
+            (g.serial_number ? esc(g.serial_number) : "") +
+            (g.serial_number && g.model ? " · " : "") +
+            (g.model ? esc(g.model) : "") +
+          '</div>' +
+        '</div>' +
+        '<div class="masch-status-dot ' + (g.status === "online" ? "online" : "offline") + '" style="margin-top:10px;"></div>' +
+      '</div>' +
+      (fuel != null ? '<div style="background:#fafbfc;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;">' +
+            '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">Tankstand</span>' +
+            '<span class="val ' + fuelCls + '" style="font-size:26px;font-weight:700;">' + Math.round(fuel) + ' %</span>' +
+          '</div>' +
+          '<div class="fuel-bar" style="height:8px;"><div class="' + fuelCls + '" style="width:' + Math.max(0, Math.min(100, fuel)) + '%;"></div></div>' +
+        '</div>' : '') +
+      '<div class="art-detail">' +
+        row("Status", g.status === "online" ? "Online" : "Offline") +
+        row("Leistung", tel.power_kw != null ? tel.power_kw.toFixed(2) + " kW" : null) +
+        row("Spannung L1", tel.voltage_l1 != null ? tel.voltage_l1 + " V" : null) +
+        row("Frequenz", tel.frequency != null ? tel.frequency + " Hz" : null) +
+        row("Betriebsstunden", tel.running_hours != null ? tel.running_hours + " h" : null) +
+        row("Distanz", g.distance_km != null ? g.distance_km.toFixed(2) + " km" : null) +
+        row("Zuordnung", g.is_manual ? "Manuell zugeordnet" : "Automatisch (im Radius)") +
+        row("Letzte Aktualisierung", g.last_seen ? fmtDateTime(g.last_seen) : null) +
+      '</div>' +
+      '<div class="actions"><button class="btn primary" id="m-close">Schließen</button></div>' +
+    '</div></div>'
+  );
+  document.body.appendChild(modal);
+  modal.querySelector("#m-close").addEventListener("click", function(){ modal.remove(); });
+  modal.addEventListener("click", function(e){ if (e.target === modal) modal.remove(); });
 }
 
 // ============================================================================

@@ -404,6 +404,14 @@ User language: **German** (Agent must respond in German).
   - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
   - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
   - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Maschinenliste-Tile** (Feb 2026):
+  - Liefert die "Generatoren im Radius" (selbe Quelle wie React `OrderDetailPage`: `GET /api/orders/epirent/{pk}/generators`)
+  - Name (z.B. `ML_252`) gross zuerst, darunter Serien-Nr + Modell, Status-Punkt rechts oben
+  - Live-Telemetrie pro Karte: **Tankstand** (farbcodiert: gruen >=50%, gelb 25-49%, rot <25%) mit Fill-Bar, **Leistung in kW**, optional Distanz
+  - **Sortier-Optionen**: Name auf/ab, Tankstand niedrig zuerst, Tankstand voll zuerst, Leistung hoechste, Distanz naechste, Online zuerst
+  - Suche (Name/Modell/Serien-Nr) + Status-Filter (online/offline/alle)
+  - **Auto-Refresh alle 30s** waehrend das Tile geoeffnet ist
+  - Klick auf Karte oeffnet Detail-Modal mit allen Telemetriewerten (Tankstand-Bar, Leistung, Spannung L1, Frequenz, Betriebsstunden, letzte Aktualisierung)
 - **Dokumentenablage-Tile** (Feb 2026):
   - 4 Kategorien (Messprotokolle / Plaene / Fotos / Sonstiges) wie React-App, mit Counts pro Kategorie
   - Drag&Drop-Upload + "Datei waehlen"-Button mit Auto-Kategorie-Erkennung
