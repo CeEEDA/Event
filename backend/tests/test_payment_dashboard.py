@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://trupps-dashboard.preview.emergentagent.com"
+                "origin_url": "https://pi-einsatz.preview.emergentagent.com"
             },
             timeout=30
         )

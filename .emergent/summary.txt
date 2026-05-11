@@ -1,153 +1,145 @@
-<analysis>Here is the handoff summary based on the latest LLM message history:
+<analysis>**original_problem_statement**: The user is building a comprehensive Kirmes (Fairground) billing and HR management system. Recent focus has been on the Einsatztagebuch (Order Diary) and building an Einsatzzentrale (Operations Center) dashboard for a Raspberry Pi Kiosk. PRODUCT REQUIREMENTS: Manage robust telemetry ingestion, order management, disruption logging (diary), team (Trupp) management, and a dedicated Kiosk interface for on-site operations with offline capabilities.
 
-<original_problem_statement>
-The user is building a comprehensive Kirmes (Fairground) billing and HR management system. The core focus includes hardware integration for fuel receipts (Tankwagen-Pi), HR document management, chat, task scheduling, role-based permissions, automated FinTS banking synchronization, and complex hardware monitoring. Recent focus is strictly on stabilizing the Tankwagen-Pi (fuel truck) RS-232 serial parser. The Pi emulates an Epson TM-U295 printer to capture data from a Sening MultiFlow fuel meter and parse bitmap/hex data into usable fuel receipts.
-</original_problem_statement>
-
-**User's preferred language**: German
-INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY. (WICHTIG: Antworte dem User ausschließlich auf Deutsch! Entschuldige dich für den Absturz im letzten Schritt.)
+**User's preferred language**: German. (WICHTIG: Antworte dem User ausschließlich auf Deutsch! / INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB application with a Python-based hardware emulation script (, bumped to v1.7.12) and a Kiosk UI () running on a Raspberry Pi. The Pi successfully handshakes with the Sening meter ( reply). A new training/sniffing pipeline () was built to capture and reverse-engineer Sening's rasterized bitmap prints. The Pi UI enforces PIN logins before assigning receipts. Cloudflare blocks have been bypassed using explicit User-Agent headers. 
+A mature React/FastAPI/MongoDB app with EpiRent API sync. The Einsatzzentrale Kiosk has been completely migrated to a standalone Vanilla JS HTML page () served by FastAPI to bypass React Dev Server HMR reload loops on the Pi. It includes tiles for Workspace (with Regenradar & Hourly Forecast), Einsatztagebuch (Order Diary), Artikelliste (Assets, read-only), Dokumentenablage (PDF/Image upload and viewing), and Maschinenliste (Generators in radius). A local Pi-Service (Python/FastAPI) has been implemented to handle offline-caching and syncing on the Raspberry Pi itself, alongside a setup-generator in the Admin Settings.
 
 **Last working item**:
-    - Last item agent was working: The agent was investigating three issues reported by the user in Message #345: 1) Phantom 0L receipts are still appearing (Belege 16967, 16969) despite the v1.7.12 filter, 2) Fuel type is hardcoded to Diesel but the Sening meter dispenses Heizöl, and 3) The receipt timestamps are off by -1 hour. **CRITICAL:** The agent got stuck in a doom loop, outputting blank messages and ignoring the user's last 4 prompts.
-    - Status: IN PROGRESS / AGENT CRASHED
-    - Agent Testing Done: N/A (Agent crashed before implementing fixes)
-    - Which testing method agent to use? Python -c for regex/time testing, User Hardware Testing for the rest.
+    - Last item agent was working: Fixing the Keine GPS Koordinate (No GPS coordinates) error on the Pi kiosk for specific orders (like Order 28) within the Weather/Radar widget. The backend has successfully geocoded the addresses using Nominatim, but the Pi still throws the error.
+    - Status: IN PROGRESS
+    - Agent Testing Done: N
+    - Which testing method agent to use? manual testing by curl / python -c / screenshot tool
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Agent Crash / Non-Responsiveness Recovery (P0)
-     - Attempted fixes: None. The previous agent output blank messages.
-     - Next debug checklist: Apologize to the user in German for the unresponsiveness. Acknowledge their message #345 immediately. 
-     - Why fix this issue and what will be achieved with the fix? Restore user trust and continue workflow.
-     - Status: NOT STARTED
-     - Is recurring issue? Y (LLM generation failure)
-     - Should Test frontend/backend/both after fix? N/A
-
-  Issue 2: 0L Phantom Receipts (Blindbelege) bypassing v1.7.12 Filter (P0)
-     - Attempted fixes: Added a length filter (>200 bytes) and a regex check for ASCII digits in the  region in . 
-     - Next debug checklist: The user reports Beleg 16967 and 16969 are 0L. Review the raw stream hex data for these specific receipts to see *why* the parser still creates a stub. Ensure  is strictly validated before DB insertion.
-     - Why fix this issue and what will be achieved with the fix? Stops the Pi UI from cluttering with empty 0L assignments.
+  Issue 1: Keine GPS Koordinate on Pi Kiosk despite Backend having data (P0)
+     - Attempted fixes: The agent updated the Geocoding fallback to Nominatim, which successfully populated  and  in the backend database (e.g., for Order 28). The agent also made the Pi-Service fetch the latest  HTML.
+     - Next debug checklist: 
+       1. Check : Verify if the SQLite cache is returning stale data for the order. Add cache invalidation or force-refresh logic. The Pi might just be serving the old order JSON.
+       2. Check : Verify the condition in  checking for  / .
+     - Why fix this issue and what will be achieved with the fix? The weather/Regenradar widget on the Workspace tile needs GPS coordinates to function. Without it, the main operational dashboard lacks critical weather data.
      - Status: IN PROGRESS
-     - Is recurring issue? Y
-     - Should Test frontend/backend/both after fix? Backend (Pi script logic)
-
-  Issue 3: Timezone Offset (-1h) on Receipts (P1)
-     - Attempted fixes: None yet.
-     - Next debug checklist: Check  vs  usage in . The Pi is likely running on UTC, while the physical Sening meter and user expect CET/CEST (Europe/Berlin). Enforce the correct timezone or extract the actual time from the Sening ASCII stream instead of relying solely on Pi system time.
-     - Status: NOT STARTED
-
-  Issue 4: Fuel Type Hardcoded to Diesel instead of Heizöl (HEL) (P1)
-     - Attempted fixes: Agent started looking at  and  fallback logic.
-     - Next debug checklist: Sening prints Heizöl (or HEL) as a graphic or partial ASCII. If it can't be parsed reliably, check the fallback mapping in  () and the parsing logic in  to properly map HEL or default to Heizöl based on config.
-     - Status: NOT STARTED
-
-  Issue 5: Sening Format-B Bitmap Decoding (>1000L) (P2)
-     - Attempted fixes: Cracked Format-A (1-3 digits). Format-B (Ending ) failed on Beleg 16955 (323L).
-     - Next debug checklist: Await user to pump >1000L and use the labeling tool. 
-     - Status: USER VERIFICATION PENDING
+     - Is recurring issue? N
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on other issue: None
 
 **In progress Task List**: 
- None
+None
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
+    - (P1) EpiRent Lieferscheine (Delivery Notes) PDF Generation. (Waiting on user input regarding layout/design).
+    Future Tasks:
     - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
     - (P2) Lastdiagramm Live-Test.
-    - (P2) Suppress Chromium Translate Popup on Raspberry Pi Kiosk globally.
+    - (P2) Auto-Scroll for new entries in Multiansicht (Einsatzzentrale).
+    - (P2) Sync-Status indicator on Kiosk (Diagnose-Badge).
+    - (P2) Camera-Foto Upload with EXIF GPS data in Dokumentenablage.
+    - (P2) Tank-Alarm-Threshold Notification for Generators.
 
 **Completed work in this session**
-- Created  to fix port conflicts and ensure pristine test environments (DONE).
-- Fixed UI PIN authentication 403 Forbidden errors by adding  headers to bypass Cloudflare bot protection (DONE).
-- Enforced strict  and  checks in  before receipt assignment (DONE).
-- Created  and  for sniffing and labeling raw Sening bytes (DONE).
-- Verified Sening RS-232 handshake ( -> ) works perfectly (DONE).
-- Successfully reverse-engineered Format-A Bitmap parsing for receipts up to 999L (DONE).
+- Fixed Pi Kiosk Reload Loop (DONE): Applied single-instance lock () and targeted  in Pi setup script.
+- Einsatztagebuch-Tile on Kiosk (DONE): Full UI with CRUD/Resolving for Diary entries.
+- Workspace v2 on Kiosk (DONE): 2-column layout, RainViewer radar, auto-geocoding (Nominatim + Open-Meteo fallback).
+- Artikelliste-Tile on Kiosk (DONE): Replaced Standortliste, added read-only asset table.
+- Dokumentenablage-Tile on Kiosk (DONE): PDF/Image upload, categorization, thumbnail viewing.
+- Maschinenliste-Tile on Kiosk (DONE): Generators in radius list with status and distance.
+- Pi-Service Offline & Sync Architecture (Option B) (DONE): Added Python service () for Pi, caching, and a Setup-Generator in the Admin Settings.
+- Multiansicht-Tile (DONE): Combined Diary and Assets view.
 
 **Earlier issues found/mentioned but not fixed**
-None.
+   None.
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Sening 0L Phantom Receipts.
-  - Recurrence count: 3
-  - Status: IN PROGRESS
-  - Note: The logic in  aggressively creates stubs on serial timeouts. The filtering logic is still not strict enough.
+  - Issue recurrence in previous fork: Chromium crash/reload loops on Raspberry Pi Kiosk.
+  - Recurrence count: 2
+  - Status: RESOLVED
+  - Note: Fixed via  and targeted  to prevent multiple launch scripts from killing each other.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-React, FastAPI, MongoDB, SQLite (local on Pi), RS-232 Serial Hardware Handshaking, Hex/Bitmap parsing (Epson TM-U295 emulation), Cloudflare User-Agent bypass, bcrypt authentication.
+React, FastAPI, Vanilla JS (for Kiosk), Open-Meteo API, Nominatim Geocoding, Raspberry Pi OS Kiosk Mode, Local SQLite (Pi-Service), Caching.
 
 **key DB schema**
-  - : Stores parsed Tankbeleg data. Uses  and  for the newly implemented machine learning/labeling pipeline.
+  - : 
 
 **changes in tech stack**
-  - None
+  - Introduced a local Python FastAPI service () running directly on the Raspberry Pi to proxy API requests, handle offline caching via SQLite, and manage syncing.
 
 **All files of reference** 
-  -  (Main parser logic)
-  -  (Kiosk JS/Python logic)
-  -  (Syncing and labeling routes)
+  -  (CRITICAL: Kiosk Frontend logic)
+  -  (Pi Setup script)
+  -  (CRITICAL: Pi Sync Service / Local proxy)
+  - 
+  - 
+  - 
 
 **Areas that need refactoring**: 
-  - The Sening Parser ( in ) is getting highly complex. The fallback logic for  and  needs cleanup.
+  - The standalone HTML page () has grown past 1000 lines with complex Vanilla JS logic. It currently serves the purpose to bypass Dev environment issues, but code organization is becoming difficult.
 
 **key api endpoints**
-  - , 
+  - 
   - 
   - 
 
 **Critical Info for New Agent** 
-- **AGENT RECOVERY REQUIRED:** You are recovering from a crashed state. The previous agent output blank messages and ignored the user's requests regarding the 0L bug, fuel type, and timezone. **Start by apologizing in German and directly addressing Message #345.**
-- **RESPOND IN GERMAN ONLY.**
-- **Cloudflare Bot Protection:** Do not use  or standard  without a custom . Cloudflare will block the Pi with a 403. Always use a header like .
-- **Hardware Limitations:** You cannot test the parser live; you must push updates via the OTA route/scripts and ask the user to test physically.
+- **Language Constraint:** ALWAYS reply in German.
+- **Pi Kiosk Environment:** Kiosk UI is built purely in . Modify this HTML file for all Kiosk changes.
+- **Offline Sync:** The Pi runs  locally on  which proxies requests to the cloud backend. **If data on the Pi is stale, the issue is highly likely in  caching logic (SQLite).**
 
 **documents and test reports created in this job**
-  - None (Testing done manually via User hardware logs)
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) Tanks 143L, matches. Notes 16963 is another 0L phantom.
- 2. (Agent) Updates parser to v1.7.12 to filter out Probedruck/0L receipts.
- 3. (User) Tanks 239L, matches.
- 4. (Agent) Acknowledges match. Asks for a >1000L test and a 0L test.
- 5. (User) Tanks 72L, matches.
- 6. (Agent) Acknowledges 72L. Points out the receipt is waiting for UI assignment.
- 7. (User) **Message 345:** 16967 wieder 0 L. Außerdem steht überall Diesel. Ist aber Heizöl getankt... Checke wo die Uhrzeit her kommt. der Beleg ist -1 h. Außerdem ist beleg 16969 wieder ein Blind beleg mit 0L.
- 8. (Agent) *Blank Output / Crash*
- 9. (User) wie gehts weiter?
- 10. (Agent) *Blank Output / Crash*
- *(Pending)*: starte den support agenten. Die letzten dinge wurden nicht beantwortet. Browser ist neu gestartet. -> Address this immediately.
+ 1. (User) wir bauen die Option B
+ 2. (Agent) Created  and updated install script for offline capability.
+ 3. (User) Reported URL error during setup script execution.
+ 4. (Agent) Fixed Setup URL derivation in .
+ 5. (User) Reported cluster-12 preview URL throws 403 Forbidden.
+ 6. (Agent) Changed frontend to build URL using  instead of relying on the backend request context.
+ 7. (User) Reported Pi-Service hangs (DNS issues) and Geocoding issue remains, requested Multiansicht.
+ 8. (Agent) Implemented Nominatim geocoding fallback, built Multiansicht, and updated Pi HTML fetch logic.
+ 9. (User) Shared Pi system logs indicating successful connections after the agent added DNS error retry logic.
+ 10. (LATEST User) nein. Wenn ich aktualisiere kommt der gleiche fehler. Keine GPS Koordinate,...
 
 **Project Health Check:**
-- Broken: LLM response generation (crashed).  0L filter, Timezone offset, Fuel Type fallback.
-- Mocked: None
+Broken: GPS coordinate reading/caching in Pi Kiosk.
+Mocked: None.
 
 **3rd Party Integrations** 
 - Stripe (Payments) — requires User API Key
 - python-fints (Banking) — requires Bank credentials
-- MQTT / DSE WebNet
+- Open-Meteo (Weather API) — No key required.
+- Nominatim (Geocoding API) — No key required.
+- EpiRent (Event software API)
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Heavy hardware context).
+  - Testing agent used after significant changes: NO
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
-  - Known regressions: 0L Phantom Bug persists.
+  - Known regressions: None
 
 **Credentials to test flow:**
 - Preview Admin:  / 
-- Pin Test User: Anna Weber 
+- Kiosk Mitarbeiter:  / 
 
 **What agent forgot to execute**
-- The agent completely stalled/crashed after message 357 and failed to address the user's bug report regarding the -1h timezone offset, the Diesel vs Heizöl mismatch, and the recurring 0L phantom receipts. 
+- The agent fixed the backend geocoding, but forgot to ensure the  clears its local SQLite cache. The Pi is likely returning a stale  JSON object from before the Nominatim fix was applied.
 
 **Debugging checklist for current issue**
-    Issue: 0L Phantoms, Timezone, Fuel Type (from msg 345)
-    Checklist:
-      - Apologize for the previous unresponsiveness.
-      - Check  for how  is generated (ensure  is using the correct timezone or localized timezone logic, not UTC).
-      - Check  in  to see why the >200 byte filter failed to catch receipts 16967 and 16969. (Perhaps Sening sends a large hex block even for 0L?).
-      - Check  fallback. If Sening sends Heizöl as a bitmap, text parsing will fail. Update the Pi config or parser logic to properly map the default fuel to  instead of .</analysis>
+    Issue: Keine GPS Koordinate on Pi Kiosk despite Backend having Geocoded data.
+
+    Pi Service files to check: 
+    
+    - Check the SQLite cache logic. The Pi might have cached the order JSON when / were still null. Add a mechanism to force-refresh the order data or bypass cache if coordinates are missing.
+
+    Frontend files to check: 
+    
+    - Ensure the JSON fields mapped to  are correctly being read. 
+    
+    Backend files to check: 
+    
+    - Verify that  is accurately sending the updated coordinates in the response payload.</analysis>
