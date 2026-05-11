@@ -389,32 +389,43 @@ async def proxy(path: str, request: Request) -> Response:
         # Cache-Eintrag pruefen
         cached = cache_get("GET", full_path, query)
 
-        if _online:
-            # Online: live holen, dann cachen (fail-soft falls Cloud kurz down)
+        # Live holen mit 2 Retry-Versuchen bei DNS/Netzwerk-Aussetzern
+        last_err = None
+        for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=15) as client:
+                async with httpx.AsyncClient(timeout=10) as client:
                     r = await client.get(f"{CLOUD_URL}{full_path}",
                                           headers=headers,
                                           params=dict(request.query_params))
                 if 200 <= r.status_code < 400:
                     cache_put("GET", full_path, query, r.status_code,
                               r.headers.get("content-type", ""), r.content)
+                    globals()["_online"] = True
                     return Response(content=r.content, status_code=r.status_code,
                                      media_type=r.headers.get("content-type"))
-                # Bei 4xx (401/403/etc) liefere Cloud-Response transparent
+                # Bei 4xx (401/403/etc) liefere Cloud-Response transparent (kein Retry)
                 return Response(content=r.content, status_code=r.status_code,
                                  media_type=r.headers.get("content-type"))
             except Exception as ex:
-                log.warning(f"Cloud GET {full_path} fehlgeschlagen: {ex}")
+                last_err = ex
+                if attempt < 2:
+                    await asyncio.sleep(0.6 * (attempt + 1))
+                    continue
+        log.warning(f"Cloud GET {full_path} nach Retry fehlgeschlagen: {last_err}")
+        globals()["_online"] = False
 
-        # Offline (oder Cloud-Fehler): liefere Cache wenn vorhanden
+        # Cloud nicht erreichbar -> liefere Cache wenn vorhanden
         if cached:
             status, ct, b, fetched_at = cached
             return Response(content=b, status_code=status,
                              media_type=ct,
-                             headers={"X-Pi-Cache": "HIT", "X-Pi-Cached-At": fetched_at})
-        return JSONResponse({"detail": "Offline und nicht im Cache"}, status_code=503,
-                            headers={"X-Pi-Cache": "MISS"})
+                             headers={"X-Pi-Cache": "HIT-OFFLINE", "X-Pi-Cached-At": fetched_at})
+        return JSONResponse(
+            {"detail": "Aktuell offline und nicht im Cache - bitte spaeter erneut versuchen",
+             "error": str(last_err)},
+            status_code=503,
+            headers={"X-Pi-Cache": "MISS", "X-Pi-Offline": "1"},
+        )
 
     # POST/PUT/PATCH/DELETE
     if _online:
