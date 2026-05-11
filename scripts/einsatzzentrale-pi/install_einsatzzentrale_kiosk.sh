@@ -153,19 +153,33 @@ install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_PROFILE_DIR"
 echo -n "$URL" > "$KIOSK_URL_FILE"
 chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_URL_FILE"
 
+# Default-Scale fuer 50"-TV (kann spaeter angepasst werden)
+echo -n "1.5" > "$KIOSK_HOME/.config/einsatzzentrale-scale"
+chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_HOME/.config/einsatzzentrale-scale"
+
+# Swap auf 2 GB hochsetzen (Pi 5 mit 1GB RAM ist knapp fuer Chromium)
+if [[ -f /etc/dphys-swapfile ]]; then
+  log "Setze Swap auf 2048 MB (Pi mit wenig RAM)..."
+  sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile
+  systemctl stop dphys-swapfile 2>/dev/null || true
+  systemctl start dphys-swapfile 2>/dev/null || true
+fi
+
 cat > "$KIOSK_LAUNCH_SCRIPT" <<'LAUNCHER_EOF'
 #!/usr/bin/env bash
 # Einsatzzentrale Kiosk Launcher
 set -u
 
 URL="$(cat "$HOME/.config/einsatzzentrale-url" 2>/dev/null || echo "")"
+SCALE="$(cat "$HOME/.config/einsatzzentrale-scale" 2>/dev/null || echo "1.5")"
 if [[ -z "$URL" ]]; then
   echo "Keine URL hinterlegt." >&2
   exit 1
 fi
 
 PROFILE="$HOME/.config/einsatzzentrale-chromium"
-mkdir -p "$PROFILE/Default"
+LOGFILE="$HOME/.local/share/einsatzzentrale-kiosk.log"
+mkdir -p "$PROFILE/Default" "$(dirname "$LOGFILE")"
 
 # Translate-Popup, Erste-Schritte, Default-Browser-Frage etc. unterdruecken
 cat > "$PROFILE/Default/Preferences" <<JSON_EOF
@@ -190,6 +204,7 @@ if command -v xset >/dev/null 2>&1; then
 fi
 # Maus ausblenden bei Inaktivitaet
 if command -v unclutter >/dev/null 2>&1; then
+  pkill -f "unclutter.*-idle" 2>/dev/null || true
   unclutter -idle 1 -root &
 fi
 
@@ -199,8 +214,12 @@ if [[ -z "$CHROMIUM" ]]; then
   exit 1
 fi
 
-# Endlosschleife: Browser nach Crash neu starten
+# Crash-Counter: nach 5 schnellen Restarts (innerhalb 60s) stoppen
+# damit man den Fehler im Log sieht statt endlos zu blinken.
+CRASH_COUNT=0
+LAST_CRASH=0
 while true; do
+  echo "[$(date '+%F %T')] Starte Chromium auf $URL (scale=$SCALE)" >> "$LOGFILE"
   "$CHROMIUM" \
     --kiosk \
     --noerrdialogs \
@@ -217,11 +236,37 @@ while true; do
     --start-fullscreen \
     --check-for-update-interval=31536000 \
     --password-store=basic \
-    --enable-features=OverlayScrollbar \
     --lang=de-DE \
-    "$URL"
-  echo "Chromium beendet (Exit $?). Restart in 3s..."
-  sleep 3
+    --force-device-scale-factor="$SCALE" \
+    --disable-gpu \
+    --disable-gpu-compositing \
+    --disable-software-rasterizer \
+    --disable-dev-shm-usage \
+    --no-sandbox \
+    --disable-features=UseChromeOSDirectVideoDecoder \
+    --enable-low-end-device-mode \
+    "$URL" >> "$LOGFILE" 2>&1
+
+  EXIT_CODE=$?
+  NOW=$(date +%s)
+  echo "[$(date '+%F %T')] Chromium beendet (Exit $EXIT_CODE)" >> "$LOGFILE"
+  if (( NOW - LAST_CRASH < 60 )); then
+    CRASH_COUNT=$((CRASH_COUNT + 1))
+  else
+    CRASH_COUNT=1
+  fi
+  LAST_CRASH=$NOW
+  if (( CRASH_COUNT >= 5 )); then
+    echo "[$(date '+%F %T')] 5 schnelle Crashes - stoppe Loop. Logfile: $LOGFILE" >> "$LOGFILE"
+    # Zeige Fehler-Screen statt endlos zu restarten
+    if command -v xmessage >/dev/null 2>&1; then
+      xmessage -center "Kiosk konnte nicht starten. Log: $LOGFILE"
+    fi
+    sleep 30
+    CRASH_COUNT=0
+  else
+    sleep 5
+  fi
 done
 LAUNCHER_EOF
 chmod +x "$KIOSK_LAUNCH_SCRIPT"
@@ -289,6 +334,12 @@ log "  und oeffnet Chromium im Vollbild auf der hinterlegten URL."
 log ""
 log "  URL spaeter aendern:"
 log "     echo 'NEUE_URL' > $KIOSK_URL_FILE && sudo reboot"
+log ""
+log "  Schriftgroesse fuer grossen TV anpassen (1.0=normal, 1.5=50%, 2.0=doppelt):"
+log "     echo '2.0' > $KIOSK_HOME/.config/einsatzzentrale-scale && sudo reboot"
+log ""
+log "  Logfile zur Fehlersuche (wenn Bildschirm blinkt):"
+log "     tail -f $KIOSK_HOME/.local/share/einsatzzentrale-kiosk.log"
 log ""
 log "  Deinstall:"
 log "     sudo bash $0 --uninstall"
