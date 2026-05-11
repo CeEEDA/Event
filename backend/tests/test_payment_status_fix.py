@@ -10,7 +10,7 @@ import os
 import uuid
 from datetime import datetime
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kirmes-hub-1.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://trupps-dashboard.preview.emergentagent.com')
 
 # Test data IDs from the review request
 TEST_SCHAUSTELLER_WITH_RECHNUNG = "044d0b7a-1f0b-422e-a4df-a5c422a513b8"  # Hans Müller, kauf_auf_rechnung=True

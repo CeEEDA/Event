@@ -9,7 +9,7 @@ import os
 import uuid
 import io
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kirmes-hub-1.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://trupps-dashboard.preview.emergentagent.com')
 
 
 class TestNewFeatures:
