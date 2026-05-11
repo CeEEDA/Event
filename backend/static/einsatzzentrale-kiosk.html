@@ -195,7 +195,62 @@ input { font-family: inherit; }
 .hourly-sum { display: flex; gap: 14px; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 8px; }
 .hourly-sum b { color: var(--text); font-weight: 700; }
 
-/* ========== ARTIKELLISTE (Read-only) =============================== */
+/* ========== DOKUMENTENABLAGE ====================================== */
+.docs-toolbar { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+.docs-toolbar h2 { margin:0; font-size:24px; }
+.docs-toolbar .sub { font-size:13px; color:var(--text-muted); margin-top:2px; }
+
+.docs-dropzone { border:2px dashed var(--border); border-radius:16px; padding:32px 24px; text-align:center;
+  background:#fafbfc; cursor:pointer; transition:all .15s; margin-bottom:18px; }
+.docs-dropzone:hover, .docs-dropzone.drag-over { border-color:var(--fuchsia); background:var(--fuchsia-bg); }
+.docs-dropzone .dz-icon { font-size:32px; margin-bottom:6px; }
+.docs-dropzone .dz-title { font-size:16px; font-weight:600; }
+.docs-dropzone .dz-hint { font-size:12px; color:var(--text-muted); margin-top:4px; }
+.docs-dropzone.uploading { pointer-events:none; opacity:0.6; }
+
+.docs-cats { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+.docs-cat { display:flex; align-items:center; gap:14px; background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:18px 20px; cursor:pointer; transition:all .15s; text-align:left; font-family:inherit; width:100%; }
+.docs-cat:hover { border-color:var(--fuchsia); transform:translateY(-1px); }
+.docs-cat .cat-ic { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; }
+.docs-cat .cat-ic.messprotokolle { background:var(--blue-bg); color:var(--blue); }
+.docs-cat .cat-ic.plaene { background:var(--emerald-bg); color:var(--emerald); }
+.docs-cat .cat-ic.fotos { background:var(--amber-bg); color:var(--amber); }
+.docs-cat .cat-ic.sonstiges { background:#f3f4f6; color:#475569; }
+.docs-cat .cat-text { flex:1; }
+.docs-cat .cat-name { font-weight:600; font-size:16px; }
+.docs-cat .cat-count { font-size:13px; color:var(--text-muted); margin-top:2px; }
+.docs-cat .cat-chev { color:#9ca3af; font-size:20px; }
+
+.docs-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
+.docs-card { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden;
+  cursor:pointer; transition:all .15s; display:flex; flex-direction:column; }
+.docs-card:hover { border-color:var(--fuchsia); transform:translateY(-1px); }
+.docs-thumb { width:100%; height:140px; background:#f3f4f6; display:flex; align-items:center; justify-content:center;
+  font-size:48px; overflow:hidden; }
+.docs-thumb img { width:100%; height:100%; object-fit:cover; }
+.docs-thumb.pdf { background:#fef2f2; color:#dc2626; }
+.docs-info { padding:8px 10px; }
+.docs-info .name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.docs-info .meta { font-size:10px; color:var(--text-muted); margin-top:2px; display:flex; gap:6px; }
+
+/* Viewer (Vollbild) */
+.viewer-bg { position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:2000; display:flex; flex-direction:column; }
+.viewer-head { display:flex; align-items:center; gap:12px; padding:10px 16px; color:#fff; background:rgba(0,0,0,0.5);
+  border-bottom:1px solid rgba(255,255,255,0.1); }
+.viewer-head .name { flex:1; font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.viewer-head .v-btn { background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff;
+  border-radius:8px; padding:8px 14px; cursor:pointer; font-family:inherit; font-size:13px; }
+.viewer-head .v-btn:hover { background:rgba(255,255,255,0.18); }
+.viewer-head .v-btn.close { background:#dc2626; border-color:#dc2626; }
+.viewer-body { flex:1; position:relative; overflow:hidden; background:#1f2937; }
+.viewer-body embed, .viewer-body iframe { width:100%; height:100%; border:0; background:#fff; }
+.img-stage { width:100%; height:100%; overflow:hidden; position:relative; cursor:grab; user-select:none; touch-action:none; background:#1f2937; }
+.img-stage.dragging { cursor:grabbing; }
+.img-stage img { position:absolute; top:50%; left:50%; transform-origin:center center; max-width:none;
+  transition:transform .04s linear; will-change:transform; user-select:none; -webkit-user-drag:none; pointer-events:none; }
+.viewer-zoom-hint { position:absolute; bottom:12px; right:16px; background:rgba(0,0,0,0.6); color:#fff;
+  padding:6px 12px; border-radius:999px; font-size:11px; pointer-events:none; }
 .art-toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
 .art-toolbar .kiosk-search { margin:0; flex:1; min-width:220px; max-width:420px; }
 .art-toolbar select { height:44px; padding:0 14px; border:1px solid var(--border); border-radius:10px; background:var(--card); font-size:14px; font-family:inherit; outline:none; cursor:pointer; }
@@ -665,7 +720,7 @@ function renderOrderSelect() {
 var TILES = [
   { key:"maschinen", label:"Maschinenliste", desc:"Generatoren, Verteiler, Lichtmasten", icon:"⚙️", cls:"tile-bg-emerald" },
   { key:"diary",     label:"Einsatztagebuch", desc:"Störungen & Verlauf",                  icon:"📓", cls:"tile-bg-slate" },
-  { key:"plaene",    label:"Pläne",           desc:"Lagepläne, Dokumente, PDFs",           icon:"📄", cls:"tile-bg-blue" },
+  { key:"docs",      label:"Dokumentenablage",desc:"Pläne, Fotos, Messprotokolle",         icon:"📂", cls:"tile-bg-blue" },
   { key:"artikel",   label:"Artikelliste",    desc:"Alle positionierten Artikel ansehen",  icon:"📍", cls:"tile-bg-fuchsia" }
 ];
 
@@ -882,6 +937,7 @@ function renderTilePanel() {
   var o = state.order; if (!t || !o) { state.phase = "workspace"; render(); return; }
   if (state.activeTile === "diary") { return renderDiaryPanel(); }
   if (state.activeTile === "artikel") { return renderArtikelPanel(); }
+  if (state.activeTile === "docs") { return renderDocsPanel(); }
   // Platzhalter fuer die noch-nicht-implementierten Tiles
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
@@ -898,6 +954,290 @@ function renderTilePanel() {
   ));
   attachLogout();
   document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+}
+
+// ============================================================================
+// DOKUMENTENABLAGE - Upload, Kategorien, PDF/Foto-Viewer mit Zoom
+// ============================================================================
+var docsState = { docs: [], cat: null }; // cat=null -> Kategorie-Uebersicht, sonst Liste in Kategorie
+var DOC_CATS = [
+  { key:"messprotokolle", label:"Messprotokolle", icon:"📋" },
+  { key:"plaene",         label:"Pläne",          icon:"🗺️" },
+  { key:"fotos",          label:"Fotos",          icon:"📷" },
+  { key:"sonstiges",      label:"Sonstiges",      icon:"📄" }
+];
+
+function renderDocsPanel() {
+  var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
+  var root = document.getElementById("root"); root.innerHTML = "";
+
+  var titleSub = docsState.cat ? (DOC_CATS.find(function(c){return c.key===docsState.cat;}) || {}).label : null;
+  root.appendChild($(
+    '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · Dokumentenablage" + (titleSub ? " · " + titleSub : "")) +
+    '<main class="kiosk-main">' +
+      '<div class="docs-toolbar">' +
+        '<div style="display:flex;align-items:center;gap:12px;">' +
+          '<button id="docs-back" class="btn">← Zurück</button>' +
+          '<div><h2>' + (docsState.cat ? esc(titleSub) : "Dokumentenablage") + '</h2>' +
+            '<div class="sub" id="docs-count">…</div></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button id="docs-photo-btn" class="btn">📷 Foto aufnehmen</button>' +
+          '<input id="docs-photo-input" type="file" accept="image/*" capture="environment" style="display:none;" />' +
+          '<button id="docs-upload-btn" class="btn primary">⤒ Datei wählen</button>' +
+          '<input id="docs-upload-input" type="file" accept=".pdf,image/*" style="display:none;" multiple />' +
+        '</div>' +
+      '</div>' +
+      '<div id="docs-dropzone" class="docs-dropzone">' +
+        '<div class="dz-icon">⤒</div>' +
+        '<div class="dz-title">Dateien hierher ziehen — automatische Zuordnung</div>' +
+        '<div class="dz-hint">PDF, JPG, PNG, WebP, GIF · max. 20 MB</div>' +
+      '</div>' +
+      '<div id="docs-content"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+    '</main></div>'
+  ));
+  attachLogout();
+
+  document.getElementById("docs-back").addEventListener("click", function() {
+    if (docsState.cat) { docsState.cat = null; renderDocsPanel(); }
+    else { state.activeTile = null; state.phase = "workspace"; render(); }
+  });
+  document.getElementById("docs-upload-btn").addEventListener("click", function(){ document.getElementById("docs-upload-input").click(); });
+  document.getElementById("docs-upload-input").addEventListener("change", function(e){ uploadDocs(Array.from(e.target.files)); e.target.value = ""; });
+  document.getElementById("docs-photo-btn").addEventListener("click", function(){ document.getElementById("docs-photo-input").click(); });
+  document.getElementById("docs-photo-input").addEventListener("change", function(e){ uploadDocs(Array.from(e.target.files), "fotos"); e.target.value = ""; });
+
+  // Drag&Drop
+  var dz = document.getElementById("docs-dropzone");
+  ["dragover","dragenter"].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.add("drag-over"); }); });
+  ["dragleave","drop"].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.remove("drag-over"); }); });
+  dz.addEventListener("drop", function(e) {
+    var files = Array.from(e.dataTransfer.files || []);
+    if (files.length) uploadDocs(files);
+  });
+  dz.addEventListener("click", function(){ document.getElementById("docs-upload-input").click(); });
+
+  loadDocs();
+}
+
+function loadDocs() {
+  var pk = encodeURIComponent(state.order.primary_key);
+  api("/api/orders/order-documents/" + pk).then(function(docs) {
+    docsState.docs = docs || [];
+    paintDocs();
+  }).catch(function(ex) {
+    document.getElementById("docs-content").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
+  });
+}
+
+function paintDocs() {
+  var content = document.getElementById("docs-content");
+  var countEl = document.getElementById("docs-count");
+  var total = docsState.docs.length;
+
+  if (!docsState.cat) {
+    // Kategorie-Uebersicht
+    if (countEl) countEl.textContent = total + " Dokument" + (total === 1 ? "" : "e") + " gesamt";
+    var html = '<div class="docs-cats">';
+    DOC_CATS.forEach(function(c) {
+      var cnt = docsState.docs.filter(function(d){return d.kategorie === c.key;}).length;
+      html += '<button class="docs-cat" data-cat="' + c.key + '">' +
+                '<div class="cat-ic ' + c.key + '">' + c.icon + '</div>' +
+                '<div class="cat-text"><div class="cat-name">' + esc(c.label) + '</div>' +
+                  '<div class="cat-count">' + cnt + " Dokument" + (cnt === 1 ? "" : "e") + '</div></div>' +
+                '<div class="cat-chev">›</div>' +
+              '</button>';
+    });
+    html += '</div>';
+    content.innerHTML = html;
+    content.querySelectorAll(".docs-cat").forEach(function(b) {
+      b.addEventListener("click", function() { docsState.cat = b.dataset.cat; renderDocsPanel(); });
+    });
+  } else {
+    // Liste in Kategorie
+    var docs = docsState.docs.filter(function(d){return d.kategorie === docsState.cat;});
+    if (countEl) countEl.textContent = docs.length + " Dokument" + (docs.length === 1 ? "" : "e");
+    if (!docs.length) {
+      content.innerHTML = '<div class="empty" style="padding:48px;">Noch keine Dokumente in dieser Kategorie. Lade eines hoch ⤒</div>';
+      return;
+    }
+    var pk = encodeURIComponent(state.order.primary_key);
+    var tokenQ = encodeURIComponent(state.token || "");
+    var html = '<div class="docs-grid">';
+    docs.forEach(function(d) {
+      var isPdf = (d.content_type || "").indexOf("pdf") > -1;
+      var isImg = (d.content_type || "").indexOf("image/") === 0;
+      var thumb;
+      if (isImg) {
+        thumb = '<img src="/api/orders/order-documents/' + pk + '/' + encodeURIComponent(d.id) + '/file?token=' + tokenQ + '&thumbnail=1&size=320" alt="" />';
+      } else if (isPdf) {
+        thumb = '📕';
+      } else {
+        thumb = '📄';
+      }
+      var sizeKb = d.size ? Math.round(d.size / 1024) : 0;
+      var sizeStr = sizeKb > 1024 ? (sizeKb/1024).toFixed(1) + " MB" : sizeKb + " KB";
+      html += '<div class="docs-card" data-doc-id="' + esc(d.id) + '">' +
+                '<div class="docs-thumb' + (isPdf ? " pdf" : "") + '">' + thumb + '</div>' +
+                '<div class="docs-info">' +
+                  '<div class="name" title="' + esc(d.original_name) + '">' + esc(d.original_name) + '</div>' +
+                  '<div class="meta"><span>' + sizeStr + '</span>' +
+                    (d.uploaded_by ? '<span>· ' + esc(d.uploaded_by) + '</span>' : '') +
+                  '</div>' +
+                '</div>' +
+              '</div>';
+    });
+    html += '</div>';
+    content.innerHTML = html;
+    content.querySelectorAll(".docs-card").forEach(function(card) {
+      card.addEventListener("click", function() {
+        var d = docsState.docs.find(function(x){return x.id === card.dataset.docId;});
+        if (d) openDocViewer(d);
+      });
+    });
+  }
+}
+
+function uploadDocs(files, forcedCategory) {
+  if (!files || !files.length) return;
+  var dz = document.getElementById("docs-dropzone");
+  dz.classList.add("uploading");
+  var origHtml = dz.innerHTML;
+  var pk = encodeURIComponent(state.order.primary_key);
+  var done = 0, total = files.length, errors = [];
+  files.forEach(function(file) {
+    var fd = new FormData();
+    fd.append("file", file);
+    // Wenn user gerade in einer Kategorie ist, dort einsortieren - außer
+    // bei Kamera-Foto (das forciert "fotos")
+    var kat = forcedCategory || docsState.cat;
+    if (kat) fd.append("kategorie", kat);
+    fetch(BACKEND + "/api/orders/order-documents/" + pk, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + state.token },
+      body: fd
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(e){ throw new Error(e.detail || "HTTP " + r.status); });
+      return r.json();
+    }).then(function(){ done++; if (done === total) finish(); }).catch(function(ex){ errors.push(file.name + ": " + ex.message); done++; if (done === total) finish(); });
+  });
+  function finish() {
+    dz.classList.remove("uploading");
+    dz.innerHTML = origHtml;
+    loadDocs();
+    if (errors.length) alert("Fehler bei Upload:\n\n" + errors.join("\n"));
+  }
+  // Progress-Anzeige
+  dz.innerHTML = '<div class="dz-icon"><div class="spinner"></div></div>' +
+                 '<div class="dz-title">Lade ' + total + ' Datei' + (total === 1 ? "" : "en") + ' hoch…</div>' +
+                 '<div class="dz-hint">Bitte warten</div>';
+}
+
+// ---- VIEWER (PDF inline + Bild mit Pan/Zoom) ---------------------------
+function openDocViewer(doc) {
+  var pk = encodeURIComponent(state.order.primary_key);
+  var tokenQ = encodeURIComponent(state.token || "");
+  var url = "/api/orders/order-documents/" + pk + "/" + encodeURIComponent(doc.id) + "/file?token=" + tokenQ;
+  var isPdf = (doc.content_type || "").indexOf("pdf") > -1;
+  var isImg = (doc.content_type || "").indexOf("image/") === 0;
+
+  var bg = $(
+    '<div class="viewer-bg">' +
+      '<div class="viewer-head">' +
+        '<div class="name">' + esc(doc.original_name) + '</div>' +
+        (isImg ? '<button class="v-btn" id="v-zoom-out">−</button>' +
+                 '<button class="v-btn" id="v-zoom-reset">100%</button>' +
+                 '<button class="v-btn" id="v-zoom-in">+</button>' : '') +
+        '<a class="v-btn" href="' + url + '" download="' + esc(doc.original_name) + '">⤓ Herunterladen</a>' +
+        '<button class="v-btn close" id="v-close">✕ Schließen</button>' +
+      '</div>' +
+      '<div class="viewer-body" id="v-body"></div>' +
+    '</div>'
+  );
+  document.body.appendChild(bg);
+  var body = bg.querySelector("#v-body");
+
+  if (isPdf) {
+    // Browser-native PDF-Viewer (Chromium hat Zoom-Buttons eingebaut)
+    body.innerHTML = '<embed src="' + url + '#zoom=page-fit&toolbar=1&navpanes=0" type="application/pdf" />';
+  } else if (isImg) {
+    body.innerHTML = '<div class="img-stage" id="img-stage"><img id="img-el" src="' + url + '" alt="" />' +
+                     '<div class="viewer-zoom-hint">Pinch/Scroll = Zoom · Drag = Verschieben</div></div>';
+    initImageZoom(bg);
+  } else {
+    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fff;">' +
+                     '<a href="' + url + '" download="' + esc(doc.original_name) + '" class="v-btn">⤓ Datei herunterladen</a></div>';
+  }
+
+  function close() { bg.remove(); }
+  bg.querySelector("#v-close").addEventListener("click", close);
+  document.addEventListener("keydown", function escHandler(e){ if (e.key === "Escape") { close(); document.removeEventListener("keydown", escHandler); } });
+}
+
+function initImageZoom(bg) {
+  var stage = bg.querySelector("#img-stage");
+  var img = bg.querySelector("#img-el");
+  var scale = 1, tx = 0, ty = 0;
+  var dragging = false, lastX = 0, lastY = 0;
+  var pinchDist = 0;
+
+  function apply() {
+    img.style.transform = "translate(calc(-50% + " + tx + "px), calc(-50% + " + ty + "px)) scale(" + scale + ")";
+  }
+  function setScale(newScale, cx, cy) {
+    newScale = Math.max(0.2, Math.min(8, newScale));
+    if (cx == null) { cx = stage.clientWidth / 2; cy = stage.clientHeight / 2; }
+    // Zoom relativ zur Mausposition
+    var rect = stage.getBoundingClientRect();
+    var dx = cx - rect.left - stage.clientWidth / 2;
+    var dy = cy - rect.top - stage.clientHeight / 2;
+    var f = newScale / scale;
+    tx = (tx - dx) * f + dx;
+    ty = (ty - dy) * f + dy;
+    scale = newScale;
+    apply();
+  }
+  apply();
+
+  // Wheel-Zoom
+  stage.addEventListener("wheel", function(e) {
+    e.preventDefault();
+    var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setScale(scale * factor, e.clientX, e.clientY);
+  }, { passive: false });
+  // Drag-Pan
+  stage.addEventListener("pointerdown", function(e) {
+    dragging = true; lastX = e.clientX; lastY = e.clientY; stage.classList.add("dragging");
+    try { stage.setPointerCapture(e.pointerId); } catch(_){}
+  });
+  stage.addEventListener("pointermove", function(e) {
+    if (!dragging) return;
+    tx += e.clientX - lastX; ty += e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; apply();
+  });
+  stage.addEventListener("pointerup", function(){ dragging = false; stage.classList.remove("dragging"); });
+  stage.addEventListener("pointercancel", function(){ dragging = false; stage.classList.remove("dragging"); });
+  // Doppelklick = Toggle Zoom 1x / 3x
+  stage.addEventListener("dblclick", function(e) { setScale(scale > 1.1 ? 1 : 3, e.clientX, e.clientY); });
+  // Touch-Pinch via TouchEvents (fallback)
+  stage.addEventListener("touchmove", function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      var t1 = e.touches[0], t2 = e.touches[1];
+      var d = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      if (pinchDist) {
+        var f = d / pinchDist;
+        var cx = (t1.clientX + t2.clientX) / 2, cy = (t1.clientY + t2.clientY) / 2;
+        setScale(scale * f, cx, cy);
+      }
+      pinchDist = d;
+    }
+  }, { passive: false });
+  stage.addEventListener("touchend", function(){ pinchDist = 0; });
+
+  // Button-Controls
+  bg.querySelector("#v-zoom-in").addEventListener("click", function(){ setScale(scale * 1.3); });
+  bg.querySelector("#v-zoom-out").addEventListener("click", function(){ setScale(scale / 1.3); });
+  bg.querySelector("#v-zoom-reset").addEventListener("click", function(){ scale = 1; tx = 0; ty = 0; apply(); });
 }
 
 // ============================================================================

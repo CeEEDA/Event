@@ -404,6 +404,14 @@ User language: **German** (Agent must respond in German).
   - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
   - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
   - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Dokumentenablage-Tile** (Feb 2026):
+  - 4 Kategorien (Messprotokolle / Plaene / Fotos / Sonstiges) wie React-App, mit Counts pro Kategorie
+  - Drag&Drop-Upload + "Datei waehlen"-Button mit Auto-Kategorie-Erkennung
+  - **Foto-Direkt-Aufnahme** via `<input capture="environment">` (oeffnet Pi-Kamera, falls vorhanden) -> immer Kategorie "fotos"
+  - **PDF-Viewer**: Browser-natives `<embed type="application/pdf">` mit eingebautem Zoom/Page-Fit
+  - **Bild-Viewer**: Custom Pan+Zoom (Wheel-Zoom, Drag-Pan, Doppelklick Toggle, Touch-Pinch, +/-/100% Buttons), Esc-Schliessen, Download-Link
+  - Token via `?token=` Query an `/file` Endpoint -> funktioniert in `<embed>`/`<img>` ohne Auth-Header
+  - Verwendet `/api/orders/order-documents/...` Endpoints (Upload, List, File, Thumbnail)
 - **Artikelliste-Tile (read-only)** (Feb 2026):
   - Vier-Spalten-Layout: Karte links + Liste rechts, Toolbar oben (Suche/Typ-Filter/Status-Filter)
   - Live-Suche ueber Bezeichnung/Typ/Plus-Code/Anleger
