@@ -17,6 +17,13 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **Leaflet-Crash Final-Fix: Strict-Number-Check statt Number()-Coercion** (Feb 2026, Bug fix Iteration 4):
+  - **Root Cause Iteration 1**: Vorher hatte ich `Number.isFinite(Number(g.latitude))` benutzt. Problem: `Number(null) === 0` und `Number.isFinite(0) === true` -> `null`-Koordinaten kamen durch den Filter durch, Leaflet bekam `position=[0, 0]` oder `[null, null]` und crashte mit "can't access property lat, e is null".
+  - **Fix**: Filter strikt auf `typeof g.latitude === "number" && isFinite(g.latitude)` umgestellt. `Number.isFinite()` (ohne Wrapper) macht KEINE Type-Coercion - blockt `null`, `undefined`, Strings sauber, laesst echte 0er aber durch (gueltige Koordinate am Aequator).
+  - Auch in `OrderDetailPage.js` (Generator+Asset Marker, FitBounds, Asset-Modal), `EnergyMonitoringPage.js` und `EnergyMonitoringDetailPage.js` umgestellt.
+  - **Stress-Test verifiziert**: Generator mit `latitude=None` zu echtem Auftrag manuell zugeordnet -> Seite laedt sauber, Generator erscheint in Liste mit "MANUELL"-Badge, wird auf Karte korrekt **ausgeblendet**, 0 Page Errors.
+  - **Wichtig fuer User**: Live-Build `main.3cf9f80b.js` enthaelt noch alten Code -> bei naechstem Deploy muss der neue Bundle-Hash ausgerollt werden.
+
 - ✅ **MQTT GPS-Routing: Modul-UID aus JSON-Payload-Key matchen** (Feb 2026, Bug fix Iteration 3):
   - **Root Cause**: DSE890-Gateway publiziert GPS unter `eventenergie/{ANLAGE}/{GATEWAY-UID}/gps`. Im Topic steht die **Gateway-UID** (z.B. `1912C4E76883D4B`, 15 Hex), im **JSON-Payload als Top-Level-Key** steht die **Modul-UID** (z.B. `6D2B5CD695`, 10 Hex = `dse_module_uid` im Portal). Vorherige Match-Logik basierte auf Topic-Segmenten → unmoeglich zu matchen.
   - **Fix**: `_process_gateway_gps` parst jetzt die JSON-Payload-Keys (`{"6D2B5CD695": {"LAT": x, "LON": y}}`) und matcht diese gegen `dse_module_uid` der Devices. Unterstuetzt Multi-Modul-Payloads (mehrere UIDs im selben Topic) — jedes Modul bekommt seine individuelle Position.

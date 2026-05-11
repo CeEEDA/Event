@@ -265,7 +265,7 @@ export default function EnergyMonitoringPage() {
           {/* Map - nur Standorte mit gueltigen GPS-Koordinaten anzeigen */}
           {(() => {
             const validLocations = (locations || []).filter(
-              (l) => Number.isFinite(Number(l.gps_lat)) && Number.isFinite(Number(l.gps_lon))
+              (l) => Number.isFinite(l.gps_lat) && Number.isFinite(l.gps_lon)
             );
             if (validLocations.length === 0) return null;
             return (

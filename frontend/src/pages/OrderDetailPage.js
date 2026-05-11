@@ -832,7 +832,7 @@ export default function OrderDetailPage() {
                       </Popup>
                     </Marker>
                     {generators
-                      .filter((g) => Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude)))
+                      .filter((g) => typeof g.latitude === "number" && typeof g.longitude === "number" && isFinite(g.latitude) && isFinite(g.longitude))
                       .map((g) => (
                       <Marker key={g.id} position={[g.latitude, g.longitude]} icon={genIcon}>
                         <Popup>
@@ -843,7 +843,7 @@ export default function OrderDetailPage() {
                       </Marker>
                     ))}
                     {filteredAssets
-                      .filter((a) => Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude)))
+                      .filter((a) => typeof a.latitude === "number" && typeof a.longitude === "number" && isFinite(a.latitude) && isFinite(a.longitude))
                       .map((a) => (
                       <Marker
                         key={a.id}
@@ -1319,7 +1319,7 @@ export default function OrderDetailPage() {
                 <div className="flex-1 overflow-y-auto" data-testid="asset-modal-body">
 
                 {/* Map - nur wenn GPS verfuegbar */}
-                {Number.isFinite(Number(selectedAsset.latitude)) && Number.isFinite(Number(selectedAsset.longitude)) ? (
+                {Number.isFinite(selectedAsset.latitude) && Number.isFinite(selectedAsset.longitude) ? (
                 <div className="h-56 w-full">
                   <MapContainer
                     center={[selectedAsset.latitude, selectedAsset.longitude]}

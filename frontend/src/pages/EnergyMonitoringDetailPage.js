@@ -307,7 +307,7 @@ export default function EnergyMonitoringDetailPage() {
           </div>
 
           {/* Location Map */}
-          {location && Number.isFinite(Number(location.gps_lat)) && Number.isFinite(Number(location.gps_lon)) && (
+          {location && Number.isFinite(location.gps_lat) && Number.isFinite(location.gps_lon) && (
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="detail-map">
               <div className="p-3 border-b border-gray-200 flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-fuchsia-600" />
