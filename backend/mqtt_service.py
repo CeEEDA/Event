@@ -140,10 +140,15 @@ async def _process_message(msg):
         _mappings_cache_ts = now_ts
 
     if _generators_cache is None or now_ts - _generators_cache_ts > _CACHE_TTL:
+        # Beide Match-Felder mitladen, damit kein DB-Fallback bei jedem
+        # GPS-Match noetig ist (vermeidet sonst N+1-DB-Roundtrips)
         _generators_cache = await _db.generators.find(
-            {"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}},
-            {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1}
-        ).to_list(100)
+            {"$or": [
+                {"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}},
+                {"dse_module_uid": {"$exists": True, "$ne": ""}},
+            ]},
+            {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1, "dse_module_uid": 1}
+        ).to_list(200)
         _generators_cache_ts = now_ts
 
     if _devices_cache is None or now_ts - _devices_cache_ts > _CACHE_TTL:
@@ -278,22 +283,25 @@ async def _log_gps_event(topic, lat, lng, route, applied_to, raw_payload=None, m
             "module_uid": module_uid,
         }
         await _db.mqtt_gps_log.insert_one(doc)
-        # Begrenze auf die letzten 1000 Eintraege (kein TTL-Index noetig)
+        # Begrenze auf die letzten 1000 Eintraege - Auto-Pruning aber NICHT
+        # synchron (blockiert sonst den Event-Loop bei MQTT-Spam). Stattdessen
+        # fire-and-forget: bei jedem 500. Eintrag eine Hintergrund-Task starten.
         global _raw_msg_counter
         _raw_msg_counter += 1
-        if _raw_msg_counter % 200 == 0:
-            try:
-                cnt = await _db.mqtt_gps_log.count_documents({})
-                if cnt > 1000:
-                    # Alteste 200 loeschen
-                    oldest = await _db.mqtt_gps_log.find(
-                        {}, {"_id": 0, "id": 1}, sort=[("ts", 1)]
-                    ).to_list(cnt - 1000)
-                    if oldest:
-                        old_ids = [o["id"] for o in oldest]
-                        await _db.mqtt_gps_log.delete_many({"id": {"$in": old_ids}})
-            except Exception:
-                pass
+        if _raw_msg_counter % 500 == 0:
+            async def _prune():
+                try:
+                    cnt = await _db.mqtt_gps_log.count_documents({})
+                    if cnt > 1000:
+                        oldest = await _db.mqtt_gps_log.find(
+                            {}, {"_id": 0, "id": 1}, sort=[("ts", 1)]
+                        ).to_list(cnt - 1000)
+                        if oldest:
+                            old_ids = [o["id"] for o in oldest]
+                            await _db.mqtt_gps_log.delete_many({"id": {"$in": old_ids}})
+                except Exception:
+                    pass
+            asyncio.ensure_future(_prune())
     except Exception as e:
         logger.debug(f"_log_gps_event failed: {e}")
 
