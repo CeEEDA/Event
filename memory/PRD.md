@@ -404,6 +404,14 @@ User language: **German** (Agent must respond in German).
   - **localStorage statt sessionStorage** für Token → Session überlebt Reload/Crash/Chromium-Restart.
   - **Install-Script Fix: Single-Instance-Lock (`flock`)** verhindert Doppel-Launcher, **targeted `pkill -f user-data-dir=$PROFILE`** killt nur eigene Chromium-Instanzen (nicht alle) → behebt den 5-Sekunden-„Opening in existing browser session"-Loop auf dem Pi.
   - Diagnose-Badge unten rechts (Loads-Counter, Uptime, Erst-Load-Zeitstempel).
+- **Workspace mit Regenradar + Stunden-Forecast** (Feb 2026):
+  - 2-Spalten-Layout (links: Tiles + 7-Tage-Wetter, rechts: Regenradar + 24h-Stunden-Prognose)
+  - **Auto-Geocoding** im Backend: Auftragsadresse -> lat/lng via Open-Meteo Geocoding-API (kein vor-Detail-Oeffnen mehr noetig)
+  - **Regenradar** via RainViewer-API (kostenlos, kein API-Key) mit Leaflet-Karte, Veranstaltungsort-Marker, Vergangenheit + Nowcast-Frames mit Play/Stopp-Animation und Slider
+  - **24h-Hourly-Forecast** als Bar-Chart mit Regen-Wahrscheinlichkeit (low/mid/high Farbcode) + Summary (Sigma mm, Max-Wkt)
+  - Kompakter Auftrags-Header (Strip statt grosser Karte) -> bessere Bildschirmnutzung auf 50"-TV
+  - Neuer Endpoint `GET /api/einsatzzentrale/weather/hourly?lat=&lng=&hours=`
+
 - **Einsatztagebuch-Tile** in Standalone-HTML komplett funktionsfähig:
   - Liste aller Diary-Einträge mit Status-Badge (offen/behoben), Filter-Suche
   - Stats-Header (offen / behoben / gesamt)

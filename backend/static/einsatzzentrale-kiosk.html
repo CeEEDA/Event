@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Einsatzzentrale</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
 :root {
   --bg: #f9fafb; --card: #ffffff; --border: #e5e7eb; --border-hover: #d946ef;
@@ -141,6 +143,57 @@ input { font-family: inherit; }
 .tile-bg-slate { background: #f1f5f9; color: #475569; }
 .tile-bg-blue { background: var(--blue-bg); color: var(--blue); }
 .tile-bg-fuchsia { background: var(--fuchsia-bg); color: var(--fuchsia-dark); }
+
+/* ========== WORKSPACE 2-Spalten-Layout ============================ */
+.ws-main { max-width: 1800px; padding: 16px 24px; }
+.section-title.compact { margin: 12px 0 8px; }
+
+.proj-strip { background: linear-gradient(135deg, var(--fuchsia-bg), white);
+  border: 1px solid #f5d0fe; border-radius: 14px; padding: 14px 20px; margin-bottom: 16px; }
+.proj-strip-inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.ps-left { flex: 1; min-width: 240px; }
+.ps-eyebrow { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  color: var(--fuchsia-dark); letter-spacing: 0.12em; }
+.ps-event { font-size: 22px; font-weight: 700; margin: 2px 0 0; line-height: 1.2; }
+.ps-right { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-muted); }
+.ps-meta { display: flex; align-items: center; gap: 6px; }
+.ps-meta span:first-child { width: 16px; text-align: center; }
+
+.ws-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 1100px) { .ws-grid { grid-template-columns: 1fr; } }
+
+.ws-tile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ws-tile { display: flex !important; align-items: center; gap: 16px; padding: 16px !important; text-align: left; }
+.ws-tile .tile-icon { width: 52px; height: 52px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 0 !important; flex-shrink: 0; }
+.ws-tile h3 { font-size: 16px; margin: 0 0 2px; }
+.ws-tile p { font-size: 11px; color: var(--text-muted); margin: 0; }
+
+/* Wetter-Tage kompakter im Workspace */
+.ws-tiles .weather { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.ws-tiles .weather .day { padding: 8px 6px; }
+.ws-tiles .weather .day .d { font-size: 11px; }
+.ws-tiles .weather .day .e { font-size: 24px; margin: 2px 0; }
+.ws-tiles .weather .day .l { font-size: 9px; }
+.ws-tiles .weather .day .t { font-size: 13px; margin-top: 3px; }
+.ws-tiles .weather .day .p, .ws-tiles .weather .day .w { font-size: 9px; }
+
+/* Regenradar */
+.radar-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.radar-map { width: 100%; height: 380px; background: #e0e7ef; z-index: 0; }
+.radar-map .leaflet-control-container .leaflet-top { top: 8px; }
+.radar-controls { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); }
+.radar-controls input[type=range] { flex: 1; cursor: pointer; height: 4px; accent-color: var(--fuchsia); }
+.radar-hourly { padding: 12px 14px 14px; border-top: 1px solid var(--border); background: #fafbfc; }
+.hourly-bars { display: flex; align-items: flex-end; gap: 2px; height: 56px; padding-bottom: 4px; }
+.hbar { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: help; }
+.hbar-fill { width: 80%; border-radius: 3px 3px 0 0; transition: height .2s; }
+.hbar-fill.low { background: #cbd5e1; }
+.hbar-fill.mid { background: #60a5fa; }
+.hbar-fill.high { background: #2563eb; }
+.hbar-label { font-size: 9px; color: var(--text-muted); margin-top: 2px; line-height: 1; transform: rotate(-45deg); transform-origin: top center; height: 10px; white-space: nowrap; }
+.hourly-sum { display: flex; gap: 14px; align-items: center; margin-top: 16px; font-size: 12px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 8px; }
+.hourly-sum b { color: var(--text); font-weight: 700; }
 
 /* ========== DIARY (Einsatztagebuch) ============================== */
 .diary-stats { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
@@ -583,67 +636,204 @@ function renderWorkspace() {
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
     '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key)) +
-    '<main class="kiosk-main">' +
-      '<div id="proj-header"></div>' +
-      '<div class="section-title">☁ Wetter-Prognose</div>' +
-      '<div id="weather-area"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
-      '<div class="section-title">Bereiche</div>' +
-      '<div class="kiosk-grid tiles">' +
-        TILES.map(function(t) {
-          return '<button class="kiosk-card tile" data-tile="' + t.key + '">' +
-                   '<div class="tile-icon ' + t.cls + '">' + t.icon + '</div>' +
-                   '<h3>' + esc(t.label) + '</h3><p>' + esc(t.desc) + '</p>' +
-                 '</button>';
-        }).join("") +
+    '<main class="kiosk-main ws-main">' +
+      // Kompakter Auftragsstreifen (1-zeilig statt grosser Header-Karte)
+      '<div id="proj-strip" class="proj-strip"></div>' +
+
+      // Hauptgrid: Links 4 Tiles (groß, prominent), rechts Wetter + Regenradar
+      '<div class="ws-grid">' +
+        '<section class="ws-tiles">' +
+          '<div class="section-title compact">Bereiche</div>' +
+          '<div class="ws-tile-grid">' +
+            TILES.map(function(t) {
+              return '<button class="kiosk-card tile ws-tile" data-tile="' + t.key + '">' +
+                       '<div class="tile-icon ' + t.cls + '">' + t.icon + '</div>' +
+                       '<div><h3>' + esc(t.label) + '</h3><p>' + esc(t.desc) + '</p></div>' +
+                     '</button>';
+            }).join("") +
+          '</div>' +
+          // 7-Tage-Wetter unter den Tiles, kompakt
+          '<div class="section-title compact" style="margin-top:20px;">7-Tage-Vorhersage</div>' +
+          '<div id="weather-days"><div class="empty" style="padding:16px;"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+        '</section>' +
+
+        '<aside class="ws-radar">' +
+          '<div class="section-title compact" style="display:flex;align-items:center;justify-content:space-between;">' +
+            '<span>Regenradar &amp; -Prognose</span>' +
+            '<span id="radar-time-lbl" style="font-size:11px;color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0;">Live</span>' +
+          '</div>' +
+          '<div class="radar-card">' +
+            '<div id="radar-map" class="radar-map"></div>' +
+            '<div class="radar-controls">' +
+              '<button id="radar-play" class="btn sm">▶ Animation</button>' +
+              '<input type="range" id="radar-slider" min="0" max="0" value="0" />' +
+              '<span id="radar-frame-lbl" style="font-size:11px;color:var(--text-muted);min-width:60px;">--:--</span>' +
+            '</div>' +
+            '<div id="radar-hourly" class="radar-hourly"></div>' +
+          '</div>' +
+        '</aside>' +
       '</div>' +
     '</main></div>'
   ));
   attachLogout();
 
-  // Tile clicks
   document.querySelectorAll("[data-tile]").forEach(function(el) {
     el.addEventListener("click", function() { state.activeTile = el.dataset.tile; state.phase = "tile"; render(); });
   });
 
-  // Load project header + weather
   api("/api/einsatzzentrale/orders/" + encodeURIComponent(o.primary_key))
     .then(function(detail) {
-      document.getElementById("proj-header").innerHTML =
-        '<div class="proj-header">' +
-          '<div class="proj-eyebrow">Auftrag #' + esc(detail.order_no || detail.primary_key) + '</div>' +
-          '<div class="proj-event">' + esc(detail.event || "Veranstaltung") + '</div>' +
-          (detail.contact_name ? '<div style="color:#374151;">🏢 ' + esc(detail.contact_name) + '</div>' : '') +
-          '<div class="proj-meta">' +
-            (detail.address ? '<div class="row">📍 ' + esc(detail.address) + '</div>' : '') +
-            '<div class="row">📅 ' + esc(fmtRange(detail.event_start, detail.event_end)) + '</div>' +
-            (detail.editor_name ? '<div class="row" style="font-size:12px;color:#9ca3af;">👤 Bearbeiter: ' + esc(detail.editor_name) + '</div>' : '') +
-          '</div>' +
-        '</div>';
-      // Weather
-      var weatherArea = document.getElementById("weather-area");
+      paintProjStrip(detail);
       if (detail.center_lat == null || detail.center_lng == null) {
-        weatherArea.innerHTML = '<div class="alert warning">⚠ Keine GPS-Koordinaten zum Auftrag hinterlegt — Auftrag zuerst auf Detail-Seite öffnen damit GPS geocodiert wird.</div>';
+        document.getElementById("weather-days").innerHTML =
+          '<div class="alert warning">⚠ Keine GPS-Koordinaten — Adresse konnte nicht geocoded werden. Bitte Adresse im Auftrag prüfen.</div>';
+        document.getElementById("radar-map").innerHTML =
+          '<div class="empty" style="padding:32px;color:#9ca3af;">Kein Standort für Radar verfügbar.</div>';
         return;
       }
-      var p = new URLSearchParams({ lat: detail.center_lat, lng: detail.center_lng });
-      if (detail.event_start) p.set("start", detail.event_start);
-      if (detail.event_end) p.set("end", detail.event_end);
-      return api("/api/einsatzzentrale/weather?" + p.toString()).then(function(w) {
-        if (!w.days || !w.days.length) { weatherArea.innerHTML = '<p style="color:#9ca3af;">Keine Wetterdaten.</p>'; return; }
-        weatherArea.innerHTML = '<div class="weather">' + w.days.map(function(d) {
-          return '<div class="day"><div class="d">' + esc(new Date(d.date).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"})) +
-                 '</div><div class="e" title="' + esc(d.weather_label) + '">' + d.weather_emoji + '</div>' +
-                 '<div class="l">' + esc(d.weather_label) + '</div>' +
-                 '<div class="t"><span class="tmax">' + Math.round(d.temp_max) + '°</span> / <span class="tmin">' + Math.round(d.temp_min) + '°</span></div>' +
-                 (d.precipitation_mm != null ? '<div class="p">🌧 ' + d.precipitation_mm.toFixed(1) + ' mm' + (d.precipitation_prob != null ? ' · ' + d.precipitation_prob + '%' : '') + '</div>' : '') +
-                 (d.wind_gust_kmh != null ? '<div class="w">💨 Böen ' + Math.round(d.wind_gust_kmh) + ' km/h</div>' : '') +
-                 '</div>';
-        }).join("") + '</div>';
-      });
+      loadWeatherDays(detail);
+      initRadar(detail.center_lat, detail.center_lng);
+      loadHourlyForecast(detail.center_lat, detail.center_lng);
     })
     .catch(function(err) {
-      document.getElementById("proj-header").innerHTML = '<div class="alert error">' + esc(err.message) + '</div>';
+      document.getElementById("proj-strip").innerHTML = '<div class="alert error">' + esc(err.message) + '</div>';
     });
+}
+
+function paintProjStrip(detail) {
+  document.getElementById("proj-strip").innerHTML =
+    '<div class="proj-strip-inner">' +
+      '<div class="ps-left">' +
+        '<div class="ps-eyebrow">Auftrag #' + esc(detail.order_no || detail.primary_key) + '</div>' +
+        '<h1 class="ps-event">' + esc(detail.event || "Veranstaltung") + '</h1>' +
+      '</div>' +
+      '<div class="ps-right">' +
+        (detail.contact_name ? '<div class="ps-meta"><span>🏢</span> ' + esc(detail.contact_name) + '</div>' : '') +
+        (detail.address ? '<div class="ps-meta"><span>📍</span> ' + esc(detail.address) + '</div>' : '') +
+        '<div class="ps-meta"><span>📅</span> ' + esc(fmtRange(detail.event_start, detail.event_end)) + '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+function loadWeatherDays(detail) {
+  var p = new URLSearchParams({ lat: detail.center_lat, lng: detail.center_lng });
+  if (detail.event_start) p.set("start", detail.event_start);
+  if (detail.event_end) p.set("end", detail.event_end);
+  api("/api/einsatzzentrale/weather?" + p.toString()).then(function(w) {
+    var area = document.getElementById("weather-days");
+    if (!w.days || !w.days.length) { area.innerHTML = '<p style="color:#9ca3af;">Keine Wetterdaten.</p>'; return; }
+    area.innerHTML = '<div class="weather">' + w.days.map(function(d) {
+      return '<div class="day"><div class="d">' + esc(new Date(d.date).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"})) +
+             '</div><div class="e" title="' + esc(d.weather_label) + '">' + d.weather_emoji + '</div>' +
+             '<div class="l">' + esc(d.weather_label) + '</div>' +
+             '<div class="t"><span class="tmax">' + Math.round(d.temp_max) + '°</span> / <span class="tmin">' + Math.round(d.temp_min) + '°</span></div>' +
+             (d.precipitation_mm != null ? '<div class="p">🌧 ' + d.precipitation_mm.toFixed(1) + ' mm' + (d.precipitation_prob != null ? ' · ' + d.precipitation_prob + '%' : '') + '</div>' : '') +
+             (d.wind_gust_kmh != null ? '<div class="w">💨 Böen ' + Math.round(d.wind_gust_kmh) + ' km/h</div>' : '') +
+             '</div>';
+    }).join("") + '</div>';
+  }).catch(function(){});
+}
+
+// ============================================================================
+// REGENRADAR via RainViewer (kostenlos, kein API-Key)
+// ============================================================================
+var radarMap = null, radarMarker = null, radarLayer = null, radarFrames = [];
+var radarIdx = -1, radarPlayHandle = null;
+
+function initRadar(lat, lng) {
+  var mapEl = document.getElementById("radar-map"); if (!mapEl) return;
+  if (radarMap) { try { radarMap.remove(); } catch(e){} radarMap = null; }
+
+  radarMap = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([lat, lng], 8);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 14, opacity: 0.85
+  }).addTo(radarMap);
+  radarMarker = L.circleMarker([lat, lng], {
+    radius: 8, color: "#d946ef", fillColor: "#d946ef", fillOpacity: 0.85, weight: 3
+  }).addTo(radarMap).bindTooltip("Veranstaltungsort", { permanent: false });
+
+  // RainViewer index laden
+  fetch("https://api.rainviewer.com/public/weather-maps.json")
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      var past = (d.radar && d.radar.past) || [];
+      var future = (d.radar && d.radar.nowcast) || [];
+      var frames = past.slice(-6).concat(future); // 6 Vergangenheit + alle Zukunft
+      radarFrames = frames.map(function(f){
+        return { time: f.time, path: f.path, host: d.host };
+      });
+      var slider = document.getElementById("radar-slider");
+      slider.max = String(Math.max(0, radarFrames.length - 1));
+      // Default: aktuellster Vergangenheits-Frame (= last "past")
+      radarIdx = Math.min(5, radarFrames.length - 1);
+      slider.value = String(radarIdx);
+      showRadarFrame(radarIdx);
+      slider.addEventListener("input", function(){ stopRadarPlay(); showRadarFrame(parseInt(slider.value,10)); });
+      document.getElementById("radar-play").addEventListener("click", toggleRadarPlay);
+    })
+    .catch(function(){
+      document.getElementById("radar-frame-lbl").textContent = "Radar offline";
+    });
+}
+
+function showRadarFrame(i) {
+  if (i < 0 || i >= radarFrames.length) return;
+  radarIdx = i;
+  var f = radarFrames[i];
+  var url = f.host + f.path + "/256/{z}/{x}/{y}/2/1_1.png";
+  if (radarLayer) { try { radarMap.removeLayer(radarLayer); } catch(e){} }
+  radarLayer = L.tileLayer(url, { opacity: 0.7, maxZoom: 14 }).addTo(radarMap);
+  var d = new Date(f.time * 1000);
+  var now = Date.now() / 1000;
+  var diffMin = Math.round((f.time - now) / 60);
+  var rel = diffMin === 0 ? "jetzt" : (diffMin > 0 ? "in " + diffMin + " Min" : "vor " + Math.abs(diffMin) + " Min");
+  document.getElementById("radar-frame-lbl").textContent = d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  document.getElementById("radar-time-lbl").textContent = rel;
+  document.getElementById("radar-slider").value = String(i);
+}
+
+function toggleRadarPlay() {
+  if (radarPlayHandle) { stopRadarPlay(); return; }
+  document.getElementById("radar-play").textContent = "⏸ Stopp";
+  radarPlayHandle = setInterval(function() {
+    var next = (radarIdx + 1) % radarFrames.length;
+    showRadarFrame(next);
+  }, 700);
+}
+function stopRadarPlay() {
+  if (radarPlayHandle) { clearInterval(radarPlayHandle); radarPlayHandle = null; }
+  var b = document.getElementById("radar-play"); if (b) b.textContent = "▶ Animation";
+}
+
+function loadHourlyForecast(lat, lng) {
+  api("/api/einsatzzentrale/weather/hourly?lat=" + lat + "&lng=" + lng + "&hours=24").then(function(d) {
+    var hours = d.hours || []; if (!hours.length) return;
+    var maxPrecip = Math.max(0.5, Math.max.apply(null, hours.map(function(h){return h.precipitation_mm || 0;})));
+    var html = '<div class="hourly-bars">';
+    hours.forEach(function(h, i) {
+      var t = new Date(h.time);
+      var label = (i === 0) ? "jetzt" : t.getHours() + "h";
+      var rain = h.precipitation_mm || 0;
+      var prob = h.precipitation_prob || 0;
+      var barH = Math.max(2, Math.round((rain / maxPrecip) * 38));
+      var probCls = prob >= 70 ? "high" : prob >= 30 ? "mid" : "low";
+      html += '<div class="hbar" title="' + esc(t.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})) +
+              ' — ' + esc(h.weather_label) + ', ' + (rain.toFixed(1)) + 'mm, ' + prob + '%">' +
+                '<div class="hbar-fill ' + probCls + '" style="height:' + barH + 'px;"></div>' +
+                '<div class="hbar-label">' + label + '</div>' +
+              '</div>';
+    });
+    html += '</div>';
+    // Summary darunter
+    var totalRain = hours.reduce(function(s,h){return s + (h.precipitation_mm || 0);}, 0);
+    var maxProb = Math.max.apply(null, hours.map(function(h){return h.precipitation_prob || 0;}));
+    html += '<div class="hourly-sum">' +
+              '<span>Σ 24h: <b>' + totalRain.toFixed(1) + ' mm</b></span>' +
+              '<span>Max-Wkt.: <b>' + maxProb + '%</b></span>' +
+              '<span style="margin-left:auto;font-size:10px;color:#9ca3af;">Radar &amp; Daten: rainviewer.com · open-meteo.com</span>' +
+            '</div>';
+    document.getElementById("radar-hourly").innerHTML = html;
+  }).catch(function(){});
 }
 
 // ============================================================================

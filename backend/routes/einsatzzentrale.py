@@ -249,6 +249,27 @@ async def get_kiosk_order(order_pk: str, user: dict = Depends(_auth_user)):
         {"order_pk": str(order_pk)}, {"_id": 0, "center_lat": 1, "center_lng": 1}
     ) or {}
 
+    # Auto-Geocoding-Fallback: Wenn keine GPS-Koordinaten in den Settings sind,
+    # versuche die Adresse via Open-Meteo Geocoding-API in lat/lng zu wandeln.
+    # Ergebnis wird in order_settings persistiert (= einmaliger Lookup).
+    center_lat = settings.get("center_lat")
+    center_lng = settings.get("center_lng")
+    address = (o.get("address") or "").strip()
+    if (center_lat is None or center_lng is None) and address:
+        try:
+            geo = await _geocode_address(address)
+            if geo:
+                center_lat, center_lng = geo
+                await _db.order_settings.update_one(
+                    {"order_pk": str(order_pk)},
+                    {"$set": {"center_lat": center_lat, "center_lng": center_lng,
+                              "geocoded_at": datetime.now(timezone.utc).isoformat(),
+                              "geocoded_from": address}},
+                    upsert=True
+                )
+        except Exception as ex:
+            logger.warning(f"Geocoding fuer Auftrag {order_pk} fehlgeschlagen: {ex}")
+
     return {
         "primary_key": o.get("primary_key"),
         "order_no": o.get("order_no") or "",
@@ -263,8 +284,8 @@ async def get_kiosk_order(order_pk: str, user: dict = Depends(_auth_user)):
         "customer_no": o.get("customer_no"),
         "sum_net": o.get("sum_net"),
         "sum_gro": o.get("sum_gro"),
-        "center_lat": settings.get("center_lat"),
-        "center_lng": settings.get("center_lng"),
+        "center_lat": center_lat,
+        "center_lng": center_lng,
     }
 
 
@@ -277,6 +298,45 @@ import httpx as _httpx  # noqa: E402
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OPEN_METEO_GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
+
+
+async def _geocode_address(address: str) -> Optional[tuple]:
+    """Geocode eine Adresse via Open-Meteo Geocoding-API.
+
+    Nimmt die erste Strasse + Ort fuer den Lookup. Liefert (lat, lng) oder None.
+    """
+    if not address:
+        return None
+    # Strategie: Probiere zuerst die volle Adresse, dann nur den Ort.
+    # Adresse meist Format: "Strasse 1, 12345 Stadt" oder "Strasse 1 12345 Stadt"
+    parts = [p.strip() for p in address.replace(",", " ").split() if p.strip()]
+    # Versuche zuerst die volle Adresse, dann reduziert
+    candidates = [address]
+    # Ort allein als Fallback (letztes Token-Paar)
+    if len(parts) >= 2:
+        # finde PLZ + Ort: 5-stellige Zahl
+        for i, p in enumerate(parts):
+            if p.isdigit() and len(p) == 5 and i + 1 < len(parts):
+                candidates.append(" ".join(parts[i:]))
+                candidates.append(" ".join(parts[i + 1:]))
+                break
+    async with _httpx.AsyncClient(timeout=8.0) as client:
+        for q in candidates:
+            try:
+                r = await client.get(OPEN_METEO_GEOCODE,
+                                     params={"name": q, "count": 1, "language": "de"})
+                r.raise_for_status()
+                data = r.json()
+                results = data.get("results") or []
+                if results:
+                    hit = results[0]
+                    lat = hit.get("latitude")
+                    lng = hit.get("longitude")
+                    if lat is not None and lng is not None:
+                        return (float(lat), float(lng))
+            except Exception:
+                continue
+    return None
 
 # WMO Weather-Codes (vereinfacht, deutsch)
 _WEATHER_CODES = {
@@ -373,6 +433,63 @@ async def kiosk_weather(
         "start": s.isoformat(),
         "end": e.isoformat(),
         "days": out_days,
+    }
+
+
+@router.get("/weather/hourly")
+async def kiosk_weather_hourly(
+    lat: float,
+    lng: float,
+    hours: int = 24,
+    user: dict = Depends(_auth_user),
+):
+    """Stunden-Wetter-Vorhersage fuer die naechsten N Stunden (Default 24).
+
+    Liefert pro Stunde: temp, niederschlag_mm, regen-prob, wind, weather_code.
+    Quelle: Open-Meteo Forecast (kostenlos, kein API-Key).
+    Wird vom Regenradar-Panel im Kiosk verwendet.
+    """
+    hours = max(1, min(int(hours), 72))
+    params = {
+        "latitude": lat,
+        "longitude": lng,
+        "hourly": ("temperature_2m,precipitation,precipitation_probability,"
+                   "weather_code,wind_speed_10m,wind_gusts_10m,cloud_cover"),
+        "forecast_hours": hours,
+        "timezone": "Europe/Berlin",
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(OPEN_METEO_BASE, params=params)
+            r.raise_for_status()
+            data = r.json()
+    except _httpx.HTTPError as ex:
+        logger.warning(f"Open-Meteo Hourly Fehler: {ex}")
+        raise HTTPException(status_code=502, detail="Wetterdienst nicht erreichbar")
+
+    h = data.get("hourly") or {}
+    times = h.get("time") or []
+    out = []
+    for i, t in enumerate(times):
+        code = h.get("weather_code", [None] * len(times))[i]
+        label, emoji = _weather_label(code)
+        out.append({
+            "time": t,
+            "temp": h.get("temperature_2m", [None] * len(times))[i],
+            "precipitation_mm": h.get("precipitation", [None] * len(times))[i],
+            "precipitation_prob": h.get("precipitation_probability", [None] * len(times))[i],
+            "weather_code": code,
+            "weather_label": label,
+            "weather_emoji": emoji,
+            "wind_kmh": h.get("wind_speed_10m", [None] * len(times))[i],
+            "wind_gust_kmh": h.get("wind_gusts_10m", [None] * len(times))[i],
+            "cloud_cover": h.get("cloud_cover", [None] * len(times))[i],
+        })
+    return {
+        "latitude": data.get("latitude"),
+        "longitude": data.get("longitude"),
+        "timezone": data.get("timezone"),
+        "hours": out,
     }
 
 
