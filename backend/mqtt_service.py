@@ -1316,7 +1316,9 @@ def _extract_module_uid_from_topic(topic):
 async def _auto_store_module_uid(generator_id, topic):
     """Extract module UID and full topic prefix from MQTT topic.
     Stores on both generator (if exists) and device (always exists).
-    Throttled to only write DB every 5 minutes per generator."""
+    Throttled to only write DB every 5 minutes per generator.
+    Schreibt zusaetzlich dse_module_uid (nur falls noch leer), damit
+    GPS-Routing automatisch matcht ohne manuelles Pflegen."""
     now = time.time()
     last = _uid_store_cache.get(generator_id, 0)
     if now - last < _UID_STORE_INTERVAL:
@@ -1327,14 +1329,38 @@ async def _auto_store_module_uid(generator_id, topic):
         update = {"last_mqtt_module_uid": uid}
         if prefix:
             update["last_mqtt_topic_prefix"] = prefix
+        # Generator: setze auch dse_module_uid (nur wenn noch leer),
+        # damit Sekundaer/Pfad-3-Match automatisch greift.
         await _db.generators.update_one(
-            {"id": generator_id},
+            {"id": generator_id,
+             "$or": [
+                 {"dse_module_uid": {"$exists": False}},
+                 {"dse_module_uid": ""},
+                 {"dse_module_uid": None},
+             ]},
+            {"$set": {**update, "dse_module_uid": uid}},
+        )
+        # Falls bereits eine andere dse_module_uid hinterlegt ist, nur
+        # die last_* Felder aktualisieren ohne ueberschreiben.
+        await _db.generators.update_one(
+            {"id": generator_id,
+             "dse_module_uid": {"$exists": True, "$nin": ["", None]}},
             {"$set": update}
         )
         if generator_id.startswith("dev-"):
             device_id = generator_id[4:]
             await _db.devices.update_one(
-                {"id": device_id},
+                {"id": device_id,
+                 "$or": [
+                     {"dse_module_uid": {"$exists": False}},
+                     {"dse_module_uid": ""},
+                     {"dse_module_uid": None},
+                 ]},
+                {"$set": {**update, "dse_module_uid": uid}},
+            )
+            await _db.devices.update_one(
+                {"id": device_id,
+                 "dse_module_uid": {"$exists": True, "$nin": ["", None]}},
                 {"$set": update}
             )
         _uid_store_cache[generator_id] = now
@@ -1704,6 +1730,47 @@ async def start_mqtt_client(db_instance, loop):
         await _db.mqtt_gps_log.create_index([("ts", 1)])
     except Exception as e:
         logger.debug(f"GPS-Log Index existiert bereits: {e}")
+
+    # Einmalige Migration: kopiere last_mqtt_module_uid -> dse_module_uid
+    # bei Geraeten/Generatoren, die das automatisch erkannt haben, aber
+    # dse_module_uid noch leer ist. Damit greift das GPS-Routing
+    # rueckwirkend fuer alle alten Datensaetze.
+    try:
+        migr_filter = {
+            "last_mqtt_module_uid": {"$exists": True, "$nin": ["", None]},
+            "$or": [
+                {"dse_module_uid": {"$exists": False}},
+                {"dse_module_uid": ""},
+                {"dse_module_uid": None},
+            ],
+        }
+        gens_to_migrate = await _db.generators.find(
+            migr_filter, {"_id": 0, "id": 1, "last_mqtt_module_uid": 1}
+        ).to_list(500)
+        gen_migr_count = 0
+        for g in gens_to_migrate:
+            await _db.generators.update_one(
+                {"id": g["id"]},
+                {"$set": {"dse_module_uid": g["last_mqtt_module_uid"]}}
+            )
+            gen_migr_count += 1
+        devs_to_migrate = await _db.devices.find(
+            migr_filter, {"_id": 0, "id": 1, "last_mqtt_module_uid": 1}
+        ).to_list(500)
+        dev_migr_count = 0
+        for d in devs_to_migrate:
+            await _db.devices.update_one(
+                {"id": d["id"]},
+                {"$set": {"dse_module_uid": d["last_mqtt_module_uid"]}}
+            )
+            dev_migr_count += 1
+        if gen_migr_count or dev_migr_count:
+            logger.info(
+                f"MQTT-Migration: dse_module_uid aus last_mqtt_module_uid kopiert "
+                f"(Generators={gen_migr_count}, Devices={dev_migr_count})"
+            )
+    except Exception as e:
+        logger.warning(f"MQTT-Migration fehlgeschlagen: {e}")
 
     # MQTT Worker-Pool starten: vermeidet Event-Loop-Saturation bei Bursts
     _mqtt_queue = asyncio.Queue(maxsize=_MQTT_QUEUE_MAX)
