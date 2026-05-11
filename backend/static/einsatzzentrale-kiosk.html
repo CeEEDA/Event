@@ -151,32 +151,70 @@ input { font-family: inherit; }
 // ============================================================================
 var BACKEND = window.location.origin;
 var LOGO_URL = "https://customer-assets.emergentagent.com/job_client-file-portal/artifacts/35th6vn9_cropped-logo.webp";
+// PERSISTENT STORAGE: localStorage statt sessionStorage, damit Token einen
+// Browser-Crash, einen Reload oder ein Chromium-Restart auf dem Pi ueberlebt.
 var SS_TOKEN = "ez_token", SS_USER = "ez_user", SS_PHASE = "ez_phase", SS_ORDER = "ez_order";
+var STORE = (function() {
+  // Versuche localStorage, fall back zu sessionStorage, fall back zu in-memory.
+  try { localStorage.setItem("__ez_probe", "1"); localStorage.removeItem("__ez_probe"); return localStorage; } catch(e) {}
+  try { sessionStorage.setItem("__ez_probe", "1"); sessionStorage.removeItem("__ez_probe"); return sessionStorage; } catch(e) {}
+  var m = {}; return { getItem: function(k){return m[k]||null;}, setItem: function(k,v){m[k]=v;}, removeItem: function(k){delete m[k];} };
+})();
 
 // ----------------------------------------------------------------------------
-// KIOSK-MODE HARDENING: Jegliche Reload-Versuche unterbinden.
-// Auf dem Pi darf die Seite NIE neu geladen werden. Falls doch ein fremdes
-// Skript (z.B. ein versehentlich injizierter Dev-Server-Hook) reload aufrufen
-// wuerde, wird das hier zu einem no-op.
+// KIOSK-MODE HARDENING
 // ----------------------------------------------------------------------------
+// 1) Reload-Versuche unterbinden. Auf dem Pi darf die Seite NIE unkontrolliert
+//    neu geladen werden. Falls doch ein fremdes Skript reload() aufruft, wird
+//    es zu einem no-op.
 try {
-  var _origReload = window.location.reload;
   Object.defineProperty(window.location, "reload", {
     configurable: false, writable: false,
     value: function(){ console.log("[Kiosk] reload() blocked"); }
   });
-} catch (e) { /* einige Browser blockieren das - ok */ }
-// Falls irgendein Skript einen WebSocket zum Dev-Server oeffnen will:
-// nicht moeglich - diese Seite kommt vom FastAPI-Backend, kein HMR.
+} catch (e) {}
+
+// 2) WebSocket zum (nicht vorhandenen) Webpack-Dev-Server blockieren. Falls
+//    irgend ein Stuck residual Code versucht wss://.../ws aufzubauen, geben
+//    wir ein no-op-Objekt zurueck statt einen echten WebSocket.
+try {
+  var _OrigWS = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    if (url && /\/ws($|\?)/.test(String(url))) {
+      console.log("[Kiosk] dev-server WS blocked:", url);
+      // Dummy-WebSocket der nichts tut
+      return { readyState: 3, close: function(){}, send: function(){},
+               addEventListener: function(){}, removeEventListener: function(){},
+               onopen: null, onmessage: null, onerror: null, onclose: null };
+    }
+    return new _OrigWS(url, protocols);
+  };
+  window.WebSocket.prototype = _OrigWS.prototype;
+  window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
+} catch (e) {}
+
+// 3) beforeunload: speichere State nochmal weg, falls Browser unkontrolliert
+//    schliesst (Pi-Crash, OOM, etc.)
+window.addEventListener("beforeunload", function() {
+  try {
+    if (state && state.token) {
+      STORE.setItem(SS_TOKEN, state.token);
+      STORE.setItem(SS_USER, JSON.stringify(state.user));
+      STORE.setItem(SS_PHASE, state.phase);
+      if (state.order) STORE.setItem(SS_ORDER, JSON.stringify(state.order));
+    }
+  } catch (e) {}
+});
 
 // State
 var state = { phase: "user_select", token: null, user: null, pickedUser: null,
               order: null, activeTile: null };
 
-// Restore from sessionStorage
+// Restore from STORE (localStorage mit fallback)
 try {
-  var t = sessionStorage.getItem(SS_TOKEN), u = sessionStorage.getItem(SS_USER);
-  var p = sessionStorage.getItem(SS_PHASE), o = sessionStorage.getItem(SS_ORDER);
+  var t = STORE.getItem(SS_TOKEN), u = STORE.getItem(SS_USER);
+  var p = STORE.getItem(SS_PHASE), o = STORE.getItem(SS_ORDER);
   if (t && u) {
     state.token = t; state.user = JSON.parse(u);
     if (p === "workspace" && o) { state.order = JSON.parse(o); state.phase = "workspace"; }
@@ -184,11 +222,11 @@ try {
   }
 } catch (e) {}
 
-function savePhase(p) { try { sessionStorage.setItem(SS_PHASE, p); } catch(e){} }
-function saveOrder(o) { try { sessionStorage.setItem(SS_ORDER, JSON.stringify(o)); } catch(e){} }
+function savePhase(p) { try { STORE.setItem(SS_PHASE, p); } catch(e){} }
+function saveOrder(o) { try { STORE.setItem(SS_ORDER, JSON.stringify(o)); } catch(e){} }
 function clearSession() {
-  try { sessionStorage.removeItem(SS_TOKEN); sessionStorage.removeItem(SS_USER);
-        sessionStorage.removeItem(SS_PHASE); sessionStorage.removeItem(SS_ORDER); } catch(e){}
+  try { STORE.removeItem(SS_TOKEN); STORE.removeItem(SS_USER);
+        STORE.removeItem(SS_PHASE); STORE.removeItem(SS_ORDER); } catch(e){}
 }
 
 // Utilities
@@ -308,8 +346,8 @@ function renderPassword() {
     api("/api/einsatzzentrale/login", { method: "POST", body: { user_id: u.id, password: pw } })
       .then(function(data) {
         state.token = data.token; state.user = data.user; state.phase = "order_select";
-        try { sessionStorage.setItem(SS_TOKEN, data.token); sessionStorage.setItem(SS_USER, JSON.stringify(data.user)); } catch(e){}
-        savePhase("order_select"); try { sessionStorage.removeItem(SS_ORDER); } catch(e){}
+        try { STORE.setItem(SS_TOKEN, data.token); STORE.setItem(SS_USER, JSON.stringify(data.user)); } catch(e){}
+        savePhase("order_select"); try { STORE.removeItem(SS_ORDER); } catch(e){}
         render();
       })
       .catch(function(ex) {
