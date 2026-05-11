@@ -17,6 +17,13 @@ User language: **German** (Agent must respond in German).
 
 ## Implementation Log
 ### Feb 2026 – Current Session (continued)
+- ✅ **MQTT GPS-Routing: Modul-UID aus JSON-Payload-Key matchen** (Feb 2026, Bug fix Iteration 3):
+  - **Root Cause**: DSE890-Gateway publiziert GPS unter `eventenergie/{ANLAGE}/{GATEWAY-UID}/gps`. Im Topic steht die **Gateway-UID** (z.B. `1912C4E76883D4B`, 15 Hex), im **JSON-Payload als Top-Level-Key** steht die **Modul-UID** (z.B. `6D2B5CD695`, 10 Hex = `dse_module_uid` im Portal). Vorherige Match-Logik basierte auf Topic-Segmenten → unmoeglich zu matchen.
+  - **Fix**: `_process_gateway_gps` parst jetzt die JSON-Payload-Keys (`{"6D2B5CD695": {"LAT": x, "LON": y}}`) und matcht diese gegen `dse_module_uid` der Devices. Unterstuetzt Multi-Modul-Payloads (mehrere UIDs im selben Topic) — jedes Modul bekommt seine individuelle Position.
+  - Sekundaere Fallbacks: Substring-Match in Mapping/Generator-Prefix, Live-DB-Regex-Suche bei Cache-Stale, Flat-Format-Fallback ohne Modul-Wrapper.
+  - **Tests**: Single-Module-Match ✅ und Multi-Modul (2 Devices unter 1 Gateway) ✅ direkt gegen Live-Funktion verifiziert.
+  - GPS-Log neue Routes: `gateway_module_match` (Erfolg), `rejected_no_module_match` (Modul-UID nicht im Portal hinterlegt).
+
 - ✅ **GPS-Diagnose-UI fuer Admin** (`/admin/gps-diagnose`) (Feb 2026): Drei Tabs
   - **Status & Duplikate**: Liste aller Devices + Generators mit Koordinaten, Alter (Min/h/Tage farblich kodiert), Duplikat-Warnung wenn mehrere Eintraege dieselbe Position teilen.
   - **Live-Log**: zeigt die letzten 200 MQTT-GPS-Events mit Topic, Route (`per_generator`/`per_device`/`gateway_fallback`/`rejected`) und welches Geraet getroffen wurde. "0 Events" Warnung wenn aktuell nichts reinkommt.
