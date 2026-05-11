@@ -49,6 +49,7 @@ import {
   ArrowRightLeft,
   LayoutGrid,
   BookOpen,
+  CheckCircle2,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
@@ -281,6 +282,12 @@ export default function OrderDetailPage() {
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
   const [docCount, setDocCount] = useState(0);
 
+  // Einsatztagebuch
+  const [diaryEntries, setDiaryEntries] = useState([]);
+  const [diaryOpenCount, setDiaryOpenCount] = useState(0);
+  const [diaryForm, setDiaryForm] = useState({ caller_name: "", caller_phone: "", reason: "", location: "" });
+  const [diarySubmitting, setDiarySubmitting] = useState(false);
+
   // 6-Kachel-Navigation: null = Hub-Ansicht, sonst aktive Kachel
   const [activeTab, setActiveTab] = useState(null);
 
@@ -363,15 +370,27 @@ export default function OrderDetailPage() {
     }
   }, [pk]);
 
+  const fetchDiary = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/orders/${pk}/diary`);
+      setDiaryEntries(data?.entries || []);
+      setDiaryOpenCount(data?.open || 0);
+    } catch {
+      setDiaryEntries([]);
+      setDiaryOpenCount(0);
+    }
+  }, [pk]);
+
   useEffect(() => {
     fetchOrder();
     fetchAssets();
     fetchFuelReceipts();
     fetchProjectReports();
     fetchMessprotokolle();
+    fetchDiary();
     // Document count
     api.get(`/orders/order-documents/${pk}`).then(r => setDocCount(r.data?.length || 0)).catch(() => {});
-  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle]);
+  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle, fetchDiary]);
 
   useEffect(() => {
     // fetchGenerators auch ohne center_lat ausfuehren - manuell zugeordnete
@@ -1056,7 +1075,7 @@ export default function OrderDetailPage() {
                   { key: "reports", label: "Projektberichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
                   { key: "fuel", label: "Tankbelege", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
                   { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
-                  { key: "diary", label: "Einsatztagebuch", desc: "Bald verfügbar", icon: BookOpen, color: "slate", count: 0, comingSoon: true },
+                  { key: "diary", label: "Einsatztagebuch", desc: "Stoerungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
                 ].filter(t => !t.hideForFreelancer || !isFreelancer).map((t) => {
                   const colorMap = {
                     orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
@@ -1980,6 +1999,233 @@ export default function OrderDetailPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+          )}
+
+          {/* ═════ Einsatztagebuch ═════ */}
+          {activeTab === "diary" && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5" data-testid="diary-section">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-slate-500" />
+                Einsatztagebuch
+                {diaryEntries.length > 0 && (
+                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-700">
+                    {diaryOpenCount} offen / {diaryEntries.length} gesamt
+                  </span>
+                )}
+              </h3>
+            </div>
+
+            {/* Eingabe-Formular fuer neue Stoerungsmeldung */}
+            <form
+              data-testid="diary-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!diaryForm.reason.trim()) {
+                  toast.error("Grund / Beschreibung ist erforderlich");
+                  return;
+                }
+                setDiarySubmitting(true);
+                try {
+                  await api.post(`/orders/${pk}/diary`, diaryForm);
+                  toast.success("Stoerung eingetragen");
+                  setDiaryForm({ caller_name: "", caller_phone: "", reason: "", location: "" });
+                  fetchDiary();
+                } catch (err) {
+                  toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+                } finally {
+                  setDiarySubmitting(false);
+                }
+              }}
+              className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-5"
+            >
+              <p className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">Neue Stoerungsmeldung</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Anrufer (Name)</label>
+                  <Input
+                    value={diaryForm.caller_name}
+                    onChange={(e) => setDiaryForm({ ...diaryForm, caller_name: e.target.value })}
+                    placeholder="Max Mustermann"
+                    data-testid="diary-input-name"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Telefonnummer</label>
+                  <Input
+                    type="tel"
+                    value={diaryForm.caller_phone}
+                    onChange={(e) => setDiaryForm({ ...diaryForm, caller_phone: e.target.value })}
+                    placeholder="+49 170 1234567"
+                    data-testid="diary-input-phone"
+                  />
+                </div>
+              </div>
+              <div className="mb-3">
+                <label className="text-xs text-gray-600 mb-1 block">Standort der Stoerung</label>
+                <Input
+                  value={diaryForm.location}
+                  onChange={(e) => setDiaryForm({ ...diaryForm, location: e.target.value })}
+                  placeholder="z.B. Halle 3 / Bauplatz B12"
+                  data-testid="diary-input-location"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="text-xs text-gray-600 mb-1 block">Grund / Beschreibung <span className="text-red-500">*</span></label>
+                <textarea
+                  value={diaryForm.reason}
+                  onChange={(e) => setDiaryForm({ ...diaryForm, reason: e.target.value })}
+                  placeholder="z.B. Generator springt nicht an, FI-Schutzschalter ausgeloest"
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                  data-testid="diary-input-reason"
+                  required
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-gray-500">
+                  <Clock className="w-3 h-3 inline mr-1" />
+                  Datum & Uhrzeit werden automatisch geloggt
+                </p>
+                <Button
+                  type="submit"
+                  disabled={diarySubmitting || !diaryForm.reason.trim()}
+                  className="bg-slate-600 hover:bg-slate-700 text-white"
+                  data-testid="diary-submit-btn"
+                >
+                  {diarySubmitting ? "Speichere..." : "Stoerung eintragen"}
+                </Button>
+              </div>
+            </form>
+
+            {/* Liste der Eintraege */}
+            {diaryEntries.length === 0 ? (
+              <div className="text-center py-8 text-sm text-gray-400">
+                Noch keine Eintraege in diesem Einsatztagebuch.
+              </div>
+            ) : (
+              <div className="space-y-2" data-testid="diary-list">
+                {diaryEntries.map((e) => {
+                  const isResolved = e.status === "resolved";
+                  return (
+                    <div
+                      key={e.id}
+                      className={`border rounded-lg p-3 transition-colors ${
+                        isResolved
+                          ? "bg-emerald-50/40 border-emerald-200"
+                          : "bg-white border-amber-300 shadow-sm"
+                      }`}
+                      data-testid={`diary-entry-${e.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            {isResolved ? (
+                              <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
+                                ✓ Behoben
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-2 py-0.5 rounded animate-pulse">
+                                ● Offen
+                              </span>
+                            )}
+                            <span className="text-[11px] text-gray-500 font-mono">
+                              {new Date(e.created_at).toLocaleString("de-DE")}
+                            </span>
+                            {e.created_by_name && (
+                              <span className="text-[11px] text-gray-400">durch {e.created_by_name}</span>
+                            )}
+                          </div>
+                          <p className="text-sm font-medium text-gray-900 mb-1 whitespace-pre-wrap break-words">
+                            {e.reason}
+                          </p>
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600">
+                            {e.caller_name && (
+                              <span><strong>Anrufer:</strong> {e.caller_name}</span>
+                            )}
+                            {e.caller_phone && (
+                              <a
+                                href={`tel:${e.caller_phone}`}
+                                className="text-fuchsia-600 hover:underline"
+                              >
+                                📞 {e.caller_phone}
+                              </a>
+                            )}
+                            {e.location && (
+                              <span><strong>Ort:</strong> {e.location}</span>
+                            )}
+                          </div>
+                          {isResolved && e.resolved_at && (
+                            <div className="text-[11px] text-emerald-700 mt-1">
+                              Behoben am {new Date(e.resolved_at).toLocaleString("de-DE")}
+                              {e.resolved_by_name && ` durch ${e.resolved_by_name}`}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-1 flex-shrink-0">
+                          {isResolved ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  await api.post(`/orders/${pk}/diary/${e.id}/reopen`);
+                                  fetchDiary();
+                                  toast.success("Eintrag wieder geoeffnet");
+                                } catch (err) {
+                                  toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+                                }
+                              }}
+                              className="h-8 text-xs"
+                              data-testid={`diary-reopen-${e.id}`}
+                            >
+                              Erneut oeffnen
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  await api.post(`/orders/${pk}/diary/${e.id}/resolve`);
+                                  fetchDiary();
+                                  toast.success("Als behoben markiert");
+                                } catch (err) {
+                                  toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+                                }
+                              }}
+                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700"
+                              data-testid={`diary-resolve-${e.id}`}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Behoben
+                            </Button>
+                          )}
+                          {(isAdmin || e.created_by_user_id === currentUser?.id) && (
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm("Eintrag wirklich loeschen?")) return;
+                                try {
+                                  await api.delete(`/orders/${pk}/diary/${e.id}`);
+                                  fetchDiary();
+                                  toast.success("Geloescht");
+                                } catch (err) {
+                                  toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+                                }
+                              }}
+                              className="text-[10px] text-red-500 hover:text-red-700 px-2 py-1"
+                              data-testid={`diary-delete-${e.id}`}
+                            >
+                              <Trash2 className="w-3 h-3 inline" /> Loeschen
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

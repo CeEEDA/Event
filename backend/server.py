@@ -2081,6 +2081,10 @@ from routes.orders import router as orders_router, init_orders_routes
 init_orders_routes(db, decode_jwt_token)
 app.include_router(orders_router)
 
+from routes.order_diary import router as order_diary_router, init_order_diary_routes
+init_order_diary_routes(db, decode_jwt_token)
+app.include_router(order_diary_router)
+
 from routes.kirmes import router as kirmes_router, init_kirmes_routes, start_mahnung_scheduler
 init_kirmes_routes(db, decode_jwt_token)
 start_mahnung_scheduler()
