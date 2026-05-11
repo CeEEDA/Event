@@ -27,6 +27,7 @@ import bcrypt
 from bson import ObjectId
 import io
 import zipfile
+import re
 from email_service import send_password_reset_email, send_admin_reset_email
 
 ROOT_DIR = Path(__file__).parent
@@ -1329,7 +1330,40 @@ async def download_shared_file(token: str, data: ShareAccessRequest = None):
             raise HTTPException(status_code=401, detail="Falsches Passwort")
     
     if share.get("share_type") == "folder":
-        raise HTTPException(status_code=400, detail="Ordner-Download nicht unterstützt")
+        # Folder-Share: streame ZIP mit allen Dateien (rekursiv).
+        folder_doc = await db.folders.find_one({"id": share["folder_id"]}, {"_id": 0})
+        if not folder_doc:
+            raise HTTPException(status_code=404, detail="Ordner nicht gefunden")
+
+        files = await db.files.find({
+            "owner_id": folder_doc["owner_id"],
+            "storage_area": folder_doc["storage_area"],
+            "folder_path": {"$regex": f"^{re.escape(folder_doc['path'])}"}
+        }, {"_id": 0}).to_list(10000)
+
+        if not files:
+            raise HTTPException(status_code=404, detail="Ordner ist leer")
+
+        await db.shares.update_one({"token": token}, {"$inc": {"access_count": 1}})
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                try:
+                    grid_out = await fs.open_download_stream_by_name(f["id"])
+                    content = await grid_out.read()
+                    rel_path = f["folder_path"].replace(folder_doc["path"], "", 1).lstrip("/")
+                    zip_path = f"{rel_path}/{f['original_filename']}" if rel_path else f["original_filename"]
+                    zf.writestr(zip_path, content)
+                except Exception as e:
+                    logger.error(f"Error adding shared file {f.get('id')} to zip: {e}")
+        zip_buffer.seek(0)
+        zip_name = f"{folder_doc['name']}.zip"
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zip_name}"'}
+        )
     
     file_doc = await db.files.find_one({"id": share.get("file_id")}, {"_id": 0})
     if not file_doc:

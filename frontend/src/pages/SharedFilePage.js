@@ -72,20 +72,28 @@ export default function SharedFilePage() {
         shareInfo.password_protected ? password : null,
         (p) => setDownloadProgress(p)
       );
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      const isFolder = shareInfo.share_type === "folder";
+      const downloadName = isFolder
+        ? `${shareInfo.folder_name || "ordner"}.zip`
+        : shareInfo.filename;
+      const mime = isFolder ? "application/zip" : (shareInfo.content_type || "application/octet-stream");
+
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: mime }));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", shareInfo.filename);
+      link.setAttribute("download", downloadName);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
       toast.success("Download gestartet");
     } catch (err) {
       if (err.response?.status === 401) {
         toast.error("Falsches Passwort");
+      } else if (err.response?.status === 404) {
+        toast.error("Datei/Ordner nicht gefunden oder leer");
       } else {
         toast.error("Download fehlgeschlagen");
       }
@@ -263,8 +271,8 @@ export default function SharedFilePage() {
             </div>
           )}
 
-          {/* Download Button - only for files */}
-          {!isFolder && shareInfo.allow_download && (
+          {/* Download Button - files AND folders (folder downloads as ZIP) */}
+          {shareInfo.allow_download && (
             <div className="space-y-2">
               <Button
                 onClick={handleDownload}
@@ -279,7 +287,7 @@ export default function SharedFilePage() {
                 ) : (
                   <>
                     <Download className="w-5 h-5 mr-2" />
-                    Herunterladen
+                    {isFolder ? "Ordner als ZIP herunterladen" : "Herunterladen"}
                   </>
                 )}
               </Button>
@@ -304,7 +312,7 @@ export default function SharedFilePage() {
           )}
 
           {/* Folder info */}
-          {isFolder && (
+          {isFolder && shareInfo.allow_upload && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
               <p>Dies ist ein freigegebener Ordner. Sie können Dateien hochladen.</p>
             </div>

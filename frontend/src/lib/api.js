@@ -86,7 +86,7 @@ export const getFolderDownloadUrl = (folderId) => {
 let _downloadLinkCallback = null;
 export const setDownloadLinkCallback = (cb) => { _downloadLinkCallback = cb; };
 
-// Download file
+// Download file - uses native browser download (streaming, no RAM blob)
 export const downloadFile = async (fileId, filename) => {
   const url = getDownloadUrl(fileId);
 
@@ -98,14 +98,21 @@ export const downloadFile = async (fileId, filename) => {
     return;
   }
 
-  // Normal download outside iframe
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const blob = await response.blob();
-  saveAs(blob, filename);
+  // Native browser download via <a download> click.
+  // Vorteile gegenueber fetch+blob:
+  //  - Browser-natives Save-As-Dialog je nach Settings
+  //  - Streaming ohne RAM-Limit (wichtig fuer grosse Dateien >50 MB)
+  //  - Funktioniert auch wenn fetch in iframe geblockt waere
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 };
 
-// Download folder as ZIP
+// Download folder as ZIP - uses native browser download
 export const downloadFolderZip = async (folderId, folderName) => {
   const url = getFolderDownloadUrl(folderId);
 
@@ -116,10 +123,13 @@ export const downloadFolderZip = async (folderId, folderName) => {
     return;
   }
 
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const blob = await response.blob();
-  saveAs(blob, `${folderName}.zip`);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${folderName}.zip`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 };
 
 // File upload helper
