@@ -47,6 +47,8 @@ import {
   Search,
   Filter,
   ArrowRightLeft,
+  LayoutGrid,
+  BookOpen,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
@@ -278,6 +280,9 @@ export default function OrderDetailPage() {
   const [messprotokolle, setMessprotokolle] = useState([]);
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
   const [docCount, setDocCount] = useState(0);
+
+  // 6-Kachel-Navigation: null = Hub-Ansicht, sonst aktive Kachel
+  const [activeTab, setActiveTab] = useState(null);
 
   const { isAdmin, user: currentUser } = useAuth();
   const isFreelancer = currentUser?.role === "freelancer";
@@ -1037,7 +1042,89 @@ export default function OrderDetailPage() {
             )}
           </div>
 
+          {/* ═════ 6-Kachel-Navigation (Hub) ═════ */}
+          {activeTab === null && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="order-tile-hub">
+              <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <LayoutGrid className="w-4 h-4 text-fuchsia-500" />
+                Auftrags-Module
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {[
+                  { key: "articles", label: "Artikel-Positionierung", desc: "Stromerzeuger, Lichtmasten & mehr", icon: MapPin, color: "orange", count: assets?.length || 0 },
+                  { key: "documents-link", label: "Dokumente", desc: "Lageplan, Fotos & Unterlagen", icon: FolderOpen, color: "fuchsia", count: docCount },
+                  { key: "reports", label: "Projektberichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
+                  { key: "fuel", label: "Tankbelege", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
+                  { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
+                  { key: "diary", label: "Einsatztagebuch", desc: "Bald verfügbar", icon: BookOpen, color: "slate", count: 0, comingSoon: true },
+                ].filter(t => !t.hideForFreelancer || !isFreelancer).map((t) => {
+                  const colorMap = {
+                    orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
+                    fuchsia: "bg-fuchsia-50 text-fuchsia-600 group-hover:bg-fuchsia-100",
+                    violet: "bg-violet-50 text-violet-600 group-hover:bg-violet-100",
+                    amber: "bg-amber-50 text-amber-600 group-hover:bg-amber-100",
+                    purple: "bg-purple-50 text-purple-600 group-hover:bg-purple-100",
+                    slate: "bg-slate-50 text-slate-500 group-hover:bg-slate-100",
+                  };
+                  const Icon = t.icon;
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => {
+                        if (t.comingSoon) {
+                          toast.info("Einsatztagebuch — bald verfügbar");
+                          return;
+                        }
+                        if (t.key === "documents-link") {
+                          navigate(`/orders/${pk}/dokumente`);
+                          return;
+                        }
+                        setActiveTab(t.key);
+                      }}
+                      disabled={t.comingSoon}
+                      className={`group relative bg-white border border-gray-200 rounded-lg p-4 text-left transition-all hover:border-fuchsia-300 hover:shadow-md ${
+                        t.comingSoon ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                      }`}
+                      data-testid={`tile-${t.key}`}
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-2 transition-colors ${colorMap[t.color]}`}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-900">{t.label}</p>
+                        {t.count > 0 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700 min-w-[20px] text-center">
+                            {t.count}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 leading-snug">{t.desc}</p>
+                      {t.comingSoon && (
+                        <span className="absolute top-2 right-2 text-[9px] font-semibold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                          Bald
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Zurück-Button wenn ein Modul aktiv */}
+          {activeTab !== null && (
+            <button
+              onClick={() => setActiveTab(null)}
+              className="flex items-center gap-2 text-sm text-fuchsia-600 hover:text-fuchsia-700 font-medium px-1"
+              data-testid="back-to-tiles-btn"
+            >
+              <ChevronRight className="w-4 h-4 rotate-180" />
+              Zurück zur Übersicht
+            </button>
+          )}
+
           {/* Asset Placement Section */}
+          {activeTab === "articles" && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="assets-section">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -1292,6 +1379,7 @@ export default function OrderDetailPage() {
               </>
             )}
           </div>
+          )}
 
           {/* Asset Detail Modal */}
           {selectedAsset && (
@@ -1575,32 +1663,10 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          {/* Dokumentenablage */}
-          <div
-            className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-fuchsia-300 hover:bg-fuchsia-50/30 transition-colors"
-            onClick={() => navigate(`/orders/${pk}/dokumente`)}
-            data-testid="documents-card"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-fuchsia-50 rounded-lg flex items-center justify-center">
-                  <FolderOpen className="w-5 h-5 text-fuchsia-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Dokumentenablage</p>
-                  <p className="text-xs text-gray-500">Lageplan, Fotos & Unterlagen</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {docCount > 0 && (
-                  <span className="text-xs bg-fuchsia-100 text-fuchsia-700 px-2 py-0.5 rounded-full font-medium">{docCount}</span>
-                )}
-                <ChevronRight className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
+          {/* Dokumentenablage - jetzt in der Hub-Uebersicht, hier entfernt */}
 
           {/* Projektberichte Section */}
+          {activeTab === "reports" && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="project-reports-section">
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1721,9 +1787,10 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Tankbelege Section */}
-          {!isFreelancer && (
+          {activeTab === "fuel" && !isFreelancer && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="fuel-receipts-section">
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1837,6 +1904,7 @@ export default function OrderDetailPage() {
           )}
 
           {/* ═════ Messprotokolle ═════ */}
+          {activeTab === "messprotokolle" && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -1915,6 +1983,7 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+          )}
 
           {showMessprotokollDialog && (
             <MessprotokollDialog
