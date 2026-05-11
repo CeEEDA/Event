@@ -14,10 +14,12 @@ Sicherheits-Aspekte:
   - Token wird vom bestehenden create_jwt_token erzeugt.
 """
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timedelta, timezone, date
+from pathlib import Path as _Path
 import logging
 
 router = APIRouter(prefix="/api/einsatzzentrale", tags=["einsatzzentrale"])
@@ -372,3 +374,28 @@ async def kiosk_weather(
         "end": e.isoformat(),
         "days": out_days,
     }
+
+
+# ----------------------------------------------------------------------------
+# 6. Pi-Kiosk-Installer (PUBLIC, liefert Shell-Skript)
+# ----------------------------------------------------------------------------
+
+_INSTALL_SCRIPT_PATH = _Path("/app/scripts/einsatzzentrale-pi/install_einsatzzentrale_kiosk.sh")
+
+
+@router.get("/install-script", response_class=PlainTextResponse)
+async def install_script():
+    """Liefert das Pi-Kiosk-Installations-Skript als Shell-Skript.
+
+    Nutzung auf dem Pi:
+      curl -sSL https://<host>/api/einsatzzentrale/install-script \\
+        | sudo bash -s -- https://<host>/einsatzzentrale
+    """
+    if not _INSTALL_SCRIPT_PATH.exists():
+        raise HTTPException(status_code=404, detail="Installer nicht verfuegbar")
+    return PlainTextResponse(
+        content=_INSTALL_SCRIPT_PATH.read_text(encoding="utf-8"),
+        media_type="text/x-shellscript; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="install_einsatzzentrale_kiosk.sh"'},
+    )
+
