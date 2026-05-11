@@ -13,7 +13,7 @@ Sicherheits-Aspekte:
     auf einem oeffentlich sichtbaren Bildschirm haengt.
   - Token wird vom bestehenden create_jwt_token erzeugt.
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -566,7 +566,7 @@ async def list_pis(user: dict = Depends(_require_admin)):
 
 
 @router.post("/pis/generate-setup")
-async def generate_pi_setup(body: PiSetupRequest, user: dict = Depends(_require_admin)):
+async def generate_pi_setup(body: PiSetupRequest, request: "Request", user: dict = Depends(_require_admin)):
     """Registriert einen neuen Pi-Kiosk und liefert den One-Liner-Befehl
     fuer das Setup auf dem Pi."""
     pi_name = (body.pi_name or "").strip()
@@ -591,9 +591,15 @@ async def generate_pi_setup(body: PiSetupRequest, user: dict = Depends(_require_
     }
     await _db.einsatzzentrale_pis.insert_one(doc)
 
-    # Portal-URL aus env oder vom Request ableiten
-    portal_url = _os_setup.environ.get("PORTAL_URL", "https://eventenergie.app").rstrip("/")
-    # One-Liner: laed das Install-Script und uebergibt direkt die Kiosk-URL
+    # Portal-URL: bevorzugt aus aktuellem Request (Origin/Forwarded-Host),
+    # damit der Setup-Befehl auf das ECHTE Portal zeigt und nicht auf einen
+    # Default. Fallback: PORTAL_URL env-Var.
+    portal_url = (
+        request.headers.get("x-forwarded-proto-host")
+        or (request.headers.get("origin") or "").rstrip("/")
+        or _build_portal_url_from_request(request)
+        or _os_setup.environ.get("PORTAL_URL", "https://eventenergie.app").rstrip("/")
+    )
     kiosk_url = f"{portal_url}/api/einsatzzentrale/kiosk-page?pi_id={pi_id}&key={plain_key}"
     install_url = f"{portal_url}/api/einsatzzentrale/install-script"
     setup_command = (
@@ -605,8 +611,22 @@ async def generate_pi_setup(body: PiSetupRequest, user: dict = Depends(_require_
         "pi_name": pi_name,
         "setup_command": setup_command,
         "kiosk_url": kiosk_url,
+        "portal_url": portal_url,
         "key_prefix": plain_key[:8],
     }
+
+
+def _build_portal_url_from_request(request: "Request") -> str:
+    """Baut die externe Portal-URL aus den Request-Headers.
+
+    Hinter dem K8s-Ingress kommen `x-forwarded-proto` und `x-forwarded-host`
+    bzw. `host`. Wir bauen daraus 'https://host' zusammen.
+    """
+    proto = (request.headers.get("x-forwarded-proto") or "https").split(",")[0].strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    if not host:
+        return ""
+    return f"{proto}://{host}"
 
 
 @router.delete("/pis/{pi_id}")
