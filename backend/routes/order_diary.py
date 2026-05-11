@@ -11,11 +11,15 @@ Endpunkte:
 
 Schema mqtt-ueberlagerungsfrei: collection `order_diary_entries`
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timezone
+import csv
+import io
+import re
 import uuid
 import logging
 
@@ -55,6 +59,8 @@ class DiaryEntryCreate(BaseModel):
     caller_phone: Optional[str] = ""
     reason: str = Field(..., min_length=1)
     location: Optional[str] = ""
+    is_nachtrag: Optional[bool] = False
+    assigned_trupp_ids: Optional[List[str]] = None
 
 
 class DiaryEntryUpdate(BaseModel):
@@ -62,6 +68,8 @@ class DiaryEntryUpdate(BaseModel):
     caller_phone: Optional[str] = None
     reason: Optional[str] = None
     location: Optional[str] = None
+    is_nachtrag: Optional[bool] = None
+    assigned_trupp_ids: Optional[List[str]] = None
 
 
 def _doc_to_response(d: dict) -> dict:
@@ -73,6 +81,8 @@ def _doc_to_response(d: dict) -> dict:
         "reason": d.get("reason") or "",
         "location": d.get("location") or "",
         "status": d.get("status") or "open",
+        "is_nachtrag": bool(d.get("is_nachtrag", False)),
+        "assigned_trupp_ids": list(d.get("assigned_trupp_ids") or []),
         "created_at": d.get("created_at"),
         "created_by_user_id": d.get("created_by_user_id"),
         "created_by_name": d.get("created_by_name") or "",
@@ -121,6 +131,8 @@ async def create_diary_entry(order_pk: str,
         "caller_phone": (payload.caller_phone or "").strip(),
         "reason": payload.reason.strip(),
         "location": (payload.location or "").strip(),
+        "is_nachtrag": bool(payload.is_nachtrag),
+        "assigned_trupp_ids": [str(t) for t in (payload.assigned_trupp_ids or []) if t],
         "status": "open",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by_user_id": user["id"],
@@ -205,6 +217,10 @@ async def update_diary_entry(order_pk: str, entry_id: str,
         v = getattr(payload, k)
         if v is not None:
             upd[k] = v.strip() if isinstance(v, str) else v
+    if payload.is_nachtrag is not None:
+        upd["is_nachtrag"] = bool(payload.is_nachtrag)
+    if payload.assigned_trupp_ids is not None:
+        upd["assigned_trupp_ids"] = [str(t) for t in payload.assigned_trupp_ids if t]
     if not upd:
         raise HTTPException(status_code=400, detail="Keine Aenderungen")
     if "reason" in upd and not upd["reason"]:
@@ -238,3 +254,252 @@ async def delete_diary_entry(order_pk: str, entry_id: str,
         {"id": entry_id, "order_pk": str(order_pk)}
     )
     return {"message": "Eintrag geloescht", "id": entry_id}
+
+
+# ----------------------------------------------------------------------------
+# Search & Export
+# ----------------------------------------------------------------------------
+
+# WICHTIG: Diese Routes liegen UNTER /api/orders/{order_pk}/diary/... -> Konflikt-frei
+# durch eindeutige sub-paths "search-all" und "export.csv"
+
+@router.get("/diary/search-all")
+async def search_diary_global(q: str = Query(..., min_length=2),
+                               limit: int = Query(50, ge=1, le=200),
+                               user: dict = Depends(_auth_user)):
+    """Volltextsuche ueber ALLE Einsatztagebuch-Eintraege (alle Auftraege).
+    Sucht in: caller_name, caller_phone, reason, location, order_pk.
+    Nur Admin & Disponent (Freelancer sehen nur eigene)."""
+    q = q.strip()
+    if not q:
+        return {"q": q, "count": 0, "results": []}
+    pattern = re.escape(q)
+    base_filter = {
+        "$or": [
+            {"caller_name": {"$regex": pattern, "$options": "i"}},
+            {"caller_phone": {"$regex": pattern, "$options": "i"}},
+            {"reason": {"$regex": pattern, "$options": "i"}},
+            {"location": {"$regex": pattern, "$options": "i"}},
+            {"order_pk": {"$regex": pattern, "$options": "i"}},
+        ]
+    }
+    if _is_freelancer(user):
+        allowed = [str(x) for x in (user.get("freelancer_orders") or [])]
+        if not allowed:
+            return {"q": q, "count": 0, "results": []}
+        base_filter = {"$and": [base_filter, {"order_pk": {"$in": allowed}}]}
+    rows = await _db.order_diary_entries.find(
+        base_filter, {"_id": 0}
+    ).sort([("created_at", -1)]).to_list(limit)
+
+    # Reichere mit Auftrags-Namen an
+    order_pks = list(set(r["order_pk"] for r in rows))
+    orders_map = {}
+    if order_pks:
+        # Probiere primary_key Schluessel; einige sind int, manche string
+        try:
+            order_pks_int = [int(p) for p in order_pks if str(p).isdigit()]
+        except Exception:
+            order_pks_int = []
+        order_docs = await _db.orders_cache.find(
+            {"$or": [
+                {"primary_key": {"$in": order_pks}},
+                {"primary_key": {"$in": order_pks_int}} if order_pks_int else {},
+            ]},
+            {"_id": 0, "primary_key": 1, "order_no": 1, "address": 1, "contact_name": 1}
+        ).to_list(500)
+        for o in order_docs:
+            orders_map[str(o.get("primary_key"))] = {
+                "order_no": o.get("order_no") or "",
+                "address": o.get("address") or "",
+                "contact_name": o.get("contact_name") or "",
+            }
+    results = []
+    for r in rows:
+        d = _doc_to_response(r)
+        info = orders_map.get(str(r["order_pk"]), {})
+        d["order_no"] = info.get("order_no", "")
+        d["order_address"] = info.get("address", "")
+        d["order_contact"] = info.get("contact_name", "")
+        results.append(d)
+    return {"q": q, "count": len(results), "results": results}
+
+
+@router.get("/{order_pk}/diary/export.csv")
+async def export_diary_csv(order_pk: str, user: dict = Depends(_auth_user)):
+    """Exportiere alle Eintraege eines Auftrags als CSV (UTF-8 BOM, Semikolon-Trenner)."""
+    if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    rows = await _db.order_diary_entries.find(
+        {"order_pk": str(order_pk)}, {"_id": 0}
+    ).sort([("created_at", 1)]).to_list(2000)
+
+    buf = io.StringIO()
+    buf.write("\ufeff")  # UTF-8 BOM fuer Excel
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "Datum", "Uhrzeit", "Status", "Nachtrag",
+        "Anrufer", "Telefon", "Standort", "Grund",
+        "Erfasst von", "Behoben am", "Behoben durch", "Eintrag-ID"
+    ])
+    for r in rows:
+        try:
+            dt = datetime.fromisoformat((r.get("created_at") or "").replace("Z", "+00:00"))
+            date_str = dt.strftime("%d.%m.%Y")
+            time_str = dt.strftime("%H:%M:%S")
+        except Exception:
+            date_str = r.get("created_at", "")
+            time_str = ""
+        resolved_at = ""
+        if r.get("resolved_at"):
+            try:
+                dt2 = datetime.fromisoformat(r["resolved_at"].replace("Z", "+00:00"))
+                resolved_at = dt2.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                resolved_at = r["resolved_at"]
+        writer.writerow([
+            date_str, time_str,
+            "Behoben" if r.get("status") == "resolved" else "Offen",
+            "Ja" if r.get("is_nachtrag") else "Nein",
+            r.get("caller_name", ""),
+            r.get("caller_phone", ""),
+            r.get("location", ""),
+            (r.get("reason", "") or "").replace("\n", " "),
+            r.get("created_by_name", ""),
+            resolved_at,
+            r.get("resolved_by_name", ""),
+            r.get("id", ""),
+        ])
+    csv_bytes = buf.getvalue().encode("utf-8")
+    filename = f"einsatztagebuch_auftrag_{order_pk}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ============================================================================
+# TRUPPS (Teams) - pro Auftrag
+# ============================================================================
+# Collection: `order_trupps`
+# Schema: { id, order_pk, name, members: [str x <=4], created_at, created_by_user_id }
+# Status (unterwegs/verfuegbar) ist ABGELEITET aus offenen Diary-Eintraegen.
+
+class TruppPayload(BaseModel):
+    name: Optional[str] = None
+    members: Optional[List[str]] = None  # max 4
+
+
+def _trupp_doc_to_response(d: dict, busy_ids: set) -> dict:
+    return {
+        "id": d["id"],
+        "order_pk": d["order_pk"],
+        "name": d.get("name") or "",
+        "members": [(m or "").strip() for m in (d.get("members") or [])],
+        "is_busy": d["id"] in busy_ids,
+        "created_at": d.get("created_at"),
+    }
+
+
+async def _compute_busy_trupps(order_pk: str) -> set:
+    """Welche Trupp-IDs sind aktuell auf einer offenen Stoerung gebunden?"""
+    cursor = _db.order_diary_entries.find(
+        {"order_pk": str(order_pk), "status": "open"},
+        {"_id": 0, "assigned_trupp_ids": 1}
+    )
+    busy = set()
+    async for row in cursor:
+        for tid in (row.get("assigned_trupp_ids") or []):
+            busy.add(str(tid))
+    return busy
+
+
+@router.get("/{order_pk}/trupps")
+async def list_trupps(order_pk: str, user: dict = Depends(_auth_user)):
+    """Liste aller Trupps zu einem Auftrag (inkl. aktueller Status: verfuegbar/unterwegs)."""
+    if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Auftrag")
+    rows = await _db.order_trupps.find(
+        {"order_pk": str(order_pk)}, {"_id": 0}
+    ).sort([("created_at", 1)]).to_list(200)
+    busy = await _compute_busy_trupps(order_pk)
+    return {
+        "total": len(rows),
+        "trupps": [_trupp_doc_to_response(r, busy) for r in rows],
+    }
+
+
+@router.post("/{order_pk}/trupps")
+async def create_trupp(order_pk: str,
+                        payload: TruppPayload,
+                        user: dict = Depends(_auth_user)):
+    """Neuen Trupp anlegen. Wenn kein Name angegeben, wird 'Trupp N' automatisch vergeben."""
+    if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung fuer diesen Auftrag")
+    name = (payload.name or "").strip()
+    if not name:
+        # Auto-Nummerierung: zaehle bestehende Trupps zu diesem Auftrag
+        existing_count = await _db.order_trupps.count_documents({"order_pk": str(order_pk)})
+        name = f"Trupp {existing_count + 1}"
+    members = [(m or "").strip() for m in (payload.members or [])][:4]
+    trupp = {
+        "id": str(uuid.uuid4()),
+        "order_pk": str(order_pk),
+        "name": name,
+        "members": members,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by_user_id": user["id"],
+    }
+    await _db.order_trupps.insert_one(trupp)
+    logger.info(f"Trupp created order={order_pk} name='{name}' by {user.get('email')}")
+    return _trupp_doc_to_response(trupp, set())
+
+
+@router.put("/{order_pk}/trupps/{trupp_id}")
+async def update_trupp(order_pk: str, trupp_id: str,
+                        payload: TruppPayload,
+                        user: dict = Depends(_auth_user)):
+    """Trupp-Name oder Mitglieder bearbeiten."""
+    if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    upd = {}
+    if payload.name is not None:
+        n = payload.name.strip()
+        if not n:
+            raise HTTPException(status_code=400, detail="Name darf nicht leer sein")
+        upd["name"] = n
+    if payload.members is not None:
+        upd["members"] = [(m or "").strip() for m in payload.members][:4]
+    if not upd:
+        raise HTTPException(status_code=400, detail="Keine Aenderungen")
+    res = await _db.order_trupps.update_one(
+        {"id": trupp_id, "order_pk": str(order_pk)},
+        {"$set": upd}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trupp nicht gefunden")
+    doc = await _db.order_trupps.find_one(
+        {"id": trupp_id, "order_pk": str(order_pk)}, {"_id": 0}
+    )
+    busy = await _compute_busy_trupps(order_pk)
+    return _trupp_doc_to_response(doc, busy)
+
+
+@router.delete("/{order_pk}/trupps/{trupp_id}")
+async def delete_trupp(order_pk: str, trupp_id: str,
+                        user: dict = Depends(_auth_user)):
+    """Trupp loeschen (entfernt ihn auch aus allen Diary-Eintraegen)."""
+    if _is_freelancer(user) and not _freelancer_can_see(user, order_pk):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    res = await _db.order_trupps.delete_one(
+        {"id": trupp_id, "order_pk": str(order_pk)}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Trupp nicht gefunden")
+    # Aus allen Diary-Eintraegen entfernen
+    await _db.order_diary_entries.update_many(
+        {"order_pk": str(order_pk), "assigned_trupp_ids": trupp_id},
+        {"$pull": {"assigned_trupp_ids": trupp_id}}
+    )
+    return {"message": "Trupp geloescht", "id": trupp_id}

@@ -50,6 +50,8 @@ import {
   LayoutGrid,
   BookOpen,
   CheckCircle2,
+  Users,
+  UserPlus,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
@@ -285,8 +287,16 @@ export default function OrderDetailPage() {
   // Einsatztagebuch
   const [diaryEntries, setDiaryEntries] = useState([]);
   const [diaryOpenCount, setDiaryOpenCount] = useState(0);
-  const [diaryForm, setDiaryForm] = useState({ caller_name: "", caller_phone: "", reason: "", location: "" });
+  const [diaryForm, setDiaryForm] = useState({ caller_name: "", caller_phone: "", reason: "", location: "", is_nachtrag: false, assigned_trupp_ids: [] });
   const [diarySubmitting, setDiarySubmitting] = useState(false);
+  const [diarySearchQ, setDiarySearchQ] = useState("");
+  const [diarySearchResults, setDiarySearchResults] = useState(null); // null = no search active
+
+  // Trupps (pro Auftrag)
+  const [trupps, setTrupps] = useState([]);
+  const [truppCreating, setTruppCreating] = useState(false);
+  const [editingTruppId, setEditingTruppId] = useState(null);
+  const [truppEditDraft, setTruppEditDraft] = useState({ name: "", members: ["", "", "", ""] });
 
   // 6-Kachel-Navigation: null = Hub-Ansicht, sonst aktive Kachel
   const [activeTab, setActiveTab] = useState(null);
@@ -381,6 +391,94 @@ export default function OrderDetailPage() {
     }
   }, [pk]);
 
+  const fetchTrupps = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/orders/${pk}/trupps`);
+      setTrupps(data?.trupps || []);
+    } catch {
+      setTrupps([]);
+    }
+  }, [pk]);
+
+  const handleCreateTrupp = useCallback(async () => {
+    setTruppCreating(true);
+    try {
+      await api.post(`/orders/${pk}/trupps`, { name: null, members: [] });
+      await fetchTrupps();
+      toast.success("Trupp angelegt");
+    } catch (err) {
+      toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setTruppCreating(false);
+    }
+  }, [pk, fetchTrupps]);
+
+  const handleSaveTrupp = useCallback(async (truppId) => {
+    const name = (truppEditDraft.name || "").trim();
+    if (!name) {
+      toast.error("Name darf nicht leer sein");
+      return;
+    }
+    try {
+      await api.put(`/orders/${pk}/trupps/${truppId}`, {
+        name,
+        members: (truppEditDraft.members || []).map((m) => (m || "").trim()).filter(Boolean).slice(0, 4),
+      });
+      setEditingTruppId(null);
+      await fetchTrupps();
+      toast.success("Trupp gespeichert");
+    } catch (err) {
+      toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+    }
+  }, [pk, truppEditDraft, fetchTrupps]);
+
+  const handleDeleteTrupp = useCallback(async (truppId, truppName) => {
+    if (!window.confirm(`Trupp "${truppName}" wirklich loeschen?`)) return;
+    try {
+      await api.delete(`/orders/${pk}/trupps/${truppId}`);
+      await fetchTrupps();
+      await fetchDiary(); // Eintraege koennen geaendert sein
+      toast.success("Trupp geloescht");
+    } catch (err) {
+      toast.error("Fehler: " + (err.response?.data?.detail || err.message));
+    }
+  }, [pk, fetchTrupps, fetchDiary]);
+
+  // Debounced global search across ALL orders
+  useEffect(() => {
+    const q = (diarySearchQ || "").trim();
+    if (q.length < 2) {
+      setDiarySearchResults(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/orders/diary/search-all`, { params: { q, limit: 50 } });
+        setDiarySearchResults(data?.results || []);
+      } catch {
+        setDiarySearchResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [diarySearchQ]);
+
+  const handleDiaryCsvExport = useCallback(async () => {
+    try {
+      const res = await api.get(`/orders/${pk}/diary/export.csv`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `einsatztagebuch_auftrag_${pk}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("CSV exportiert");
+    } catch (err) {
+      toast.error("CSV-Export fehlgeschlagen: " + (err.response?.data?.detail || err.message));
+    }
+  }, [pk]);
+
   useEffect(() => {
     fetchOrder();
     fetchAssets();
@@ -388,9 +486,10 @@ export default function OrderDetailPage() {
     fetchProjectReports();
     fetchMessprotokolle();
     fetchDiary();
+    fetchTrupps();
     // Document count
     api.get(`/orders/order-documents/${pk}`).then(r => setDocCount(r.data?.length || 0)).catch(() => {});
-  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle, fetchDiary]);
+  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle, fetchDiary, fetchTrupps]);
 
   useEffect(() => {
     // fetchGenerators auch ohne center_lat ausfuehren - manuell zugeordnete
@@ -1140,6 +1239,157 @@ export default function OrderDetailPage() {
               <ChevronRight className="w-4 h-4 rotate-180" />
               Zurück zur Übersicht
             </button>
+          )}
+
+          {/* ═════ Trupps (nur im Einsatztagebuch sichtbar) ═════ */}
+          {activeTab === "diary" && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4" data-testid="trupps-section">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-500" />
+                  Trupps
+                  {trupps.length > 0 && (
+                    <span className="text-xs text-gray-500 font-normal">
+                      ({trupps.filter(t => !t.is_busy).length} verfügbar / {trupps.filter(t => t.is_busy).length} unterwegs)
+                    </span>
+                  )}
+                </h3>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCreateTrupp}
+                  disabled={truppCreating}
+                  data-testid="trupp-add-btn"
+                >
+                  <UserPlus className="w-3.5 h-3.5 mr-1" />
+                  {truppCreating ? "Lege an..." : "Trupp hinzufügen"}
+                </Button>
+              </div>
+
+              {trupps.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-3">
+                  Noch keine Trupps angelegt. Lege Trupps an, um sie im Störfall zuzuweisen.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" data-testid="trupp-grid">
+                  {trupps.map((t) => {
+                    const isEditing = editingTruppId === t.id;
+                    const busy = t.is_busy;
+                    return (
+                      <div
+                        key={t.id}
+                        className={`relative border-2 rounded-lg p-3 transition-all ${
+                          busy
+                            ? "bg-red-50 border-red-400 shadow-sm"
+                            : "bg-emerald-50 border-emerald-400"
+                        }`}
+                        data-testid={`trupp-card-${t.id}`}
+                      >
+                        {/* Status-Indikator-Punkt */}
+                        <div className="absolute top-2 right-2 flex items-center gap-1">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full ${
+                              busy ? "bg-red-500 animate-pulse" : "bg-emerald-500"
+                            }`}
+                            data-testid={`trupp-status-dot-${t.id}`}
+                            title={busy ? "Unterwegs" : "Verfügbar"}
+                          />
+                          <span className={`text-[10px] font-bold uppercase ${
+                            busy ? "text-red-700" : "text-emerald-700"
+                          }`}>
+                            {busy ? "Unterwegs" : "Verfügbar"}
+                          </span>
+                        </div>
+
+                        {isEditing ? (
+                          <div className="space-y-2 pt-5">
+                            <Input
+                              value={truppEditDraft.name}
+                              onChange={(e) => setTruppEditDraft({ ...truppEditDraft, name: e.target.value })}
+                              placeholder="Trupp-Name"
+                              className="h-8 text-sm font-semibold"
+                              data-testid={`trupp-input-name-${t.id}`}
+                            />
+                            {[0, 1, 2, 3].map((i) => (
+                              <Input
+                                key={i}
+                                value={truppEditDraft.members[i] || ""}
+                                onChange={(e) => {
+                                  const m = [...(truppEditDraft.members || ["", "", "", ""])];
+                                  m[i] = e.target.value;
+                                  setTruppEditDraft({ ...truppEditDraft, members: m });
+                                }}
+                                placeholder={`Mitglied ${i + 1}`}
+                                className="h-7 text-xs"
+                                data-testid={`trupp-input-member-${t.id}-${i}`}
+                              />
+                            ))}
+                            <div className="flex gap-1 pt-1">
+                              <Button
+                                size="sm"
+                                onClick={() => handleSaveTrupp(t.id)}
+                                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 flex-1"
+                                data-testid={`trupp-save-${t.id}`}
+                              >
+                                <Save className="w-3 h-3 mr-1" /> Speichern
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditingTruppId(null)}
+                                className="h-7 text-xs"
+                                data-testid={`trupp-cancel-${t.id}`}
+                              >
+                                Abbr.
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="pt-5">
+                            <h4 className={`text-sm font-bold mb-1.5 ${busy ? "text-red-900" : "text-emerald-900"}`}>
+                              {t.name}
+                            </h4>
+                            {t.members && t.members.length > 0 ? (
+                              <ul className="space-y-0.5 mb-2">
+                                {t.members.map((m, idx) => (
+                                  <li key={idx} className="text-xs text-gray-700 flex items-center gap-1">
+                                    <User className="w-3 h-3 text-gray-400" />
+                                    {m}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-[11px] text-gray-400 italic mb-2">Keine Mitglieder</p>
+                            )}
+                            <div className="flex gap-1 mt-2 pt-2 border-t border-gray-200/60">
+                              <button
+                                onClick={() => {
+                                  setEditingTruppId(t.id);
+                                  const members = [...(t.members || [])];
+                                  while (members.length < 4) members.push("");
+                                  setTruppEditDraft({ name: t.name, members: members.slice(0, 4) });
+                                }}
+                                className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                data-testid={`trupp-edit-${t.id}`}
+                              >
+                                <Pencil className="w-3 h-3" /> Bearbeiten
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTrupp(t.id, t.name)}
+                                className="text-[11px] text-red-500 hover:text-red-700 flex items-center gap-1 ml-auto"
+                                data-testid={`trupp-delete-${t.id}`}
+                              >
+                                <Trash2 className="w-3 h-3" /> Löschen
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Asset Placement Section */}
@@ -2007,7 +2257,7 @@ export default function OrderDetailPage() {
           {/* ═════ Einsatztagebuch ═════ */}
           {activeTab === "diary" && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5" data-testid="diary-section">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-slate-500" />
                 Einsatztagebuch
@@ -2017,6 +2267,93 @@ export default function OrderDetailPage() {
                   </span>
                 )}
               </h3>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDiaryCsvExport}
+                disabled={diaryEntries.length === 0}
+                data-testid="diary-csv-export-btn"
+              >
+                <Download className="w-3.5 h-3.5 mr-1" /> CSV exportieren
+              </Button>
+            </div>
+
+            {/* Globale Volltextsuche */}
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={diarySearchQ}
+                  onChange={(e) => setDiarySearchQ(e.target.value)}
+                  placeholder="Suchen: Anrufer, Telefon, Standort, Grund (auftragsuebergreifend) ..."
+                  className="pl-9 pr-9"
+                  data-testid="diary-search-input"
+                />
+                {diarySearchQ && (
+                  <button
+                    onClick={() => setDiarySearchQ("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    data-testid="diary-search-clear"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {diarySearchResults !== null && (
+                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="diary-search-results">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-blue-800">
+                      <Search className="w-3 h-3 inline mr-1" />
+                      {diarySearchResults.length} Treffer auftragsuebergreifend
+                      {diarySearchResults.length === 50 && " (Max. 50 angezeigt)"}
+                    </p>
+                  </div>
+                  {diarySearchResults.length === 0 ? (
+                    <p className="text-xs text-gray-600">Keine Treffer. Vermutlich erster Anruf!</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                      {diarySearchResults.map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => {
+                            if (String(r.order_pk) !== String(pk)) {
+                              navigate(`/orders/${r.order_pk}`);
+                            }
+                          }}
+                          className="w-full text-left bg-white border border-blue-100 rounded p-2 text-xs hover:border-blue-300 hover:shadow-sm transition-colors"
+                          data-testid={`diary-search-result-${r.id}`}
+                        >
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                              r.status === "resolved" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                            }`}>
+                              {r.status === "resolved" ? "✓ Behoben" : "● Offen"}
+                            </span>
+                            {r.is_nachtrag && (
+                              <span className="text-[9px] font-bold uppercase bg-fuchsia-100 text-fuchsia-700 px-1.5 py-0.5 rounded">
+                                Nachtrag
+                              </span>
+                            )}
+                            <span className="text-[10px] text-gray-500 font-mono">
+                              {new Date(r.created_at).toLocaleDateString("de-DE")}
+                            </span>
+                            <span className="text-[10px] text-blue-700 font-semibold">
+                              Auftrag #{r.order_no || r.order_pk}
+                            </span>
+                            {String(r.order_pk) !== String(pk) && (
+                              <span className="text-[9px] text-blue-500">→ wechseln</span>
+                            )}
+                          </div>
+                          <div className="text-gray-900 mt-0.5 truncate">{r.reason}</div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            {[r.caller_name, r.caller_phone, r.location].filter(Boolean).join(" · ")}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Eingabe-Formular fuer neue Stoerungsmeldung */}
@@ -2032,8 +2369,9 @@ export default function OrderDetailPage() {
                 try {
                   await api.post(`/orders/${pk}/diary`, diaryForm);
                   toast.success("Stoerung eingetragen");
-                  setDiaryForm({ caller_name: "", caller_phone: "", reason: "", location: "" });
+                  setDiaryForm({ caller_name: "", caller_phone: "", reason: "", location: "", is_nachtrag: false, assigned_trupp_ids: [] });
                   fetchDiary();
+                  fetchTrupps();
                 } catch (err) {
                   toast.error("Fehler: " + (err.response?.data?.detail || err.message));
                 } finally {
@@ -2085,6 +2423,59 @@ export default function OrderDetailPage() {
                   required
                 />
               </div>
+              {/* Trupp-Zuweisung */}
+              {trupps.length > 0 && (
+                <div className="mb-3" data-testid="diary-trupp-select">
+                  <label className="text-xs text-gray-600 mb-1.5 block">
+                    <Users className="w-3.5 h-3.5 inline mr-1 text-indigo-500" />
+                    Trupp(s) zuweisen <span className="text-[10px] text-gray-400">(optional)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {trupps.map((t) => {
+                      const isSelected = (diaryForm.assigned_trupp_ids || []).includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            const cur = diaryForm.assigned_trupp_ids || [];
+                            const next = isSelected ? cur.filter((x) => x !== t.id) : [...cur, t.id];
+                            setDiaryForm({ ...diaryForm, assigned_trupp_ids: next });
+                          }}
+                          className={`text-xs px-2.5 py-1 rounded-full border-2 transition-all flex items-center gap-1.5 ${
+                            isSelected
+                              ? "bg-indigo-600 text-white border-indigo-600"
+                              : t.is_busy
+                              ? "bg-red-50 text-red-700 border-red-300 hover:border-red-400"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:border-emerald-400"
+                          }`}
+                          data-testid={`diary-trupp-chip-${t.id}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            isSelected ? "bg-white" : t.is_busy ? "bg-red-500" : "bg-emerald-500"
+                          }`} />
+                          {t.name}
+                          {t.is_busy && !isSelected && <span className="text-[9px]">(unterwegs)</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Nachtrag Checkbox */}
+              <label className="flex items-center gap-2 mb-3 cursor-pointer select-none" data-testid="diary-nachtrag-label">
+                <input
+                  type="checkbox"
+                  checked={diaryForm.is_nachtrag}
+                  onChange={(e) => setDiaryForm({ ...diaryForm, is_nachtrag: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
+                  data-testid="diary-input-nachtrag"
+                />
+                <span className="text-sm text-gray-800">
+                  <strong>Nachtrag</strong> <span className="text-xs text-gray-500">— gehoert nicht zum urspruenglichen Auftrag, wird zusaetzlich abgerechnet</span>
+                </span>
+              </label>
               <div className="flex items-center justify-between">
                 <p className="text-[11px] text-gray-500">
                   <Clock className="w-3 h-3 inline mr-1" />
@@ -2132,6 +2523,11 @@ export default function OrderDetailPage() {
                                 ● Offen
                               </span>
                             )}
+                            {e.is_nachtrag && (
+                              <span className="text-[10px] font-bold uppercase bg-fuchsia-100 text-fuchsia-700 px-2 py-0.5 rounded" data-testid={`diary-badge-nachtrag-${e.id}`}>
+                                Nachtrag
+                              </span>
+                            )}
                             <span className="text-[11px] text-gray-500 font-mono">
                               {new Date(e.created_at).toLocaleString("de-DE")}
                             </span>
@@ -2158,6 +2554,29 @@ export default function OrderDetailPage() {
                               <span><strong>Ort:</strong> {e.location}</span>
                             )}
                           </div>
+                          {/* Zugewiesene Trupps */}
+                          {(e.assigned_trupp_ids || []).length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5" data-testid={`diary-entry-trupps-${e.id}`}>
+                              {(e.assigned_trupp_ids || []).map((tid) => {
+                                const t = trupps.find((x) => x.id === tid);
+                                if (!t) return null;
+                                return (
+                                  <span
+                                    key={tid}
+                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                      isResolved
+                                        ? "bg-gray-100 text-gray-600"
+                                        : "bg-red-100 text-red-700 border border-red-300"
+                                    }`}
+                                    data-testid={`diary-entry-trupp-badge-${e.id}-${tid}`}
+                                  >
+                                    <Users className="w-2.5 h-2.5" />
+                                    {t.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                           {isResolved && e.resolved_at && (
                             <div className="text-[11px] text-emerald-700 mt-1">
                               Behoben am {new Date(e.resolved_at).toLocaleString("de-DE")}
@@ -2174,6 +2593,7 @@ export default function OrderDetailPage() {
                                 try {
                                   await api.post(`/orders/${pk}/diary/${e.id}/reopen`);
                                   fetchDiary();
+                                  fetchTrupps();
                                   toast.success("Eintrag wieder geoeffnet");
                                 } catch (err) {
                                   toast.error("Fehler: " + (err.response?.data?.detail || err.message));
@@ -2191,6 +2611,7 @@ export default function OrderDetailPage() {
                                 try {
                                   await api.post(`/orders/${pk}/diary/${e.id}/resolve`);
                                   fetchDiary();
+                                  fetchTrupps();
                                   toast.success("Als behoben markiert");
                                 } catch (err) {
                                   toast.error("Fehler: " + (err.response?.data?.detail || err.message));
@@ -2210,6 +2631,7 @@ export default function OrderDetailPage() {
                                 try {
                                   await api.delete(`/orders/${pk}/diary/${e.id}`);
                                   fetchDiary();
+                                  fetchTrupps();
                                   toast.success("Geloescht");
                                 } catch (err) {
                                   toast.error("Fehler: " + (err.response?.data?.detail || err.message));
