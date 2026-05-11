@@ -89,16 +89,37 @@ class FakeCollection:
     async def find_one(self, filt=None, projection=None):
         return self.docs[0] if self.docs else None
 
-    async def update_one(self, filt, update):
+    async def update_one(self, filt, update, upsert=False):
         # Apply $set in-memory damit nachfolgende Reads den neuen Wert sehen
         self.updates.append((filt, update))
         target_id = filt.get("id")
+        matched = 0
         if target_id and "$set" in update:
             for d in self.docs:
                 if d.get("id") == target_id:
                     d.update(update["$set"])
+                    matched = 1
                     break
-        return types.SimpleNamespace(matched_count=1, modified_count=1)
+        else:
+            # Generischer Match via _match_one
+            for d in self.docs:
+                if self._match_one(d, filt):
+                    if "$set" in update:
+                        d.update(update["$set"])
+                    matched = 1
+                    break
+        if matched == 0 and upsert:
+            new_doc = {}
+            for k, v in filt.items():
+                if not isinstance(v, dict):
+                    new_doc[k] = v
+            if "$set" in update:
+                new_doc.update(update["$set"])
+            if "$setOnInsert" in update:
+                new_doc.update(update["$setOnInsert"])
+            self.docs.append(new_doc)
+            return types.SimpleNamespace(matched_count=0, modified_count=0, upserted_id=new_doc.get("id"))
+        return types.SimpleNamespace(matched_count=matched, modified_count=matched)
 
     async def insert_one(self, doc):
         self.docs.append(doc)
@@ -337,6 +358,83 @@ def test_gateway_gps_tertiary_match_via_topic_hex_uid():
     assert dev.get("latitude") == 50.0, f"Tertiary-Match fehlgeschlagen: {dev}"
 
 
+def test_anlage_pairing_dse890_bridge():
+    """Kern-Fix: DSE890 Bruecke ueber Anlage-ID.
+    Szenario: 
+      - Device im Portal hat dse_module_uid='6D2B5CDE5F' (Bediendisplay).
+      - Telemetrie kommt unter 'eventenergie/35072/6D2B5CDE5F/engine'.
+      - GPS kommt unter 'eventenergie/35072/1922A5D409E1601/gps' mit
+        payload {"1922A5D409E1601":{"lat":...}}.
+    Erwartung: Anlage-Pairing erkennt dass beide UIDs zur Anlage 35072
+    gehoeren -> Gateway-UID wird auf Device gespeichert UND GPS angewendet.
+    """
+    db = FakeDB()
+    db.devices.docs.append({
+        "id": "dev-pair-1",
+        "dse_module_uid": "6D2B5CDE5F",
+        # dse_gateway_uid NICHT gesetzt -> muss erlernt werden
+    })
+    _reset_state(db)
+    # Index reset
+    mqtt_service._anlage_index.clear()
+    mqtt_service._anlage_pair_persist.clear()
+
+    # SCHRITT 1: Telemetrie-Topic -> lernt mod-UID in Anlage 35072
+    tele_msg = FakeMsg(
+        "eventenergie/35072/6D2B5CDE5F/engine",
+        '{"6D2B5CDE5F":{"P004":{"R000":1}}}',
+    )
+    asyncio.run(mqtt_service._process_message(tele_msg))
+
+    # SCHRITT 2: GPS-Topic mit Gateway-UID kommt rein
+    gps_msg = FakeMsg(
+        "eventenergie/35072/1922A5D409E1601/gps",
+        '{"1922A5D409E1601":{"lat":50.456767,"lon":7.425265}}',
+    )
+    asyncio.run(mqtt_service._process_message(gps_msg))
+
+    # Verifiziere: Device hat jetzt sowohl GPS als auch gelernte Gateway-UID
+    dev = next(d for d in db.devices.docs if d["id"] == "dev-pair-1")
+    assert dev.get("dse_gateway_uid") == "1922A5D409E1601", \
+        f"Gateway-UID nicht ueber Anlage-Pairing gelernt: {dev}"
+    assert dev.get("latitude") == 50.456767, \
+        f"GPS nicht angewendet trotz Pairing: {dev}"
+    assert dev.get("longitude") == 7.425265, \
+        f"GPS nicht angewendet trotz Pairing: {dev}"
+
+    # Verifiziere: Pairing wurde persistiert
+    pairings = db._collections.get("mqtt_anlage_pairing", FakeCollection()).docs
+    assert len(pairings) == 1, f"Pairing nicht persistiert: {pairings}"
+    p = pairings[0]
+    assert p["anlage_id"] == "35072"
+    assert p["gateway_uid"] == "1922A5D409E1601"
+    assert p["module_uid"] == "6D2B5CDE5F"
+
+
+def test_anlage_pairing_second_gps_uses_persisted_link():
+    """Zweites GPS-Telegramm an dasselbe Setup sollte ohne erneutes
+    Pairing (= via tertiary match auf dse_gateway_uid) routen."""
+    db = FakeDB()
+    db.devices.docs.append({
+        "id": "dev-pair-2",
+        "dse_module_uid": "AABBCCDDEE",
+        "dse_gateway_uid": "1234567890ABCDE",  # bereits gepaart
+    })
+    _reset_state(db)
+    mqtt_service._anlage_index.clear()
+    mqtt_service._anlage_pair_persist.clear()
+
+    # Direkt GPS-Topic (ohne vorherige Telemetrie)
+    gps_msg = FakeMsg(
+        "eventenergie/99999/1234567890ABCDE/gps",
+        '{"1234567890ABCDE":{"LAT":48.1,"LON":11.5}}',
+    )
+    asyncio.run(mqtt_service._process_message(gps_msg))
+
+    dev = next(d for d in db.devices.docs if d["id"] == "dev-pair-2")
+    assert dev.get("latitude") == 48.1, f"GPS nicht via gelernter Gateway-UID: {dev}"
+
+
 def test_no_match_logs_rejected():
     """Unbekannte Module-UID darf KEIN Device updaten und muss als rejected loggen."""
     db = FakeDB()
@@ -377,6 +475,8 @@ if __name__ == "__main__":
         test_gateway_gps_routes_via_learned_gateway_uid_to_device,
         test_gateway_gps_routes_via_module_uid_payload_key,
         test_gateway_gps_tertiary_match_via_topic_hex_uid,
+        test_anlage_pairing_dse890_bridge,
+        test_anlage_pairing_second_gps_uses_persisted_link,
         test_no_match_logs_rejected,
     ]
     failed = 0
