@@ -321,32 +321,41 @@ export default function AdminGpsDiagnosePage() {
                         <th className="text-left p-2 font-semibold">Route</th>
                         <th className="text-left p-2 font-semibold">Topic</th>
                         <th className="text-left p-2 font-semibold">Lat / Lng</th>
-                        <th className="text-left p-2 font-semibold">Match (n)</th>
-                        <th className="text-left p-2 font-semibold">Applied to</th>
+                        <th className="text-left p-2 font-semibold">Module-UID</th>
+                        <th className="text-left p-2 font-semibold">Match</th>
+                        <th className="text-left p-2 font-semibold">Applied / Payload</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(log?.events || []).map((e) => (
-                        <tr key={e.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <tr key={e.id} className="border-b border-gray-100 hover:bg-gray-50 align-top">
                           <td className="p-2 text-gray-500 font-mono text-[10px]">
                             {new Date(e.ts).toLocaleString("de-DE")}
                           </td>
                           <td className="p-2">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                              e.route === "rejected" ? "bg-red-100 text-red-700" :
-                              e.route === "gateway_fallback" ? "bg-amber-100 text-amber-700" :
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${
+                              e.route?.startsWith("rejected") ? "bg-red-100 text-red-700" :
+                              e.route === "gateway_module_match" ? "bg-emerald-100 text-emerald-700" :
+                              e.route === "pi_ingest" ? "bg-blue-100 text-blue-700" :
                               "bg-emerald-100 text-emerald-700"
                             }`}>
                               {e.route}
                             </span>
                           </td>
-                          <td className="p-2 font-mono text-[10px] max-w-md truncate">{e.topic}</td>
-                          <td className="p-2 font-mono text-[10px]">
+                          <td className="p-2 font-mono text-[10px] max-w-xs truncate" title={e.topic}>{e.topic}</td>
+                          <td className="p-2 font-mono text-[10px] whitespace-nowrap">
                             {fmtCoord(e.lat)} / {fmtCoord(e.lng)}
                           </td>
+                          <td className={`p-2 font-mono text-[10px] ${e.module_uid ? "text-amber-700 font-semibold" : "text-gray-300"}`}>
+                            {e.module_uid || "—"}
+                          </td>
                           <td className="p-2 text-center font-semibold">{e.match_count}</td>
-                          <td className="p-2 font-mono text-[10px] text-gray-500 max-w-xs truncate">
-                            {(e.applied_to || []).join(", ") || "—"}
+                          <td className="p-2 font-mono text-[10px] text-gray-500 max-w-md">
+                            {e.applied_to && e.applied_to.length > 0 ? (
+                              <div className="truncate" title={e.applied_to.join(", ")}>{e.applied_to.join(", ")}</div>
+                            ) : (
+                              <div className="text-gray-400 truncate" title={e.raw_preview}>{e.raw_preview || "—"}</div>
+                            )}
                           </td>
                         </tr>
                       ))}

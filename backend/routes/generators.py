@@ -1191,6 +1191,23 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         update_fields["latitude"] = valid_gps_lat
         update_fields["longitude"] = valid_gps_lng
         update_fields["last_gps_update"] = now_iso
+        # Pi-GPS auch im zentralen GPS-Log eintragen, damit Admin im
+        # /admin/gps-diagnose Live-Log sowohl MQTT als auch Pi-Pfad sieht.
+        try:
+            await db.mqtt_gps_log.insert_one({
+                "id": str(uuid.uuid4()),
+                "topic": f"pi-ingest/{payload.device_id}",
+                "lat": valid_gps_lat,
+                "lng": valid_gps_lng,
+                "route": "pi_ingest",
+                "applied_to": [f"dev-{payload.device_id}"],
+                "match_count": 1,
+                "ts": now_iso,
+                "raw_preview": f"device_id={payload.device_id}, gen_id={generator_id}",
+                "module_uid": None,
+            })
+        except Exception as e:
+            logger.debug(f"Pi-GPS log failed: {e}")
 
     # Build latest_snapshot from the most recent record
     if payload.records:

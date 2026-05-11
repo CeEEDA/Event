@@ -226,12 +226,17 @@ async def _process_message(msg):
     logger.debug(f"MQTT: Unmatched topic '{topic}' | stored_uids={stored_uids}")
 
 
-async def _log_gps_event(topic, lat, lng, route, applied_to, raw_payload=None):
+async def _log_gps_event(topic, lat, lng, route, applied_to, raw_payload=None, module_uid=None):
     """Schreibt jedes verarbeitete GPS-Event in mqtt_gps_log fuer Admin-Diagnose.
 
-    route:      "per_generator" | "per_device" | "gateway_fallback" | "rejected"
+    route:      "per_generator" | "per_device" | "gateway_module_match" |
+                "rejected_no_module_match" | "rejected"
     applied_to: Liste der Generator-IDs (oder Device-IDs als dev-<id>), die
                 tatsaechlich upgedated wurden.
+    module_uid: Die im JSON-Payload extrahierte Modul-UID (DSE890-Konvention:
+                top-level JSON-Key). Wichtig fuer Diagnose:
+                bei "rejected_no_module_match" sieht der Admin direkt, welche
+                UID nicht im Portal hinterlegt ist und nachgetragen werden muss.
     """
     if _db is None:
         return
@@ -245,7 +250,8 @@ async def _log_gps_event(topic, lat, lng, route, applied_to, raw_payload=None):
             "applied_to": list(applied_to) if applied_to else [],
             "match_count": len(applied_to) if applied_to else 0,
             "ts": datetime.now(timezone.utc).isoformat(),
-            "raw_preview": (str(raw_payload)[:300] if raw_payload else None),
+            "raw_preview": (str(raw_payload)[:400] if raw_payload else None),
+            "module_uid": module_uid,
         }
         await _db.mqtt_gps_log.insert_one(doc)
         # Begrenze auf die letzten 1000 Eintraege (kein TTL-Index noetig)
@@ -399,14 +405,14 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                 f"auf {len(matched_gen_ids)} Geraet(e) angewendet ({topic})"
             )
             await _log_gps_event(topic, lat, lng, "gateway_module_match",
-                                 matched_gen_ids, raw_payload)
+                                 matched_gen_ids, raw_payload, module_uid=module_uid)
         else:
             logger.warning(
                 f"MQTT: Gateway-GPS {lat},{lng} ({topic}) - kein Device mit "
                 f"dse_module_uid='{module_uid}' im Portal gefunden"
             )
             await _log_gps_event(topic, lat, lng, "rejected_no_module_match",
-                                 [], raw_payload)
+                                 [], raw_payload, module_uid=module_uid)
 
 
 async def _process_gps(generator_id, raw_payload, parsed, timestamp, topic=""):
