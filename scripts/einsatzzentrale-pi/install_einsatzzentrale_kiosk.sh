@@ -256,6 +256,12 @@ while true; do
     --disable-dev-shm-usage \
     --no-sandbox \
     --process-per-site \
+    --disable-low-end-device-mode \
+    --disable-sync \
+    --disable-background-networking \
+    --disable-cloud-management-enrollment \
+    --disable-default-apps \
+    --js-flags=" " \
     "$URL" >> "$LOGFILE" 2>&1
 
   EXIT_CODE=$?
