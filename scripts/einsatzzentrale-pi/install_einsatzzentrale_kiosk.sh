@@ -214,6 +214,17 @@ if [[ -z "$CHROMIUM" ]]; then
   exit 1
 fi
 
+# Sicherstellen dass Chromium NICHT Wayland versucht (wir laufen auf X11+openbox).
+# Mixed Wayland/X11 verursacht Renderer-Crash-Loop.
+unset WAYLAND_DISPLAY
+unset WAYLAND_SOCKET
+export GDK_BACKEND=x11
+export QT_QPA_PLATFORM=xcb
+export XDG_SESSION_TYPE=x11
+
+# Falls Chromium-Snap-Reste oder alte Wayland-Sessions liegen: cleanen
+rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket" 2>/dev/null || true
+
 # Crash-Counter: nach 5 schnellen Restarts (innerhalb 60s) stoppen
 # damit man den Fehler im Log sieht statt endlos zu blinken.
 CRASH_COUNT=0
@@ -238,6 +249,7 @@ while true; do
     --password-store=basic \
     --lang=de-DE \
     --force-device-scale-factor="$SCALE" \
+    --ozone-platform=x11 \
     --disable-gpu \
     --disable-gpu-compositing \
     --disable-software-rasterizer \
@@ -245,6 +257,7 @@ while true; do
     --no-sandbox \
     --disable-features=UseChromeOSDirectVideoDecoder \
     --enable-low-end-device-mode \
+    --process-per-site \
     "$URL" >> "$LOGFILE" 2>&1
 
   EXIT_CODE=$?
