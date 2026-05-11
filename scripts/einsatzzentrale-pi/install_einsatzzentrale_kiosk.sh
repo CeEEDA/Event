@@ -236,7 +236,7 @@ while true; do
     --noerrdialogs \
     --disable-infobars \
     --disable-translate \
-    --disable-features=TranslateUI,Translate,AutofillEnableAccountWalletStorage \
+    --disable-features=TranslateUI,Translate,AutofillEnableAccountWalletStorage,UseChromeOSDirectVideoDecoder \
     --no-first-run \
     --disable-session-crashed-bubble \
     --disable-component-update \
@@ -255,8 +255,6 @@ while true; do
     --disable-software-rasterizer \
     --disable-dev-shm-usage \
     --no-sandbox \
-    --disable-features=UseChromeOSDirectVideoDecoder \
-    --enable-low-end-device-mode \
     --process-per-site \
     "$URL" >> "$LOGFILE" 2>&1
 
