@@ -150,7 +150,7 @@ async def _process_message(msg):
         _devices_cache = await _db.devices.find(
             {"dse_module_uid": {"$exists": True, "$ne": ""}},
             {"_id": 0, "id": 1, "dse_module_uid": 1, "device_type": 1, "controller": 1,
-             "dse_gateway_topic_prefix": 1, "dse_gateway_uid": 1}
+             "dse_gateway_uid": 1}
         ).to_list(100)
         _devices_cache_ts = now_ts
 
@@ -203,45 +203,28 @@ async def _process_message(msg):
         if uid and uid.upper() in topic_parts_upper:
             device_id = dev["id"]
             logger.info(f"MQTT: Matched device {device_id} via module_uid {uid}")
-            # AUTO-LEARN: Zwei Strategien, damit GPS-Telegramme auf dem
-            # Gateway-Topic (mit Gateway-UID, NICHT Module-UID) zugeordnet
-            # werden koennen:
-            # (a) Gateway-Topic-Prefix = alles im Topic VOR der Module-UID.
-            #     Nur lernen wenn das Segment davor selbst Hex-UID-aehnlich
-            #     ist (>=10 Hex-Zeichen), sonst wuerden wir die Anlagen-ID
-            #     lernen und einen Spread provozieren.
-            # (b) Gateway-UID aus dem Telemetrie-Payload: DSE890 schickt
-            #     oft {"<GATEWAY_UID>":{...telemetrie...}} mit der Gateway-
-            #     UID als Top-Level-Key. Falls wir so einen Hex-Key sehen,
-            #     lernen wir ihn als dse_gateway_uid des Device.
+            # AUTO-LEARN dse_gateway_uid: Das Segment direkt VOR der Module-UID
+            # im Telemetrie-Topic ist die Gateway-UID. Damit kann das GPS-Topic
+            # spaeter genauso einfach gematcht werden wie die Telemetrie.
             try:
-                update_learn = {}
-                cur_prefix = dev.get("dse_gateway_topic_prefix")
-                cur_gw_uid = dev.get("dse_gateway_uid")
-                # (a) Gateway-Topic-Prefix
                 idx = topic_parts_upper.index(uid.upper())
                 if idx > 0:
                     seg_before = topic_parts[idx - 1].strip()
-                    # Hex-UID-Pruefung: nur Buchstaben/Ziffern, >=10 Zeichen
+                    # Hex-UID-Pruefung: alphanumerisch, >=10 Zeichen
+                    # (verhindert falsches Lernen einer Anlagen-ID wie "35072")
                     if len(seg_before) >= 10 and _re.fullmatch(r"[A-Fa-f0-9]+", seg_before):
-                        learned_prefix = "/".join(topic_parts[:idx])
-                        if cur_prefix != learned_prefix:
-                            update_learn["dse_gateway_topic_prefix"] = learned_prefix
-                            dev["dse_gateway_topic_prefix"] = learned_prefix
-                # (b) Gateway-UID aus Payload-Key
-                if isinstance(parsed, dict):
-                    for k in parsed.keys():
-                        ks = str(k).strip()
-                        if len(ks) >= 10 and _re.fullmatch(r"[A-Fa-f0-9]+", ks) and ks.upper() != uid.upper():
-                            if cur_gw_uid != ks:
-                                update_learn["dse_gateway_uid"] = ks
-                                dev["dse_gateway_uid"] = ks
-                            break
-                if update_learn:
-                    await _db.devices.update_one({"id": device_id}, {"$set": update_learn})
-                    logger.info(f"MQTT: Auto-learned for {device_id}: {update_learn}")
+                        if dev.get("dse_gateway_uid") != seg_before:
+                            await _db.devices.update_one(
+                                {"id": device_id},
+                                {"$set": {"dse_gateway_uid": seg_before}}
+                            )
+                            dev["dse_gateway_uid"] = seg_before
+                            logger.info(
+                                f"MQTT: Auto-learned gateway_uid='{seg_before}' "
+                                f"for device {device_id} (module_uid={uid})"
+                            )
             except (ValueError, Exception) as e:
-                logger.debug(f"Auto-learn failed: {e}")
+                logger.debug(f"Auto-learn gateway_uid failed: {e}")
             if topic.endswith("/gps"):
                 await _process_gps_device(device_id, payload_str, parsed, timestamp, topic=topic)
                 return
@@ -438,27 +421,30 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                 if module_uid and module_uid.upper() in gp.upper():
                     matched_gen_ids.add(gen["id"])
 
-        # TERTIAER (Auto-Learn-Fallback): Match via gelerntem Gateway-Prefix.
-        # Greift wenn KEINE Modul-UID im Payload ist (DSE890 sendet GPS oft als
-        # flaches {LAT, LON} unter Gateway-Topic). Beim Telemetrie-Routing wurde
-        # per dse_module_uid das gw_topic dem Device als dse_gateway_topic_prefix
-        # zugeordnet -> jetzt einfach matchen.
+        # TERTIAER: Match GPS-Topic-Gateway-UID (= letztes Hex-Segment vor /gps)
+        # gegen das gelernte dse_gateway_uid der Devices.
+        # Dieser Pfad greift wenn der GPS-Payload flach kommt ({LAT, LON} ohne
+        # Modul-UID-Wrapper) und mein Modul-UID-Match nichts findet.
         if not matched_device_ids and not matched_gen_ids:
-            for dev in (_devices_cache or []):
-                dgp = (dev.get("dse_gateway_topic_prefix") or "").strip().rstrip("/")
-                if dgp and dgp.lower() == gw_topic.lower():
-                    matched_device_ids.add(dev["id"])
-            # DB-Fallback
-            if not matched_device_ids:
-                try:
-                    db_devs = await _db.devices.find(
-                        {"dse_gateway_topic_prefix": {"$regex": f"^{gw_topic.replace('.', chr(92)+'.')}$", "$options": "i"}},
-                        {"_id": 0, "id": 1}
-                    ).to_list(20)
-                    for d in db_devs:
-                        matched_device_ids.add(d["id"])
-                except Exception as e:
-                    logger.debug(f"Auto-learn gateway prefix DB lookup failed: {e}")
+            gw_uid_candidate = gw_topic.rsplit("/", 1)[-1].strip()
+            if gw_uid_candidate and len(gw_uid_candidate) >= 10:
+                for dev in (_devices_cache or []):
+                    dgu = (dev.get("dse_gateway_uid") or "").strip()
+                    if dgu and dgu.upper() == gw_uid_candidate.upper():
+                        matched_device_ids.add(dev["id"])
+                # DB-Fallback wenn Cache stale
+                if not matched_device_ids:
+                    try:
+                        import re as _re2
+                        esc = _re2.escape(gw_uid_candidate)
+                        db_devs = await _db.devices.find(
+                            {"dse_gateway_uid": {"$regex": f"^{esc}$", "$options": "i"}},
+                            {"_id": 0, "id": 1}
+                        ).to_list(20)
+                        for d in db_devs:
+                            matched_device_ids.add(d["id"])
+                    except Exception as e:
+                        logger.debug(f"GPS DB-fallback (gateway_uid) failed: {e}")
 
         # Devices auf gen_ids erweitern (dev-<id> Schema)
         for dev_id in matched_device_ids:
