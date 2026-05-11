@@ -16,6 +16,13 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Auto-Learn Verifikation
+- ✅ **MQTT Auto-Learn Logik final verifiziert** (Feb 2026):
+  - 7 Unit-Tests in `/app/backend/tests/test_mqtt_auto_learn_gps.py` (kein dotenv, kein echtes Mongo — FakeDB In-Memory).
+  - Verifiziert alle 3 Auto-Learn Match-Pfade in `_process_message` (mappings_cache, generators_cache prefix, devices_cache module_uid) und das nachgelagerte GPS-Routing in `_process_gateway_gps` via gelerntem `dse_gateway_uid`.
+  - Inkl. negativem Test: unbekannte Module-UIDs werden korrekt als `rejected_no_module_match` geloggt und updaten KEIN Device.
+  - Resultat: **7/7 PASS**. User bekommt Deploy-Freigabe fuer mqtt_service.py.
+
 ### Feb 2026 – Current Session (continued)
 - ✅ **Leaflet-Crash Final-Fix: Strict-Number-Check statt Number()-Coercion** (Feb 2026, Bug fix Iteration 4):
   - **Root Cause Iteration 1**: Vorher hatte ich `Number.isFinite(Number(g.latitude))` benutzt. Problem: `Number(null) === 0` und `Number.isFinite(0) === true` -> `null`-Koordinaten kamen durch den Filter durch, Leaflet bekam `position=[0, 0]` oder `[null, null]` und crashte mit "can't access property lat, e is null".
