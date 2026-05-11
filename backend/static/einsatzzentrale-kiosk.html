@@ -207,6 +207,67 @@ window.addEventListener("beforeunload", function() {
   } catch (e) {}
 });
 
+// ----------------------------------------------------------------------------
+// DIAGNOSE: Load-Counter & Uptime-Badge unten rechts.
+// Falls die Page reloaded, zaehlt der Counter hoch. Falls die Page stabil
+// laeuft, bleibt er bei 1 und die Uhrzeit der Erst-Ladung wird angezeigt.
+// So sieht der Operator sofort, ob es einen Reload-Loop gibt.
+// ----------------------------------------------------------------------------
+(function() {
+  try {
+    var KEY_LOADS = "ez_loads", KEY_FIRST = "ez_first_load";
+    var n = parseInt(STORE.getItem(KEY_LOADS) || "0", 10) + 1;
+    STORE.setItem(KEY_LOADS, String(n));
+    if (n === 1 || !STORE.getItem(KEY_FIRST)) {
+      STORE.setItem(KEY_FIRST, new Date().toISOString());
+    }
+    var firstIso = STORE.getItem(KEY_FIRST);
+    var startTs = Date.now();
+
+    function fmtUptime(sec) {
+      sec = Math.max(0, Math.floor(sec));
+      var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+      return (h ? h+"h " : "") + (m<10?"0":"") + m + ":" + (s<10?"0":"") + s;
+    }
+
+    function buildBadge() {
+      var existing = document.getElementById("ez-diag-badge");
+      if (existing) return existing;
+      var b = document.createElement("div");
+      b.id = "ez-diag-badge";
+      b.style.cssText = "position:fixed;bottom:12px;right:12px;z-index:9999;" +
+        "background:rgba(17,24,39,0.85);color:#fff;font:11px -apple-system,sans-serif;" +
+        "padding:6px 10px;border-radius:8px;letter-spacing:.02em;cursor:pointer;" +
+        "user-select:none;backdrop-filter:blur(8px);" +
+        "border:1px solid rgba(255,255,255,.1);box-shadow:0 4px 12px rgba(0,0,0,.2);";
+      b.title = "Klick zum Zuruecksetzen";
+      b.addEventListener("click", function() {
+        STORE.removeItem(KEY_LOADS); STORE.removeItem(KEY_FIRST);
+        b.innerHTML = "Counter zurueckgesetzt (laden zum aktualisieren)";
+      });
+      document.body.appendChild(b);
+      return b;
+    }
+
+    function tick() {
+      try {
+        var b = buildBadge();
+        var upt = fmtUptime((Date.now() - startTs) / 1000);
+        var firstStr = "";
+        try { firstStr = new Date(firstIso).toLocaleTimeString("de-DE"); } catch (e) {}
+        var color = n === 1 ? "#10b981" : (n < 5 ? "#f59e0b" : "#ef4444");
+        b.innerHTML = '<span style="display:inline-block;width:8px;height:8px;' +
+          'border-radius:50%;background:' + color + ';margin-right:8px;vertical-align:middle;"></span>' +
+          'Loads: <b>' + n + '</b> &nbsp;·&nbsp; Uptime: <b>' + upt + '</b> &nbsp;·&nbsp; Erst-Load: ' + firstStr;
+      } catch (e) {}
+    }
+
+    if (document.body) tick();
+    else document.addEventListener("DOMContentLoaded", tick);
+    setInterval(tick, 1000);
+  } catch (e) {}
+})();
+
 // State
 var state = { phase: "user_select", token: null, user: null, pickedUser: null,
               order: null, activeTile: null };

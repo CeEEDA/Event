@@ -2,6 +2,26 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
+        <script>
+            // PI-KIOSK HARD REDIRECT - LAEUFT VOR ALLEM ANDEREN.
+            // Diese Zeile MUSS die erste sein damit der Pi-Chromium NICHT erst
+            // das ganze React-Bundle laedt (das den WDS-WebSocket startet, der
+            // dann alle ~10s ein Reload triggert).
+            // Synchron, blockiert. Browser stoppt den weiteren Page-Load und
+            // navigiert sofort zur Standalone-HTML.
+            (function () {
+                try {
+                    var p = window.location.pathname;
+                    if (p === "/einsatzzentrale" || p.indexOf("/einsatzzentrale/") === 0) {
+                        if (!window.__kioskRedirected) {
+                            window.__kioskRedirected = true;
+                            window.stop && window.stop();
+                            window.location.replace("/api/einsatzzentrale/kiosk-page");
+                        }
+                    }
+                } catch (e) {}
+            })();
+        </script>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
         <meta name="theme-color" content="#000000" />
         <meta name="description" content="Eventenergie Portal" />
