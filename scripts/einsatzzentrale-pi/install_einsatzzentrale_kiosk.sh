@@ -174,6 +174,20 @@ cat > "$KIOSK_LAUNCH_SCRIPT" <<'LAUNCHER_EOF'
 # Einsatzzentrale Kiosk Launcher
 set -u
 
+LOGFILE="$HOME/.local/share/einsatzzentrale-kiosk.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+# ----- SINGLE-INSTANCE-LOCK -------------------------------------------------
+# Verhindert dass zwei Launcher gleichzeitig laufen (passiert wenn openbox +
+# xdg-autostart + LXDE-autostart alle dieselbe Datei aufrufen). Zwei Launcher
+# wuerden sich gegenseitig die Chromium-Prozesse killen.
+exec 9>/tmp/einsatzzentrale-kiosk.lock
+if ! flock -n 9; then
+  echo "[$(date '+%F %T')] Launcher laeuft bereits (lock-fail) - exit." >> "$LOGFILE"
+  exit 0
+fi
+echo "[$(date '+%F %T')] Launcher-Start (PID $$)" >> "$LOGFILE"
+
 URL="$(cat "$HOME/.config/einsatzzentrale-url" 2>/dev/null || echo "")"
 SCALE="$(cat "$HOME/.config/einsatzzentrale-scale" 2>/dev/null || echo "1.5")"
 if [[ -z "$URL" ]]; then
@@ -182,8 +196,7 @@ if [[ -z "$URL" ]]; then
 fi
 
 PROFILE="$HOME/.config/einsatzzentrale-chromium"
-LOGFILE="$HOME/.local/share/einsatzzentrale-kiosk.log"
-mkdir -p "$PROFILE/Default" "$(dirname "$LOGFILE")"
+mkdir -p "$PROFILE/Default"
 
 # Translate-Popup, Erste-Schritte, Default-Browser-Frage etc. unterdruecken
 cat > "$PROFILE/Default/Preferences" <<JSON_EOF
@@ -235,18 +248,13 @@ CRASH_COUNT=0
 LAST_CRASH=0
 while true; do
   # ----- WICHTIG -----
-  # "Opening in existing browser session" -> Chromium denkt es laeuft schon
-  # eine Instanz und beendet sich sofort wieder (Exit 0). Ursache: residuale
-  # Chromium-Prozesse oder Stale-Locks im default ODER kiosk-Profile.
-  # Daher VOR jedem Start aggressiv aufraeumen.
-  pkill -9 -f chromium 2>/dev/null || true
-  pkill -9 -f chrome 2>/dev/null || true
-  sleep 0.5
+  # Nur RESIDUALE Chromium-Instanzen aus unserem eigenen Profile killen.
+  # NICHT alle Chromium-Prozesse - das wuerde unseren eigenen Browser killen,
+  # falls ein zweiter Launcher-Run versucht zu starten (Exit-137-Loop).
+  pkill -9 -f "user-data-dir=$PROFILE" 2>/dev/null || true
+  sleep 0.3
   rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket" 2>/dev/null || true
   rm -f "$PROFILE/Default/SingletonLock" "$PROFILE/Default/SingletonCookie" "$PROFILE/Default/SingletonSocket" 2>/dev/null || true
-  rm -f "$HOME/.config/chromium/SingletonLock" "$HOME/.config/chromium/SingletonCookie" "$HOME/.config/chromium/SingletonSocket" 2>/dev/null || true
-  rm -f "$HOME/.config/chromium/Default/SingletonLock" "$HOME/.config/chromium/Default/SingletonCookie" "$HOME/.config/chromium/Default/SingletonSocket" 2>/dev/null || true
-  rm -f "$HOME/.config/chromium-browser/SingletonLock" "$HOME/.config/chromium-browser/SingletonCookie" "$HOME/.config/chromium-browser/SingletonSocket" 2>/dev/null || true
 
   echo "[$(date '+%F %T')] Starte Chromium auf $URL (scale=$SCALE)" >> "$LOGFILE"
   "$CHROMIUM" \
