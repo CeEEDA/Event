@@ -49,6 +49,7 @@ import {
   Monitor,
   Laptop,
   CircleDollarSign,
+  MapPin,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
 
@@ -2028,6 +2029,9 @@ export default function AdminSettingsPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => navigate("/mqtt-config")} className="text-gray-600 hover:text-fuchsia-600" data-testid="mqtt-config-link">
               <Wifi className="w-4 h-4 mr-1" /> MQTT
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin/gps-diagnose")} className="text-gray-600 hover:text-fuchsia-600" data-testid="gps-diagnose-link">
+              <MapPin className="w-4 h-4 mr-1" /> GPS-Diagnose
             </Button>
             <Button variant="outline" size="sm" onClick={() => document.getElementById('hilfsmittel-section')?.scrollIntoView({ behavior: 'smooth' })} className="text-gray-600 hover:text-fuchsia-600" data-testid="hilfsmittel-link">
               <Wrench className="w-4 h-4 mr-1" /> Hilfsmittel
