@@ -396,7 +396,16 @@ User language: **German** (Agent must respond in German).
 
 ## Roadmap (offene Tasks)
 
+### Recently Completed (Feb 2026)
+- **Einsatzzentrale Pi-Kiosk Reload-Loop endgültig gefixt**:
+  - React-Route `/einsatzzentrale` macht jetzt einen synchronen Hard-Redirect (vor React-Render) auf die Vanilla-JS-Standalone-HTML `/api/einsatzzentrale/kiosk-page` → kein HMR, kein WebSocket, kein 10-Sekunden-Reload mehr.
+  - Logo-Bild in der Standalone-HTML eingebaut (`customer-assets.../35th6vn9_cropped-logo.webp`) mit Text-Fallback.
+  - `window.location.reload` als no-op überschrieben (Defense-in-Depth gegen fremde Reload-Skripte).
+  - Install-Script-Default-URL auf `/api/einsatzzentrale/kiosk-page` umgestellt.
+
 ### P1
+- Workspace-Tiles in der Standalone-HTML mit echten Daten füllen (Maschinenliste, Einsatztagebuch, Pläne, Standortliste) — aktuell Platzhalter.
+- EpiRent „Lieferscheine" PDF-Generierung (wartet auf Layout-Feedback vom User).
 - LTE Failover DNS Fix auf Pi: `usepeerdns` in `/etc/ppp/peers/m2m` + `/etc/ppp/ip-up.d/0000-lte-dns` Hook (Telekom-DNS in `/etc/resolv.conf` wenn LAN ausfällt).
 
 ### P2

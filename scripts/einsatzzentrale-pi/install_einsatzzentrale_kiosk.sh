@@ -17,7 +17,11 @@
 #   - Screen-Blanking + DPMS deaktiviert
 #
 # Benutzung:
-#   sudo bash install_einsatzzentrale_kiosk.sh https://dein-portal.de/einsatzzentrale
+#   sudo bash install_einsatzzentrale_kiosk.sh https://dein-portal.de/api/einsatzzentrale/kiosk-page
+#
+# Hinweis: Sowohl /einsatzzentrale (mit automatischem Redirect) als auch
+# /api/einsatzzentrale/kiosk-page funktionieren. Empfohlen ist die direkte
+# Kiosk-Page-URL, da sie einen Schritt ohne Redirect liefert.
 #
 # Deinstallation (nur Kiosk-Teile, OS-Pakete bleiben):
 #   sudo bash install_einsatzzentrale_kiosk.sh --uninstall
@@ -26,7 +30,7 @@
 set -euo pipefail
 
 # ---------- Konfiguration ----------------------------------------------------
-DEFAULT_URL="https://dein-portal.example/einsatzzentrale"
+DEFAULT_URL="https://dein-portal.example/api/einsatzzentrale/kiosk-page"
 KIOSK_USER="${SUDO_USER:-pi}"
 KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6 || true)"
 [[ -z "$KIOSK_HOME" ]] && KIOSK_HOME="/home/$KIOSK_USER"

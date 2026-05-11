@@ -26,8 +26,8 @@ input { font-family: inherit; }
 .kiosk-header-inner { max-width: 1200px; margin: 0 auto; display: flex;
   align-items: center; justify-content: space-between; gap: 16px; }
 .kiosk-brand { display: flex; align-items: center; gap: 16px; }
-.kiosk-logo { height: 40px; width: auto; object-fit: contain; }
-.kiosk-logo-text { font-weight: 800; font-size: 22px; letter-spacing: -0.5px; color: var(--fuchsia-dark); }
+.kiosk-logo { height: 40px; width: auto; object-fit: contain; display: block; }
+.kiosk-logo-fallback { font-weight: 800; font-size: 22px; letter-spacing: -0.5px; color: var(--fuchsia-dark); }
 .kiosk-sep { width: 1px; height: 32px; background: var(--border); }
 .kiosk-title { font-size: 15px; font-weight: 600; color: var(--text); }
 .kiosk-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
@@ -150,7 +150,24 @@ input { font-family: inherit; }
 // Standalone Kiosk - Vanilla JS, kein Framework, kein HMR, keine Reloads.
 // ============================================================================
 var BACKEND = window.location.origin;
+var LOGO_URL = "https://customer-assets.emergentagent.com/job_client-file-portal/artifacts/35th6vn9_cropped-logo.webp";
 var SS_TOKEN = "ez_token", SS_USER = "ez_user", SS_PHASE = "ez_phase", SS_ORDER = "ez_order";
+
+// ----------------------------------------------------------------------------
+// KIOSK-MODE HARDENING: Jegliche Reload-Versuche unterbinden.
+// Auf dem Pi darf die Seite NIE neu geladen werden. Falls doch ein fremdes
+// Skript (z.B. ein versehentlich injizierter Dev-Server-Hook) reload aufrufen
+// wuerde, wird das hier zu einem no-op.
+// ----------------------------------------------------------------------------
+try {
+  var _origReload = window.location.reload;
+  Object.defineProperty(window.location, "reload", {
+    configurable: false, writable: false,
+    value: function(){ console.log("[Kiosk] reload() blocked"); }
+  });
+} catch (e) { /* einige Browser blockieren das - ok */ }
+// Falls irgendein Skript einen WebSocket zum Dev-Server oeffnen will:
+// nicht moeglich - diese Seite kommt vom FastAPI-Backend, kein HMR.
 
 // State
 var state = { phase: "user_select", token: null, user: null, pickedUser: null,
@@ -211,7 +228,7 @@ function renderUserSelect() {
     '<div>' +
     '<header class="kiosk-header"><div class="kiosk-header-inner">' +
       '<div class="kiosk-brand">' +
-        '<div class="kiosk-logo">Eventenergie</div>' +
+        '<img class="kiosk-logo" src="' + LOGO_URL + '" alt="Eventenergie" onerror="this.outerHTML=\'<div class=\\\'kiosk-logo-fallback\\\'>Eventenergie</div>\'" />' +
         '<div class="kiosk-sep"></div>' +
         '<div><div class="kiosk-title">Einsatzzentrale</div><div class="kiosk-sub">Wähle deinen Namen, um dich anzumelden</div></div>' +
       '</div>' +
@@ -263,7 +280,7 @@ function renderPassword() {
   root.appendChild($(
     '<div>' +
     '<header class="kiosk-header"><div class="kiosk-header-inner">' +
-      '<div class="kiosk-brand"><div class="kiosk-logo">Eventenergie</div>' +
+      '<div class="kiosk-brand"><img class="kiosk-logo" src="' + LOGO_URL + '" alt="Eventenergie" onerror="this.outerHTML=\'<div class=\\\'kiosk-logo-fallback\\\'>Eventenergie</div>\'" />' +
         '<div class="kiosk-sep"></div><div><div class="kiosk-title">Einsatzzentrale</div><div class="kiosk-sub">Passwort eingeben</div></div>' +
       '</div>' +
       '<button id="back-btn" class="btn">← Zurück</button>' +
@@ -309,7 +326,7 @@ function renderHeader(subtitle) {
   var u = state.user; var freelancer = u && u.role === "freelancer";
   return (
     '<header class="kiosk-header"><div class="kiosk-header-inner">' +
-      '<div class="kiosk-brand"><div class="kiosk-logo">Eventenergie</div>' +
+      '<div class="kiosk-brand"><img class="kiosk-logo" src="' + LOGO_URL + '" alt="Eventenergie" onerror="this.outerHTML=\'<div class=\\\'kiosk-logo-fallback\\\'>Eventenergie</div>\'" />' +
         '<div class="kiosk-sep"></div><div><div class="kiosk-title">Einsatzzentrale</div><div class="kiosk-sub">' + esc(subtitle || "") + '</div></div>' +
       '</div>' +
       '<div class="user-info">' +
