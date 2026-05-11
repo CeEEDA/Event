@@ -94,7 +94,7 @@ async def gps_status(admin: dict = Depends(require_admin)):
     gens = await db.generators.find(
         {}, {"_id": 0, "id": 1, "serial_number": 1, "name": 1,
              "latitude": 1, "longitude": 1, "last_gps_update": 1,
-             "dse_mqtt_topic_prefix": 1, "is_active": 1}
+             "dse_mqtt_topic_prefix": 1, "dse_module_uid": 1, "is_active": 1}
     ).to_list(2000)
     gen_rows = []
     for g in gens:
@@ -110,7 +110,12 @@ async def gps_status(admin: dict = Depends(require_admin)):
             "last_gps_update": g.get("last_gps_update"),
             "age_hours": _age_hours(g.get("last_gps_update")),
             "dse_mqtt_topic_prefix": g.get("dse_mqtt_topic_prefix"),
+            "dse_module_uid": g.get("dse_module_uid"),
         })
+
+    # Zaehle Devices/Generators ohne dse_module_uid (= koennen kein GPS via Module-UID-Match bekommen)
+    missing_uid_devices = [d for d in dev_rows if not d.get("dse_module_uid")]
+    missing_uid_generators = [g for g in gen_rows if not g.get("dse_module_uid")]
 
     # Duplikate erkennen: identische lat/lng auf mehreren Devices/Generators
     coord_counts = {}
@@ -124,6 +129,11 @@ async def gps_status(admin: dict = Depends(require_admin)):
         "devices": dev_rows,
         "generators": gen_rows,
         "duplicate_coords": duplicates,
+        "missing_dse_module_uid": {
+            "devices": [{"id": d["id"], "serial_number": d.get("serial_number"), "name": d.get("name")} for d in missing_uid_devices],
+            "generators": [{"id": g["id"], "serial_number": g.get("serial_number"), "name": g.get("name")} for g in missing_uid_generators],
+            "total": len(missing_uid_devices) + len(missing_uid_generators),
+        },
     }
 
 

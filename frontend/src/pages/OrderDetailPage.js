@@ -690,7 +690,7 @@ export default function OrderDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge order={order} />
-            <Button variant="outline" size="sm" onClick={fetchOrder} data-testid="refresh-detail-btn">
+            <Button variant="outline" size="sm" onClick={() => { fetchOrder(); fetchGenerators(); fetchAssets(); }} data-testid="refresh-detail-btn">
               <RefreshCw className="w-4 h-4 mr-1" /> Aktualisieren
             </Button>
             {isAdmin && (

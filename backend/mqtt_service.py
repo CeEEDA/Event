@@ -332,12 +332,19 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
         # PRIMAER: Match via Modul-UID aus dem JSON-Key
         if module_uid:
             mu_upper = module_uid.upper()
+            # 1a) Devices mit passender dse_module_uid
             for dev in (_devices_cache or []):
                 dev_uid = (dev.get("dse_module_uid") or "").strip()
                 if dev_uid and dev_uid.upper() == mu_upper:
                     matched_device_ids.add(dev["id"])
-            # DB-Fallback wenn Cache stale
-            if not matched_device_ids:
+            # 1b) Echte Generatoren mit passender dse_module_uid
+            #     (manuell angelegte Generators, die kein Device-Pendant haben)
+            for gen in (_generators_cache or []):
+                gen_uid = (gen.get("dse_module_uid") or "").strip()
+                if gen_uid and gen_uid.upper() == mu_upper:
+                    matched_gen_ids.add(gen["id"])
+            # 1c) DB-Fallback wenn Cache stale: BEIDE Collections durchsuchen
+            if not matched_device_ids and not matched_gen_ids:
                 import re
                 try:
                     esc = re.escape(module_uid)
@@ -347,6 +354,12 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                     ).to_list(10)
                     for d in db_devs:
                         matched_device_ids.add(d["id"])
+                    db_gens = await _db.generators.find(
+                        {"dse_module_uid": {"$regex": f"^{esc}$", "$options": "i"}},
+                        {"_id": 0, "id": 1}
+                    ).to_list(10)
+                    for g in db_gens:
+                        matched_gen_ids.add(g["id"])
                 except Exception as e:
                     logger.debug(f"GPS DB-fallback (module_uid) failed: {e}")
 

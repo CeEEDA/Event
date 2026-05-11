@@ -180,11 +180,37 @@ export default function AdminGpsDiagnosePage() {
                       Keine Duplikate
                     </div>
                   )}
+                  {status.missing_dse_module_uid && status.missing_dse_module_uid.total > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-sm text-amber-800 flex items-center gap-2" data-testid="missing-uid-warning">
+                      <AlertTriangle className="w-4 h-4" />
+                      <strong>{status.missing_dse_module_uid.total}</strong> Einträge ohne <code className="text-xs">dse_module_uid</code> (kein GPS möglich)
+                    </div>
+                  )}
                 </div>
                 <Button size="sm" variant="outline" onClick={fetchStatus} disabled={loading} data-testid="refresh-status-btn">
                   <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
                 </Button>
               </div>
+
+              {status.missing_dse_module_uid && status.missing_dse_module_uid.total > 0 && (
+                <div className="bg-white border border-amber-200 rounded-lg p-4" data-testid="missing-uid-list">
+                  <h3 className="text-sm font-semibold text-amber-700 mb-2">
+                    Geräte ohne hinterlegte <code className="text-xs">dse_module_uid</code> ({status.missing_dse_module_uid.total})
+                  </h3>
+                  <p className="text-xs text-amber-700 mb-3">
+                    Ohne diese UID kann das GPS-Telegramm im JSON-Payload nicht zugeordnet werden — die Maschine bleibt ohne Position.
+                    Trage die 10-stellige Modul-UID (z.B. <code>6D2B5CD695</code>) in der Geräte- bzw. Generator-Verwaltung nach.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    {[...status.missing_dse_module_uid.devices, ...status.missing_dse_module_uid.generators].map((e) => (
+                      <div key={e.id} className="border border-amber-100 rounded px-2 py-1 bg-amber-50">
+                        <strong>{e.name || e.serial_number || "—"}</strong>
+                        <span className="text-gray-500 ml-2 font-mono">{e.serial_number}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {dupCount > 0 && (
                 <div className="bg-white border border-red-200 rounded-lg p-4" data-testid="dup-list">
