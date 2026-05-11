@@ -161,6 +161,71 @@ async def _subscribe_all(client):
     await _update_connection_status("connected", "Verbunden")
 
 
+def _extract_first_hex_uid(topic_parts):
+    """Findet die erste Hex-UID-aehnliche Komponente im Topic-Pfad.
+    Typische DSE890-Konvention: das ERSTE Hex-Segment mit >=10 Zeichen ist
+    die Gateway-UID (z.B. '1922B6E660DBF6E'). Die Module-UID kommt typisch
+    danach (z.B. '6E2B5CE14B').
+    Returns: Hex-String oder None
+    """
+    import re as _re
+    for p in topic_parts:
+        p_clean = p.strip()
+        if len(p_clean) >= 10 and _re.fullmatch(r"[A-Fa-f0-9]+", p_clean):
+            return p_clean
+    return None
+
+
+async def _auto_learn_gateway_uid(device_id=None, generator_id=None, topic=""):
+    """Lerne die Gateway-UID aus dem Topic und speichere sie auf das
+    matched Device (oder den verknuepften echten Generator). Nur einmal
+    pro Device — wird per Cache-In-Memory-Check guarded, damit kein
+    DB-Spam entsteht.
+    """
+    if not topic or _db is None:
+        return
+    topic_parts = topic.split("/")
+    gw_uid = _extract_first_hex_uid(topic_parts)
+    if not gw_uid:
+        return
+    try:
+        # Auf Device speichern (primaer)
+        if device_id:
+            # In-Memory-Check: aktualisiere Cache
+            for dev in (_devices_cache or []):
+                if dev.get("id") == device_id:
+                    if dev.get("dse_gateway_uid") == gw_uid:
+                        return  # bereits gelernt
+                    dev["dse_gateway_uid"] = gw_uid
+                    break
+            await _db.devices.update_one(
+                {"id": device_id, "$or": [
+                    {"dse_gateway_uid": {"$exists": False}},
+                    {"dse_gateway_uid": {"$ne": gw_uid}},
+                ]},
+                {"$set": {"dse_gateway_uid": gw_uid}}
+            )
+            logger.info(f"MQTT: Auto-learned gateway_uid='{gw_uid}' for device {device_id}")
+        # Auf Generator speichern (sekundaer, falls kein Device-Pendant)
+        if generator_id and not generator_id.startswith("dev-"):
+            for gen in (_generators_cache or []):
+                if gen.get("id") == generator_id:
+                    if gen.get("dse_gateway_uid") == gw_uid:
+                        return
+                    gen["dse_gateway_uid"] = gw_uid
+                    break
+            await _db.generators.update_one(
+                {"id": generator_id, "$or": [
+                    {"dse_gateway_uid": {"$exists": False}},
+                    {"dse_gateway_uid": {"$ne": gw_uid}},
+                ]},
+                {"$set": {"dse_gateway_uid": gw_uid}}
+            )
+            logger.info(f"MQTT: Auto-learned gateway_uid='{gw_uid}' for generator {generator_id}")
+    except Exception as e:
+        logger.debug(f"Auto-learn gateway_uid failed: {e}")
+
+
 async def _process_message(msg):
     """Process an incoming MQTT message and store it."""
     global _raw_msg_counter, _mappings_cache, _mappings_cache_ts
@@ -194,8 +259,10 @@ async def _process_message(msg):
             {"$or": [
                 {"dse_mqtt_topic_prefix": {"$exists": True, "$ne": ""}},
                 {"dse_module_uid": {"$exists": True, "$ne": ""}},
+                {"dse_gateway_uid": {"$exists": True, "$ne": ""}},
             ]},
-            {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1, "dse_module_uid": 1}
+            {"_id": 0, "id": 1, "dse_mqtt_topic_prefix": 1,
+             "dse_module_uid": 1, "dse_gateway_uid": 1}
         ).to_list(200)
         _generators_cache_ts = now_ts
 
@@ -218,6 +285,7 @@ async def _process_message(msg):
         # Match by topic prefix
         if topic_prefix and topic.startswith(topic_prefix):
             logger.info(f"MQTT: Matched via gateway mapping (prefix='{topic_prefix}', gen={generator_id})")
+            await _auto_learn_gateway_uid(generator_id=generator_id, topic=topic)
             if topic.endswith("/gps"):
                 await _process_gps(generator_id, payload_str, parsed, timestamp, topic=topic)
                 return
@@ -235,6 +303,7 @@ async def _process_message(msg):
         prefix = gen.get("dse_mqtt_topic_prefix", "").strip()
         if prefix and topic.startswith(prefix):
             logger.info(f"MQTT: Matched via generator prefix (prefix='{prefix}', gen={gen['id']})")
+            await _auto_learn_gateway_uid(generator_id=gen["id"], topic=topic)
             if topic.endswith("/gps"):
                 await _process_gps(gen["id"], payload_str, parsed, timestamp, topic=topic)
                 return
@@ -477,19 +546,25 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                 if module_uid and module_uid.upper() in gp.upper():
                     matched_gen_ids.add(gen["id"])
 
-        # TERTIAER: Match GPS-Topic-Gateway-UID (= letztes Hex-Segment vor /gps)
-        # gegen das gelernte dse_gateway_uid der Devices.
-        # Dieser Pfad greift wenn der GPS-Payload flach kommt ({LAT, LON} ohne
-        # Modul-UID-Wrapper) und mein Modul-UID-Match nichts findet.
+        # TERTIAER: Match GPS-Topic-Gateway-UID (= erstes Hex-Segment im Topic)
+        # gegen das gelernte dse_gateway_uid der Devices UND Generators.
+        # Greift wenn Payload flach kommt ({lat,lon} ohne Wrapper) oder wenn
+        # die UID im Payload-Key gleich der Gateway-UID ist (DSE890-Standard).
         if not matched_device_ids and not matched_gen_ids:
-            gw_uid_candidate = gw_topic.rsplit("/", 1)[-1].strip()
-            if gw_uid_candidate and len(gw_uid_candidate) >= 10:
+            # Kandidat = erste Hex-UID >=10 im Topic-Pfad
+            gw_uid_candidate = _extract_first_hex_uid(gw_topic.split("/"))
+            if gw_uid_candidate:
+                gwu = gw_uid_candidate.upper()
                 for dev in (_devices_cache or []):
                     dgu = (dev.get("dse_gateway_uid") or "").strip()
-                    if dgu and dgu.upper() == gw_uid_candidate.upper():
+                    if dgu and dgu.upper() == gwu:
                         matched_device_ids.add(dev["id"])
+                for gen in (_generators_cache or []):
+                    ggu = (gen.get("dse_gateway_uid") or "").strip()
+                    if ggu and ggu.upper() == gwu:
+                        matched_gen_ids.add(gen["id"])
                 # DB-Fallback wenn Cache stale
-                if not matched_device_ids:
+                if not matched_device_ids and not matched_gen_ids:
                     try:
                         import re as _re2
                         esc = _re2.escape(gw_uid_candidate)
@@ -499,6 +574,12 @@ async def _process_gateway_gps(topic, raw_payload, parsed, timestamp):
                         ).to_list(20)
                         for d in db_devs:
                             matched_device_ids.add(d["id"])
+                        db_gens = await _db.generators.find(
+                            {"dse_gateway_uid": {"$regex": f"^{esc}$", "$options": "i"}},
+                            {"_id": 0, "id": 1}
+                        ).to_list(20)
+                        for g in db_gens:
+                            matched_gen_ids.add(g["id"])
                     except Exception as e:
                         logger.debug(f"GPS DB-fallback (gateway_uid) failed: {e}")
 
