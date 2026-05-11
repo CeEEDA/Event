@@ -381,6 +381,27 @@ async def kiosk_weather(
 # ----------------------------------------------------------------------------
 
 _INSTALL_SCRIPT_PATH = _Path("/app/scripts/einsatzzentrale-pi/install_einsatzzentrale_kiosk.sh")
+_KIOSK_HTML_PATH = _Path("/app/backend/static/einsatzzentrale-kiosk.html")
+
+
+@router.get("/kiosk-page", response_class=PlainTextResponse)
+async def kiosk_page():
+    """Standalone Kiosk-HTML (kein React, kein HMR, kein Reload-Loop).
+
+    Wird vom Raspberry Pi geladen statt /einsatzzentrale. Vanilla JS,
+    self-contained, kein webpack-dev-server-Refresh.
+    """
+    if not _KIOSK_HTML_PATH.exists():
+        raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
+    return PlainTextResponse(
+        content=_KIOSK_HTML_PATH.read_text(encoding="utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @router.get("/install-script", response_class=PlainTextResponse)
