@@ -164,7 +164,7 @@ export default function AuswertungEinsatztagebuchPage() {
                         </div>
                       </button>
                       <button
-                        onClick={() => navigate(`/orders/${o.order_pk}`)}
+                        onClick={() => navigate(`/orders/${o.order_pk}?tab=diary`)}
                         className="text-xs text-fuchsia-600 hover:text-fuchsia-700 font-medium px-3 py-1.5 rounded hover:bg-fuchsia-50 flex-shrink-0"
                         data-testid={`order-open-${o.order_pk}`}
                       >

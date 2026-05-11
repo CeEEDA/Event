@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 import api, { BACKEND_URL, getErrorMsg } from "../lib/api";
@@ -299,7 +299,13 @@ export default function OrderDetailPage() {
   const [truppEditDraft, setTruppEditDraft] = useState({ name: "", members: ["", "", "", ""] });
 
   // 6-Kachel-Navigation: null = Hub-Ansicht, sonst aktive Kachel
-  const [activeTab, setActiveTab] = useState(null);
+  // Initialwert aus URL: /orders/{pk}?tab=diary -> oeffnet direkt Einsatztagebuch
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const VALID_TABS = ["articles", "fuel", "reports", "documents", "messprotokolle", "diary"];
+  const [activeTab, setActiveTab] = useState(
+    VALID_TABS.includes(initialTab) ? initialTab : null
+  );
 
   const { isAdmin, user: currentUser } = useAuth();
   const isFreelancer = currentUser?.role === "freelancer";
@@ -2356,7 +2362,7 @@ export default function OrderDetailPage() {
                           key={r.id}
                           onClick={() => {
                             if (String(r.order_pk) !== String(pk)) {
-                              navigate(`/orders/${r.order_pk}`);
+                              navigate(`/orders/${r.order_pk}?tab=diary`);
                             }
                           }}
                           className="w-full text-left bg-white border border-blue-100 rounded p-2 text-xs hover:border-blue-300 hover:shadow-sm transition-colors"
