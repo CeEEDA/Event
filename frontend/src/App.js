@@ -48,6 +48,7 @@ import EmployeeAdminPage from "./pages/EmployeeAdminPage";
 import AuswertungPage from "./pages/AuswertungPage";
 import AuswertungIndexPage from "./pages/AuswertungIndexPage";
 import AuswertungEinsatztagebuchPage from "./pages/AuswertungEinsatztagebuchPage";
+import EinsatzzentralePiPage from "./pages/EinsatzzentralePiPage";
 import ArbeitszeitPage from "./pages/ArbeitszeitPage";
 import AdminZeiterfassungPage from "./pages/AdminZeiterfassungPage";
 import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
@@ -140,6 +141,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/einsatzzentrale" element={<EinsatzzentralePiPage />} />
       <Route 
         path="/login" 
         element={

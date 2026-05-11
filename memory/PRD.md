@@ -25,6 +25,20 @@ User language: **German** (Agent must respond in German).
 
 
 
+### Feb 2026 – Einsatzzentrale Pi-Kiosk
+- ✅ **Backend** `routes/einsatzzentrale.py`:
+  - `GET /api/einsatzzentrale/users` (PUBLIC, kein Auth) — liefert nur Mitarbeiter+Freelancer (id, name, role; KEINE Emails/Telefon).
+  - `POST /api/einsatzzentrale/login` — Login via `user_id + password`. Admins/Kunden werden mit 403 geblockt.
+  - `GET /api/einsatzzentrale/orders` — aktive Auftraege im Zeitfenster heute -14d/+14d (event_start/end oder dispo_start/end Overlap-Check). Freelancer sehen nur eigene Auftraege.
+- ✅ **Frontend** `EinsatzzentralePiPage.jsx` (Touch-Kiosk, Dark Theme) mit State-Machine:
+  1. User-Grid (Avatar mit Initialen, Farbcodierung Mitarbeiter/Freelancer, Suchfeld).
+  2. Passwort-Eingabe fuer ausgewaehlten User.
+  3. Auftrags-Auswahl (Cards mit Event/Kunde/Adresse/Zeitraum, Suchfeld, Zeitfenster-Hinweis).
+  4. Workspace-Platzhalter (Inhalt kommt vom User).
+- ✅ Header mit prominentem **"Abmelden"-Button** (rot) in jeder Post-Login-Phase. Logout setzt sessionStorage zurueck und springt zur User-Auswahl.
+- ✅ Route `/einsatzzentrale` (PUBLIC, kein ProtectedRoute) — Pi startet direkt darauf.
+
+
 ### Feb 2026 – Einsatztagebuch Auswertungs-Seite
 - ✅ **Neuer Backend-Endpoint** `GET /api/orders/diary/auswertung`:
   - Aggregiert alle Diary-Eintraege pro Auftrag (nur Auftraege mit >=1 Eintrag).
