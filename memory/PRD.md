@@ -16,7 +16,21 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
-### Feb 2026 – Admin Copy-Funktion fuer Auftraege (P0)
+### Feb 2026 – Admin Copy-Funktion: Dokumente (P0 Folge)
+- ✅ **Backend** `POST /api/orders/epirent/{order_pk}/copy-to` um `document_ids` erweitert:
+  - Datei wird per `shutil.copy2` physisch in das Ziel-Storage-Verzeichnis dupliziert.
+  - DB-Eintrag (`order_documents`) mit neuer UUID + neuem `filename` (`{new_id}{ext}`); `original_name`, `kategorie`, `content_type`, `size` bleiben 1:1.
+  - `order_pk` als String gespeichert (anders als bei assets/settings) — Cast wird im Endpoint behandelt.
+  - Response enthaelt jetzt zusaetzlich `copied_documents`.
+- ✅ **Frontend** `OrderDocumentsPage.jsx`:
+  - "Kopier-Modus"-Toggle in der Page-Header (Admin only, wenn Docs vorhanden).
+  - Checkbox + Emerald-Highlight pro DocRow; Klick auf Row toggelt Auswahl im Copy-Modus.
+  - Floating Action-Bar mit Counts + "Kopieren nach...".
+  - Ziel-Auftrags-Picker-Dialog (gleiche Suchquelle wie bei Assets/Generatoren).
+  - Aktions-Buttons (Vorschau/Download/Delete/Kategorie-Wechsel) werden im Copy-Modus per Row ausgeblendet.
+- ✅ Tests: Frontend E2E (iteration_68.json) 100% PASS; Backend bereits durch iteration_67-Fixture + manuelles curl validiert.
+
+
 - ✅ **Backend** `POST /api/orders/epirent/{order_pk}/copy-to` (Admin-only):
   - Body: `{ target_order_pk, asset_ids: [...], generator_ids: [...] }`.
   - Artikel werden 1:1 dupliziert (neue UUID, Position/Status/Kommentare bleiben; Audit-Kommentar "Kopiert aus Auftrag #X" haengt an).
