@@ -868,16 +868,22 @@ function loadWeatherDays(detail) {
 // ============================================================================
 // REGENRADAR via RainViewer (kostenlos, kein API-Key)
 // ============================================================================
-var radarMap = null, radarMarker = null, radarLayer = null, radarFrames = [];
+var radarMap = null, radarMarker = null, radarLayers = [], radarFrames = [];
 var radarIdx = -1, radarPlayHandle = null;
+
+// RainViewer-Tiles werden serverseitig nur bis Zoom ~10 erzeugt.
+// Hoehere Zooms ergeben "Zoom Level not Supported"-Fehler-PNGs.
+// Loesung: maxNativeZoom=10 -> Leaflet skaliert lokal hoch statt unsupported Tiles zu laden.
+var RADAR_MAX_NATIVE_ZOOM = 10;
 
 function initRadar(lat, lng) {
   var mapEl = document.getElementById("radar-map"); if (!mapEl) return;
   if (radarMap) { try { radarMap.remove(); } catch(e){} radarMap = null; }
+  radarLayers = [];
 
-  radarMap = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([lat, lng], 8);
+  radarMap = L.map(mapEl, { zoomControl: true, attributionControl: false, maxZoom: 11 }).setView([lat, lng], 8);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 14, opacity: 0.85
+    maxZoom: 11, opacity: 0.85
   }).addTo(radarMap);
   radarMarker = L.circleMarker([lat, lng], {
     radius: 8, color: "#d946ef", fillColor: "#d946ef", fillOpacity: 0.85, weight: 3
@@ -893,6 +899,20 @@ function initRadar(lat, lng) {
       radarFrames = frames.map(function(f){
         return { time: f.time, path: f.path, host: d.host };
       });
+      // Alle Frame-Layer SOFORT anlegen (opacity 0) -> echte Animation ohne Nachladen
+      radarLayers = radarFrames.map(function(f) {
+        var url = f.host + f.path + "/256/{z}/{x}/{y}/2/1_1.png";
+        var layer = L.tileLayer(url, {
+          opacity: 0,
+          maxNativeZoom: RADAR_MAX_NATIVE_ZOOM,
+          maxZoom: 11,
+          tileSize: 256,
+          crossOrigin: true,
+          errorTileUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        });
+        layer.addTo(radarMap);
+        return layer;
+      });
       var slider = document.getElementById("radar-slider");
       slider.max = String(Math.max(0, radarFrames.length - 1));
       // Default: aktuellster Vergangenheits-Frame (= last "past")
@@ -901,6 +921,8 @@ function initRadar(lat, lng) {
       showRadarFrame(radarIdx);
       slider.addEventListener("input", function(){ stopRadarPlay(); showRadarFrame(parseInt(slider.value,10)); });
       document.getElementById("radar-play").addEventListener("click", toggleRadarPlay);
+      // Auto-Start Animation nach 1.5s (Tiles haben Zeit zu laden)
+      setTimeout(function(){ if (!radarPlayHandle) toggleRadarPlay(); }, 1500);
     })
     .catch(function(){
       document.getElementById("radar-frame-lbl").textContent = "Radar offline";
@@ -910,10 +932,11 @@ function initRadar(lat, lng) {
 function showRadarFrame(i) {
   if (i < 0 || i >= radarFrames.length) return;
   radarIdx = i;
+  // Opacity-Switch: nur der aktive Layer ist sichtbar, alle anderen unsichtbar
+  radarLayers.forEach(function(layer, idx) {
+    layer.setOpacity(idx === i ? 0.7 : 0);
+  });
   var f = radarFrames[i];
-  var url = f.host + f.path + "/256/{z}/{x}/{y}/2/1_1.png";
-  if (radarLayer) { try { radarMap.removeLayer(radarLayer); } catch(e){} }
-  radarLayer = L.tileLayer(url, { opacity: 0.7, maxZoom: 14 }).addTo(radarMap);
   var d = new Date(f.time * 1000);
   var now = Date.now() / 1000;
   var diffMin = Math.round((f.time - now) / 60);
