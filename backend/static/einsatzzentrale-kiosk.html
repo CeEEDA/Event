@@ -1052,7 +1052,14 @@ function loadWeatherDays(detail) {
   api("/api/einsatzzentrale/weather?" + p.toString()).then(function(w) {
     var area = document.getElementById("weather-days");
     if (!w.days || !w.days.length) { area.innerHTML = '<p style="color:#9ca3af;">Keine Wetterdaten.</p>'; return; }
-    var days7 = w.days.slice(0, 7);
+    // Nur Tage ab heute (Vergangenheit ausblenden)
+    var today = new Date(); today.setHours(0,0,0,0);
+    var future = w.days.filter(function(d){
+      var dd = new Date(d.date); dd.setHours(0,0,0,0);
+      return dd.getTime() >= today.getTime();
+    });
+    if (!future.length) { area.innerHTML = '<p style="color:#9ca3af;">Keine zukünftigen Wetterdaten.</p>'; return; }
+    var days7 = future.slice(0, 7);
     area.innerHTML = '<div class="weather">' + days7.map(function(d) {
       return '<div class="day"><div class="d">' + esc(new Date(d.date).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"})) +
              '</div><div class="e" title="' + esc(d.weather_label) + '">' + d.weather_emoji + '</div>' +
@@ -1094,19 +1101,24 @@ function initRadar(lat, lng) {
     .then(function(r){ return r.json(); })
     .then(function(d) {
       var past = (d.radar && d.radar.past) || [];
-      var future = (d.radar && d.radar.nowcast) || [];
-      var frames = past.slice(-6).concat(future); // 6 Vergangenheit + alle Zukunft
+      // KEINE nowcast-Frames - die haben nur in Nordamerika + Teilen Europas
+      // konsistente Coverage; in Mitteleuropa liefern sie z.T. "Zoom Level Not
+      // Supported"-Fehler-Tiles. Past-Frames sind global hochaufloesend.
+      var frames = past.slice(-12); // letzte ~2 Stunden in 10-Min-Schritten
       radarFrames = frames.map(function(f){
         return { time: f.time, path: f.path, host: d.host };
       });
       // Alle Frame-Layer SOFORT anlegen (opacity 0) -> echte Animation ohne Nachladen
+      // Color 4 (TWC) gibt bessere Lesbarkeit als 2 (Universal Blue) bei Mitteleuropa
+      // Tile-Size 512 = schaerfer auf High-DPI-Displays
       radarLayers = radarFrames.map(function(f) {
-        var url = f.host + f.path + "/256/{z}/{x}/{y}/2/1_1.png";
+        var url = f.host + f.path + "/512/{z}/{x}/{y}/4/1_1.png";
         var layer = L.tileLayer(url, {
           opacity: 0,
           maxNativeZoom: RADAR_MAX_NATIVE_ZOOM,
           maxZoom: 11,
-          tileSize: 256,
+          tileSize: 512,
+          zoomOffset: -1,   // 512px tile braucht zoomOffset -1
           crossOrigin: true,
           errorTileUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
         });
@@ -1115,8 +1127,8 @@ function initRadar(lat, lng) {
       });
       var slider = document.getElementById("radar-slider");
       slider.max = String(Math.max(0, radarFrames.length - 1));
-      // Default: aktuellster Vergangenheits-Frame (= last "past")
-      radarIdx = Math.min(5, radarFrames.length - 1);
+      // Default: letzter (= aktuellster) Past-Frame
+      radarIdx = Math.max(0, radarFrames.length - 1);
       slider.value = String(radarIdx);
       showRadarFrame(radarIdx);
       slider.addEventListener("input", function(){ stopRadarPlay(); showRadarFrame(parseInt(slider.value,10)); });
