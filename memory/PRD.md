@@ -16,6 +16,23 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Admin Copy-Funktion fuer Auftraege (P0)
+- ✅ **Backend** `POST /api/orders/epirent/{order_pk}/copy-to` (Admin-only):
+  - Body: `{ target_order_pk, asset_ids: [...], generator_ids: [...] }`.
+  - Artikel werden 1:1 dupliziert (neue UUID, Position/Status/Kommentare bleiben; Audit-Kommentar "Kopiert aus Auftrag #X" haengt an).
+  - Generatoren werden zusaetzlich an `order_settings.manual_generator_ids` des Ziel-Auftrags angehaengt (`$addToSet`) — Quelle behaelt die Zuordnung (kopieren, nicht verschieben).
+  - Auto-Deployment-Eintrag fuer jeden neu zugeordneten Generator wird in `deployment_history` angelegt (analog zu `add_manual_generator`).
+  - Validierung: Self-Copy 400, leere Auswahl 400, unbekanntes Ziel 404, Non-Admin 403.
+- ✅ **Frontend** `OrderDetailPage.js`:
+  - "Kopier-Modus"-Toggle in Header von Generatoren-Panel und Artikel-Section (nur Admin, nur wenn Items vorhanden).
+  - Checkbox-Spalte in Asset-Tabelle + Checkbox je Generator-Card.
+  - Floating Action-Bar mit Counts + "Kopieren nach...".
+  - Ziel-Auftrags-Picker-Dialog (debounced Search via `/orders/epirent-search/quick`).
+  - Confirm + Toast + State-Reset nach Erfolg.
+- ✅ Tests: Backend 8/8 PASS (test_copy_to_order_iteration67.py), Frontend Playwright e2e PASS (Toggle, Checkboxen, Action-Bar, Picker, Confirm, Toast, Regression Move-Dialog).
+
+
+## Implementation Log
 ### Feb 2026 – Auto-Learn Verifikation
 - ✅ **MQTT Auto-Learn Logik final verifiziert** (Feb 2026):
   - 7 Unit-Tests in `/app/backend/tests/test_mqtt_auto_learn_gps.py` (kein dotenv, kein echtes Mongo — FakeDB In-Memory).
