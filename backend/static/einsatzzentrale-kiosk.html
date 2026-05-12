@@ -456,9 +456,22 @@ input { font-family: inherit; }
 .diary-section-h .right { display:flex; gap:8px; }
 
 .diary-entry { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:10px; transition:border-color .15s; }
-.diary-entry.open { border-left:4px solid #dc2626; }
-.diary-entry.in_progress { border-left:4px solid #f59e0b; }
-.diary-entry.resolved { border-left:4px solid var(--emerald); opacity:.85; }
+.diary-entry.open {
+  border: 2px solid #dc2626;
+  background: linear-gradient(to right, #fef2f2 0%, #ffffff 30%);
+  box-shadow: 0 0 0 4px rgba(220,38,38,0.10), 0 1px 3px rgba(220,38,38,0.15);
+  animation: diary-pulse 2s ease-in-out infinite;
+}
+@keyframes diary-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(220,38,38,0.10), 0 1px 3px rgba(220,38,38,0.15); }
+  50%      { box-shadow: 0 0 0 6px rgba(220,38,38,0.18), 0 1px 6px rgba(220,38,38,0.25); }
+}
+.diary-entry.in_progress {
+  border: 2px solid #f59e0b;
+  background: linear-gradient(to right, #fffbeb 0%, #ffffff 30%);
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.08);
+}
+.diary-entry.resolved { border:1px solid #d1fae5; background:#f0fdf4; opacity:.95; }
 .diary-entry .e-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; flex-wrap:wrap; }
 .diary-entry .e-time { font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
 .diary-entry .badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:3px 8px; border-radius:999px; }
@@ -471,6 +484,40 @@ input { font-family: inherit; }
 .diary-entry .e-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:6px 16px; font-size:13px; color:var(--text-muted); margin-bottom:10px; }
 .diary-entry .e-meta .row { display:flex; align-items:center; gap:6px; }
 .diary-entry .e-actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Inline-Trupp-Picker im Diary-Eintrag (rechte Seite der Karte) */
+.diary-entry { display:grid; grid-template-columns: 1fr 230px; gap:16px; align-items:start; }
+@media (max-width: 900px) { .diary-entry { grid-template-columns: 1fr; } }
+.diary-entry > .de-main { min-width:0; }
+.diary-entry > .de-side { background:#fff; border:1px solid var(--border); border-radius:10px;
+  padding:10px; display:flex; flex-direction:column; gap:6px; }
+.diary-entry.open > .de-side { border-color:#fecaca; background:#fff5f5; }
+.diary-entry.in_progress > .de-side { border-color:#fde68a; background:#fffbeb; }
+.diary-entry.resolved > .de-side { border-color:#a7f3d0; background:#ecfdf5; }
+.diary-entry .de-side-h { font-size:10px; font-weight:700; text-transform:uppercase;
+  color:var(--text-muted); letter-spacing:.06em; margin-bottom:2px; }
+.diary-entry .de-trupp-grid { display:flex; flex-direction:column; gap:4px; }
+.diary-entry .de-trupp-btn { display:flex; align-items:center; gap:8px;
+  padding:8px 10px; border:1.5px solid var(--border); border-radius:8px;
+  background:#fff; cursor:pointer; text-align:left; transition:all .15s;
+  font-family:inherit; font-size:12px; }
+.diary-entry .de-trupp-btn:hover:not(:disabled) { border-color:var(--fuchsia); background:#fdf4ff;
+  transform:translateY(-1px); box-shadow:0 2px 6px rgba(0,0,0,.08); }
+.diary-entry .de-trupp-btn:disabled { opacity:.45; cursor:not-allowed; }
+.diary-entry .de-trupp-dot { width:8px; height:8px; border-radius:999px; background:var(--emerald); flex-shrink:0; }
+.diary-entry .de-trupp-dot.busy { background:var(--amber); }
+.diary-entry .de-trupp-name { font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.diary-entry .de-trupp-meta { font-size:10px; color:var(--text-muted); font-weight:500; }
+.diary-entry .de-empty { font-size:11px; color:var(--text-muted); font-style:italic; padding:6px 4px; text-align:center; }
+.diary-entry .de-assigned { background:#fff; border:1.5px solid var(--amber); border-radius:8px; padding:8px 10px;
+  display:flex; align-items:center; gap:8px; }
+.diary-entry .de-resolve-big { background:var(--emerald); color:#fff; border:none; border-radius:8px;
+  padding:10px 12px; font-weight:700; font-size:13px; cursor:pointer; transition:all .15s;
+  display:flex; align-items:center; justify-content:center; gap:6px; }
+.diary-entry .de-resolve-big:hover { background:#059669; transform:translateY(-1px); box-shadow:0 3px 8px rgba(16,185,129,.3); }
+.diary-entry .de-resolved-info-side { font-size:11px; color:#047857; text-align:center; padding:6px 4px; }
+.diary-entry .de-reopen-small { font-size:11px; padding:6px 10px; border:1px solid var(--border);
+  border-radius:6px; background:#fff; cursor:pointer; color:#92400e; }
 .diary-entry .e-resolved-info { font-size:12px; color:var(--emerald); margin-top:6px; }
 
 .btn.sm { height:34px; padding:0 12px; font-size:13px; }
@@ -1416,20 +1463,35 @@ function paintMultiDiary(data) {
     area.innerHTML = '<div class="empty" style="padding:24px;">' + (q || status !== "all" ? "Keine Treffer." : "Noch keine Einträge.") + '</div>';
     return;
   }
+  var truppMapMD = {}; diaryState.trupps.forEach(function(t){ truppMapMD[t.id] = t; });
   area.innerHTML = entries.map(function(e) {
     var cls = e.status; // "open" | "in_progress" | "resolved"
-    var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : "?"; }).filter(Boolean);
+    var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMapMD[tid]; return t ? t.name : "?"; }).filter(Boolean);
     var badge =
       e.status === "resolved"    ? '<span class="badge bg-emerald">✓ Behoben</span>' :
       e.status === "in_progress" ? '<span class="badge bg-amber">● Unterwegs</span>' :
                                     '<span class="badge bg-red">● Offen</span>';
-    return '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '" style="padding:10px 12px;margin-bottom:8px;">' +
-              '<div class="e-top" style="margin-bottom:4px;">' +
+    // Inline-Trupp-Picker fuer offene Eintraege (horizontal, kompakt)
+    var picker = "";
+    if (e.status === "open") {
+      var freeT = diaryState.trupps.filter(function(t){ return t.is_active; });
+      if (freeT.length) {
+        picker = '<div style="margin-top:6px;padding:6px 8px;background:#fff5f5;border:1px dashed #fecaca;border-radius:6px;">' +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#dc2626;margin-bottom:4px;">🔴 Trupp zuweisen:</div>' +
+          '<div style="display:flex;gap:4px;flex-wrap:wrap;">' +
+          freeT.map(function(t) {
+            var disabled = t.is_busy ? "disabled" : "";
+            var bg = t.is_busy ? "background:#fef3c7;color:#92400e;opacity:.6;cursor:not-allowed;" : "background:#fff;cursor:pointer;";
+            return '<button class="mmd-assign" data-id="' + esc(e.id) + '" data-tid="' + esc(t.id) + '" ' + disabled +
+                   ' style="' + bg + 'border:1.5px solid var(--border);padding:5px 10px;font-size:11px;border-radius:6px;font-weight:600;font-family:inherit;">' +
+                   esc(t.name) + (t.is_busy ? " (busy)" : "") + '</button>';
+          }).join("") + '</div></div>';
+      }
+    }
+    return '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '" style="display:block;padding:10px 12px;margin-bottom:8px;">' +
+              '<div class="e-top" style="margin-bottom:4px;display:flex;justify-content:space-between;">' +
                 '<div class="e-time" style="font-size:11px;">🕐 ' + esc(fmtDateTime(e.created_at)) + '</div>' +
-                '<div style="display:flex;gap:4px;">' +
-                  badge +
-                  (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
-                '</div>' +
+                '<div style="display:flex;gap:4px;">' + badge + (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') + '</div>' +
               '</div>' +
               '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + esc(e.reason) + '</div>' +
               '<div style="font-size:11px;color:var(--text-muted);display:flex;gap:8px;flex-wrap:wrap;">' +
@@ -1438,17 +1500,16 @@ function paintMultiDiary(data) {
                 (e.location ? '<span>📍 ' + esc(e.location) + '</span>' : '') +
                 (truppNames.length ? '<span>👥 ' + esc(truppNames.join(", ")) + '</span>' : '') +
               '</div>' +
+              picker +
               (e.status === "resolved" && e.resolved_at
                 ? '<div class="e-resolved-info" style="font-size:11px;margin-top:4px;">✓ ' + esc(fmtDateTime(e.resolved_at)) +
                   (e.resolved_by_name ? ' · ' + esc(e.resolved_by_name) : '') +
                   ' · Dauer: ' + esc(fmtDuration(e.created_at, e.resolved_at)) + '</div>'
                 : '') +
               '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">' +
-                (e.status === "open"
-                  ? '<button class="btn sm primary multi-e-assign" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">👥 Trupp zuweisen</button>'
-                  : '') +
                 (e.status === "in_progress"
-                  ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">✓ Behoben</button>'
+                  ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 10px;">✓ Behoben</button>' +
+                    '<button class="btn sm multi-e-unassign" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">↺ Trupp ab</button>'
                   : '') +
                 (e.status === "open"
                   ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">✓ Direkt behoben</button>'
@@ -1461,12 +1522,33 @@ function paintMultiDiary(data) {
               '</div>' +
             '</div>';
   }).join("");
+
+  // Inline-Picker-Buttons verdrahten
+  area.querySelectorAll(".mmd-assign").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      if (btn.disabled) return;
+      var pk = encodeURIComponent(state.order.primary_key);
+      var entry = diaryState.entries.find(function(x){ return x.id === btn.dataset.id; });
+      var ids = entry ? (entry.assigned_trupp_ids || []).slice() : [];
+      if (ids.indexOf(btn.dataset.tid) === -1) ids.push(btn.dataset.tid);
+      btn.disabled = true; btn.style.opacity = ".5";
+      api("/api/orders/" + pk + "/diary/" + encodeURIComponent(btn.dataset.id),
+          { method: "PUT", body: { assigned_trupp_ids: ids } })
+        .then(loadMultiDiary)
+        .catch(function(ex){ alert("Fehler: " + ex.message); btn.disabled = false; btn.style.opacity = ""; });
+    });
+  });
+  area.querySelectorAll(".multi-e-unassign").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      if (!confirm("Trupp wieder abziehen?")) return;
+      var pk = encodeURIComponent(state.order.primary_key);
+      api("/api/orders/" + pk + "/diary/" + encodeURIComponent(btn.dataset.id),
+          { method: "PUT", body: { assigned_trupp_ids: [] } })
+        .then(loadMultiDiary).catch(function(ex){ alert(ex.message); });
+    });
+  });
   area.querySelectorAll(".multi-e-resolve").forEach(function(b){ b.addEventListener("click", function(){ resolveEntry(b.dataset.id).then(loadMultiDiary).catch(function(){}); }); });
   area.querySelectorAll(".multi-e-reopen").forEach(function(b){ b.addEventListener("click", function(){ reopenEntry(b.dataset.id).then(loadMultiDiary).catch(function(){}); }); });
-  area.querySelectorAll(".multi-e-assign").forEach(function(b){ b.addEventListener("click", function(){
-    var e = diaryState.entries.find(function(x){return x.id === b.dataset.id;});
-    if (e) openEntryModal(e);   // Modal mit Trupp-Picker
-  }); });
   area.querySelectorAll(".multi-e-edit").forEach(function(b){ b.addEventListener("click", function(){
     var e = diaryState.entries.find(function(x){return x.id === b.dataset.id;});
     if (e) openEntryModal(e);
@@ -2518,6 +2600,92 @@ function paintTrupps() {
   area.querySelectorAll(".trupp-del-btn").forEach(function(b){ b.addEventListener("click", function(){ var t = diaryState.trupps.find(function(x){return x.id===b.dataset.id;}); deleteTrupp(t); }); });
 }
 
+function _renderSidePanel(e, truppMap, scope) {
+  // scope: "diary" (vollansicht) | "multi" (kompakt)
+  // Liefert HTML fuer den rechten Inline-Bereich der Karte.
+  // Aktionen werden ueber data-action + data-id + data-tid Buttons getriggert.
+  if (e.status === "resolved") {
+    var dur = e.resolved_at ? fmtDuration(e.created_at, e.resolved_at) : "";
+    return '<div class="de-side-h">✓ Behoben</div>' +
+           '<div class="de-resolved-info-side">' +
+             (e.resolved_by_name ? esc(e.resolved_by_name) + '<br>' : '') +
+             (e.resolved_at ? esc(fmtDateTime(e.resolved_at).replace(",", "")) + '<br>' : '') +
+             (dur ? '⏱ ' + esc(dur) : '') +
+           '</div>' +
+           '<button class="de-reopen-small" data-action="reopen" data-id="' + esc(e.id) + '">↺ Wieder öffnen</button>';
+  }
+  if (e.status === "in_progress") {
+    var truppNames = (e.assigned_trupp_ids || []).map(function(tid){
+      var t = truppMap[tid]; return t ? t.name : "?";
+    }).filter(Boolean);
+    return '<div class="de-side-h">🟡 Trupp unterwegs</div>' +
+           truppNames.map(function(n){ return '<div class="de-assigned"><div class="de-trupp-dot busy"></div><div class="de-trupp-name">' + esc(n) + '</div></div>'; }).join("") +
+           '<button class="de-resolve-big" data-action="resolve" data-id="' + esc(e.id) + '">✓ Fehler behoben</button>' +
+           '<button class="de-reopen-small" data-action="unassign" data-id="' + esc(e.id) + '" style="font-size:10px;">↺ Trupp abziehen</button>';
+  }
+  // status open: Trupp-Picker
+  var trupps = diaryState.trupps.filter(function(t){ return t.is_active; });
+  var head = '<div class="de-side-h">🔴 Trupp zuweisen</div>';
+  if (!trupps.length) {
+    return head + '<div class="de-empty">Keine aktiven Trupps. „+ Trupp" oben klicken.</div>' +
+           '<button class="de-resolve-big" data-action="resolve" data-id="' + esc(e.id) + '" style="background:#9ca3af;">✓ Ohne Trupp behoben</button>';
+  }
+  return head +
+    '<div class="de-trupp-grid">' +
+      trupps.map(function(t) {
+        var disabled = t.is_busy ? "disabled title=\"Trupp aktuell auf einem Einsatz\"" : "";
+        var meta = t.is_busy ? "unterwegs" : ((t.members || []).filter(Boolean).length + " Mitgl.");
+        return '<button class="de-trupp-btn" data-action="assign" data-id="' + esc(e.id) + '" data-tid="' + esc(t.id) + '" ' + disabled + '>' +
+                 '<div class="de-trupp-dot ' + (t.is_busy ? "busy" : "") + '"></div>' +
+                 '<div class="de-trupp-name">' + esc(t.name) + '</div>' +
+                 '<div class="de-trupp-meta">' + esc(meta) + '</div>' +
+               '</button>';
+      }).join("") +
+    '</div>' +
+    '<button class="de-reopen-small" data-action="resolve" data-id="' + esc(e.id) + '" style="margin-top:4px;color:#065f46;border-color:#a7f3d0;">✓ Ohne Trupp behoben</button>';
+}
+
+function _wireSidePanelActions(area, onChangeCb) {
+  // onChangeCb wird nach jeder erfolgreichen Aenderung aufgerufen (typ. loadDiary)
+  area.querySelectorAll("[data-action='assign']").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      if (btn.disabled) return;
+      var pk = encodeURIComponent(state.order.primary_key);
+      var entry = diaryState.entries.find(function(x){ return x.id === btn.dataset.id; });
+      var ids = entry ? (entry.assigned_trupp_ids || []).slice() : [];
+      if (ids.indexOf(btn.dataset.tid) === -1) ids.push(btn.dataset.tid);
+      btn.disabled = true; btn.style.opacity = ".5";
+      api("/api/orders/" + pk + "/diary/" + encodeURIComponent(btn.dataset.id),
+          { method: "PUT", body: { assigned_trupp_ids: ids } })
+        .then(onChangeCb)
+        .catch(function(ex){ alert("Fehler: " + ex.message); btn.disabled = false; btn.style.opacity = ""; });
+    });
+  });
+  area.querySelectorAll("[data-action='resolve']").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      btn.disabled = true;
+      resolveEntry(btn.dataset.id).then(onChangeCb).catch(function(){ btn.disabled = false; });
+    });
+  });
+  area.querySelectorAll("[data-action='reopen']").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      btn.disabled = true;
+      reopenEntry(btn.dataset.id).then(onChangeCb).catch(function(){ btn.disabled = false; });
+    });
+  });
+  area.querySelectorAll("[data-action='unassign']").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      if (!confirm("Trupp wieder abziehen? Eintrag geht zurück auf 'offen'.")) return;
+      var pk = encodeURIComponent(state.order.primary_key);
+      btn.disabled = true;
+      api("/api/orders/" + pk + "/diary/" + encodeURIComponent(btn.dataset.id),
+          { method: "PUT", body: { assigned_trupp_ids: [] } })
+        .then(onChangeCb)
+        .catch(function(ex){ alert("Fehler: " + ex.message); btn.disabled = false; });
+    });
+  });
+}
+
 function paintDiary(filter) {
   var area = document.getElementById("diary-area"); if (!area) return;
   var q = (filter || "").trim().toLowerCase();
@@ -2539,45 +2707,31 @@ function paintDiary(filter) {
       e.status === "in_progress" ? '<span class="badge bg-amber">● Trupp unterwegs</span>' :
                                     '<span class="badge bg-red">● Offen</span>';
     html += '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '">' +
-              '<div class="e-top">' +
-                '<div class="e-time">🕐 ' + esc(fmtDateTime(e.created_at)) + (e.created_by_name ? ' &middot; <span style="font-style:italic;">' + esc(e.created_by_name) + '</span>' : '') + '</div>' +
-                '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-                  badge +
-                  (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
+              '<div class="de-main">' +
+                '<div class="e-top">' +
+                  '<div class="e-time">🕐 ' + esc(fmtDateTime(e.created_at)) + (e.created_by_name ? ' &middot; <span style="font-style:italic;">' + esc(e.created_by_name) + '</span>' : '') + '</div>' +
+                  '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                    badge +
+                    (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
+                  '</div>' +
+                '</div>' +
+                '<div class="e-reason">' + esc(e.reason) + '</div>' +
+                '<div class="e-meta">' +
+                  (e.caller_name ? '<div class="row">👤 ' + esc(e.caller_name) + '</div>' : '') +
+                  (e.caller_phone ? '<div class="row">📞 ' + esc(e.caller_phone) + '</div>' : '') +
+                  (e.location ? '<div class="row">📍 ' + esc(e.location) + '</div>' : '') +
+                  (truppNames.length ? '<div class="row">👥 ' + esc(truppNames.join(", ")) + '</div>' : '') +
+                '</div>' +
+                '<div class="e-actions">' +
+                  '<button class="btn sm entry-edit-btn" data-id="' + esc(e.id) + '">Bearbeiten</button>' +
+                  '<button class="btn sm danger entry-del-btn" data-id="' + esc(e.id) + '">Löschen</button>' +
                 '</div>' +
               '</div>' +
-              '<div class="e-reason">' + esc(e.reason) + '</div>' +
-              '<div class="e-meta">' +
-                (e.caller_name ? '<div class="row">👤 ' + esc(e.caller_name) + '</div>' : '') +
-                (e.caller_phone ? '<div class="row">📞 ' + esc(e.caller_phone) + '</div>' : '') +
-                (e.location ? '<div class="row">📍 ' + esc(e.location) + '</div>' : '') +
-                (truppNames.length ? '<div class="row">👥 ' + esc(truppNames.join(", ")) + '</div>' : '') +
-              '</div>' +
-              (e.status === "resolved" && e.resolved_at
-                ? '<div class="e-resolved-info">✓ Behoben am ' + esc(fmtDateTime(e.resolved_at)) +
-                  (e.resolved_by_name ? ' von ' + esc(e.resolved_by_name) : '') +
-                  ' &middot; Dauer: ' + esc(fmtDuration(e.created_at, e.resolved_at)) + '</div>'
-                : '') +
-              '<div class="e-actions">' +
-                (e.status === "open"
-                  ? '<button class="btn sm primary entry-assign-btn" data-id="' + esc(e.id) + '">👥 Trupp zuweisen</button>' +
-                    '<button class="btn sm success entry-resolve-btn" data-id="' + esc(e.id) + '">✓ Direkt behoben</button>'
-                  : '') +
-                (e.status === "in_progress"
-                  ? '<button class="btn sm success entry-resolve-btn" data-id="' + esc(e.id) + '">✓ Als behoben markieren</button>'
-                  : '') +
-                (e.status === "resolved"
-                  ? '<button class="btn sm warn entry-reopen-btn" data-id="' + esc(e.id) + '">↺ Wieder öffnen</button>'
-                  : '') +
-                '<button class="btn sm entry-edit-btn" data-id="' + esc(e.id) + '">Bearbeiten</button>' +
-                '<button class="btn sm danger entry-del-btn" data-id="' + esc(e.id) + '">Löschen</button>' +
-              '</div>' +
+              '<div class="de-side">' + _renderSidePanel(e, truppMap, "diary") + '</div>' +
             '</div>';
   });
   area.innerHTML = html;
-  area.querySelectorAll(".entry-resolve-btn").forEach(function(b){ b.addEventListener("click", function(){ resolveEntry(b.dataset.id); }); });
-  area.querySelectorAll(".entry-reopen-btn").forEach(function(b){ b.addEventListener("click", function(){ reopenEntry(b.dataset.id); }); });
-  area.querySelectorAll(".entry-assign-btn").forEach(function(b){ b.addEventListener("click", function(){ var e = diaryState.entries.find(function(x){return x.id===b.dataset.id;}); openEntryModal(e); }); });
+  _wireSidePanelActions(area, function(){ loadDiary(); loadTrupps(); });
   area.querySelectorAll(".entry-edit-btn").forEach(function(b){ b.addEventListener("click", function(){ var e = diaryState.entries.find(function(x){return x.id===b.dataset.id;}); openEntryModal(e); }); });
   area.querySelectorAll(".entry-del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteEntry(b.dataset.id); }); });
 }
