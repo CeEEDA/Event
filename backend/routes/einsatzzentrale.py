@@ -572,6 +572,27 @@ async def install_script():
     )
 
 
+_REFRESH_SCRIPT_PATH = _Path("/app/backend/static/einsatzzentrale_pi_refresh.sh")
+
+
+@router.get("/refresh-pi", response_class=PlainTextResponse)
+async def refresh_pi_script():
+    """Refresh-Skript fuer einen bereits installierten Pi.
+
+    Holt frischen pi_service.py + kiosk.html, loescht stale Caches (SQLite +
+    Chromium) und startet den Service neu. Behaelt Pi-ID + Konfig.
+
+    Nutzung auf dem Pi:
+      curl -fsSL https://<host>/api/einsatzzentrale/refresh-pi | sudo bash
+    """
+    if not _REFRESH_SCRIPT_PATH.exists():
+        raise HTTPException(status_code=404, detail="Refresh-Skript nicht verfuegbar")
+    return PlainTextResponse(
+        content=_REFRESH_SCRIPT_PATH.read_text(encoding="utf-8"),
+        media_type="text/x-shellscript; charset=utf-8",
+    )
+
+
 # ============================================================================
 # PI-SETUP-GENERATOR (Mehrere Pi-Kioske registrieren & verwalten)
 # ============================================================================
