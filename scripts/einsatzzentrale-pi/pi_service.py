@@ -329,8 +329,12 @@ async def kiosk_root():
     """
     if CLOUD_URL and _online:
         try:
+            cloud_headers = {}
+            if PI_ID:  cloud_headers["X-Pi-Id"]  = PI_ID
+            if PI_KEY: cloud_headers["X-Pi-Key"] = PI_KEY
             async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(f"{CLOUD_URL}/api/einsatzzentrale/kiosk-page")
+                r = await client.get(f"{CLOUD_URL}/api/einsatzzentrale/kiosk-page",
+                                     headers=cloud_headers)
             if 200 <= r.status_code < 300 and r.content:
                 # Lokale Kopie aktualisieren (fuer Offline-Fallback)
                 try:
@@ -382,6 +386,20 @@ async def proxy(path: str, request: Request) -> Response:
     body = await request.body()
     headers = {k: v for k, v in request.headers.items()
                if k.lower() not in ("host", "content-length", "connection")}
+    # Pi identifiziert sich bei jedem Cloud-Call mit pi_id + key, damit das
+    # Backend Rate-Limit / Audit-Log pro Pi machen kann.
+    if PI_ID:  headers["X-Pi-Id"]  = PI_ID
+    if PI_KEY: headers["X-Pi-Key"] = PI_KEY
+
+    # Fast-Path: /api/einsatzzentrale/build-id wird vom Kiosk-JS alle 30 s
+    # gepollt - 10 s lokaler Cache verhindert unnoetige Cloud-Calls bei
+    # mehreren Tabs / mehreren Pis am gleichen Endpoint.
+    if method == "GET" and full_path == "/api/einsatzzentrale/build-id":
+        cached_bid = state_get("build_id_cache")
+        cached_ts = float(state_get("build_id_cache_ts") or "0")
+        import time as _t
+        if cached_bid and (_t.time() - cached_ts) < 10:
+            return Response(content=cached_bid, status_code=200, media_type="application/json")
 
     if method == "GET":
         # Token aus dem Request speichern (fuer Sync-Worker)
@@ -404,6 +422,11 @@ async def proxy(path: str, request: Request) -> Response:
                     cache_put("GET", full_path, query, r.status_code,
                               r.headers.get("content-type", ""), r.content)
                     globals()["_online"] = True
+                    # build-id Fast-Cache aktualisieren
+                    if full_path == "/api/einsatzzentrale/build-id":
+                        import time as _t
+                        state_set("build_id_cache", r.content.decode("utf-8", "ignore"))
+                        state_set("build_id_cache_ts", str(_t.time()))
                     return Response(content=r.content, status_code=r.status_code,
                                      media_type=r.headers.get("content-type"))
                 # Bei 4xx (401/403/etc) liefere Cloud-Response transparent (kein Retry)

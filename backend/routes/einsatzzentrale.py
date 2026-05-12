@@ -51,6 +51,36 @@ async def _auth_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return user
 
 
+async def _track_pi_request(request: Request) -> Optional[dict]:
+    """Wertet X-Pi-Id + X-Pi-Key (oder ?pi_id&key Query) aus.
+
+    Wenn gueltig -> aktualisiert last_seen auf 'online' und gibt das
+    Pi-Doc zurueck. Wenn nicht gueltig -> wirft 401 (NUR wenn pi_id ueberhaupt
+    angegeben wurde - andernfalls None damit der Endpoint weiter offen bleibt
+    fuer Mac-Browser-Vorschauen).
+    """
+    pi_id = request.headers.get("x-pi-id") or request.query_params.get("pi_id")
+    pi_key = request.headers.get("x-pi-key") or request.query_params.get("key")
+    if not pi_id:
+        return None
+    pi = await _db.einsatzzentrale_pis.find_one({"id": pi_id}, {"_id": 0})
+    if not pi:
+        raise HTTPException(status_code=401, detail="Unbekannter Pi")
+    import hashlib as _h
+    if not pi_key or _h.sha256(pi_key.encode()).hexdigest() != pi.get("device_key_hash"):
+        raise HTTPException(status_code=401, detail="Ungueltiger Pi-Key")
+    # last_seen Update (async, non-blocking auch wenn schreibtraege)
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        await _db.einsatzzentrale_pis.update_one(
+            {"id": pi_id},
+            {"$set": {"last_seen": now, "status": "online"}}
+        )
+    except Exception:
+        pass
+    return pi
+
+
 # ----------------------------------------------------------------------------
 # 1. User-Liste (PUBLIC, Kiosk)
 # ----------------------------------------------------------------------------
@@ -542,23 +572,53 @@ _KIOSK_HTML_PATH = _Path("/app/backend/static/einsatzzentrale-kiosk.html")
 
 
 @router.get("/kiosk-page", response_class=PlainTextResponse)
-async def kiosk_page():
-    """Standalone Kiosk-HTML (kein React, kein HMR, kein Reload-Loop).
-
-    Wird vom Raspberry Pi geladen statt /einsatzzentrale. Vanilla JS,
-    self-contained, kein webpack-dev-server-Refresh.
-    """
+async def kiosk_page(request: Request):
+    """Standalone Kiosk-HTML (kein React, kein HMR, kein Reload-Loop)."""
+    # Optional Pi-Auth (X-Pi-Id/X-Pi-Key) - updates last_seen wenn Pi-Header da.
+    # Bei falschen Credentials -> 401. Bei fehlenden Credentials -> offen.
+    await _track_pi_request(request)
     if not _KIOSK_HTML_PATH.exists():
         raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
+    raw = _KIOSK_HTML_PATH.read_text(encoding="utf-8")
+    import hashlib
+    build_id = hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
+    # In das HTML einbauen (vor </head>): meta-Tag + JS-Konstante.
+    inject = (
+        f'<meta name="kiosk-build-id" content="{build_id}" />\n'
+        f'<script>window.__KIOSK_BUILD_ID = "{build_id}";</script>\n'
+    )
+    if "</head>" in raw:
+        raw = raw.replace("</head>", inject + "</head>", 1)
+    else:
+        raw = inject + raw
     return PlainTextResponse(
-        content=_KIOSK_HTML_PATH.read_text(encoding="utf-8"),
+        content=raw,
         media_type="text/html; charset=utf-8",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
+            "X-Kiosk-Build-Id": build_id,
         },
     )
+
+
+@router.get("/build-id")
+async def kiosk_build_id(request: Request):
+    """Liefert den md5-Hash der aktuellen kiosk.html.
+
+    Vom Pi-Kiosk-JS alle 30 s gepollt. Bei Aenderung des Hashs reloadet der
+    Pi seine Seite automatisch -> Code-Updates landen instant auf dem Pi.
+    """
+    await _track_pi_request(request)
+    if not _KIOSK_HTML_PATH.exists():
+        raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
+    import hashlib
+    build_id = hashlib.md5(_KIOSK_HTML_PATH.read_bytes()).hexdigest()[:12]
+    return {
+        "build_id": build_id,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.get("/install-script", response_class=PlainTextResponse)

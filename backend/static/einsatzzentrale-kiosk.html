@@ -34,6 +34,39 @@
     }
   } catch (e) {}
 })();
+
+/* AUTO-UPDATE-CHECK: Alle 30 s gegen das Backend pruefen ob es eine neue
+   Kiosk-Build-ID gibt. Wenn ja -> Hard-Reload mit Cache-Bust. So bekommt
+   der Pi neue Versionen innerhalb von 30 s ohne manuelles Eingreifen. */
+(function () {
+  function getCurrentBuildId() {
+    if (window.__KIOSK_BUILD_ID) return window.__KIOSK_BUILD_ID;
+    var meta = document.querySelector('meta[name="kiosk-build-id"]');
+    return meta ? meta.getAttribute("content") : "";
+  }
+  var CURRENT = getCurrentBuildId();
+  if (!CURRENT) return;
+  function pollBuild() {
+    fetch("/api/einsatzzentrale/build-id", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.build_id) return;
+        if (d.build_id !== CURRENT) {
+          console.log("[Kiosk] Neue Version erkannt:", d.build_id, "(alt:", CURRENT, ") -> Reload");
+          var u = new URL(window.location.href);
+          u.searchParams.set("_b", d.build_id);
+          u.searchParams.set("_t", Date.now().toString());
+          window.location.assign(u.toString());
+        }
+      })
+      .catch(function () { /* offline ist OK, naechster Poll versucht's */ });
+  }
+  // Erst nach 20 s starten (Initial-Load braucht Ruhe), dann alle 30 s
+  setTimeout(function () {
+    pollBuild();
+    setInterval(pollBuild, 30000);
+  }, 20000);
+})();
 </script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
