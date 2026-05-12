@@ -9,7 +9,7 @@ import {
   ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
   DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText, Check, Heart, FileDown,
-  Pencil, X,
+  Pencil, X, History,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
 
@@ -36,6 +36,21 @@ export default function AdminZeitDetailPage() {
   }, [userId]);
 
   useEffect(() => { loadVerbEntries(); }, [loadVerbEntries]);
+
+  // Audit-Log: protokolliert manuelle Aenderungen an Zeit/Urlaub/HR-Daten
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditEntries, setAuditEntries] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const loadAuditLog = useCallback(async () => {
+    if (!userId) return;
+    setAuditLoading(true);
+    try {
+      const res = await api.get(`/employee/audit-log/${userId}?token=${token}`);
+      setAuditEntries(res.data.entries || []);
+    } catch { /* silent */ } finally { setAuditLoading(false); }
+  }, [userId, token]);
+  // Beim ersten Aufklappen laden
+  useEffect(() => { if (auditOpen) loadAuditLog(); }, [auditOpen, loadAuditLog]);
 
   const handleVerbPdf = async (entryId, lfdNr, eventDate) => {
     try {
@@ -509,6 +524,14 @@ export default function AdminZeitDetailPage() {
           <span className="text-gray-300">/</span>
           <span className="text-sm text-gray-500">Arbeitszeit</span>
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              onClick={() => { setAuditOpen(true); setTimeout(() => loadAuditLog(), 50); document.getElementById("audit-section")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+              size="sm" variant="outline"
+              className="text-violet-700 border-violet-300 hover:bg-violet-50"
+              data-testid="audit-btn"
+            >
+              <History className="w-3.5 h-3.5 mr-1.5" /> Protokoll
+            </Button>
             <Button onClick={() => navigate(`/verwaltung/zeiterfassung/${userId}/notizen`)} size="sm" variant="outline" className="text-amber-700 border-amber-300 hover:bg-amber-50" data-testid="notes-btn">
               <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Notizen
             </Button>
@@ -1227,6 +1250,87 @@ export default function AdminZeitDetailPage() {
               </div>
             );
           })}
+        </div>
+
+        {/* Audit-Log (Protokoll der manuellen Aenderungen) */}
+        <div id="audit-section" className="bg-white rounded-xl border border-gray-200" data-testid="audit-section">
+          <button
+            type="button"
+            onClick={() => setAuditOpen(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-violet-50/40 transition-colors"
+            data-testid="audit-toggle"
+          >
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-violet-600" />
+              <span className="font-semibold text-sm text-gray-900">Änderungs­protokoll</span>
+              <span className="text-xs text-gray-500">– manuelle Eingriffe an Zeit / Urlaub / Stammdaten</span>
+              {auditEntries.length > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold">
+                  {auditEntries.length}
+                </span>
+              )}
+            </div>
+            {auditOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+          </button>
+          {auditOpen && (
+            <div className="border-t border-gray-100">
+              {auditLoading ? (
+                <div className="px-4 py-6 text-center text-xs text-gray-400">Lade…</div>
+              ) : auditEntries.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-gray-400">Noch keine protokollierten Änderungen.</div>
+              ) : (
+                <ul className="divide-y divide-gray-50">
+                  {auditEntries.map(a => {
+                    const dt = new Date(a.created_at);
+                    const when = dt.toLocaleString("de-DE", {
+                      day: "2-digit", month: "2-digit", year: "numeric",
+                      hour: "2-digit", minute: "2-digit"
+                    });
+                    const actionLabel = {
+                      time_manual_create: "Zeit manuell angelegt",
+                      time_edit:          "Zeit korrigiert",
+                      time_delete:        "Zeit gelöscht",
+                      vacation_add:       "Urlaub hinzugefügt",
+                      vacation_delete:    "Urlaub gelöscht",
+                      time_off_admin_create: "Abwesenheit eingetragen",
+                      time_off_delete:    "Abwesenheit gelöscht",
+                      hr_data_update:     "HR-Daten geändert",
+                      work_schedule_update: "Regelarbeitszeit geändert",
+                      deduction_add:      "Lohnabzug hinzugefügt",
+                      deduction_delete:   "Lohnabzug gelöscht",
+                      payroll_release:    "Lohn freigegeben",
+                    }[a.action] || a.action;
+                    return (
+                      <li key={a.id} className="px-4 py-2.5 hover:bg-gray-50" data-testid={`audit-row-${a.id}`}>
+                        <div className="flex items-start gap-3">
+                          <span className="text-[10px] font-mono text-gray-400 mt-0.5 whitespace-nowrap">{when}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-gray-900 truncate">
+                              <span className="text-[10px] inline-block bg-violet-50 text-violet-700 font-semibold uppercase px-1.5 py-0.5 rounded mr-2">{actionLabel}</span>
+                              {a.summary}
+                            </div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">
+                              durch <span className="font-medium">{a.performed_by_name}</span>
+                              {a.performed_by_role && <span className="text-gray-400"> · {a.performed_by_role}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div className="px-4 py-2 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={loadAuditLog}
+                  className="text-[11px] text-violet-600 hover:text-violet-800"
+                  data-testid="audit-refresh"
+                >
+                  ↻ Aktualisieren
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

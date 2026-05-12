@@ -67,6 +67,66 @@ async def _get_user(token: str):
     return user
 
 
+# ==================== AUDIT LOG ====================
+# Protokolliert manuelle Aenderungen an HR-/Zeit-/Urlaubsdaten eines
+# Mitarbeiters. Wird in der Zeiterfassungs-Detailansicht angezeigt.
+
+async def _log_audit(
+    target_user_id: str,
+    action: str,
+    caller: dict,
+    *,
+    before: Optional[dict] = None,
+    after: Optional[dict] = None,
+    summary: str = "",
+    details: Optional[dict] = None,
+):
+    """Schreibt einen Audit-Eintrag ins time_audit_log.
+
+    action: kurzer Identifier wie 'time_manual_create', 'time_edit',
+            'time_delete', 'vacation_add', 'vacation_delete',
+            'time_off_admin_create', 'time_off_delete', 'hr_data_update',
+            'work_schedule_update', 'deduction_add', 'deduction_delete',
+            'payroll_release'
+    summary: menschenlesbarer Text fuer die Liste (z.B. "Urlaub 01.06.-05.06. hinzugefuegt")
+    """
+    try:
+        entry = {
+            "id": str(uuid.uuid4()),
+            "target_user_id": target_user_id,
+            "action": action,
+            "performed_by_user_id": (caller or {}).get("id"),
+            "performed_by_name": (caller or {}).get("name") or (caller or {}).get("email") or "?",
+            "performed_by_role": (caller or {}).get("role"),
+            "summary": summary,
+            "before": before,
+            "after": after,
+            "details": details or {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.time_audit_log.insert_one(entry)
+    except Exception as ex:
+        # Audit-Fehler nicht weiterreichen - der eigentliche Schreibvorgang soll
+        # nicht scheitern nur weil Logging klemmt.
+        logger.warning(f"Audit-Log Fehler: {ex}")
+
+
+@router.get("/audit-log/{user_id}")
+async def get_audit_log(user_id: str, token: str = Query(...), limit: int = 200):
+    """Liefert das Audit-Log eines Mitarbeiters (manuelle Aenderungen an Zeit/HR/Urlaub).
+
+    Nur fuer Verwaltung sichtbar (Admin oder Mitarbeiter mit Verwaltungs-App).
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    rows = await db.time_audit_log.find(
+        {"target_user_id": user_id}, {"_id": 0}
+    ).sort([("created_at", -1)]).to_list(int(limit))
+    return {"total": len(rows), "entries": rows}
+
+
+
 # ==================== PROFILE ====================
 
 @router.get("/profile")
@@ -979,6 +1039,14 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.time_entries.insert_one(entry)
+    # Audit-Log
+    await _log_audit(
+        target_user_id, "time_manual_create", caller,
+        after={"date": date_str, "clock_in": start_str, "clock_out": end_str,
+               "duration_minutes": duration, "note": entry.get("manual_note")},
+        summary=f"Arbeitszeit {date_str} {start_str or '?'}–{end_str or 'offen'} manuell angelegt"
+                + (f" ({duration/60:.2f} h)" if duration else "")
+    )
     # Ueberstunden neu berechnen damit der manuell erfasste Eintrag sofort
     # im hr_data.overtime_hours-Konto sichtbar wird.
     try:
@@ -1033,6 +1101,18 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
     if "note" in body:
         update["manual_note"] = body.get("note") or ""
     await db.time_entries.update_one({"id": entry_id}, {"$set": update})
+    # Audit-Log: was hat sich geaendert?
+    await _log_audit(
+        entry.get("user_id"), "time_edit", caller,
+        before={"date": entry.get("date"),
+                "clock_in": entry.get("clock_in"),
+                "clock_out": entry.get("clock_out"),
+                "duration_minutes": entry.get("duration_minutes")},
+        after={"date": date_str, "clock_in_time": start_str, "clock_out_time": end_str,
+               "duration_minutes": duration, "note": update.get("manual_note")},
+        summary=f"Arbeitszeit {date_str} {start_str or '?'}–{end_str or 'offen'} korrigiert"
+                + (f" ({duration/60:.2f} h)" if duration else "")
+    )
     # Ueberstunden neu berechnen - falls Datum geaendert wurde auch fuer das alte Jahr.
     try:
         from datetime import date as _date
@@ -1053,11 +1133,19 @@ async def delete_time_entry(entry_id: str, token: str = Query(...)):
         raise HTTPException(status_code=403, detail="Nur Admins")
     # Vor Loeschen Datum + user_id merken, damit wir die Ueberstunden danach
     # neu rechnen koennen (sonst bleibt der Diff im hr_data-Konto stehen).
-    entry = await db.time_entries.find_one({"id": entry_id}, {"_id": 0, "date": 1, "user_id": 1})
+    entry = await db.time_entries.find_one({"id": entry_id}, {"_id": 0, "date": 1, "user_id": 1, "clock_in": 1, "clock_out": 1, "duration_minutes": 1})
     res = await db.time_entries.delete_one({"id": entry_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
     if entry:
+        await _log_audit(
+            entry.get("user_id"), "time_delete", caller,
+            before={"date": entry.get("date"),
+                    "clock_in": entry.get("clock_in"),
+                    "clock_out": entry.get("clock_out"),
+                    "duration_minutes": entry.get("duration_minutes")},
+            summary=f"Arbeitszeit {entry.get('date') or '?'} gelöscht"
+        )
         try:
             from datetime import date as _date
             year = _date.fromisoformat(entry.get("date") or "").year
@@ -1183,12 +1271,31 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
         update["vacation_days_used"] = int(data["vacation_days_used"])
 
     if update:
+        # Vorzustand fuer Audit-Log
+        before_doc = await db.hr_data.find_one(
+            {"user_id": user_id, "year": year},
+            {"_id": 0, "overtime_hours": 1, "vacation_days_total": 1, "vacation_days_used": 1}
+        ) or {}
         update["user_id"] = user_id
         update["year"] = year
         await db.hr_data.update_one(
             {"user_id": user_id, "year": year},
             {"$set": update},
             upsert=True,
+        )
+        # Audit-Log
+        changed = []
+        if "overtime_hours" in data:
+            changed.append(f"Überstunden: {before_doc.get('overtime_hours', 0)} → {data['overtime_hours']} h")
+        if "vacation_days_total" in data:
+            changed.append(f"Urlaubsanspruch: {before_doc.get('vacation_days_total', 0)} → {data['vacation_days_total']} Tage")
+        if "vacation_days_used" in data:
+            changed.append(f"Urlaub genommen: {before_doc.get('vacation_days_used', 0)} → {data['vacation_days_used']} Tage")
+        await _log_audit(
+            user_id, "hr_data_update", caller,
+            before=before_doc,
+            after={k: v for k, v in data.items() if k in ("overtime_hours", "vacation_days_total", "vacation_days_used")},
+            summary="HR-Daten geändert: " + ("; ".join(changed) if changed else "(keine sichtbaren Felder)")
         )
 
     # Geburtstag direkt am User-Dokument speichern (YYYY-MM-DD oder leer)
@@ -1463,6 +1570,11 @@ async def add_vacation_entry(user_id: str, token: str = Query(...), data: dict =
     }
     await db.vacation_entries.insert_one(entry)
     await _recalc_vacation_used(user_id, year)
+    await _log_audit(
+        user_id, "vacation_add", caller,
+        after={"start_date": start_date, "end_date": end_date, "days": days},
+        summary=f"Urlaub {start_date} – {end_date} hinzugefügt ({days} Tage)"
+    )
     return {"id": entry["id"], "days": days}
 
 
@@ -1479,6 +1591,11 @@ async def delete_vacation_entry(user_id: str, entry_id: str, token: str = Query(
     year = entry.get("year", datetime.now(timezone.utc).year)
     await db.vacation_entries.delete_one({"id": entry_id, "user_id": user_id})
     await _recalc_vacation_used(user_id, year)
+    await _log_audit(
+        user_id, "vacation_delete", caller,
+        before={"start_date": entry.get("start_date"), "end_date": entry.get("end_date"), "days": entry.get("days")},
+        summary=f"Urlaub {entry.get('start_date')} – {entry.get('end_date')} gelöscht ({entry.get('days')} Tage)"
+    )
     return {"ok": True}
 
 
@@ -1544,6 +1661,12 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
             upsert=True,
         )
 
+    _typ_lbl_c = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req_type, req_type)
+    await _log_audit(
+        target_user_id, "time_off_admin_create", caller,
+        after={"type": req_type, "start_date": start_date, "end_date": end_date, "days": days},
+        summary=f"{_typ_lbl_c} {start_date} – {end_date} eingetragen ({days} Tage)"
+    )
     return {k: v for k, v in entry.items() if k != "_id"}
 
 
@@ -1572,6 +1695,14 @@ async def admin_delete_time_off(request_id: str, token: str = Query(...)):
             )
 
     await db.time_off_requests.delete_one({"id": request_id})
+    _typ_lbl = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req.get("type"), req.get("type") or "Antrag")
+    await _log_audit(
+        req.get("user_id"), "time_off_delete", caller,
+        before={"type": req.get("type"), "status": req.get("status"),
+                "start_date": req.get("start_date"), "end_date": req.get("end_date"),
+                "days": req.get("days")},
+        summary=f"{_typ_lbl} {req.get('start_date')} – {req.get('end_date')} gelöscht"
+    )
     return {"ok": True}
 
 
@@ -1766,17 +1897,29 @@ async def update_work_schedule(user_id: str, token: str = Query(...), data: dict
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
+    before = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0}) or {}
     update_fields = {"user_id": user_id, "updated_at": datetime.now(timezone.utc).isoformat()}
+    changed_parts = []
     if "days" in data:
         update_fields["days"] = data["days"]
+        changed_parts.append("Arbeitszeiten-Wochenplan")
     if "hourly_wage" in data:
         update_fields["hourly_wage"] = float(data["hourly_wage"])
+        old_w = before.get("hourly_wage", "?")
+        changed_parts.append(f"Stundenlohn {old_w} → {data['hourly_wage']} €")
     if "surcharges" in data:
         update_fields["surcharges"] = data["surcharges"]
+        changed_parts.append("Zuschläge")
     await db.work_schedules.update_one(
         {"user_id": user_id},
         {"$set": update_fields},
         upsert=True,
+    )
+    await _log_audit(
+        user_id, "work_schedule_update", caller,
+        before={k: before.get(k) for k in ("days", "hourly_wage", "surcharges") if k in before},
+        after={k: update_fields.get(k) for k in ("days", "hourly_wage", "surcharges") if k in update_fields},
+        summary="Regelarbeitszeit/Lohn geändert: " + ", ".join(changed_parts) if changed_parts else "Regelarbeitszeit aktualisiert"
     )
     return {"ok": True}
 
@@ -2088,6 +2231,11 @@ async def add_deduction(user_id: str, token: str = Query(...), data: dict = Body
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.payroll_deductions.insert_one(entry)
+    await _log_audit(
+        user_id, "deduction_add", caller,
+        after={"month": entry["month"], "text": entry["text"], "amount": entry["amount"]},
+        summary=f"Abzug {entry['month']}: „{entry['text']}\" −{entry['amount']:.2f} €"
+    )
     return {"id": entry["id"], "ok": True}
 
 @router.delete("/deductions/entry/{deduction_id}")
@@ -2095,7 +2243,14 @@ async def delete_deduction(deduction_id: str, token: str = Query(...)):
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
+    item = await db.payroll_deductions.find_one({"id": deduction_id}, {"_id": 0})
     await db.payroll_deductions.delete_one({"id": deduction_id})
+    if item:
+        await _log_audit(
+            item.get("user_id"), "deduction_delete", caller,
+            before={"month": item.get("month"), "text": item.get("text"), "amount": item.get("amount")},
+            summary=f"Abzug {item.get('month')}: „{item.get('text', '')}\" gelöscht"
+        )
     return {"ok": True}
 
 
@@ -2124,6 +2279,13 @@ async def release_payroll(user_id: str, month: str = Query(...), token: str = Qu
     else:
         entry["id"] = str(uuid.uuid4())
         await db.payroll_releases.insert_one(entry)
+    await _log_audit(
+        user_id, "payroll_release", caller,
+        after={"month": month, "total_gross": (payroll_data or {}).get("total_gross"),
+               "total_net": (payroll_data or {}).get("total_net")},
+        summary=f"Lohnabrechnung {month} freigegeben"
+                + (f" (brutto {(payroll_data or {}).get('total_gross', 0):.2f} €)" if payroll_data else "")
+    )
     return {"ok": True, "month": month}
 
 
