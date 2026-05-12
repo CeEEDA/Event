@@ -852,7 +852,8 @@ function loadWeatherDays(detail) {
   api("/api/einsatzzentrale/weather?" + p.toString()).then(function(w) {
     var area = document.getElementById("weather-days");
     if (!w.days || !w.days.length) { area.innerHTML = '<p style="color:#9ca3af;">Keine Wetterdaten.</p>'; return; }
-    area.innerHTML = '<div class="weather">' + w.days.map(function(d) {
+    var days7 = w.days.slice(0, 7);
+    area.innerHTML = '<div class="weather">' + days7.map(function(d) {
       return '<div class="day"><div class="d">' + esc(new Date(d.date).toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"})) +
              '</div><div class="e" title="' + esc(d.weather_label) + '">' + d.weather_emoji + '</div>' +
              '<div class="l">' + esc(d.weather_label) + '</div>' +
