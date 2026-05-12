@@ -324,6 +324,34 @@ input { font-family: inherit; }
 .art-cmt .meta { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
 .art-cmt .txt { font-size:13px; white-space:pre-wrap; word-break:break-word; }
 
+/* ========== MULTIANSICHT (Split-View Diary + Artikelliste) ========= */
+.multi-grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px;
+  height: calc(100vh - 200px); min-height: 600px; }
+@media (max-width: 1200px) { .multi-grid { grid-template-columns: 1fr; height:auto; } }
+.multi-pane { background:var(--card); border:1px solid var(--border); border-radius:14px;
+  display:flex; flex-direction:column; overflow:hidden; min-height:0; }
+.multi-pane-h { display:flex; align-items:center; gap:10px; padding:12px 14px;
+  border-bottom:1px solid var(--border); background:#fafbfc; flex-wrap:wrap; }
+.multi-pane-h h3 { margin:0; font-size:15px; font-weight:700; }
+.multi-pane-h .kiosk-search { flex:1; min-width:160px; max-width:none; margin:0; }
+.multi-pane-h .kiosk-search input { height:36px; font-size:13px; padding:0 12px 0 36px; }
+.multi-pane-h .kiosk-search svg { width:14px; height:14px; left:12px; }
+.multi-pane-h select { height:36px; padding:0 10px; border:1px solid var(--border);
+  border-radius:8px; background:#fff; font-size:12px; font-family:inherit; cursor:pointer; outline:none; }
+.multi-pane-h select:focus { border-color:var(--fuchsia); }
+.multi-pane-h .btn.sm { height:36px; font-size:12px; padding:0 12px; }
+.multi-pane-body { flex:1; overflow:auto; padding:12px 14px; min-height:0; }
+.badge-cnt { font-size:11px; padding:3px 9px; border-radius:999px;
+  background:#f1f5f9; color:#475569; font-weight:600; white-space:nowrap; }
+.multi-toolbar-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  padding:0 14px 10px; border-bottom:1px solid var(--border); background:#fafbfc; }
+.multi-toolbar-row .kiosk-search { flex:1; min-width:160px; max-width:none; margin:0; }
+.multi-toolbar-row .kiosk-search input { height:34px; font-size:12px; padding:0 10px 0 34px; }
+.multi-toolbar-row .kiosk-search svg { width:13px; height:13px; left:11px; }
+.multi-toolbar-row select { height:34px; padding:0 8px; border:1px solid var(--border);
+  border-radius:7px; background:#fff; font-size:11px; font-family:inherit; cursor:pointer; outline:none; }
+.multi-toolbar-row .count { margin-left:auto; font-size:11px; color:var(--text-muted); white-space:nowrap; }
+
 /* ========== DIARY (Einsatztagebuch) ============================== */
 .diary-stats { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
 .diary-stat { flex:1; min-width:120px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
@@ -1022,6 +1050,8 @@ function renderTilePanel() {
 // ============================================================================
 // MULTIANSICHT - Diary + Artikelliste parallel
 // ============================================================================
+var multiState = { diarySearch: "", diaryStatus: "all", artSearch: "", artType: "all", artStatus: "all" };
+
 function renderMultiPanel() {
   var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
   var root = document.getElementById("root"); root.innerHTML = "";
@@ -1030,9 +1060,10 @@ function renderMultiPanel() {
     '<main class="kiosk-main fullscreen">' +
       '<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">' +
         '<button id="multi-back" class="btn">← Zurück</button>' +
-        '<div style="flex:1;font-size:13px;color:var(--text-muted);">Einsatztagebuch und Artikelliste parallel — ideal für den Überblick auf dem TV</div>' +
+        '<div style="flex:1;font-size:13px;color:var(--text-muted);">Einsatztagebuch links · Artikelliste rechts — live Auto-Refresh alle 30 s</div>' +
       '</div>' +
       '<div class="multi-grid">' +
+        // LEFT PANE: Einsatztagebuch
         '<div class="multi-pane">' +
           '<div class="multi-pane-h">' +
             '<div class="tile-icon tile-bg-slate" style="width:32px;height:32px;font-size:16px;border-radius:8px;">📓</div>' +
@@ -1041,20 +1072,42 @@ function renderMultiPanel() {
             '<button id="multi-diary-new" class="btn primary sm">+ Störung</button>' +
             '<button id="multi-diary-trupp" class="btn sm">+ Trupp</button>' +
           '</div>' +
+          '<div class="multi-toolbar-row">' +
+            '<div class="kiosk-search">' +
+              '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" stroke-linecap="round" d="m20 20-3-3"/></svg>' +
+              '<input id="multi-diary-search" placeholder="Suchen: Grund, Anrufer, Ort…" autocomplete="off" />' +
+            '</div>' +
+            '<select id="multi-diary-status">' +
+              '<option value="all">Alle</option>' +
+              '<option value="open">Offen</option>' +
+              '<option value="resolved">Behoben</option>' +
+            '</select>' +
+            '<div class="count" id="multi-diary-shown"></div>' +
+          '</div>' +
           '<div class="multi-pane-body">' +
             '<div id="multi-diary-trupps"></div>' +
             '<div id="multi-diary-entries"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
           '</div>' +
         '</div>' +
+        // RIGHT PANE: Artikelliste (volle Funktionalität)
         '<div class="multi-pane">' +
           '<div class="multi-pane-h">' +
             '<div class="tile-icon tile-bg-fuchsia" style="width:32px;height:32px;font-size:16px;border-radius:8px;">📍</div>' +
             '<h3>Artikelliste</h3>' +
             '<span class="badge-cnt" id="multi-art-cnt">…</span>' +
-            '<div class="kiosk-search" style="margin:0;max-width:200px;">' +
+          '</div>' +
+          '<div class="multi-toolbar-row">' +
+            '<div class="kiosk-search">' +
               '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path stroke-width="2" stroke-linecap="round" d="m20 20-3-3"/></svg>' +
-              '<input id="multi-art-search" placeholder="Suchen…" style="height:32px;font-size:12px;" />' +
+              '<input id="multi-art-search" placeholder="Suchen: Bezeichnung, Plus-Code, Kommentar…" autocomplete="off" />' +
             '</div>' +
+            '<select id="multi-art-type"><option value="all">Alle Typen</option></select>' +
+            '<select id="multi-art-status">' +
+              '<option value="all">Alle</option>' +
+              '<option value="placed">Gestellt</option>' +
+              '<option value="dismantled">Abgebaut</option>' +
+            '</select>' +
+            '<div class="count" id="multi-art-shown"></div>' +
           '</div>' +
           '<div class="multi-pane-body">' +
             '<div id="multi-art-list"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
@@ -1067,9 +1120,24 @@ function renderMultiPanel() {
   document.getElementById("multi-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
   document.getElementById("multi-diary-new").addEventListener("click", function(){ openEntryModal(null); });
   document.getElementById("multi-diary-trupp").addEventListener("click", function(){ openTruppModal(null); });
-  document.getElementById("multi-art-search").addEventListener("input", function(e){
-    artikelState.search = e.target.value; paintMultiArt();
-  });
+
+  // Diary-Filter
+  var diarySearchEl = document.getElementById("multi-diary-search");
+  diarySearchEl.value = multiState.diarySearch;
+  diarySearchEl.addEventListener("input", function(e){ multiState.diarySearch = e.target.value; paintMultiDiary(); });
+  var diaryStatusEl = document.getElementById("multi-diary-status");
+  diaryStatusEl.value = multiState.diaryStatus;
+  diaryStatusEl.addEventListener("change", function(e){ multiState.diaryStatus = e.target.value; paintMultiDiary(); });
+
+  // Artikel-Filter
+  var artSearchEl = document.getElementById("multi-art-search");
+  artSearchEl.value = multiState.artSearch;
+  artSearchEl.addEventListener("input", function(e){ multiState.artSearch = e.target.value; paintMultiArt(); });
+  var artTypeEl = document.getElementById("multi-art-type");
+  artTypeEl.addEventListener("change", function(e){ multiState.artType = e.target.value; paintMultiArt(); });
+  var artStatusEl = document.getElementById("multi-art-status");
+  artStatusEl.value = multiState.artStatus;
+  artStatusEl.addEventListener("change", function(e){ multiState.artStatus = e.target.value; paintMultiArt(); });
 
   // Initial-Loads
   loadMultiDiary();
@@ -1091,17 +1159,19 @@ function loadMultiDiary() {
   ]).then(function(res) {
     diaryState.entries = res[0].entries || [];
     diaryState.trupps = res[1].trupps || [];
-    paintMultiDiary(res[0]);
+    diaryState._summary = { open: res[0].open || 0, resolved: res[0].resolved || 0 };
+    paintMultiDiary();
   }).catch(function(ex) {
     document.getElementById("multi-diary-entries").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
   });
 }
 
-function paintMultiDiary(data) {
+function paintMultiDiary() {
+  var sum = diaryState._summary || { open: 0, resolved: 0 };
   var cntEl = document.getElementById("multi-diary-cnt");
-  if (cntEl) cntEl.textContent = (data.open || 0) + " offen · " + (data.resolved || 0) + " behoben";
+  if (cntEl) cntEl.textContent = sum.open + " offen · " + sum.resolved + " behoben";
 
-  // Trupps kompakt (Pills)
+  // Trupps kompakt (Pills) - immer sichtbar
   var ta = document.getElementById("multi-diary-trupps");
   if (diaryState.trupps.length) {
     ta.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">' +
@@ -1121,12 +1191,30 @@ function paintMultiDiary(data) {
     });
   } else { ta.innerHTML = ""; }
 
-  // Diary-Entries kompakter (für Split-View)
+  // Filter anwenden: Suche + Status
+  var q = (multiState.diarySearch || "").trim().toLowerCase();
+  var status = multiState.diaryStatus || "all";
   var truppMap = {}; diaryState.trupps.forEach(function(t){ truppMap[t.id] = t; });
-  var entries = diaryState.entries;
+
+  var entries = diaryState.entries.filter(function(e) {
+    if (status === "open" && e.status !== "open") return false;
+    if (status === "resolved" && e.status !== "resolved") return false;
+    if (q) {
+      var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : ""; }).join(" ");
+      var hay = [e.reason, e.caller_name, e.caller_phone, e.location, e.created_by_name,
+                 e.resolved_by_name, e.resolved_note, truppNames]
+                .filter(Boolean).join(" ").toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+
+  var shownEl = document.getElementById("multi-diary-shown");
+  if (shownEl) shownEl.textContent = entries.length + " von " + diaryState.entries.length;
+
   var area = document.getElementById("multi-diary-entries");
   if (!entries.length) {
-    area.innerHTML = '<div class="empty" style="padding:24px;">Noch keine Einträge.</div>';
+    area.innerHTML = '<div class="empty" style="padding:24px;">' + (q || status !== "all" ? "Keine Treffer." : "Noch keine Einträge.") + '</div>';
     return;
   }
   area.innerHTML = entries.map(function(e) {
@@ -1135,19 +1223,29 @@ function paintMultiDiary(data) {
     return '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '" style="padding:10px 12px;margin-bottom:8px;">' +
               '<div class="e-top" style="margin-bottom:4px;">' +
                 '<div class="e-time" style="font-size:11px;">🕐 ' + esc(fmtDateTime(e.created_at)) + '</div>' +
-                (e.status === "resolved" ? '<span class="badge bg-emerald">✓</span>' : '<span class="badge bg-red">●</span>') +
+                '<div style="display:flex;gap:4px;">' +
+                  (e.status === "resolved" ? '<span class="badge bg-emerald">✓</span>' : '<span class="badge bg-red">●</span>') +
+                  (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
+                '</div>' +
               '</div>' +
               '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + esc(e.reason) + '</div>' +
               '<div style="font-size:11px;color:var(--text-muted);display:flex;gap:8px;flex-wrap:wrap;">' +
                 (e.caller_name ? '<span>👤 ' + esc(e.caller_name) + '</span>' : '') +
+                (e.caller_phone ? '<span>📞 ' + esc(e.caller_phone) + '</span>' : '') +
                 (e.location ? '<span>📍 ' + esc(e.location) + '</span>' : '') +
                 (truppNames.length ? '<span>👥 ' + esc(truppNames.join(", ")) + '</span>' : '') +
               '</div>' +
-              '<div style="display:flex;gap:6px;margin-top:6px;">' +
+              (e.status === "resolved" && e.resolved_at
+                ? '<div class="e-resolved-info" style="font-size:11px;margin-top:4px;">✓ ' + esc(fmtDateTime(e.resolved_at)) +
+                  (e.resolved_by_name ? ' · ' + esc(e.resolved_by_name) : '') +
+                  ' · Dauer: ' + esc(fmtDuration(e.created_at, e.resolved_at)) + '</div>'
+                : '') +
+              '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">' +
                 (e.status === "open"
                   ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">✓ Behoben</button>'
                   : '<button class="btn sm warn multi-e-reopen" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">↺ Öffnen</button>') +
                 '<button class="btn sm multi-e-edit" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">Bearbeiten</button>' +
+                '<button class="btn sm danger multi-e-del" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">Löschen</button>' +
               '</div>' +
             '</div>';
   }).join("");
@@ -1157,12 +1255,27 @@ function paintMultiDiary(data) {
     var e = diaryState.entries.find(function(x){return x.id === b.dataset.id;});
     if (e) openEntryModal(e);
   }); });
+  area.querySelectorAll(".multi-e-del").forEach(function(b){ b.addEventListener("click", function(){
+    if (typeof deleteEntry === "function") deleteEntry(b.dataset.id);
+  }); });
 }
 
 function loadMultiArtikel() {
   var pk = encodeURIComponent(state.order.primary_key);
   api("/api/orders/epirent/" + pk + "/assets").then(function(data) {
     artikelState.items = data.assets || [];
+    // Typ-Filter befüllen
+    var types = {};
+    artikelState.items.forEach(function(a){ if (a.asset_type) types[a.asset_type] = (types[a.asset_type] || 0) + 1; });
+    var sel = document.getElementById("multi-art-type");
+    if (sel) {
+      var prev = multiState.artType || "all";
+      sel.innerHTML = '<option value="all">Alle Typen (' + artikelState.items.length + ')</option>' +
+        Object.keys(types).sort().map(function(t){ return '<option value="' + esc(t) + '">' + esc(t) + ' (' + types[t] + ')</option>'; }).join("");
+      // Auswahl behalten wenn der Typ noch existiert
+      sel.value = (prev === "all" || types[prev]) ? prev : "all";
+      multiState.artType = sel.value;
+    }
     paintMultiArt();
   }).catch(function(ex) {
     document.getElementById("multi-art-list").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';
@@ -1170,21 +1283,51 @@ function loadMultiArtikel() {
 }
 
 function paintMultiArt() {
-  var q = (artikelState.search || "").trim().toLowerCase();
-  var items = q ? artikelState.items.filter(function(a) {
-    return [a.label, a.asset_type, a.plus_code].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
-  }) : artikelState.items;
+  var q = (multiState.artSearch || "").trim().toLowerCase();
+  var ftype = multiState.artType || "all";
+  var fstatus = multiState.artStatus || "all";
+  var items = artikelState.items.filter(function(a) {
+    if (ftype !== "all" && a.asset_type !== ftype) return false;
+    if (fstatus !== "all" && (a.status || "placed") !== fstatus) return false;
+    if (q) {
+      // Kommentartext mit in den Suchindex
+      var commentText = (a.comments || []).map(function(c){ return (c.text || "") + " " + (c.author_name || ""); }).join(" ");
+      var hay = [a.label, a.asset_type, a.plus_code, a.created_by, a.created_by_name,
+                 a.latitude, a.longitude, commentText].filter(function(v){ return v != null && v !== ""; }).join(" ").toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+
   var cntEl = document.getElementById("multi-art-cnt");
-  if (cntEl) cntEl.textContent = items.length + " von " + artikelState.items.length;
+  if (cntEl) cntEl.textContent = artikelState.items.length + " Artikel";
+  var shownEl = document.getElementById("multi-art-shown");
+  if (shownEl) shownEl.textContent = items.length + " von " + artikelState.items.length;
+
   var area = document.getElementById("multi-art-list");
   if (!items.length) {
-    area.innerHTML = '<div class="empty" style="padding:24px;">' + (q ? "Keine Treffer." : "Keine Artikel.") + '</div>';
+    area.innerHTML = '<div class="empty" style="padding:24px;">' + (q || ftype !== "all" || fstatus !== "all" ? "Keine Treffer." : "Keine Artikel.") + '</div>';
     return;
   }
   area.innerHTML = items.map(function(a) {
     var ic = _artikelIcon(a.asset_type);
     var status = a.status || "placed";
     var statusLbl = status === "dismantled" ? "Abgebaut" : "Gestellt";
+    var cmtCount = (a.comments || []).length;
+    // Treffer-Snippet bei Suche im Kommentartext anzeigen
+    var snippet = "";
+    if (q && cmtCount) {
+      var hit = (a.comments || []).find(function(c){ return (c.text || "").toLowerCase().indexOf(q) > -1; });
+      if (hit) {
+        var t = (hit.text || "").trim();
+        if (t.length > 90) {
+          var pos = t.toLowerCase().indexOf(q);
+          var start = Math.max(0, pos - 30); var end = Math.min(t.length, pos + q.length + 50);
+          t = (start > 0 ? "…" : "") + t.substring(start, end) + (end < t.length ? "…" : "");
+        }
+        snippet = '<div style="margin-top:4px;font-size:11px;color:#475569;font-style:italic;background:#fef9c3;padding:4px 8px;border-radius:6px;">💬 ' + esc(t) + '</div>';
+      }
+    }
     return '<div class="art-row ' + (status === "dismantled" ? "dismantled" : "") + '" data-asset-id="' + esc(a.id) + '" style="padding:8px 4px;">' +
              '<div class="art-type-icon ' + ic.cls + '" style="width:32px;height:32px;font-size:14px;border-radius:8px;">' + ic.icon + '</div>' +
              '<div class="art-row-text">' +
@@ -1192,8 +1335,9 @@ function paintMultiArt() {
                '<div class="art-row-meta" style="font-size:10px;">' +
                  '<span>' + esc(a.asset_type || "") + '</span>' +
                  (a.plus_code ? '<span>📍 ' + esc(a.plus_code) + '</span>' : '') +
-                 ((a.comments || []).length ? '<span>💬 ' + a.comments.length + '</span>' : '') +
+                 (cmtCount ? '<span>💬 ' + cmtCount + '</span>' : '') +
                '</div>' +
+               snippet +
              '</div>' +
              '<div class="art-status-badge ' + status + '">' + statusLbl + '</div>' +
            '</div>';
