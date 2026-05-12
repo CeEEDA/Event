@@ -34,6 +34,7 @@ input { font-family: inherit; }
 .kiosk-title { font-size: 15px; font-weight: 600; color: var(--text); }
 .kiosk-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
 .kiosk-main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.kiosk-main.fullscreen { max-width: none; padding: 16px 28px; }
 .kiosk-search { position: relative; max-width: 380px; margin-bottom: 24px; }
 .kiosk-search input { width: 100%; height: 52px; padding: 0 16px 0 44px;
   border: 1px solid var(--border); border-radius: 12px; font-size: 16px;
@@ -326,8 +327,8 @@ input { font-family: inherit; }
 
 /* ========== MULTIANSICHT (Split-View Diary + Artikelliste) ========= */
 .multi-grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px;
-  height: calc(100vh - 200px); min-height: 600px; }
-@media (max-width: 1200px) { .multi-grid { grid-template-columns: 1fr; height:auto; } }
+  height: calc(100vh - 140px); min-height: 600px; }
+@media (max-width: 1100px) { .multi-grid { grid-template-columns: 1fr; height:auto; } }
 .multi-pane { background:var(--card); border:1px solid var(--border); border-radius:14px;
   display:flex; flex-direction:column; overflow:hidden; min-height:0; }
 .multi-pane-h { display:flex; align-items:center; gap:10px; padding:12px 14px;
@@ -341,6 +342,12 @@ input { font-family: inherit; }
 .multi-pane-h select:focus { border-color:var(--fuchsia); }
 .multi-pane-h .btn.sm { height:36px; font-size:12px; padding:0 12px; }
 .multi-pane-body { flex:1; overflow:auto; padding:12px 14px; min-height:0; }
+/* Artikel-Pane: Karte oben, Liste unten - innerhalb der multi-pane-body */
+.multi-art-split { display:flex; flex-direction:column; gap:10px; height:100%; min-height:0; }
+.multi-art-map { width:100%; height:42%; min-height:240px; background:#e0e7ef;
+  border-radius:10px; overflow:hidden; border:1px solid var(--border); z-index:0; flex-shrink:0; }
+.multi-art-list { flex:1; overflow:auto; min-height:0; border:1px solid var(--border);
+  border-radius:10px; background:#fff; }
 .badge-cnt { font-size:11px; padding:3px 9px; border-radius:999px;
   background:#f1f5f9; color:#475569; font-weight:600; white-space:nowrap; }
 .multi-toolbar-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
@@ -1050,7 +1057,8 @@ function renderTilePanel() {
 // ============================================================================
 // MULTIANSICHT - Diary + Artikelliste parallel
 // ============================================================================
-var multiState = { diarySearch: "", diaryStatus: "all", artSearch: "", artType: "all", artStatus: "all" };
+var multiState = { diarySearch: "", diaryStatus: "all", artSearch: "", artType: "all", artStatus: "all",
+                   map: null, markers: [] };
 
 function renderMultiPanel() {
   var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
@@ -1089,7 +1097,7 @@ function renderMultiPanel() {
             '<div id="multi-diary-entries"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
           '</div>' +
         '</div>' +
-        // RIGHT PANE: Artikelliste (volle Funktionalität)
+        // RIGHT PANE: Artikelliste (volle Funktionalität + Karte)
         '<div class="multi-pane">' +
           '<div class="multi-pane-h">' +
             '<div class="tile-icon tile-bg-fuchsia" style="width:32px;height:32px;font-size:16px;border-radius:8px;">📍</div>' +
@@ -1109,15 +1117,21 @@ function renderMultiPanel() {
             '</select>' +
             '<div class="count" id="multi-art-shown"></div>' +
           '</div>' +
-          '<div class="multi-pane-body">' +
-            '<div id="multi-art-list"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+          '<div class="multi-pane-body" style="padding:10px;">' +
+            '<div class="multi-art-split">' +
+              '<div id="multi-art-map" class="multi-art-map"></div>' +
+              '<div id="multi-art-list" class="multi-art-list"><div class="empty"><div class="spinner" style="margin:20px auto"></div></div></div>' +
+            '</div>' +
           '</div>' +
         '</div>' +
       '</div>' +
     '</main></div>'
   ));
   attachLogout();
-  document.getElementById("multi-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+  document.getElementById("multi-back").addEventListener("click", function(){
+    if (multiState.map) { try { multiState.map.remove(); } catch(e){} multiState.map = null; multiState.markers = []; }
+    state.activeTile = null; state.phase = "workspace"; render();
+  });
   document.getElementById("multi-diary-new").addEventListener("click", function(){ openEntryModal(null); });
   document.getElementById("multi-diary-trupp").addEventListener("click", function(){ openTruppModal(null); });
 
@@ -1142,6 +1156,30 @@ function renderMultiPanel() {
   // Initial-Loads
   loadMultiDiary();
   loadMultiArtikel();
+
+  // Karte aufbauen (Hybrid: Satellit + Strassen-Labels, gleicher Stil wie React-App)
+  setTimeout(function() {
+    var mapEl = document.getElementById("multi-art-map"); if (!mapEl) return;
+    if (multiState.map) { try { multiState.map.remove(); } catch(e){} multiState.map = null; }
+    var center = [state.order.center_lat || 51.0, state.order.center_lng || 10.0];
+    var zoom = (state.order.center_lat && state.order.center_lng) ? 13 : 6;
+    multiState.map = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView(center, zoom);
+    multiState._userZoomed = false;
+    multiState.map.on("zoomstart dragstart", function(){ multiState._userZoomed = true; });
+    // Hybrid: Esri Sat + transparente Strassen-Labels (Hybrid-Stil)
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                { maxZoom: 19, maxNativeZoom: 18 }).addTo(multiState.map);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+                { maxZoom: 19, maxNativeZoom: 18, opacity: 0.85 }).addTo(multiState.map);
+    // Veranstaltungsort-Marker falls bekannt
+    if (state.order.center_lat && state.order.center_lng) {
+      L.circleMarker([state.order.center_lat, state.order.center_lng],
+                     { radius: 7, color: "#d946ef", fillColor: "#d946ef", fillOpacity: 0.4, weight: 2 })
+        .addTo(multiState.map).bindTooltip("Veranstaltungsort", { permanent: false });
+    }
+    // Falls Items schon geladen sind, Marker direkt rendern
+    if (artikelState.items && artikelState.items.length) paintMultiArt();
+  }, 60);
 
   // Auto-Refresh alle 30s (live Updates für TV-Wand)
   if (window._multiRefresh) clearInterval(window._multiRefresh);
@@ -1348,6 +1386,33 @@ function paintMultiArt() {
       if (a) openArtikelDetail(a);
     });
   });
+
+  // Karten-Marker neu rendern (gefilterte Items)
+  if (multiState.map) {
+    multiState.markers.forEach(function(m){ try { multiState.map.removeLayer(m); } catch(e){} });
+    multiState.markers = [];
+    var bounds = [];
+    items.forEach(function(a) {
+      if (typeof a.latitude !== "number" || !isFinite(a.latitude)) return;
+      if (typeof a.longitude !== "number" || !isFinite(a.longitude)) return;
+      var ic = _artikelIcon(a.asset_type);
+      var color = ic.cls === "generator" ? "#ea580c" :
+                  ic.cls === "verteiler" ? "#16a34a" :
+                  ic.cls === "lichtmast" ? "#ca8a04" :
+                  ic.cls === "tank"      ? "#0891b2" : "#6b7280";
+      var m = L.circleMarker([a.latitude, a.longitude], {
+        radius: 9, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 2.5
+      }).addTo(multiState.map);
+      m.bindTooltip('<b>' + esc(a.label || "?") + '</b><br>' + esc(a.asset_type || ""), { direction: "top" });
+      m.on("click", function(){ openArtikelDetail(a); });
+      multiState.markers.push(m);
+      bounds.push([a.latitude, a.longitude]);
+    });
+    // Auto-Fit nur wenn mehr als 0 Marker und keine User-Zoom-Aktion stattfand
+    if (bounds.length && !multiState._userZoomed) {
+      try { multiState.map.fitBounds(bounds, { padding: [25, 25], maxZoom: 17 }); } catch (e) {}
+    }
+  }
 }
 
 // ============================================================================
