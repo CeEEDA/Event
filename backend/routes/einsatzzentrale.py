@@ -662,7 +662,23 @@ async def kiosk_weather_hourly(
 # 6. Pi-Kiosk-Installer (PUBLIC, liefert Shell-Skript)
 # ----------------------------------------------------------------------------
 
-_INSTALL_SCRIPT_PATH = _Path("/app/scripts/einsatzzentrale-pi/install_einsatzzentrale_kiosk.sh")
+# Pfad zum Install-Skript. In Dev liegt /app/scripts/einsatzzentrale-pi/
+# parallel zu /app/backend/; in manchen Production-Deployments wird nur
+# /app/backend/ ausgeliefert und /app/scripts/ fehlt. Daher mehrere
+# Kandidaten pruefen und den ersten existierenden nehmen.
+def _first_existing(*paths):
+    for p in paths:
+        if p.exists():
+            return p
+    return paths[0]  # default zum melden welcher Pfad fehlt
+
+
+_PROJECT_ROOT = _Path(__file__).resolve().parent.parent.parent  # /app
+_INSTALL_SCRIPT_PATH = _first_existing(
+    _PROJECT_ROOT / "scripts" / "einsatzzentrale-pi" / "install_einsatzzentrale_kiosk.sh",
+    _Path("/app/scripts/einsatzzentrale-pi/install_einsatzzentrale_kiosk.sh"),
+    _Path("/app/backend/static/install_einsatzzentrale_kiosk.sh"),
+)
 _KIOSK_HTML_PATH = _Path("/app/backend/static/einsatzzentrale-kiosk.html")
 
 
@@ -725,7 +741,14 @@ async def install_script():
         | sudo bash -s -- https://<host>/einsatzzentrale
     """
     if not _INSTALL_SCRIPT_PATH.exists():
-        raise HTTPException(status_code=404, detail="Installer nicht verfuegbar")
+        # Helfender Fehler: liste die gesuchten Pfade auf damit das Deployment
+        # genau weiss wo die Datei hingehoert.
+        tried = [
+            str(_PROJECT_ROOT / "scripts" / "einsatzzentrale-pi" / "install_einsatzzentrale_kiosk.sh"),
+            "/app/scripts/einsatzzentrale-pi/install_einsatzzentrale_kiosk.sh",
+            "/app/backend/static/install_einsatzzentrale_kiosk.sh",
+        ]
+        raise HTTPException(status_code=404, detail=f"Installer nicht verfuegbar (gesucht: {tried})")
     return PlainTextResponse(
         content=_INSTALL_SCRIPT_PATH.read_text(encoding="utf-8"),
         media_type="text/x-shellscript; charset=utf-8",
@@ -872,7 +895,11 @@ async def pi_heartbeat(pi_id: str, key: str):
 
 
 # --- Pi-Service Code-Download (wird vom Install-Skript geholt) -------------
-_PI_SERVICE_PATH = _Path(__file__).resolve().parent.parent.parent / "scripts" / "einsatzzentrale-pi" / "pi_service.py"
+_PI_SERVICE_PATH = _first_existing(
+    _PROJECT_ROOT / "scripts" / "einsatzzentrale-pi" / "pi_service.py",
+    _Path("/app/scripts/einsatzzentrale-pi/pi_service.py"),
+    _Path("/app/backend/static/pi_service.py"),
+)
 
 
 @router.get("/pi-service.py")

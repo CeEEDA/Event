@@ -16,7 +16,12 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
-### Feb 2026 – Tankwagen-Pi: Tastatur + Offline-Buchungs-Status
+### Feb 2026 – Pi-Installer 404 Fix
+- ✅ `_INSTALL_SCRIPT_PATH` und `_PI_SERVICE_PATH` in `routes/einsatzzentrale.py` suchen jetzt in mehreren Kandidaten-Pfaden (relativ zum __file__ via `_PROJECT_ROOT`, dann hardcoded `/app/scripts/...`, schliesslich `/app/backend/static/...`).
+- ✅ Kopien von `install_einsatzzentrale_kiosk.sh` und `pi_service.py` liegen jetzt zusaetzlich in `/app/backend/static/` und werden damit garantiert mit dem Backend ausgeliefert (Production-Deployments shippen oft nur `/app/backend/`).
+- ✅ Verbessertes 404-Detail listet alle gesuchten Pfade, damit Deployment-Probleme sofort sichtbar sind.
+
+
 - ✅ **On-Screen-Tastatur** in `tankbeleg_ui.py` zeigt Ziffern (1-0) jetzt DAUERHAFT als oberste Reihe (vorher wurden sie im Shift-Modus durch Sonderzeichen ueberschrieben). Auf dem PI wurden Auftragsnummern wie "251024-01" und Bezeichnungen wie "FUNKMAST 3" gebraucht, daher sind Zahlen jetzt immer ohne Shift erreichbar. Sonderzeichen (@ - _ / . ,) bleiben in der Symbol-Reihe verfuegbar.
 - ✅ **Dreistufiger Belege-Status** statt nur rot/gruen:
   - rot "Offen" — assigned=0
