@@ -428,7 +428,18 @@ input { font-family: inherit; }
 .multi-diary-form-card .mdf-trupps button.on { background:var(--fuchsia); color:#fff; border-color:var(--fuchsia); }
 .multi-diary-form-card .mdf-trupps button.busy { opacity:.7; }
 .multi-diary-form-card .mdf-actions { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:8px; }
+.multi-diary-form-card .mdf-actions .btn { height:38px; font-size:13px; padding:0 16px; border-radius:8px; min-width:120px; justify-content:center; }
+.multi-diary-form-card .mdf-actions .btn.primary { height:38px; font-size:13px; padding:0 18px; }
 .multi-diary-form-card .mdf-err { color:#dc2626; font-size:11px; margin-right:auto; }
+
+/* Trupp-Karten: alle Action-Buttons gleich gross */
+.multi-trupp-card .mt-actions { display:grid; grid-template-columns: 1fr 1fr auto; gap:4px; margin-top:4px; }
+.multi-trupp-card .mt-actions .btn { height:28px; font-size:11px; padding:0 8px; border-radius:6px;
+  justify-content:center; min-width:0; }
+.multi-trupp-card .mt-actions .mt-del { padding:0 8px; }
+.multi-trupp-card .mt-actions .mt-pause { font-weight:600; }
+.multi-trupp-card.busy .mt-actions .mt-pause,
+.multi-trupp-card .mt-actions .mt-pause { background:#fff; }
 
 /* ========== DIARY (Einsatztagebuch) ============================== */
 .diary-stats { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
