@@ -337,12 +337,15 @@ async def kiosk_root():
                     KIOSK_HTML_PATH.write_bytes(r.content)
                 except Exception as ex:
                     log.warning(f"Konnte kiosk.html nicht lokal cachen: {ex}")
-                return Response(content=r.content, media_type="text/html")
+                return Response(content=r.content, media_type="text/html",
+                                headers={"Cache-Control": "no-cache, no-store, must-revalidate",
+                                         "Pragma": "no-cache", "Expires": "0"})
         except Exception as ex:
             log.warning(f"Cloud kiosk-page Fetch fehlgeschlagen: {ex}")
     # Offline-Fallback: lokale Kopie
     if KIOSK_HTML_PATH.exists():
-        return FileResponse(KIOSK_HTML_PATH, media_type="text/html")
+        return FileResponse(KIOSK_HTML_PATH, media_type="text/html",
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     if CLOUD_URL:
         return RedirectResponse(f"{CLOUD_URL}/api/einsatzzentrale/kiosk-page")
     return Response(content="<h1>Pi-Service: weder Cloud noch lokaler Cache verfuegbar</h1>",
