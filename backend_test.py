@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 
 class FileShareAPITester:
-    def __init__(self, base_url="https://pi-einsatz.preview.emergentagent.com"):
+    def __init__(self, base_url="https://bestand-copy.preview.emergentagent.com"):
         self.base_url = base_url
         self.admin_token = None
         self.user_token = None

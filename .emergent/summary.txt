@@ -3,22 +3,23 @@
 **User's preferred language**: German. (WICHTIG: Antworte dem User ausschließlich auf Deutsch! / INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB app with EpiRent API sync. The Einsatzzentrale Kiosk has been completely migrated to a standalone Vanilla JS HTML page () served by FastAPI to bypass React Dev Server HMR reload loops on the Pi. It includes tiles for Workspace (with Regenradar & Hourly Forecast), Einsatztagebuch (Order Diary), Artikelliste (Assets, read-only), Dokumentenablage (PDF/Image upload and viewing), and Maschinenliste (Generators in radius). A local Pi-Service (Python/FastAPI) has been implemented to handle offline-caching and syncing on the Raspberry Pi itself, alongside a setup-generator in the Admin Settings.
+A mature React/FastAPI/MongoDB app with EpiRent API sync. The Einsatzzentrale Kiosk is a standalone Vanilla JS HTML page () to bypass React Dev Server HMR/caching issues on the Pi. The Pi runs a local Python service () for caching. The Kiosk features an auto-updating UI (30s polling), a future-predicting rain radar (Open-Meteo grid), and a 3-status Multiview for disruption logging. The React Portal includes advanced order management, HR/time tracking with an audit log, and invoice handling.
 
 **Last working item**:
-    - Last item agent was working: Fixing the Keine GPS Koordinate (No GPS coordinates) error on the Pi kiosk for specific orders (like Order 28) within the Weather/Radar widget. The backend has successfully geocoded the addresses using Nominatim, but the Pi still throws the error.
+    - Last item agent was working: Building a Copy function for Admin users in the Order Details view. The user wants to select specific articles, light masts, and generators from one order and copy them into another order, because equipment often stays at the same location across multiple sequential events.
     - Status: IN PROGRESS
     - Agent Testing Done: N
-    - Which testing method agent to use? manual testing by curl / python -c / screenshot tool
+    - Which testing method agent to use? Frontend testing agent
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Keine GPS Koordinate on Pi Kiosk despite Backend having data (P0)
-     - Attempted fixes: The agent updated the Geocoding fallback to Nominatim, which successfully populated  and  in the backend database (e.g., for Order 28). The agent also made the Pi-Service fetch the latest  HTML.
+  Issue 1: Copy Function for Assets & Generators across Orders (P0)
+     - Attempted fixes: The agent just started looking at  and the  endpoints before the context cut off.
      - Next debug checklist: 
-       1. Check : Verify if the SQLite cache is returning stale data for the order. Add cache invalidation or force-refresh logic. The Pi might just be serving the old order JSON.
-       2. Check : Verify the condition in  checking for  / .
-     - Why fix this issue and what will be achieved with the fix? The weather/Regenradar widget on the Workspace tile needs GPS coordinates to function. Without it, the main operational dashboard lacks critical weather data.
+       1. Check frontend  or  to add selection checkboxes to the asset/generator tables.
+       2. Build a modal/dialog to select the Target Order (using existing order search endpoints).
+       3. Create a new backend endpoint (e.g., ) that takes a list of asset IDs/generator IDs and a target , and duplicates those records in the DB.
+     - Why fix this issue and what will be achieved with the fix? Saves admins significant time by not having to manually re-enter or re-assign hardware that remains on-site for subsequent events.
      - Status: IN PROGRESS
      - Is recurring issue? N
      - Should Test frontend/backend/both after fix? Both
@@ -33,86 +34,91 @@ None
     Future Tasks:
     - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
     - (P2) Lastdiagramm Live-Test.
-    - (P2) Auto-Scroll for new entries in Multiansicht (Einsatzzentrale).
-    - (P2) Sync-Status indicator on Kiosk (Diagnose-Badge).
-    - (P2) Camera-Foto Upload with EXIF GPS data in Dokumentenablage.
+    - (P2) Camera-Foto Upload with EXIF GPS data in Dokumentenablage (Portal side).
     - (P2) Tank-Alarm-Threshold Notification for Generators.
 
 **Completed work in this session**
-- Fixed Pi Kiosk Reload Loop (DONE): Applied single-instance lock () and targeted  in Pi setup script.
-- Einsatztagebuch-Tile on Kiosk (DONE): Full UI with CRUD/Resolving for Diary entries.
-- Workspace v2 on Kiosk (DONE): 2-column layout, RainViewer radar, auto-geocoding (Nominatim + Open-Meteo fallback).
-- Artikelliste-Tile on Kiosk (DONE): Replaced Standortliste, added read-only asset table.
-- Dokumentenablage-Tile on Kiosk (DONE): PDF/Image upload, categorization, thumbnail viewing.
-- Maschinenliste-Tile on Kiosk (DONE): Generators in radius list with status and distance.
-- Pi-Service Offline & Sync Architecture (Option B) (DONE): Added Python service () for Pi, caching, and a Setup-Generator in the Admin Settings.
-- Multiansicht-Tile (DONE): Combined Diary and Assets view.
+- Fixed Kiosk Caching/Service Worker loops (DONE): Added script to unregister React SW on the Kiosk page and an API endpoint  to force clear Chromium caches.
+- Kiosk Auto-Update (DONE): Kiosk HTML polls  every 30s and hard-reloads if the hash changes.
+- Kiosk Security (DONE):  now injects  and  headers into all backend requests.
+- Multiansicht UI Upgrade (DONE): Implemented 50/50 split width on TV, added map to article list, converted Trupp pills to full cards.
+- Diary 3-Status Logic (DONE): Red (Open/No team), Yellow (In Progress/Team assigned), Green (Resolved). Added inline side-panel for assigning teams.
+- Weather/Radar Upgrade (DONE): Changed weather to 7 days (today + 6 future). Replaced RainViewer with Open-Meteo precipitation grid (4 hours future forecast animation).
+- Kiosk Documents (DONE): Removed upload/camera functions, making it read-only for the Pi.
+- Emoji Fix (DONE): Added  to Pi setup script.
+- Portal Fixes (DONE): Renamed Stundenberichte to Projektberichte. Filtered Kiosk Order list to .
+- Signup Table Sorting (DONE): Added column sorting (including parsing Steckergröße 16A/32A/63A) to the Anmeldungen table.
+- Zeiterfassung Audit Log (DONE): Added backend logging and frontend UI panel to track manual changes to HR data, time entries, and vacations.
 
 **Earlier issues found/mentioned but not fixed**
-   None.
+None.
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Chromium crash/reload loops on Raspberry Pi Kiosk.
-  - Recurrence count: 2
+  - Issue recurrence in previous fork: Service Worker caching stale Kiosk HTML on the Pi.
+  - Recurrence count: 3
   - Status: RESOLVED
-  - Note: Fixed via  and targeted  to prevent multiple launch scripts from killing each other.
+  - Note: Fixed by specifically adding logic in  and  to skip the Service Worker for  and an inline killer script in the Kiosk HTML.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-React, FastAPI, Vanilla JS (for Kiosk), Open-Meteo API, Nominatim Geocoding, Raspberry Pi OS Kiosk Mode, Local SQLite (Pi-Service), Caching.
+React, FastAPI, Vanilla JS (for Kiosk), Open-Meteo API (Precipitation Grid), Service Workers, MongoDB, Chromium Kiosk Mode.
 
 **key DB schema**
+  - :  (NEW)
+  - : 
   - : 
 
 **changes in tech stack**
-  - Introduced a local Python FastAPI service () running directly on the Raspberry Pi to proxy API requests, handle offline caching via SQLite, and manage syncing.
+  - None, but added heavy reliance on  hashing for the Kiosk HTML to trigger auto-reloads.
 
 **All files of reference** 
-  -  (CRITICAL: Kiosk Frontend logic)
-  -  (Pi Setup script)
-  -  (CRITICAL: Pi Sync Service / Local proxy)
-  - 
-  - 
-  - 
+  -  (Heavily updated, 3-status logic, grid weather)
+  -  (Updated to inject auth headers)
+  -  (Added build-id, updated weather to grid)
+  -  (Added  logic)
+  -  (Added Audit Log UI)
+  -  (Current working file for copy feature)
+  -  (Current working file for copy feature)
 
 **Areas that need refactoring**: 
-  - The standalone HTML page () has grown past 1000 lines with complex Vanilla JS logic. It currently serves the purpose to bypass Dev environment issues, but code organization is becoming difficult.
+  -  is almost 3000 lines of Vanilla JS. It is working exceptionally well and auto-updating, but is dense. Avoid refactoring it unless absolutely necessary.
 
 **key api endpoints**
-  - 
-  - 
-  - 
+  -  (Used for Kiosk auto-update)
+  -  (Needs to be created)
 
 **Critical Info for New Agent** 
 - **Language Constraint:** ALWAYS reply in German.
-- **Pi Kiosk Environment:** Kiosk UI is built purely in . Modify this HTML file for all Kiosk changes.
-- **Offline Sync:** The Pi runs  locally on  which proxies requests to the cloud backend. **If data on the Pi is stale, the issue is highly likely in  caching logic (SQLite).**
+- **Copy Feature Logic:** Equipment (Generators, Light Masts) often remains physically in the same place for consecutive events. The user needs to select these items in Order A and copy them to Order B so they don't have to re-enter all the data.
+- **Kiosk Vanilla JS:** If you touch the Kiosk, do it ONLY in . Do not use React for the Kiosk.
 
 **documents and test reports created in this job**
-  - 
+None (Handled via bash and UI screenshots).
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) wir bauen die Option B
- 2. (Agent) Created  and updated install script for offline capability.
- 3. (User) Reported URL error during setup script execution.
- 4. (Agent) Fixed Setup URL derivation in .
- 5. (User) Reported cluster-12 preview URL throws 403 Forbidden.
- 6. (Agent) Changed frontend to build URL using  instead of relying on the backend request context.
- 7. (User) Reported Pi-Service hangs (DNS issues) and Geocoding issue remains, requested Multiansicht.
- 8. (Agent) Implemented Nominatim geocoding fallback, built Multiansicht, and updated Pi HTML fetch logic.
- 9. (User) Shared Pi system logs indicating successful connections after the agent added DNS error retry logic.
- 10. (LATEST User) nein. Wenn ich aktualisiere kommt der gleiche fehler. Keine GPS Koordinate,...
+ 1. (User) das Regenradar darf nicht in der Vergangenheit liegen, sonder soll in der Zukunft sein. +4 Stunden.
+ 2. (Agent) Replaced RainViewer with Open-Meteo precipitation grid (4h future forecast).
+ 3. (User) in der Einsatzzentrale benötige ich kein Upload und Foto Funktion.
+ 4. (Agent) Removed upload/camera functions from the Kiosk Document tile.
+ 5. (User) beim wetter hab ich auf dem PI nur die Kisten anstatt bilder.
+ 6. (Agent) Added  to Pi setup and refresh scripts to fix Chromium emoji rendering.
+ 7. (User) wo kommt der Blanko Projektbericht an?
+ 8. (Agent) Explained they go to the DB but are hidden due to missing order IDs.
+ 9. (User) checke deine aussage. die kommen in Verwaltung / Stundenberichte an. Änder die Bezeichnung auf Projektberichte.
+ 10. (User) Baue unter Anmeldung eine Sortierfunktion ein...
+ 11. (User) In der Protokollansicht möchte ich, dass festgehalten wird, wann eine Änderung vorgenommen wurde und von wem...
+ 12. (Agent) Implemented Audit Log.
+ 13. (LATEST User) baue hier für mich als Admin eine Kopierfunktion ein. Wenn ich den butten drücke kann ich die Artikel und Lichtmasten auswählen und die dann in einen weiteren Job Kopieren. Das muss ich auch bei den Genertoren auch machen können.
 
 **Project Health Check:**
-Broken: GPS coordinate reading/caching in Pi Kiosk.
+Broken: None.
 Mocked: None.
 
 **3rd Party Integrations** 
 - Stripe (Payments) — requires User API Key
-- python-fints (Banking) — requires Bank credentials
-- Open-Meteo (Weather API) — No key required.
+- Open-Meteo (Weather API / Precip Grid) — No key required.
 - Nominatim (Geocoding API) — No key required.
 - EpiRent (Event software API)
 
@@ -124,22 +130,22 @@ Mocked: None.
 
 **Credentials to test flow:**
 - Preview Admin:  / 
-- Kiosk Mitarbeiter:  / 
 
 **What agent forgot to execute**
-- The agent fixed the backend geocoding, but forgot to ensure the  clears its local SQLite cache. The Pi is likely returning a stale  JSON object from before the Nominatim fix was applied.
+- The agent was just starting the Copy Assets feature when the context ended. No code was written for this feature yet.
 
 **Debugging checklist for current issue**
-    Issue: Keine GPS Koordinate on Pi Kiosk despite Backend having Geocoded data.
-
-    Pi Service files to check: 
-    
-    - Check the SQLite cache logic. The Pi might have cached the order JSON when / were still null. Add a mechanism to force-refresh the order data or bypass cache if coordinates are missing.
+    Issue: Copy Function for Assets & Generators across Orders
 
     Frontend files to check: 
     
-    - Ensure the JSON fields mapped to  are correctly being read. 
+    - Add checkboxes next to Assets (Artikel/Lichtmasten) and Generators.
+    - Add a Kopieren nach... (Copy to...) button.
+    - Implement a modal using the existing order search API to pick the destination .
+  
+    Backend files to check:
     
-    Backend files to check: 
-    
-    - Verify that  is accurately sending the updated coordinates in the response payload.</analysis>
+    - Create an endpoint .
+    - It should accept ,  (List of Mongo ObjectIds for ), and  (List of strings for ).
+    - Query the selected assets, strip their , change their  to the target, and insert them.
+    - Append the selected  to the target order's .</analysis>

@@ -52,6 +52,9 @@ import {
   CheckCircle2,
   Users,
   UserPlus,
+  Copy,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
@@ -243,6 +246,17 @@ export default function OrderDetailPage() {
   const [moveResults, setMoveResults] = useState([]);
   const [moveLoading, setMoveLoading] = useState(false);
   const [moveSubmitting, setMoveSubmitting] = useState(false);
+  // Copy-Modus (Admin): Artikel + Generatoren auswaehlen und in einen
+  // anderen Auftrag duplizieren. Equipment bleibt oft am gleichen Ort fuer
+  // Folge-Events, daher spart das viel Tipparbeit.
+  const [copyMode, setCopyMode] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState(() => new Set());
+  const [selectedGenIds, setSelectedGenIds] = useState(() => new Set());
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copySearch, setCopySearch] = useState("");
+  const [copyResults, setCopyResults] = useState([]);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copySubmitting, setCopySubmitting] = useState(false);
   // Gefilterte Asset-Liste (Suche + Typ-Filter). Wird sowohl von der Tabelle
   // als auch von den Karten-Markern verwendet, damit Filter konsistent greift.
   const filteredAssets = (() => {
@@ -713,6 +727,95 @@ export default function OrderDetailPage() {
     }
   };
 
+  // ── Copy-Modus ──
+  // Toggle: aktiviert Auswahl-Checkboxen ueber Artikel + Generatoren.
+  // Auswahl wird beim Verlassen des Modus geleert damit beim Neustart kein
+  // Geister-Selection-State haengen bleibt.
+  const toggleCopyMode = () => {
+    setCopyMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedAssetIds(new Set());
+        setSelectedGenIds(new Set());
+      }
+      return next;
+    });
+  };
+
+  const toggleAssetSelected = (id) => {
+    setSelectedAssetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGenSelected = (id) => {
+    setSelectedGenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisibleAssets = () => {
+    setSelectedAssetIds(new Set(filteredAssets.map((a) => a.id)));
+  };
+
+  // Auftrags-Picker fuer Copy-Modus (separat von Move, damit der Move-Picker
+  // unabhaengig bleibt und beide Dialoge nicht in Sucheingaben kollidieren).
+  useEffect(() => {
+    if (!copyDialogOpen) return;
+    const timer = setTimeout(async () => {
+      setCopyLoading(true);
+      try {
+        const { data } = await api.get(`/orders/epirent-search/quick`, {
+          params: { q: copySearch, exclude_pk: pk, limit: 25 },
+        });
+        setCopyResults(data.orders || []);
+      } catch {
+        setCopyResults([]);
+      } finally {
+        setCopyLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [copySearch, copyDialogOpen, pk]);
+
+  const submitCopyToOrder = async (targetOrderPk, targetLabel) => {
+    const assetIds = Array.from(selectedAssetIds);
+    const generatorIds = Array.from(selectedGenIds);
+    if (assetIds.length === 0 && generatorIds.length === 0) {
+      toast.error("Bitte mindestens einen Artikel oder Generator auswaehlen");
+      return;
+    }
+    const summary = [
+      assetIds.length > 0 ? `${assetIds.length} Artikel` : null,
+      generatorIds.length > 0 ? `${generatorIds.length} Generator${generatorIds.length === 1 ? "" : "en"}` : null,
+    ].filter(Boolean).join(" + ");
+    if (!window.confirm(`${summary} nach "${targetLabel}" kopieren?`)) return;
+    setCopySubmitting(true);
+    try {
+      const { data } = await api.post(`/orders/epirent/${pk}/copy-to`, {
+        target_order_pk: targetOrderPk,
+        asset_ids: assetIds,
+        generator_ids: generatorIds,
+      });
+      const parts = [];
+      if (data.copied_assets) parts.push(`${data.copied_assets} Artikel`);
+      if (data.copied_generators) parts.push(`${data.copied_generators} Generator${data.copied_generators === 1 ? "" : "en"}`);
+      toast.success(`${parts.join(" + ") || "Nichts neues"} kopiert nach ${targetLabel}`);
+      setCopyDialogOpen(false);
+      setCopyMode(false);
+      setSelectedAssetIds(new Set());
+      setSelectedGenIds(new Set());
+    } catch (err) {
+      toast.error(getErrorMsg(err) || "Kopieren fehlgeschlagen");
+    } finally {
+      setCopySubmitting(false);
+    }
+  };
+
   const confirmFuelReceipt = async (id) => {
     try {
       await api.post(`/fuel-receipts/${id}/confirm`);
@@ -1007,14 +1110,29 @@ export default function OrderDetailPage() {
                   Generatoren im Radius
                   {genLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
                 </h2>
-                <button
-                  onClick={openAddGenModal}
-                  className="p-1.5 rounded-md text-fuchsia-600 hover:bg-fuchsia-50 transition-colors"
-                  title="Generator manuell zuordnen"
-                  data-testid="add-manual-generator-btn"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {isAdmin && generators.length > 0 && (
+                    <button
+                      onClick={toggleCopyMode}
+                      className={`px-2 py-1 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+                        copyMode ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "text-gray-500 hover:bg-gray-100"
+                      }`}
+                      title="Auswahl-Modus zum Kopieren in einen anderen Auftrag"
+                      data-testid="copy-mode-toggle-gen"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      {copyMode ? "Auswahl beenden" : "Kopier-Modus"}
+                    </button>
+                  )}
+                  <button
+                    onClick={openAddGenModal}
+                    className="p-1.5 rounded-md text-fuchsia-600 hover:bg-fuchsia-50 transition-colors"
+                    title="Generator manuell zuordnen"
+                    data-testid="add-manual-generator-btn"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="divide-y divide-gray-100 max-h-[380px] overflow-y-auto">
                 {generators.length === 0 && !genLoading && (
@@ -1034,14 +1152,32 @@ export default function OrderDetailPage() {
                   const tel = g.latest_telemetry || {};
                   const kw = tel.power_kw != null ? Number(tel.power_kw) : null;
                   const fuel = tel.fuel_level != null ? Number(tel.fuel_level) : null;
+                  const isSelected = selectedGenIds.has(g.id);
                   return (
                   <div
                     key={g.id}
-                    className="p-3 hover:bg-gray-50 transition-colors group"
+                    className={`p-3 hover:bg-gray-50 transition-colors group ${
+                      copyMode && isSelected ? "bg-emerald-50 border-l-[3px] border-l-emerald-500" : ""
+                    }`}
                     data-testid={`gen-item-${g.id}`}
+                    onClick={() => { if (copyMode) toggleGenSelected(g.id); }}
+                    style={{ cursor: copyMode ? "pointer" : "default" }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2 min-w-0 flex-1">
+                        {copyMode && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleGenSelected(g.id); }}
+                            className="flex-shrink-0 mt-0.5 text-emerald-600"
+                            data-testid={`copy-select-gen-${g.id}`}
+                            aria-label="Generator auswaehlen"
+                          >
+                            {isSelected
+                              ? <CheckSquare className="w-4 h-4" />
+                              : <Square className="w-4 h-4 text-gray-300" />}
+                          </button>
+                        )}
                         <div
                           className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5"
                           style={{ backgroundColor: statusColors[g.status] || "#9CA3AF" }}
@@ -1440,12 +1576,27 @@ export default function OrderDetailPage() {
           {/* Asset Placement Section */}
           {activeTab === "articles" && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="assets-section">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-orange-500" />
                 Artikel positionieren
               </h2>
-              <span className="text-xs text-gray-400">{assets.filter(a => (a.status || "placed") === "placed").length} gestellt · {assets.filter(a => a.status === "dismantled").length} abgebaut</span>
+              <div className="flex items-center gap-3">
+                {isAdmin && assets.length > 0 && (
+                  <button
+                    onClick={toggleCopyMode}
+                    className={`px-2 py-1 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+                      copyMode ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "text-gray-500 hover:bg-gray-100"
+                    }`}
+                    title="Auswahl-Modus zum Kopieren in einen anderen Auftrag"
+                    data-testid="copy-mode-toggle-assets"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copyMode ? "Auswahl beenden" : "Kopier-Modus"}
+                  </button>
+                )}
+                <span className="text-xs text-gray-400">{assets.filter(a => (a.status || "placed") === "placed").length} gestellt · {assets.filter(a => a.status === "dismantled").length} abgebaut</span>
+              </div>
             </div>
 
             {/* Add Form */}
@@ -1605,6 +1756,19 @@ export default function OrderDetailPage() {
                 <table className="w-full text-sm" data-testid="assets-table">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
+                      {copyMode && (
+                        <th className="w-10 text-center px-2 py-2 font-medium text-gray-600">
+                          <button
+                            type="button"
+                            onClick={selectAllVisibleAssets}
+                            className="text-emerald-600 hover:text-emerald-700"
+                            title="Alle sichtbaren auswaehlen"
+                            data-testid="copy-select-all-assets"
+                          >
+                            <CheckSquare className="w-4 h-4" />
+                          </button>
+                        </th>
+                      )}
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Typ</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Bezeichnung</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Plus Code</th>
@@ -1622,17 +1786,38 @@ export default function OrderDetailPage() {
                     }).map((a) => {
                       const TypeIcon = assetTypeIcon(a.asset_type).icon;
                       const isPlaced = (a.status || "placed") === "placed";
+                      const isSelected = selectedAssetIds.has(a.id);
                       return (
                         <tr
                           key={a.id}
                           className={`border-b border-gray-100 cursor-pointer transition-colors ${
-                            isPlaced
+                            copyMode && isSelected
+                              ? "bg-emerald-50 border-l-[5px] border-l-emerald-500 hover:bg-emerald-100"
+                              : isPlaced
                               ? "bg-fuchsia-100 border-l-[5px] border-l-fuchsia-500 hover:bg-fuchsia-200"
                               : "bg-white hover:bg-gray-50"
                           }`}
                           data-testid={`asset-row-${a.id}`}
-                          onClick={() => setSelectedAsset(a)}
+                          onClick={() => {
+                            if (copyMode) toggleAssetSelected(a.id);
+                            else setSelectedAsset(a);
+                          }}
                         >
+                          {copyMode && (
+                            <td className="text-center px-2 py-2.5">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); toggleAssetSelected(a.id); }}
+                                className="text-emerald-600"
+                                data-testid={`copy-select-asset-${a.id}`}
+                                aria-label="Artikel auswaehlen"
+                              >
+                                {isSelected
+                                  ? <CheckSquare className="w-4 h-4" />
+                                  : <Square className="w-4 h-4 text-gray-300" />}
+                              </button>
+                            </td>
+                          )}
                           <td className="px-4 py-2.5">
                             <span className="inline-flex items-center gap-1.5 text-orange-600">
                               <TypeIcon className="w-4 h-4" />
@@ -1978,6 +2163,113 @@ export default function OrderDetailPage() {
           )}
 
           {/* Dokumentenablage - jetzt in der Hub-Uebersicht, hier entfernt */}
+
+          {/* ── Copy-Modus: Floating Action Bar + Target-Picker ──
+              Sticky am unteren Rand sobald mindestens ein Artikel oder Generator
+              ausgewaehlt wurde. Zeigt Counts an + Button um den Ziel-Auftrag
+              zu waehlen. Eigener Dialog (statt move-Picker recyclen) damit
+              Such-Eingabe + Submit-State der beiden Flows nicht kollidieren. */}
+          {copyMode && (selectedAssetIds.size > 0 || selectedGenIds.size > 0) && (
+            <div
+              className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9000] bg-white border border-emerald-200 shadow-2xl rounded-full px-4 py-2 flex items-center gap-3"
+              data-testid="copy-action-bar"
+            >
+              <span className="text-xs font-medium text-emerald-700">
+                {selectedAssetIds.size > 0 && `${selectedAssetIds.size} Artikel`}
+                {selectedAssetIds.size > 0 && selectedGenIds.size > 0 && " · "}
+                {selectedGenIds.size > 0 && `${selectedGenIds.size} Generator${selectedGenIds.size === 1 ? "" : "en"}`}
+                {" "}ausgewaehlt
+              </span>
+              <button
+                type="button"
+                onClick={() => { setSelectedAssetIds(new Set()); setSelectedGenIds(new Set()); }}
+                className="text-xs text-gray-400 hover:text-gray-700 px-2"
+                data-testid="copy-clear-selection"
+              >
+                Zuruecksetzen
+              </button>
+              <button
+                type="button"
+                onClick={() => { setCopySearch(""); setCopyResults([]); setCopyDialogOpen(true); }}
+                className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium inline-flex items-center gap-1.5"
+                data-testid="copy-open-target-picker"
+              >
+                <Copy className="w-3.5 h-3.5" /> Kopieren nach...
+              </button>
+            </div>
+          )}
+
+          {copyDialogOpen && (
+            <div className="fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4" onClick={() => setCopyDialogOpen(false)} data-testid="copy-target-dialog">
+              <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Copy className="w-4 h-4 text-emerald-500" />
+                    <h3 className="text-base font-semibold text-gray-900">In welchen Auftrag kopieren?</h3>
+                  </div>
+                  <button onClick={() => setCopyDialogOpen(false)} className="text-gray-400 hover:text-gray-600 p-1" data-testid="copy-target-close">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="px-5 py-3 bg-emerald-50/50 border-b border-emerald-100 text-xs text-emerald-900">
+                  {selectedAssetIds.size > 0 && <><strong>{selectedAssetIds.size}</strong> Artikel</>}
+                  {selectedAssetIds.size > 0 && selectedGenIds.size > 0 && " + "}
+                  {selectedGenIds.size > 0 && <><strong>{selectedGenIds.size}</strong> Generator{selectedGenIds.size === 1 ? "" : "en"}</>}
+                  {" "}werden in den Ziel-Auftrag dupliziert. Quelle bleibt unveraendert; eine Audit-Notiz haengt am kopierten Eintrag.
+                </div>
+                <div className="px-5 py-3 border-b border-gray-100">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={copySearch}
+                      onChange={(e) => setCopySearch(e.target.value)}
+                      placeholder="Auftrag suchen: Event, Auftrags-Nr. oder Kunde..."
+                      className="w-full h-9 pl-8 pr-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-200"
+                      data-testid="copy-target-search"
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto px-2 py-2">
+                  {copyLoading ? (
+                    <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" /> Suche...
+                    </div>
+                  ) : copyResults.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-gray-400" data-testid="copy-target-empty">
+                      {copySearch.trim() ? `Keine Auftraege passen zu "${copySearch}"` : "Tippe um Auftraege zu suchen"}
+                    </div>
+                  ) : (
+                    <ul className="space-y-1">
+                      {copyResults.map((o) => (
+                        <li key={o.primary_key}>
+                          <button
+                            type="button"
+                            onClick={() => submitCopyToOrder(o.primary_key, o.event || o.order_no || `#${o.primary_key}`)}
+                            disabled={copySubmitting}
+                            className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-emerald-50 hover:border-emerald-200 border border-transparent transition-colors disabled:opacity-50"
+                            data-testid={`copy-target-option-${o.primary_key}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-900 truncate">{o.event || "—"}</p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  <span className="font-mono">{o.order_no || `#${o.primary_key}`}</span>
+                                  {o.address && <span> · {o.address}</span>}
+                                </p>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Projektberichte Section */}
           {activeTab === "reports" && (

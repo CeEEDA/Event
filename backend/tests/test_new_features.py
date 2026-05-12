@@ -9,7 +9,7 @@ import os
 import uuid
 import io
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://pi-einsatz.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://bestand-copy.preview.emergentagent.com')
 
 
 class TestNewFeatures:

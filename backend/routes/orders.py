@@ -338,6 +338,12 @@ class AssetMove(BaseModel):
     target_order_pk: int
 
 
+class CopyToOrder(BaseModel):
+    target_order_pk: int
+    asset_ids: list[str] = []
+    generator_ids: list[str] = []
+
+
 def _haversine_km(lat1, lng1, lat2, lng2):
     """Calculate distance between two GPS points in km."""
     R = 6371.0
@@ -1057,6 +1063,128 @@ async def move_order_asset(
         {"$set": {"order_pk": data.target_order_pk}, "$push": {"comments": audit}},
     )
     return {"ok": True, "target": target}
+
+
+@router.post("/epirent/{order_pk}/copy-to")
+async def copy_assets_and_generators(
+    order_pk: int, data: CopyToOrder, user: dict = Depends(_auth_user),
+):
+    """Admin-Funktion: kopiert ausgewaehlte Artikel und/oder Generator-Zuordnungen
+    in einen anderen Auftrag. Anwendungsfall: gleiches Equipment bleibt ueber
+    mehrere Folge-Events am selben Standort - der User muss es nicht alles neu
+    eintragen. Artikel werden 1:1 dupliziert (inkl. Position, Kommentare und
+    Status), Generatoren werden zusaetzlich der Ziel-Auftragsliste hinzugefuegt
+    (kein Verschieben - sie bleiben in beiden Auftraegen sichtbar).
+    Audit-Kommentar/-Notiz haengt am kopierten Objekt damit nachvollziehbar
+    bleibt wo es herkommt.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Nur Admins duerfen kopieren")
+    if data.target_order_pk == order_pk:
+        raise HTTPException(400, "Ziel-Auftrag muss vom aktuellen Auftrag verschieden sein")
+    if not data.asset_ids and not data.generator_ids:
+        raise HTTPException(400, "Keine Auswahl uebergeben")
+    target = await _db.orders_cache.find_one(
+        {"primary_key": data.target_order_pk},
+        {"_id": 0, "primary_key": 1, "event": 1, "order_no": 1, "name": 1, "title": 1},
+    )
+    if not target:
+        raise HTTPException(404, "Ziel-Auftrag nicht gefunden")
+
+    import uuid
+    now = datetime.now(timezone.utc).isoformat()
+    creator = user.get("name") or user.get("email") or "System"
+    creator_id = user.get("id") or user.get("user_id") or user.get("email") or ""
+
+    copied_assets = 0
+    if data.asset_ids:
+        cursor = _db.order_assets.find(
+            {"order_pk": order_pk, "id": {"$in": data.asset_ids}}
+        )
+        async for asset in cursor:
+            asset.pop("_id", None)
+            new_doc = dict(asset)
+            new_doc["id"] = str(uuid.uuid4())
+            new_doc["order_pk"] = data.target_order_pk
+            audit = {
+                "id": str(uuid.uuid4()),
+                "text": f"Kopiert aus Auftrag #{order_pk}",
+                "created_at": now,
+                "created_by": creator,
+                "created_by_id": creator_id,
+                "kind": "system",
+            }
+            new_doc["comments"] = list(new_doc.get("comments") or []) + [audit]
+            await _db.order_assets.insert_one(new_doc)
+            new_doc.pop("_id", None)
+            copied_assets += 1
+
+    copied_generators = 0
+    if data.generator_ids:
+        # Nur tatsaechlich neue IDs zaehlen damit das Frontend einen ehrlichen
+        # Count anzeigen kann (addToSet bei bereits zugewiesenen Generatoren
+        # wuerde sonst stillschweigend nichts tun und der Count waere falsch).
+        existing_settings = await _db.order_settings.find_one(
+            {"order_pk": data.target_order_pk}, {"_id": 0, "manual_generator_ids": 1}
+        ) or {}
+        already = set((existing_settings.get("manual_generator_ids") or []))
+        new_ids = [gid for gid in data.generator_ids if gid not in already]
+
+        if new_ids:
+            await _db.order_settings.update_one(
+                {"order_pk": data.target_order_pk},
+                {
+                    "$addToSet": {"manual_generator_ids": {"$each": new_ids}},
+                    "$setOnInsert": {"order_pk": data.target_order_pk},
+                    "$set": {"updated_at": now},
+                },
+                upsert=True,
+            )
+
+        # Auto-Deployment-Eintraege analog zu add_manual_generator
+        order_label = target.get("name") or target.get("title") or target.get("event") or f"Auftrag #{data.target_order_pk}"
+        for gid in new_ids:
+            existing = await _db.deployment_history.find_one({
+                "order_pk": data.target_order_pk,
+                "generator_id": gid,
+                "auto_assigned": True,
+            })
+            if existing:
+                continue
+            gen_name = ""
+            gen_doc = await _db.generators.find_one(
+                {"id": gid}, {"_id": 0, "name": 1, "serial_number": 1}
+            )
+            if gen_doc:
+                gen_name = gen_doc.get("name") or gen_doc.get("serial_number") or ""
+            elif gid.startswith("dev-"):
+                dev = await _db.devices.find_one({"id": gid[4:]}, {"_id": 0})
+                if dev:
+                    gen_name = dev.get("user_field") or dev.get("model") or dev.get("serial_number", "")
+            await _db.deployment_history.insert_one({
+                "id": str(uuid.uuid4()),
+                "order_pk": data.target_order_pk,
+                "order_label": order_label,
+                "generator_id": gid,
+                "generator_name": gen_name,
+                "started_at": now,
+                "stopped_at": None,
+                "operating_hours": None,
+                "kwh_start": None, "kwh_end": None,
+                "faults": None,
+                "notes": f"Kopiert aus Auftrag #{order_pk}",
+                "auto_assigned": True,
+                "created_at": now,
+                "created_by": creator,
+            })
+            copied_generators += 1
+
+    return {
+        "ok": True,
+        "copied_assets": copied_assets,
+        "copied_generators": copied_generators,
+        "target": target,
+    }
 
 
 @router.get("/epirent-search/quick")

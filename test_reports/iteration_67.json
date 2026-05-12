@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 67: Tested admin copy function (assets + generators) in Kirmes Order Detail view. Backend POST /api/orders/epirent/{pk}/copy-to: 8/9 passed, 1 skipped (no manual gens on src in env). Frontend: full e2e flow works - copy-mode toggle (admin only, when items>0), checkbox per row, floating action bar, target picker dialog with search, confirm + toast + dialog close + target count +1 + source intact. Regression (asset row click without copy mode opens detail modal -> move-dialog) still works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Order Detail (Articles)", "issues": ["Hydration warning in console: <span> inside <option> in <select> at OrderDetailPage.js line ~1728. Cosmetic but pollutes console and may break SSR/StrictMode. Wrap dynamic counts outside the option text or render plain string."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_copy_to_order_iteration67.py",
+    "/app/test_reports/pytest/pytest_copy_to_order_iteration67.xml"
+  ],
+  "action_items": [
+    "Optional: confirm() dialog before submit is fine for power-users, but consider replacing window.confirm with the shadcn AlertDialog used elsewhere for consistency",
+    "Optional: clean the <option><span>...</span></option> hydration warning in OrderDetailPage filter selects (~line 1728)"
+  ],
+  "critical_code_review_comments": [
+    "copy_assets_and_generators correctly enforces admin role, blocks self-copy (400), empty payload (400), unknown target (404).",
+    "Assets are duplicated with NEW uuid + audit comment 'Kopiert aus Auftrag #...' - source untouched. Verified via test_source_assets_unchanged_after_copy.",
+    "Generator copy is idempotent: $addToSet + diff via existing manual_generator_ids ensures regen-copy returns copied_generators=0.",
+    "deployment_history entry created for each newly copied gen with auto_assigned:true and notes referencing source order.",
+    "Mongo _id is correctly stripped before insert/return (asset.pop('_id', None) + new_doc.pop('_id', None)).",
+    "Frontend gating uses isAdmin && (assets.length>0 / generators.length>0) - correct - hides feature for non-admin and when nothing to copy.",
+    "submitCopyToOrder closes dialog, resets selection, exits copy mode on success - clean UX state reset.",
+    "OrderDetailPage.js is 3331 lines - exceeds 700-line guideline; consider splitting articles section + generator panel + copy-dialog into sub-components."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_copy_to_order_iteration67.py"
+  ],
+  "success_rate": {"backend": "100% (8/8 non-skipped passed)", "frontend": "100% - all spec flows verified"},
+  "test_credentials": "admin@test.com / password",
+  "seed_data_creation": "Created TEST_UI_Lichtmast on pk=6 (id 3b265611-...) for UI test and assigned generator 1d36f68b-0894-43fd-8226-aa7beb5f33ef manually to pk=6 to enable gen copy panel. Copied to pk=7. ALL SEED DATA CLEANED UP at end of run - pk=6 has 0 assets/no manual generator; pk=7 back to original 1 Lichtmast B\u00fchne 1.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Source order pk=6 (Lichtmast I Crange I Beleuchtung) has NO real assets in this env - the spec-noted 'already has 1 lichtmast' is stale. Test seeds a TEST_UI_Lichtmast asset and a manual generator before running UI flow, then cleans up. Backend test fixture ensure_source_has_asset is module-scoped autouse and creates+deletes its own asset. Generator idempotent test gets skipped because the source has no manual generators by default - if you want full coverage, seed one before running.",
+  "verified_features": {
+    "backend_copy_self_400": "PASS",
+    "backend_copy_empty_400": "PASS",
+    "backend_copy_unknown_target_404": "PASS",
+    "backend_copy_one_asset_201": "PASS (copied_assets=1, target+1, source unchanged)",
+    "frontend_copy_toggle_admin_only": "PASS (visible only when admin && items>0)",
+    "frontend_asset_checkbox_column": "PASS (data-testid=copy-select-asset-{id})",
+    "frontend_action_bar": "PASS (1 Artikel ausgewaehlt + Zuruecksetzen + Kopieren nach...)",
+    "frontend_target_dialog": "PASS (search returned 8 results for 'NLS')",
+    "frontend_copy_completed": "PASS (toast '1 Artikel kopiert nach NLS 1', dialog closed, target+1)",
+    "frontend_generator_panel_copy": "PASS (toggle + checkbox + action bar '1 Generator ausgewaehlt')",
+    "frontend_regression_asset_move": "PASS (row click without copy mode opens detail modal, move btn opens asset-move-dialog)"
+  }
+}
