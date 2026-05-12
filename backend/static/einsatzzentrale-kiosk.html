@@ -1022,8 +1022,8 @@ function renderWorkspace() {
 
         '<aside class="ws-radar">' +
           '<div class="section-title compact" style="display:flex;align-items:center;justify-content:space-between;">' +
-            '<span>Regenradar &amp; -Prognose</span>' +
-            '<span id="radar-time-lbl" style="font-size:11px;color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0;">Live</span>' +
+            '<span>Niederschlags-Prognose (4 h)</span>' +
+            '<span id="radar-time-lbl" style="font-size:11px;color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0;">Lade…</span>' +
           '</div>' +
           '<div class="radar-card">' +
             '<div id="radar-map" class="radar-map"></div>' +
@@ -1106,87 +1106,95 @@ function loadWeatherDays(detail) {
 }
 
 // ============================================================================
-// REGENRADAR via RainViewer (kostenlos, kein API-Key)
+// REGENRADAR via Open-Meteo Forecast (4h in die Zukunft)
+// Open-Meteo gibt stuendliche Niederschlagsmenge mm/h fuer ein Punkte-Gitter.
+// Wir rendern jeden Gitterpunkt als farbiges Quadrat -> sieht aus wie ein Radar.
 // ============================================================================
-var radarMap = null, radarMarker = null, radarLayers = [], radarFrames = [];
-var radarIdx = -1, radarPlayHandle = null;
+var radarMap = null, radarMarker = null, radarFrames = [], radarCells = [];
+var radarIdx = 0, radarPlayHandle = null;
 
-// RainViewer-Tiles werden serverseitig nur bis Zoom ~10 erzeugt.
-// Hoehere Zooms ergeben "Zoom Level not Supported"-Fehler-PNGs.
-// Loesung: maxNativeZoom=10 -> Leaflet skaliert lokal hoch statt unsupported Tiles zu laden.
-var RADAR_MAX_NATIVE_ZOOM = 10;
+// Farbskala mm/h -> RGBA (transparent bei 0)
+function _precipColor(p) {
+  if (p < 0.05)  return null;               // kein Regen -> nichts zeichnen
+  if (p < 0.5)   return "rgba(125,211,252,0.55)"; // hellblau
+  if (p < 2)     return "rgba(59,130,246,0.65)";  // blau
+  if (p < 5)     return "rgba(16,185,129,0.70)";  // gruen
+  if (p < 10)    return "rgba(245,158,11,0.75)";  // orange
+  if (p < 20)    return "rgba(239,68,68,0.80)";   // rot
+  return         "rgba(139,92,246,0.85)";         // violett (extrem)
+}
 
 function initRadar(lat, lng) {
   var mapEl = document.getElementById("radar-map"); if (!mapEl) return;
   if (radarMap) { try { radarMap.remove(); } catch(e){} radarMap = null; }
-  radarLayers = [];
+  radarFrames = []; radarCells = []; radarIdx = 0;
 
-  radarMap = L.map(mapEl, { zoomControl: true, attributionControl: false, maxZoom: 11 }).setView([lat, lng], 8);
+  radarMap = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([lat, lng], 9);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 11, opacity: 0.85
+    maxZoom: 14, opacity: 0.85
   }).addTo(radarMap);
   radarMarker = L.circleMarker([lat, lng], {
     radius: 8, color: "#d946ef", fillColor: "#d946ef", fillOpacity: 0.85, weight: 3
   }).addTo(radarMap).bindTooltip("Veranstaltungsort", { permanent: false });
 
-  // RainViewer index laden
-  fetch("https://api.rainviewer.com/public/weather-maps.json")
-    .then(function(r){ return r.json(); })
-    .then(function(d) {
-      var past = (d.radar && d.radar.past) || [];
-      // KEINE nowcast-Frames - die haben nur in Nordamerika + Teilen Europas
-      // konsistente Coverage; in Mitteleuropa liefern sie z.T. "Zoom Level Not
-      // Supported"-Fehler-Tiles. Past-Frames sind global hochaufloesend.
-      var frames = past.slice(-12); // letzte ~2 Stunden in 10-Min-Schritten
-      radarFrames = frames.map(function(f){
-        return { time: f.time, path: f.path, host: d.host };
-      });
-      // Alle Frame-Layer SOFORT anlegen (opacity 0) -> echte Animation ohne Nachladen
-      // Color 4 (TWC) gibt bessere Lesbarkeit als 2 (Universal Blue) bei Mitteleuropa
-      // Tile-Size 512 = schaerfer auf High-DPI-Displays
-      radarLayers = radarFrames.map(function(f) {
-        var url = f.host + f.path + "/512/{z}/{x}/{y}/4/1_1.png";
-        var layer = L.tileLayer(url, {
-          opacity: 0,
-          maxNativeZoom: RADAR_MAX_NATIVE_ZOOM,
-          maxZoom: 11,
-          tileSize: 512,
-          zoomOffset: -1,   // 512px tile braucht zoomOffset -1
-          crossOrigin: true,
-          errorTileUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+  // Open-Meteo Forecast-Gitter laden (4h in die Zukunft, 7x7 Punkte, 30km Radius)
+  api("/api/einsatzzentrale/weather/precip-forecast?lat=" + lat + "&lng=" + lng + "&hours=4&grid=7&radius_km=30")
+    .then(function(data) {
+      radarFrames = data.frames || [];
+      var dLat = data.step_lat_deg || 0.05;
+      var dLng = data.step_lng_deg || 0.05;
+      // Jede Zelle wird als Leaflet-Rechteck angelegt (Geschwindigkeit > Polygon)
+      // Wir erstellen einmal alle Rechtecke fuer Frame 0 und passen Farbe per Frame an.
+      var firstPts = radarFrames.length ? radarFrames[0].points : [];
+      radarCells = firstPts.map(function(pt) {
+        var bounds = [
+          [pt.lat - dLat / 2, pt.lng - dLng / 2],
+          [pt.lat + dLat / 2, pt.lng + dLng / 2]
+        ];
+        var rect = L.rectangle(bounds, {
+          weight: 0, fillOpacity: 0, color: "transparent",
+          interactive: false   // Klicks gehen auf die Karte durch
         });
-        layer.addTo(radarMap);
-        return layer;
+        rect.addTo(radarMap);
+        return rect;
       });
       var slider = document.getElementById("radar-slider");
       slider.max = String(Math.max(0, radarFrames.length - 1));
-      // Default: letzter (= aktuellster) Past-Frame
-      radarIdx = Math.max(0, radarFrames.length - 1);
-      slider.value = String(radarIdx);
-      showRadarFrame(radarIdx);
-      slider.addEventListener("input", function(){ stopRadarPlay(); showRadarFrame(parseInt(slider.value,10)); });
-      document.getElementById("radar-play").addEventListener("click", toggleRadarPlay);
-      // Auto-Start Animation nach 1.5s (Tiles haben Zeit zu laden)
+      slider.value = "0";
+      radarIdx = 0;
+      showRadarFrame(0);
+      slider.oninput = function(){ stopRadarPlay(); showRadarFrame(parseInt(slider.value,10)); };
+      document.getElementById("radar-play").onclick = toggleRadarPlay;
+      // Auto-Start (langsam, damit man die Stunden ablesen kann)
       setTimeout(function(){ if (!radarPlayHandle) toggleRadarPlay(); }, 1500);
     })
-    .catch(function(){
-      document.getElementById("radar-frame-lbl").textContent = "Radar offline";
+    .catch(function(ex) {
+      document.getElementById("radar-frame-lbl").textContent = "Vorhersage offline";
+      console.warn("Precip-Forecast Fehler:", ex);
     });
 }
 
 function showRadarFrame(i) {
   if (i < 0 || i >= radarFrames.length) return;
   radarIdx = i;
-  // Opacity-Switch: nur der aktive Layer ist sichtbar, alle anderen unsichtbar
-  radarLayers.forEach(function(layer, idx) {
-    layer.setOpacity(idx === i ? 0.7 : 0);
-  });
-  var f = radarFrames[i];
-  var d = new Date(f.time * 1000);
-  var now = Date.now() / 1000;
-  var diffMin = Math.round((f.time - now) / 60);
-  var rel = diffMin === 0 ? "jetzt" : (diffMin > 0 ? "in " + diffMin + " Min" : "vor " + Math.abs(diffMin) + " Min");
-  document.getElementById("radar-frame-lbl").textContent = d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  var frame = radarFrames[i];
+  if (!frame || !frame.points) return;
+  // Farben pro Zelle setzen (nur die mit Niederschlag werden sichtbar)
+  for (var k = 0; k < radarCells.length && k < frame.points.length; k++) {
+    var p = frame.points[k].p || 0;
+    var color = _precipColor(p);
+    if (color) {
+      radarCells[k].setStyle({ fillColor: color, fillOpacity: 1.0, weight: 0 });
+    } else {
+      radarCells[k].setStyle({ fillOpacity: 0, weight: 0 });
+    }
+  }
+  // Label: Uhrzeit der Vorhersage + Diff
+  var d = new Date(frame.time);
+  var diffMin = Math.round((d.getTime() - Date.now()) / 60000);
+  var rel = diffMin <= 0 ? "jetzt" : ("in " + (diffMin < 60 ? diffMin + " Min" : Math.round(diffMin / 60) + " h " + (diffMin % 60) + " Min"));
+  document.getElementById("radar-frame-lbl").textContent =
+    d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
   document.getElementById("radar-time-lbl").textContent = rel;
   document.getElementById("radar-slider").value = String(i);
 }
@@ -1197,7 +1205,7 @@ function toggleRadarPlay() {
   radarPlayHandle = setInterval(function() {
     var next = (radarIdx + 1) % radarFrames.length;
     showRadarFrame(next);
-  }, 700);
+  }, 1200);   // Forecast: 1.2s pro Stunde -> ~5 Sek pro 4h-Loop
 }
 function stopRadarPlay() {
   if (radarPlayHandle) { clearInterval(radarPlayHandle); radarPlayHandle = null; }

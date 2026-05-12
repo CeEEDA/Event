@@ -506,6 +506,101 @@ async def kiosk_weather(
     }
 
 
+@router.get("/weather/precip-forecast")
+async def kiosk_precip_forecast(
+    lat: float,
+    lng: float,
+    hours: int = 4,
+    grid: int = 7,
+    radius_km: float = 30.0,
+    user: dict = Depends(_auth_user),
+):
+    """Niederschlags-Vorhersage als Gitter fuer das Kiosk-Regenradar.
+
+    Erzeugt ein `grid` x `grid` Punkte-Gitter um (lat, lng) mit Radius
+    `radius_km` und fragt Open-Meteo in einem einzigen Batch-Call die
+    stuendliche Niederschlagsmenge fuer die naechsten `hours` Stunden ab.
+
+    Liefert pro Frame (Stunde) ein Array aus {lat,lng,p} (p = mm/h).
+    Der Kiosk rendert daraus farbige Rechtecke und animiert ueber die Stunden.
+    """
+    hours = max(1, min(int(hours), 12))
+    grid = max(3, min(int(grid), 11))
+    radius_km = max(5.0, min(float(radius_km), 100.0))
+
+    # Schritt (deg) zwischen Punkten: 1° lat ~= 111 km
+    half = radius_km / 2.0
+    step_deg = (radius_km / 111.0) / max(grid - 1, 1)
+    cell_size_km = radius_km / max(grid - 1, 1)
+    # 1° lng am Aequator = 111 km, korrigiert um cos(lat)
+    import math
+    cos_lat = max(math.cos(math.radians(lat)), 0.1)
+    step_lng = step_deg / cos_lat
+
+    points = []
+    half_idx = (grid - 1) / 2.0
+    for iy in range(grid):
+        for ix in range(grid):
+            plat = lat + (iy - half_idx) * step_deg
+            plng = lng + (ix - half_idx) * step_lng
+            points.append((round(plat, 4), round(plng, 4)))
+
+    # Open-Meteo Batch-Call: comma-separated lat/lng
+    params = {
+        "latitude": ",".join(str(p[0]) for p in points),
+        "longitude": ",".join(str(p[1]) for p in points),
+        "hourly": "precipitation",
+        "forecast_hours": hours,
+        "timezone": "Europe/Berlin",
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=12.0) as client:
+            r = await client.get(OPEN_METEO_BASE, params=params)
+            r.raise_for_status()
+            data = r.json()
+    except _httpx.HTTPError as ex:
+        logger.warning(f"Open-Meteo Precip-Grid Fehler: {ex}")
+        raise HTTPException(status_code=502, detail="Wetterdienst nicht erreichbar")
+
+    # Open-Meteo gibt bei Batch-Call eine Liste von Objekten zurueck (1 pro Punkt)
+    # Bei einzelnem Punkt ein Objekt. Wir normalisieren.
+    if isinstance(data, dict):
+        data = [data]
+
+    if len(data) < len(points):
+        raise HTTPException(status_code=502, detail="Vorhersage-Anzahl stimmt nicht")
+
+    # Zeitsreihe aus erstem Punkt extrahieren (alle Punkte haben gleichen times-array)
+    times = (data[0].get("hourly") or {}).get("time") or []
+    if not times:
+        raise HTTPException(status_code=502, detail="Keine Vorhersage-Zeitreihe")
+
+    # Pro Frame (Stunde): Liste aus (lat, lng, p)
+    frames = []
+    for hi, t in enumerate(times[:hours]):
+        pts = []
+        for pi, p in enumerate(points):
+            d = data[pi]
+            precip_arr = (d.get("hourly") or {}).get("precipitation") or []
+            p_val = precip_arr[hi] if hi < len(precip_arr) else 0.0
+            if p_val is None: p_val = 0.0
+            pts.append({"lat": p[0], "lng": p[1], "p": round(float(p_val), 2)})
+        frames.append({"time": t, "points": pts})
+
+    return {
+        "center_lat": lat,
+        "center_lng": lng,
+        "grid": grid,
+        "radius_km": radius_km,
+        "cell_size_km": round(cell_size_km, 1),
+        "step_lat_deg": round(step_deg, 5),
+        "step_lng_deg": round(step_lng, 5),
+        "hours": hours,
+        "frames": frames,
+        "source": "Open-Meteo",
+    }
+
+
 @router.get("/weather/hourly")
 async def kiosk_weather_hourly(
     lat: float,
