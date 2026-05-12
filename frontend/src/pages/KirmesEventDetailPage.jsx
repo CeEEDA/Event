@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
@@ -81,6 +81,81 @@ export default function KirmesEventDetailPage() {
   const [invoiceConfirm, setInvoiceConfirm] = useState(null); // { type: "single"|"bulk", signupId?, signupName? }
   const [eventInvoices, setEventInvoices] = useState([]);
   const [emuMeters, setEmuMeters] = useState([]);
+
+  // Sortier-Konfig fuer die Anmeldungen-Tabelle (klickbare Spalten-Header).
+  // dir: "asc" | "desc" | null. Bei null = original Reihenfolge (kein Sort).
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+
+  // Steckergroessen in logischer Reihenfolge (klein -> gross).
+  // Werte, die nicht im Mapping stehen, landen alphabetisch dahinter.
+  const _CONN_ORDER = useMemo(() => ({
+    "schuko": 1, "Schuko": 1, "SCHUKO": 1,
+    "cee16": 2, "16A": 2, "16a": 2,
+    "cee32": 3, "32A": 3, "32a": 3,
+    "cee63": 4, "63A": 4, "63a": 4,
+    "cee125": 5, "125A": 5, "125a": 5,
+  }), []);
+  function _connWeight(ct) {
+    if (!ct) return 99;
+    const v = _CONN_ORDER[ct] || _CONN_ORDER[String(ct).toLowerCase()];
+    if (v) return v;
+    // Numerische Werte (z.B. "63") parsen
+    const num = parseInt(String(ct).replace(/\D/g, ""), 10);
+    if (!isNaN(num)) return 10 + num;
+    return 99;
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      // 3-State-Toggle: asc -> desc -> aus
+      if (sortDir === "asc") setSortDir("desc");
+      else if (sortDir === "desc") { setSortKey(null); setSortDir("asc"); }
+    } else {
+      setSortKey(key); setSortDir("asc");
+    }
+  }
+
+  const sortedSignups = useMemo(() => {
+    const arr = (event && event.signups) ? [...event.signups] : [];
+    if (!sortKey) return arr;
+    const dirMul = sortDir === "desc" ? -1 : 1;
+    const cmpStr = (a, b) => (a || "").toString().localeCompare((b || "").toString(), "de", { sensitivity: "base" });
+    arr.sort((a, b) => {
+      let av, bv;
+      switch (sortKey) {
+        case "firma":      av = a.schausteller?.firma || ""; bv = b.schausteller?.firma || ""; return cmpStr(av, bv) * dirMul;
+        case "name":       av = a.schausteller?.name || "";  bv = b.schausteller?.name || "";  return cmpStr(av, bv) * dirMul;
+        case "fahrgeschaeft": av = a.fahrgeschaeft || "";    bv = b.fahrgeschaeft || "";       return cmpStr(av, bv) * dirMul;
+        case "platz":      av = a.platznummer || "";         bv = b.platznummer || "";         return cmpStr(av, bv) * dirMul;
+        case "anschluss":  av = _connWeight(a.connection_type); bv = _connWeight(b.connection_type); return (av - bv) * dirMul;
+        case "preis":      av = parseFloat(a.price ?? a.preis ?? 0); bv = parseFloat(b.price ?? b.preis ?? 0); return (av - bv) * dirMul;
+        case "status":     av = a.payment_status || "";      bv = b.payment_status || "";      return cmpStr(av, bv) * dirMul;
+        case "verbrauch":  av = parseFloat(a.kwh_used ?? 0); bv = parseFloat(b.kwh_used ?? 0); return (av - bv) * dirMul;
+        default: return 0;
+      }
+    });
+    return arr;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, sortKey, sortDir, _CONN_ORDER]);
+
+  // Hilfs-Komponente: sortierbarer Spalten-Header
+  function SortableTh({ k, label, align = "left", className = "" }) {
+    const active = sortKey === k;
+    const indicator = !active ? "" : (sortDir === "asc" ? "▲" : "▼");
+    return (
+      <th
+        className={`px-1.5 py-2 text-${align} select-none cursor-pointer hover:text-fuchsia-600 transition-colors ${active ? "text-fuchsia-700" : ""} ${className}`}
+        onClick={() => toggleSort(k)}
+        data-testid={`sort-${k}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {indicator && <span className="text-[9px]">{indicator}</span>}
+        </span>
+      </th>
+    );
+  }
   const [meterDataMap, setMeterDataMap] = useState({});
   const [linkingMeter, setLinkingMeter] = useState(null);
   const [selectedMeterCombo, setSelectedMeterCombo] = useState("");
@@ -718,7 +793,36 @@ export default function KirmesEventDetailPage() {
             <>
             {/* Mobile Card View */}
             <div className="lg:hidden divide-y divide-gray-100" data-testid="signups-mobile">
-              {(event.signups || []).map(signup => {
+              {/* Sort-Dropdown fuer Mobile (Desktop hat klickbare Header) */}
+              <div className="px-4 py-2 flex items-center gap-2 bg-gray-50/60 text-xs">
+                <span className="text-gray-500">Sortieren:</span>
+                <select
+                  value={sortKey ? `${sortKey}:${sortDir}` : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) { setSortKey(null); return; }
+                    const [k, d] = e.target.value.split(":");
+                    setSortKey(k); setSortDir(d || "asc");
+                  }}
+                  className="bg-white border border-gray-200 rounded px-2 py-1 text-xs"
+                  data-testid="signups-sort-mobile"
+                >
+                  <option value="">Standard</option>
+                  <option value="anschluss:asc">Anschluss (klein → groß)</option>
+                  <option value="anschluss:desc">Anschluss (groß → klein)</option>
+                  <option value="firma:asc">Firma A–Z</option>
+                  <option value="firma:desc">Firma Z–A</option>
+                  <option value="name:asc">Name A–Z</option>
+                  <option value="name:desc">Name Z–A</option>
+                  <option value="fahrgeschaeft:asc">Geschäft A–Z</option>
+                  <option value="fahrgeschaeft:desc">Geschäft Z–A</option>
+                  <option value="platz:asc">Platz A–Z</option>
+                  <option value="preis:desc">Preis (hoch → tief)</option>
+                  <option value="preis:asc">Preis (tief → hoch)</option>
+                  <option value="verbrauch:desc">Verbrauch ↓</option>
+                  <option value="status:asc">Status A–Z</option>
+                </select>
+              </div>
+              {sortedSignups.map(signup => {
                 const sch = signup.schausteller;
                 const isExpanded = expandedSignup === signup.id;
                 const isQrLinked = !!(signup.emu_device_id && signup.emu_meter_id);
@@ -1035,21 +1139,21 @@ export default function KirmesEventDetailPage() {
               <table className="w-full text-sm min-w-[1000px]" data-testid="signups-table">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-[11px] text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    <th className="px-1.5 py-2 text-left">Firma</th>
-                    <th className="px-1.5 py-2 text-left">Name</th>
-                    <th className="px-1.5 py-2 text-left">Geschäft</th>
-                    <th className="px-1.5 py-2 text-left">Platz</th>
-                    <th className="px-1.5 py-2 text-left">Anschl.</th>
+                    <SortableTh k="firma" label="Firma" />
+                    <SortableTh k="name" label="Name" />
+                    <SortableTh k="fahrgeschaeft" label="Geschäft" />
+                    <SortableTh k="platz" label="Platz" />
+                    <SortableTh k="anschluss" label="Anschl." />
                     <th className="px-1.5 py-2 text-right">Einbau</th>
                     <th className="px-1.5 py-2 text-right">Aktuell</th>
-                    <th className="px-1.5 py-2 text-right">Verbr.</th>
-                    <th className="px-1.5 py-2 text-right">Preis</th>
-                    <th className="px-1.5 py-2 text-left">Status</th>
+                    <SortableTh k="verbrauch" label="Verbr." align="right" />
+                    <SortableTh k="preis" label="Preis" align="right" />
+                    <SortableTh k="status" label="Status" />
                     <th className="px-1.5 py-2 text-right w-24"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(event.signups || []).map(signup => {
+                  {sortedSignups.map(signup => {
                     const sch = signup.schausteller;
                     const isExpanded = expandedSignup === signup.id;
                     const isQrLinked = !!(signup.emu_device_id && signup.emu_meter_id);
