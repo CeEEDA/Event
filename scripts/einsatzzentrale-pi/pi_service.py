@@ -451,6 +451,17 @@ async def proxy(path: str, request: Request) -> Response:
     )
 
 
+# Catch-All: jede unbekannte URL (z.B. nach versehentlichem Bookmark, alter
+# Pfad nach Update, Mistype) -> Redirect zur Kiosk-Page. So kann es im
+# Vollbild-Modus keine 404-Seite mehr geben.
+@app.get("/{full_path:path}")
+async def catch_all_redirect(full_path: str):
+    if full_path.startswith("api/"):
+        # Sollte schon vom /api/{path:path}-Handler abgefangen sein - safety net.
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return RedirectResponse("/kiosk", status_code=307)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PI_PORT", "8001")))
