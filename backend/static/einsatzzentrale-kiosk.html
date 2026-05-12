@@ -390,6 +390,46 @@ input { font-family: inherit; }
   border-radius:7px; background:#fff; font-size:11px; font-family:inherit; cursor:pointer; outline:none; }
 .multi-toolbar-row .count { margin-left:auto; font-size:11px; color:var(--text-muted); white-space:nowrap; }
 
+/* Multi-Trupp-Cards (kompakter als Vollbild, aber mit Pause/Bearbeiten/Löschen) */
+.multi-trupps-wrap { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.multi-trupp-card { background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:8px 10px; min-width:160px; flex:0 1 auto; display:flex; flex-direction:column; gap:4px; }
+.multi-trupp-card.busy { border-color:#fde68a; background:var(--amber-bg); }
+.multi-trupp-card.inactive { opacity:.55; background:#f9fafb; }
+.multi-trupp-card .mt-name { font-weight:600; font-size:13px; display:flex; align-items:center; gap:6px; }
+.multi-trupp-card .mt-status-dot { width:8px; height:8px; border-radius:999px; }
+.multi-trupp-card .mt-status-dot.free { background:var(--emerald); }
+.multi-trupp-card .mt-status-dot.busy { background:var(--amber); }
+.multi-trupp-card .mt-status-dot.paused { background:#9ca3af; }
+.multi-trupp-card .mt-members { font-size:10px; color:var(--text-muted); line-height:1.3; }
+.multi-trupp-card .mt-actions { display:flex; gap:4px; margin-top:2px; }
+.multi-trupp-card .mt-actions .btn { height:26px; font-size:10px; padding:0 8px; border-radius:6px; }
+
+/* Inline-Form fuer Stoerung anlegen (oben im Diary-Pane) */
+.multi-diary-form-card { background:#fafbfc; border:1px solid var(--border); border-radius:12px;
+  padding:12px 14px; margin-bottom:14px; }
+.multi-diary-form-card .mdf-head { display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:8px; cursor:pointer; user-select:none; }
+.multi-diary-form-card .mdf-head h4 { margin:0; font-size:13px; font-weight:700; color:var(--fuchsia-dark); }
+.multi-diary-form-card .mdf-head .mdf-toggle { font-size:11px; color:var(--text-muted); }
+.multi-diary-form-card .mdf-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+.multi-diary-form-card .mdf-grid input { width:100%; height:34px; padding:0 10px; border:1px solid var(--border);
+  border-radius:7px; font-size:12px; background:#fff; outline:none; }
+.multi-diary-form-card .mdf-grid input:focus { border-color:var(--fuchsia); }
+.multi-diary-form-card .mdf-fullrow { grid-column: 1 / -1; }
+.multi-diary-form-card textarea { width:100%; min-height:60px; padding:8px 10px; border:1px solid var(--border);
+  border-radius:7px; font-size:13px; font-family:inherit; background:#fff; outline:none; resize:vertical; box-sizing:border-box; }
+.multi-diary-form-card textarea:focus { border-color:var(--fuchsia); }
+.multi-diary-form-card .mdf-label { font-size:10px; font-weight:600; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--text-muted); margin-bottom:3px; }
+.multi-diary-form-card .mdf-trupps { display:flex; flex-wrap:wrap; gap:4px; }
+.multi-diary-form-card .mdf-trupps button { font-size:11px; padding:4px 10px; border-radius:999px;
+  border:1px solid var(--border); background:#fff; cursor:pointer; transition:all .15s; }
+.multi-diary-form-card .mdf-trupps button.on { background:var(--fuchsia); color:#fff; border-color:var(--fuchsia); }
+.multi-diary-form-card .mdf-trupps button.busy { opacity:.7; }
+.multi-diary-form-card .mdf-actions { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:8px; }
+.multi-diary-form-card .mdf-err { color:#dc2626; font-size:11px; margin-right:auto; }
+
 /* ========== DIARY (Einsatztagebuch) ============================== */
 .diary-stats { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
 .diary-stat { flex:1; min-width:120px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
@@ -1159,6 +1199,7 @@ function renderMultiPanel() {
           '</div>' +
           '<div class="multi-pane-body">' +
             '<div id="multi-diary-trupps"></div>' +
+            '<div id="multi-diary-form"></div>' +
             '<div id="multi-diary-entries"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
           '</div>' +
         '</div>' +
@@ -1269,30 +1310,65 @@ function loadMultiDiary() {
   });
 }
 
-function paintMultiDiary() {
+function paintMultiDiary(data) {
+  // data ist optional (wenn von loadDiary mit Summary-Payload aufgerufen)
+  if (data && (data.open != null || data.resolved != null)) {
+    diaryState._summary = { open: data.open || 0, resolved: data.resolved || 0 };
+  }
   var sum = diaryState._summary || { open: 0, resolved: 0 };
   var cntEl = document.getElementById("multi-diary-cnt");
   if (cntEl) cntEl.textContent = sum.open + " offen · " + sum.resolved + " behoben";
 
-  // Trupps kompakt (Pills) - immer sichtbar
+  // Trupps als richtige Karten (mit Pause/Bearbeiten/Loeschen) - wie im Portal
   var ta = document.getElementById("multi-diary-trupps");
   if (diaryState.trupps.length) {
-    ta.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">' +
+    ta.innerHTML = '<div class="multi-trupps-wrap">' +
       diaryState.trupps.map(function(t) {
-        var color = !t.is_active ? "background:#e5e7eb;color:#6b7280" :
-                    t.is_busy ? "background:" + "var(--amber-bg)" + ";color:#92400e" :
-                    "background:" + "var(--emerald-bg)" + ";color:#047857";
-        return '<button class="multi-trupp-pill" data-id="' + esc(t.id) + '" style="' + color +
-               ';border:none;font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600;">' +
-               esc(t.name) + (t.is_busy ? " ●" : "") + '</button>';
+        var cls = !t.is_active ? "inactive" : (t.is_busy ? "busy" : "");
+        var dotCls = !t.is_active ? "paused" : (t.is_busy ? "busy" : "free");
+        var statusLbl = !t.is_active ? "Pause" : (t.is_busy ? "Unterwegs" : "Verfügbar");
+        var members = (t.members || []).filter(Boolean).join(", ");
+        return '<div class="multi-trupp-card ' + cls + '" data-id="' + esc(t.id) + '">' +
+                 '<div class="mt-name"><span class="mt-status-dot ' + dotCls + '"></span>' + esc(t.name) +
+                   '<span style="font-size:9px;color:var(--text-muted);font-weight:500;text-transform:uppercase;margin-left:auto;">' + statusLbl + '</span>' +
+                 '</div>' +
+                 (members ? '<div class="mt-members">👥 ' + esc(members) + '</div>' : '<div class="mt-members" style="font-style:italic;opacity:.6;">Keine Mitglieder</div>') +
+                 '<div class="mt-actions">' +
+                   '<button class="btn mt-pause" data-id="' + esc(t.id) + '">' + (t.is_active ? "⏸ Pause" : "▶ Aktivieren") + '</button>' +
+                   '<button class="btn mt-edit"  data-id="' + esc(t.id) + '">✎ Bearbeiten</button>' +
+                   '<button class="btn danger mt-del" data-id="' + esc(t.id) + '">🗑</button>' +
+                 '</div>' +
+               '</div>';
       }).join("") + '</div>';
-    ta.querySelectorAll(".multi-trupp-pill").forEach(function(b) {
-      b.addEventListener("click", function() {
+    ta.querySelectorAll(".mt-pause").forEach(function(b){
+      b.addEventListener("click", function(ev) { ev.stopPropagation();
+        var t = diaryState.trupps.find(function(x){return x.id === b.dataset.id;});
+        if (!t) return;
+        var pk = encodeURIComponent(state.order.primary_key);
+        api("/api/orders/" + pk + "/trupps/" + encodeURIComponent(t.id),
+            { method: "PUT", body: { is_active: !t.is_active } }).then(loadMultiDiary).catch(function(ex){ alert(ex.message); });
+      });
+    });
+    ta.querySelectorAll(".mt-edit").forEach(function(b){
+      b.addEventListener("click", function(ev) { ev.stopPropagation();
         var t = diaryState.trupps.find(function(x){return x.id === b.dataset.id;});
         if (t) openTruppModal(t);
       });
     });
+    ta.querySelectorAll(".mt-del").forEach(function(b){
+      b.addEventListener("click", function(ev) { ev.stopPropagation();
+        var t = diaryState.trupps.find(function(x){return x.id === b.dataset.id;});
+        if (!t) return;
+        if (!confirm("Trupp „" + t.name + "\" wirklich löschen?")) return;
+        var pk = encodeURIComponent(state.order.primary_key);
+        api("/api/orders/" + pk + "/trupps/" + encodeURIComponent(t.id),
+            { method: "DELETE" }).then(loadMultiDiary).catch(function(ex){ alert(ex.message); });
+      });
+    });
   } else { ta.innerHTML = ""; }
+
+  // Inline-Formular zum Anlegen einer Stoerung (immer sichtbar oben)
+  paintMultiDiaryForm();
 
   // Filter anwenden: Suche + Status
   var q = (multiState.diarySearch || "").trim().toLowerCase();
@@ -1359,8 +1435,127 @@ function paintMultiDiary() {
     if (e) openEntryModal(e);
   }); });
   area.querySelectorAll(".multi-e-del").forEach(function(b){ b.addEventListener("click", function(){
-    if (typeof deleteEntry === "function") deleteEntry(b.dataset.id);
+    if (!confirm("Diesen Eintrag wirklich löschen?")) return;
+    var pk = encodeURIComponent(state.order.primary_key);
+    api("/api/orders/" + pk + "/diary/" + encodeURIComponent(b.dataset.id), { method: "DELETE" })
+      .then(loadMultiDiary).catch(function(ex){ alert("Fehler: " + ex.message); });
   }); });
+}
+
+// Inline-Formular fuer neue Stoerung (immer sichtbar im Multi-Diary-Pane)
+function paintMultiDiaryForm() {
+  var host = document.getElementById("multi-diary-form"); if (!host) return;
+  // Wir bauen die Form nur EINMAL (sonst gehen Eingaben beim Auto-Refresh verloren).
+  // Nur die Trupp-Pills werden bei Bedarf aktualisiert.
+  if (host.dataset.built === "1") {
+    paintMultiDiaryFormTrupps(host);
+    return;
+  }
+  host.dataset.built = "1";
+  host.innerHTML =
+    '<div class="multi-diary-form-card">' +
+      '<div class="mdf-head" id="mdf-toggle">' +
+        '<h4>📞 Neue Störung anlegen</h4>' +
+        '<span class="mdf-toggle" id="mdf-toggle-lbl">▼ einklappen</span>' +
+      '</div>' +
+      '<div id="mdf-body">' +
+        '<div class="mdf-grid">' +
+          '<div><div class="mdf-label">Anrufer/Gast</div><input type="text" id="mdf-name" placeholder="Name" autocomplete="off" /></div>' +
+          '<div><div class="mdf-label">Telefon</div><input type="tel" id="mdf-phone" placeholder="Telefonnummer" autocomplete="off" /></div>' +
+          '<div class="mdf-fullrow"><div class="mdf-label">Standort / Position</div><input type="text" id="mdf-loc" placeholder="z.B. Verteiler 3, Festzelt…" autocomplete="off" /></div>' +
+          '<div class="mdf-fullrow"><div class="mdf-label">Grund / Beschreibung *</div><textarea id="mdf-reason" placeholder="Was ist passiert?" required></textarea></div>' +
+          '<div class="mdf-fullrow"><div class="mdf-label">Trupp zuweisen</div><div class="mdf-trupps" id="mdf-trupps"></div></div>' +
+        '</div>' +
+        '<div class="mdf-actions">' +
+          '<span class="mdf-err" id="mdf-err"></span>' +
+          '<label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px;cursor:pointer;">' +
+            '<input type="checkbox" id="mdf-nachtrag" /> Nachtrag</label>' +
+          '<button class="btn" id="mdf-clear">Zurücksetzen</button>' +
+          '<button class="btn primary" id="mdf-submit">+ Anlegen</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  // Collapse-Toggle
+  document.getElementById("mdf-toggle").addEventListener("click", function() {
+    var body = document.getElementById("mdf-body");
+    var lbl = document.getElementById("mdf-toggle-lbl");
+    var collapsed = body.style.display === "none";
+    body.style.display = collapsed ? "" : "none";
+    lbl.textContent = collapsed ? "▼ einklappen" : "▲ ausklappen";
+  });
+
+  // Header "+ Störung"-Button: scrollt zur Form und fokussiert Textarea
+  var headerBtn = document.getElementById("multi-diary-new");
+  if (headerBtn) {
+    headerBtn.onclick = function() {
+      var body = document.getElementById("mdf-body");
+      if (body && body.style.display === "none") {
+        body.style.display = "";
+        document.getElementById("mdf-toggle-lbl").textContent = "▼ einklappen";
+      }
+      var r = document.getElementById("mdf-reason");
+      if (r) { r.focus(); r.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    };
+  }
+
+  document.getElementById("mdf-clear").addEventListener("click", function() {
+    document.getElementById("mdf-name").value = "";
+    document.getElementById("mdf-phone").value = "";
+    document.getElementById("mdf-loc").value = "";
+    document.getElementById("mdf-reason").value = "";
+    document.getElementById("mdf-nachtrag").checked = false;
+    document.querySelectorAll("#mdf-trupps button.on").forEach(function(b){ b.classList.remove("on"); });
+    document.getElementById("mdf-err").textContent = "";
+  });
+
+  document.getElementById("mdf-submit").addEventListener("click", function(ev) {
+    ev.preventDefault();
+    var reason = document.getElementById("mdf-reason").value.trim();
+    var errEl = document.getElementById("mdf-err"); errEl.textContent = "";
+    if (!reason) { errEl.textContent = "Grund/Beschreibung ist erforderlich."; return; }
+    var selIds = Array.from(document.querySelectorAll("#mdf-trupps button.on")).map(function(b){ return b.dataset.id; });
+    var payload = {
+      caller_name: document.getElementById("mdf-name").value,
+      caller_phone: document.getElementById("mdf-phone").value,
+      location: document.getElementById("mdf-loc").value,
+      reason: reason,
+      is_nachtrag: document.getElementById("mdf-nachtrag").checked,
+      assigned_trupp_ids: selIds
+    };
+    var btn = document.getElementById("mdf-submit");
+    btn.disabled = true; var oldTxt = btn.textContent; btn.textContent = "Speichere…";
+    var pk = encodeURIComponent(state.order.primary_key);
+    api("/api/orders/" + pk + "/diary", { method: "POST", body: payload })
+      .then(function() {
+        // Reset und Liste neu laden
+        document.getElementById("mdf-clear").click();
+        btn.disabled = false; btn.textContent = oldTxt;
+        loadMultiDiary();
+      })
+      .catch(function(ex) { errEl.textContent = ex.message; btn.disabled = false; btn.textContent = oldTxt; });
+  });
+
+  paintMultiDiaryFormTrupps(host);
+}
+
+function paintMultiDiaryFormTrupps(host) {
+  var pickEl = host.querySelector("#mdf-trupps"); if (!pickEl) return;
+  // Aktive Auswahl merken (User hat ggf. schon Trupps angeklickt)
+  var prevSel = new Set(Array.from(pickEl.querySelectorAll("button.on")).map(function(b){ return b.dataset.id; }));
+  var active = diaryState.trupps.filter(function(t){ return t.is_active; });
+  if (!active.length) {
+    pickEl.innerHTML = '<span style="font-size:11px;color:var(--text-muted);font-style:italic;">Keine aktiven Trupps – „+ Trupp" klicken</span>';
+    return;
+  }
+  pickEl.innerHTML = active.map(function(t) {
+    var on = prevSel.has(t.id) ? " on" : "";
+    var busy = t.is_busy ? " busy" : "";
+    return '<button type="button" class="' + on + busy + '" data-id="' + esc(t.id) + '">' + esc(t.name) + (t.is_busy ? " (unterwegs)" : "") + '</button>';
+  }).join("");
+  pickEl.querySelectorAll("button").forEach(function(b) {
+    b.addEventListener("click", function(ev) { ev.preventDefault(); b.classList.toggle("on"); });
+  });
 }
 
 function loadMultiArtikel() {
