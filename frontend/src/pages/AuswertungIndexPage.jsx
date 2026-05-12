@@ -5,7 +5,7 @@ import { ArrowLeft, BarChart3, FileText, ChevronRight, Fuel, Wrench, Heart, Cloc
 const subPages = [
   {
     key: "stundenberichte",
-    label: "Stundenberichte",
+    label: "Projektberichte",
     description: "Alle Projektberichte mit Volltextsuche – inkl. Blanko-Berichte",
     icon: ClockIcon,
     color: "blue",

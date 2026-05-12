@@ -72,7 +72,7 @@ export default function StundenberichteListPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <ClipboardList className="w-5 h-5 text-fuchsia-600" />
-          <h1 className="text-lg font-semibold text-gray-900">Stundenberichte</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Projektberichte</h1>
           <span className="ml-auto text-xs text-gray-400">{filtered.length} / {reports.length}</span>
         </div>
       </header>
