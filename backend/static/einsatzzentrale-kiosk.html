@@ -612,6 +612,12 @@ function renderUserSelect() {
         '<div class="kiosk-sep"></div>' +
         '<div><div class="kiosk-title">Einsatzzentrale</div><div class="kiosk-sub">Wähle deinen Namen, um dich anzumelden</div></div>' +
       '</div>' +
+      '<button id="hard-refresh-btn" class="btn" title="Kiosk-Seite neu laden (Cache umgehen)" style="padding:0 12px;">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">' +
+          '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>' +
+          '<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>' +
+        '</svg>' +
+      '</button>' +
     '</div></header>' +
     '<main class="kiosk-main">' +
       '<div class="kiosk-search">' +
@@ -646,6 +652,7 @@ function renderUserSelect() {
     area.appendChild(grid);
   }
   input.addEventListener("input", function(){ paint(input.value); });
+  attachLogout();   // verdrahtet den Hard-Refresh-Button (Logout fehlt hier, ist OK)
   api("/api/einsatzzentrale/users").then(function(data){ allUsers = data.users || []; paint(""); })
     .catch(function(err){ area.innerHTML = '<div class="alert error">Server nicht erreichbar: ' + esc(err.message) + '</div>'; });
 }
@@ -663,7 +670,15 @@ function renderPassword() {
       '<div class="kiosk-brand"><img class="kiosk-logo" src="' + LOGO_URL + '" alt="Eventenergie" onerror="this.outerHTML=\'<div class=\\\'kiosk-logo-fallback\\\'>Eventenergie</div>\'" />' +
         '<div class="kiosk-sep"></div><div><div class="kiosk-title">Einsatzzentrale</div><div class="kiosk-sub">Passwort eingeben</div></div>' +
       '</div>' +
-      '<button id="back-btn" class="btn">← Zurück</button>' +
+      '<div style="display:flex;gap:8px;align-items:center;">' +
+        '<button id="hard-refresh-btn" class="btn" title="Kiosk-Seite neu laden (Cache umgehen)" style="padding:0 12px;">' +
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">' +
+            '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>' +
+            '<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>' +
+          '</svg>' +
+        '</button>' +
+        '<button id="back-btn" class="btn">← Zurück</button>' +
+      '</div>' +
     '</div></header>' +
     '<main class="kiosk-main">' +
       '<form id="pw-form" class="login-card">' +
@@ -678,6 +693,7 @@ function renderPassword() {
     '</main></div>'
   ));
   document.getElementById("back-btn").addEventListener("click", function(){ state.pickedUser = null; state.phase = "user_select"; render(); });
+  attachLogout();   // Hard-Refresh-Button verdrahten
   setTimeout(function(){ var pw = document.getElementById("pw"); if (pw) pw.focus(); }, 50);
   document.getElementById("pw-form").addEventListener("submit", function(e) {
     e.preventDefault();
@@ -710,6 +726,12 @@ function renderHeader(subtitle) {
         '<div class="kiosk-sep"></div><div><div class="kiosk-title">Einsatzzentrale</div><div class="kiosk-sub">' + esc(subtitle || "") + '</div></div>' +
       '</div>' +
       '<div class="user-info">' +
+        '<button id="hard-refresh-btn" class="btn" title="Kiosk-Seite neu laden (Cache umgehen)" style="padding:0 12px;">' +
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">' +
+            '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>' +
+            '<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>' +
+          '</svg>' +
+        '</button>' +
         '<div style="text-align:right;"><div style="font-size:14px;font-weight:500;">' + esc(u ? u.name : "") + '</div><div style="font-size:10px;text-transform:uppercase;color:#6b7280;font-weight:600;">' + esc(u ? u.role : "") + '</div></div>' +
         '<div class="av-small' + (freelancer ? ' freelancer' : '') + '">' + esc(initials(u ? u.name : "")) + '</div>' +
         '<button id="logout-btn" class="btn danger">⎋ Abmelden</button>' +
@@ -724,6 +746,18 @@ function attachLogout() {
     state.token = null; state.user = null; state.order = null; state.pickedUser = null; state.phase = "user_select";
     clearSession();
     render();
+  });
+  var r = document.getElementById("hard-refresh-btn");
+  if (r) r.addEventListener("click", function() {
+    // Hard-Reload: Cache-Bust via Timestamp + assign (umgeht Reload-Override falls vorhanden).
+    // Token bleibt in localStorage, User bleibt eingeloggt.
+    try {
+      var spinSvg = r.querySelector("svg");
+      if (spinSvg) { spinSvg.style.transition = "transform .8s linear"; spinSvg.style.transform = "rotate(360deg)"; }
+    } catch(e) {}
+    var u = new URL(window.location.href);
+    u.searchParams.set("_t", Date.now().toString());
+    setTimeout(function(){ window.location.assign(u.toString()); }, 100);
   });
 }
 
