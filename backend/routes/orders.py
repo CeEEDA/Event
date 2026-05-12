@@ -342,6 +342,7 @@ class CopyToOrder(BaseModel):
     target_order_pk: int
     asset_ids: list[str] = []
     generator_ids: list[str] = []
+    document_ids: list[str] = []
 
 
 def _haversine_km(lat1, lng1, lat2, lng2):
@@ -1082,7 +1083,7 @@ async def copy_assets_and_generators(
         raise HTTPException(403, "Nur Admins duerfen kopieren")
     if data.target_order_pk == order_pk:
         raise HTTPException(400, "Ziel-Auftrag muss vom aktuellen Auftrag verschieden sein")
-    if not data.asset_ids and not data.generator_ids:
+    if not data.asset_ids and not data.generator_ids and not data.document_ids:
         raise HTTPException(400, "Keine Auswahl uebergeben")
     target = await _db.orders_cache.find_one(
         {"primary_key": data.target_order_pk},
@@ -1179,10 +1180,54 @@ async def copy_assets_and_generators(
             })
             copied_generators += 1
 
+    copied_documents = 0
+    if data.document_ids:
+        # Dokumente werden physisch dupliziert: DB-Doc + Datei auf Platte.
+        # order_pk wird in order_documents als STRING gespeichert (anders als
+        # bei order_assets), daher str() Cast hier. Datei-Layout:
+        # storage/order_documents/{order_pk}/{uuid}.{ext}
+        import shutil as _shutil
+        src_pk_str = str(order_pk)
+        tgt_pk_str = str(data.target_order_pk)
+        tgt_dir = _os.path.join(_ORDER_DOC_STORAGE, tgt_pk_str)
+        _os.makedirs(tgt_dir, exist_ok=True)
+        cursor = _db.order_documents.find(
+            {"order_pk": src_pk_str, "id": {"$in": data.document_ids}}
+        )
+        async for doc in cursor:
+            doc.pop("_id", None)
+            old_filename = doc.get("filename") or ""
+            # Extension aus altem Filename uebernehmen damit ZIP/MIME stimmen
+            _, ext = _os.path.splitext(old_filename)
+            new_id = str(uuid.uuid4())
+            new_filename = f"{new_id}{ext}"
+            src_path = _os.path.join(_ORDER_DOC_STORAGE, src_pk_str, old_filename)
+            dst_path = _os.path.join(tgt_dir, new_filename)
+            if not _os.path.exists(src_path):
+                # Quelldatei fehlt - DB-Eintrag ueberspringen damit kein
+                # toter Verweis im Ziel-Auftrag landet.
+                continue
+            try:
+                _shutil.copy2(src_path, dst_path)
+            except Exception:
+                continue
+            new_doc = dict(doc)
+            new_doc["id"] = new_id
+            new_doc["order_pk"] = tgt_pk_str
+            new_doc["filename"] = new_filename
+            new_doc["uploaded_at"] = now
+            new_doc["uploaded_by"] = creator
+            # Original-Name mit Hinweis ergaenzen waere zu invasiv -
+            # stattdessen den ursprünglichen Namen behalten, die Audit-Spur
+            # kommt aus uploaded_by + uploaded_at.
+            await _db.order_documents.insert_one(new_doc)
+            copied_documents += 1
+
     return {
         "ok": True,
         "copied_assets": copied_assets,
         "copied_generators": copied_generators,
+        "copied_documents": copied_documents,
         "target": target,
     }
 

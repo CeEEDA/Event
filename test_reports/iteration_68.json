@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend e2e test of document copy-to-order feature on OrderDocumentsPage. Full flow verified successfully: enter copy mode -> navigate into 'plaene' folder -> select doc via checkbox -> floating action bar appears -> open target dialog -> search by 'NLS' -> click option pk=7 -> confirm -> toast 'kopiert' -> dialog/bar close -> copy mode exits. Target order /orders/7 received duplicate with same original_name, same kategorie='plaene', new id, size=298, uploaded_by='Administrator'. Action toolbar (kat-select / preview / download / delete) correctly HIDDEN per row during copy mode.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/src/pages/OrderDocumentsPage.jsx",
+    "/app/backend/tests/test_copy_to_order_iteration67.py"
+  ],
+  "action_items": [
+    "Cosmetic note for review_request author: actual route is '/orders/:pk/dokumente' (German spelling), not '/orders/:pk/documents'. Request text said /documents; please document the correct path in future tickets. No code change required."
+  ],
+  "critical_code_review_comments": [
+    "OrderDocumentsPage.jsx is 602 lines, approaching the 700-line guidance. Consider extracting the Copy-Modus sub-tree (action bar + target dialog + helpers) into a small reusable hook/component shared with OrderDetailPage to reduce duplication and keep file focused.",
+    "submitCopyToOrder uses window.confirm(); the rest of the dialog is custom Tailwind so this single native confirm is UX-inconsistent. Consider using shadcn AlertDialog for parity.",
+    "The copy target search effect re-runs on every keystroke with 300ms debounce but does not abort the previous in-flight request; rapid typing may show stale results out-of-order. Low risk in practice."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@test.com / password",
+  "seed_data_creation": "Uploaded 1 PDF (TEST_iteration68_plan.pdf, kategorie=plaene) to order 6 for the test, then cleaned up both the source doc and the duplicated copy on order 7 after testing. Both orders end with 0 docs (original state).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Document copy flow on OrderDocumentsPage is fully working e2e (iteration_68). Backend POST /api/orders/epirent/{src}/copy-to with document_ids was already verified in iteration_67 (test_copy_to_order_iteration67.py). The frontend route for the docs page is /orders/:pk/dokumente (German) not /documents. Asset/generator copy regression on /orders/{pk} was previously verified (iteration_67). Note: ?tab=articles query param does not seem to drive initial tab selection on OrderDetailPage (it loads Karte tab), but this is unrelated to current change and was not modified in this iteration.",
+  "rca of the issue": "No issues found. Initial test attempt failed because review_request specified '/documents' route but actual code uses '/dokumente'. Corrected URL and re-ran — all assertions pass."
+}

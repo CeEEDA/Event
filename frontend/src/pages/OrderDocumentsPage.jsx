@@ -3,10 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import api, { getErrorMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Upload, FileText, Trash2, Download, Eye,
   FolderOpen, ClipboardCheck, Map, Camera, FileBox, ChevronRight, X,
-  Archive,
+  Archive, Copy, CheckSquare, Square, Search, Loader2,
 } from "lucide-react";
 
 import CameraCapture from "../components/CameraCapture";
@@ -43,6 +44,17 @@ export default function OrderDocumentsPage() {
   const [previewDoc, setPreviewDoc] = useState(null);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
+
+  // ── Copy-Modus (Admin): Dokumente in einen anderen Auftrag duplizieren.
+  // Identische UX wie auf der OrderDetailPage (Artikel/Generatoren), damit
+  // der User das Muster wiedererkennt.
+  const [copyMode, setCopyMode] = useState(false);
+  const [selectedDocIds, setSelectedDocIds] = useState(() => new Set());
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copySearch, setCopySearch] = useState("");
+  const [copyResults, setCopyResults] = useState([]);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [copySubmitting, setCopySubmitting] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -153,6 +165,66 @@ export default function OrderDocumentsPage() {
   };
   const katLabel = (key) => KATEGORIEN.find(k => k.key === key)?.label || key;
 
+  // ── Copy-Modus Helpers ──
+  const toggleCopyMode = () => {
+    setCopyMode((prev) => {
+      const next = !prev;
+      if (!next) setSelectedDocIds(new Set());
+      return next;
+    });
+  };
+  const toggleDocSelected = (id) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!copyDialogOpen) return;
+    const timer = setTimeout(async () => {
+      setCopyLoading(true);
+      try {
+        const { data } = await api.get(`/orders/epirent-search/quick`, {
+          params: { q: copySearch, exclude_pk: pk, limit: 25 },
+        });
+        setCopyResults(data.orders || []);
+      } catch {
+        setCopyResults([]);
+      } finally {
+        setCopyLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [copySearch, copyDialogOpen, pk]);
+
+  const submitCopyToOrder = async (targetOrderPk, targetLabel) => {
+    const ids = Array.from(selectedDocIds);
+    if (ids.length === 0) {
+      toast.error("Bitte mindestens ein Dokument auswaehlen");
+      return;
+    }
+    if (!window.confirm(`${ids.length} Dokument${ids.length === 1 ? "" : "e"} nach "${targetLabel}" kopieren?`)) return;
+    setCopySubmitting(true);
+    try {
+      const { data } = await api.post(`/orders/epirent/${pk}/copy-to`, {
+        target_order_pk: targetOrderPk,
+        asset_ids: [],
+        generator_ids: [],
+        document_ids: ids,
+      });
+      toast.success(`${data.copied_documents || 0} Dokument${(data.copied_documents || 0) === 1 ? "" : "e"} kopiert nach ${targetLabel}`);
+      setCopyDialogOpen(false);
+      setCopyMode(false);
+      setSelectedDocIds(new Set());
+    } catch (err) {
+      toast.error(getErrorMsg(err) || "Kopieren fehlgeschlagen");
+    } finally {
+      setCopySubmitting(false);
+    }
+  };
+
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Laden...</div>;
 
   const folderDocs = activeFolder ? docs.filter(d => d.kategorie === activeFolder) : [];
@@ -175,6 +247,19 @@ export default function OrderDocumentsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Admin: Kopier-Modus toggle - duplicates docs into another order */}
+            {isAdmin && docs.length > 0 && (
+              <Button
+                variant="outline" size="sm"
+                onClick={toggleCopyMode}
+                className={copyMode ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100" : "text-gray-600"}
+                data-testid="copy-mode-toggle-docs"
+                title="Dokumente in einen anderen Auftrag kopieren"
+              >
+                <Copy className="w-4 h-4 mr-1" />
+                {copyMode ? "Auswahl beenden" : "Kopier-Modus"}
+              </Button>
+            )}
             {/* Camera button */}
             <Button variant="outline" size="sm" onClick={() => setShowCamera(true)}
               className="text-gray-600" data-testid="camera-btn">
@@ -239,7 +324,8 @@ export default function OrderDocumentsPage() {
               <div className="space-y-2">
                 {folderDocs.map(doc => (
                   <DocRow key={doc.id} doc={doc} isAdmin={isAdmin} onDelete={handleDelete} onPreview={setPreviewDoc}
-                    onChangeKat={handleChangeKategorie} getFileUrl={getFileUrl} isImage={isImage} isPdf={isPdf} formatSize={formatSize} />
+                    onChangeKat={handleChangeKategorie} getFileUrl={getFileUrl} isImage={isImage} isPdf={isPdf} formatSize={formatSize}
+                    copyMode={copyMode} isSelected={selectedDocIds.has(doc.id)} onToggleSelect={toggleDocSelected} />
                 ))}
               </div>
             )}
@@ -347,29 +433,151 @@ export default function OrderDocumentsPage() {
           }}
         />
       )}
+
+      {/* ── Copy-Modus: Floating Action Bar (sticky bottom) ── */}
+      {copyMode && selectedDocIds.size > 0 && (
+        <div
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9000] bg-white border border-emerald-200 shadow-2xl rounded-full px-4 py-2 flex items-center gap-3"
+          data-testid="copy-action-bar-docs"
+        >
+          <span className="text-xs font-medium text-emerald-700">
+            {selectedDocIds.size} Dokument{selectedDocIds.size === 1 ? "" : "e"} ausgewaehlt
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedDocIds(new Set())}
+            className="text-xs text-gray-400 hover:text-gray-700 px-2"
+            data-testid="copy-clear-docs"
+          >
+            Zuruecksetzen
+          </button>
+          <button
+            type="button"
+            onClick={() => { setCopySearch(""); setCopyResults([]); setCopyDialogOpen(true); }}
+            className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium inline-flex items-center gap-1.5"
+            data-testid="copy-open-target-picker-docs"
+          >
+            <Copy className="w-3.5 h-3.5" /> Kopieren nach...
+          </button>
+        </div>
+      )}
+
+      {/* ── Copy-Target-Dialog: Auftrag auswaehlen ── */}
+      {copyDialogOpen && (
+        <div className="fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4" onClick={() => setCopyDialogOpen(false)} data-testid="copy-target-dialog-docs">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Copy className="w-4 h-4 text-emerald-500" />
+                <h3 className="text-base font-semibold text-gray-900">In welchen Auftrag kopieren?</h3>
+              </div>
+              <button onClick={() => setCopyDialogOpen(false)} className="text-gray-400 hover:text-gray-600 p-1" data-testid="copy-target-close-docs">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-3 bg-emerald-50/50 border-b border-emerald-100 text-xs text-emerald-900">
+              <strong>{selectedDocIds.size}</strong> Dokument{selectedDocIds.size === 1 ? "" : "e"} werden in den Ziel-Auftrag dupliziert (inkl. Datei + Kategorie). Die Originale bleiben im aktuellen Auftrag.
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                <Input
+                  type="text"
+                  autoFocus
+                  value={copySearch}
+                  onChange={(e) => setCopySearch(e.target.value)}
+                  placeholder="Auftrag suchen: Event, Auftrags-Nr. oder Kunde..."
+                  className="w-full h-9 pl-8 pr-3 text-sm"
+                  data-testid="copy-target-search-docs"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {copyLoading ? (
+                <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" /> Suche...
+                </div>
+              ) : copyResults.length === 0 ? (
+                <div className="text-center py-8 text-sm text-gray-400" data-testid="copy-target-empty-docs">
+                  {copySearch.trim() ? `Keine Auftraege passen zu "${copySearch}"` : "Tippe um Auftraege zu suchen"}
+                </div>
+              ) : (
+                <ul className="space-y-1">
+                  {copyResults.map((o) => (
+                    <li key={o.primary_key}>
+                      <button
+                        type="button"
+                        onClick={() => submitCopyToOrder(o.primary_key, o.event || o.order_no || `#${o.primary_key}`)}
+                        disabled={copySubmitting}
+                        className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-emerald-50 hover:border-emerald-200 border border-transparent transition-colors disabled:opacity-50"
+                        data-testid={`copy-target-option-doc-${o.primary_key}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">{o.event || "—"}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              <span className="font-mono">{o.order_no || `#${o.primary_key}`}</span>
+                              {o.address && <span> · {o.address}</span>}
+                            </p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function DocRow({ doc, isAdmin, onDelete, onPreview, onChangeKat, getFileUrl, isImage: checkImage, isPdf: checkPdf, formatSize: fmtSize }) {
+function DocRow({ doc, isAdmin, onDelete, onPreview, onChangeKat, getFileUrl, isImage: checkImage, isPdf: checkPdf, formatSize: fmtSize, copyMode, isSelected, onToggleSelect }) {
   const img = checkImage(doc);
   const pdf = checkPdf(doc);
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-white rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors" data-testid={`doc-${doc.id}`}>
-      <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => onPreview(doc)}>
-        {img ? (
-          <img src={`${getFileUrl(doc)}${getFileUrl(doc).includes("?") ? "&" : "?"}thumbnail=1&size=120`} loading="lazy" alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
-        ) : (
-          <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
-            <FileText className="w-5 h-5 text-red-500" />
-          </div>
+    <div
+      className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 rounded-lg border transition-colors ${
+        copyMode && isSelected
+          ? "bg-emerald-50 border-emerald-300 hover:bg-emerald-100"
+          : "bg-white border-gray-100 hover:bg-gray-50"
+      } ${copyMode ? "cursor-pointer" : ""}`}
+      data-testid={`doc-${doc.id}`}
+      onClick={copyMode ? () => onToggleSelect(doc.id) : undefined}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        {copyMode && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(doc.id); }}
+            className="text-emerald-600 flex-shrink-0"
+            data-testid={`copy-select-doc-${doc.id}`}
+            aria-label="Dokument auswaehlen"
+          >
+            {isSelected
+              ? <CheckSquare className="w-5 h-5" />
+              : <Square className="w-5 h-5 text-gray-300" />}
+          </button>
         )}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-900 break-all" title={doc.original_name}>{doc.original_name}</p>
-          <p className="text-[10px] text-gray-400">{fmtSize(doc.size)} · {new Date(doc.uploaded_at).toLocaleDateString("de-DE")} · {doc.uploaded_by}</p>
-          {(img || pdf) && <p className="text-[10px] text-fuchsia-500 mt-0.5">Klicken fuer Vorschau</p>}
+        <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={(e) => { if (!copyMode) { e.stopPropagation(); onPreview(doc); } }}>
+          {img ? (
+            <img src={`${getFileUrl(doc)}${getFileUrl(doc).includes("?") ? "&" : "?"}thumbnail=1&size=120`} loading="lazy" alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <FileText className="w-5 h-5 text-red-500" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-gray-900 break-all" title={doc.original_name}>{doc.original_name}</p>
+            <p className="text-[10px] text-gray-400">{fmtSize(doc.size)} · {new Date(doc.uploaded_at).toLocaleDateString("de-DE")} · {doc.uploaded_by}</p>
+            {(img || pdf) && !copyMode && <p className="text-[10px] text-fuchsia-500 mt-0.5">Klicken fuer Vorschau</p>}
+          </div>
         </div>
       </div>
+      {!copyMode && (
       <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-auto">
         <select value={doc.kategorie || "sonstiges"} onChange={e => onChangeKat(doc.id, e.target.value)}
           className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 mr-1" data-testid={`kat-select-${doc.id}`}>
@@ -387,6 +595,7 @@ function DocRow({ doc, isAdmin, onDelete, onPreview, onChangeKat, getFileUrl, is
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }
