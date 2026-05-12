@@ -72,6 +72,19 @@ class DiaryEntryUpdate(BaseModel):
     assigned_trupp_ids: Optional[List[str]] = None
 
 
+def _derive_status(d: dict) -> str:
+    """3-Status-Logik:
+       - resolved (gruen): resolved_at gesetzt
+       - in_progress (gelb): Trupp(s) zugewiesen, aber nicht behoben
+       - open (rot): angelegt, ohne Trupp und nicht behoben
+    """
+    if d.get("resolved_at") or (d.get("status") == "resolved"):
+        return "resolved"
+    if d.get("assigned_trupp_ids"):
+        return "in_progress"
+    return "open"
+
+
 def _doc_to_response(d: dict) -> dict:
     return {
         "id": d["id"],
@@ -80,7 +93,7 @@ def _doc_to_response(d: dict) -> dict:
         "caller_phone": d.get("caller_phone") or "",
         "reason": d.get("reason") or "",
         "location": d.get("location") or "",
-        "status": d.get("status") or "open",
+        "status": _derive_status(d),
         "is_nachtrag": bool(d.get("is_nachtrag", False)),
         "assigned_trupp_ids": list(d.get("assigned_trupp_ids") or []),
         "created_at": d.get("created_at"),
@@ -104,11 +117,13 @@ async def list_diary(order_pk: str, user: dict = Depends(_auth_user)):
     rows = await _db.order_diary_entries.find(
         {"order_pk": str(order_pk)}, {"_id": 0}
     ).sort([("created_at", -1)]).to_list(500)
-    open_count = sum(1 for r in rows if (r.get("status") or "open") == "open")
-    resolved_count = sum(1 for r in rows if r.get("status") == "resolved")
+    open_count = sum(1 for r in rows if _derive_status(r) == "open")
+    in_progress_count = sum(1 for r in rows if _derive_status(r) == "in_progress")
+    resolved_count = sum(1 for r in rows if _derive_status(r) == "resolved")
     return {
         "total": len(rows),
         "open": open_count,
+        "in_progress": in_progress_count,
         "resolved": resolved_count,
         "entries": [_doc_to_response(r) for r in rows],
     }

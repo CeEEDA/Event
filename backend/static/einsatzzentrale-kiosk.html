@@ -447,6 +447,7 @@ input { font-family: inherit; }
 .diary-stat .lbl { font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); letter-spacing:.06em; }
 .diary-stat .val { font-size:28px; font-weight:700; margin-top:4px; }
 .diary-stat.open .val { color:#dc2626; }
+.diary-stat.in-progress .val { color:#f59e0b; }
 .diary-stat.resolved .val { color:var(--emerald); }
 .diary-stat.total .val { color:var(--text); }
 
@@ -456,6 +457,7 @@ input { font-family: inherit; }
 
 .diary-entry { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:10px; transition:border-color .15s; }
 .diary-entry.open { border-left:4px solid #dc2626; }
+.diary-entry.in_progress { border-left:4px solid #f59e0b; }
 .diary-entry.resolved { border-left:4px solid var(--emerald); opacity:.85; }
 .diary-entry .e-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; flex-wrap:wrap; }
 .diary-entry .e-time { font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
@@ -1203,8 +1205,9 @@ function renderMultiPanel() {
             '</div>' +
             '<select id="multi-diary-status">' +
               '<option value="all">Alle</option>' +
-              '<option value="open">Offen</option>' +
-              '<option value="resolved">Behoben</option>' +
+              '<option value="open">🔴 Offen</option>' +
+              '<option value="in_progress">🟡 Unterwegs</option>' +
+              '<option value="resolved">🟢 Behoben</option>' +
             '</select>' +
             '<div class="count" id="multi-diary-shown"></div>' +
           '</div>' +
@@ -1323,12 +1326,17 @@ function loadMultiDiary() {
 
 function paintMultiDiary(data) {
   // data ist optional (wenn von loadDiary mit Summary-Payload aufgerufen)
-  if (data && (data.open != null || data.resolved != null)) {
-    diaryState._summary = { open: data.open || 0, resolved: data.resolved || 0 };
+  if (data && (data.open != null || data.resolved != null || data.in_progress != null)) {
+    diaryState._summary = {
+      open: data.open || 0,
+      in_progress: data.in_progress || 0,
+      resolved: data.resolved || 0
+    };
   }
-  var sum = diaryState._summary || { open: 0, resolved: 0 };
+  var sum = diaryState._summary || { open: 0, in_progress: 0, resolved: 0 };
   var cntEl = document.getElementById("multi-diary-cnt");
-  if (cntEl) cntEl.textContent = sum.open + " offen · " + sum.resolved + " behoben";
+  if (cntEl) cntEl.textContent =
+    sum.open + " 🔴 · " + (sum.in_progress || 0) + " 🟡 · " + sum.resolved + " 🟢";
 
   // Trupps als richtige Karten (mit Pause/Bearbeiten/Loeschen) - wie im Portal
   var ta = document.getElementById("multi-diary-trupps");
@@ -1388,6 +1396,7 @@ function paintMultiDiary(data) {
 
   var entries = diaryState.entries.filter(function(e) {
     if (status === "open" && e.status !== "open") return false;
+    if (status === "in_progress" && e.status !== "in_progress") return false;
     if (status === "resolved" && e.status !== "resolved") return false;
     if (q) {
       var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : ""; }).join(" ");
@@ -1408,13 +1417,17 @@ function paintMultiDiary(data) {
     return;
   }
   area.innerHTML = entries.map(function(e) {
-    var cls = e.status === "resolved" ? "resolved" : "open";
+    var cls = e.status; // "open" | "in_progress" | "resolved"
     var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : "?"; }).filter(Boolean);
+    var badge =
+      e.status === "resolved"    ? '<span class="badge bg-emerald">✓ Behoben</span>' :
+      e.status === "in_progress" ? '<span class="badge bg-amber">● Unterwegs</span>' :
+                                    '<span class="badge bg-red">● Offen</span>';
     return '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '" style="padding:10px 12px;margin-bottom:8px;">' +
               '<div class="e-top" style="margin-bottom:4px;">' +
                 '<div class="e-time" style="font-size:11px;">🕐 ' + esc(fmtDateTime(e.created_at)) + '</div>' +
                 '<div style="display:flex;gap:4px;">' +
-                  (e.status === "resolved" ? '<span class="badge bg-emerald">✓</span>' : '<span class="badge bg-red">●</span>') +
+                  badge +
                   (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
                 '</div>' +
               '</div>' +
@@ -1432,8 +1445,17 @@ function paintMultiDiary(data) {
                 : '') +
               '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">' +
                 (e.status === "open"
+                  ? '<button class="btn sm primary multi-e-assign" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">👥 Trupp zuweisen</button>'
+                  : '') +
+                (e.status === "in_progress"
                   ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">✓ Behoben</button>'
-                  : '<button class="btn sm warn multi-e-reopen" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">↺ Öffnen</button>') +
+                  : '') +
+                (e.status === "open"
+                  ? '<button class="btn sm success multi-e-resolve" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">✓ Direkt behoben</button>'
+                  : '') +
+                (e.status === "resolved"
+                  ? '<button class="btn sm warn multi-e-reopen" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">↺ Wieder öffnen</button>'
+                  : '') +
                 '<button class="btn sm multi-e-edit" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">Bearbeiten</button>' +
                 '<button class="btn sm danger multi-e-del" data-id="' + esc(e.id) + '" style="height:26px;font-size:11px;padding:0 8px;">Löschen</button>' +
               '</div>' +
@@ -1441,6 +1463,10 @@ function paintMultiDiary(data) {
   }).join("");
   area.querySelectorAll(".multi-e-resolve").forEach(function(b){ b.addEventListener("click", function(){ resolveEntry(b.dataset.id).then(loadMultiDiary).catch(function(){}); }); });
   area.querySelectorAll(".multi-e-reopen").forEach(function(b){ b.addEventListener("click", function(){ reopenEntry(b.dataset.id).then(loadMultiDiary).catch(function(){}); }); });
+  area.querySelectorAll(".multi-e-assign").forEach(function(b){ b.addEventListener("click", function(){
+    var e = diaryState.entries.find(function(x){return x.id === b.dataset.id;});
+    if (e) openEntryModal(e);   // Modal mit Trupp-Picker
+  }); });
   area.querySelectorAll(".multi-e-edit").forEach(function(b){ b.addEventListener("click", function(){
     var e = diaryState.entries.find(function(x){return x.id === b.dataset.id;});
     if (e) openEntryModal(e);
@@ -2455,8 +2481,9 @@ function paintStats(data) {
   var el = document.getElementById("diary-stats"); if (!el) return;
   el.innerHTML =
     '<div class="diary-stats">' +
-      '<div class="diary-stat open"><div class="lbl">Offen</div><div class="val">' + (data.open || 0) + '</div></div>' +
-      '<div class="diary-stat resolved"><div class="lbl">Behoben</div><div class="val">' + (data.resolved || 0) + '</div></div>' +
+      '<div class="diary-stat open"><div class="lbl">🔴 Offen</div><div class="val">' + (data.open || 0) + '</div></div>' +
+      '<div class="diary-stat in-progress"><div class="lbl">🟡 Unterwegs</div><div class="val">' + (data.in_progress || 0) + '</div></div>' +
+      '<div class="diary-stat resolved"><div class="lbl">🟢 Behoben</div><div class="val">' + (data.resolved || 0) + '</div></div>' +
       '<div class="diary-stat total"><div class="lbl">Gesamt</div><div class="val">' + (data.total || 0) + '</div></div>' +
     '</div>';
 }
@@ -2505,15 +2532,17 @@ function paintDiary(filter) {
   }
   var html = "";
   entries.forEach(function(e) {
-    var cls = e.status === "resolved" ? "resolved" : "open";
+    var cls = e.status; // open | in_progress | resolved
     var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : "?"; }).filter(Boolean);
+    var badge =
+      e.status === "resolved"    ? '<span class="badge bg-emerald">✓ Behoben</span>' :
+      e.status === "in_progress" ? '<span class="badge bg-amber">● Trupp unterwegs</span>' :
+                                    '<span class="badge bg-red">● Offen</span>';
     html += '<div class="diary-entry ' + cls + '" data-entry-id="' + esc(e.id) + '">' +
               '<div class="e-top">' +
                 '<div class="e-time">🕐 ' + esc(fmtDateTime(e.created_at)) + (e.created_by_name ? ' &middot; <span style="font-style:italic;">' + esc(e.created_by_name) + '</span>' : '') + '</div>' +
                 '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-                  (e.status === "resolved"
-                     ? '<span class="badge bg-emerald">✓ Behoben</span>'
-                     : '<span class="badge bg-red">● Offen</span>') +
+                  badge +
                   (e.is_nachtrag ? '<span class="badge bg-amber">Nachtrag</span>' : '') +
                 '</div>' +
               '</div>' +
@@ -2531,8 +2560,15 @@ function paintDiary(filter) {
                 : '') +
               '<div class="e-actions">' +
                 (e.status === "open"
+                  ? '<button class="btn sm primary entry-assign-btn" data-id="' + esc(e.id) + '">👥 Trupp zuweisen</button>' +
+                    '<button class="btn sm success entry-resolve-btn" data-id="' + esc(e.id) + '">✓ Direkt behoben</button>'
+                  : '') +
+                (e.status === "in_progress"
                   ? '<button class="btn sm success entry-resolve-btn" data-id="' + esc(e.id) + '">✓ Als behoben markieren</button>'
-                  : '<button class="btn sm warn entry-reopen-btn" data-id="' + esc(e.id) + '">↺ Wieder öffnen</button>') +
+                  : '') +
+                (e.status === "resolved"
+                  ? '<button class="btn sm warn entry-reopen-btn" data-id="' + esc(e.id) + '">↺ Wieder öffnen</button>'
+                  : '') +
                 '<button class="btn sm entry-edit-btn" data-id="' + esc(e.id) + '">Bearbeiten</button>' +
                 '<button class="btn sm danger entry-del-btn" data-id="' + esc(e.id) + '">Löschen</button>' +
               '</div>' +
@@ -2541,6 +2577,7 @@ function paintDiary(filter) {
   area.innerHTML = html;
   area.querySelectorAll(".entry-resolve-btn").forEach(function(b){ b.addEventListener("click", function(){ resolveEntry(b.dataset.id); }); });
   area.querySelectorAll(".entry-reopen-btn").forEach(function(b){ b.addEventListener("click", function(){ reopenEntry(b.dataset.id); }); });
+  area.querySelectorAll(".entry-assign-btn").forEach(function(b){ b.addEventListener("click", function(){ var e = diaryState.entries.find(function(x){return x.id===b.dataset.id;}); openEntryModal(e); }); });
   area.querySelectorAll(".entry-edit-btn").forEach(function(b){ b.addEventListener("click", function(){ var e = diaryState.entries.find(function(x){return x.id===b.dataset.id;}); openEntryModal(e); }); });
   area.querySelectorAll(".entry-del-btn").forEach(function(b){ b.addEventListener("click", function(){ deleteEntry(b.dataset.id); }); });
 }

@@ -2370,9 +2370,13 @@ export default function OrderDetailPage() {
                         >
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                              r.status === "resolved" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                              r.status === "resolved" ? "bg-emerald-100 text-emerald-700" :
+                              r.status === "in_progress" ? "bg-amber-100 text-amber-700" :
+                              "bg-red-100 text-red-700"
                             }`}>
-                              {r.status === "resolved" ? "✓ Behoben" : "● Offen"}
+                              {r.status === "resolved" ? "✓ Behoben" :
+                               r.status === "in_progress" ? "● Unterwegs" :
+                               "● Offen"}
                             </span>
                             {r.is_nachtrag && (
                               <span className="text-[9px] font-bold uppercase bg-fuchsia-100 text-fuchsia-700 px-1.5 py-0.5 rounded">
@@ -2579,13 +2583,16 @@ export default function OrderDetailPage() {
               <div className="space-y-2" data-testid="diary-list">
                 {diaryEntries.map((e) => {
                   const isResolved = e.status === "resolved";
+                  const isInProgress = e.status === "in_progress";
                   return (
                     <div
                       key={e.id}
                       className={`border rounded-lg p-3 transition-colors ${
                         isResolved
                           ? "bg-emerald-50/40 border-emerald-200"
-                          : "bg-white border-amber-300 shadow-sm"
+                          : isInProgress
+                          ? "bg-amber-50/40 border-amber-300 shadow-sm"
+                          : "bg-red-50/30 border-red-300 shadow-sm"
                       }`}
                       data-testid={`diary-entry-${e.id}`}
                     >
@@ -2596,8 +2603,12 @@ export default function OrderDetailPage() {
                               <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
                                 ✓ Behoben
                               </span>
-                            ) : (
+                            ) : isInProgress ? (
                               <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-2 py-0.5 rounded animate-pulse">
+                                ● Trupp unterwegs
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase bg-red-100 text-red-700 px-2 py-0.5 rounded animate-pulse">
                                 ● Offen
                               </span>
                             )}
