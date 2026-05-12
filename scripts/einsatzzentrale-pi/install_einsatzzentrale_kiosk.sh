@@ -138,6 +138,13 @@ log "Chromium:    ${CHROMIUM_BIN:-(noch nicht installiert)}"
 
 apt-get install -y --no-install-recommends unclutter x11-xserver-utils openbox 2>/dev/null || true
 
+# Emoji-Font installieren (Chromium nutzt sonst Placeholder-Kaestchen fuer
+# alle Emojis wie 🌧 ❄ ⛅ - das Kiosk-UI hat viele davon).
+log "Installiere Emoji-Font (fonts-noto-color-emoji)..."
+apt-get install -y --no-install-recommends fonts-noto-color-emoji 2>/dev/null || true
+# Font-Cache neu aufbauen
+fc-cache -f 2>/dev/null || true
+
 # ============================================================================
 # LOKALER PI-SERVICE (Offline-Cache + 2-Min-Sync + 3-Monats-Retention)
 # ============================================================================

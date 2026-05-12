@@ -29,12 +29,21 @@ echo "Cloud-URL:   $CLOUD"
 echo "Kiosk-User:  $KIOSK_USER (Home: $KIOSK_HOME)"
 echo ""
 
-echo "[1/7] Stoppe Pi-Service + Chromium..."
+echo "[1/8] Stoppe Pi-Service + Chromium..."
 systemctl stop einsatzzentrale-pi 2>/dev/null || true
 pkill -9 -f chromium 2>/dev/null || true
 sleep 2
 
-echo "[2/7] Aktualisiere CLOUD_URL in $CONF..."
+echo "[2/8] Pruefe Emoji-Font (fonts-noto-color-emoji)..."
+if ! dpkg -l fonts-noto-color-emoji 2>/dev/null | grep -q "^ii"; then
+  echo "  -> nicht installiert, hole ihn nach (sonst leere Kaestchen statt Wetter-Icons)"
+  apt-get install -y --no-install-recommends fonts-noto-color-emoji 2>/dev/null || true
+  fc-cache -f 2>/dev/null || true
+else
+  echo "  -> bereits installiert"
+fi
+
+echo "[3/8] Aktualisiere CLOUD_URL in $CONF..."
 if [[ -f "$CONF" ]]; then
   sed -i "s|^CLOUD_URL=.*|CLOUD_URL=$CLOUD|" "$CONF"
   grep -q "^CLOUD_URL=" "$CONF" || echo "CLOUD_URL=$CLOUD" >> "$CONF"
@@ -42,7 +51,7 @@ else
   echo "CLOUD_URL=$CLOUD" > "$CONF"
 fi
 
-echo "[3/7] Lade frischen pi_service.py..."
+echo "[4/8] Lade frischen pi_service.py..."
 mkdir -p "$SERVICE_DIR"
 curl -fsSL "$CLOUD/api/einsatzzentrale/pi-service.py" -o "$SERVICE_DIR/pi_service.py.new"
 if [[ -s "$SERVICE_DIR/pi_service.py.new" ]]; then
@@ -52,7 +61,7 @@ else
   rm -f "$SERVICE_DIR/pi_service.py.new"
 fi
 
-echo "[4/7] Lade frische kiosk.html (Offline-Fallback)..."
+echo "[5/8] Lade frische kiosk.html (Offline-Fallback)..."
 curl -fsSL "$CLOUD/api/einsatzzentrale/kiosk-page" -o "$SERVICE_DIR/kiosk.html.new"
 if [[ -s "$SERVICE_DIR/kiosk.html.new" ]]; then
   mv "$SERVICE_DIR/kiosk.html.new" "$SERVICE_DIR/kiosk.html"
@@ -60,10 +69,10 @@ else
   rm -f "$SERVICE_DIR/kiosk.html.new"
 fi
 
-echo "[5/7] Loesche Pi-Service SQLite-Cache..."
+echo "[6/8] Loesche Pi-Service SQLite-Cache..."
 rm -f /var/lib/einsatzzentrale-pi/cache.db*
 
-echo "[6/7] Loesche Chromium-Caches..."
+echo "[7/8] Loesche Chromium-Caches..."
 rm -rf "$PROFILE/Default/Cache"             2>/dev/null || true
 rm -rf "$PROFILE/Default/Code Cache"        2>/dev/null || true
 rm -rf "$PROFILE/Default/Service Worker"    2>/dev/null || true
@@ -72,7 +81,7 @@ rm -rf "$PROFILE/Default/Application Cache" 2>/dev/null || true
 rm -rf "$PROFILE/ShaderCache"               2>/dev/null || true
 rm -rf "$PROFILE/GrShaderCache"             2>/dev/null || true
 
-echo "[7/7] Starte Pi-Service neu..."
+echo "[8/8] Starte Pi-Service neu..."
 systemctl start einsatzzentrale-pi
 sleep 2
 
