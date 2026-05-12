@@ -333,6 +333,10 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .receipt-card .details{{display:flex;gap:12px;font-size:12px;color:var(--muted)}}
 .receipt-card .fuel{{color:var(--accent-dark);font-weight:700;font-size:13px}}
 .receipt-card .assigned-tag{{font-size:10px;color:var(--green);margin-top:4px;font-weight:600}}
+.receipt-card .assigned-tag.pending{{color:var(--amber)}}
+.receipt-card .assigned-tag .sync-state{{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px}}
+.receipt-card .assigned-tag .sync-state.ok{{background:var(--green-bg);color:var(--green)}}
+.receipt-card .assigned-tag .sync-state.pending{{background:var(--amber-bg);color:var(--amber)}}
 .receipt-card .unassigned-tag{{font-size:10px;color:var(--red);margin-top:4px;font-weight:600}}
 
 .form-section{{padding:12px 14px 0 14px;display:flex;flex-direction:column;height:100%}}
@@ -530,20 +534,28 @@ let selectedReceipt=null, lastReceiptCount=-1, orders=[], receipts=[], selectedO
 let kbdTarget=null, kbdValue='', kbdShift=false;
 let verifiedDriver='', verifiedDriverId='', verifiedPin='', driversMap={{}}, pinDriverId='', pinDriverName='', pinValue='';
 
-const ROWS=[['1','2','3','4','5','6','7','8','9','0'],['q','w','e','r','t','z','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['y','x','c','v','b','n','m']];
-const ROWS_SHIFT=[['!','@','#','$','%','&','/','(',')','+'],['Q','W','E','R','T','Z','U','I','O','P'],['A','S','D','F','G','H','J','K','L'],['Y','X','C','V','B','N','M']];
+const ROWS_DIGITS=['1','2','3','4','5','6','7','8','9','0'];
+const ROWS=[['q','w','e','r','t','z','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['y','x','c','v','b','n','m']];
+const ROWS_SHIFT=[['Q','W','E','R','T','Z','U','I','O','P'],['A','S','D','F','G','H','J','K','L'],['Y','X','C','V','B','N','M']];
 
 function buildKbd() {{
   const rows=kbdShift?ROWS_SHIFT:ROWS;
   let html='';
+  // Ziffern-Reihe IMMER oben - unabhaengig von Shift. Auf einem Tankwagen-PI
+  // werden oft Auftragsnummern wie "251024-01" oder Funkmast-Bezeichnungen
+  // mit Zahlen ("FUNKMAST 3") eingegeben - daher muss die Tastatur Zahlen
+  // dauerhaft anbieten, nicht hinter einem Shift-Toggle verstecken.
+  html+='<div class="kbd-row">';
+  ROWS_DIGITS.forEach(k=>{{ html+='<div class="kbd-key" onmousedown="kbdType(\\''+k+'\\');event.preventDefault()" ontouchstart="kbdType(\\''+k+'\\');event.preventDefault()">'+k+'</div>'; }});
+  html+='</div>';
   for(let i=0;i<rows.length;i++) {{
     html+='<div class="kbd-row">';
-    if(i===3) html+='<div class="kbd-key wide '+(kbdShift?'':'accent')+'" onmousedown="kbdToggleShift()" ontouchstart="kbdToggleShift()">&#8679;</div>';
+    if(i===2) html+='<div class="kbd-key wide '+(kbdShift?'accent':'')+'" onmousedown="kbdToggleShift()" ontouchstart="kbdToggleShift()">&#8679;</div>';
     rows[i].forEach(k=>{{ html+='<div class="kbd-key" onmousedown="kbdType(\\''+k+'\\');event.preventDefault()" ontouchstart="kbdType(\\''+k+'\\');event.preventDefault()">'+k+'</div>'; }});
-    if(i===2) html+='<div class="kbd-key wide" onmousedown="kbdBack();event.preventDefault()" ontouchstart="kbdBack();event.preventDefault()">&#9003;</div>';
+    if(i===1) html+='<div class="kbd-key wide" onmousedown="kbdBack();event.preventDefault()" ontouchstart="kbdBack();event.preventDefault()">&#9003;</div>';
     html+='</div>';
   }}
-  html+='<div class="kbd-row"><div class="kbd-key" onmousedown="kbdType(\\'@\\');event.preventDefault()" ontouchstart="kbdType(\\'@\\');event.preventDefault()">@</div><div class="kbd-key" onmousedown="kbdType(\\'-\\');event.preventDefault()" ontouchstart="kbdType(\\'-\\');event.preventDefault()">-</div><div class="kbd-key" onmousedown="kbdType(\\'_\\');event.preventDefault()" ontouchstart="kbdType(\\'_\\');event.preventDefault()">_</div><div class="kbd-key space" onmousedown="kbdType(\\' \\');event.preventDefault()" ontouchstart="kbdType(\\' \\');event.preventDefault()">Leer</div><div class="kbd-key" onmousedown="kbdType(\\'.\\');event.preventDefault()" ontouchstart="kbdType(\\'.\\');event.preventDefault()">.</div><div class="kbd-key" onmousedown="kbdType(\\',\\');event.preventDefault()" ontouchstart="kbdType(\\',\\');event.preventDefault()">,</div></div>';
+  html+='<div class="kbd-row"><div class="kbd-key" onmousedown="kbdType(\\'@\\');event.preventDefault()" ontouchstart="kbdType(\\'@\\');event.preventDefault()">@</div><div class="kbd-key" onmousedown="kbdType(\\'-\\');event.preventDefault()" ontouchstart="kbdType(\\'-\\');event.preventDefault()">-</div><div class="kbd-key" onmousedown="kbdType(\\'_\\');event.preventDefault()" ontouchstart="kbdType(\\'_\\');event.preventDefault()">_</div><div class="kbd-key" onmousedown="kbdType(\\'/\\');event.preventDefault()" ontouchstart="kbdType(\\'/\\');event.preventDefault()">/</div><div class="kbd-key space" onmousedown="kbdType(\\' \\');event.preventDefault()" ontouchstart="kbdType(\\' \\');event.preventDefault()">Leer</div><div class="kbd-key" onmousedown="kbdType(\\'.\\');event.preventDefault()" ontouchstart="kbdType(\\'.\\');event.preventDefault()">.</div><div class="kbd-key" onmousedown="kbdType(\\',\\');event.preventDefault()" ontouchstart="kbdType(\\',\\');event.preventDefault()">,</div></div>';
   document.getElementById('kbdRows').innerHTML=html;
 }}
 
@@ -724,10 +736,24 @@ function renderReceipts(){{
   el.innerHTML=receipts.map(r=>{{
     const sel=selectedReceipt&&selectedReceipt.local_id===r.local_id;
     const asg=r.assigned&&r.order_pk;
+    const synced=Number(r.synced||0)===1;
+    // Drei klare Status, damit der Fahrer auch offline sicher weiss dass
+    // der Beleg gebucht ist (gruen-Hell = lokal gespeichert, gruen-Voll =
+    // ans Backend synchronisiert, rot = noch nicht zugeordnet).
+    let badge='';
+    if(asg){{
+      if(synced){{
+        badge='<div class="assigned-tag synced">&#10003; '+esc(r.order_name||r.order_pk)+' <span class="sync-state ok">synchron</span></div>';
+      }}else{{
+        badge='<div class="assigned-tag pending">&#10003; '+esc(r.order_name||r.order_pk)+' <span class="sync-state pending">lokal gebucht &#183; Sync ausstehend</span></div>';
+      }}
+    }}else{{
+      badge='<div class="unassigned-tag">&#9679; Offen</div>';
+    }}
     return '<div class="receipt-card'+(sel?' selected':'')+'" onclick="selectReceipt(\\''+r.local_id+'\\')">'+
       '<div class="top"><span class="nr">Nr. '+esc(r.beleg_nr||'?')+'</span><span class="date">'+esc(r.datum||'')+' '+esc(r.zeit||'')+'</span></div>'+
       '<div class="details"><span class="fuel">'+esc(String(r.menge_liter||0))+' L</span><span>'+esc(fuelLabel(r.fuel_type))+'</span>'+(r.fahrer?'<span>'+esc(r.fahrer)+'</span>':'')+'</div>'+
-      (asg?'<div class="assigned-tag">&#10003; '+esc(r.order_name||r.order_pk)+'</div>':'<div class="unassigned-tag">&#9679; Offen</div>')+
+      badge+
     '</div>';
   }}).join('');
 }}

@@ -16,7 +16,16 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
-### Feb 2026 – Admin Copy-Funktion: Dokumente (P0 Folge)
+### Feb 2026 – Tankwagen-Pi: Tastatur + Offline-Buchungs-Status
+- ✅ **On-Screen-Tastatur** in `tankbeleg_ui.py` zeigt Ziffern (1-0) jetzt DAUERHAFT als oberste Reihe (vorher wurden sie im Shift-Modus durch Sonderzeichen ueberschrieben). Auf dem PI wurden Auftragsnummern wie "251024-01" und Bezeichnungen wie "FUNKMAST 3" gebraucht, daher sind Zahlen jetzt immer ohne Shift erreichbar. Sonderzeichen (@ - _ / . ,) bleiben in der Symbol-Reihe verfuegbar.
+- ✅ **Dreistufiger Belege-Status** statt nur rot/gruen:
+  - rot "Offen" — assigned=0
+  - amber "Lokal gebucht · Sync ausstehend" — assigned=1, synced=0 (offline gebucht, wartet auf Backend-Sync)
+  - gruen "synchron" — assigned=1, synced=1 (ans Portal uebertragen)
+  Damit erkennt der Fahrer offline sicher, dass seine Zuordnung gespeichert ist und nur noch die Backend-Uebertragung aussteht; nach Neustart bleibt der Status amber/gruen erhalten (Daten liegen in `/var/lib/tankbeleg/tankbeleg.sqlite`, persistent).
+- ⚠️ Eichrechts-relevante Liter-Logik wurde NICHT angefasst (User-Vorgabe — funktioniert tadellos).
+
+
 - ✅ **Backend** `POST /api/orders/epirent/{order_pk}/copy-to` um `document_ids` erweitert:
   - Datei wird per `shutil.copy2` physisch in das Ziel-Storage-Verzeichnis dupliziert.
   - DB-Eintrag (`order_documents`) mit neuer UUID + neuem `filename` (`{new_id}{ext}`); `original_name`, `kategorie`, `content_type`, `size` bleiben 1:1.
