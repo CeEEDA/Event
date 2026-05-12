@@ -2,8 +2,39 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Einsatzzentrale</title>
+<!-- KIOSK-BUILD: 2026-05-12-multi-v2 -->
+<script>
+/* SELBST-REINIGUNG: Service Worker abmelden + alle Caches loeschen.
+   Verhindert dass alte HTML-Versionen via SW-Cache zurueckgeliefert werden. */
+(function () {
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        var hadAny = regs.length > 0;
+        regs.forEach(function (r) { r.unregister(); });
+        if (hadAny && window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+          }).then(function () {
+            // Nach SW-Cleanup einmalig hart reloaden, damit ohne SW geladen wird
+            if (!sessionStorage.getItem("__sw_killed_once")) {
+              sessionStorage.setItem("__sw_killed_once", "1");
+              var u = new URL(window.location.href);
+              u.searchParams.set("_sw_clean", Date.now().toString());
+              window.location.assign(u.toString());
+            }
+          });
+        }
+      }).catch(function () {});
+    }
+  } catch (e) {}
+})();
+</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
