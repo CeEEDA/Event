@@ -2075,17 +2075,6 @@ function renderDocsPanel() {
           '<div><h2>' + (docsState.cat ? esc(titleSub) : "Dokumentenablage") + '</h2>' +
             '<div class="sub" id="docs-count">…</div></div>' +
         '</div>' +
-        '<div style="display:flex;gap:8px;">' +
-          '<button id="docs-photo-btn" class="btn">📷 Foto aufnehmen</button>' +
-          '<input id="docs-photo-input" type="file" accept="image/*" capture="environment" style="display:none;" />' +
-          '<button id="docs-upload-btn" class="btn primary">⤒ Datei wählen</button>' +
-          '<input id="docs-upload-input" type="file" accept=".pdf,image/*" style="display:none;" multiple />' +
-        '</div>' +
-      '</div>' +
-      '<div id="docs-dropzone" class="docs-dropzone">' +
-        '<div class="dz-icon">⤒</div>' +
-        '<div class="dz-title">Dateien hierher ziehen — automatische Zuordnung</div>' +
-        '<div class="dz-hint">PDF, JPG, PNG, WebP, GIF · max. 20 MB</div>' +
       '</div>' +
       '<div id="docs-content"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
     '</main></div>'
@@ -2096,20 +2085,6 @@ function renderDocsPanel() {
     if (docsState.cat) { docsState.cat = null; renderDocsPanel(); }
     else { state.activeTile = null; state.phase = "workspace"; render(); }
   });
-  document.getElementById("docs-upload-btn").addEventListener("click", function(){ document.getElementById("docs-upload-input").click(); });
-  document.getElementById("docs-upload-input").addEventListener("change", function(e){ uploadDocs(Array.from(e.target.files)); e.target.value = ""; });
-  document.getElementById("docs-photo-btn").addEventListener("click", function(){ document.getElementById("docs-photo-input").click(); });
-  document.getElementById("docs-photo-input").addEventListener("change", function(e){ uploadDocs(Array.from(e.target.files), "fotos"); e.target.value = ""; });
-
-  // Drag&Drop
-  var dz = document.getElementById("docs-dropzone");
-  ["dragover","dragenter"].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.add("drag-over"); }); });
-  ["dragleave","drop"].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.remove("drag-over"); }); });
-  dz.addEventListener("drop", function(e) {
-    var files = Array.from(e.dataTransfer.files || []);
-    if (files.length) uploadDocs(files);
-  });
-  dz.addEventListener("click", function(){ document.getElementById("docs-upload-input").click(); });
 
   loadDocs();
 }
