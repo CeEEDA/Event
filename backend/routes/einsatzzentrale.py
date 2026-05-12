@@ -190,8 +190,14 @@ async def list_kiosk_orders(user: dict = Depends(_auth_user)):
         {"_id": 0, "primary_key": 1, "order_no": 1, "address": 1,
          "contact_name": 1, "event": 1, "event_start": 1, "event_end": 1,
          "dispo_start": 1, "dispo_end": 1, "date_shipping": 1,
-         "is_archived": 1, "is_canceled": 1, "editor_name": 1}
+         "is_archived": 1, "is_canceled": 1, "is_confirmed": 1, "editor_name": 1}
     ).to_list(5000)
+    # Filter: nur bestaetigte Auftraege, keine stornierten/archivierten (wie in
+    # der React-Auftragsverwaltung Default-Ansicht).
+    rows = [o for o in rows
+            if o.get("is_confirmed") is True
+            and not o.get("is_canceled")
+            and not o.get("is_archived")]
     active = [o for o in rows if _is_active_in_window(o, win_start, win_end)]
     # Sortiere nach event_start (asc), dann nach order_no
     def _sort_key(o):
