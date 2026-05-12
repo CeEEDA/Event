@@ -382,7 +382,10 @@ export default function GeneratorDashboardPage() {
               {filtered.filter(g => g.latitude && g.longitude).map((gen) => {
                 const s = statusConfig[gen.status] || statusConfig.offline;
                 const t = gen.latest_telemetry;
-                const tooltipLabel = gen.name || gen.serial_number || "Gerät";
+                // Auf der Karte als Hauptlabel die SERIENNUMMER zeigen - der
+                // User-Field-Name (z. B. "TL_206", "Fogo_20kVA_03") sagt am
+                // Standort nichts ueber das Geraet aus, die Serie schon.
+                const tooltipLabel = gen.serial_number || gen.name || "Gerät";
                 const tooltipMeta = [gen.model, s.label].filter(Boolean).join(" · ");
                 return (
                   <Marker
