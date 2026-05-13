@@ -467,15 +467,10 @@ def read_dse5510(ser, slave_id):
         pos_kwh = read_uint32(ser, REG_GEN_POS_KWH, slave_id)
         num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
-        # --- Page 3: Status Flags (Generator availability + Breaker state) ---
-        # WICHTIG: DSE meldet Hauptschalter-Status nicht ueber die Last sondern
-        # ueber ein dediziertes Bit. Vorher haben wir das aus power_total_w > 100
-        # abgeleitet - das ist FALSCH wenn der Generator ohne Last laeuft
-        # (z.B. Leerlauf-Test oder direkt nach Zuschalten).
-        # Register Page 3 Offset 14: Generator available (uint16, 0/1)
-        # Register Page 3 Offset 15: Generator breaker closed (uint16, 0/1)
-        gen_available_raw = read_uint16(ser, REG_GEN_AVAILABLE, slave_id)
-        gen_breaker_raw = read_uint16(ser, REG_GEN_BREAKER_CLOSED, slave_id)
+        # HINWEIS: Page 3 Offset 14/15 sind State-Machine-Timer in Sekunden,
+        # KEINE Status-Bits (vorher falsch interpretiert). Der DSE 5510 hat
+        # kein eindeutig dokumentiertes "Generator switch closed"-Register
+        # auf Page 3. Wir leiten den Status aus Spannung+Frequenz ab.
 
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
@@ -523,26 +518,23 @@ def read_dse5510(ser, slave_id):
         data["dse_mode_raw"] = None
         data["dse_mode"] = "unknown"
 
-        # Generator-Status: DSE-Register bevorzugen, Fallback auf abgeleitet
-        # Wenn der DSE einen klaren 0/1-Status liefert (kein 0xFFFF Sentinel),
-        # verwenden wir den - sonst leiten wir aus Messwerten ab.
-        has_voltage = (data["voltage_l1"] > 50 or data["voltage_l2"] > 50 or data["voltage_l3"] > 50)
-        has_frequency = data["frequency"] > 40
+        # Generator-Status aus Messwerten ableiten (DSE 5510 hat keine
+        # eindeutigen Modbus-Bits dafuer - Page 3 Offsets sind State-Machine-Timer).
+        # has_voltage: mind. eine Phase > 200V (Nennlast ist 230V/400V)
+        has_voltage = (data["voltage_l1"] > 200 or data["voltage_l2"] > 200 or data["voltage_l3"] > 200)
+        # Frequenz im Nennbereich (50Hz +/- 5%) - Spool-up-Phasen unter 47Hz nicht als "verfuegbar" zaehlen
+        has_normal_freq = 47.5 <= data["frequency"] <= 52.5
 
-        if gen_available_raw is not None:
-            data["generator_available"] = bool(gen_available_raw)
-            data["generator_available_source"] = "dse_register"
-        else:
-            data["generator_available"] = has_voltage and has_frequency
-            data["generator_available_source"] = "derived"
+        # Generator verfuegbar: laeuft hoch mit Spannung + Nennfrequenz
+        data["generator_available"] = has_voltage and has_normal_freq
+        data["generator_available_source"] = "derived"
 
-        if gen_breaker_raw is not None:
-            data["breaker_closed"] = bool(gen_breaker_raw)
-            data["breaker_closed_source"] = "dse_register"
-        else:
-            # Fallback: alt-Logik (Power > 100W) - funktioniert nur unter Last
-            data["breaker_closed"] = data["generator_available"] and data["power_total_w"] > 100
-            data["breaker_closed_source"] = "derived"
+        # Hauptschalter geschlossen: Wenn der Generator stabil bei Nennspannung+Frequenz laeuft,
+        # ist der Output-Contactor zugeschaltet (sonst kaeme keine Spannung am Klemmenpaar an).
+        # Wichtig: das ist UNABHAENGIG von Last - auch ohne Verbraucher kann der Schalter
+        # geschlossen sein. Vorher wurde das aus power > 100W abgeleitet - das war falsch.
+        data["breaker_closed"] = data["generator_available"]
+        data["breaker_closed_source"] = "derived"
 
         data["online"] = True
 

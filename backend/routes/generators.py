@@ -1239,7 +1239,7 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
                 snapshot[snap_key] = transform(val) if transform else val
         # Boolean status flags (engine_running, breaker_closed, etc.) explizit
         # in latest_snapshot mitschreiben - das Frontend liest die hier raus.
-        for bool_key in ("engine_running", "breaker_closed", "gen_ready",
+        for bool_key in ("engine_running", "breaker_closed", "generator_available", "gen_ready",
                          "mains_available", "remote_start", "alarm_active"):
             if rec.get(bool_key) is not None:
                 snapshot[bool_key] = rec[bool_key]
