@@ -16,6 +16,17 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – DSE 5510 USB Re-Enumeration Auto-Recovery (P0 Hardware Bug)
+- Symptom: Generator-Start verursacht Spannungs-Spike auf RS232, FTDI-Adapter wird vom Kernel als `ttyUSB6` (statt `ttyUSB0`) neu eingehaengt. Sync-Service haengt 30s+ und meldet `[Errno 2] No such file or directory`.
+- ✅ **Installer** (`routes/energy_monitoring.py`): udev-Regel `99-dse-rs232.rules` matcht alle gaengigen FTDI-Chips (VID 0403, PIDs 6001/6010/6011/6014/6015) und legt stabilen Symlink `/dev/dse-rs232` an, der USB-Re-Enumeration uebersteht. Wird automatisch generiert wenn FTDI per `lsusb` erkannt wird.
+- ✅ **Sync-Client** (`static/dse5510_sync.py`):
+  - `_find_ftdi_port()` scannt `/sys/class/tty/ttyUSB*` und matcht FTDI Vendor-ID `0403`.
+  - `_resolve_serial_port()` priorisiert konfigurierten Port → Symlink `/dev/dse-rs232` → FTDI-Auto-Discovery.
+  - Main-Loop ruft `_resolve_serial_port()` bei jedem Verbindungsversuch auf — bei USB-Reset findet der Service den Port automatisch innerhalb von 3s wieder (statt 30s Retry-Delay).
+  - `read_dse5510()` erkennt `errno 2 / input-output / device disconnected` im Read-Loop und schliesst `ser` proaktiv, damit Auto-Recovery sofort greift.
+- ✅ Verifikation: `python -c "from dse5510_sync import _find_ftdi_port, _resolve_serial_port"` PASS; Endpoint `/api/energy-monitoring/dse5510-script?variant=rs232` liefert neue Version (4× `_resolve_serial_port` enthalten).
+- 📋 User Quick-Fix (ohne Re-Install): siehe Hand-off Anweisungen.
+
 ### Feb 2026 – Diagnose-Panel fuer Generator-Detailseite (Variante A)
 - ✅ **Backend** `GET /api/generators/{gen_id}/diagnostics` (Admin-only) liefert:
   - Meta (Name, Serial, Controller, status, last_seen, dse_module_uid, topic_prefix, mapping)

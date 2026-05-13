@@ -251,7 +251,7 @@ class TestSendPaymentLinkEndpoint:
             headers=self.headers,
             json={
                 "signup_id": signup_id,
-                "origin_url": "https://bestand-copy.preview.emergentagent.com"
+                "origin_url": "https://kiosk-central-1.preview.emergentagent.com"
             },
             timeout=30
         )

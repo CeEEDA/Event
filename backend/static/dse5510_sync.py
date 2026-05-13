@@ -126,6 +126,66 @@ DSE_COMMANDS = {
 }
 
 
+def _find_ftdi_port():
+    """Sucht aktiv nach einem FTDI USB-RS232-Adapter im /sys/bus/usb-serial/devices/.
+    Wird aufgerufen wenn der konfigurierte Port verschwindet (z.B. nach USB-
+    Re-Enumeration durch Spannungs-Spike bei Generator-Start)."""
+    # 1) Bevorzugt udev-Symlink /dev/dse-rs232 (vom Installer angelegt)
+    if os.path.exists("/dev/dse-rs232"):
+        try:
+            real = os.path.realpath("/dev/dse-rs232")
+            if os.path.exists(real):
+                return "/dev/dse-rs232"
+        except Exception:
+            pass
+
+    # 2) Fallback: alle /dev/ttyUSB* durchgehen und FTDI-Vendor 0403 pruefen
+    try:
+        import glob
+        for tty in sorted(glob.glob("/dev/ttyUSB*")):
+            try:
+                # /sys/class/tty/ttyUSBN/device -> .../ttyUSB/ttyUSBN
+                name = os.path.basename(tty)
+                sys_path = f"/sys/class/tty/{name}/device"
+                if not os.path.exists(sys_path):
+                    continue
+                # Hoch bis zum USB-Device gehen, idVendor lesen
+                dev_real = os.path.realpath(sys_path)
+                # Suche idVendor in den Parent-Verzeichnissen
+                cur = dev_real
+                for _ in range(6):
+                    vid_file = os.path.join(cur, "idVendor")
+                    if os.path.exists(vid_file):
+                        with open(vid_file, "r") as f:
+                            vid = f.read().strip().lower()
+                        if vid == "0403":
+                            return tty
+                        break
+                    parent = os.path.dirname(cur)
+                    if parent == cur:
+                        break
+                    cur = parent
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_serial_port(configured_port):
+    """Liefert den tatsaechlich nutzbaren Serial-Port zurueck.
+    Priorisiert konfigurierten Port, faellt zurueck auf /dev/dse-rs232 oder
+    auf einen automatisch erkannten FTDI-Adapter."""
+    if configured_port and os.path.exists(configured_port):
+        return configured_port
+    # Konfigurierter Port nicht verfuegbar - FTDI-Auto-Discovery
+    found = _find_ftdi_port()
+    if found and found != configured_port:
+        log.warning(f"Konfigurierter Port {configured_port} nicht verfuegbar. "
+                    f"Verwende automatisch erkannten FTDI-Port: {found}")
+    return found
+
+
 # ====== Konfiguration ======
 
 DEFAULT_CONF = {
@@ -470,6 +530,17 @@ def read_dse5510(ser, slave_id):
     except Exception as e:
         data["error"] = str(e)
         log.error(f"Lesefehler: {e}")
+        # USB-Re-Enumeration erkennen: "No such file or directory" oder
+        # "device disconnected" -> Port schliessen damit Main-Loop ihn ueber
+        # _resolve_serial_port automatisch neu findet (z.B. /dev/dse-rs232).
+        msg = str(e).lower()
+        if any(s in msg for s in ("no such file", "errno 2", "device disconnected",
+                                   "input/output error", "errno 5", "could not open")):
+            try:
+                ser.close()
+                log.warning("Serial-Port wegen USB-Reset geschlossen - Auto-Recovery beim naechsten Zyklus")
+            except Exception:
+                pass
 
     return data
 
@@ -1092,9 +1163,24 @@ def main():
         try:
             # Serielle Verbindung oeffnen
             if ser is None or not ser.is_open:
+                # AUTO-RECOVERY: Bei USB-Re-Enumeration (z.B. nach Generator-Start
+                # Spannungs-Spike) verschiebt sich der FTDI-Adapter von ttyUSB0 nach
+                # z.B. ttyUSB6. _resolve_serial_port findet den Adapter automatisch
+                # wieder (via /dev/dse-rs232 Symlink oder FTDI-Vendor-Scan).
+                active_port = _resolve_serial_port(conf["serial_port"])
+                if not active_port:
+                    # Kurzer Backoff (3s) bei einzelnen Aussetzern, laenger nach mehreren
+                    backoff = 3 if consecutive_errors < 5 else min(int(conf["retry_delay"]), 30)
+                    log.warning(f"Kein Serial-Port verfuegbar (konfiguriert: {conf['serial_port']}). "
+                                f"Warte {backoff}s und versuche erneut...")
+                    store_alarm(conf["db_path"], "modbus_disconnect", 0,
+                                f"Kein Serial-Port verfuegbar (konfiguriert: {conf['serial_port']})")
+                    consecutive_errors += 1
+                    time.sleep(backoff)
+                    continue
                 try:
                     ser = serial.Serial(
-                        port=conf["serial_port"],
+                        port=active_port,
                         baudrate=int(conf["baud_rate"]),
                         bytesize=8,
                         parity=parity,
@@ -1104,10 +1190,10 @@ def main():
                     ser.reset_input_buffer()
                     ser.reset_output_buffer()
                     time.sleep(0.5)
-                    log.info(f"Seriell verbunden: {conf['serial_port']} @ {conf['baud_rate']} Baud")
+                    log.info(f"Seriell verbunden: {active_port} @ {conf['baud_rate']} Baud")
                     clear_alarm(conf["db_path"], "modbus_disconnect")
                 except Exception as e:
-                    log.warning(f"Serielle Verbindung zu {conf['serial_port']} fehlgeschlagen: {e}")
+                    log.warning(f"Serielle Verbindung zu {active_port} fehlgeschlagen: {e}")
                     store_alarm(conf["db_path"], "modbus_disconnect", 0,
                                 f"Serielle Verbindung fehlgeschlagen: {e}")
                     consecutive_errors += 1

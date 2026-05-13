@@ -2400,6 +2400,36 @@ UDEVRULE
     echo "  udev-Regel angelegt (persistent nach Reboot)"
 fi
 
+# ===== FTDI RS232-USB-Adapter: STABILER SYMLINK /dev/dse-rs232 =====
+# Hintergrund: Beim Remote-Start des Generators erzeugt der DSE 5510 einen
+# Spannungs-Spike auf der RS232-Leitung. Der FTDI-Adapter wird vom Kernel
+# kurzzeitig getrennt und unter einer NEUEN Nummer (z.B. ttyUSB6 statt ttyUSB0)
+# wieder eingehaengt. Damit verliert dse5510_sync den Port. Die folgende
+# udev-Regel bindet JEDEN FTDI-USB-Serial-Adapter (Vendor 0403) an den
+# stabilen Symlink /dev/dse-rs232, der die Re-Enumeration uebersteht.
+if lsusb | grep -qE "0403:(6001|6010|6011|6014|6015)"; then
+    echo "  FTDI RS232-USB-Adapter erkannt - stabilen Symlink anlegen..."
+    sudo tee /etc/udev/rules.d/99-dse-rs232.rules > /dev/null << 'FTDIRULE'
+# FTDI USB-RS232-Adapter -> stabiler Symlink /dev/dse-rs232
+# Ueberlebt USB-Re-Enumeration nach Spannungs-Spike bei Generator-Start.
+# Match: alle gaengigen FTDI Chips (FT232R/FT2232H/FT4232H/FT232H/FT231X)
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6001", SYMLINK+="dse-rs232", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6010", SYMLINK+="dse-rs232", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6011", SYMLINK+="dse-rs232", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6014", SYMLINK+="dse-rs232", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6015", SYMLINK+="dse-rs232", MODE="0666"
+FTDIRULE
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger --subsystem-match=tty 2>/dev/null || true
+    sleep 1
+    if [ -e /dev/dse-rs232 ]; then
+        REAL=$(readlink -f /dev/dse-rs232)
+        echo "  OK: /dev/dse-rs232 -> $REAL (ueberlebt USB-Re-Enumeration)"
+    else
+        echo "  Symlink noch nicht aktiv. Nach Reboot oder erneutem USB-Stecken verfuegbar."
+    fi
+fi
+
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
 echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
 

@@ -1,28 +1,27 @@
-<analysis>**original_problem_statement**: The user is building a comprehensive Kirmes (Fairground) billing and HR management system. Recent focus has been on the Einsatztagebuch (Order Diary) and building an Einsatzzentrale (Operations Center) dashboard for a Raspberry Pi Kiosk. PRODUCT REQUIREMENTS: Manage robust telemetry ingestion, order management, disruption logging (diary), team (Trupp) management, and a dedicated Kiosk interface for on-site operations with offline capabilities.
+<analysis>**original_problem_statement**: The user is building a comprehensive Kirmes (Fairground) billing and HR management system. PRODUCT REQUIREMENTS: Manage robust telemetry ingestion, order management, disruption logging (diary), team (Trupp) management, and dedicated Kiosk interfaces for on-site operations with offline capabilities (Einsatzzentrale, Tankbeleg-Pi, DSE 5510 Generators).
 
-**User's preferred language**: German. (WICHTIG: Antworte dem User ausschließlich auf Deutsch! / INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY)
+**User's preferred language**: German (WICHTIG: Antworte dem User ausschließlich auf Deutsch! / INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY)
 
 **what currently exists?** 
-A mature React/FastAPI/MongoDB app with EpiRent API sync. The Einsatzzentrale Kiosk is a standalone Vanilla JS HTML page () to bypass React Dev Server HMR/caching issues on the Pi. The Pi runs a local Python service () for caching. The Kiosk features an auto-updating UI (30s polling), a future-predicting rain radar (Open-Meteo grid), and a 3-status Multiview for disruption logging. The React Portal includes advanced order management, HR/time tracking with an audit log, and invoice handling.
+A mature React/FastAPI/MongoDB app with EpiRent API sync. It includes standalone Kiosk applications for Raspberry Pis (Einsatzzentrale, Tankwagen-Pi) and a Python sync service () for generator telemetry. The portal includes advanced order management, HR/time tracking, a full map-based generator monitoring dashboard, and newly added copy functions for assets, generators, and documents across orders.
 
 **Last working item**:
-    - Last item agent was working: Building a Copy function for Admin users in the Order Details view. The user wants to select specific articles, light masts, and generators from one order and copy them into another order, because equipment often stays at the same location across multiple sequential events.
-    - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? Frontend testing agent
+    - Last item agent was working: Debugging the DSE 5510 Pi sync service. The FTDI RS232-USB adapter dropped and re-enumerated from  to  due to a voltage spike when the generator was remotely started. The agent implemented a udev rule in the installation script () to create a persistent symlink () and provided instructions to the user to apply this fix.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? manual testing by curl / bash logs
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Copy Function for Assets & Generators across Orders (P0)
-     - Attempted fixes: The agent just started looking at  and the  endpoints before the context cut off.
+  Issue 1: DSE 5510 FTDI USB Re-enumeration on Generator Start (P0)
+     - Attempted fixes: The generator start command caused a USB disconnect. The agent updated the setup script to include a udev rule that strictly maps the FTDI Vendor/Product ID to  to survive port re-numbering.
      - Next debug checklist: 
-       1. Check frontend  or  to add selection checkboxes to the asset/generator tables.
-       2. Build a modal/dialog to select the Target Order (using existing order search endpoints).
-       3. Create a new backend endpoint (e.g., ) that takes a list of asset IDs/generator IDs and a target , and duplicates those records in the DB.
-     - Why fix this issue and what will be achieved with the fix? Saves admins significant time by not having to manually re-enter or re-assign hardware that remains on-site for subsequent events.
-     - Status: IN PROGRESS
-     - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Both
+       1. Wait for the user to confirm if the Pi is back online after applying the  fix ( or the new  symlink).
+       2. Verify if the 60-second GPS sync successfully transmits  and  to the backend once the serial connection is stabilized.
+     - Why fix this issue and what will be achieved with the fix? Ensures generator telemetry and remote-control remain stable despite hardware voltage spikes causing USB resets.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue? Y (Hardware environment specific)
+     - Should Test frontend/backend/both after fix? Backend (Check DB for incoming telemetry)
      - Blocked on other issue: None
 
 **In progress Task List**: 
@@ -31,86 +30,85 @@ None
 **Upcoming and Future Tasks**
     Upcoming Tasks:
     - (P1) EpiRent Lieferscheine (Delivery Notes) PDF Generation. (Waiting on user input regarding layout/design).
+    - (P2) Add Alarm vor Ort geprueft - Sammel-Warning quittieren button to the new Generator Diagnose page to resolve alarms and send a DSE-Reset command (Key 35707) to the device.
     Future Tasks:
     - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
     - (P2) Lastdiagramm Live-Test.
     - (P2) Camera-Foto Upload with EXIF GPS data in Dokumentenablage (Portal side).
     - (P2) Tank-Alarm-Threshold Notification for Generators.
+    - (P2) Refactor: Clean up duplicate Pi-scripts (Remove  now that they are definitively served from ).
 
 **Completed work in this session**
-- Fixed Kiosk Caching/Service Worker loops (DONE): Added script to unregister React SW on the Kiosk page and an API endpoint  to force clear Chromium caches.
-- Kiosk Auto-Update (DONE): Kiosk HTML polls  every 30s and hard-reloads if the hash changes.
-- Kiosk Security (DONE):  now injects  and  headers into all backend requests.
-- Multiansicht UI Upgrade (DONE): Implemented 50/50 split width on TV, added map to article list, converted Trupp pills to full cards.
-- Diary 3-Status Logic (DONE): Red (Open/No team), Yellow (In Progress/Team assigned), Green (Resolved). Added inline side-panel for assigning teams.
-- Weather/Radar Upgrade (DONE): Changed weather to 7 days (today + 6 future). Replaced RainViewer with Open-Meteo precipitation grid (4 hours future forecast animation).
-- Kiosk Documents (DONE): Removed upload/camera functions, making it read-only for the Pi.
-- Emoji Fix (DONE): Added  to Pi setup script.
-- Portal Fixes (DONE): Renamed Stundenberichte to Projektberichte. Filtered Kiosk Order list to .
-- Signup Table Sorting (DONE): Added column sorting (including parsing Steckergröße 16A/32A/63A) to the Anmeldungen table.
-- Zeiterfassung Audit Log (DONE): Added backend logging and frontend UI panel to track manual changes to HR data, time entries, and vacations.
+- Order Copy Feature (DONE): Admins can copy Assets and Generators from one order to another (, ).
+- Document Copy Feature (DONE): Extended the copy feature to physically duplicate and assign uploaded plans/documents across orders ().
+- Tankbeleg-Pi Keyboard & Status Badges (DONE): Touch keyboard always shows numbers. Added lokal gebucht · Sync ausstehend badge for offline bookings ().
+- Pi-Installer 404 Fix (DONE): Migrated  to  and fixed the download endpoint ().
+- Generator Map Tooltips (DONE): Changed Leaflet map hover tooltips to show  instead of the user field ().
+- Signups (Anmeldungen) Full-text Search (DONE): Added a search bar to filter signups by name, company, etc. ().
+- Generator Diagnostics Panel (DONE): Created  and a frontend panel to view raw DSE status bits and all open alarms ().
+- DSE 5510 Pi Sync Hardening (DONE): Fixed  deadlock. Added defensive threading, 3-5s hard timeouts for GPS lookups, made intervals configurable, and added  to the setup script (, ).
 
 **Earlier issues found/mentioned but not fixed**
 None.
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Service Worker caching stale Kiosk HTML on the Pi.
-  - Recurrence count: 3
+  - Issue recurrence in previous fork: None.
+  - Recurrence count: 0
   - Status: RESOLVED
-  - Note: Fixed by specifically adding logic in  and  to skip the Service Worker for  and an inline killer script in the Kiosk HTML.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-React, FastAPI, Vanilla JS (for Kiosk), Open-Meteo API (Precipitation Grid), Service Workers, MongoDB, Chromium Kiosk Mode.
+React, FastAPI, MongoDB, MQTT, Modbus RTU via RS232/USB, Leaflet Maps, Chromium Kiosk Mode, gpsd, Linux systemd & udev rules, Python threading/timeouts.
 
 **key DB schema**
-  - :  (NEW)
   - : 
   - : 
+  - , , 
 
 **changes in tech stack**
-  - None, but added heavy reliance on  hashing for the Kiosk HTML to trigger auto-reloads.
+  - Added hardware-level  rules generation to the Pi deployment scripts to bind FTDI adapters to stable  symlinks.
 
 **All files of reference** 
-  -  (Heavily updated, 3-status logic, grid weather)
-  -  (Updated to inject auth headers)
-  -  (Added build-id, updated weather to grid)
-  -  (Added  logic)
-  -  (Added Audit Log UI)
-  -  (Current working file for copy feature)
-  -  (Current working file for copy feature)
+  -  (Heavily updated for GPS timeout safety)
+  -  (Installer script logic updated with udev and unmask configs)
+  -  (Diagnostics endpoint, ingest adjustments)
+  -  (Copy endpoints for assets and docs)
+  -  (UI for document copying)
+  -  (UI for signup search)
+  -  (Keyboard and offline UI tweaks)
 
 **Areas that need refactoring**: 
-  -  is almost 3000 lines of Vanilla JS. It is working exceptionally well and auto-updating, but is dense. Avoid refactoring it unless absolutely necessary.
+  -  directory is obsolete. The installer and  are now cleanly served from . The  files should be deleted to prevent future confusion.
 
 **key api endpoints**
-  -  (Used for Kiosk auto-update)
-  -  (Needs to be created)
+  - 
+  - 
+  - 
+  - 
 
 **Critical Info for New Agent** 
 - **Language Constraint:** ALWAYS reply in German.
-- **Copy Feature Logic:** Equipment (Generators, Light Masts) often remains physically in the same place for consecutive events. The user needs to select these items in Order A and copy them to Order B so they don't have to re-enter all the data.
-- **Kiosk Vanilla JS:** If you touch the Kiosk, do it ONLY in . Do not use React for the Kiosk.
+- **Pi Script Hardening:** The  script running on the client Pi was deadlocking because of . It is now wrapped in a defensive threading block with a hard timeout. **Do not remove the threading imports or the 3-5s timeouts in .**
+- **USB Re-enumeration:** When the generator starts, it drops the USB connection ( becomes ). A udev rule mapping it to  was added to the installation script. The user is currently verifying this on their physical device.
 
 **documents and test reports created in this job**
-None (Handled via bash and UI screenshots).
+  - 
+  - 
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. (User) das Regenradar darf nicht in der Vergangenheit liegen, sonder soll in der Zukunft sein. +4 Stunden.
- 2. (Agent) Replaced RainViewer with Open-Meteo precipitation grid (4h future forecast).
- 3. (User) in der Einsatzzentrale benötige ich kein Upload und Foto Funktion.
- 4. (Agent) Removed upload/camera functions from the Kiosk Document tile.
- 5. (User) beim wetter hab ich auf dem PI nur die Kisten anstatt bilder.
- 6. (Agent) Added  to Pi setup and refresh scripts to fix Chromium emoji rendering.
- 7. (User) wo kommt der Blanko Projektbericht an?
- 8. (Agent) Explained they go to the DB but are hidden due to missing order IDs.
- 9. (User) checke deine aussage. die kommen in Verwaltung / Stundenberichte an. Änder die Bezeichnung auf Projektberichte.
- 10. (User) Baue unter Anmeldung eine Sortierfunktion ein...
- 11. (User) In der Protokollansicht möchte ich, dass festgehalten wird, wann eine Änderung vorgenommen wurde und von wem...
- 12. (Agent) Implemented Audit Log.
- 13. (LATEST User) baue hier für mich als Admin eine Kopierfunktion ein. Wenn ich den butten drücke kann ich die Artikel und Lichtmasten auswählen und die dann in einen weiteren Job Kopieren. Das muss ich auch bei den Genertoren auch machen können.
+ 1. (User) checke das Installationsskript, das dies jetzt auch korrekt ist. und hier kommen keine daten an.
+ 2. (Agent) Verifies setup script, sees Pi last seen 45s ago, asks user to check if they are looking at the Production or Test portal.
+ 3. (User) ist da. dauerte einfach nur etwas. Wo ist die GPS Position? Gib mir ein Befehl um zu checken...
+ 4. (Agent) Provides  and  commands to check the physical Pi GPS.
+ 5. (User) Pastes output showing a perfect 3D GPS fix via .
+ 6. (Agent) Checks backend, notes no GPS data is arriving. Asks for -- No entries -- logs.
+ 7. (User) Pastes logs showing . Also shows a remote generator start command worked, but immediately after,  disconnected with .
+ 8. (Agent) Diagnoses that the FTDI adapter dropped and re-enumerated due to a voltage spike. Asks user to run  and .
+ 9. (User) Pastes logs confirming FTDI disconnected from  and reattached to .
+ 10. (LATEST User) Waiting for the user to apply the provided fix (changing  in  to  or deploying the new udev rule ). Pending user confirmation.
 
 **Project Health Check:**
 Broken: None.
@@ -118,34 +116,29 @@ Mocked: None.
 
 **3rd Party Integrations** 
 - Stripe (Payments) — requires User API Key
-- Open-Meteo (Weather API / Precip Grid) — No key required.
+- Open-Meteo (Weather API) — No key required.
 - Nominatim (Geocoding API) — No key required.
 - EpiRent (Event software API)
 
 **Testing status**
-  - Testing agent used after significant changes: NO
+  - Testing agent used after significant changes: YES
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None
+  - Test files created: 
   - Known regressions: None
 
 **Credentials to test flow:**
 - Preview Admin:  / 
 
 **What agent forgot to execute**
-- The agent was just starting the Copy Assets feature when the context ended. No code was written for this feature yet.
+- Nothing. The agent successfully updated the setup script with the  rule and is waiting on the user's manual hardware test.
 
 **Debugging checklist for current issue**
-    Issue: Copy Function for Assets & Generators across Orders
+    Issue: DSE 5510 Pi RS232 Adapter re-enumeration on start
+    
+    Hardware/Pi Side:
+    - Ensure the user updates  to point to the newly assigned port (e.g., ) or applies the udev rule provided.
+    - Restart  and verify  logs resume.
 
-    Frontend files to check: 
-    
-    - Add checkboxes next to Assets (Artikel/Lichtmasten) and Generators.
-    - Add a Kopieren nach... (Copy to...) button.
-    - Implement a modal using the existing order search API to pick the destination .
-  
-    Backend files to check:
-    
-    - Create an endpoint .
-    - It should accept ,  (List of Mongo ObjectIds for ), and  (List of strings for ).
-    - Query the selected assets, strip their , change their  to the target, and insert them.
-    - Append the selected  to the target order's .</analysis>
+    Backend files to check: 
+    -  (Verify the  udev block remains intact).
+    -  (Monitor if  resolves itself once the serial port stabilizes).</analysis>
