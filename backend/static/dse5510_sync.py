@@ -1169,13 +1169,14 @@ def main():
             # stummer SIM7600-Port niemals die main-loop einfriert. Vorher
             # konnte das den kompletten Sync stoppen ohne Log-Hinweis.
             if now - last_gps_time >= 60:
+                import threading as _threading_mod  # defensive lokale Bindung
                 gps_result = {"data": None}
                 def _gps_worker():
                     try:
                         gps_result["data"] = read_gps()
                     except Exception as _e:
                         log.debug(f"GPS-Worker Exception: {_e}")
-                gps_thread = threading.Thread(target=_gps_worker, daemon=True)
+                gps_thread = _threading_mod.Thread(target=_gps_worker, daemon=True)
                 gps_thread.start()
                 gps_thread.join(timeout=5.0)
                 if gps_thread.is_alive():
