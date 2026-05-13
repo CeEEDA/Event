@@ -24,6 +24,7 @@ Status pruefen:
 
 import struct
 import time
+import threading
 import json
 import logging
 import os
@@ -1163,11 +1164,26 @@ def main():
 
                 last_read_time = now
 
-            # GPS lesen (alle 60 Sekunden)
+            # GPS lesen (alle 60 Sekunden) - HARDENED: 5s Worker-Timeout damit
+            # ein haengender Serial-Open (gpsd belegt z.B. /dev/ttyUSB2) oder ein
+            # stummer SIM7600-Port niemals die main-loop einfriert. Vorher
+            # konnte das den kompletten Sync stoppen ohne Log-Hinweis.
             if now - last_gps_time >= 60:
-                gps = read_gps()
-                if gps:
-                    last_gps = gps
+                gps_result = {"data": None}
+                def _gps_worker():
+                    try:
+                        gps_result["data"] = read_gps()
+                    except Exception as _e:
+                        log.debug(f"GPS-Worker Exception: {_e}")
+                gps_thread = threading.Thread(target=_gps_worker, daemon=True)
+                gps_thread.start()
+                gps_thread.join(timeout=5.0)
+                if gps_thread.is_alive():
+                    log.warning("GPS-Lookup haengt (>5s) - skip diesen Zyklus")
+                else:
+                    gps = gps_result["data"]
+                    if gps:
+                        last_gps = gps
                 last_gps_time = now
 
             # Schnelles Command-Polling (jede Sekunde fuer sofortige Reaktion)
