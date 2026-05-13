@@ -517,12 +517,43 @@ def read_gps():
             continue
 
     # Fallback: gpsd (fuer externe USB-GPS-Maus)
+    # WICHTIG: gpsd.get_current() blockiert OHNE Timeout wenn kein GPS-Fix
+    # vorhanden ist. Auf einem Pi der gpsd installiert hat aber KEINE
+    # GPS-Hardware angeschlossen ist, friert das die komplette main-loop
+    # ein - kein Sync, kein Command-Poll mehr. Daher socket-level Timeout
+    # vor dem Aufruf setzen und im Worker-Thread laufen lassen damit es
+    # hart aufgebrochen werden kann.
     try:
-        import gpsd
-        gpsd.connect()
-        packet = gpsd.get_current()
-        if packet.mode >= 2:
-            return {"latitude": round(packet.lat, 6), "longitude": round(packet.lon, 6)}
+        import socket as _socket
+        # 1. Schneller Reachability-Check: ist gpsd-Port ueberhaupt offen?
+        try:
+            with _socket.create_connection(("127.0.0.1", 2947), timeout=1) as _s:
+                pass
+        except Exception:
+            return None  # gpsd laeuft nicht - sauberer Abbruch
+
+        # 2. Daten lesen mit hartem Thread-Timeout (max 3s)
+        import threading
+        result = {"data": None}
+        def _gpsd_worker():
+            try:
+                import gpsd
+                _socket.setdefaulttimeout(2)
+                gpsd.connect()
+                pkt = gpsd.get_current()
+                if pkt.mode >= 2:
+                    result["data"] = {"latitude": round(pkt.lat, 6), "longitude": round(pkt.lon, 6)}
+            except Exception as e:
+                log.debug(f"GPS-Worker Fehler: {e}")
+            finally:
+                _socket.setdefaulttimeout(None)
+        t = threading.Thread(target=_gpsd_worker, daemon=True)
+        t.start()
+        t.join(timeout=3.0)
+        if t.is_alive():
+            log.debug("GPS-Worker timeout (gpsd haengt - kein Fix verfuegbar)")
+            return None
+        return result["data"]
     except Exception as e:
         log.debug(f"GPS nicht verfuegbar: {e}")
     return None
