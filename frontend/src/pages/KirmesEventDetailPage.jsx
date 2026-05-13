@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
   Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard, ChevronDown,
-  Menu,
+  Menu, Search,
 } from "lucide-react";
 
 import { Input } from "../components/ui/input";
@@ -86,6 +86,10 @@ export default function KirmesEventDetailPage() {
   // dir: "asc" | "desc" | null. Bei null = original Reihenfolge (kein Sort).
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
+  // Volltextsuche fuer die Anmeldungen-Tabelle. Filtert Firma, Name,
+  // Fahrgeschaeft, Platz, Anschluss, Email, Telefon, Status etc. - alles
+  // was in der Tabelle/Karte erkennbar ist, soll auch suchbar sein.
+  const [signupSearch, setSignupSearch] = useState("");
 
   // Steckergroessen in logischer Reihenfolge (klein -> gross).
   // Werte, die nicht im Mapping stehen, landen alphabetisch dahinter.
@@ -138,6 +142,30 @@ export default function KirmesEventDetailPage() {
     return arr;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, sortKey, sortDir, _CONN_ORDER]);
+
+  // Volltextsuche: bauen wir auf sortedSignups auf, damit Sortierung
+  // erhalten bleibt und die Sucheingabe nur filtert. Tokenisiertes Matching
+  // (alle Teile muessen vorkommen) damit "meyer 125" auch dann zieht wenn
+  // Firma und Anschluss separat in der Karte stehen.
+  const filteredSignups = useMemo(() => {
+    const q = (signupSearch || "").trim().toLowerCase();
+    if (!q) return sortedSignups;
+    const tokens = q.split(/\s+/).filter(Boolean);
+    return sortedSignups.filter(s => {
+      const sch = s.schausteller || {};
+      const hay = [
+        sch.firma, sch.name, sch.email, sch.rechnungs_email, sch.telefon,
+        sch.adresse, sch.plz, sch.ort,
+        s.fahrgeschaeft, s.platznummer, s.connection_type,
+        s.payment_status, s.invoice_number,
+        s.price ?? s.preis, s.kwh_used,
+        s.notes, s.note, s.bemerkung,
+      ].filter(v => v !== null && v !== undefined && v !== "")
+        .map(v => String(v).toLowerCase())
+        .join(" ");
+      return tokens.every(t => hay.includes(t));
+    });
+  }, [sortedSignups, signupSearch]);
 
   // Hilfs-Komponente: sortierbarer Spalten-Header
   function SortableTh({ k, label, align = "left", className = "" }) {
@@ -782,12 +810,54 @@ export default function KirmesEventDetailPage() {
 
         {/* Signups Table */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">Anmeldungen ({(event.signups || []).length})</h2>
+          <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Anmeldungen ({(event.signups || []).length})
+              {signupSearch.trim() && (
+                <span className="ml-2 text-xs font-normal text-fuchsia-600" data-testid="signups-match-count">
+                  · {filteredSignups.length} Treffer
+                </span>
+              )}
+            </h2>
+            {(event.signups || []).length > 0 && (
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={signupSearch}
+                  onChange={(e) => setSignupSearch(e.target.value)}
+                  placeholder="Suche: Firma, Name, Platz, Geschäft, ..."
+                  className="w-full h-9 pl-8 pr-8 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-400 focus:ring-1 focus:ring-fuchsia-200"
+                  data-testid="signups-search-input"
+                />
+                {signupSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setSignupSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                    aria-label="Suche loeschen"
+                    data-testid="signups-search-clear"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           {(event.signups || []).length === 0 ? (
             <div className="px-5 py-12 text-center text-gray-400 text-sm">
               Noch keine Anmeldungen vorhanden
+            </div>
+          ) : filteredSignups.length === 0 ? (
+            <div className="px-5 py-12 text-center text-gray-400 text-sm" data-testid="signups-no-matches">
+              Keine Anmeldungen passen zu &bdquo;<span className="font-medium text-gray-600">{signupSearch}</span>&ldquo;
+              <button
+                type="button"
+                onClick={() => setSignupSearch("")}
+                className="ml-3 text-xs text-fuchsia-600 hover:text-fuchsia-700 underline"
+              >
+                Suche zuruecksetzen
+              </button>
             </div>
           ) : (
             <>
@@ -822,7 +892,7 @@ export default function KirmesEventDetailPage() {
                   <option value="status:asc">Status A–Z</option>
                 </select>
               </div>
-              {sortedSignups.map(signup => {
+              {filteredSignups.map(signup => {
                 const sch = signup.schausteller;
                 const isExpanded = expandedSignup === signup.id;
                 const isQrLinked = !!(signup.emu_device_id && signup.emu_meter_id);
@@ -1153,7 +1223,7 @@ export default function KirmesEventDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedSignups.map(signup => {
+                  {filteredSignups.map(signup => {
                     const sch = signup.schausteller;
                     const isExpanded = expandedSignup === signup.id;
                     const isQrLinked = !!(signup.emu_device_id && signup.emu_meter_id);
