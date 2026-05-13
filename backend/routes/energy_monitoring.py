@@ -1905,6 +1905,26 @@ class DSE5510SetupRequest(BaseModel):
     controller_type: str = "DSE 5510"
     connection_type: str = ""  # "pi_usb", "pi_rs232", or ""
 
+@router.get("/dse5510-script", response_class=PlainTextResponse, include_in_schema=False)
+async def get_dse5510_script(variant: str = "rs232"):
+    """Liefert das aktuelle dse5510_sync.py (oder dse_usb_sync.py) Script ohne Auth.
+    Damit kann der Pi-Adminstrator das Script direkt per curl aktualisieren ohne
+    den kompletten Setup-Flow erneut durchzuspielen. Enthaelt KEINE Secrets -
+    nur das Sync-Script selbst (api_url/device_key kommen aus /etc/dse5510.conf).
+    """
+    static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+    fname = "dse_usb_sync.py" if (variant or "").lower() in ("usb", "usb-direct") else "dse5510_sync.py"
+    path = os.path.join(static_dir, fname)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"Script {fname} nicht gefunden")
+    with open(path, "r") as f:
+        content = f.read()
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.post("/devices/{device_id}/dse5510-setup")
 async def generate_dse5510_setup(device_id: str, request: Request, body: DSE5510SetupRequest = None, admin: dict = Depends(require_admin)):
     """Generate an all-in-one bash installer for DSE controllers via USB/RS232 + Pi."""
