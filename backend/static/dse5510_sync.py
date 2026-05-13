@@ -191,15 +191,35 @@ def _find_ftdi_port():
 def _resolve_serial_port(configured_port):
     """Liefert den tatsaechlich nutzbaren Serial-Port zurueck.
     Priorisiert konfigurierten Port, faellt zurueck auf /dev/dse-rs232 oder
-    auf einen automatisch erkannten FTDI-Adapter."""
-    if configured_port and os.path.exists(configured_port):
+    auf einen automatisch erkannten FTDI-Adapter.
+
+    WICHTIG: 'os.path.exists' allein reicht nicht (Kernel cached Symlinks
+    nach USB-Reset), wir muessen auch testen ob der Port wirklich OFFENBAR
+    ist - sonst landen wir in einer Broken-Pipe-Schleife."""
+
+    def _port_usable(p):
+        """Versucht den Port kurz zu oeffnen - wenn das gelingt, ist er nutzbar."""
+        if not p or not os.path.exists(p):
+            return False
+        try:
+            import serial as _serial
+            s = _serial.Serial(p, 9600, timeout=0.1)
+            s.close()
+            return True
+        except Exception:
+            return False
+
+    if _port_usable(configured_port):
         return configured_port
-    # Konfigurierter Port nicht verfuegbar - FTDI-Auto-Discovery
+
+    # Konfigurierter Port nicht nutzbar - FTDI-Auto-Discovery
     found = _find_ftdi_port()
-    if found and found != configured_port:
-        log.warning(f"Konfigurierter Port {configured_port} nicht verfuegbar. "
-                    f"Verwende automatisch erkannten FTDI-Port: {found}")
-    return found
+    if found and _port_usable(found):
+        if found != configured_port:
+            log.warning(f"Konfigurierter Port {configured_port} nicht nutzbar (USB-Reset?). "
+                        f"Verwende automatisch erkannten FTDI-Port: {found}")
+        return found
+    return None
 
 
 # ====== Konfiguration ======
