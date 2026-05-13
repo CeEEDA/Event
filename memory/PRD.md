@@ -16,7 +16,19 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
-### Feb 2026 – Pi-Installer 404 Fix
+### Feb 2026 – Diagnose-Panel fuer Generator-Detailseite (Variante A)
+- ✅ **Backend** `GET /api/generators/{gen_id}/diagnostics` (Admin-only) liefert:
+  - Meta (Name, Serial, Controller, status, last_seen, dse_module_uid, topic_prefix, mapping)
+  - Alle offenen Alarme (nicht nur den prominenten Primaer-Alarm)
+  - Latest-Telemetry inkl. `status_bits_raw` + komplett dekodiertes `status_bits_decoded` (alle 9 GenComm-Bits mit Bedeutung/Severity/set-Flag)
+  - Letzte ~50 Roh-MQTT-Messages, gefiltert nach Topic-Prefix UND module_uid (OR-Match damit auch nach Re-Mapping noch Historie sichtbar bleibt)
+- ✅ **Frontend** GeneratorDetailPage:
+  - Im roten Alarm-Banner steht jetzt ein "Diagnose oeffnen"-Button (Admin only).
+  - Aufgeklapptes Dark-Theme-Panel zeigt drei Bereiche: Offene Alarme (mit Severity-Tag), DSE Status-Bits (mit Bit-Visualisierung + Maske), MQTT-Roh-Messages (expandierbar, Topic + Payload + Timestamp).
+  - "Aktualisieren"- und "JSON kopieren"-Buttons (Zwischenablage-Dump fuer Support-Tickets).
+- ✅ Tests: `/app/backend/tests/test_generator_diagnostics.py` (3 Tests, alle PASS).
+
+
 - ✅ `_INSTALL_SCRIPT_PATH` und `_PI_SERVICE_PATH` in `routes/einsatzzentrale.py` suchen jetzt in mehreren Kandidaten-Pfaden (relativ zum __file__ via `_PROJECT_ROOT`, dann hardcoded `/app/scripts/...`, schliesslich `/app/backend/static/...`).
 - ✅ Kopien von `install_einsatzzentrale_kiosk.sh` und `pi_service.py` liegen jetzt zusaetzlich in `/app/backend/static/` und werden damit garantiert mit dem Backend ausgeliefert (Production-Deployments shippen oft nur `/app/backend/`).
 - ✅ Verbessertes 404-Detail listet alle gesuchten Pfade, damit Deployment-Probleme sofort sichtbar sind.

@@ -1831,3 +1831,164 @@ async def push_remote_update(device_id: str, data: RemoteConfigUpdate, user: dic
     await db.device_remote_updates.insert_one(update_doc)
 
     return {"message": f"Config-Update fuer {device_id} geplant", "changes": config_changes}
+
+
+# ============== Diagnose / Raw-Data (Admin) ==============
+
+# Bit-Map der DSE-GenComm Page-3 Register-6 Status-Bits. Wird verwendet um
+# dem User in der "Diagnose"-Box zu zeigen WELCHES Bit den Warning-/Alarm-
+# Trigger ausgeloest hat - das eigentliche Problem hat der DSE auf der
+# Page-8-Conditions-Tabelle, aber nicht jedes Geraet schickt die mit.
+_DSE_STATUS_BIT_MEANINGS = [
+    (0x8000, "Bit 15", "Steuerung nicht konfiguriert (Control unit not configured)", "info"),
+    (0x2000, "Bit 13", "Steuerungsfehler (Control unit failure)", "shutdown"),
+    (0x1000, "Bit 12", "Abschaltung aktiv (Shutdown alarm active)", "shutdown"),
+    (0x0800, "Bit 11", "Elektrische Ausloesung (Electrical trip)", "shutdown"),
+    (0x0400, "Bit 10", "Warnung aktiv (Warning alarm active)", "warning"),
+    (0x0200, "Bit  9", "Telemetry-Alarm Flag", "warning"),
+    (0x0100, "Bit  8", "Satellite-Telemetry-Alarm Flag", "warning"),
+    (0x0080, "Bit  7", "Kein Font-File (No font file)", "info"),
+    (0x0040, "Bit  6", "Kontrollierte Abschaltung (Controlled shutdown)", "warning"),
+]
+
+
+def _decode_status_bits(value):
+    """Wandelt das rohe SB-Wort in eine lesbare Liste {bit, mask_hex, label, severity, set}."""
+    try:
+        sb = int(value)
+    except (TypeError, ValueError):
+        return []
+    out = []
+    for mask, bit_name, label, severity in _DSE_STATUS_BIT_MEANINGS:
+        out.append({
+            "bit": bit_name,
+            "mask_hex": f"0x{mask:04X}",
+            "label": label,
+            "severity": severity,
+            "set": bool(sb & mask),
+        })
+    return out
+
+
+def _candidate_topic_filters(gen, device, mapping):
+    """Sammelt mögliche Topic-Filter aus allen bekannten Quellen.
+    Da der User mehrere Konfig-Wege hat (Mapping-Tabelle, dse_module_uid auf
+    Device, dse_mqtt_topic_prefix auf Generator) bauen wir eine Liste von
+    $regex-Filtern - alles was matched gehoert wahrscheinlich zu dem Geraet.
+    Wir UND-en NICHT, sondern ODERn (any-match), damit auch alte Messages
+    von vor dem Re-Mapping noch auftauchen koennen.
+    """
+    import re as _re
+    prefixes = set()
+    uids = set()
+    for src in (gen or {}, device or {}, mapping or {}):
+        if not isinstance(src, dict):
+            continue
+        for k in ("dse_mqtt_topic_prefix", "topic_prefix"):
+            v = (src.get(k) or "").strip()
+            if v:
+                prefixes.add(v.rstrip("/"))
+        for k in ("dse_module_uid", "module_uid"):
+            v = (src.get(k) or "").strip()
+            if v:
+                uids.add(v.upper())
+    or_clauses = []
+    for p in prefixes:
+        or_clauses.append({"topic": {"$regex": f"^{_re.escape(p)}(/|$)"}})
+    for u in uids:
+        # UID kann irgendwo im Topic stehen ("eventenergie/35072/<uid>/engine")
+        or_clauses.append({"topic": {"$regex": _re.escape(u), "$options": "i"}})
+    return or_clauses
+
+
+@router.get("/{generator_id}/diagnostics")
+async def get_generator_diagnostics(
+    generator_id: str, limit: int = 50, admin: dict = Depends(require_admin_user)
+):
+    """Diagnose-Endpoint fuer false-positive Alarme.
+
+    Liefert alles was wir ueber das Geraet wissen - Geraete-Metadaten, alle
+    offenen Alarme (nicht nur den prominent angezeigten), die entschluesselten
+    Status-Bits (so sieht man genau welches Flag den Warning-Alarm ausloest)
+    und die letzten N Roh-MQTT-Messages die dem Geraet zugeordnet werden
+    koennen. Damit lassen sich vor-Ort-okay/Portal-Alarm Diskrepanzen schnell
+    nachvollziehen.
+    """
+    limit = max(1, min(int(limit or 50), 200))
+
+    # Geraet finden: kann ein Generator-Doc oder ein Device-Doc sein. Device-IDs
+    # haben den Prefix "dev-".
+    raw_id = generator_id[4:] if generator_id.startswith("dev-") else generator_id
+    gen_doc = await db.generators.find_one({"id": generator_id}, {"_id": 0})
+    device_doc = await db.devices.find_one({"id": raw_id}, {"_id": 0})
+    if not gen_doc and not device_doc:
+        raise HTTPException(status_code=404, detail="Geraet nicht gefunden")
+
+    mapping = await db.mqtt_gateway_mappings.find_one(
+        {"generator_id": generator_id}, {"_id": 0}
+    ) or {}
+
+    # Offene Alarme (alle, nicht nur die primaere)
+    open_alarms = await db.generator_alarms.find(
+        {"generator_id": generator_id, "resolved_at": None},
+        {"_id": 0},
+    ).sort("timestamp", -1).to_list(50)
+
+    # Decoded status_bits aus latest_telemetry
+    telemetry = (gen_doc or device_doc or {}).get("latest_telemetry") or {}
+    sb_raw = telemetry.get("status_bits")
+    status_bits_decoded = _decode_status_bits(sb_raw) if sb_raw is not None else []
+    # Nur die gesetzten Bits separat fuer schnellen Blick
+    status_bits_active = [b for b in status_bits_decoded if b["set"]]
+
+    # Roh-MQTT-Messages: ueber alle bekannten Topic-Indizien suchen
+    or_clauses = _candidate_topic_filters(gen_doc, device_doc, mapping)
+    raw_messages = []
+    matched_filter = None
+    if or_clauses:
+        try:
+            raw_messages = await db.mqtt_raw_messages.find(
+                {"$or": or_clauses}, {"_id": 0}
+            ).sort("timestamp", -1).to_list(limit)
+            matched_filter = or_clauses
+        except Exception as e:
+            logger.warning(f"diagnostics raw query failed: {e}")
+    # Payload-Strings begrenzen damit das Frontend nicht erstickt
+    for m in raw_messages:
+        p = m.get("payload")
+        if isinstance(p, str) and len(p) > 4000:
+            m["payload"] = p[:4000] + "...[truncated]"
+
+    # Generator/Device meta - schlankes Pick
+    def _pick(d, *keys):
+        return {k: d.get(k) for k in keys if d and d.get(k) is not None}
+
+    meta = {
+        "id": generator_id,
+        "raw_id": raw_id,
+        "from_generators": bool(gen_doc),
+        "from_devices": bool(device_doc),
+        "name": (gen_doc or device_doc or {}).get("name") or (device_doc or {}).get("user_field"),
+        "serial_number": (gen_doc or device_doc or {}).get("serial_number"),
+        "model": (gen_doc or device_doc or {}).get("model"),
+        "controller": (gen_doc or device_doc or {}).get("controller"),
+        "status": (gen_doc or {}).get("status") or (device_doc or {}).get("mqtt_status"),
+        "last_seen": (gen_doc or device_doc or {}).get("last_seen"),
+        "dse_module_uid": (gen_doc or device_doc or {}).get("dse_module_uid"),
+        "dse_mqtt_topic_prefix": (gen_doc or device_doc or {}).get("dse_mqtt_topic_prefix")
+            or (mapping.get("topic_prefix") if mapping else None),
+        "mapping": _pick(mapping, "id", "gateway_name", "topic_prefix", "notes"),
+    }
+
+    return {
+        "ok": True,
+        "meta": meta,
+        "open_alarms": open_alarms,
+        "telemetry": telemetry,
+        "status_bits_raw": sb_raw,
+        "status_bits_decoded": status_bits_decoded,
+        "status_bits_active": status_bits_active,
+        "raw_messages": raw_messages,
+        "raw_messages_count": len(raw_messages),
+        "filter_used": matched_filter,
+    }

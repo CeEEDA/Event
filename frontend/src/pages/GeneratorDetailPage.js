@@ -30,6 +30,10 @@ import {
   FileText,
   Download,
   BarChart3,
+  Stethoscope,
+  ChevronDown,
+  ChevronRight,
+  Copy,
 } from "lucide-react";
 import {
   XAxis,
@@ -236,6 +240,13 @@ export default function GeneratorDetailPage() {
   const [hours, setHours] = useState(24);
   const [cmdLoading, setCmdLoading] = useState(null);
 
+  // Diagnose-Panel: lazy geladen erst beim Aufklappen, sonst wuerden raw
+  // MQTT-Logs jede Sekunde gezogen werden.
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagData, setDiagData] = useState(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagExpanded, setDiagExpanded] = useState(() => new Set()); // expanded raw-message ids
+
   // Analyse-Bereich
   const today = new Date().toISOString().split("T")[0];
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
@@ -276,6 +287,48 @@ export default function GeneratorDetailPage() {
       setAlarms(alarmRes.data);
     } catch (e) { console.error("Alarm load failed:", e); }
   }, [id, hours, navigate]);
+
+  // Diagnose laden - Admin-only Endpoint, deshalb tolerant gegen 403/404
+  // damit ein Mitarbeiter den Toggle einfach nicht sieht ohne Crash.
+  const loadDiagnostics = useCallback(async () => {
+    if (!isAdmin) return;
+    setDiagLoading(true);
+    try {
+      const r = await api.get(`/generators/${id}/diagnostics?limit=50`);
+      setDiagData(r.data);
+    } catch (e) {
+      console.error("Diagnostics load failed:", e);
+      toast.error("Diagnose-Daten konnten nicht geladen werden");
+    } finally {
+      setDiagLoading(false);
+    }
+  }, [id, isAdmin]);
+
+  const toggleDiag = () => {
+    setDiagOpen((prev) => {
+      const next = !prev;
+      if (next && !diagData && !diagLoading) loadDiagnostics();
+      return next;
+    });
+  };
+
+  const toggleDiagRow = (mid) => {
+    setDiagExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(mid)) next.delete(mid); else next.add(mid);
+      return next;
+    });
+  };
+
+  const copyDiagDump = () => {
+    if (!diagData) return;
+    try {
+      navigator.clipboard.writeText(JSON.stringify(diagData, null, 2));
+      toast.success("Diagnose-Dump in Zwischenablage kopiert");
+    } catch {
+      toast.error("Kopieren fehlgeschlagen");
+    }
+  };
 
   const fetchAnalyse = useCallback(async () => {
     if (!analyseDateFrom || !analyseDateTo) return;
@@ -482,6 +535,163 @@ export default function GeneratorDetailPage() {
                 <p className="text-xs text-red-200">seit {new Date(alarms[0].timestamp).toLocaleString("de-DE")}</p>
               )}
             </div>
+            {isAdmin && (
+              <button
+                onClick={toggleDiag}
+                className="flex items-center gap-1.5 text-xs bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-md font-medium transition-colors"
+                data-testid="diag-toggle-banner"
+                title="Roh-Daten ansehen damit der Trigger des Alarms gefunden werden kann"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                {diagOpen ? "Diagnose ausblenden" : "Diagnose oeffnen"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Diagnose-Panel: zeigt offene Alarme, decoded status-bits und letzte
+          MQTT-Roh-Messages fuer dieses Geraet - hilft false-positive Alarme
+          (Portal zeigt Alarm, vor Ort alles okay) zu debuggen. */}
+      {isAdmin && diagOpen && (
+        <div className="bg-slate-900 text-slate-100 border-t border-slate-700" data-testid="diag-panel">
+          <div className="max-w-7xl mx-auto px-4 py-4 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Stethoscope className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-sm font-semibold">Diagnose &middot; Roh-Daten</h3>
+                {diagLoading && <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadDiagnostics}
+                  disabled={diagLoading}
+                  className="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
+                  data-testid="diag-refresh"
+                >
+                  <RefreshCw className="w-3 h-3 inline mr-1" /> Aktualisieren
+                </button>
+                <button
+                  type="button"
+                  onClick={copyDiagDump}
+                  disabled={!diagData}
+                  className="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 inline-flex items-center gap-1"
+                  data-testid="diag-copy-dump"
+                >
+                  <Copy className="w-3 h-3" /> JSON kopieren
+                </button>
+              </div>
+            </div>
+
+            {!diagData && !diagLoading && (
+              <p className="text-xs text-slate-400">Klicke auf &bdquo;Aktualisieren&ldquo; um die Daten zu laden.</p>
+            )}
+
+            {diagData && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Linke Spalte: Open Alarms + Status-Bits */}
+                <div className="space-y-4">
+                  <section data-testid="diag-open-alarms">
+                    <h4 className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+                      Offene Alarme ({(diagData.open_alarms || []).length})
+                    </h4>
+                    {(diagData.open_alarms || []).length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">Keine offenen Alarme in der DB</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {diagData.open_alarms.map((a) => (
+                          <li key={a.id} className="flex items-start gap-2 text-xs bg-slate-800/60 rounded px-2 py-1.5">
+                            <span className={`shrink-0 mt-0.5 font-mono px-1.5 py-0.5 rounded text-[10px] ${a.severity === "shutdown" ? "bg-red-500/30 text-red-200" : "bg-amber-500/30 text-amber-200"}`}>
+                              {a.alarm_code}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-slate-100">{a.alarm_text}</p>
+                              <p className="text-[10px] text-slate-400">
+                                {new Date(a.timestamp).toLocaleString("de-DE")} &middot; {a.severity}
+                                {a.acknowledged && " &middot; ack"}
+                              </p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+
+                  <section data-testid="diag-status-bits">
+                    <h4 className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+                      DSE Status-Bits {diagData.status_bits_raw != null && (
+                        <span className="font-mono text-slate-300 ml-1">
+                          (0x{Number(diagData.status_bits_raw).toString(16).toUpperCase().padStart(4, "0")} = {diagData.status_bits_raw})
+                        </span>
+                      )}
+                    </h4>
+                    {(diagData.status_bits_decoded || []).length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">Keine status_bits in Telemetrie (Page-3 Reg-6 noch nicht empfangen)</p>
+                    ) : (
+                      <ul className="space-y-0.5 text-xs font-mono">
+                        {diagData.status_bits_decoded.map((b) => (
+                          <li key={b.mask_hex} className={`flex items-center gap-2 ${b.set ? "text-amber-300" : "text-slate-500"}`}>
+                            <span className="w-4">{b.set ? "●" : "○"}</span>
+                            <span className="w-16">{b.mask_hex}</span>
+                            <span className="flex-1 truncate">{b.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+
+                {/* Rechte Spalte: Roh-MQTT-Messages */}
+                <section data-testid="diag-raw-messages">
+                  <h4 className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+                    Letzte MQTT-Roh-Messages ({diagData.raw_messages_count || 0})
+                  </h4>
+                  {(diagData.raw_messages || []).length === 0 ? (
+                    <p className="text-xs text-slate-500 italic">
+                      Keine Roh-Messages gefunden. {!diagData.filter_used && "Geraet hat keine konfigurierte module_uid / topic_prefix - kann nicht filtern."}
+                    </p>
+                  ) : (
+                    <ul className="space-y-1 max-h-96 overflow-y-auto pr-1">
+                      {diagData.raw_messages.map((m, idx) => {
+                        const mid = `${m.timestamp}-${idx}`;
+                        const isExp = diagExpanded.has(mid);
+                        const payloadStr = typeof m.payload === "string" ? m.payload : JSON.stringify(m.payload);
+                        return (
+                          <li key={mid} className="bg-slate-800/60 rounded text-xs">
+                            <button
+                              type="button"
+                              onClick={() => toggleDiagRow(mid)}
+                              className="w-full flex items-start gap-1.5 px-2 py-1.5 text-left hover:bg-slate-800"
+                              data-testid={`diag-raw-row-${idx}`}
+                            >
+                              {isExp ? <ChevronDown className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" /> : <ChevronRight className="w-3 h-3 mt-0.5 shrink-0 text-slate-400" />}
+                              <div className="min-w-0 flex-1">
+                                <p className="font-mono text-emerald-300 truncate">{m.topic}</p>
+                                <p className="text-[10px] text-slate-400">{new Date(m.timestamp).toLocaleString("de-DE")}</p>
+                                {!isExp && (
+                                  <p className="font-mono text-slate-300 truncate">{payloadStr}</p>
+                                )}
+                              </div>
+                            </button>
+                            {isExp && (
+                              <pre className="px-2 pb-2 text-[11px] font-mono text-slate-200 whitespace-pre-wrap break-all">{payloadStr}</pre>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {diagData.meta && (
+                    <div className="mt-3 text-[10px] text-slate-500 leading-snug" data-testid="diag-meta">
+                      <p>Topic-Prefix: <span className="font-mono text-slate-400">{diagData.meta.dse_mqtt_topic_prefix || "(nicht gesetzt)"}</span></p>
+                      <p>Module-UID: <span className="font-mono text-slate-400">{diagData.meta.dse_module_uid || "(nicht gesetzt)"}</span></p>
+                      <p>Letzter Kontakt: <span className="text-slate-400">{diagData.meta.last_seen ? new Date(diagData.meta.last_seen).toLocaleString("de-DE") : "—"}</span></p>
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
           </div>
         </div>
       )}
