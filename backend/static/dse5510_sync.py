@@ -580,48 +580,50 @@ def read_dse5510(ser, slave_id):
 # ====== GPS ======
 
 def read_gps():
-    """Liest GPS-Position vom SIM7600 LTE-Modem via AT-Kommando.
-    Versucht mehrere Ports (USB-Verbindung des SIM7600 bietet AT-Ports).
-    Fallback auf gpsd falls kein SIM7600 AT-Port verfuegbar."""
+    """Liest GPS-Position. Priorisierung:
+    1. SIM7600 AT-Port (NUR wenn /dev/sim7600-at Symlink existiert - sonst skip!)
+    2. gpsd (USB-GPS-Maus oder NMEA-Stream)
 
-    # SIM7600 AT-Ports (typisch ttyUSB1-ttyUSB5 wenn USB-Kabel gesteckt)
-    sim_ports = ["/dev/ttyUSB3", "/dev/ttyUSB2", "/dev/ttyUSB1", "/dev/ttyUSB4", "/dev/ttyUSB5"]
-    for port in sim_ports:
+    Vorher wurde blind ttyUSB1-5 als SIM7600 probiert - das blockierte 3s pro Port
+    auf Systemen ohne SIM7600 und liess den 5s-Wrapper im main-Loop timeouten,
+    bevor gpsd ueberhaupt versucht wurde."""
+
+    # 1) SIM7600: NUR wenn stabiler udev-Symlink existiert (Installer legt den an).
+    # KEIN Blind-Scan mehr - das hat den GPS-Pfad auf gpsd-only-Systemen blockiert.
+    sim_at_port = None
+    for cand in ("/dev/sim7600-at", "/dev/sim7600-at2", "/dev/sim7600-nmea"):
+        if os.path.exists(cand):
+            sim_at_port = cand
+            break
+
+    if sim_at_port:
         try:
-            if not os.path.exists(port):
-                continue
-            s = serial.Serial(port, 115200, timeout=3)
-            # GPS aktivieren (ignoriert wenn bereits aktiv)
+            s = serial.Serial(sim_at_port, 115200, timeout=1)
             s.write(b"AT+CGPS=1\r\n")
-            time.sleep(0.5)
+            time.sleep(0.3)
             s.read(s.in_waiting or 256)
-            # GPS-Position abfragen
             s.write(b"AT+CGPSINFO\r\n")
-            time.sleep(1.5)
+            time.sleep(0.8)
             resp = s.read(s.in_waiting or 512).decode(errors="ignore")
             s.close()
-            # Format: +CGPSINFO: DDMM.MMMM,N,DDDMM.MMMM,E,date,time,alt,speed,course
-            if "+CGPSINFO:" not in resp:
-                continue
-            line = resp.split("+CGPSINFO:")[1].strip().split("\r")[0].strip()
-            parts = line.split(",")
-            if len(parts) < 4 or not parts[0] or parts[0] == "":
-                continue  # Kein Fix
-            # DDMM.MMMM -> Dezimalgrad
-            lat_raw, lat_dir = parts[0], parts[1]
-            lon_raw, lon_dir = parts[2], parts[3]
-            lat_deg = int(lat_raw[:2]) + float(lat_raw[2:]) / 60.0
-            lon_deg = int(lon_raw[:3]) + float(lon_raw[3:]) / 60.0
-            if lat_dir == "S":
-                lat_deg = -lat_deg
-            if lon_dir == "W":
-                lon_deg = -lon_deg
-            log.info(f"GPS Fix: {lat_deg:.6f}, {lon_deg:.6f} (via {port})")
-            return {"latitude": round(lat_deg, 6), "longitude": round(lon_deg, 6)}
-        except Exception:
-            continue
+            if "+CGPSINFO:" in resp:
+                line = resp.split("+CGPSINFO:")[1].strip().split("\r")[0].strip()
+                parts = line.split(",")
+                if len(parts) >= 4 and parts[0]:
+                    lat_raw, lat_dir = parts[0], parts[1]
+                    lon_raw, lon_dir = parts[2], parts[3]
+                    lat_deg = int(lat_raw[:2]) + float(lat_raw[2:]) / 60.0
+                    lon_deg = int(lon_raw[:3]) + float(lon_raw[3:]) / 60.0
+                    if lat_dir == "S":
+                        lat_deg = -lat_deg
+                    if lon_dir == "W":
+                        lon_deg = -lon_deg
+                    log.info(f"GPS Fix (SIM7600 {sim_at_port}): {lat_deg:.6f}, {lon_deg:.6f}")
+                    return {"latitude": round(lat_deg, 6), "longitude": round(lon_deg, 6)}
+        except Exception as e:
+            log.info(f"GPS: SIM7600 {sim_at_port} Lesefehler ({e}) - faellt zurueck auf gpsd")
 
-    # Fallback: gpsd (fuer externe USB-GPS-Maus)
+    # 2) gpsd (USB-GPS-Maus / externe NMEA-Quelle)
     # WICHTIG: gpsd.get_current() blockiert OHNE Timeout wenn kein GPS-Fix
     # vorhanden ist. Auf einem Pi der gpsd installiert hat aber KEINE
     # GPS-Hardware angeschlossen ist, friert das die komplette main-loop
@@ -1295,10 +1297,9 @@ def main():
 
                 last_read_time = now
 
-            # GPS lesen (alle 60 Sekunden) - HARDENED: 5s Worker-Timeout damit
-            # ein haengender Serial-Open (gpsd belegt z.B. /dev/ttyUSB2) oder ein
-            # stummer SIM7600-Port niemals die main-loop einfriert. Vorher
-            # konnte das den kompletten Sync stoppen ohne Log-Hinweis.
+            # GPS lesen (alle 60 Sekunden) - HARDENED: 8s Worker-Timeout.
+            # Innerer read_gps() ist jetzt sauberer: SIM7600 nur via udev-Symlink,
+            # sonst direkt gpsd (~3s). Wrapper 8s gibt gpsd genug Luft.
             if now - last_gps_time >= 60:
                 import threading as _threading_mod  # defensive lokale Bindung
                 gps_result = {"data": None}
@@ -1309,9 +1310,9 @@ def main():
                         log.debug(f"GPS-Worker Exception: {_e}")
                 gps_thread = _threading_mod.Thread(target=_gps_worker, daemon=True)
                 gps_thread.start()
-                gps_thread.join(timeout=5.0)
+                gps_thread.join(timeout=8.0)
                 if gps_thread.is_alive():
-                    log.warning("GPS-Lookup haengt (>5s) - skip diesen Zyklus")
+                    log.warning("GPS-Lookup haengt (>8s) - skip diesen Zyklus")
                 else:
                     gps = gps_result["data"]
                     if gps:
