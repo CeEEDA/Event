@@ -85,6 +85,22 @@ REG_NUM_STARTS         = PAGE7 + 16   # Starts, 32bit, scale 1
 # --- Page 3: Status Information (Base: 768) ---
 PAGE3 = 3 * 256  # = 768
 
+# --- Page 8: Digital Input Configuration / Alarm Conditions (Base: 2048) ---
+# Eingang 7 = Hauptschalter-Rueckmeldung (vom Kunden so konfiguriert).
+# Register 130 enthaelt den Alarm-Condition-Code fuer Input 7 (Bits 5-8 / MSB):
+#   0  = Input in Config disabled
+#   8/10 = Aktiv-Indikation  -> Breaker CLOSED
+#   9  = Inaktiv-Indikation  -> Breaker OPEN
+#   15 = Unimplemented
+PAGE8 = 8 * 256  # = 2048
+REG_INPUT7_ALARM_COND = PAGE8 + 130   # = 2178; Bits 5-8 / Mask 0x00F0 / Shift 4
+
+# --- Page 12: Digital Input States (Base: 3072) - neuere Firmware ---
+# Fallback: Register 17 Bit 10/16 (Bit-Index 9 von rechts) = Input 7 state.
+# Werte: 0 = OPEN, 1 = CLOSED.
+PAGE12 = 12 * 256  # = 3072
+REG_DIGITAL_INPUTS_STATE = PAGE12 + 17  # = 3089; Bit 10/16 fuer Input 7
+
 # --- Page 1: Identification & Mode (Base: 256) ---
 PAGE1 = 1 * 256  # = 256
 REG_INSTRUMENT_MODE    = PAGE1 + 14   # Betriebsmodus, 16bit
@@ -467,10 +483,12 @@ def read_dse5510(ser, slave_id):
         pos_kwh = read_uint32(ser, REG_GEN_POS_KWH, slave_id)
         num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
-        # HINWEIS: Page 3 Offset 14/15 sind State-Machine-Timer in Sekunden,
-        # KEINE Status-Bits (vorher falsch interpretiert). Der DSE 5510 hat
-        # kein eindeutig dokumentiertes "Generator switch closed"-Register
-        # auf Page 3. Wir leiten den Status aus Spannung+Frequenz ab.
+        # --- Hauptschalter-Rueckmeldung ueber Eingang 7 ---
+        # Variante A (5510 GenComm v1): Page 8 Reg 130, Bits 5-8 (Mask 0x00F0)
+        #   0=disabled, 8/10=CLOSED, 9=OPEN, 15=unimplemented
+        # Variante B (v9+): Page 12 Reg 17, Bit 10/16 (Bit-Index 9): 0=OPEN, 1=CLOSED
+        input7_a_raw = read_uint16(ser, REG_INPUT7_ALARM_COND, slave_id)
+        input7_b_raw = read_uint16(ser, REG_DIGITAL_INPUTS_STATE, slave_id)
 
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
@@ -518,23 +536,49 @@ def read_dse5510(ser, slave_id):
         data["dse_mode_raw"] = None
         data["dse_mode"] = "unknown"
 
-        # Generator-Status aus Messwerten ableiten (DSE 5510 hat keine
-        # eindeutigen Modbus-Bits dafuer - Page 3 Offsets sind State-Machine-Timer).
-        # has_voltage: mind. eine Phase > 200V (Nennlast ist 230V/400V)
+        # Generator verfuegbar: Spannung + Nennfrequenz (abgeleitet)
         has_voltage = (data["voltage_l1"] > 200 or data["voltage_l2"] > 200 or data["voltage_l3"] > 200)
-        # Frequenz im Nennbereich (50Hz +/- 5%) - Spool-up-Phasen unter 47Hz nicht als "verfuegbar" zaehlen
         has_normal_freq = 47.5 <= data["frequency"] <= 52.5
-
-        # Generator verfuegbar: laeuft hoch mit Spannung + Nennfrequenz
         data["generator_available"] = has_voltage and has_normal_freq
         data["generator_available_source"] = "derived"
 
-        # Hauptschalter geschlossen: Wenn der Generator stabil bei Nennspannung+Frequenz laeuft,
-        # ist der Output-Contactor zugeschaltet (sonst kaeme keine Spannung am Klemmenpaar an).
-        # Wichtig: das ist UNABHAENGIG von Last - auch ohne Verbraucher kann der Schalter
-        # geschlossen sein. Vorher wurde das aus power > 100W abgeleitet - das war falsch.
-        data["breaker_closed"] = data["generator_available"]
-        data["breaker_closed_source"] = "derived"
+        # ===== Hauptschalter geschlossen - PRIORITAET: Variante A -> B -> abgeleitet =====
+        breaker_closed = None
+        breaker_source = "unknown"
+
+        # Variante A: Page 8 Reg 130, Eingang 7 Alarm-Condition (Bits 5-8 / Maske 0x00F0 / Shift 4)
+        if input7_a_raw is not None:
+            input7_code = (input7_a_raw >> 4) & 0x0F
+            data["input7_alarm_cond_raw"] = input7_a_raw
+            data["input7_code"] = input7_code
+            if input7_code in (8, 10):
+                breaker_closed = True
+                breaker_source = "dse_page8_reg130_input7"
+            elif input7_code == 9:
+                breaker_closed = False
+                breaker_source = "dse_page8_reg130_input7"
+            elif input7_code == 0:
+                log.debug("Eingang 7 in DSE-Config DEAKTIVIERT - Variante A unbrauchbar")
+            elif input7_code == 15:
+                log.debug("Eingang 7 unimplemented (Page 8 Reg 130) - probiere Variante B")
+            else:
+                log.debug(f"Input 7 unerwarteter Code: {input7_code} - probiere Variante B")
+
+        # Variante B: Page 12 Reg 17, Bit 10/16 = Bit-Index 9 (0=offen, 1=geschlossen)
+        if breaker_closed is None and input7_b_raw is not None:
+            input7_bit = (input7_b_raw >> 9) & 0x01
+            data["input7_state_raw"] = input7_b_raw
+            data["input7_bit"] = input7_bit
+            breaker_closed = bool(input7_bit)
+            breaker_source = "dse_page12_reg17_input7"
+
+        # Fallback: abgeleitet aus generator_available
+        if breaker_closed is None:
+            breaker_closed = data["generator_available"]
+            breaker_source = "derived"
+
+        data["breaker_closed"] = breaker_closed
+        data["breaker_closed_source"] = breaker_source
 
         data["online"] = True
 
@@ -548,7 +592,8 @@ def read_dse5510(ser, slave_id):
             f"Batt={data['battery_voltage']:.1f}V "
             f"Oil={'n/a' if oil_press is None else str(oil_press) + 'kPa'} "
             f"Cool={'n/a' if coolant_temp is None else str(coolant_temp) + 'C'} "
-            f"Fuel={data['fuel_level_pct']}%"
+            f"Fuel={data['fuel_level_pct']}% "
+            f"Breaker={'CLOSED' if breaker_closed else 'OPEN'}({breaker_source})"
         )
 
     except Exception as e:
