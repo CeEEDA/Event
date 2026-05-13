@@ -258,17 +258,24 @@ def _calc_crc(data):
     return struct.pack("<H", crc)
 
 
-def _raw_read(ser, slave, register, count, timeout_s=0.25):
-    """Liest Modbus Holding Register via rohem Serial (FC03)."""
+def _raw_read(ser, slave, register, count, timeout_s=0.20):
+    """Liest Modbus Holding Register via rohem Serial (FC03).
+    EVENT-DRIVEN: ser.read(expected) blockiert bis genau die erwarteten Bytes
+    da sind ODER timeout_s abgelaufen ist. DSE 5510 antwortet typ. <30ms.
+    Vorher: fixes time.sleep(0.25) → 30 Reads = 7.5s tote Wartezeit pro Zyklus.
+    Jetzt: ~30ms pro Read → kompletter Zyklus < 1s."""
     frame = struct.pack(">BBHH", slave, 0x03, register, count)
     frame += _calc_crc(frame)
 
-    ser.reset_input_buffer()
-    ser.write(frame)
-    time.sleep(timeout_s)
-
-    expected = 3 + count * 2 + 2
-    response = ser.read(expected + 10)
+    orig_timeout = ser.timeout
+    try:
+        ser.timeout = timeout_s
+        ser.reset_input_buffer()
+        ser.write(frame)
+        expected = 3 + count * 2 + 2
+        response = ser.read(expected)
+    finally:
+        ser.timeout = orig_timeout
 
     if len(response) < 5:
         return None
@@ -460,6 +467,16 @@ def read_dse5510(ser, slave_id):
         pos_kwh = read_uint32(ser, REG_GEN_POS_KWH, slave_id)
         num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
+        # --- Page 3: Status Flags (Generator availability + Breaker state) ---
+        # WICHTIG: DSE meldet Hauptschalter-Status nicht ueber die Last sondern
+        # ueber ein dediziertes Bit. Vorher haben wir das aus power_total_w > 100
+        # abgeleitet - das ist FALSCH wenn der Generator ohne Last laeuft
+        # (z.B. Leerlauf-Test oder direkt nach Zuschalten).
+        # Register Page 3 Offset 14: Generator available (uint16, 0/1)
+        # Register Page 3 Offset 15: Generator breaker closed (uint16, 0/1)
+        gen_available_raw = read_uint16(ser, REG_GEN_AVAILABLE, slave_id)
+        gen_breaker_raw = read_uint16(ser, REG_GEN_BREAKER_CLOSED, slave_id)
+
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
         data["coolant_temp_c"] = coolant_temp if coolant_temp is not None else 0
@@ -506,11 +523,26 @@ def read_dse5510(ser, slave_id):
         data["dse_mode_raw"] = None
         data["dse_mode"] = "unknown"
 
-        # Generator-Status aus Messwerten ableiten
+        # Generator-Status: DSE-Register bevorzugen, Fallback auf abgeleitet
+        # Wenn der DSE einen klaren 0/1-Status liefert (kein 0xFFFF Sentinel),
+        # verwenden wir den - sonst leiten wir aus Messwerten ab.
         has_voltage = (data["voltage_l1"] > 50 or data["voltage_l2"] > 50 or data["voltage_l3"] > 50)
         has_frequency = data["frequency"] > 40
-        data["generator_available"] = has_voltage and has_frequency
-        data["breaker_closed"] = data["generator_available"] and data["power_total_w"] > 100
+
+        if gen_available_raw is not None:
+            data["generator_available"] = bool(gen_available_raw)
+            data["generator_available_source"] = "dse_register"
+        else:
+            data["generator_available"] = has_voltage and has_frequency
+            data["generator_available_source"] = "derived"
+
+        if gen_breaker_raw is not None:
+            data["breaker_closed"] = bool(gen_breaker_raw)
+            data["breaker_closed_source"] = "dse_register"
+        else:
+            # Fallback: alt-Logik (Power > 100W) - funktioniert nur unter Last
+            data["breaker_closed"] = data["generator_available"] and data["power_total_w"] > 100
+            data["breaker_closed_source"] = "derived"
 
         data["online"] = True
 
@@ -602,45 +634,55 @@ def read_gps():
         try:
             with _socket.create_connection(("127.0.0.1", 2947), timeout=1) as _s:
                 pass
-        except Exception:
+        except Exception as e:
+            log.info(f"GPS: gpsd auf 127.0.0.1:2947 nicht erreichbar ({e}) - kein GPS")
             return None  # gpsd laeuft nicht - sauberer Abbruch
 
-        # 2. Daten lesen mit hartem Thread-Timeout (max 3s)
+        # 2. Daten lesen mit hartem Thread-Timeout (max 5s)
         import threading
-        result = {"data": None}
+        result = {"data": None, "error": None, "mode": None}
         def _gpsd_worker():
             try:
                 import gpsd
-                _socket.setdefaulttimeout(2)
+                _socket.setdefaulttimeout(3)
                 gpsd.connect()
                 pkt = gpsd.get_current()
+                result["mode"] = getattr(pkt, "mode", None)
                 if pkt.mode >= 2:
                     result["data"] = {"latitude": round(pkt.lat, 6), "longitude": round(pkt.lon, 6)}
+                else:
+                    result["error"] = f"GPS-Fix-Modus {pkt.mode} (<2, kein 2D/3D-Fix)"
+            except ImportError as e:
+                result["error"] = f"gpsd-py3 nicht installiert: {e}"
             except Exception as e:
-                log.debug(f"GPS-Worker Fehler: {e}")
+                result["error"] = f"GPS-Worker Fehler: {e}"
             finally:
                 _socket.setdefaulttimeout(None)
         t = threading.Thread(target=_gpsd_worker, daemon=True)
         t.start()
-        t.join(timeout=3.0)
+        t.join(timeout=5.0)
         if t.is_alive():
-            log.debug("GPS-Worker timeout (gpsd haengt - kein Fix verfuegbar)")
+            log.warning("GPS: Worker timeout >5s - gpsd haengt")
             return None
+        if result["data"]:
+            log.info(f"GPS Fix (gpsd, mode={result['mode']}): {result['data']['latitude']}, {result['data']['longitude']}")
+        elif result["error"]:
+            log.info(f"GPS: {result['error']}")
         return result["data"]
     except Exception as e:
-        log.debug(f"GPS nicht verfuegbar: {e}")
+        log.warning(f"GPS nicht verfuegbar: {e}")
     return None
 
 
 def poll_commands(conf, ser):
-    """Schnelle Befehlsabfrage (alle 5 Sek.) - leichtgewichtig, ohne Telemetriedaten.
+    """Schnelle Befehlsabfrage (alle 1 Sek.) - leichtgewichtig, ohne Telemetriedaten.
     WICHTIG: Bei Steuerbefehlen wird ser geschlossen (exklusiver Subprocess-Zugriff).
     Gibt (anzahl_befehle, ser) zurueck - ser kann None sein wenn geschlossen."""
     try:
         resp = requests.get(
             f"{conf['api_url']}/generators/poll-commands/{conf['device_id']}",
             params={"key": conf["device_key"]},
-            timeout=10,
+            timeout=5,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -703,15 +745,18 @@ def crc(d):
             c=(c>>1)^0xA001 if c&1 else c>>1
     return struct.pack("<H",c)
 
-port=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=2)
-time.sleep(0.3)
+port=serial.Serial("{port_name}",{baudrate},bytesize=8,parity="N",stopbits=1,timeout=1.5)
+time.sleep(0.2)
 port.reset_input_buffer()
 f=struct.pack(">BBHHB",{slave_id},0x10,{REG_CONTROL_KEY},2,4)
 f+=struct.pack(">HH",{key},{complement})
 f+=crc(f)
 port.write(f)
-time.sleep(1.5)
-r=port.read(port.in_waiting or 50)
+# Event-driven: warten bis DSE antwortet (typ. <100ms statt fixe 1.5s sleep)
+r=port.read(20)
+if not r:
+    time.sleep(0.3)
+    r=port.read(port.in_waiting or 50)
 port.close()
 if r:
     print(f"OK:1:{{r.hex()}}")
@@ -983,7 +1028,7 @@ def sync_to_portal(conf, gps_data, ser):
         resp = requests.post(
             f"{conf['api_url']}/generators/ingest",
             json=payload,
-            timeout=60,
+            timeout=15,
         )
         if resp.status_code == 200:
             mark_synced(conf["db_path"], row_ids)
@@ -1287,7 +1332,7 @@ def main():
                 # Nach Steuerbefehl: sofort lesen + syncen fuer schnelles UI-Feedback
                 if cmd_count > 0:
                     log.info("Sofort-Readback nach Steuerbefehl...")
-                    time.sleep(2)  # DSE braucht kurz um den Modus zu wechseln
+                    time.sleep(0.3)  # DSE-Modus-Wechsel braucht nur ms via Modbus
                     # Port neu oeffnen falls noetig
                     if ser is None or not ser.is_open:
                         try:
