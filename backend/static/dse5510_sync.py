@@ -138,7 +138,8 @@ DEFAULT_CONF = {
     "parity": "N",
     "slave_id": 10,
     "read_interval": 1,
-    "sync_interval": 30,
+    "dse_read_interval": 10,
+    "sync_interval": 120,
     "retry_delay": 30,
     "batch_size": 500,
     "max_disk_gb": 60,
@@ -155,7 +156,7 @@ def load_config():
             s = cp["dse5510"]
             for key in conf:
                 if key in s:
-                    if key in ("baud_rate", "slave_id", "read_interval", "sync_interval", "retry_delay", "batch_size", "max_disk_gb"):
+                    if key in ("baud_rate", "slave_id", "read_interval", "dse_read_interval", "sync_interval", "retry_delay", "batch_size", "max_disk_gb"):
                         conf[key] = int(s[key])
                     else:
                         conf[key] = s[key]
@@ -1046,7 +1047,8 @@ def main():
     log.info(f"  Paritaet:      {conf.get('parity', 'N')}")
     log.info(f"  Slave ID:      {conf['slave_id']}")
     log.info(f"  Datenbank:     {conf['db_path']}")
-    log.info(f"  Leseintervall: {conf['read_interval']}s (1x/Sek.)")
+    log.info(f"  Leseintervall: {conf['read_interval']}s (Main-Loop)")
+    log.info(f"  DSE-Leseintervall: {conf.get('dse_read_interval', 10)}s (Modbus-Read)")
     log.info(f"  Sync-Intervall:{conf['sync_interval']}s")
     log.info(f"  Max Disk:      {conf['max_disk_gb']} GB")
     log.info("=" * 60)
@@ -1113,8 +1115,9 @@ def main():
 
             now = time.time()
 
-            # DSE 5510 auslesen (alle 20 Minuten im Normalbetrieb)
-            if now - last_read_time >= 1200:
+            # DSE 5510 auslesen (konfigurierbarer Takt via dse_read_interval,
+            # Default 10 s - DSE 5510 ist langsam, jede Sekunde waere zu viel).
+            if now - last_read_time >= int(conf.get("dse_read_interval", 10)):
                 data = read_dse5510(ser, int(conf["slave_id"]))
                 if data.get("online"):
                     store_telemetry(conf["db_path"], data)
