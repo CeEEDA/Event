@@ -651,6 +651,7 @@ GPSD_OPTIONS="-n"
 USBAUTO="true"
 START_DAEMON="true"
 GPSD_EOF
+systemctl unmask gpsd gpsd.socket 2>/dev/null || true
 systemctl enable gpsd
 systemctl restart gpsd || true
 echo "  gpsd konfiguriert (USB Auto-Erkennung aktiv)"
@@ -1769,6 +1770,7 @@ GPSD_OPTIONS="-n"
 DEVICES="$GPS_DEV"
 USBAUTO="false"
 EOF
+    sudo systemctl unmask gpsd gpsd.socket 2>/dev/null || true
     sudo systemctl enable gpsd
     sudo systemctl restart gpsd 2>/dev/null || true
 fi
@@ -2168,6 +2170,10 @@ GPSD_OPTIONS="-n"
 GPSDCONF
 
 sudo usermod -aG dialout gpsd 2>/dev/null || true
+# Falls gpsd vorher per "systemctl mask gpsd" deaktiviert wurde (z. B. beim
+# Debugging) muss es VOR dem enable wieder entmaskiert werden - sonst bricht
+# das Setup mit "Unit /etc/systemd/system/gpsd.service is masked" ab.
+sudo systemctl unmask gpsd gpsd.socket 2>/dev/null || true
 sudo systemctl daemon-reload
 sudo systemctl enable sim7600-gps-enable.service gpsd.socket gpsd.service
 
@@ -2429,6 +2435,7 @@ DEVICES="$GPS_DEV"
 GPSD_OPTIONS="-n"
 GPSD_CONF
 
+sudo systemctl unmask gpsd gpsd.socket 2>/dev/null || true
 sudo systemctl enable gpsd
 sudo systemctl restart gpsd
 echo "  gpsd konfiguriert fuer: $GPS_DEV"
