@@ -271,6 +271,16 @@ input { font-family: inherit; }
 .masch-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
 .masch-overview-map { width:100%; height:300px; border:1px solid var(--border); border-radius:14px;
   margin-bottom:14px; background:#e0e7ef; overflow:hidden; }
+.masch-map-legend { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 12px;
+  background:#fafbfc; border:1px solid var(--border); border-radius:10px; margin-bottom:10px;
+  font-size:11px; color:#475569; }
+.masch-map-legend .lg-dot { width:10px; height:10px; border-radius:50%; border:2px solid #fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.1); display:inline-block; }
+.masch-map-legend .lg-dot.sm { width:7px; height:7px; border-width:1px; }
+.masch-map-legend .lg-sep { width:1px; height:14px; background:var(--border); margin:0 4px; }
+.masch-map-legend .lg-toggle { margin-left:auto; display:flex; align-items:center; gap:5px;
+  cursor:pointer; user-select:none; font-weight:600; color:#334155; }
+.masch-map-legend .lg-count { font-weight:600; color:#0f172a; padding-left:8px; }
 .masch-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px;
   cursor:pointer; transition:all .12s; }
 .masch-card:hover { border-color:var(--fuchsia); transform:translateY(-1px); }
@@ -1995,6 +2005,18 @@ function renderMaschinenPanel() {
         '</select>' +
         '<div class="count" id="masch-count">…</div>' +
       '</div>' +
+      '<div class="masch-map-legend">' +
+        '<span class="lg-dot" style="background:#16a34a;"></span><span>Generator OK</span>' +
+        '<span class="lg-dot" style="background:#ea580c;"></span><span>Tank &lt; 50 %</span>' +
+        '<span class="lg-dot" style="background:#dc2626;"></span><span>Tank &lt; 25 %</span>' +
+        '<span class="lg-dot" style="background:#9ca3af;"></span><span>Offline</span>' +
+        '<span class="lg-sep"></span>' +
+        '<span class="lg-dot sm" style="background:#16a34a;"></span><span>Verteiler</span>' +
+        '<span class="lg-dot sm" style="background:#ca8a04;"></span><span>Lichtmast</span>' +
+        '<span class="lg-dot sm" style="background:#0891b2;"></span><span>Tank</span>' +
+        '<label class="lg-toggle"><input type="checkbox" id="masch-toggle-assets" checked /> Artikel anzeigen</label>' +
+        '<span id="masch-legend-count" class="lg-count">…</span>' +
+      '</div>' +
       '<div id="masch-map" class="masch-overview-map"></div>' +
       '<div id="masch-area"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
     '</main></div>'
@@ -2008,6 +2030,14 @@ function renderMaschinenPanel() {
   document.getElementById("masch-status").addEventListener("change", function(e){ maschState.filterStatus = e.target.value; paintMaschinen(); });
   document.getElementById("masch-sort").addEventListener("change", function(e){ maschState.sort = e.target.value; paintMaschinen(); });
   document.getElementById("masch-sort").value = maschState.sort;
+  var toggleAssetsEl = document.getElementById("masch-toggle-assets");
+  if (toggleAssetsEl) {
+    toggleAssetsEl.checked = maschState.showAssets !== false;
+    toggleAssetsEl.addEventListener("change", function(e) {
+      maschState.showAssets = e.target.checked;
+      paintMaschinenMap();
+    });
+  }
 
   loadMaschinen();
   // Übersichtskarte aufbauen (Hybrid: Satellit + Strassen-Labels)
@@ -2040,11 +2070,42 @@ function renderMaschinenPanel() {
 }
 
 // Zeichnet/aktualisiert die Marker auf der Maschinenliste-Übersichtskarte.
+// Zeigt: Generatoren (gross, Tank-Farbcodierung) + Assets aus Artikelliste
+// (Verteiler, Lichtmasten, Tankstellen — kleiner, eigene Farben), damit man
+// auf einen Blick sieht: wo steht Generator XY und welche Verteiler/Lichtmasten
+// hängen drumherum.
 function paintMaschinenMap() {
   if (!maschState.map) return;
   (maschState.mapMarkers || []).forEach(function(m){ try { maschState.map.removeLayer(m); } catch(e){} });
   maschState.mapMarkers = [];
   var bounds = [];
+
+  // 1) Assets als Hintergrund-Pins (kleinere Marker, damit Generatoren dominieren)
+  var assets = (maschState.showAssets === false) ? [] : (maschState.assets || []);
+  assets.forEach(function(a) {
+    if (typeof a.latitude !== "number" || !isFinite(a.latitude)) return;
+    if (typeof a.longitude !== "number" || !isFinite(a.longitude)) return;
+    var ic = _artikelIcon(a.asset_type);
+    // Generator-Pins aus Artikelliste skippen — die echten Generatoren werden unten gezeichnet.
+    if (ic.cls === "generator") return;
+    var color = ic.cls === "verteiler" ? "#16a34a" :
+                ic.cls === "lichtmast" ? "#ca8a04" :
+                ic.cls === "tank"      ? "#0891b2" : "#6b7280";
+    var dismantled = (a.status === "dismantled");
+    var m = L.circleMarker([a.latitude, a.longitude], {
+      radius: 6, color: "#fff",
+      fillColor: dismantled ? "#9ca3af" : color,
+      fillOpacity: dismantled ? 0.55 : 0.9,
+      weight: 1.5
+    }).addTo(maschState.map);
+    m.bindTooltip('<b>' + esc(a.label || "?") + '</b><br>' + esc(a.asset_type || "") +
+                  (dismantled ? '<br><i>abgebaut</i>' : ''),
+                  { direction: "top" });
+    maschState.mapMarkers.push(m);
+    bounds.push([a.latitude, a.longitude]);
+  });
+
+  // 2) Generatoren als prominente Marker oben drauf
   maschState.items.forEach(function(g) {
     if (typeof g.latitude !== "number" || !isFinite(g.latitude)) return;
     if (typeof g.longitude !== "number" || !isFinite(g.longitude)) return;
@@ -2055,7 +2116,7 @@ function paintMaschinenMap() {
     if (fuel != null && fuel < 25) color = "#dc2626"; // niedriger Tank rot
     else if (fuel != null && fuel < 50) color = "#ea580c"; // gelb
     var m = L.circleMarker([g.latitude, g.longitude], {
-      radius: 10, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 2.5
+      radius: 11, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 3
     }).addTo(maschState.map);
     var tip = '<b>' + esc(g.name || "(ohne Name)") + '</b>' +
               (g.model ? '<br>' + esc(g.model) : '') +
@@ -2066,15 +2127,31 @@ function paintMaschinenMap() {
     maschState.mapMarkers.push(m);
     bounds.push([g.latitude, g.longitude]);
   });
+
   if (bounds.length && !maschState._userZoomed) {
     try { maschState.map.fitBounds(bounds, { padding: [25, 25], maxZoom: 17 }); } catch (e) {}
+  }
+
+  // Marker-Zähler ins UI
+  var legendEl = document.getElementById("masch-legend-count");
+  if (legendEl) {
+    var nGen = maschState.items.filter(function(g){ return typeof g.latitude === "number" && isFinite(g.latitude); }).length;
+    var nAss = assets.filter(function(a){
+      if (typeof a.latitude !== "number" || !isFinite(a.latitude)) return false;
+      var ic = _artikelIcon(a.asset_type); return ic.cls !== "generator";
+    }).length;
+    legendEl.textContent = nGen + " Generator" + (nGen === 1 ? "" : "en") + " · " + nAss + " Artikel auf Karte";
   }
 }
 
 function loadMaschinen(silent) {
   var pk = encodeURIComponent(state.order.primary_key);
-  api("/api/orders/epirent/" + pk + "/generators").then(function(data) {
-    maschState.items = data.generators || [];
+  Promise.all([
+    api("/api/orders/epirent/" + pk + "/generators"),
+    api("/api/orders/epirent/" + pk + "/assets").catch(function(){ return { assets: [] }; })
+  ]).then(function(res) {
+    maschState.items = (res[0] && res[0].generators) || [];
+    maschState.assets = (res[1] && res[1].assets) || [];
     paintMaschinen();
   }).catch(function(ex) {
     if (!silent) document.getElementById("masch-area").innerHTML = '<div class="alert error">' + esc(ex.message) + '</div>';

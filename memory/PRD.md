@@ -23,6 +23,7 @@ User language: **German** (Agent must respond in German).
 - ✅ **Maschinenliste mit Karte** (`einsatzzentrale-kiosk.html`):
   - Uebersichts-Hybrid-Karte (Esri Sat + Strassen-Labels) ueber der Karten-Grid. Marker pro Generator mit Tank-Farbcodierung (rot < 25%, orange < 50%, gruen >= 50%, grau offline).
   - Klick auf Marker oder Kachel oeffnet Detail-Modal — dort jetzt **Mini-Karte** (240px hoch, gleicher Hybrid-Stil) + Koordinaten + Google-Maps-Link.
+  - **Operations-Layer:** Zusätzlich Verteiler-/Lichtmast-/Tank-Pins aus der Artikelliste (kleinere Marker, eigene Farben) auf der Übersichtskarte — toggle-bar via Checkbox „Artikel anzeigen". Inklusive Farb-Legende über der Karte.
 - ✅ **Multiansicht — Multi-Trupp + Generatoren in Artikelliste**:
   - „Trupp zuweisen" hat jetzt expliziten Hinweis „(mehrere wählbar)" in beiden Forms (Inline-Form + Bearbeiten-Modal). Multi-Select-Logik war bereits implementiert, aber UX nicht klar kommuniziert.
   - `loadMultiArtikel` laedt jetzt parallel `/assets` + `/generators`. Auftrags-Generatoren landen als virtuelle Assets (asset_type `Generator (Auftrag)`) in Liste + Karte. Klick auf Generator-Eintrag/Marker oeffnet das richtige Maschinendetail (mit GPS-Karte).
