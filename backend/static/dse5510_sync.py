@@ -86,20 +86,20 @@ REG_NUM_STARTS         = PAGE7 + 16   # Starts, 32bit, scale 1
 PAGE3 = 3 * 256  # = 768
 
 # --- Page 8: Digital Input Configuration / Alarm Conditions (Base: 2048) ---
-# Eingang 7 = Hauptschalter-Rueckmeldung (vom Kunden so konfiguriert).
-# Register 130 enthaelt den Alarm-Condition-Code fuer Input 7 (Bits 5-8 / MSB):
-#   0  = Input in Config disabled
-#   8/10 = Aktiv-Indikation  -> Breaker CLOSED
-#   9  = Inaktiv-Indikation  -> Breaker OPEN
-#   15 = Unimplemented
+# EMPIRISCH (User-Diff mit Schalter-Toggle) verifiziert:
+#   Page 8 Reg 13 = Modbus 2061, Bit 9 = Hauptschalter-Rueckmeldung (Input 7)
+#     Bit 9 SET = Schalter GESCHLOSSEN, CLEAR = OFFEN
+#
+# Fallback-Adressen aus GenComm-Doku (firmwareabhaengig, oft nicht implementiert):
+#   Page 8 Reg 130 (Bits 5-8 / Mask 0x00F0): 8/10=CLOSED, 9=OPEN, 0=disabled
+#   Page 12 Reg 17 Bit 9: 0=OPEN, 1=CLOSED  (auf 5510 nicht implementiert)
 PAGE8 = 8 * 256  # = 2048
-REG_INPUT7_ALARM_COND = PAGE8 + 130   # = 2178; Bits 5-8 / Mask 0x00F0 / Shift 4
+REG_INPUT_STATE_PRIMARY = PAGE8 + 13   # = 2061; Bit 9 = Hauptschalter (5510 verifiziert)
+REG_INPUT7_ALARM_COND = PAGE8 + 130    # = 2178; Bits 5-8 (Fallback A)
 
 # --- Page 12: Digital Input States (Base: 3072) - neuere Firmware ---
-# Fallback: Register 17 Bit 10/16 (Bit-Index 9 von rechts) = Input 7 state.
-# Werte: 0 = OPEN, 1 = CLOSED.
 PAGE12 = 12 * 256  # = 3072
-REG_DIGITAL_INPUTS_STATE = PAGE12 + 17  # = 3089; Bit 10/16 fuer Input 7
+REG_DIGITAL_INPUTS_STATE = PAGE12 + 17  # = 3089; Bit 9 (Fallback B)
 
 # --- Page 1: Identification & Mode (Base: 256) ---
 PAGE1 = 1 * 256  # = 256
@@ -504,9 +504,12 @@ def read_dse5510(ser, slave_id):
         num_starts = read_uint32(ser, REG_NUM_STARTS, slave_id)
 
         # --- Hauptschalter-Rueckmeldung ueber Eingang 7 ---
-        # Variante A (5510 GenComm v1): Page 8 Reg 130, Bits 5-8 (Mask 0x00F0)
-        #   0=disabled, 8/10=CLOSED, 9=OPEN, 15=unimplemented
-        # Variante B (v9+): Page 12 Reg 17, Bit 10/16 (Bit-Index 9): 0=OPEN, 1=CLOSED
+        # VERIFIZIERT auf 5510 (User-Diff Schalter-Toggle):
+        #   Variante C: Page 8 Reg 13 (Modbus 2061) Bit 9: 1=CLOSED, 0=OPEN
+        # Fallback (falls auf anderer Firmware abweicht):
+        #   Variante A: Page 8 Reg 130 Bits 5-8 (Alarm-Cond-Codes)
+        #   Variante B: Page 12 Reg 17 Bit 9
+        input_state_primary = read_uint16(ser, REG_INPUT_STATE_PRIMARY, slave_id)
         input7_a_raw = read_uint16(ser, REG_INPUT7_ALARM_COND, slave_id)
         input7_b_raw = read_uint16(ser, REG_DIGITAL_INPUTS_STATE, slave_id)
 
@@ -562,12 +565,20 @@ def read_dse5510(ser, slave_id):
         data["generator_available"] = has_voltage and has_normal_freq
         data["generator_available_source"] = "derived"
 
-        # ===== Hauptschalter geschlossen - PRIORITAET: Variante A -> B -> abgeleitet =====
+        # ===== Hauptschalter geschlossen - PRIORITAET: Variante C -> A -> B -> abgeleitet =====
         breaker_closed = None
         breaker_source = "unknown"
 
-        # Variante A: Page 8 Reg 130, Eingang 7 Alarm-Condition (Bits 5-8 / Maske 0x00F0 / Shift 4)
-        if input7_a_raw is not None:
+        # Variante C (5510 verifiziert): Page 8 Reg 13 Bit 9 = Hauptschalter
+        # Bit 9 SET = CLOSED, CLEAR = OPEN
+        if input_state_primary is not None:
+            bit9 = (input_state_primary >> 9) & 0x01
+            data["input_state_primary_raw"] = input_state_primary
+            breaker_closed = bool(bit9)
+            breaker_source = "dse_page8_reg13_bit9"
+
+        # Variante A: Page 8 Reg 130, Bits 5-8 Alarm-Condition (Fallback)
+        if breaker_closed is None and input7_a_raw is not None:
             input7_code = (input7_a_raw >> 4) & 0x0F
             data["input7_alarm_cond_raw"] = input7_a_raw
             data["input7_code"] = input7_code
@@ -577,14 +588,8 @@ def read_dse5510(ser, slave_id):
             elif input7_code == 9:
                 breaker_closed = False
                 breaker_source = "dse_page8_reg130_input7"
-            elif input7_code == 0:
-                log.debug("Eingang 7 in DSE-Config DEAKTIVIERT - Variante A unbrauchbar")
-            elif input7_code == 15:
-                log.debug("Eingang 7 unimplemented (Page 8 Reg 130) - probiere Variante B")
-            else:
-                log.debug(f"Input 7 unerwarteter Code: {input7_code} - probiere Variante B")
 
-        # Variante B: Page 12 Reg 17, Bit 10/16 = Bit-Index 9 (0=offen, 1=geschlossen)
+        # Variante B: Page 12 Reg 17, Bit 9 (Fallback)
         if breaker_closed is None and input7_b_raw is not None:
             input7_bit = (input7_b_raw >> 9) & 0x01
             data["input7_state_raw"] = input7_b_raw
