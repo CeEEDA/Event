@@ -1818,7 +1818,7 @@ function loadMultiArtikel() {
       var meta = [];
       if (fuel != null) meta.push("Tank " + Math.round(fuel) + "%");
       if (power != null) meta.push(power.toFixed(1) + " kW");
-      var label = g.name || g.serial_number || "(Generator)";
+      var label = g.serial_number || g.name || "(Generator)";
       return {
         id: "gen__" + g.id,
         asset_type: "Generator (Auftrag)",
@@ -2118,7 +2118,7 @@ function paintMaschinenMap() {
     var m = L.circleMarker([g.latitude, g.longitude], {
       radius: 11, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 3
     }).addTo(maschState.map);
-    var tip = '<b>' + esc(g.name || "(ohne Name)") + '</b>' +
+    var tip = '<b>' + esc(g.serial_number || g.name || "(ohne Name)") + '</b>' +
               (g.model ? '<br>' + esc(g.model) : '') +
               (fuel != null ? '<br>Tank: ' + Math.round(fuel) + '%' : '') +
               (tel.power_kw != null ? '<br>Leistung: ' + tel.power_kw.toFixed(1) + ' kW' : '');
@@ -2217,11 +2217,11 @@ function paintMaschinen() {
     return '<div class="masch-card ' + (online ? "" : "offline") + '" data-gen-id="' + esc(g.id) + '">' +
              '<div class="masch-top">' +
                '<div style="flex:1;min-width:0;">' +
-                 '<div class="masch-name">' + esc(g.name || "(ohne Name)") + '</div>' +
+                 '<div class="masch-name">' + esc(g.serial_number || g.name || "(ohne Name)") + '</div>' +
                  '<div class="masch-sub">' +
-                   (g.serial_number ? esc(g.serial_number) : "") +
-                   (g.serial_number && g.model ? " · " : "") +
                    (g.model ? esc(g.model) : "") +
+                   (g.model && g.serial_number && g.name && g.name !== g.serial_number ? " · " : "") +
+                   (g.serial_number && g.name && g.name !== g.serial_number ? esc(g.name) : "") +
                  '</div>' +
                  '<div class="masch-tags">' +
                    (g.is_manual ? '<span class="masch-tag">Manuell</span>' : '') +
@@ -2265,11 +2265,11 @@ function openMaschinenDetail(g) {
     '<div class="modal-bg"><div class="modal-card" style="max-width:720px;">' +
       '<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">' +
         '<div style="flex:1;">' +
-          '<h3 style="margin:0;font-size:24px;">' + esc(g.name || "(ohne Name)") + '</h3>' +
+          '<h3 style="margin:0;font-size:24px;">' + esc(g.serial_number || g.name || "(ohne Name)") + '</h3>' +
           '<div style="font-size:13px;color:var(--text-muted);margin-top:2px;">' +
-            (g.serial_number ? esc(g.serial_number) : "") +
-            (g.serial_number && g.model ? " · " : "") +
             (g.model ? esc(g.model) : "") +
+            (g.model && g.serial_number && g.name && g.name !== g.serial_number ? " · " : "") +
+            (g.serial_number && g.name && g.name !== g.serial_number ? esc(g.name) : "") +
           '</div>' +
         '</div>' +
         '<div class="masch-status-dot ' + (g.status === "online" ? "online" : "offline") + '" style="margin-top:10px;"></div>' +
@@ -2319,7 +2319,7 @@ function openMaschinenDetail(g) {
                     (g.status === "online" ? "#16a34a" : "#9ca3af");
         L.circleMarker([g.latitude, g.longitude], {
           radius: 11, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 3
-        }).addTo(dmap).bindTooltip(esc(g.name || ""), { permanent: false });
+        }).addTo(dmap).bindTooltip(esc(g.serial_number || g.name || ""), { permanent: false });
         // Invalidate size nach kurzer Wartezeit damit Modal-Animation Platz hat
         setTimeout(function(){ try { dmap.invalidateSize(); } catch(e){} }, 50);
       } catch (e) { console.warn("Detail-Karte konnte nicht initialisiert werden:", e); }

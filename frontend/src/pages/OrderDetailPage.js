@@ -1184,14 +1184,16 @@ export default function OrderDetailPage() {
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-sm font-medium text-gray-900 truncate">{g.name}</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">{g.serial_number || g.name}</p>
                             {g.is_manual && (
                               <span className="text-[9px] px-1.5 py-0.5 bg-fuchsia-100 text-fuchsia-700 rounded uppercase tracking-wide font-medium flex-shrink-0">
                                 Manuell
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 truncate">{g.model} · {g.serial_number}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {[g.model, g.serial_number ? g.name : null].filter(Boolean).join(" · ")}
+                          </p>
                           {(kw != null || fuel != null) && (
                             <div className="flex items-center gap-3 mt-1">
                               {kw != null && (

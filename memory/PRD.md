@@ -24,6 +24,7 @@ User language: **German** (Agent must respond in German).
   - Uebersichts-Hybrid-Karte (Esri Sat + Strassen-Labels) ueber der Karten-Grid. Marker pro Generator mit Tank-Farbcodierung (rot < 25%, orange < 50%, gruen >= 50%, grau offline).
   - Klick auf Marker oder Kachel oeffnet Detail-Modal — dort jetzt **Mini-Karte** (240px hoch, gleicher Hybrid-Stil) + Koordinaten + Google-Maps-Link.
   - **Operations-Layer:** Zusätzlich Verteiler-/Lichtmast-/Tank-Pins aus der Artikelliste (kleinere Marker, eigene Farben) auf der Übersichtskarte — toggle-bar via Checkbox „Artikel anzeigen". Inklusive Farb-Legende über der Karte.
+  - **Beschriftung:** Hauptzeile zeigt jetzt die Maschinenlisten-Nr (`serial_number`, z.B. `ML_255`), Untertitel = Controller-Typ + EpiRent-Asset-Nr. Konsistent in OrderDetailPage (React-Portal), Kiosk-Kachel, Kiosk-Detail-Modal und Karten-Tooltips.
 - ✅ **Multiansicht — Multi-Trupp + Generatoren in Artikelliste**:
   - „Trupp zuweisen" hat jetzt expliziten Hinweis „(mehrere wählbar)" in beiden Forms (Inline-Form + Bearbeiten-Modal). Multi-Select-Logik war bereits implementiert, aber UX nicht klar kommuniziert.
   - `loadMultiArtikel` laedt jetzt parallel `/assets` + `/generators`. Auftrags-Generatoren landen als virtuelle Assets (asset_type `Generator (Auftrag)`) in Liste + Karte. Klick auf Generator-Eintrag/Marker oeffnet das richtige Maschinendetail (mit GPS-Karte).
