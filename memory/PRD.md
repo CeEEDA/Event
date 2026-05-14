@@ -16,6 +16,14 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – DSE 5510 Performance + Hauptschalter + Pi 5 USB-Autosuspend (P0)
+- ✅ **Modbus Event-driven Reads:** `_raw_read` ersetzt `time.sleep(0.25)` durch `ser.read(expected)` mit 0.2s timeout. Komplette DSE-Auslesung 7.5s → <1s.
+- ✅ **Steuerbefehl-Latenz:** Klick → DSE-Action 30s → ~6s (Subprocess event-driven, post-cmd sleep 2s→0.3s, HTTP-Timeouts 60s/10s → 15s/5s).
+- ✅ **Hauptschalter-Status korrekt:** Liest DSE Page 12 Reg 17 Bit 9 (Variante B, Input 7) primär; Page 8 Reg 130 Bits 5-8 (Variante A) als Fallback; abgeleitet (V+F) als letzter Fallback. Log zeigt aktive Quelle: `Breaker=CLOSED(dse_page12_reg17_input7)`.
+- ✅ **Pi 5 USB-Autosuspend Killer:** Pi 5 hat `usbcore.autosuspend=2s` per Default → FTDI-Adapter wird im Zusammenspiel mit SIM7600-HAT nach 1s suspended und kann nicht reaktiviert werden ("device disconnected"). Fix: `usbcore.autosuspend=-1` in `/boot/firmware/cmdline.txt` + udev-Regel `98-ftdi-no-suspend.rules` für Vendor 0403.
+- ✅ **Eth-Failover Watchdog:** `/usr/local/bin/eth-failover-watchdog.sh` + systemd-Service entfernen eth0-default-Route bei Carrier-Loss → LTE/ppp0 übernimmt automatisch (Bonus, läuft im Hintergrund).
+- ✅ **GPS-Logging:** Aussagekräftige INFO-Logs ("gpsd nicht erreichbar", "Mode 1 kein Fix", "GPS-Worker timeout") statt versteckte DEBUG.
+
 ### Feb 2026 – DSE 5510 USB Re-Enumeration Auto-Recovery (P0 Hardware Bug)
 - Symptom: Generator-Start verursacht Spannungs-Spike auf RS232, FTDI-Adapter wird vom Kernel als `ttyUSB6` (statt `ttyUSB0`) neu eingehaengt. Sync-Service haengt 30s+ und meldet `[Errno 2] No such file or directory`.
 - ✅ **Installer** (`routes/energy_monitoring.py`): udev-Regel `99-dse-rs232.rules` matcht alle gaengigen FTDI-Chips (VID 0403, PIDs 6001/6010/6011/6014/6015) und legt stabilen Symlink `/dev/dse-rs232` an, der USB-Re-Enumeration uebersteht. Wird automatisch generiert wenn FTDI per `lsusb` erkannt wird.
