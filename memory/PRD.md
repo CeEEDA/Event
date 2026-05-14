@@ -16,6 +16,13 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – LTE-Failover Bridge stabilisiert + GPS final (P0)
+- ✅ **GPS via SIM7600-NMEA:** SIM7600-LTE-HAT liefert NMEA-Stream auf `/dev/ttyUSB1`. gpsd-py3 hatte Library-Bug (`get_current()` lieferte nur erstes Packet=mode:1). Ersetzt durch direktes gpsd-Socket-Protokoll: `?WATCH={"enable":true}` und mehrere TPV-Packets lesen bis 2D/3D-Fix kommt. gpsd-Konfig: `DEVICES="/dev/ttyUSB1"`, `GPSD_OPTIONS="-n -b"`. SIM7600-GPS-Aktivierung (AT+CGPS=1) via systemd-Service `sim7600-gps.service` persistent nach Reboot.
+- ✅ **Hauptschalter-Status via Page 8 Reg 13 Bit 9** (Modbus 2061, empirisch via Diff-Scan verifiziert). Vorherige Annahmen (Page 8 Reg 130 / Page 12 Reg 17) waren auf 5510-Firmware nicht implementiert. Code priorisiert: Variante C (Page 8 Reg 13) → A (Reg 130) → B (Page 12) → abgeleitet.
+- ✅ **LTE-Failover funktioniert:** Pi schaltet bei Eth-Carrier-Loss innerhalb 10s auf ppp0 um. Sync läuft durchgehend weiter über LTE-Tunnel (SIM hat Internet, m2m-APN OK). Praxistest: 2 Min LAN gezogen → 5 Syncs ohne Datenverlust durchgegangen.
+- ✅ **DNS-Stabilität:** `/etc/resolv.conf` statisch (1.1.1.1, 8.8.8.8, 9.9.9.9) + `chattr +i` damit NetworkManager nicht bei Eth-Down auf Carrier-DNS (10.74.210.210) umschwenkt (Carrier-DNS blockiert externe Auflösung). NM-Konfig `dns=none` deaktiviert resolv.conf-Management komplett.
+- ✅ **eth-failover-watchdog.sh:** Backup-Mechanismus läuft als systemd-Service, entfernt eth0-Default-Route bei Carrier-Loss (NetworkManager macht's heutzutage auch von selbst, aber sicher ist sicher).
+
 ### Feb 2026 – DSE 5510 Performance + Hauptschalter + Pi 5 USB-Autosuspend (P0)
 - ✅ **Modbus Event-driven Reads:** `_raw_read` ersetzt `time.sleep(0.25)` durch `ser.read(expected)` mit 0.2s timeout. Komplette DSE-Auslesung 7.5s → <1s.
 - ✅ **Steuerbefehl-Latenz:** Klick → DSE-Action 30s → ~6s (Subprocess event-driven, post-cmd sleep 2s→0.3s, HTTP-Timeouts 60s/10s → 15s/5s).
