@@ -2430,6 +2430,108 @@ FTDIRULE
     fi
 fi
 
+# ===== Pi 5 USB-Autosuspend Killer =====
+# Hintergrund: Pi 5 hat usbcore.autosuspend=2s per Default. Im Zusammenspiel
+# mit dem SIM7600-LTE-HAT wird der FTDI-Adapter nach 1s suspended und kann
+# nicht reaktiviert werden -> "device disconnected". Persistent abschalten:
+echo "  USB-Autosuspend dauerhaft deaktivieren (Pi 5 + SIM7600 Konflikt)..."
+if [ -f /boot/firmware/cmdline.txt ]; then
+    CMDLINE=/boot/firmware/cmdline.txt
+elif [ -f /boot/cmdline.txt ]; then
+    CMDLINE=/boot/cmdline.txt
+else
+    CMDLINE=""
+fi
+if [ -n "$CMDLINE" ] && ! grep -q "usbcore.autosuspend=-1" "$CMDLINE"; then
+    sudo sed -i 's| *$| usbcore.autosuspend=-1|' "$CMDLINE"
+    echo "    in $CMDLINE eingetragen (wirkt nach Reboot)"
+fi
+# Sofortige FTDI-Spezifische Regel (wirkt ohne Reboot fuer aktuelle Sessions)
+sudo tee /etc/udev/rules.d/98-ftdi-no-suspend.rules > /dev/null << 'FTDISUSPEND'
+# Pi 5: USB-Autosuspend killt FTDI-Adapter im Zusammenspiel mit SIM7600-HAT
+ACTION=="add", SUBSYSTEM=="usb", ATTR{{idVendor}}=="0403", ATTR{{idProduct}}=="6001", TEST=="power/control", ATTR{{power/control}}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{{idVendor}}=="0403", ATTR{{idProduct}}=="6001", TEST=="power/autosuspend", ATTR{{power/autosuspend}}="-1"
+FTDISUSPEND
+sudo udevadm control --reload-rules
+for usbdev in /sys/bus/usb/devices/*/idVendor; do
+    if [ "$(cat $usbdev 2>/dev/null)" = "0403" ]; then
+        dev=$(dirname $usbdev)
+        sudo bash -c "echo on > $dev/power/control" 2>/dev/null || true
+        sudo bash -c "echo -1 > $dev/power/autosuspend" 2>/dev/null || true
+    fi
+done
+
+# ===== Statisches /etc/resolv.conf (LTE-Failover) =====
+# Hintergrund: NetworkManager regeneriert resolv.conf bei jedem Connection-
+# Wechsel. Bei Eth-Aus landen u.U. nur PPP-Carrier-DNS (z.B. 10.74.210.210)
+# drin, die externe DNS-Anfragen blockieren. Statisch auf Public-DNS setzen
+# und gegen Ueberschreibung sichern.
+echo "  Statisches /etc/resolv.conf fuer Eth/LTE-Failover..."
+sudo chattr -i /etc/resolv.conf 2>/dev/null || true
+sudo tee /etc/resolv.conf > /dev/null << 'RESOLVE'
+# Statisch (Eventenergie-Installer) - ueberlebt Eth/PPP-Wechsel.
+# Carrier-DNS (10.74.x.x bei m2m-SIM) blockiert oft externe Aufloesung.
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+nameserver 9.9.9.9
+options timeout:2 attempts:2
+RESOLVE
+sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+sudo mkdir -p /etc/NetworkManager/conf.d
+sudo tee /etc/NetworkManager/conf.d/no-dns.conf > /dev/null << 'NMNO'
+[main]
+dns=none
+NMNO
+sudo systemctl reload NetworkManager 2>/dev/null || true
+
+# ===== Eth-Failover Carrier-Watchdog =====
+# NetworkManager raeumt eth0-Route i.d.R. selbst auf, aber als Sicherheitsnetz:
+# der Watchdog entfernt die default-Route via eth0 manuell bei carrier-loss
+# und triggert DHCP-Renew sobald der Carrier zurueckkommt.
+sudo tee /usr/local/bin/eth-failover-watchdog.sh > /dev/null << 'WDSH'
+#!/bin/bash
+PREV=$(cat /sys/class/net/eth0/carrier 2>/dev/null || echo 0)
+logger -t eth-failover "Watchdog gestartet (eth0 carrier=$PREV)"
+while true; do
+    CUR=$(cat /sys/class/net/eth0/carrier 2>/dev/null || echo 0)
+    if [ "$CUR" != "$PREV" ]; then
+        if [ "$CUR" = "0" ]; then
+            ip route del default dev eth0 2>/dev/null && \
+              logger -t eth-failover "eth0 Kabel weg - default-Route entfernt"
+            ip neigh flush dev eth0 2>/dev/null
+        else
+            logger -t eth-failover "eth0 Kabel zurueck - DHCP-Renew"
+            nmcli connection down netplan-eth0 2>/dev/null
+            sleep 1
+            nmcli connection up netplan-eth0 2>/dev/null
+        fi
+        PREV=$CUR
+    fi
+    sleep 2
+done
+WDSH
+sudo chmod +x /usr/local/bin/eth-failover-watchdog.sh
+sudo tee /etc/systemd/system/eth-failover.service > /dev/null << 'WDSVC'
+[Unit]
+Description=Eth0 Carrier-Loss Watchdog (Failover auf LTE)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/eth-failover-watchdog.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+WDSVC
+sudo systemctl daemon-reload
+sudo systemctl enable --now eth-failover.service 2>/dev/null || true
+echo "  eth-failover Watchdog aktiv"
+
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
 echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
 
@@ -2453,22 +2555,64 @@ GPS_DEV=$(detect_gps_port) || true
 if [ -n "$GPS_DEV" ]; then
     echo "  GPS-NMEA-Stream verifiziert auf: $GPS_DEV"
 else
-    echo "  WARNUNG: Kein NMEA-Stream gefunden. Fallback: /dev/ttyUSB2"
-    echo "  Nach Anschluss: sudo dpkg-reconfigure gpsd"
-    GPS_DEV="/dev/ttyUSB2"
+    # SIM7600 GPS evtl. nicht aktiv - AT+CGPS=1 senden und retry
+    if lsusb | grep -q "1e0e:9001"; then
+        echo "  SIM7600 erkannt - aktiviere GPS (AT+CGPS=1)..."
+        for at in /dev/ttyUSB2 /dev/ttyUSB3 /dev/sim7600-at; do
+            [ -e "$at" ] || continue
+            echo -ne "AT+CGPS=1\r\n" > "$at" 2>/dev/null || continue
+            sleep 2
+            echo "    AT+CGPS=1 -> $at gesendet"
+            break
+        done
+        sleep 5
+        GPS_DEV=$(detect_gps_port) || true
+        if [ -z "$GPS_DEV" ] && [ -e "/dev/ttyUSB1" ]; then
+            # SIM7600 NMEA-Port ist per Konvention ttyUSB1
+            echo "  SIM7600 NMEA-Port-Konvention: /dev/ttyUSB1"
+            GPS_DEV="/dev/ttyUSB1"
+        fi
+    fi
+    if [ -z "$GPS_DEV" ]; then
+        echo "  WARNUNG: Kein NMEA-Stream gefunden. Fallback: /dev/ttyUSB1"
+        GPS_DEV="/dev/ttyUSB1"
+    fi
 fi
 
 sudo tee /etc/default/gpsd > /dev/null << GPSD_CONF
 START_DAEMON="true"
 USBAUTO="false"
 DEVICES="$GPS_DEV"
-GPSD_OPTIONS="-n"
+GPSD_OPTIONS="-n -b"
 GPSD_CONF
 
 sudo systemctl unmask gpsd gpsd.socket 2>/dev/null || true
 sudo systemctl enable gpsd
-sudo systemctl restart gpsd
-echo "  gpsd konfiguriert fuer: $GPS_DEV"
+sudo systemctl restart gpsd.socket gpsd
+echo "  gpsd konfiguriert fuer: $GPS_DEV (Optionen: -n -b)"
+
+# SIM7600 GPS persistent nach Reboot aktivieren
+if lsusb | grep -q "1e0e:9001"; then
+    sudo tee /etc/systemd/system/sim7600-gps.service > /dev/null << 'GPSSVC2'
+[Unit]
+Description=SIM7600 GPS aktivieren (AT+CGPS=1)
+After=multi-user.target ModemManager.service
+Wants=gpsd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 8
+ExecStart=/bin/bash -c 'for p in /dev/ttyUSB2 /dev/sim7600-at; do [ -e "$p" ] && echo -ne "AT+CGPS=1\\r\\n" > "$p" && break; done; sleep 2'
+ExecStop=/bin/bash -c 'for p in /dev/ttyUSB2 /dev/sim7600-at; do [ -e "$p" ] && echo -ne "AT+CGPS=0\\r\\n" > "$p" && break; done'
+
+[Install]
+WantedBy=multi-user.target
+GPSSVC2
+    sudo systemctl daemon-reload
+    sudo systemctl enable sim7600-gps.service
+    echo "  SIM7600 GPS-Service eingerichtet (Auto-Aktivierung nach Boot)"
+fi
 {lte_setup_block}
 # ===== SCHRITT {"4" if body.enable_lte else "3"}: PYTHON-UMGEBUNG =====
 echo "[{"4" if body.enable_lte else "3"}/{total_steps}] Python-Umgebung einrichten..."
