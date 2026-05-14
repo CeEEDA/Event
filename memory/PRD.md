@@ -16,6 +16,17 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – EinsatzPI: Token-Refresh + Maschinenliste-Karte + Multi-Artikelliste mit Generatoren (P0)
+- ✅ **Token Auto-Refresh** (`server.py` + `einsatzzentrale-kiosk.html`):
+  - Neuer Endpoint `POST /api/auth/refresh-token` (Auth-pflichtig). Stellt einen frischen JWT aus, solange der aktuelle noch gueltig ist.
+  - Kiosk-HTML hat jetzt `scheduleTokenRefresh()`: refresht alle 30 Min im Hintergrund + Sofort-Refresh, wenn beim Restore < 2h Restzeit. Verhindert das ploetzliche „Token ist abgelaufen" auf den 24/7-Pi-Kiosks.
+- ✅ **Maschinenliste mit Karte** (`einsatzzentrale-kiosk.html`):
+  - Uebersichts-Hybrid-Karte (Esri Sat + Strassen-Labels) ueber der Karten-Grid. Marker pro Generator mit Tank-Farbcodierung (rot < 25%, orange < 50%, gruen >= 50%, grau offline).
+  - Klick auf Marker oder Kachel oeffnet Detail-Modal — dort jetzt **Mini-Karte** (240px hoch, gleicher Hybrid-Stil) + Koordinaten + Google-Maps-Link.
+- ✅ **Multiansicht — Multi-Trupp + Generatoren in Artikelliste**:
+  - „Trupp zuweisen" hat jetzt expliziten Hinweis „(mehrere wählbar)" in beiden Forms (Inline-Form + Bearbeiten-Modal). Multi-Select-Logik war bereits implementiert, aber UX nicht klar kommuniziert.
+  - `loadMultiArtikel` laedt jetzt parallel `/assets` + `/generators`. Auftrags-Generatoren landen als virtuelle Assets (asset_type `Generator (Auftrag)`) in Liste + Karte. Klick auf Generator-Eintrag/Marker oeffnet das richtige Maschinendetail (mit GPS-Karte).
+
 ### Feb 2026 – Bugfix: „Meine Arbeitszeit" zeigte Krank-/Urlaubstage anderer Mitarbeiter bei Admins (P0)
 - 🐛 Symptom: Wenn ein User mit Admin- oder Verwaltungs-Rolle (z.B. Philipp Bertram) seine eigene „Meine Arbeitszeit"-Seite öffnete, sah er die Krankheitstage anderer Mitarbeiter (z.B. Max' 3 Tage) als eigene.
 - 🔍 Root Cause: `ArbeitszeitPage.jsx` rief `/employee/time-off?token=...` **ohne** `user_id`-Parameter auf. Das Backend liefert für Admin/Verwaltungs-Caller in diesem Fall **alle** Anträge aller Mitarbeiter zurück (by-design für die Übersichtsseite `AdminZeiterfassungPage`). Die Selbstansicht filterte clientseitig nicht nach `req.user_id`, also flossen fremde Anträge in den `sickDaysYear`-Counter ein.

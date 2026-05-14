@@ -269,6 +269,8 @@ input { font-family: inherit; }
 .masch-toolbar .count { margin-left:auto; font-size:13px; color:var(--text-muted); }
 
 .masch-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.masch-overview-map { width:100%; height:300px; border:1px solid var(--border); border-radius:14px;
+  margin-bottom:14px; background:#e0e7ef; overflow:hidden; }
 .masch-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px;
   cursor:pointer; transition:all .12s; }
 .masch-card:hover { border-color:var(--fuchsia); transform:translateY(-1px); }
@@ -735,6 +737,61 @@ function clearSession() {
         STORE.removeItem(SS_PHASE); STORE.removeItem(SS_ORDER); } catch(e){}
 }
 
+// ============================================================================
+// TOKEN AUTO-REFRESH: Pi-Kiosk laeuft 24/7 -> JWT_EXPIRATION_HOURS=24 reicht nicht.
+// Wir refreshen den Token alle 30 Min im Hintergrund, solange noch gueltig.
+// Bei 401 vom Refresh -> still ausloggen (User wird beim naechsten Klick neu eingeloggt).
+// ============================================================================
+var _tokenRefreshTimer = null;
+function _decodeJwtExp(tok) {
+  try {
+    var p = tok.split(".")[1];
+    p = p.replace(/-/g, "+").replace(/_/g, "/");
+    while (p.length % 4) p += "=";
+    var json = atob(p);
+    var obj = JSON.parse(json);
+    return typeof obj.exp === "number" ? obj.exp * 1000 : null;
+  } catch (e) { return null; }
+}
+function refreshTokenOnce() {
+  if (!state.token) return;
+  fetch(BACKEND + "/api/auth/refresh-token", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + state.token }
+  }).then(function(r) {
+    if (!r.ok) { throw new Error("refresh failed " + r.status); }
+    return r.json();
+  }).then(function(data) {
+    if (data && data.token) {
+      state.token = data.token;
+      try { STORE.setItem(SS_TOKEN, data.token); } catch(e){}
+      // Logge fuer Debug auf Pi (sichtbar in Chromium devtools / journalctl)
+      console.log("[token] refreshed, expires in ~" + (data.expires_in_hours || "?") + "h");
+    }
+  }).catch(function(ex) {
+    console.warn("[token] refresh fehlgeschlagen:", ex && ex.message);
+    // Bei Fehler nichts tun – der naechste Tick versucht's wieder.
+    // Erst wenn Token wirklich abgelaufen ist, kommt 401 beim naechsten api()-Call.
+  });
+}
+function scheduleTokenRefresh() {
+  if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+  if (!state.token) return;
+  // Sofortiger Check bei Start: wenn weniger als 2h Restzeit, gleich refreshen.
+  var expMs = _decodeJwtExp(state.token);
+  if (expMs) {
+    var remaining = expMs - Date.now();
+    if (remaining < 2 * 3600 * 1000 && remaining > 0) {
+      refreshTokenOnce();
+    }
+  }
+  // Alle 30 Min einen Refresh im Hintergrund.
+  _tokenRefreshTimer = setInterval(refreshTokenOnce, 30 * 60 * 1000);
+}
+function stopTokenRefresh() {
+  if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+}
+
 // Utilities
 function $(html) { var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]}); }
@@ -870,6 +927,7 @@ function renderPassword() {
         state.token = data.token; state.user = data.user; state.phase = "order_select";
         try { STORE.setItem(SS_TOKEN, data.token); STORE.setItem(SS_USER, JSON.stringify(data.user)); } catch(e){}
         savePhase("order_select"); try { STORE.removeItem(SS_ORDER); } catch(e){}
+        scheduleTokenRefresh();
         render();
       })
       .catch(function(ex) {
@@ -908,6 +966,7 @@ function attachLogout() {
   var b = document.getElementById("logout-btn");
   if (b) b.addEventListener("click", function() {
     state.token = null; state.user = null; state.order = null; state.pickedUser = null; state.phase = "user_select";
+    stopTokenRefresh();
     clearSession();
     render();
   });
@@ -1636,7 +1695,7 @@ function paintMultiDiaryForm() {
           '<div><div class="mdf-label">Telefon</div><input type="tel" id="mdf-phone" placeholder="Telefonnummer" autocomplete="off" /></div>' +
           '<div class="mdf-fullrow"><div class="mdf-label">Standort / Position</div><input type="text" id="mdf-loc" placeholder="z.B. Verteiler 3, Festzelt…" autocomplete="off" /></div>' +
           '<div class="mdf-fullrow"><div class="mdf-label">Grund / Beschreibung *</div><textarea id="mdf-reason" placeholder="Was ist passiert?" required></textarea></div>' +
-          '<div class="mdf-fullrow"><div class="mdf-label">Trupp zuweisen</div><div class="mdf-trupps" id="mdf-trupps"></div></div>' +
+          '<div class="mdf-fullrow"><div class="mdf-label">Trupp zuweisen <span style="font-weight:500;color:var(--text-muted);font-size:10px;">(mehrere wählbar)</span></div><div class="mdf-trupps" id="mdf-trupps"></div></div>' +
         '</div>' +
         '<div class="mdf-actions">' +
           '<span class="mdf-err" id="mdf-err"></span>' +
@@ -1732,8 +1791,40 @@ function paintMultiDiaryFormTrupps(host) {
 
 function loadMultiArtikel() {
   var pk = encodeURIComponent(state.order.primary_key);
-  api("/api/orders/epirent/" + pk + "/assets").then(function(data) {
-    artikelState.items = data.assets || [];
+  // Parallel: Assets (Verteiler, Lichtmasten, Tankstellen, Generator-Pins) +
+  // gebuchte Generatoren (Maschinenliste mit GPS), damit beides auf Karte+Liste landet.
+  Promise.all([
+    api("/api/orders/epirent/" + pk + "/assets"),
+    api("/api/orders/epirent/" + pk + "/generators").catch(function(){ return { generators: [] }; })
+  ]).then(function(res) {
+    var assets = (res[0] && res[0].assets) || [];
+    var gens = (res[1] && res[1].generators) || [];
+    // Generatoren als virtuelle Assets einreihen, damit Filter/Suche/Karte greifen.
+    // ID-Praefix verhindert Kollision mit echten Asset-IDs.
+    var genVirtuals = gens.map(function(g) {
+      var tel = g.latest_telemetry || {};
+      var fuel = tel.fuel_level;
+      var power = tel.power_kw;
+      var meta = [];
+      if (fuel != null) meta.push("Tank " + Math.round(fuel) + "%");
+      if (power != null) meta.push(power.toFixed(1) + " kW");
+      var label = g.name || g.serial_number || "(Generator)";
+      return {
+        id: "gen__" + g.id,
+        asset_type: "Generator (Auftrag)",
+        label: label,
+        plus_code: meta.join(" · "),
+        latitude: g.latitude,
+        longitude: g.longitude,
+        status: "placed",
+        comments: [],
+        _isGenerator: true,
+        _gen: g,
+        _fuel: fuel,
+        _power: power
+      };
+    });
+    artikelState.items = assets.concat(genVirtuals);
     // Typ-Filter befüllen
     var types = {};
     artikelState.items.forEach(function(a){ if (a.asset_type) types[a.asset_type] = (types[a.asset_type] || 0) + 1; });
@@ -1742,7 +1833,6 @@ function loadMultiArtikel() {
       var prev = multiState.artType || "all";
       sel.innerHTML = '<option value="all">Alle Typen (' + artikelState.items.length + ')</option>' +
         Object.keys(types).sort().map(function(t){ return '<option value="' + esc(t) + '">' + esc(t) + ' (' + types[t] + ')</option>'; }).join("");
-      // Auswahl behalten wenn der Typ noch existiert
       sel.value = (prev === "all" || types[prev]) ? prev : "all";
       multiState.artType = sel.value;
     }
@@ -1815,7 +1905,9 @@ function paintMultiArt() {
   area.querySelectorAll(".art-row").forEach(function(row) {
     row.addEventListener("click", function() {
       var a = artikelState.items.find(function(x){return x.id === row.dataset.assetId;});
-      if (a) openArtikelDetail(a);
+      if (!a) return;
+      if (a._isGenerator && a._gen) { openMaschinenDetail(a._gen); }
+      else { openArtikelDetail(a); }
     });
   });
 
@@ -1828,15 +1920,31 @@ function paintMultiArt() {
       if (typeof a.latitude !== "number" || !isFinite(a.latitude)) return;
       if (typeof a.longitude !== "number" || !isFinite(a.longitude)) return;
       var ic = _artikelIcon(a.asset_type);
-      var color = ic.cls === "generator" ? "#ea580c" :
-                  ic.cls === "verteiler" ? "#16a34a" :
-                  ic.cls === "lichtmast" ? "#ca8a04" :
-                  ic.cls === "tank"      ? "#0891b2" : "#6b7280";
+      // Generatoren bekommen rote/orange Färbung wenn Tank niedrig, sonst Status-Farbe
+      var color;
+      if (a._isGenerator) {
+        var f = a._fuel;
+        color = (f != null && f < 25) ? "#dc2626" :
+                (f != null && f < 50) ? "#ea580c" :
+                (a._gen && a._gen.status === "online" ? "#16a34a" : "#9ca3af");
+      } else {
+        color = ic.cls === "generator" ? "#ea580c" :
+                ic.cls === "verteiler" ? "#16a34a" :
+                ic.cls === "lichtmast" ? "#ca8a04" :
+                ic.cls === "tank"      ? "#0891b2" : "#6b7280";
+      }
       var m = L.circleMarker([a.latitude, a.longitude], {
-        radius: 9, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 2.5
+        radius: a._isGenerator ? 11 : 9,
+        color: "#fff", fillColor: color, fillOpacity: 0.95,
+        weight: a._isGenerator ? 3 : 2.5
       }).addTo(multiState.map);
-      m.bindTooltip('<b>' + esc(a.label || "?") + '</b><br>' + esc(a.asset_type || ""), { direction: "top" });
-      m.on("click", function(){ openArtikelDetail(a); });
+      var tip = '<b>' + esc(a.label || "?") + '</b><br>' + esc(a.asset_type || "");
+      if (a._isGenerator && a.plus_code) tip += '<br>' + esc(a.plus_code);
+      m.bindTooltip(tip, { direction: "top" });
+      m.on("click", function(){
+        if (a._isGenerator && a._gen) openMaschinenDetail(a._gen);
+        else openArtikelDetail(a);
+      });
       multiState.markers.push(m);
       bounds.push([a.latitude, a.longitude]);
     });
@@ -1887,23 +1995,80 @@ function renderMaschinenPanel() {
         '</select>' +
         '<div class="count" id="masch-count">…</div>' +
       '</div>' +
+      '<div id="masch-map" class="masch-overview-map"></div>' +
       '<div id="masch-area"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
     '</main></div>'
   ));
   attachLogout();
-  document.getElementById("tile-back").addEventListener("click", function(){ state.activeTile = null; state.phase = "workspace"; render(); });
+  document.getElementById("tile-back").addEventListener("click", function(){
+    if (maschState.map) { try { maschState.map.remove(); } catch(e){} maschState.map = null; maschState.mapMarkers = []; }
+    state.activeTile = null; state.phase = "workspace"; render();
+  });
   document.getElementById("masch-search").addEventListener("input", function(e){ maschState.search = e.target.value; paintMaschinen(); });
   document.getElementById("masch-status").addEventListener("change", function(e){ maschState.filterStatus = e.target.value; paintMaschinen(); });
   document.getElementById("masch-sort").addEventListener("change", function(e){ maschState.sort = e.target.value; paintMaschinen(); });
   document.getElementById("masch-sort").value = maschState.sort;
 
   loadMaschinen();
+  // Übersichtskarte aufbauen (Hybrid: Satellit + Strassen-Labels)
+  setTimeout(function() {
+    var mapEl = document.getElementById("masch-map"); if (!mapEl) return;
+    if (maschState.map) { try { maschState.map.remove(); } catch(e){} maschState.map = null; }
+    var center = [state.order.center_lat || 51.0, state.order.center_lng || 10.0];
+    var zoom = (state.order.center_lat && state.order.center_lng) ? 13 : 6;
+    maschState.map = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView(center, zoom);
+    maschState._userZoomed = false;
+    maschState.map.on("zoomstart dragstart", function(){ maschState._userZoomed = true; });
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                { maxZoom: 19, maxNativeZoom: 18 }).addTo(maschState.map);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+                { maxZoom: 19, maxNativeZoom: 18, opacity: 0.85 }).addTo(maschState.map);
+    if (state.order.center_lat && state.order.center_lng) {
+      L.circleMarker([state.order.center_lat, state.order.center_lng],
+                     { radius: 7, color: "#d946ef", fillColor: "#d946ef", fillOpacity: 0.4, weight: 2 })
+        .addTo(maschState.map).bindTooltip("Veranstaltungsort", { permanent: false });
+    }
+    maschState.mapMarkers = [];
+    if (maschState.items && maschState.items.length) paintMaschinenMap();
+  }, 60);
   // Auto-Refresh alle 30s (Telemetrie ist live)
   if (maschState.autoRefresh) clearInterval(maschState.autoRefresh);
   maschState.autoRefresh = setInterval(function() {
     if (state.activeTile === "maschinen") loadMaschinen(true);
     else { clearInterval(maschState.autoRefresh); maschState.autoRefresh = null; }
   }, 30000);
+}
+
+// Zeichnet/aktualisiert die Marker auf der Maschinenliste-Übersichtskarte.
+function paintMaschinenMap() {
+  if (!maschState.map) return;
+  (maschState.mapMarkers || []).forEach(function(m){ try { maschState.map.removeLayer(m); } catch(e){} });
+  maschState.mapMarkers = [];
+  var bounds = [];
+  maschState.items.forEach(function(g) {
+    if (typeof g.latitude !== "number" || !isFinite(g.latitude)) return;
+    if (typeof g.longitude !== "number" || !isFinite(g.longitude)) return;
+    var online = g.status === "online";
+    var tel = g.latest_telemetry || {};
+    var fuel = tel.fuel_level;
+    var color = online ? "#16a34a" : "#9ca3af";
+    if (fuel != null && fuel < 25) color = "#dc2626"; // niedriger Tank rot
+    else if (fuel != null && fuel < 50) color = "#ea580c"; // gelb
+    var m = L.circleMarker([g.latitude, g.longitude], {
+      radius: 10, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 2.5
+    }).addTo(maschState.map);
+    var tip = '<b>' + esc(g.name || "(ohne Name)") + '</b>' +
+              (g.model ? '<br>' + esc(g.model) : '') +
+              (fuel != null ? '<br>Tank: ' + Math.round(fuel) + '%' : '') +
+              (tel.power_kw != null ? '<br>Leistung: ' + tel.power_kw.toFixed(1) + ' kW' : '');
+    m.bindTooltip(tip, { direction: "top" });
+    m.on("click", function(){ openMaschinenDetail(g); });
+    maschState.mapMarkers.push(m);
+    bounds.push([g.latitude, g.longitude]);
+  });
+  if (bounds.length && !maschState._userZoomed) {
+    try { maschState.map.fitBounds(bounds, { padding: [25, 25], maxZoom: 17 }); } catch (e) {}
+  }
 }
 
 function loadMaschinen(silent) {
@@ -1954,6 +2119,10 @@ function paintMaschinen() {
   var area = document.getElementById("masch-area");
   var countEl = document.getElementById("masch-count");
   if (countEl) countEl.textContent = items.length + " von " + maschState.items.length + " Maschinen";
+
+  // Karte neu rendern (immer alle Items zeigen, nicht nur gefilterte – die Übersicht
+  // ist dafür gedacht, schnell die Lage aller Generatoren zu erfassen).
+  paintMaschinenMap();
 
   if (!items.length) {
     area.innerHTML = '<div class="empty" style="padding:48px;">' +
@@ -2012,8 +2181,11 @@ function openMaschinenDetail(g) {
   var tel = g.latest_telemetry || {};
   function row(k, v) { return v == null || v === "" ? "" : '<div class="row"><div class="k">' + esc(k) + '</div><div class="v">' + esc(String(v)) + '</div></div>'; }
   var fuel = tel.fuel_level; var fuelCls = _fuelClass(fuel);
+  var hasGps = (typeof g.latitude === "number" && isFinite(g.latitude) &&
+                typeof g.longitude === "number" && isFinite(g.longitude));
+  var coordsStr = hasGps ? g.latitude.toFixed(5) + ", " + g.longitude.toFixed(5) : null;
   var modal = $(
-    '<div class="modal-bg"><div class="modal-card" style="max-width:620px;">' +
+    '<div class="modal-bg"><div class="modal-card" style="max-width:720px;">' +
       '<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">' +
         '<div style="flex:1;">' +
           '<h3 style="margin:0;font-size:24px;">' + esc(g.name || "(ohne Name)") + '</h3>' +
@@ -2025,6 +2197,12 @@ function openMaschinenDetail(g) {
         '</div>' +
         '<div class="masch-status-dot ' + (g.status === "online" ? "online" : "offline") + '" style="margin-top:10px;"></div>' +
       '</div>' +
+      (hasGps
+        ? '<div id="masch-detail-map" style="height:240px;width:100%;border-radius:12px;border:1px solid var(--border);margin-bottom:14px;background:#f3f4f6;"></div>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin:-8px 0 12px 4px;">📍 ' + esc(coordsStr) +
+            ' · <a href="https://www.google.com/maps/?q=' + g.latitude + ',' + g.longitude + '" target="_blank" rel="noopener" style="color:var(--fuchsia);text-decoration:none;font-weight:600;">In Google Maps öffnen ↗</a>' +
+          '</div>'
+        : '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px;font-size:12px;color:#92400e;margin-bottom:12px;">⚠️ Keine GPS-Position für diesen Generator hinterlegt.</div>') +
       (fuel != null ? '<div style="background:#fafbfc;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;">' +
             '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">Tankstand</span>' +
@@ -2039,6 +2217,7 @@ function openMaschinenDetail(g) {
         row("Frequenz", tel.frequency != null ? tel.frequency + " Hz" : null) +
         row("Betriebsstunden", tel.running_hours != null ? tel.running_hours + " h" : null) +
         row("Distanz", g.distance_km != null ? g.distance_km.toFixed(2) + " km" : null) +
+        row("Position", coordsStr) +
         row("Zuordnung", g.is_manual ? "Manuell zugeordnet" : "Automatisch (im Radius)") +
         row("Letzte Aktualisierung", g.last_seen ? fmtDateTime(g.last_seen) : null) +
       '</div>' +
@@ -2046,6 +2225,29 @@ function openMaschinenDetail(g) {
     '</div></div>'
   );
   document.body.appendChild(modal);
+  // Mini-Karte im Modal initialisieren (nach Einbau in DOM -> Leaflet braucht Größe)
+  if (hasGps) {
+    setTimeout(function() {
+      var el = modal.querySelector("#masch-detail-map");
+      if (!el) return;
+      try {
+        var dmap = L.map(el, { zoomControl: true, attributionControl: false })
+                     .setView([g.latitude, g.longitude], 17);
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                    { maxZoom: 19, maxNativeZoom: 18 }).addTo(dmap);
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+                    { maxZoom: 19, maxNativeZoom: 18, opacity: 0.85 }).addTo(dmap);
+        var color = (fuel != null && fuel < 25) ? "#dc2626" :
+                    (fuel != null && fuel < 50) ? "#ea580c" :
+                    (g.status === "online" ? "#16a34a" : "#9ca3af");
+        L.circleMarker([g.latitude, g.longitude], {
+          radius: 11, color: "#fff", fillColor: color, fillOpacity: 0.95, weight: 3
+        }).addTo(dmap).bindTooltip(esc(g.name || ""), { permanent: false });
+        // Invalidate size nach kurzer Wartezeit damit Modal-Animation Platz hat
+        setTimeout(function(){ try { dmap.invalidateSize(); } catch(e){} }, 50);
+      } catch (e) { console.warn("Detail-Karte konnte nicht initialisiert werden:", e); }
+    }, 30);
+  }
   modal.querySelector("#m-close").addEventListener("click", function(){ modal.remove(); });
   modal.addEventListener("click", function(e){ if (e.target === modal) modal.remove(); });
 }
@@ -2776,7 +2978,7 @@ function openEntryModal(entry) {
       '<label>Standort / Position</label><input type="text" id="m-loc" value="' + esc(entry ? entry.location : "") + '" placeholder="z.B. Verteiler 3, Festzelt..." />' +
       '<label>Grund / Beschreibung *</label><textarea id="m-reason" placeholder="Was ist passiert?" required>' + esc(entry ? entry.reason : "") + '</textarea>' +
       (diaryState.trupps.length
-        ? '<label>Trupp zuweisen</label><div class="trupp-pick" id="m-trupps"></div>'
+        ? '<label>Trupp zuweisen <span style="font-weight:500;color:var(--text-muted);font-size:11px;">(mehrere wählbar)</span></label><div class="trupp-pick" id="m-trupps"></div>'
         : '') +
       '<label class="checkbox-row"><input type="checkbox" id="m-nachtrag" ' + (entry && entry.is_nachtrag ? "checked" : "") + ' /> Als Nachtrag markieren (rückwirkend)</label>' +
       '<div id="m-err"></div>' +
@@ -2923,6 +3125,8 @@ function render() {
   }
 }
 render();
+// Auto-Refresh starten falls beim Reload eine bestehende Session restored wurde
+if (state.token) { scheduleTokenRefresh(); }
 </script>
 </body>
 </html>

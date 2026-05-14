@@ -428,6 +428,19 @@ async def login(data: LoginRequest, request: Request):
     
     return LoginResponse(token=token, user=user_response)
 
+@api_router.post("/auth/refresh-token")
+async def refresh_token(user: dict = Depends(get_current_user)):
+    """Stellt einen frischen JWT-Token aus, solange der aktuelle noch gültig ist.
+
+    Wird von langlebigen Kiosk-Sessions (z.B. EinsatzPI) periodisch aufgerufen,
+    bevor der bestehende Token abläuft. Erfordert einen aktuell gültigen Token
+    (über get_current_user) – dieser darf NICHT abgelaufen sein. Genau das ist
+    der Punkt: Frontend muss rechtzeitig vor exp refreshen.
+    """
+    new_token = create_jwt_token(user["id"], user["email"], user["role"])
+    return {"token": new_token, "expires_in_hours": JWT_EXPIRATION_HOURS}
+
+
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(user: dict = Depends(get_current_user)):
     return UserResponse(
