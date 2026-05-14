@@ -2535,18 +2535,42 @@ echo "  eth-failover Watchdog aktiv"
 # ===== SCHRITT 2: GPS KONFIGURIEREN =====
 echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
 
-# Auto-Detect: NMEA-Verifikation statt nur Port-Existenz pruefen
+# SIM7600-HAT: GPS PROAKTIV aktivieren (bevor wir nach NMEA suchen).
+# Ohne AT+CGPS=1 sendet der NMEA-Port nichts -> detect_gps_port findet nichts.
+if lsusb | grep -q "1e0e:9001"; then
+    echo "  SIM7600 erkannt - aktiviere GPS proaktiv..."
+    for at in /dev/sim7600-at /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1; do
+        [ -e "$at" ] || continue
+        [ "$at" = "{body.serial_port}" ] && continue
+        # 115200 fuer AT-Ports, raw mode
+        stty -F "$at" 115200 raw -echo 2>/dev/null || continue
+        # AT+CGPS=1 senden + 1s auf Antwort warten
+        (echo -ne "AT+CGPS=1\r\n" > "$at") &
+        if timeout 2 head -c 200 "$at" 2>/dev/null | grep -qE "OK|CGPS|ERROR"; then
+            echo "    AT+CGPS=1 -> $at akzeptiert (AT-Port erkannt)"
+            wait
+            break
+        fi
+        wait 2>/dev/null
+    done
+    sleep 5  # GPS Engine braucht Zeit zum Hochfahren
+fi
+
+# Auto-Detect: NMEA-Verifikation statt nur Port-Existenz pruefen.
+# Probiert ALLE plausiblen SIM7600/USB-GPS-Ports - auch mit unterschiedlichen Baudraten.
 detect_gps_port() {{
-    for port in /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyACM0 /dev/ttyACM1; do
+    for port in /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyACM0 /dev/ttyACM1; do
         [ -e "$port" ] || continue
-        # Nicht den Modbus-Port oder LTE-Port nehmen
         [ "$port" = "{body.serial_port}" ] && continue
         [ "$port" = "{lte_port}" ] && continue
-        # 3 Sekunden lauschen, nach echtem NMEA-Pattern suchen
-        if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
-            echo "$port"
-            return 0
-        fi
+        # Baudraten 9600 (Standard NMEA) und 115200 (SIM7600 USB) probieren
+        for baud in 9600 115200; do
+            stty -F "$port" $baud raw -echo 2>/dev/null || continue
+            if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
+                echo "$port"
+                return 0
+            fi
+        done
     done
     return 1
 }}
@@ -2555,28 +2579,14 @@ GPS_DEV=$(detect_gps_port) || true
 if [ -n "$GPS_DEV" ]; then
     echo "  GPS-NMEA-Stream verifiziert auf: $GPS_DEV"
 else
-    # SIM7600 GPS evtl. nicht aktiv - AT+CGPS=1 senden und retry
-    if lsusb | grep -q "1e0e:9001"; then
-        echo "  SIM7600 erkannt - aktiviere GPS (AT+CGPS=1)..."
-        for at in /dev/ttyUSB2 /dev/ttyUSB3 /dev/sim7600-at; do
-            [ -e "$at" ] || continue
-            echo -ne "AT+CGPS=1\r\n" > "$at" 2>/dev/null || continue
-            sleep 2
-            echo "    AT+CGPS=1 -> $at gesendet"
-            break
-        done
-        sleep 5
-        GPS_DEV=$(detect_gps_port) || true
-        if [ -z "$GPS_DEV" ] && [ -e "/dev/ttyUSB1" ]; then
-            # SIM7600 NMEA-Port ist per Konvention ttyUSB1
-            echo "  SIM7600 NMEA-Port-Konvention: /dev/ttyUSB1"
-            GPS_DEV="/dev/ttyUSB1"
-        fi
-    fi
-    if [ -z "$GPS_DEV" ]; then
-        echo "  WARNUNG: Kein NMEA-Stream gefunden. Fallback: /dev/ttyUSB1"
+    echo "  WARNUNG: Kein NMEA-Stream gefunden."
+    # Sinnvoller Fallback: bei SIM7600 standardmaessig ttyUSB1 (Standard-Mapping)
+    if lsusb | grep -q "1e0e:9001" && [ -e "/dev/ttyUSB1" ]; then
         GPS_DEV="/dev/ttyUSB1"
+    else
+        GPS_DEV="/dev/ttyUSB2"
     fi
+    echo "  Fallback: $GPS_DEV (nach Reboot/Antennen-Fix evtl. korrigieren via /etc/default/gpsd)"
 fi
 
 sudo tee /etc/default/gpsd > /dev/null << GPSD_CONF

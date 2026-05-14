@@ -16,6 +16,10 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – GPS-Port Auto-Detection im Installer (P0 ✅ VERIFIZIERT)
+- ✅ **`detect_gps_port()` im Installer (`routes/energy_monitoring.py`):** Sendet `AT+CGPS=1` vor dem Scan an den AT-Port, dann iteriert über `/dev/ttyUSB*` und sucht nach `$` (NMEA-Start). Schreibt den gefundenen Port dynamisch in `/etc/default/gpsd`. Hardware-Layout-Variabilität (NMEA mal auf ttyUSB1, mal ttyUSB2) wird automatisch erkannt.
+- ✅ **Live-Test User:** Neuer Installer komplett zero-touch durchgelaufen, GPS wurde korrekt erkannt (`/dev/ttyUSB2`), Position erscheint im Portal-Map.
+
 ### Feb 2026 – LTE-Failover Bridge stabilisiert + GPS final (P0)
 - ✅ **GPS via SIM7600-NMEA:** SIM7600-LTE-HAT liefert NMEA-Stream auf `/dev/ttyUSB1`. gpsd-py3 hatte Library-Bug (`get_current()` lieferte nur erstes Packet=mode:1). Ersetzt durch direktes gpsd-Socket-Protokoll: `?WATCH={"enable":true}` und mehrere TPV-Packets lesen bis 2D/3D-Fix kommt. gpsd-Konfig: `DEVICES="/dev/ttyUSB1"`, `GPSD_OPTIONS="-n -b"`. SIM7600-GPS-Aktivierung (AT+CGPS=1) via systemd-Service `sim7600-gps.service` persistent nach Reboot.
 - ✅ **Hauptschalter-Status via Page 8 Reg 13 Bit 9** (Modbus 2061, empirisch via Diff-Scan verifiziert). Vorherige Annahmen (Page 8 Reg 130 / Page 12 Reg 17) waren auf 5510-Firmware nicht implementiert. Code priorisiert: Variante C (Page 8 Reg 13) → A (Reg 130) → B (Page 12) → abgeleitet.

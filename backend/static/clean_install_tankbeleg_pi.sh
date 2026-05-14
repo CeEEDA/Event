@@ -15,7 +15,7 @@
 #   sudo bash clean_install_tankbeleg_pi.sh
 #       [test-backend-url] [pi-user]
 #
-# Default-Backend: https://kiosk-central-1.preview.emergentagent.com
+# Default-Backend: https://kirmes-telemetry.preview.emergentagent.com
 # Default-User:    pi  (oder $SUDO_USER)
 # =====================================================
 
@@ -27,7 +27,7 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-API_BASE="${1:-https://kiosk-central-1.preview.emergentagent.com}"
+API_BASE="${1:-https://kirmes-telemetry.preview.emergentagent.com}"
 API_BASE="${API_BASE%/}"
 REAL_USER="${2:-${SUDO_USER:-pi}}"
 REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"

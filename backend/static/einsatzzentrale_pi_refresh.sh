@@ -13,7 +13,7 @@ CONF="/etc/einsatzzentrale-pi.conf"
 if [[ -f "$CONF" ]]; then
   CLOUD=$(grep '^CLOUD_URL=' "$CONF" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
 fi
-CLOUD="${CLOUD:-https://kiosk-central-1.preview.emergentagent.com}"
+CLOUD="${CLOUD:-https://kirmes-telemetry.preview.emergentagent.com}"
 
 # Kiosk-User-Profile finden (Default: admin)
 KIOSK_USER="${KIOSK_USER:-admin}"
