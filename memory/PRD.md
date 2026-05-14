@@ -16,6 +16,11 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Bugfix: „Meine Arbeitszeit" zeigte Krank-/Urlaubstage anderer Mitarbeiter bei Admins (P0)
+- 🐛 Symptom: Wenn ein User mit Admin- oder Verwaltungs-Rolle (z.B. Philipp Bertram) seine eigene „Meine Arbeitszeit"-Seite öffnete, sah er die Krankheitstage anderer Mitarbeiter (z.B. Max' 3 Tage) als eigene.
+- 🔍 Root Cause: `ArbeitszeitPage.jsx` rief `/employee/time-off?token=...` **ohne** `user_id`-Parameter auf. Das Backend liefert für Admin/Verwaltungs-Caller in diesem Fall **alle** Anträge aller Mitarbeiter zurück (by-design für die Übersichtsseite `AdminZeiterfassungPage`). Die Selbstansicht filterte clientseitig nicht nach `req.user_id`, also flossen fremde Anträge in den `sickDaysYear`-Counter ein.
+- ✅ Fix: `/app/frontend/src/pages/ArbeitszeitPage.jsx` ruft `/employee/time-off` jetzt mit `user_id=${user.id}` auf. Curl-Test verifiziert: vorher 10 Treffer (inkl. Max), nachher 0 Treffer für Philipp.
+
 ### Feb 2026 – GPS-Port Auto-Detection im Installer (P0 ✅ VERIFIZIERT)
 - ✅ **`detect_gps_port()` im Installer (`routes/energy_monitoring.py`):** Sendet `AT+CGPS=1` vor dem Scan an den AT-Port, dann iteriert über `/dev/ttyUSB*` und sucht nach `$` (NMEA-Start). Schreibt den gefundenen Port dynamisch in `/etc/default/gpsd`. Hardware-Layout-Variabilität (NMEA mal auf ttyUSB1, mal ttyUSB2) wird automatisch erkannt.
 - ✅ **Live-Test User:** Neuer Installer komplett zero-touch durchgelaufen, GPS wurde korrekt erkannt (`/dev/ttyUSB2`), Position erscheint im Portal-Map.

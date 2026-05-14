@@ -32,8 +32,11 @@ export default function ArbeitszeitPage() {
   }, [token, user?.id]);
 
   useEffect(() => {
-    api.get(`/employee/time-off?token=${token}`).then(r => setTimeOffRequests(r.data || [])).catch(() => {});
-  }, [token]);
+    if (!user?.id) return;
+    // Wichtig: Admin/Verwaltung würden ohne user_id-Filter ALLE Anträge sehen.
+    // Explizit auf die eigene User-ID einschränken, damit "Meine Arbeitszeit" wirklich nur eigene Daten zeigt.
+    api.get(`/employee/time-off?token=${token}&user_id=${user.id}`).then(r => setTimeOffRequests(r.data || [])).catch(() => {});
+  }, [token, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
