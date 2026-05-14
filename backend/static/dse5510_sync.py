@@ -685,54 +685,81 @@ def read_gps():
         except Exception as e:
             log.info(f"GPS: SIM7600 {sim_at_port} Lesefehler ({e}) - faellt zurueck auf gpsd")
 
-    # 2) gpsd (USB-GPS-Maus / externe NMEA-Quelle)
-    # WICHTIG: gpsd.get_current() blockiert OHNE Timeout wenn kein GPS-Fix
-    # vorhanden ist. Auf einem Pi der gpsd installiert hat aber KEINE
-    # GPS-Hardware angeschlossen ist, friert das die komplette main-loop
-    # ein - kein Sync, kein Command-Poll mehr. Daher socket-level Timeout
-    # vor dem Aufruf setzen und im Worker-Thread laufen lassen damit es
-    # hart aufgebrochen werden kann.
+    # 2) gpsd (USB-GPS-Maus / SIM7600 NMEA via gpsd)
+    # WICHTIG: gpsd-py3 hat einen Bug - get_current() liefert oft das ERSTE
+    # Paket nach connect, das noch mode=1 ist obwohl gpsd selbst schon mode=3
+    # hat. Daher direkt das gpsd-Socket-Protokoll sprechen und mehrere
+    # TPV-Packets lesen bis ein gueltiger 2D/3D-Fix kommt.
     try:
         import socket as _socket
-        # 1. Schneller Reachability-Check: ist gpsd-Port ueberhaupt offen?
+        import json as _json
+        import threading
+
+        # 1. Reachability-Check
         try:
             with _socket.create_connection(("127.0.0.1", 2947), timeout=1) as _s:
                 pass
         except Exception as e:
-            log.info(f"GPS: gpsd auf 127.0.0.1:2947 nicht erreichbar ({e}) - kein GPS")
-            return None  # gpsd laeuft nicht - sauberer Abbruch
+            log.info(f"GPS: gpsd auf 127.0.0.1:2947 nicht erreichbar ({e})")
+            return None
 
-        # 2. Daten lesen mit hartem Thread-Timeout (max 5s)
-        import threading
-        result = {"data": None, "error": None, "mode": None}
-        def _gpsd_worker():
+        # 2. WATCH-Stream lesen mit hartem Thread-Timeout
+        result = {"data": None, "best_mode": 0, "error": None}
+
+        def _gpsd_socket_worker():
             try:
-                import gpsd
-                _socket.setdefaulttimeout(3)
-                gpsd.connect()
-                pkt = gpsd.get_current()
-                result["mode"] = getattr(pkt, "mode", None)
-                if pkt.mode >= 2:
-                    result["data"] = {"latitude": round(pkt.lat, 6), "longitude": round(pkt.lon, 6)}
-                else:
-                    result["error"] = f"GPS-Fix-Modus {pkt.mode} (<2, kein 2D/3D-Fix)"
-            except ImportError as e:
-                result["error"] = f"gpsd-py3 nicht installiert: {e}"
+                sock = _socket.create_connection(("127.0.0.1", 2947), timeout=2)
+                sock.sendall(b'?WATCH={"enable":true,"json":true};\n')
+                deadline = time.time() + 5.5
+                buf = b""
+                while time.time() < deadline:
+                    sock.settimeout(max(0.1, deadline - time.time()))
+                    try:
+                        chunk = sock.recv(4096)
+                    except _socket.timeout:
+                        break
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        try:
+                            j = _json.loads(line.decode("utf-8"))
+                        except Exception:
+                            continue
+                        if j.get("class") == "TPV":
+                            mode = int(j.get("mode", 0) or 0)
+                            if mode > result["best_mode"]:
+                                result["best_mode"] = mode
+                            if mode >= 2 and "lat" in j and "lon" in j:
+                                result["data"] = {
+                                    "latitude": round(j["lat"], 6),
+                                    "longitude": round(j["lon"], 6),
+                                }
+                                return
+                try:
+                    sock.sendall(b'?WATCH={"enable":false};\n')
+                except Exception:
+                    pass
+                sock.close()
             except Exception as e:
-                result["error"] = f"GPS-Worker Fehler: {e}"
-            finally:
-                _socket.setdefaulttimeout(None)
-        t = threading.Thread(target=_gpsd_worker, daemon=True)
+                result["error"] = str(e)
+
+        t = threading.Thread(target=_gpsd_socket_worker, daemon=True)
         t.start()
-        t.join(timeout=5.0)
+        t.join(timeout=7.0)
         if t.is_alive():
-            log.warning("GPS: Worker timeout >5s - gpsd haengt")
+            log.warning("GPS: gpsd-Socket-Worker timeout >7s")
             return None
         if result["data"]:
-            log.info(f"GPS Fix (gpsd, mode={result['mode']}): {result['data']['latitude']}, {result['data']['longitude']}")
+            log.info(f"GPS Fix (gpsd, mode={result['best_mode']}): "
+                     f"{result['data']['latitude']}, {result['data']['longitude']}")
+            return result["data"]
         elif result["error"]:
-            log.info(f"GPS: {result['error']}")
-        return result["data"]
+            log.info(f"GPS: gpsd-Socket-Fehler: {result['error']}")
+        else:
+            log.info(f"GPS: gpsd best_mode={result['best_mode']} (<2, kein 2D/3D-Fix)")
+        return None
     except Exception as e:
         log.warning(f"GPS nicht verfuegbar: {e}")
     return None
