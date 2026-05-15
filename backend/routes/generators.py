@@ -2041,8 +2041,35 @@ async def get_generator_diagnostics(
 
     # Alarm-Conditions (Page 8 Named Conditions) - liefert konkreten Grund:
     # "Niedriger Oeldruck", "Tankleer", "Notaus", etc.
+    # Quelle 1 (DSE 5510 Pi-Sync): latest_snapshot.alarm_conditions als dict
+    # Quelle 2 (DSE 890 MQTT-Broker): open_alarms mit A-Code-Prefix (mqtt_service._process_alarm)
     ac_raw = telemetry.get("alarm_conditions")
     alarm_conditions_active = _decode_alarm_conditions(ac_raw) if ac_raw else []
+    if not alarm_conditions_active:
+        # Fallback: aus open_alarms die A-Code-Eintraege zu Conditions umbauen
+        # (Status-Bit-Alarme SB_/F-codes werden ignoriert - die zeigt der
+        # Status-Bits-Block separat an).
+        sev_codes = {"warning": 2, "electrical_trip": 3, "shutdown": 4}
+        sev_labels = {"warning": "Warnung", "electrical_trip": "Elektr. Ausloesung", "shutdown": "Abschaltung"}
+        for a in open_alarms or []:
+            code = (a.get("alarm_code") or "").strip()
+            if not code.startswith("A"):
+                continue
+            try:
+                pos = int(code[1:])
+            except (ValueError, TypeError):
+                continue
+            sev = (a.get("severity") or "warning").lower()
+            alarm_conditions_active.append({
+                "modbus_addr": 2048 + pos - 1,
+                "page8_reg": pos - 1,
+                "value": sev_codes.get(sev, 2),
+                "label": a.get("alarm_text") or code,
+                "severity": sev,
+                "severity_label": sev_labels.get(sev, sev.title()),
+            })
+        # Sortierung wie bei _decode_alarm_conditions
+        alarm_conditions_active.sort(key=lambda x: (-x["value"], x["modbus_addr"]))
 
     # Roh-MQTT-Messages: ueber alle bekannten Topic-Indizien suchen
     or_clauses = _candidate_topic_filters(gen_doc, device_doc, mapping)
