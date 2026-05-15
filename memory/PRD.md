@@ -16,6 +16,22 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Zeiterfassung: Tag-fuer-Tag Bilanz + Automatischer Minus-Abzug (P0)
+- 🐛 **Bug 1:** Soll wurde pro `time_entry` abgezogen — bei 2 Stempeln am gleichen Tag (z.B. 8-18 Uhr + 20:30-21:45) wurde Soll DOPPELT abgezogen → -7.25h statt +2h.
+- 🐛 **Bug 2:** Tage ganz ohne Stempel wurden ignoriert → kein Minus, obwohl Mitarbeiter (z.B. Sebi) nicht gearbeitet hatte.
+- ✅ **Fix:** `_recompute_overtime_for_year` komplett umgeschrieben. Iteriert jetzt Tag-fuer-Tag von 1.1. bis heute:
+  - Pro Tag: Ist = SUMME aller `time_entries` des Tages, Soll = 1x aus Wochenplan
+  - Urlaub/Krank/Ueberstundenabbau aus `time_off_requests` → Soll=0 fuer den Tag
+  - Feiertage (RLP via `_get_holidays`) → Soll=0
+  - Tage ohne Wochenplan-Soll → Soll=0 (z.B. Wochenende)
+- ✅ **Sanfte V2-Migration:** Beim ersten Recompute nach Update setzt sich `overtime_baseline` automatisch so neu, dass der bestehende Saldo erhalten bleibt. Kein Schock-Sprung bei Bestandskonten (Marker: `overtime_baseline_v2_migrated`).
+- ✅ **Audit-Protokoll (option 2c):** 
+  - Pro NEU automatisch gebuchter Minus-Tag ein einmaliger Detail-Eintrag (`auto_balance_day`, z.B. "12.05.2026: -8.25h (Soll 8.25h, Ist 0.0h, Kein Stempel)") — Duplikate werden verhindert.
+  - Pro Recompute eine Aggregat-Zusammenfassung (`auto_balance_recompute`: "+0.99h an 2 Tagen, -728.75h an 98 Tagen, Saldo: +35h").
+- ✅ Verifiziert mit Live-DB:
+  - Max (35h Saldo, Plan 7.5h Mo-Sa): nach Recompute weiter 35h (V2-Migration absorbiert die rueckwirkenden -728h aus Tagen ohne Stempel).
+  - Isolierter Test: User mit nur Dienstag-Plan 8.5h, am Test-Dienstag 2 Stempel (555min + 75min), Soll 510min — Diff exakt **+2h** (statt -7.25h vorher).
+
 ### Feb 2026 – EinsatzPI: Token-Refresh + Maschinenliste-Karte + Multi-Artikelliste mit Generatoren (P0)
 - ✅ **Token Auto-Refresh** (`server.py` + `einsatzzentrale-kiosk.html`):
   - Neuer Endpoint `POST /api/auth/refresh-token` (Auth-pflichtig). Stellt einen frischen JWT aus, solange der aktuelle noch gueltig ist.

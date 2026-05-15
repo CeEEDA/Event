@@ -817,46 +817,137 @@ async def _soll_minutes_for_weekday(user_id: str, weekday: int) -> int:
     return 0
 
 
-async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
-    """Berechne Ueberstunden eines Jahres aus Baseline + time_entries + Abbau-Antraegen.
+def _soll_minutes_from_schedule(schedule: dict, weekday: int) -> int:
+    """Synchrone Variante von _soll_minutes_for_weekday — nimmt schedule als Param.
+    Sinn: bei Tag-fuer-Tag-Bilanzierung soll der Wochenplan NICHT in jeder
+    Iteration aus der DB nachgeladen werden."""
+    day_name = _WEEKDAY_MAP.get(weekday)
+    if not day_name or not schedule:
+        return 0
+    day_sched = (schedule.get("days") or {}).get(day_name, {}) or {}
+    if not day_sched:
+        return 0
+    try:
+        sh_field = day_sched.get("soll_hours")
+        if sh_field not in (None, ""):
+            return int(round(float(sh_field) * 60))
+        if day_sched.get("start") and day_sched.get("end"):
+            sh, sm = map(int, day_sched["start"].split(":"))
+            eh, em = map(int, day_sched["end"].split(":"))
+            sched_break = int(day_sched.get("break_min") or 0)
+            return max(0, (eh * 60 + em) - (sh * 60 + sm) - sched_break)
+    except (ValueError, TypeError):
+        return 0
+    return 0
+
+
+async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller: Optional[dict] = None) -> float:
+    """Berechne Ueberstunden eines Jahres aus Baseline + Tag-fuer-Tag-Bilanz.
 
     Pattern:
-      overtime_hours = overtime_baseline + sum(ist-soll fuer alle time_entries)
+      overtime_hours = overtime_baseline + sum(ist_tag - soll_tag fuer alle vergangenen Plan-Tage)
                        - sum(hours_deducted aus genehmigten ueberstundenabbau-Antraegen)
 
-    'overtime_baseline' ist der manuell vom Admin eingetragene Anfangsbestand
-    (z.B. "Mitarbeiter X hatte beim Start 35h aus altem System"). Ohne diese
-    Baseline-Spalte wuerde der Recompute den Anfangsbestand vergessen.
+    WICHTIG: Tag-fuer-Tag, NICHT pro time_entry. Soll wird PRO TAG einmal abgezogen,
+    Ist ist die SUMME aller Stempel-Eintraege des Tages. Damit funktioniert auch
+    der Fall „8-18 Uhr + 20:30-21:45" korrekt (Soll 8.5h einmal, Ist 9.25+1.25=10.5h,
+    Diff = +2.0h und nicht -7.25h).
 
-    SICHERHEITS-MIGRATION: Wenn ein User noch KEINE overtime_baseline hat aber
-    bereits ein overtime_hours-Wert in der DB, ist das mit hoher Wahrscheinlich-
-    keit ein historisch gewachsener Bestand. In dem Fall berechnen wir die
-    Baseline rueckwaerts so, dass der angezeigte Wert ERHALTEN bleibt:
-       baseline := current_overtime_hours - sum(ist-soll) + sum(deductions)
-    Damit fuehrt der Recompute NICHT zu einer ploetzlichen Aenderung.
+    Tage GANZ OHNE Stempel werden mit Ist=0 verrechnet -> Minus, sofern es ein
+    Plan-Arbeitstag ohne Feiertag/Urlaub/Krank/Ueberstundenabbau ist.
+
+    Audit-Log:
+      - Jeder NEU automatisch verbuchte Tag wird einmalig detailliert geloggt
+        (action='auto_balance_day') und beim naechsten Recompute uebersprungen.
+      - Am Ende jedes Recompute eine Zusammenfassung (action='auto_balance_recompute').
     """
-    from datetime import date as _date
+    from datetime import date as _date, timedelta
     hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0}) or {}
 
-    # 1) Diff aus time_entries
+    today = datetime.now(timezone.utc).date()
+    year_start = _date(year, 1, 1)
+    year_end = _date(year, 12, 31)
+    end_day = min(today, year_end)
+
+    # 1) Feiertage (RLP)
+    holidays = set(_get_holidays(year).keys())
+
+    # 2) Urlaub/Krank/Abbau-Tage aus time_off_requests
+    off_days: set = set()
+    abbau_days: set = set()
+    off_cursor = db.time_off_requests.find({
+        "user_id": user_id, "status": "approved",
+        "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
+    }, {"_id": 0, "type": 1, "start_date": 1, "end_date": 1, "all_day": 1})
+    async for r in off_cursor:
+        try:
+            s = _date.fromisoformat(r["start_date"])
+            e = _date.fromisoformat(r["end_date"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        target = abbau_days if (r.get("type") or "").lower() == "ueberstundenabbau" else off_days
+        cur = s
+        while cur <= e:
+            if cur.year == year:
+                target.add(cur.isoformat())
+            cur += timedelta(days=1)
+
+    # 3) time_entries aggregiert pro Tag (Echtarbeit, keine Urlaub-Pseudo-Eintraege)
+    ist_by_day: dict = {}
     cursor = db.time_entries.find(
         {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
         {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
     )
-    total_diff_minutes = 0
     async for e in cursor:
         if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
             continue
-        try:
-            wd = _date.fromisoformat(e["date"]).weekday()
-        except Exception:
+        d = e.get("date")
+        if not d:
             continue
-        soll = await _soll_minutes_for_weekday(user_id, wd)
-        ist = float(e.get("duration_minutes") or 0)
-        total_diff_minutes += (ist - soll)
+        ist_by_day[d] = ist_by_day.get(d, 0.0) + float(e.get("duration_minutes") or 0)
+
+    # 4) Wochenplan einmal laden
+    schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+    has_schedule = bool(schedule and (schedule.get("days") or {}))
+
+    # 5) Tag-fuer-Tag-Bilanz
+    total_diff_minutes = 0.0
+    plus_days = 0
+    minus_days = 0
+    plus_minutes = 0.0
+    minus_minutes = 0.0
+    new_detail_logs: list = []  # NEU zu loggende Tage
+    cur = year_start
+    while cur <= end_day:
+        date_str = cur.isoformat()
+        ist = ist_by_day.get(date_str, 0.0)
+        soll = 0
+        reason = ""
+        if date_str in holidays:
+            reason = "Feiertag (" + _get_holidays(year).get(date_str, "?") + ")"
+        elif date_str in off_days:
+            reason = "Urlaub/Krank"
+        elif date_str in abbau_days:
+            reason = "Überstundenabbau"
+        elif has_schedule:
+            soll = _soll_minutes_from_schedule(schedule, cur.weekday())
+        diff = ist - soll
+        if diff > 0.5:
+            plus_days += 1; plus_minutes += diff
+        elif diff < -0.5:
+            minus_days += 1; minus_minutes += abs(diff)
+            # Detail-Eintrag fuer Minus-Tage merken (Plus-Tage logge ich nicht
+            # einzeln — sonst Spam)
+            new_detail_logs.append({
+                "date": date_str, "soll_min": soll, "ist_min": ist, "diff_min": diff,
+                "reason": reason or ("Kein Stempel" if soll > 0 else "")
+            })
+        total_diff_minutes += diff
+        cur += timedelta(days=1)
+
     diff_hours = round(total_diff_minutes / 60.0, 2)
 
-    # 2) Genehmigte ueberstundenabbau-Antraege
+    # 6) Genehmigte ueberstundenabbau-Antraege (alt: aus absences-Collection)
     abs_cursor = db.absences.find(
         {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
          "date": {"$regex": f"^{year}-"}},
@@ -869,25 +960,42 @@ async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
         except (TypeError, ValueError):
             continue
 
-    # 3) Baseline ermitteln - falls noch nicht gesetzt, rueckwaerts so berechnen
-    # dass der aktuell angezeigte overtime_hours-Wert erhalten bleibt.
+    # 7) Baseline – falls noch nicht gesetzt, rueckwaerts so berechnen dass
+    # der aktuell angezeigte Wert ERHALTEN bleibt (Migration ohne Sprung).
+    # ZUSAETZLICHE V2-MIGRATION: Der Recompute war frueher pro-time_entry und
+    # hat Tage ohne Stempel nicht beruecksichtigt. Mit dem neuen Tag-fuer-Tag-
+    # Algorithmus aendert sich diff_hours u.U. massiv (Minus-Tage tauchen auf).
+    # Damit existierende Konten KEINEN ploetzlichen Sprung erhalten, setzen wir
+    # die Baseline beim ersten Recompute nach dem Update so neu, dass der
+    # angezeigte Saldo gleich bleibt. Ab dann werden NEUE Tage normal verbucht.
     baseline = hr.get("overtime_baseline")
+    needs_v2_migration = bool(hr) and not hr.get("overtime_baseline_v2_migrated")
     if baseline is None:
         current_total = float(hr.get("overtime_hours") or 0)
-        # current_total = baseline + diff_hours - deduction  =>  baseline = current_total - diff_hours + deduction
         baseline = round(current_total - diff_hours + deduction, 2)
-        # Baseline persistent ablegen - so dass naechste Recomputes konsistent bleiben.
         await db.hr_data.update_one(
             {"user_id": user_id, "year": year},
             {"$set": {"overtime_baseline": baseline,
                        "overtime_baseline_set_at": datetime.now(timezone.utc).isoformat(),
-                       "overtime_baseline_reason": "auto-migration: erhalten was vorher im overtime_hours stand"}},
+                       "overtime_baseline_reason": "auto-migration: erhalten was vorher im overtime_hours stand",
+                       "overtime_baseline_v2_migrated": True}},
             upsert=True,
         )
         logger.info(f"Overtime baseline AUTO-SET: user={user_id} year={year} baseline={baseline}h (preserves displayed {current_total}h)")
+    elif needs_v2_migration:
+        current_total = float(hr.get("overtime_hours") or baseline)
+        old_baseline = baseline
+        baseline = round(current_total - diff_hours + deduction, 2)
+        await db.hr_data.update_one(
+            {"user_id": user_id, "year": year},
+            {"$set": {"overtime_baseline": baseline,
+                       "overtime_baseline_set_at": datetime.now(timezone.utc).isoformat(),
+                       "overtime_baseline_reason": f"v2-migration: alte baseline {old_baseline}h -> {baseline}h, damit Saldo {current_total}h ohne Sprung erhalten bleibt (neue Tag-fuer-Tag-Logik)",
+                       "overtime_baseline_v2_migrated": True}}
+        )
+        logger.info(f"Overtime V2-MIGRATION: user={user_id} year={year} baseline {old_baseline}h -> {baseline}h (preserves {current_total}h)")
 
     new_overtime = round(float(baseline) + diff_hours - deduction, 2)
-
     update = {"overtime_hours": new_overtime, "updated_at": datetime.now(timezone.utc).isoformat()}
     if not hr:
         await db.hr_data.insert_one({
@@ -903,7 +1011,57 @@ async def _recompute_overtime_for_year(user_id: str, year: int) -> float:
             {"user_id": user_id, "year": year},
             {"$set": update},
         )
-    logger.info(f"Overtime recompute: user={user_id} year={year} baseline={baseline}h + diff={diff_hours}h - deduction={deduction}h = {new_overtime}h")
+    logger.info(f"Overtime recompute: user={user_id} year={year} baseline={baseline}h + diff={diff_hours}h - deduction={deduction}h = {new_overtime}h (plus={plus_days}d/+{round(plus_minutes/60.0,2)}h, minus={minus_days}d/-{round(minus_minutes/60.0,2)}h)")
+
+    # 8) Audit-Log: Detail-Eintraege fuer NEU automatisch gebuchte Minus-Tage
+    sys_caller = audit_caller or {"id": None, "name": "System (Auto-Bilanz)", "role": "system"}
+    if new_detail_logs:
+        # Schon geloggte Tage (per action+date+user) NICHT erneut loggen
+        existing = set()
+        existing_cursor = db.time_audit_log.find(
+            {"target_user_id": user_id, "action": "auto_balance_day"},
+            {"_id": 0, "details.date": 1}
+        )
+        async for ex in existing_cursor:
+            d = (ex.get("details") or {}).get("date")
+            if d: existing.add(d)
+        for entry in new_detail_logs:
+            if entry["date"] in existing:
+                continue
+            diff_h = round(entry["diff_min"] / 60.0, 2)
+            soll_h = round(entry["soll_min"] / 60.0, 2)
+            ist_h = round(entry["ist_min"] / 60.0, 2)
+            try:
+                d_de = datetime.fromisoformat(entry["date"]).strftime("%d.%m.%Y")
+            except Exception:
+                d_de = entry["date"]
+            summary = f"{d_de}: {diff_h:+.2f}h (Soll {soll_h}h, Ist {ist_h}h{', ' + entry['reason'] if entry['reason'] else ''})"
+            await _log_audit(user_id, "auto_balance_day", sys_caller,
+                             summary=summary, details=entry)
+
+    # 9) Audit-Log: Zusammenfassung (aggregiert) – nur wenn was passiert ist
+    if plus_days or minus_days or deduction > 0:
+        summary_text = (
+            f"Recompute Stundenkonto {year}: "
+            f"+{round(plus_minutes/60.0,2)}h an {plus_days} Tag(en), "
+            f"-{round(minus_minutes/60.0,2)}h an {minus_days} Tag(en), "
+            f"Abbau {round(deduction,2)}h, "
+            f"Saldo: {new_overtime:+.2f}h"
+        )
+        await _log_audit(user_id, "auto_balance_recompute", sys_caller,
+                         before={"overtime_hours": float(hr.get("overtime_hours") or 0)} if hr else None,
+                         after={"overtime_hours": new_overtime},
+                         summary=summary_text,
+                         details={
+                             "year": year,
+                             "baseline_h": float(baseline),
+                             "diff_h": diff_hours,
+                             "deduction_h": round(deduction, 2),
+                             "plus_days": plus_days, "plus_h": round(plus_minutes/60.0, 2),
+                             "minus_days": minus_days, "minus_h": round(minus_minutes/60.0, 2),
+                             "new_overtime_h": new_overtime,
+                         })
+
     return new_overtime
 
 
@@ -1233,23 +1391,51 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     if "overtime_hours" in data:
         new_value = float(data["overtime_hours"])
         update["overtime_hours"] = new_value
-        # Diff aus time_entries des Jahres + Deductions berechnen, um baseline zu setzen
-        from datetime import date as _date
-        cursor = db.time_entries.find(
+        # WICHTIG: Diff mit der GLEICHEN Tag-fuer-Tag-Logik wie im Recompute berechnen,
+        # sonst stimmt die Baseline-Rueckrechnung nicht mit dem naechsten Recompute ueberein.
+        from datetime import date as _date, timedelta
+        today = datetime.now(timezone.utc).date()
+        year_start = _date(year, 1, 1)
+        year_end = _date(year, 12, 31)
+        end_day = min(today, year_end)
+        holidays = set(_get_holidays(year).keys())
+        off_days = set(); abbau_days = set()
+        async for r in db.time_off_requests.find({
+            "user_id": user_id, "status": "approved",
+            "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
+        }, {"_id": 0, "type": 1, "start_date": 1, "end_date": 1}):
+            try:
+                s = _date.fromisoformat(r["start_date"]); e2 = _date.fromisoformat(r["end_date"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            target = abbau_days if (r.get("type") or "").lower() == "ueberstundenabbau" else off_days
+            cur2 = s
+            while cur2 <= e2:
+                if cur2.year == year: target.add(cur2.isoformat())
+                cur2 += timedelta(days=1)
+        ist_by_day = {}
+        async for e in db.time_entries.find(
             {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
             {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
-        )
-        diff_min = 0
-        async for e in cursor:
+        ):
             if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
                 continue
-            try:
-                wd = _date.fromisoformat(e["date"]).weekday()
-            except Exception:
-                continue
-            soll = await _soll_minutes_for_weekday(user_id, wd)
-            ist = float(e.get("duration_minutes") or 0)
+            d = e.get("date")
+            if d: ist_by_day[d] = ist_by_day.get(d, 0.0) + float(e.get("duration_minutes") or 0)
+        schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+        has_schedule = bool(schedule and (schedule.get("days") or {}))
+        diff_min = 0.0
+        cur = year_start
+        while cur <= end_day:
+            date_str = cur.isoformat()
+            ist = ist_by_day.get(date_str, 0.0)
+            soll = 0
+            if date_str in holidays or date_str in off_days or date_str in abbau_days:
+                soll = 0
+            elif has_schedule:
+                soll = _soll_minutes_from_schedule(schedule, cur.weekday())
             diff_min += (ist - soll)
+            cur += timedelta(days=1)
         diff_h = round(diff_min / 60.0, 2)
         abs_cursor = db.absences.find(
             {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
