@@ -27,6 +27,7 @@ _mqtt_dropped_counter = 0       # Zaehler verworfener Messages
 _dedup_cache = {}  # topic -> (timestamp, payload_hash)
 _dedup_ttl = 2.0   # seconds
 _raw_msg_counter = 0  # for periodic trimming
+_raw_log_counter = 0  # for periodic raw-message-log trimming
 
 # Cache for DB lookups (refreshed periodically)
 _mappings_cache = None
@@ -354,6 +355,32 @@ async def _process_message(msg):
 
     timestamp = datetime.now(timezone.utc).isoformat()
     now_ts = time.time()
+
+    # --- Roh-Message-Logging (Ringpuffer, max 2000 Eintraege) ----------------
+    # Damit der Diagnose-Block im Portal sehen kann WAS fuer ein konkretes
+    # Geraet wirklich rein kommt (Topic + Payload). Nur die letzten 2000
+    # Messages werden behalten (rotation via FIFO), sonst waechst das endlos.
+    try:
+        await _db.mqtt_raw_messages.insert_one({
+            "topic": topic,
+            "payload": payload_str[:4000],  # cap auf 4 KB
+            "timestamp": timestamp,
+            "received_at": timestamp,
+        })
+        global _raw_log_counter
+        _raw_log_counter += 1
+        # Periodisches Trimmen: alle 200 Inserts die aeltesten verwerfen,
+        # damit max 2000 Eintraege im Ring bleiben.
+        if _raw_log_counter % 200 == 0:
+            n = await _db.mqtt_raw_messages.count_documents({})
+            if n > 2000:
+                overflow = n - 2000
+                oldest = await _db.mqtt_raw_messages.find({}, {"_id": 1}).sort("timestamp", 1).limit(overflow).to_list(overflow)
+                if oldest:
+                    await _db.mqtt_raw_messages.delete_many({"_id": {"$in": [o["_id"] for o in oldest]}})
+    except Exception as _e:
+        # Logging darf NIE die Verarbeitung blockieren
+        logger.debug(f"MQTT raw-log skip: {_e}")
 
     # Anlage-Index lernen: pro Anlage-ID, welche Gateway- und Module-UIDs
     # sehen wir? Wird spaeter genutzt um die DSE890 Bruecke zu schlagen.

@@ -27,6 +27,8 @@ User language: **German** (Agent must respond in German).
   - Diagnose-Endpoint liefert `alarm_conditions_active` zusätzlich zu `status_bits_decoded`. Source-Fallback: latest_telemetry → latest_snapshot → letzter generator_telemetry-Eintrag.
 - ✅ **Frontend (`GeneratorDetailPage.js`):** Neue Sektion „Alarm-Ursachen (Page 8 Named Conditions)" prominent vor den Status-Bits. Severity-Farbcode: rot=Shutdown, orange=Electrical Trip, gelb=Warning.
 - ✅ **DSE 890 → MQTT-Broker Pfad mit abgedeckt (Fallback):** Der MQTT-Service hat die Page-8-Conditions bereits als A-Code-Einträge in `generator_alarms`. Wenn `alarm_conditions` im `latest_snapshot` leer ist, baut der Diagnose-Endpoint die `alarm_conditions_active`-Liste aus den offenen A-Code-Alarmen (A001–A052) automatisch nach. Status-Bit-Alarme (SB_) werden ausgelassen (separat im Status-Bits-Block).
+- 🐛 **Bug:** `mqtt_raw_messages` Collection wurde **nirgends im Code befüllt** (nur gelesen + via Admin-Endpoint gelöscht). Daher zeigte der Diagnose-Block immer „Letzte MQTT-Roh-Messages (0)".
+- ✅ **Fix:** Roh-Message-Logging in `mqtt_service._process_message` aktiviert (Ringpuffer max 2000 Einträge, periodisches Trim alle 200 Inserts). Damit sieht der Diagnose-Block jetzt was tatsächlich für ein Gerät ankommt — kritisch für DSE-890-Konfig-Debugging (z.B. „sendet das Modul überhaupt /alarm-Topics?").
 
 ## Implementation Log (älter)
 ### Feb 2026 – Zeiterfassung: Tag-fuer-Tag Bilanz + Automatischer Minus-Abzug (P0)
