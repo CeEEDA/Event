@@ -16,6 +16,18 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Generator-Diagnose: Page-3-Status-Bits + Page-8 Alarm-Conditions (P0)
+- 🐛 **Bug:** Diagnose-Block zeigte „Keine status_bits in Telemetrie", weil `dse5510_sync.py` Page-3 Reg-6 nicht las. Damit war der echte Alarm-Grund (Niedriger Öldruck, Tank leer, etc.) im Portal nicht sichtbar.
+- ✅ **Pi-Sync (`dse5510_sync.py`):**
+  - Liest jetzt Page-3 Reg-6 (Modbus 774) als `status_bits` (16-bit Status-Wort).
+  - Liest Page-8 Block (Modbus 2048-2097, 50 Register, **ein** Block-Read via FC03) als Named-Alarm-Conditions. Nur aktive (Wert ≥ 2 = Warnung/Trip/Shutdown) werden gesendet.
+- ✅ **Backend (`generators.py`):**
+  - Ingest-Endpoint schreibt `status_bits` und `alarm_conditions` sowohl in `latest_snapshot` als auch in `generator_telemetry`-History.
+  - Neuer Decoder `_decode_alarm_conditions` mit Mapping-Tabelle (`_DSE_ALARM_CONDITION_LABELS`) für 31 GenComm-Standard-Conditions (Notaus, Öldruck, Coolant, Tank, Batterie, Generator-Spannung, etc.). Unbekannte Adressen werden als „Page 8 Reg X (Modbus Y)" angezeigt.
+  - Diagnose-Endpoint liefert `alarm_conditions_active` zusätzlich zu `status_bits_decoded`. Source-Fallback: latest_telemetry → latest_snapshot → letzter generator_telemetry-Eintrag.
+- ✅ **Frontend (`GeneratorDetailPage.js`):** Neue Sektion „Alarm-Ursachen (Page 8 Named Conditions)" prominent vor den Status-Bits. Severity-Farbcode: rot=Shutdown, orange=Electrical Trip, gelb=Warning.
+
+## Implementation Log (älter)
 ### Feb 2026 – Zeiterfassung: Tag-fuer-Tag Bilanz + Automatischer Minus-Abzug (P0)
 - 🐛 **Bug 1:** Soll wurde pro `time_entry` abgezogen — bei 2 Stempeln am gleichen Tag (z.B. 8-18 Uhr + 20:30-21:45) wurde Soll DOPPELT abgezogen → -7.25h statt +2h.
 - 🐛 **Bug 2:** Tage ganz ohne Stempel wurden ignoriert → kein Minus, obwohl Mitarbeiter (z.B. Sebi) nicht gearbeitet hatte.

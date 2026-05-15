@@ -618,6 +618,42 @@ export default function GeneratorDetailPage() {
                     )}
                   </section>
 
+                  <section data-testid="diag-alarm-conditions">
+                    <h4 className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+                      Alarm-Ursachen (Page 8 Named Conditions)
+                      {Array.isArray(diagData.alarm_conditions_active) && (
+                        <span className="ml-1 text-slate-300 font-mono">
+                          ({diagData.alarm_conditions_active.length})
+                        </span>
+                      )}
+                    </h4>
+                    {(!diagData.alarm_conditions_active || diagData.alarm_conditions_active.length === 0) ? (
+                      diagData.alarm_conditions_raw == null ? (
+                        <p className="text-xs text-slate-500 italic">
+                          Keine Page-8-Daten in Telemetrie. Pi muss aktualisiert werden (siehe Refresh-PI-URL).
+                        </p>
+                      ) : (
+                        <p className="text-xs text-emerald-400/80 italic">Keine aktiven Alarm-Ursachen — sauber.</p>
+                      )
+                    ) : (
+                      <ul className="space-y-1 text-xs">
+                        {diagData.alarm_conditions_active.map((c) => {
+                          const sevCls = c.severity === "shutdown" ? "bg-red-600/20 text-red-300 border-red-600/40"
+                                       : c.severity === "electrical_trip" ? "bg-orange-600/20 text-orange-300 border-orange-600/40"
+                                       : c.severity === "warning" ? "bg-amber-600/20 text-amber-300 border-amber-600/40"
+                                       : "bg-slate-600/20 text-slate-300 border-slate-600/40";
+                          return (
+                            <li key={c.modbus_addr} className={`flex items-start gap-2 px-2 py-1.5 rounded border ${sevCls}`}>
+                              <span className="text-[10px] font-mono font-bold uppercase shrink-0 mt-0.5">{c.severity_label}</span>
+                              <span className="flex-1">{c.label}</span>
+                              <span className="text-[10px] font-mono text-slate-400 shrink-0">P8R{c.page8_reg}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+
                   <section data-testid="diag-status-bits">
                     <h4 className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
                       DSE Status-Bits {diagData.status_bits_raw != null && (

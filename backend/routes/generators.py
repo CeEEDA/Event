@@ -1243,6 +1243,13 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
                          "mains_available", "remote_start", "alarm_active"):
             if rec.get(bool_key) is not None:
                 snapshot[bool_key] = rec[bool_key]
+        # Diagnose-Felder (status_bits 16-bit Wort, alarm_conditions dict)
+        # in latest_snapshot durchreichen, damit der Diagnose-Endpoint sie ohne
+        # Zusatz-Query aus dem Generator-Dokument lesen kann.
+        if rec.get("status_bits") is not None:
+            snapshot["status_bits"] = rec["status_bits"]
+        if rec.get("alarm_conditions") is not None:
+            snapshot["alarm_conditions"] = rec["alarm_conditions"]
         for k, v in snapshot.items():
             update_fields[f"latest_snapshot.{k}"] = v
 
@@ -1310,6 +1317,9 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
             "dse_mode_raw": record.get("dse_mode_raw"),
             "generator_available": record.get("generator_available"),
             "breaker_closed": record.get("breaker_closed"),
+            # Diagnose: DSE-Status-Bits (Page 3 Reg 6) + aktive Alarm-Conditions (Page 8 Block)
+            "status_bits": record.get("status_bits"),
+            "alarm_conditions": record.get("alarm_conditions"),
             # GPS pro Record (Fahrt-Verfolgung)
             "gps_lat": record.get("gps_lat"),
             "gps_lng": record.get("gps_lng"),
@@ -1852,6 +1862,80 @@ _DSE_STATUS_BIT_MEANINGS = [
 ]
 
 
+# DSE GenComm Page 8 "Named Alarm Conditions" — Modbus-Adresse -> Label.
+# Werte pro Register: 0=deaktiviert, 1=konfiguriert aber inaktiv, 2=Warnung,
+# 3=Elektrische Ausloesung, 4=Abschaltung. Mapping basiert auf DSE-5510-GenComm,
+# kann je Firmware leicht variieren. Unbekannte Adressen werden als
+# "Page 8 Reg X" angezeigt, damit der User trotzdem sieht, wo's brennt.
+_DSE_ALARM_CONDITION_LABELS = {
+    2048: "Notaus (Emergency stop)",
+    2049: "Niedriger Oeldruck",
+    2050: "Hohe Kuehlmitteltemperatur",
+    2051: "Niedrige Kuehlmitteltemperatur / Vorgluehen",
+    2052: "Unterdrehzahl",
+    2053: "Ueberdrehzahl",
+    2054: "Generator Unterfrequenz",
+    2055: "Generator Ueberfrequenz",
+    2056: "Generator Unterspannung",
+    2057: "Generator Ueberspannung",
+    2058: "Generator Ueberstrom",
+    2059: "Erdschluss",
+    2060: "Drehzahlsignal verloren",
+    2061: "Eingang 7 (Hauptschalter-Rueckmeldung)",
+    2062: "Konfigurierter Eingang 1",
+    2063: "Konfigurierter Eingang 2",
+    2064: "Niedriger Tankstand",
+    2065: "Hoher Tankstand (Ueberfuellung)",
+    2066: "Konfigurierter Eingang 3",
+    2067: "Konfigurierter Eingang 4",
+    2068: "Wartung erforderlich",
+    2069: "Batterieladung niedrig",
+    2070: "Batteriespannung niedrig/hoch",
+    2071: "Lichtmaschine defekt (Charge alternator)",
+    2072: "Startfehler",
+    2073: "Stoppfehler",
+    2074: "Notstart fehlgeschlagen",
+    2075: "Anlasser Uebersetzung",
+    2076: "Oelfilter Wartung",
+    2077: "Luftfilter Wartung",
+    2078: "Generator Verbindungsfehler",
+}
+
+_DSE_ALARM_SEVERITY = {
+    2: ("warning", "Warnung"),
+    3: ("electrical_trip", "Elektr. Ausloesung"),
+    4: ("shutdown", "Abschaltung"),
+}
+
+
+def _decode_alarm_conditions(conds):
+    """Wandelt das alarm_conditions-Dict (modbus_addr -> severity_code) in eine
+    sortierte Liste lesbarer Eintraege. Nur ECHT-aktive (Severity >= 2)."""
+    if not isinstance(conds, dict):
+        return []
+    out = []
+    for addr_str, val in conds.items():
+        try:
+            addr = int(addr_str)
+            sev = int(val)
+        except (TypeError, ValueError):
+            continue
+        if sev < 2:
+            continue
+        sev_key, sev_label = _DSE_ALARM_SEVERITY.get(sev, ("info", f"Code {sev}"))
+        label = _DSE_ALARM_CONDITION_LABELS.get(addr, f"Page 8 Reg {addr - 2048} (Modbus {addr})")
+        out.append({
+            "modbus_addr": addr,
+            "page8_reg": addr - 2048,
+            "value": sev,
+            "label": label,
+            "severity": sev_key,
+            "severity_label": sev_label,
+        })
+    # Sortierung: Schwerste Schwere zuerst, dann nach Adresse
+    return sorted(out, key=lambda x: (-x["value"], x["modbus_addr"]))
+
+
 def _decode_status_bits(value):
     """Wandelt das rohe SB-Wort in eine lesbare Liste {bit, mask_hex, label, severity, set}."""
     try:
@@ -1934,12 +2018,31 @@ async def get_generator_diagnostics(
         {"_id": 0},
     ).sort("timestamp", -1).to_list(50)
 
-    # Decoded status_bits aus latest_telemetry
-    telemetry = (gen_doc or device_doc or {}).get("latest_telemetry") or {}
+    # Decoded status_bits + alarm_conditions aus aktueller Telemetrie
+    # Quelle: bevorzugt latest_telemetry (List-API fuellt das), fallback latest_snapshot
+    # (Ingest schreibt status_bits/alarm_conditions dort hinein) und schliesslich der
+    # letzte generator_telemetry-Eintrag falls nichts oben dran haengt.
+    gen_or_dev = gen_doc or device_doc or {}
+    telemetry = gen_or_dev.get("latest_telemetry") or gen_or_dev.get("latest_snapshot") or {}
+    if not telemetry.get("status_bits") and not telemetry.get("alarm_conditions"):
+        latest_tel = await db.generator_telemetry.find_one(
+            {"generator_id": generator_id}, {"_id": 0}, sort=[("timestamp", -1)]
+        )
+        if latest_tel:
+            # Behalte vorhandene Telemetrie aber merge die Diagnose-Felder rein
+            if latest_tel.get("status_bits") is not None and not telemetry.get("status_bits"):
+                telemetry["status_bits"] = latest_tel["status_bits"]
+            if latest_tel.get("alarm_conditions") is not None and not telemetry.get("alarm_conditions"):
+                telemetry["alarm_conditions"] = latest_tel["alarm_conditions"]
+
     sb_raw = telemetry.get("status_bits")
     status_bits_decoded = _decode_status_bits(sb_raw) if sb_raw is not None else []
-    # Nur die gesetzten Bits separat fuer schnellen Blick
     status_bits_active = [b for b in status_bits_decoded if b["set"]]
+
+    # Alarm-Conditions (Page 8 Named Conditions) - liefert konkreten Grund:
+    # "Niedriger Oeldruck", "Tankleer", "Notaus", etc.
+    ac_raw = telemetry.get("alarm_conditions")
+    alarm_conditions_active = _decode_alarm_conditions(ac_raw) if ac_raw else []
 
     # Roh-MQTT-Messages: ueber alle bekannten Topic-Indizien suchen
     or_clauses = _candidate_topic_filters(gen_doc, device_doc, mapping)
@@ -1988,6 +2091,8 @@ async def get_generator_diagnostics(
         "status_bits_raw": sb_raw,
         "status_bits_decoded": status_bits_decoded,
         "status_bits_active": status_bits_active,
+        "alarm_conditions_raw": ac_raw,
+        "alarm_conditions_active": alarm_conditions_active,
         "raw_messages": raw_messages,
         "raw_messages_count": len(raw_messages),
         "filter_used": matched_filter,

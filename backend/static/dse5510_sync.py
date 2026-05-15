@@ -513,6 +513,23 @@ def read_dse5510(ser, slave_id):
         input7_a_raw = read_uint16(ser, REG_INPUT7_ALARM_COND, slave_id)
         input7_b_raw = read_uint16(ser, REG_DIGITAL_INPUTS_STATE, slave_id)
 
+        # --- Page 3 Reg 6: DSE-Status-Bitwort (Warning/Shutdown/Trip-Flags) ---
+        # 16-bit Word. Backend dekodiert die einzelnen Bits via _decode_status_bits.
+        status_bits_raw = read_uint16(ser, PAGE3 + 6, slave_id)
+
+        # --- Page 8: Named Alarm Conditions Block (50 Register) ---
+        # Werte pro Register: 0=deaktiviert/inaktiv, 2=Warnung, 3=elektr. Ausloesung, 4=Abschaltung
+        # Block-Read (FC03 count=50) statt 50 Einzel-Reads -> ein Modbus-Roundtrip.
+        # Damit kann das Backend exakt den Alarm-Grund (Niedriger Oeldruck, Tankleer, ...) anzeigen,
+        # statt nur "irgendwo eine Warnung".
+        alarm_block = _raw_read(ser, slave_id, PAGE8 + 0, 50)
+        alarm_conditions = {}
+        if alarm_block is not None:
+            for offset, val in enumerate(alarm_block):
+                # 0=inaktiv, 1=configured-but-not-raised, 0xFFFF=N/A. Nur aktive Alarme (>=2) senden.
+                if isinstance(val, int) and 2 <= val < 0xFFFE:
+                    alarm_conditions[str(PAGE8 + offset)] = val
+
         # Skalierung anwenden
         data["oil_pressure_kpa"] = oil_press if oil_press is not None else 0
         data["coolant_temp_c"] = coolant_temp if coolant_temp is not None else 0
@@ -604,6 +621,17 @@ def read_dse5510(ser, slave_id):
 
         data["breaker_closed"] = breaker_closed
         data["breaker_closed_source"] = breaker_source
+
+        # Diagnose-Daten: Rohstatus + aktive Alarm-Conditions
+        if status_bits_raw is not None:
+            data["status_bits"] = status_bits_raw
+        if alarm_conditions:
+            data["alarm_conditions"] = alarm_conditions
+        elif alarm_block is not None:
+            # Block wurde gelesen, aber alle Werte sind 0/disabled -> dann hat das
+            # Geraet KEINE aktiven Alarme. Wir senden ein leeres Dict, damit das
+            # Backend weiss: Daten sind aktuell, einfach nichts dran.
+            data["alarm_conditions"] = {}
 
         data["online"] = True
 
