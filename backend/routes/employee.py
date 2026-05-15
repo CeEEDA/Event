@@ -893,10 +893,14 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             cur += timedelta(days=1)
 
     # 3) time_entries aggregiert pro Tag (Echtarbeit, keine Urlaub-Pseudo-Eintraege)
+    #    + Erkennung von Nachtschicht-Folgetagen (Schicht über Mitternacht).
+    import zoneinfo as _zi
+    _berlin = _zi.ZoneInfo("Europe/Berlin")
     ist_by_day: dict = {}
+    night_followup_days: set = set()  # Tage, an denen eine Nachtschicht vom Vortag endet
     cursor = db.time_entries.find(
         {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
-        {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
+        {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1, "clock_in": 1, "clock_out": 1}
     )
     async for e in cursor:
         if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
@@ -905,6 +909,23 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
         if not d:
             continue
         ist_by_day[d] = ist_by_day.get(d, 0.0) + float(e.get("duration_minutes") or 0)
+        # Schicht über Mitternacht?
+        ci_str, co_str = e.get("clock_in"), e.get("clock_out")
+        if ci_str and co_str:
+            try:
+                ci_dt = datetime.fromisoformat(ci_str); co_dt = datetime.fromisoformat(co_str)
+                if ci_dt.tzinfo is None: ci_dt = ci_dt.replace(tzinfo=timezone.utc)
+                if co_dt.tzinfo is None: co_dt = co_dt.replace(tzinfo=timezone.utc)
+                ci_date = ci_dt.astimezone(_berlin).date()
+                co_date = co_dt.astimezone(_berlin).date()
+                if ci_date < co_date:
+                    cur_d = ci_date + timedelta(days=1)
+                    while cur_d <= co_date:
+                        if cur_d.year == year:
+                            night_followup_days.add(cur_d.isoformat())
+                        cur_d += timedelta(days=1)
+            except (ValueError, TypeError):
+                pass
 
     # 4) Wochenplan einmal laden
     schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
@@ -929,6 +950,11 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             reason = "Urlaub/Krank"
         elif date_str in abbau_days:
             reason = "Überstundenabbau"
+        elif date_str in night_followup_days and ist == 0:
+            # Tag X+1 nach einer Nachtschicht (Vortag 22:30 -> 08:10 heute).
+            # Die Arbeitszeit wurde bereits auf den Schicht-Start-Tag gebucht.
+            # Daher hier KEIN Soll abziehen, sonst gibt's Minus für nicht geleistete Arbeit.
+            reason = "Nachtschicht-Folgetag"
         elif has_schedule:
             soll = _soll_minutes_from_schedule(schedule, cur.weekday())
         diff = ist - soll
@@ -1414,14 +1440,32 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
                 if cur2.year == year: target.add(cur2.isoformat())
                 cur2 += timedelta(days=1)
         ist_by_day = {}
+        night_followup_days = set()
+        import zoneinfo as _zi
+        _berlin = _zi.ZoneInfo("Europe/Berlin")
         async for e in db.time_entries.find(
             {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
-            {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1}
+            {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1, "clock_in": 1, "clock_out": 1}
         ):
             if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
                 continue
             d = e.get("date")
             if d: ist_by_day[d] = ist_by_day.get(d, 0.0) + float(e.get("duration_minutes") or 0)
+            ci_str, co_str = e.get("clock_in"), e.get("clock_out")
+            if ci_str and co_str:
+                try:
+                    ci_dt = datetime.fromisoformat(ci_str); co_dt = datetime.fromisoformat(co_str)
+                    if ci_dt.tzinfo is None: ci_dt = ci_dt.replace(tzinfo=timezone.utc)
+                    if co_dt.tzinfo is None: co_dt = co_dt.replace(tzinfo=timezone.utc)
+                    ci_date = ci_dt.astimezone(_berlin).date()
+                    co_date = co_dt.astimezone(_berlin).date()
+                    if ci_date < co_date:
+                        cd = ci_date + timedelta(days=1)
+                        while cd <= co_date:
+                            if cd.year == year: night_followup_days.add(cd.isoformat())
+                            cd += timedelta(days=1)
+                except (ValueError, TypeError):
+                    pass
         schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
         has_schedule = bool(schedule and (schedule.get("days") or {}))
         diff_min = 0.0
@@ -1432,6 +1476,8 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
             soll = 0
             if date_str in holidays or date_str in off_days or date_str in abbau_days:
                 soll = 0
+            elif date_str in night_followup_days and ist == 0:
+                soll = 0  # Nachtschicht-Folgetag
             elif has_schedule:
                 soll = _soll_minutes_from_schedule(schedule, cur.weekday())
             diff_min += (ist - soll)

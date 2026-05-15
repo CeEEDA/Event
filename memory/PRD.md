@@ -32,6 +32,9 @@ User language: **German** (Agent must respond in German).
   - Max (35h Saldo, Plan 7.5h Mo-Sa): nach Recompute weiter 35h (V2-Migration absorbiert die rueckwirkenden -728h aus Tagen ohne Stempel).
   - Isolierter Test: User mit nur Dienstag-Plan 8.5h, am Test-Dienstag 2 Stempel (555min + 75min), Soll 510min — Diff exakt **+2h** (statt -7.25h vorher).
 
+- ✅ **Nachtschicht-Folgetag erkannt:** Wenn ein Stempel-Eintrag über Mitternacht reicht (z.B. Mo 22:30 → Di 08:10), wird die volle Dauer auf den Schicht-Start-Tag gebucht (10h auf Mo). Tag X+1 (Di) wird automatisch als „Nachtschicht-Folgetag" markiert → KEIN Soll-Abzug für Di, sofern dort kein eigener Stempel hinzukommt. Funktioniert auch über mehrere Tage (Mehrtages-Schichten). Markiert im Audit als `reason: "Nachtschicht-Folgetag"`.
+- ✅ **Nachtzuschlag (Lohnaufschlag 20-06 Uhr)** war bereits korrekt: `_calc_night_minutes` iteriert minutenweise und behandelt Mitternacht sauber. Verifiziert: 22:30→08:10 = 450min, 18:00→02:00 = 360min, 08-17 = 0min ✓.
+
 ### Feb 2026 – EinsatzPI: Token-Refresh + Maschinenliste-Karte + Multi-Artikelliste mit Generatoren (P0)
 - ✅ **Token Auto-Refresh** (`server.py` + `einsatzzentrale-kiosk.html`):
   - Neuer Endpoint `POST /api/auth/refresh-token` (Auth-pflichtig). Stellt einen frischen JWT aus, solange der aktuelle noch gueltig ist.
