@@ -7,6 +7,7 @@ import uuid
 import time
 from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
+import deployment_tracker as _det
 
 logger = logging.getLogger(__name__)
 
@@ -1415,6 +1416,25 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
         if dse_mode and dse_mode not in ("unknown", ""):
             gen_update["last_dse_mode"] = dse_mode
         gen_update.update(snapshot_fields)
+
+        # Engine-State-Transition-Detection -> deployment_history (Einsatzhistorie).
+        # Vor dem Update den alten Snapshot lesen, danach mit neuem Wert vergleichen.
+        new_engine_state = _det.extract_engine_state(telemetry_data)
+        if new_engine_state is not None:
+            try:
+                _prev = await _db.devices.find_one(
+                    {"id": device_id},
+                    {"_id": 0, "latest_snapshot.engine_running": 1,
+                     "latest_snapshot.rpm": 1, "latest_snapshot.hours_run": 1,
+                     "latest_snapshot.energy_kwh": 1}
+                )
+                _prev_snap = (_prev or {}).get("latest_snapshot") or {}
+                await _det.track_engine_transition(
+                    _db, generator_id, new_engine_state, telemetry_data,
+                    _prev_snap, timestamp
+                )
+            except Exception as _ex:
+                logger.error(f"engine-transition-tracker fehler: {_ex}", exc_info=True)
 
         # Jetzt beide Updates schreiben (NACH Alarm-Status-Bestimmung)
         device_update.update(snapshot_fields)

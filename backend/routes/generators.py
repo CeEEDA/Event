@@ -1268,6 +1268,34 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
         for k, v in snapshot.items():
             update_fields[f"latest_snapshot.{k}"] = v
 
+    # Engine-State-Transition-Detection -> deployment_history (Einsatzhistorie).
+    # Vor dem Update den alten Snapshot lesen, dann mit neuestem Datensatz vergleichen.
+    try:
+        import deployment_tracker as _det
+        if payload.records:
+            last_rec = payload.records[-1]
+            new_engine_state = _det.extract_engine_state(last_rec)
+            if new_engine_state is not None:
+                prev_dev = await db.devices.find_one(
+                    {"id": payload.device_id},
+                    {"_id": 0, "latest_snapshot.engine_running": 1,
+                     "latest_snapshot.rpm": 1, "latest_snapshot.hours_run": 1,
+                     "latest_snapshot.energy_kwh": 1, "latest_snapshot.engine_run_hours": 1}
+                )
+                prev_snap = (prev_dev or {}).get("latest_snapshot") or {}
+                # Pi-Sync nutzt engine_run_hours statt hours_run – normalisieren
+                if prev_snap.get("hours_run") is None and prev_snap.get("engine_run_hours") is not None:
+                    prev_snap["hours_run"] = prev_snap["engine_run_hours"]
+                tel_for_tracker = dict(last_rec)
+                if tel_for_tracker.get("hours_run") is None and tel_for_tracker.get("engine_run_hours") is not None:
+                    tel_for_tracker["hours_run"] = tel_for_tracker["engine_run_hours"]
+                await _det.track_engine_transition(
+                    db, generator_id, new_engine_state, tel_for_tracker,
+                    prev_snap, now_iso
+                )
+    except Exception as _ex:
+        logger.error(f"engine-transition-tracker (pi-ingest) fehler: {_ex}", exc_info=True)
+
     await db.devices.update_one({"id": payload.device_id}, {"$set": update_fields})
 
     # Update virtual generator status too
