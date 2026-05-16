@@ -1041,7 +1041,17 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
 
     # Count from generators collection
     gen_total = await db.generators.count_documents(query)
-    gen_running = await db.generators.count_documents({**query, "status": "running"})
+    # "running" zaehlt nach echter Motor-Bewegung (engine_running ODER rpm>0),
+    # UNABHAENGIG vom status-Feld. Ein Generator kann gleichzeitig "alarm" und
+    # "laufend" sein - der Single-Value-Status verliert sonst die Motor-Info.
+    gen_running = await db.generators.count_documents({
+        **query,
+        "$or": [
+            {"latest_snapshot.engine_running": True},
+            {"latest_snapshot.rpm": {"$gt": 0}},
+            {"status": "running"},  # Fallback fuer Datensaetze ohne snapshot
+        ],
+    })
     gen_standby = await db.generators.count_documents({**query, "status": "standby"})
     gen_alarm = await db.generators.count_documents({**query, "status": {"$in": ["alarm", "warning"]}})
     gen_online = await db.generators.count_documents({**query, "status": "online"})
@@ -1055,13 +1065,18 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
     virtual_online = 0
     virtual_offline = 0
     virtual_alarm = 0
+    virtual_running = 0
     active_devices = await db.devices.find(
         {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
-        {"_id": 0, "serial_number": 1, "mqtt_status": 1, "last_seen": 1}
+        {"_id": 0, "serial_number": 1, "mqtt_status": 1, "last_seen": 1, "latest_snapshot": 1}
     ).to_list(2000)
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
             existing_serials.add(dev["serial_number"])
+            snap = dev.get("latest_snapshot") or {}
+            # Motor-laeuft-Check (orthogonal zu mqtt_status)
+            if snap.get("engine_running") is True or (snap.get("rpm") or 0) > 0:
+                virtual_running += 1
             if dev.get("mqtt_status") == "alarm":
                 virtual_alarm += 1
             elif dev.get("mqtt_status") == "online":
@@ -1078,7 +1093,7 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
 
     return {
         "total": total,
-        "running": gen_running,
+        "running": gen_running + virtual_running,
         "standby": standby,
         "online": gen_online,
         "alarm": gen_alarm + virtual_alarm,

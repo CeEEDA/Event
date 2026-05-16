@@ -30,6 +30,8 @@ User language: **German** (Agent must respond in German).
 - 🐛 **Bug:** `mqtt_raw_messages` Collection wurde **nirgends im Code befüllt** (nur gelesen + via Admin-Endpoint gelöscht). Daher zeigte der Diagnose-Block immer „Letzte MQTT-Roh-Messages (0)".
 - ✅ **Fix:** Roh-Message-Logging in `mqtt_service._process_message` aktiviert (Ringpuffer max 2000 Einträge, periodisches Trim alle 200 Inserts). Damit sieht der Diagnose-Block jetzt was tatsächlich für ein Gerät ankommt — kritisch für DSE-890-Konfig-Debugging (z.B. „sendet das Modul überhaupt /alarm-Topics?").
 - ✅ **Option A — SB_WARNING-Filter (User-Choice):** Bit 10 ("Warning Active") aus Page 3 Reg 6 wird nicht mehr eigenständig als Alarm-Trigger behandelt. Das DSE 890 setzt es oft als Aggregat-Flag ohne begleitende A-Code-Condition, was zu Dauer-Alarm im Portal führte. Status bleibt „online", wenn nur Bit 10 anliegt; echte Warnings via A-Codes laufen weiter über `_process_alarm`. Bestehende `SB_WARNING`-Einträge werden beim nächsten Telemetrie-Tick automatisch via `fault_code==0`-Pfad aufgelöst.
+- 🐛 **Bug:** Dashboard-Statistik zeigte "0 läuft" obwohl Motoren liefen, weil `status` Single-Value-Feld ist und durch „alarm" überschrieben wird. Ein laufender Generator mit Warning verlor die „running"-Info komplett.
+- ✅ **Fix:** `running`-Counter (im `/stats/overview`-Endpoint) zählt jetzt orthogonal über `latest_snapshot.engine_running == true` ODER `rpm > 0`, unabhängig vom Status-Feld. Funktioniert für `generators`- und `devices`-Collection. Ein Generator kann jetzt gleichzeitig im Alarm UND als „läuft" gezählt sein, was die Realität korrekter abbildet.
 
 ## Implementation Log (älter)
 ### Feb 2026 – Zeiterfassung: Tag-fuer-Tag Bilanz + Automatischer Minus-Abzug (P0)
