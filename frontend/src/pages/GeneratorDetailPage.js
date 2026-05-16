@@ -1076,20 +1076,27 @@ export default function GeneratorDetailPage() {
 
           {/* Analyse-Charts */}
           {analyseData.length > 0 && (() => {
+            // WICHTIG: null != 0. Wenn ein Wert nicht vorhanden ist, soll er
+            // im Chart eine Lücke erzeugen (Recharts ignoriert null), NICHT
+            // als 0 angezeigt werden. Sonst wirkt's als wäre der Motor aus.
+            const _val = (raw, field) => {
+              const v = sanitizeValue(raw, field);
+              return (v === null || v === undefined || Number.isNaN(v)) ? null : v;
+            };
             const chartData = analyseData.map(r => ({
               time: new Date(r.timestamp).toLocaleString("de-DE", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }),
-              P_kW: sanitizeValue(r.power_kw, "power_kw") || (r.power_total_w ? Math.round(sanitizeValue(r.power_total_w) / 100) / 10 : 0) || 0,
-              kWh: r.energy_kwh || 0,
-              U_L1: sanitizeValue(r.voltage_l1, "voltage_l1") || 0,
-              U_L2: sanitizeValue(r.voltage_l2, "voltage_l2") || 0,
-              U_L3: sanitizeValue(r.voltage_l3, "voltage_l3") || 0,
-              I_L1: sanitizeValue(r.current_l1, "current_l1") || 0,
-              I_L2: sanitizeValue(r.current_l2, "current_l2") || 0,
-              I_L3: sanitizeValue(r.current_l3, "current_l3") || 0,
-              Freq: sanitizeValue(r.frequency, "frequency") || 0,
-              Batt: sanitizeValue(r.battery_voltage, "battery_voltage") || 0,
-              Fuel: sanitizeValue(r.fuel_level, "fuel_level") || sanitizeValue(r.fuel_level_pct, "fuel_level") || 0,
-              Cool: sanitizeValue(r.coolant_temp, "coolant_temp") || sanitizeValue(r.coolant_temp_c, "coolant_temp") || 0,
+              P_kW: _val(r.power_kw, "power_kw") ?? (r.power_total_w ? Math.round(sanitizeValue(r.power_total_w) / 100) / 10 : null),
+              kWh: r.energy_kwh ?? null,
+              U_L1: _val(r.voltage_l1, "voltage_l1"),
+              U_L2: _val(r.voltage_l2, "voltage_l2"),
+              U_L3: _val(r.voltage_l3, "voltage_l3"),
+              I_L1: _val(r.current_l1, "current_l1"),
+              I_L2: _val(r.current_l2, "current_l2"),
+              I_L3: _val(r.current_l3, "current_l3"),
+              Freq: _val(r.frequency, "frequency"),
+              Batt: _val(r.battery_voltage, "battery_voltage"),
+              Fuel: _val(r.fuel_level, "fuel_level") ?? _val(r.fuel_level_pct, "fuel_level"),
+              Cool: _val(r.coolant_temp, "coolant_temp") ?? _val(r.coolant_temp_c, "coolant_temp"),
             }));
             return (
               <div className="px-5 pb-5 space-y-4">

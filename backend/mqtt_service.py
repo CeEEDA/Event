@@ -1322,22 +1322,18 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             "fault_code", "fault_text", "status_bits",
         ]
         # Determine which fields this topic SHOULD contain
-        engine_fields = {"oil_pressure", "coolant_temp", "fuel_level", "battery_voltage", "rpm"}
-        generator_fields = {"voltage_l1", "voltage_l2", "voltage_l3", "current_l1", "current_l2", "current_l3",
-                           "frequency", "power_kw", "power_total_w"}
-        raw_topic = topic.split("/")[-1] if topic else ""
-        clear_fields = set()
-        if raw_topic == "engine":
-            clear_fields = engine_fields
-        elif raw_topic == "generator":
-            clear_fields = generator_fields
-
+        # Snapshot-Merge: nur die im AKTUELLEN Payload vorhandenen Felder schreiben.
+        # WICHTIG: Wir clearen Felder NICHT auf None nur weil ein bestimmtes
+        # Subtopic ("/engine", "/generator") sie nicht sendet. Sonst loescht
+        # ein /engine-Topic-Update die zuvor empfangenen coolant_temp / fuel_level /
+        # battery_voltage-Werte aus einem /coolant- oder /battery-Topic.
+        # Felder die wirklich SOFORT auf 0 muessen wenn Motor steht (z.B. rpm,
+        # oil_pressure, power_total_w) werden ueber separate Logik schon in
+        # _parse_dse_payload oder vom Modul direkt auf 0 gesetzt.
         for key in _TELEMETRY_KEYS:
             val = telemetry_data.get(key)
             if val is not None:
                 snapshot_fields[f"latest_snapshot.{key}"] = val
-            elif key in clear_fields:
-                snapshot_fields[f"latest_snapshot.{key}"] = None
         snapshot_fields["latest_snapshot.timestamp"] = timestamp
 
         # Single combined update for device

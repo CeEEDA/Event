@@ -1,27 +1,26 @@
-<analysis>**original_problem_statement**: The user is building a comprehensive Kirmes (Fairground) billing and HR management system. PRODUCT REQUIREMENTS: Manage robust telemetry ingestion, order management, disruption logging (diary), team (Trupp) management, and dedicated Kiosk interfaces for on-site operations with offline capabilities (Einsatzzentrale, Tankbeleg-Pi, DSE 5510 Generators). Focus is currently on deep hardware integration and resilience for the DSE 5510 Generator Raspberry Pi setup.
+<analysis>**original_problem_statement**: The user is building a comprehensive Kirmes (Fairground) billing and HR management system. PRODUCT REQUIREMENTS: Manage robust telemetry ingestion, order management, disruption logging (diary), team (Trupp) management, HR time-tracking/absences, and dedicated Kiosk interfaces for on-site operations with offline capabilities. Focus includes deep hardware integration for the DSE 5510 Generator (Raspberry Pi setup) and DSE 890 (MQTT).
 
 **User's preferred language**: German (WICHTIG: Antworte dem User ausschließlich auf Deutsch! / INSTRUCT NEXT AGENT TO RESPOND IN GERMAN ONLY)
 
-**what currently exists?**
-A mature React/FastAPI/MongoDB app with EpiRent API sync. It includes standalone Kiosk applications for Raspberry Pis and a Python sync service () for generator telemetry. The backend heavily manages hardware deployment scripts. The DSE 5510 sync service has just undergone massive robustness upgrades for USB-Re-enumeration, event-driven Modbus reads, SIM7600 LTE failover, and GPS tracking.
+**what currently exists?** 
+A mature React/FastAPI/MongoDB app with EpiRent API sync. Includes standalone Kiosk applications () for deployment tracking on Raspberry Pi/PC. A robust HR module tracks shifts, absences, and automated overtime calculations. Generator telemetry is ingested either via a Pi Python sync service () or an MQTT Broker ( for DSE 890). Deployment history is now automatically generated via engine start/stop telemetry.
 
 **Last working item**:
-    - Last item agent was working: Fixing the GPS NMEA port auto-detection in the Pi installation script (). The user reported that the previous installation script successfully configured LTE and the Modbus Breaker logic, but failed to detect GPS because the SIM7600 NMEA stream was on  instead of the fallback . The agent updated the  bash function to send  *before* scanning the ports using  and .
+    - Last item agent was working: Fixing missing  and incorrect Chart rendering in . The agent discovered that  aggressively cleared fields (like ) if they weren't present in every specific topic payload (like ). Furthermore, the frontend charts were rendering  values as  (e.g., frequency showing 0 Hz instead of skipping/connecting lines) due to an overly aggressive  fallback.
     - Status: USER VERIFICATION PENDING
-    - Agent Testing Done: Y (Syntax checks)
-    - Which testing method agent to use? manual testing by bash logs / user physical test
-    - User Testing Done: N (Waiting for user to run the newly generated install script)
+    - Agent Testing Done: Y
+    - Which testing method agent to use? manual testing by bash / Python scripts
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  Issue 1: Verify robust GPS Port Auto-Detection during Pi Installation (P0)
-     - Attempted fixes: Updated  to trigger  on the AT port before scanning  for  (NMEA sentences).
+  Issue 1: Verify Telemetry Chart Rendering &  Persistence (P0)
+     - Attempted fixes: Removed the aggressive  block in  so variables like  persist across different topic updates. Updated  Recharts implementation to handle  gracefully instead of falling back to .
      - Next debug checklist: 
-       1. Ask user if the newly generated installation script successfully detected the GPS port (e.g., ).
-       2. Check backend logs to see if  and  are arriving from the test Pi.
-     - Why fix this issue and what will be achieved with the fix? Ensures a 100% zero-touch installation for new hardware deployments, automatically binding LTE, Modbus, and GPS without manual intervention.
+       1. Ask the user if the Einsatzhistorie and Live-Charts now display continuous, correct values (e.g., 50Hz, 230V) and if the temperature shows up correctly.
+     - Why fix this issue and what will be achieved with the fix? Ensures reliable, accurate historical charts for hardware diagnostics. 
      - Status: USER VERIFICATION PENDING
      - Is recurring issue? N
-     - Should Test frontend/backend/both after fix? Backend (Check DB for incoming telemetry via Pi)
+     - Should Test frontend/backend/both after fix? Frontend (Charts)
      - Blocked on other issue: None
 
 **In progress Task List**:
@@ -30,7 +29,7 @@ None
 **Upcoming and Future Tasks**
     Upcoming Tasks:
     - (P1) EpiRent Lieferscheine (Delivery Notes) PDF Generation. (Waiting on user input regarding layout/design).
-    - (P2) Add Alarm vor Ort geprueft - Sammel-Warning quittieren button to the Generator Diagnose page to resolve alarms and send a DSE-Reset command (Key 35707) to the device.
+    - (P2) Add Alarm vor Ort geprueft - Sammel-Warning quittieren button to the Generator Diagnose page to resolve alarms and send a DSE-Reset command (Key 35707).
     - (P2) USB-Resilience / Hardware Health Dashboard pro Pi (Show USB-Resets in last 24h, LTE/Eth-Failover-Events, GPS-Fix-Quality).
     Future Tasks:
     - (P2) Add GPS Support to Kirmeskiste (Legacy 4-meter variant).
@@ -40,15 +39,18 @@ None
     - (P2) Refactor: Clean up duplicate Pi-scripts (Remove ).
 
 **Completed work in this session**
-- DSE 5510 FTDI USB Re-enumeration Fix (DONE): Disabled Pi 5 USB-Autosuspend via  () and added udev rules to map FTDI to .
-- Modbus Latency Optimization (DONE): Changed  to use event-driven Modbus reads () instead of , reducing control latency from 30s to ~6s.
-- Hauptschalter (Breaker) Status Logic (DONE): Empirically mapped and fixed the breaker status reading to Page 8 Reg 13 Bit 9 (Modbus 2061) instead of guessing based on power output.
-- GPS Integration via SIM7600 (DONE): Migrated from the buggy  library to a direct socket-based  implementation in the python sync script. Ensured GPS persists via .
-- LTE / Ethernet Failover Bridge (DONE): Set up static immutable  (chattr +i), deactivated NetworkManager DNS, and added a carrier watchdog so the Pi stays online seamlessly via PPP when the Ethernet cable is pulled.
-- Pi Installation Script Generation Update (DONE): Rolled all the above fixes into the dynamic installer script payload in .
+- HR Bugfix: Prevented users from seeing other employees' sick days in self-view (added  filter) (DONE).
+- EinsatzPI Token Expiration Fix: Implemented  and auto-refresh logic in  (DONE).
+- EinsatzPI UI Enhancements: Added Map to Generator List, Multi-Trupp selection, and generator markers on article list (DONE).
+- Asset Naming Display Fix: Replaced internal EpiRent asset names with  prominently in the UI (DONE).
+- HR Time-Tracking Overhaul: Rewrote overtime calculation to balance per-day (preventing double deduction on split shifts) and added automatic missing-stamp deductions with gentle migration for old balances. Handled night-shift overlap logic (DONE).
+- Generator Alarm Diagnoses (DSE 5510 & DSE 890): Read and mapped Page 8 named conditions directly to UI. Configured the system to ignore  as a primary alarm trigger (Option A) to prevent false-positive offline states (DONE).
+- Dashboard Running Counter: Decoupled running count from device status so generators in warning still count as running (DONE).
+- Auto-Deployment Tracker: Created  to auto-log Generator Start/Stop events in  based on RPM/engine_running telemetry (DONE).
+- Telemetry Charts Data Integrity: Fixed aggressive field clearing in MQTT parser and  chart rendering bug (DONE).
 
 **Earlier issues found/mentioned but not fixed**
-None
+None.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: None
@@ -59,19 +61,24 @@ None
 
 
 **Key Technical Concepts**
-React, FastAPI, MongoDB, Modbus RTU via RS232/USB, Raspberry Pi 5 Hardware specifics (USB Autosuspend), SIM7600 LTE HAT routing (PPP failover, NetworkManager, ), GPS NMEA parsing,  socket protocols.
+React, FastAPI, MongoDB, JWT (with new refresh capability), Modbus RTU, MQTT (DSE 890 ingestion with A-codes), Leaflet Maps, Recharts, Python Datetime/Timezones (Overtime calculation).
 
 **key DB schema**
   -  / : 
-  - : Raw time-series data including breaker state.
+  - : 
+  - : Baseline work hours per day.
+  - : 
+  - :  (Ring buffer for debugging).
 
 **changes in tech stack**
-  - Switched from  pip library to native socket commands for  due to library bugs holding stale  statuses.
+  - Introduced  as a centralized module for handling Engine State Transitions across both MQTT and Pi APIs.
 
-**All files of reference**
-  -  (Core sync client script, updated heavily)
-  -  (Installer generator. Updated with  patches,  immutability, and robust GPS port finding)
-  -  (Telemetry ingestion logic updated to correctly handle GPS and breaker states)
+**All files of reference** 
+  -  (Heavily updated for per-day overtime calculations)
+  -  (Major JS UI additions for map and tokens)
+  -  (Alarm parsing, field sanitization)
+  -  (New: Deployment History generator)
+  -  (Charts and Diagnostic sections)
   - 
 
 **Areas that need refactoring**:
@@ -81,24 +88,24 @@ React, FastAPI, MongoDB, Modbus RTU via RS232/USB, Raspberry Pi 5 Hardware speci
   - 
   - 
   - 
+  - 
 
 **Critical Info for New Agent**
 - **Language Constraint:** ALWAYS reply in German.
-- **Hardware-Specifics:** The current setup involves a Raspberry Pi 5, a SIM7600 LTE HAT (acting as both PPP internet failover and GPS NMEA source), and a DSE Modbus FTDI USB adapter. 
-- **Do not alter  Modbus timeout or socket parsing logics lightly.** They were finely tuned empirically with the user's live physical hardware to reduce latency from 30s to 6s.
-- **LTE DNS Setup:** The Pi's  is locked via  in the setup script. This was intentional to prevent NetworkManager from overwriting DNS servers during Eth -> LTE failover.
-- The  in  creates a highly complex Bash script payload. Ensure Bash syntax is maintained if edited.
+- **DSE Telemetry Logic:** The  uses strict A-code parsing for Alarms. We have explicitly instructed the system to ignore  (Bit 10) as a direct status trigger to avoid false positives (Option A chosen by user). 
+- **Time Tracking:** HR overtime works on a strict baseline system. When updating , it is critical not to break the  methodology which now aggregates daily. 
+- **Chart Rendering:** In Recharts,  values must be passed as  (not fallback ) so the chart can connect the dots correctly during telemetry interruptions. 
 
 **documents and test reports created in this job**
-  - None strictly new,  was updated.
+  -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages**
- 1. (User) installations skript läuft ohne fehler durch. LTE geht, Breaker geht. Nur GPS geht nicht.
- 2. (Agent) Asks for diagnostic commands to check why GPS failed during install (, , etc.).
- 3. (User) Provides logs showing GPS is outputting NMEA data on , but  was configured to listen to .
- 4. (Agent) Identifies the issue: the hardware assigned NMEA to , but the installer defaulted to . Fixes it live and edits  to dynamically detect the correct NMEA port during installation.
- 5. (Agent) Proposes the final fix in the installation script and asks the user to generate a new script from the portal, reboot the Pi, and verify if it works fully out of the box.
- 6. (LATEST User) *Pending*: User is testing the final, fully dynamic installation script.
+ 1. (User) Complains the 0 läuft dashboard counter is broken even when generators run.
+ 2. (Agent) Decouples running count from the single-value generator  so warnings don't break the running counter.
+ 3. (User) Einsatzhistorie (deployment history) is empty for all generators.
+ 4. (Agent) Builds  to auto-detect engine start/stops and generate history. Hooks it into MQTT and Modbus ingestion endpoints.
+ 5. (User) Provides an image showing charts are rendering wrong values (e.g. 4Hz instead of 50Hz, missing coolant_temp). 
+ 6. (LATEST User) *Pending Verification*: Agent identified that charts were rendering  as  via a frontend fallback () and that  was being aggressively wiped by . The agent applied the fix, tested the DB output, and finished the turn. User needs to verify if the charts now display properly.
 
 **Project Health Check:**
 Broken: None.
@@ -111,7 +118,7 @@ Mocked: None.
 - EpiRent (Event software API)
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Testing was done interactively with the user's live physical Pi hardware via ).
+  - Testing agent used after significant changes: NO (Heavy reliance on  for unit-testing python scripts, and  for UI spot-checks).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: None
   - Known regressions: None
@@ -120,13 +127,16 @@ Mocked: None.
 - Preview Admin:  / 
 
 **What agent forgot to execute**
-- The agent updated the GPS auto-detection script in  but finished the turn before receiving confirmation from the user. You are waiting for the user to report back on the test.
+- N/A. The agent fully implemented the final chart and DB sanitization fix, but finished without an explicit  for confirmation. You should verify the fix success with the user.
 
 **Debugging checklist for current issue**
-    Issue: GPS Port Auto-Detection in Pi Setup Script
+    Issue: Generator Telemetry Charts rendering as 0 or missing Temperature.
     
-    Backend files to check: 
-    -  (Line ~2535, function ).
+    Frontend files to check: 
+    -  (Verify  and  tooltips and data binding correctly handle ).
   
+    Backend files to check: 
+    -  (Verify  logic retains ).
+
     Verification:
-    - Ask the user if the newly downloaded  successfully found the GPS port and if the Portal Map shows the generator's position after a reboot.</analysis>
+    - Ask the user if the live deployment history and diagnostic charts now look correct based on the newly saved telemetry.</analysis>
