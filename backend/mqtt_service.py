@@ -1755,6 +1755,11 @@ def _parse_gencomm_registers(parsed, topic):
         result["status_bits"] = sb
 
         # Detect alarm conditions from status bits
+        # WICHTIG: Bit 10 ("SB_WARNING") wird BEWUSST nicht hinzugefuegt.
+        # Das DSE 890 setzt das oft ohne begleitende A-Code-Condition als
+        # Aggregat-Flag, was zu Dauer-Alarm im Portal fuehrt ohne dass eine
+        # konkrete Ursache vorhanden ist. Echte Warnings via A-Codes laufen
+        # ueber _process_alarm() und triggern dort den Alarm-Status.
         active_faults = []
         if sb & 0x2000:
             active_faults.append(("SB_CTRL_FAIL", "Steuerungsfehler (Control Unit Failure)", "shutdown"))
@@ -1762,8 +1767,7 @@ def _parse_gencomm_registers(parsed, topic):
             active_faults.append(("SB_SHUTDOWN", "Abschaltung aktiv (Shutdown Alarm)", "shutdown"))
         if sb & 0x0800:
             active_faults.append(("SB_ELEC_TRIP", "Elektrische Ausloesung (Electrical Trip)", "shutdown"))
-        if sb & 0x0400:
-            active_faults.append(("SB_WARNING", "Warnung aktiv (Warning Alarm)", "warning"))
+        # if sb & 0x0400:  # SB_WARNING - ABSICHTLICH IGNORIERT (Option A, User-Choice)
         if sb & 0x0040:
             active_faults.append(("SB_CTRL_STOP", "Kontrollierte Abschaltung (Controlled Shutdown)", "warning"))
 
@@ -1773,7 +1777,9 @@ def _parse_gencomm_registers(parsed, topic):
             result["fault_text"] = active_faults[0][1]  # Most severe first
             result["status_alarms"] = active_faults
         else:
-            result["fault_code"] = 0  # No alarm active
+            # Auch wenn Bit 10 alleine gesetzt ist (sb == 0x0400) zaehlt das als
+            # "kein Alarm" - genau das ist der Filter-Effekt von Option A.
+            result["fault_code"] = 0
 
     # Engine parameters
     if valid(registers.get((4, 0))):
