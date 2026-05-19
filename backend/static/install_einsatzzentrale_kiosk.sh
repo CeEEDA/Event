@@ -217,13 +217,16 @@ fi
 "$PI_SERVICE_VENV/bin/pip" install "fastapi>=0.110" "uvicorn[standard]>=0.27" "httpx>=0.26" >/dev/null
 
 # Pi-Service-Code holen (aus dem Portal selbst, oder via base64-Embedded)
+PI_SERVICE_AVAILABLE=true
 if [[ -n "$CLOUD_URL" ]]; then
   log "Lade Pi-Service-Skript vom Portal..."
-  curl -fsSL -o "$PI_SERVICE_DIR/pi_service.py" "$CLOUD_URL/api/einsatzzentrale/pi-service.py" || \
-    warn "Pi-Service-Download fehlgeschlagen - lokal weiterversuchen"
+  if ! curl -fsSL -o "$PI_SERVICE_DIR/pi_service.py" "$CLOUD_URL/api/einsatzzentrale/pi-service.py" 2>/dev/null; then
+    warn "Pi-Service-Endpoint nicht auf Portal verfuegbar (aelteres Backend) - Online-Only-Modus"
+    PI_SERVICE_AVAILABLE=false
+  fi
   # Kiosk-HTML lokal cachen damit Boot ohne Internet moeglich ist
-  curl -fsSL -o "$PI_SERVICE_DIR/kiosk.html" "$CLOUD_URL/api/einsatzzentrale/kiosk-page" || \
-    warn "Kiosk-HTML-Download fehlgeschlagen"
+  curl -fsSL -o "$PI_SERVICE_DIR/kiosk.html" "$CLOUD_URL/api/einsatzzentrale/kiosk-page" 2>/dev/null || \
+    warn "Kiosk-HTML-Download fehlgeschlagen (Cache leer - braucht Internet beim Start)"
 fi
 
 # Config
@@ -237,8 +240,9 @@ RETENTION_DAYS=90
 PICONF_EOF
 chmod 640 "$PI_SERVICE_CONF"
 
-# systemd-Service
-cat > /etc/systemd/system/einsatzzentrale-pi.service <<SYSD_EOF
+if [[ "$PI_SERVICE_AVAILABLE" == "true" ]]; then
+  # systemd-Service
+  cat > /etc/systemd/system/einsatzzentrale-pi.service <<SYSD_EOF
 [Unit]
 Description=Einsatzzentrale Pi-Service (Offline-Cache + Sync)
 After=network-online.target
@@ -261,15 +265,24 @@ StandardError=append:$PI_SERVICE_LOG
 WantedBy=multi-user.target
 SYSD_EOF
 
-systemctl daemon-reload
-systemctl enable einsatzzentrale-pi.service
-systemctl restart einsatzzentrale-pi.service || warn "Pi-Service-Start fehlgeschlagen - siehe $PI_SERVICE_LOG"
+  systemctl daemon-reload
+  systemctl enable einsatzzentrale-pi.service
+  systemctl restart einsatzzentrale-pi.service || warn "Pi-Service-Start fehlgeschlagen - siehe $PI_SERVICE_LOG"
 
-# Chromium soll JETZT auf den lokalen Service zeigen statt zur Cloud
-# (sofern wir die Cloud-URL kennen, also die Setup-Variante)
-if [[ -n "$CLOUD_URL" ]]; then
-  log "Stelle Chromium auf lokalen Pi-Service (localhost:8001) um"
-  URL="http://localhost:8001/kiosk"
+  # Chromium soll JETZT auf den lokalen Service zeigen statt zur Cloud
+  if [[ -n "$CLOUD_URL" ]]; then
+    log "Stelle Chromium auf lokalen Pi-Service (localhost:8001) um"
+    URL="http://localhost:8001/kiosk"
+  fi
+else
+  # Online-Only-Modus: Falls schon ein alter Pi-Service-systemd-Unit existiert,
+  # abschalten, damit Chrome nicht versucht auf localhost:8001 zuzugreifen.
+  if systemctl list-unit-files 2>/dev/null | grep -q "einsatzzentrale-pi.service"; then
+    log "Deaktiviere alten Pi-Service (Online-Only-Modus)"
+    systemctl stop einsatzzentrale-pi.service 2>/dev/null || true
+    systemctl disable einsatzzentrale-pi.service 2>/dev/null || true
+  fi
+  log "Online-Only-Modus: Chrome zeigt direkt auf $URL"
 fi
 # ============================================================================
 
