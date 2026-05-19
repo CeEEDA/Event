@@ -64,12 +64,18 @@ async def require_admin(credentials: HTTPAuthorizationCredentials = Depends(secu
 
 
 async def require_operator(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Require admin or Mitarbeiter role."""
+    """Admin ODER Mitarbeiter mit aktivem Hub-Modul 'power_monitoring' duerfen Generator-Steuerbefehle absetzen.
+    Mitarbeiter ohne den Haken werden abgelehnt (Lese-Zugang ist eine andere Pruefung)."""
     payload = decode_jwt_token(credentials.credentials)
     user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
-    if not user or user["role"] not in ("admin", "mitarbeiter"):
-        raise HTTPException(status_code=403, detail="Keine Berechtigung (Admin oder Mitarbeiter erforderlich)")
-    return user
+    if not user:
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+    role = user.get("role")
+    if role == "admin":
+        return user
+    if role == "mitarbeiter" and ((user.get("apps") or {}).get("modules") or {}).get("power_monitoring") is not False:
+        return user
+    raise HTTPException(status_code=403, detail="Keine Berechtigung (Power-Monitoring-Freigabe erforderlich)")
 
 
 # ============== MQTT Config ==============

@@ -1584,8 +1584,15 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
 async def send_pi_command(device_id: str, cmd: Dict[str, str], user: dict = Depends(get_authenticated_user)):
     """Queue a control command for a Pi-based generator (DSE 5510).
     The Pi picks it up on its next ingest call."""
-    # Verify admin/operator
-    if user.get("role") not in ("admin", "operator"):
+    # Admin oder Mitarbeiter mit aktivem Hub-Modul "power_monitoring" duerfen bedienen.
+    # (Frueher: nur admin/operator -> Mitarbeiter mit Power-Monitoring-Freigabe konnten
+    # die Geraete sehen, aber nicht steuern.)
+    role = user.get("role")
+    if role == "admin" or role == "operator":
+        pass
+    elif role == "mitarbeiter" and ((user.get("apps") or {}).get("modules") or {}).get("power_monitoring") is not False:
+        pass
+    else:
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
 
     command = cmd.get("command", "")
