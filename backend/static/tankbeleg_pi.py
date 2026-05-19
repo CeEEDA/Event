@@ -712,16 +712,7 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
         ascii_val = int(raw_qty_digits)
         reason = (f"Sening-Bitmap-Suffix erkannt aber nicht dekodierbar - "
                   f"ASCII-Wert: {ascii_val} L. "
-                  f"Forensic-Hex (12 Bytes): {raw_qty_unknown_hex or '(leer)'}. "
-                  f"Bitte an Entwickler senden zur Pattern-Erweiterung.")
-        # Hex auch als eigenes Feld, damit Frontend es Copy-Paste-freundlich
-        # anzeigen kann (review_bitmap_hex Liste, falls mehrere Belege).
-        existing_hex = result.get("review_bitmap_hex") or []
-        if isinstance(existing_hex, list):
-            existing_hex.append(raw_qty_unknown_hex)
-        else:
-            existing_hex = [raw_qty_unknown_hex]
-        result["review_bitmap_hex"] = existing_hex
+                  f"Bitte Hex-Dump an Entwickler senden zur Pattern-Erweiterung.")
         log.warning(f"  [REVIEW] {reason}")
         if isinstance(result.get("review_reason"), list):
             result["review_reason"].append(reason)
