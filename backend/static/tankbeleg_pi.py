@@ -1431,7 +1431,7 @@ def sync_to_portal(conf):
             "review_reason": row.get("review_reason") or None,
             "order_pk": row.get("order_pk") or None,
             "order_name": row.get("order_name") or "",
-            "notes": row.get("notes") or f"Pi-Sync {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+            "notes": row.get("notes") or "",
         }
         api_receipts.append(api_receipt)
         local_ids.append(row["local_id"])
