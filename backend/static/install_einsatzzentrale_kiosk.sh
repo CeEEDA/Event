@@ -1,313 +1,123 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Eventenergie - Einsatzzentrale Pi Kiosk Installer
+# Eventenergie - Einsatzzentrale Kiosk Installer (Ubuntu Desktop)
 # ============================================================================
-# Funktioniert auf:
-#   - Raspberry Pi OS (Desktop)  -> Bookworm / Bullseye
-#   - Raspberry Pi OS Lite       -> minimaler X11+openbox+lightdm wird
-#                                   automatisch nachinstalliert
+# Zielsystem:
+#   - Ubuntu Desktop 22.04 / 24.04 (GNOME + GDM3)
+#   - Kein Raspberry Pi! (Pi 4/5 hat zu wenig GPU-Power fuer Kiosk-Renderer)
 #
-# Was passiert:
-#   - Falls noetig: minimaler Desktop-Stack (xserver, openbox, lightdm,
-#     chromium) wird installiert
-#   - Autologin wird per lightdm.conf konfiguriert (User pi/admin/SUDO_USER)
-#   - Kiosk-Launcher startet Chromium im Vollbild, mit Watchdog-Restart
-#   - Translate-Popup, Erste-Schritte-Wizard, Password-Manager,
-#     Crash-Bubbles, Update-Prompts werden unterdrueckt
-#   - Screen-Blanking + DPMS deaktiviert
+# Was passiert (idempotent - kann beliebig oft wiederholt werden):
+#   1. Google Chrome stable (DEB) installieren (Snap-Chromium hat Sandboxing-
+#      Probleme im Kiosk-Modus -> wir nehmen Chrome direkt)
+#   2. GDM3 Autologin fuer aktuellen User aktivieren
+#   3. Wayland deaktivieren (Chrome-Kiosk laeuft nur stabil unter Xorg)
+#   4. Kiosk-Launcher-Skript mit Watchdog-Restart anlegen
+#   5. XDG-Autostart-Eintrag damit Chrome nach Login automatisch startet
+#   6. Screen-Blanking + DPMS + Notification-Popups + Screensaver aus
+#   7. Translate-Popup, Default-Browser-Frage, Password-Manager unterdruecken
 #
 # Benutzung:
-#   sudo bash install_einsatzzentrale_kiosk.sh https://dein-portal.de/api/einsatzzentrale/kiosk-page
+#   sudo bash install_einsatzzentrale_kiosk.sh https://dein-portal.de/einsatzzentrale?pi_id=...&key=...
 #
-# Hinweis: Sowohl /einsatzzentrale (mit automatischem Redirect) als auch
-# /api/einsatzzentrale/kiosk-page funktionieren. Empfohlen ist die direkte
-# Kiosk-Page-URL, da sie einen Schritt ohne Redirect liefert.
-#
-# Deinstallation (nur Kiosk-Teile, OS-Pakete bleiben):
+# Deinstallation:
 #   sudo bash install_einsatzzentrale_kiosk.sh --uninstall
+#
+# URL spaeter aendern:
+#   echo "NEUE_URL" > ~/.config/einsatzzentrale-url && sudo reboot
+#
+# Schriftgroesse anpassen (1.0=normal, 1.5=+50%, 2.0=doppelt):
+#   echo "1.5" > ~/.config/einsatzzentrale-scale && sudo reboot
 # ============================================================================
 
 set -euo pipefail
 
-# ---------- Konfiguration ----------------------------------------------------
-DEFAULT_URL="https://dein-portal.example/api/einsatzzentrale/kiosk-page"
-KIOSK_USER="${SUDO_USER:-pi}"
+KIOSK_USER="${SUDO_USER:-$USER}"
 KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6 || true)"
 [[ -z "$KIOSK_HOME" ]] && KIOSK_HOME="/home/$KIOSK_USER"
 KIOSK_PROFILE_DIR="$KIOSK_HOME/.config/einsatzzentrale-chromium"
 KIOSK_LAUNCH_SCRIPT="$KIOSK_HOME/.local/bin/einsatzzentrale-kiosk.sh"
 KIOSK_URL_FILE="$KIOSK_HOME/.config/einsatzzentrale-url"
+KIOSK_SCALE_FILE="$KIOSK_HOME/.config/einsatzzentrale-scale"
 
 C_GREEN="\033[1;32m"; C_YELLOW="\033[1;33m"; C_RED="\033[1;31m"; C_NC="\033[0m"
 log()  { echo -e "${C_GREEN}[+]${C_NC} $*"; }
 warn() { echo -e "${C_YELLOW}[!]${C_NC} $*"; }
 err()  { echo -e "${C_RED}[x]${C_NC} $*" >&2; }
 
-# ---------- Root-Check -------------------------------------------------------
-if [[ $EUID -ne 0 ]]; then
-  err "Bitte mit sudo ausfuehren."
-  exit 1
+if [[ $EUID -ne 0 ]]; then err "Bitte mit sudo ausfuehren."; exit 1; fi
+if [[ "$KIOSK_USER" == "root" ]]; then
+  err "Bitte als normaler User aufrufen, nicht direkt als root."; exit 1
 fi
-if [[ ! -d "$KIOSK_HOME" ]]; then
-  err "Home-Verzeichnis fuer User '$KIOSK_USER' nicht gefunden ($KIOSK_HOME)."
-  exit 1
-fi
+if [[ ! -d "$KIOSK_HOME" ]]; then err "Home '$KIOSK_HOME' nicht gefunden."; exit 1; fi
 
 # ---------- Uninstall --------------------------------------------------------
 if [[ "${1:-}" == "--uninstall" ]]; then
   log "Deinstalliere Einsatzzentrale Kiosk..."
-  rm -f  "$KIOSK_LAUNCH_SCRIPT" "$KIOSK_URL_FILE"
+  rm -f  "$KIOSK_LAUNCH_SCRIPT" "$KIOSK_URL_FILE" "$KIOSK_SCALE_FILE"
   rm -rf "$KIOSK_PROFILE_DIR"
   rm -f  "$KIOSK_HOME/.config/autostart/einsatzzentrale-kiosk.desktop"
-  rm -f  "$KIOSK_HOME/.config/openbox/autostart"
-  for f in "$KIOSK_HOME/.config/wayfire.ini" \
-           "$KIOSK_HOME/.config/labwc/autostart" \
-           "$KIOSK_HOME/.config/lxsession/LXDE-pi/autostart" \
-           "/etc/xdg/lxsession/LXDE-pi/autostart"; do
-    [[ -f "$f" ]] && sed -i '/einsatzzentrale-kiosk\.sh/d' "$f" || true
-  done
+  if [[ -f /etc/gdm3/custom.conf ]]; then
+    sed -i '/^AutomaticLoginEnable/d;/^AutomaticLogin=/d' /etc/gdm3/custom.conf
+  fi
+  systemctl stop einsatzzentrale-pi.service 2>/dev/null || true
+  systemctl disable einsatzzentrale-pi.service 2>/dev/null || true
+  rm -f /etc/systemd/system/einsatzzentrale-pi.service /etc/einsatzzentrale-pi.conf
+  rm -rf /usr/local/lib/einsatzzentrale-pi /var/lib/einsatzzentrale-pi
+  systemctl daemon-reload 2>/dev/null || true
   log "Fertig. Bitte neu starten."
   exit 0
 fi
 
-# ---------- URL-Parameter ----------------------------------------------------
 URL="${1:-}"
 if [[ -z "$URL" ]]; then
-  warn "Keine URL angegeben. Verwende Default: $DEFAULT_URL"
-  URL="$DEFAULT_URL"
-fi
-if [[ ! "$URL" =~ ^https?:// ]]; then
-  err "URL muss mit http:// oder https:// beginnen."
+  err "Keine URL angegeben."
+  err "Beispiel: sudo bash $0 \"https://eventenergie.app/einsatzzentrale?pi_id=XXX&key=YYY\""
   exit 1
 fi
+if [[ ! "$URL" =~ ^https?:// ]]; then err "URL muss mit http(s):// beginnen."; exit 1; fi
+
 log "Kiosk-URL:   $URL"
 log "Kiosk-User:  $KIOSK_USER ($KIOSK_HOME)"
 
-# ---------- OS-Detection ----------------------------------------------------
-OS_ID="unknown"
-OS_LIKE=""
 if [[ -r /etc/os-release ]]; then
-  # shellcheck disable=SC1091
   . /etc/os-release
-  OS_ID="${ID:-unknown}"
-  OS_LIKE="${ID_LIKE:-}"
-fi
-IS_UBUNTU=false
-IS_RASPI=false
-case "$OS_ID" in
-  ubuntu)   IS_UBUNTU=true ;;
-  raspbian) IS_RASPI=true ;;
-  debian)
-    # Pi OS meldet sich oft als debian + ID_LIKE=debian; echtes Pi-OS hat raspi-config oder /boot/firmware
-    if [[ -f /etc/rpi-issue ]] || command -v raspi-config >/dev/null 2>&1; then
-      IS_RASPI=true
-    fi
-    ;;
-esac
-log "OS:          $OS_ID  (Ubuntu=$IS_UBUNTU, Raspberry=$IS_RASPI)"
-
-# ---------- Pi-ID + Key aus URL extrahieren ---------------------------------
-# Falls die URL Parameter pi_id=&key= enthaelt (Setup-Generator im Portal),
-# verwenden wir diese fuer den lokalen Pi-Service. CLOUD_URL = origin der URL.
-CLOUD_URL=""; PI_ID=""; PI_KEY=""
-if [[ "$URL" =~ ^(https?://[^/]+) ]]; then CLOUD_URL="${BASH_REMATCH[1]}"; fi
-if [[ "$URL" == *"pi_id="* ]]; then
-  PI_ID="$(echo "$URL" | sed -n 's/.*[?&]pi_id=\([^&]*\).*/\1/p')"
-fi
-if [[ "$URL" == *"key="* ]]; then
-  PI_KEY="$(echo "$URL" | sed -n 's/.*[?&]key=\([^&]*\).*/\1/p')"
-fi
-log "Cloud-URL:   ${CLOUD_URL:-<nicht erkannt>}"
-[[ -n "$PI_ID" ]] && log "Pi-ID:       ${PI_ID:0:8}..."
-
-# ---------- Desktop-Detection ------------------------------------------------
-HAS_DESKTOP=false
-if command -v startx >/dev/null 2>&1 || dpkg -s xserver-xorg >/dev/null 2>&1; then
-  HAS_DESKTOP=true
+  log "OS:          ${PRETTY_NAME:-$ID}"
+  if [[ "${ID:-}" != "ubuntu" ]] && [[ "${ID_LIKE:-}" != *"ubuntu"* ]]; then
+    warn "Skript ist fuer Ubuntu Desktop. Erkannt: ${ID:-unbekannt}. Fahre fort..."
+  fi
 fi
 
-# Apt-Update einmal vorab
 export DEBIAN_FRONTEND=noninteractive
 log "apt-get update..."
-apt-get update -y
+apt-get update -y -qq
 
-# ---------- Fall A: Pi OS Lite -> minimalen Stack installieren --------------
-if [[ "$HAS_DESKTOP" == "false" ]]; then
-  log "Pi OS Lite erkannt - installiere minimalen X11-Kiosk-Stack..."
-  apt-get install -y --no-install-recommends \
-    xserver-xorg xserver-xorg-legacy xserver-xorg-input-libinput \
-    xinit x11-xserver-utils \
-    openbox \
-    lightdm \
-    chromium-browser \
-    unclutter \
-    fonts-dejavu-core \
-    libgl1-mesa-dri \
-    plymouth plymouth-themes
-  # Anyone may start X (sonst startx als non-root nicht erlaubt)
-  if [[ -f /etc/X11/Xwrapper.config ]]; then
-    sed -i 's/^allowed_users=.*/allowed_users=anybody/' /etc/X11/Xwrapper.config
-  else
-    echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
-  fi
-fi
-
-# ---------- Chromium / Google Chrome sicherstellen --------------------------
-# Auf Ubuntu Desktop ist 'chromium-browser' nur ein Snap-Transitional-Paket.
-# Snap-Chromium hat Sandboxing-Restriktionen die Kiosk-Mode mit beliebigem
-# --user-data-dir brechen. Daher auf Ubuntu: Google Chrome stable DEB.
-if [[ "$IS_UBUNTU" == "true" ]]; then
-  if ! command -v google-chrome-stable >/dev/null 2>&1 && ! command -v google-chrome >/dev/null 2>&1; then
-    log "Ubuntu erkannt - installiere Google Chrome stable (statt Snap-Chromium)..."
-    install -d /usr/share/keyrings
-    if [[ ! -f /usr/share/keyrings/google-chrome.gpg ]]; then
-      curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
-        | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg 2>/dev/null \
-        || warn "Google-Repo-Key konnte nicht geholt werden"
-    fi
-    cat > /etc/apt/sources.list.d/google-chrome.list <<'GCR'
+# ---------- Google Chrome stable installieren --------------------------------
+if ! command -v google-chrome-stable >/dev/null 2>&1; then
+  log "Installiere Google Chrome stable (DEB-Repo)..."
+  install -d /usr/share/keyrings
+  curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+    | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+  cat > /etc/apt/sources.list.d/google-chrome.list <<'GCR'
 deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main
 GCR
-    apt-get update -y
-    apt-get install -y --no-install-recommends google-chrome-stable \
-      || warn "google-chrome-stable Installation fehlgeschlagen - probiere chromium..."
-  fi
+  apt-get update -y -qq
+  apt-get install -y --no-install-recommends google-chrome-stable
 fi
+CHROME_BIN="$(command -v google-chrome-stable)"
+log "Chrome:      $CHROME_BIN ($(google-chrome-stable --version 2>/dev/null | head -1))"
 
-if ! command -v chromium-browser >/dev/null 2>&1 \
-   && ! command -v chromium >/dev/null 2>&1 \
-   && ! command -v google-chrome-stable >/dev/null 2>&1 \
-   && ! command -v google-chrome >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends chromium-browser || apt-get install -y --no-install-recommends chromium
-fi
-CHROMIUM_BIN="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
-log "Browser:     ${CHROMIUM_BIN:-(nichts installiert!)}"
-
-apt-get install -y --no-install-recommends unclutter x11-xserver-utils openbox 2>/dev/null || true
-
-# Emoji-Font installieren (Chromium nutzt sonst Placeholder-Kaestchen fuer
-# alle Emojis wie 🌧 ❄ ⛅ - das Kiosk-UI hat viele davon).
-log "Installiere Emoji-Font (fonts-noto-color-emoji)..."
-apt-get install -y --no-install-recommends fonts-noto-color-emoji 2>/dev/null || true
-# Font-Cache neu aufbauen
+log "Installiere Hilfspakete..."
+apt-get install -y --no-install-recommends \
+  unclutter x11-xserver-utils fonts-noto-color-emoji curl ca-certificates zenity \
+  >/dev/null 2>&1 || true
 fc-cache -f 2>/dev/null || true
 
-# ============================================================================
-# LOKALER PI-SERVICE (Offline-Cache + 2-Min-Sync + 3-Monats-Retention)
-# ============================================================================
-# Python3 + Abhaengigkeiten
-log "Installiere Python3 + Pi-Service-Abhaengigkeiten..."
-apt-get install -y --no-install-recommends python3 python3-pip python3-venv curl ca-certificates
-
-PI_SERVICE_DIR="/usr/local/lib/einsatzzentrale-pi"
-PI_SERVICE_VENV="$PI_SERVICE_DIR/venv"
-PI_SERVICE_CONF="/etc/einsatzzentrale-pi.conf"
-PI_SERVICE_DATA="/var/lib/einsatzzentrale-pi"
-PI_SERVICE_LOG="/var/log/einsatzzentrale-pi.log"
-
-install -d "$PI_SERVICE_DIR" "$PI_SERVICE_DATA" "$(dirname "$PI_SERVICE_LOG")"
-touch "$PI_SERVICE_LOG"
-
-# venv anlegen + Pakete (fastapi, uvicorn, httpx)
-if [[ ! -x "$PI_SERVICE_VENV/bin/python" ]]; then
-  log "Erstelle Python-venv unter $PI_SERVICE_VENV ..."
-  python3 -m venv "$PI_SERVICE_VENV"
-fi
-"$PI_SERVICE_VENV/bin/pip" install --upgrade pip wheel >/dev/null
-"$PI_SERVICE_VENV/bin/pip" install "fastapi>=0.110" "uvicorn[standard]>=0.27" "httpx>=0.26" >/dev/null
-
-# Pi-Service-Code holen (aus dem Portal selbst, oder via base64-Embedded)
-PI_SERVICE_AVAILABLE=true
-if [[ -n "$CLOUD_URL" ]]; then
-  log "Lade Pi-Service-Skript vom Portal..."
-  if ! curl -fsSL -o "$PI_SERVICE_DIR/pi_service.py" "$CLOUD_URL/api/einsatzzentrale/pi-service.py" 2>/dev/null; then
-    warn "Pi-Service-Endpoint nicht auf Portal verfuegbar (aelteres Backend) - Online-Only-Modus"
-    PI_SERVICE_AVAILABLE=false
-  fi
-  # Kiosk-HTML lokal cachen damit Boot ohne Internet moeglich ist
-  curl -fsSL -o "$PI_SERVICE_DIR/kiosk.html" "$CLOUD_URL/api/einsatzzentrale/kiosk-page" 2>/dev/null || \
-    warn "Kiosk-HTML-Download fehlgeschlagen (Cache leer - braucht Internet beim Start)"
-fi
-
-# Config
-cat > "$PI_SERVICE_CONF" <<PICONF_EOF
-# Einsatzzentrale Pi-Service - automatisch generiert
-CLOUD_URL=$CLOUD_URL
-PI_ID=$PI_ID
-PI_KEY=$PI_KEY
-SYNC_INTERVAL_SEC=120
-RETENTION_DAYS=90
-PICONF_EOF
-chmod 640 "$PI_SERVICE_CONF"
-
-if [[ "$PI_SERVICE_AVAILABLE" == "true" ]]; then
-  # systemd-Service
-  cat > /etc/systemd/system/einsatzzentrale-pi.service <<SYSD_EOF
-[Unit]
-Description=Einsatzzentrale Pi-Service (Offline-Cache + Sync)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-EnvironmentFile=$PI_SERVICE_CONF
-Environment=PI_CONFIG=$PI_SERVICE_CONF
-Environment=PI_DATA_DIR=$PI_SERVICE_DATA
-Environment=PI_LOG=$PI_SERVICE_LOG
-Environment=PI_KIOSK_HTML=$PI_SERVICE_DIR/kiosk.html
-ExecStart=$PI_SERVICE_VENV/bin/python $PI_SERVICE_DIR/pi_service.py
-Restart=always
-RestartSec=5
-StandardOutput=append:$PI_SERVICE_LOG
-StandardError=append:$PI_SERVICE_LOG
-
-[Install]
-WantedBy=multi-user.target
-SYSD_EOF
-
-  systemctl daemon-reload
-  systemctl enable einsatzzentrale-pi.service
-  systemctl restart einsatzzentrale-pi.service || warn "Pi-Service-Start fehlgeschlagen - siehe $PI_SERVICE_LOG"
-
-  # Chromium soll JETZT auf den lokalen Service zeigen statt zur Cloud
-  if [[ -n "$CLOUD_URL" ]]; then
-    log "Stelle Chromium auf lokalen Pi-Service (localhost:8001) um"
-    URL="http://localhost:8001/kiosk"
-  fi
-else
-  # Online-Only-Modus: Falls schon ein alter Pi-Service-systemd-Unit existiert,
-  # abschalten, damit Chrome nicht versucht auf localhost:8001 zuzugreifen.
-  if systemctl list-unit-files 2>/dev/null | grep -q "einsatzzentrale-pi.service"; then
-    log "Deaktiviere alten Pi-Service (Online-Only-Modus)"
-    systemctl stop einsatzzentrale-pi.service 2>/dev/null || true
-    systemctl disable einsatzzentrale-pi.service 2>/dev/null || true
-  fi
-  log "Online-Only-Modus: Chrome zeigt direkt auf $URL"
-fi
-# ============================================================================
-
-# ---------- LightDM Autologin konfigurieren (Pi OS / Raspberry) -------------
-if command -v lightdm >/dev/null 2>&1; then
-  log "Konfiguriere lightdm Autologin fuer '$KIOSK_USER'..."
-  install -d /etc/lightdm/lightdm.conf.d
-  cat > /etc/lightdm/lightdm.conf.d/50-einsatzzentrale.conf <<LIGHTDM_EOF
-[Seat:*]
-autologin-user=$KIOSK_USER
-autologin-user-timeout=0
-user-session=openbox
-LIGHTDM_EOF
-  systemctl enable lightdm.service 2>/dev/null || true
-  systemctl set-default graphical.target 2>/dev/null || true
-fi
-
-# ---------- GDM3 Autologin konfigurieren (Ubuntu Desktop / Debian GNOME) ----
+# ---------- GDM3 Autologin + Wayland aus -------------------------------------
 if [[ -f /etc/gdm3/custom.conf ]] || command -v gdm3 >/dev/null 2>&1; then
-  log "Konfiguriere gdm3 Autologin fuer '$KIOSK_USER' + Wayland aus..."
+  log "GDM3: Autologin '$KIOSK_USER' + Wayland aus..."
   install -d /etc/gdm3
-  # Falls Datei noch nicht da: minimal anlegen
   if [[ ! -f /etc/gdm3/custom.conf ]]; then
     cat > /etc/gdm3/custom.conf <<'GDMINIT'
-# Eventenergie Einsatzzentrale - autogenerated
 [daemon]
 [security]
 [xdmcp]
@@ -315,80 +125,55 @@ if [[ -f /etc/gdm3/custom.conf ]] || command -v gdm3 >/dev/null 2>&1; then
 [debug]
 GDMINIT
   fi
-  # Wayland deaktivieren (Chrome/Chromium-Kiosk laeuft stabiler unter Xorg)
   if grep -q '^#\?\s*WaylandEnable' /etc/gdm3/custom.conf; then
     sed -i 's/^#\?\s*WaylandEnable.*/WaylandEnable=false/' /etc/gdm3/custom.conf
   else
     sed -i '/^\[daemon\]/a WaylandEnable=false' /etc/gdm3/custom.conf
   fi
-  # Autologin setzen/erneuern
-  sed -i '/^AutomaticLoginEnable/d;/^AutomaticLogin /d;/^AutomaticLogin=/d' /etc/gdm3/custom.conf
+  sed -i '/^AutomaticLoginEnable/d;/^AutomaticLogin=/d' /etc/gdm3/custom.conf
   sed -i "/^\[daemon\]/a AutomaticLoginEnable=true\nAutomaticLogin=$KIOSK_USER" /etc/gdm3/custom.conf
   systemctl enable gdm3.service 2>/dev/null || true
   systemctl set-default graphical.target 2>/dev/null || true
+else
+  warn "GDM3 nicht gefunden - Autologin manuell konfigurieren."
 fi
 
-# ---------- Openbox Autostart (Pi OS Lite) ----------------------------------
-install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/openbox"
-OPENBOX_AS="$KIOSK_HOME/.config/openbox/autostart"
-touch "$OPENBOX_AS"
-chown "$KIOSK_USER":"$KIOSK_USER" "$OPENBOX_AS"
-if ! grep -q "einsatzzentrale-kiosk.sh" "$OPENBOX_AS" 2>/dev/null; then
-  cat >> "$OPENBOX_AS" <<EOF
-# Einsatzzentrale Kiosk
-$KIOSK_LAUNCH_SCRIPT &
-EOF
-fi
-
-# ---------- Kiosk-Skript anlegen --------------------------------------------
-log "Schreibe Launch-Skript $KIOSK_LAUNCH_SCRIPT ..."
-install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$(dirname "$KIOSK_LAUNCH_SCRIPT")"
+# ---------- URL- + Scale-Datei -----------------------------------------------
+install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config"
+install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.local/bin"
 install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_PROFILE_DIR"
+install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/autostart"
+
 echo -n "$URL" > "$KIOSK_URL_FILE"
 chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_URL_FILE"
-
-# Default-Scale fuer 50"-TV (kann spaeter angepasst werden)
-echo -n "1.5" > "$KIOSK_HOME/.config/einsatzzentrale-scale"
-chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_HOME/.config/einsatzzentrale-scale"
-
-# Swap auf 2 GB hochsetzen (Pi 5 mit 1GB RAM ist knapp fuer Chromium)
-if [[ -f /etc/dphys-swapfile ]]; then
-  log "Setze Swap auf 2048 MB (Pi mit wenig RAM)..."
-  sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile
-  systemctl stop dphys-swapfile 2>/dev/null || true
-  systemctl start dphys-swapfile 2>/dev/null || true
+if [[ ! -s "$KIOSK_SCALE_FILE" ]]; then
+  echo -n "1.0" > "$KIOSK_SCALE_FILE"
+  chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_SCALE_FILE"
 fi
 
+# ---------- Launcher-Skript --------------------------------------------------
+log "Schreibe Launcher: $KIOSK_LAUNCH_SCRIPT"
 cat > "$KIOSK_LAUNCH_SCRIPT" <<'LAUNCHER_EOF'
 #!/usr/bin/env bash
-# Einsatzzentrale Kiosk Launcher
 set -u
-
 LOGFILE="$HOME/.local/share/einsatzzentrale-kiosk.log"
 mkdir -p "$(dirname "$LOGFILE")"
 
-# ----- SINGLE-INSTANCE-LOCK -------------------------------------------------
-# Verhindert dass zwei Launcher gleichzeitig laufen (passiert wenn openbox +
-# xdg-autostart + LXDE-autostart alle dieselbe Datei aufrufen). Zwei Launcher
-# wuerden sich gegenseitig die Chromium-Prozesse killen.
+# Single-Instance-Lock
 exec 9>/tmp/einsatzzentrale-kiosk.lock
 if ! flock -n 9; then
-  echo "[$(date '+%F %T')] Launcher laeuft bereits (lock-fail) - exit." >> "$LOGFILE"
+  echo "[$(date '+%F %T')] Launcher laeuft bereits - exit." >> "$LOGFILE"
   exit 0
 fi
-echo "[$(date '+%F %T')] Launcher-Start (PID $$)" >> "$LOGFILE"
+echo "[$(date '+%F %T')] === Launcher-Start (PID $$) ===" >> "$LOGFILE"
 
 URL="$(cat "$HOME/.config/einsatzzentrale-url" 2>/dev/null || echo "")"
-SCALE="$(cat "$HOME/.config/einsatzzentrale-scale" 2>/dev/null || echo "1.5")"
-if [[ -z "$URL" ]]; then
-  echo "Keine URL hinterlegt." >&2
-  exit 1
-fi
+SCALE="$(cat "$HOME/.config/einsatzzentrale-scale" 2>/dev/null || echo "1.0")"
+if [[ -z "$URL" ]]; then echo "Keine URL hinterlegt." >&2; exit 1; fi
 
 PROFILE="$HOME/.config/einsatzzentrale-chromium"
 mkdir -p "$PROFILE/Default"
 
-# Translate-Popup, Erste-Schritte, Default-Browser-Frage etc. unterdruecken
 cat > "$PROFILE/Default/Preferences" <<JSON_EOF
 {
   "browser": { "check_default_browser": false, "show_home_button": false },
@@ -403,57 +188,40 @@ cat > "$PROFILE/Default/Preferences" <<JSON_EOF
 }
 JSON_EOF
 
-# Screen-Blanking deaktivieren (X11)
-if command -v xset >/dev/null 2>&1; then
-  xset s off 2>/dev/null || true
-  xset -dpms 2>/dev/null || true
-  xset s noblank 2>/dev/null || true
-fi
-# Maus ausblenden bei Inaktivitaet
-if command -v unclutter >/dev/null 2>&1; then
-  pkill -f "unclutter.*-idle" 2>/dev/null || true
-  unclutter -idle 1 -root &
+# Display-Blanking aus
+command -v xset >/dev/null 2>&1 && { xset s off 2>/dev/null || true; xset -dpms 2>/dev/null || true; xset s noblank 2>/dev/null || true; }
+command -v unclutter >/dev/null 2>&1 && { pkill -f "unclutter.*-idle" 2>/dev/null || true; unclutter -idle 1 -root & }
+
+# GNOME-Notifications + Screensaver aus (best effort)
+if command -v gsettings >/dev/null 2>&1; then
+  gsettings set org.gnome.desktop.notifications show-banners false 2>/dev/null || true
+  gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
+  gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
+  gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing' 2>/dev/null || true
 fi
 
-CHROMIUM="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium-browser || command -v chromium)"
-if [[ -z "$CHROMIUM" ]]; then
-  echo "Weder Chrome noch Chromium installiert." >&2
-  exit 1
-fi
-
-# Sicherstellen dass Chromium NICHT Wayland versucht (wir laufen auf X11+openbox).
-# Mixed Wayland/X11 verursacht Renderer-Crash-Loop.
-unset WAYLAND_DISPLAY
-unset WAYLAND_SOCKET
+unset WAYLAND_DISPLAY WAYLAND_SOCKET
 export GDK_BACKEND=x11
 export QT_QPA_PLATFORM=xcb
 export XDG_SESSION_TYPE=x11
 
-# Falls Chromium-Snap-Reste oder alte Wayland-Sessions liegen: cleanen
-rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket" 2>/dev/null || true
-
-# Crash-Counter: nach 5 schnellen Restarts (innerhalb 60s) stoppen
-# damit man den Fehler im Log sieht statt endlos zu blinken.
 CRASH_COUNT=0
 LAST_CRASH=0
 while true; do
-  # ----- WICHTIG -----
-  # Nur RESIDUALE Chromium-Instanzen aus unserem eigenen Profile killen.
-  # NICHT alle Chromium-Prozesse - das wuerde unseren eigenen Browser killen,
-  # falls ein zweiter Launcher-Run versucht zu starten (Exit-137-Loop).
   pkill -9 -f "user-data-dir=$PROFILE" 2>/dev/null || true
   sleep 0.3
   rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket" 2>/dev/null || true
   rm -f "$PROFILE/Default/SingletonLock" "$PROFILE/Default/SingletonCookie" "$PROFILE/Default/SingletonSocket" 2>/dev/null || true
 
-  echo "[$(date '+%F %T')] Starte Chromium auf $URL (scale=$SCALE)" >> "$LOGFILE"
-  "$CHROMIUM" \
+  echo "[$(date '+%F %T')] Starte Chrome auf $URL (scale=$SCALE)" >> "$LOGFILE"
+  google-chrome-stable \
     --kiosk \
     --noerrdialogs \
     --disable-infobars \
     --disable-translate \
-    --disable-features=TranslateUI,Translate,AutofillEnableAccountWalletStorage,UseChromeOSDirectVideoDecoder \
+    --disable-features=TranslateUI,Translate,AutofillEnableAccountWalletStorage \
     --no-first-run \
+    --no-default-browser-check \
     --disable-session-crashed-bubble \
     --disable-component-update \
     --disable-pinch \
@@ -466,55 +234,36 @@ while true; do
     --lang=de-DE \
     --force-device-scale-factor="$SCALE" \
     --ozone-platform=x11 \
-    --disable-gpu \
-    --disable-gpu-compositing \
-    --disable-software-rasterizer \
-    --disable-dev-shm-usage \
     --no-sandbox \
-    --process-per-site \
-    --disable-low-end-device-mode \
+    --disable-dev-shm-usage \
     --disable-sync \
     --disable-background-networking \
-    --disable-cloud-management-enrollment \
     --disable-default-apps \
-    --js-flags=" " \
     "$URL" >> "$LOGFILE" 2>&1
 
   EXIT_CODE=$?
   NOW=$(date +%s)
-  echo "[$(date '+%F %T')] Chromium beendet (Exit $EXIT_CODE)" >> "$LOGFILE"
-  if (( NOW - LAST_CRASH < 60 )); then
-    CRASH_COUNT=$((CRASH_COUNT + 1))
-  else
-    CRASH_COUNT=1
-  fi
+  echo "[$(date '+%F %T')] Chrome beendet (Exit $EXIT_CODE)" >> "$LOGFILE"
+  if (( NOW - LAST_CRASH < 60 )); then CRASH_COUNT=$((CRASH_COUNT + 1)); else CRASH_COUNT=1; fi
   LAST_CRASH=$NOW
   if (( CRASH_COUNT >= 5 )); then
-    echo "[$(date '+%F %T')] 5 schnelle Crashes - stoppe Loop. Logfile: $LOGFILE" >> "$LOGFILE"
-    # Zeige Fehler-Screen statt endlos zu restarten
-    if command -v xmessage >/dev/null 2>&1; then
-      xmessage -center "Kiosk konnte nicht starten. Log: $LOGFILE"
-    fi
-    sleep 30
-    CRASH_COUNT=0
+    echo "[$(date '+%F %T')] 5 Crashes in 60s - 30s Pause." >> "$LOGFILE"
+    command -v zenity >/dev/null 2>&1 && zenity --error --no-wrap --title="Kiosk-Fehler" --text="Chrome konnte nicht starten.\n\nLog: $LOGFILE" 2>/dev/null &
+    sleep 30; CRASH_COUNT=0
   else
-    sleep 5
+    sleep 3
   fi
 done
 LAUNCHER_EOF
 chmod +x "$KIOSK_LAUNCH_SCRIPT"
 chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_LAUNCH_SCRIPT"
 
-# ---------- Zusaetzliche Autostarts (Wayland / LXDE Desktop) ----------------
-# Falls Pi OS Desktop installiert war (oder spaeter wird), funktioniert es auch dort.
-
-# XDG-Autostart
-install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/autostart"
+# ---------- XDG Autostart -----------------------------------------------------
 cat > "$KIOSK_HOME/.config/autostart/einsatzzentrale-kiosk.desktop" <<DESKTOP_EOF
 [Desktop Entry]
 Type=Application
 Name=Einsatzzentrale Kiosk
-Comment=Chromium Kiosk fuer Einsatzzentrale
+Comment=Eventenergie Einsatzzentrale Chrome-Kiosk
 Exec=$KIOSK_LAUNCH_SCRIPT
 Terminal=false
 X-GNOME-Autostart-enabled=true
@@ -522,58 +271,29 @@ NoDisplay=false
 DESKTOP_EOF
 chown "$KIOSK_USER":"$KIOSK_USER" "$KIOSK_HOME/.config/autostart/einsatzzentrale-kiosk.desktop"
 
-# Wayland labwc (Bookworm Desktop Default)
-if command -v labwc >/dev/null 2>&1; then
-  install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/labwc"
-  AS="$KIOSK_HOME/.config/labwc/autostart"
-  touch "$AS"; chown "$KIOSK_USER":"$KIOSK_USER" "$AS"
-  if ! grep -q "einsatzzentrale-kiosk.sh" "$AS" 2>/dev/null; then
-    echo "$KIOSK_LAUNCH_SCRIPT &" >> "$AS"
-  fi
-fi
-# X11 LXDE
-if [[ -d "/etc/xdg/lxsession/LXDE-pi" ]]; then
-  install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config/lxsession/LXDE-pi"
-  AS="$KIOSK_HOME/.config/lxsession/LXDE-pi/autostart"
-  if [[ ! -f "$AS" ]]; then
-    cp "/etc/xdg/lxsession/LXDE-pi/autostart" "$AS" 2>/dev/null || touch "$AS"
-    chown "$KIOSK_USER":"$KIOSK_USER" "$AS"
-  fi
-  if ! grep -q "einsatzzentrale-kiosk.sh" "$AS" 2>/dev/null; then
-    echo "@$KIOSK_LAUNCH_SCRIPT" >> "$AS"
-  fi
+# ---------- Aufraeumen Pi-Service-Reste --------------------------------------
+if systemctl list-unit-files 2>/dev/null | grep -q "einsatzzentrale-pi.service"; then
+  log "Entferne alte Pi-Service-Reste..."
+  systemctl stop einsatzzentrale-pi.service 2>/dev/null || true
+  systemctl disable einsatzzentrale-pi.service 2>/dev/null || true
+  rm -f /etc/systemd/system/einsatzzentrale-pi.service /etc/einsatzzentrale-pi.conf
+  rm -rf /usr/local/lib/einsatzzentrale-pi /var/lib/einsatzzentrale-pi
+  systemctl daemon-reload 2>/dev/null || true
 fi
 
-# ---------- Screen-Blanking aus via raspi-config -----------------------------
-if command -v raspi-config >/dev/null 2>&1; then
-  raspi-config nonint do_blanking 1 || true
-fi
-
-# ---------- Fertig -----------------------------------------------------------
 log ""
 log "================================================================"
 log "  Installation abgeschlossen."
 log "================================================================"
-log "  URL:        $URL"
-log "  User:       $KIOSK_USER"
-log "  Launcher:   $KIOSK_LAUNCH_SCRIPT"
-log "  URL-Datei:  $KIOSK_URL_FILE   (zum spaeteren Aendern)"
+log "  URL:      $URL"
+log "  User:     $KIOSK_USER"
+log "  Browser:  $CHROME_BIN"
+log "  Launcher: $KIOSK_LAUNCH_SCRIPT"
 log ""
 log "  Naechster Schritt:   sudo reboot"
 log ""
-log "  Nach dem Reboot bootet der Pi automatisch in den Kiosk-Modus,"
-log "  startet lightdm + openbox, loggt '$KIOSK_USER' automatisch ein"
-log "  und oeffnet Chromium im Vollbild auf der hinterlegten URL."
-log ""
-log "  URL spaeter aendern:"
-log "     echo 'NEUE_URL' > $KIOSK_URL_FILE && sudo reboot"
-log ""
-log "  Schriftgroesse fuer grossen TV anpassen (1.0=normal, 1.5=50%, 2.0=doppelt):"
-log "     echo '2.0' > $KIOSK_HOME/.config/einsatzzentrale-scale && sudo reboot"
-log ""
-log "  Logfile zur Fehlersuche (wenn Bildschirm blinkt):"
-log "     tail -f $KIOSK_HOME/.local/share/einsatzzentrale-kiosk.log"
-log ""
-log "  Deinstall:"
-log "     sudo bash $0 --uninstall"
+log "  URL aendern:    echo 'NEUE_URL' | sudo tee $KIOSK_URL_FILE && sudo reboot"
+log "  Scale aendern:  echo '1.5' > $KIOSK_SCALE_FILE && sudo reboot"
+log "  Log:            tail -f $KIOSK_HOME/.local/share/einsatzzentrale-kiosk.log"
+log "  Deinstall:      sudo bash $0 --uninstall"
 log "================================================================"

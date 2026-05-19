@@ -839,7 +839,7 @@ async def generate_pi_setup(body: PiSetupRequest, request: "Request", user: dict
         or _build_portal_url_from_request(request)
         or _os_setup.environ.get("PORTAL_URL", "https://eventenergie.app").rstrip("/")
     )
-    kiosk_url = f"{portal_url}/api/einsatzzentrale/kiosk-page?pi_id={pi_id}&key={plain_key}"
+    kiosk_url = f"{portal_url}/einsatzzentrale?pi_id={pi_id}&key={plain_key}"
     install_url = f"{portal_url}/api/einsatzzentrale/install-script"
     setup_command = (
         f'curl -sL "{install_url}" | sudo bash -s -- "{kiosk_url}"'
