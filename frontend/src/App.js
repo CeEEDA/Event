@@ -56,6 +56,7 @@ import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
 import AbrechnungPage from "./pages/AbrechnungPage";
 import MitarbeiterDatenPage from "./pages/MitarbeiterDatenPage";
 import MitarbeiterDokumentePage from "./pages/MitarbeiterDokumentePage";
+import TravelExpensesPage from "./pages/TravelExpensesPage";
 import AdrPage from "./pages/AdrPage";
 import VerbandsbuchPage from "./pages/VerbandsbuchPage";
 import EinsatzplanungPage from "./pages/EinsatzplanungPage";
@@ -541,6 +542,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MitarbeiterDokumentePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mitarbeiter-daten/reisekosten"
+        element={
+          <ProtectedRoute>
+            <TravelExpensesPage />
           </ProtectedRoute>
         }
       />

@@ -2152,6 +2152,10 @@ app.include_router(mailbridge_router)
 from routes.datev import router as datev_router
 app.include_router(datev_router)
 
+from routes.travel_expenses import router as travel_expenses_router, init_travel_expense_routes
+init_travel_expense_routes(db, decode_jwt_token)
+app.include_router(travel_expenses_router)
+
 
 
 

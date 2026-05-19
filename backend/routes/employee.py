@@ -2380,6 +2380,40 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
     total_gross = round(totals["regular_wage"] + totals["sunday_wage"] + totals["holiday_wage"] + totals["special_wage"] + totals["night_wage"], 2)
     total_net = round(total_gross - total_deductions, 2)
 
+    # Reisekosten (Verpflegungsmehraufwand + KM + Übernachtung) für den Monat aggregieren.
+    # Nur GENEHMIGTE Reisen werden in die Lohnabrechnung übernommen (steuerfrei!).
+    travel_docs = await db.travel_expenses.find(
+        {"user_id": user_id, "month": month, "status": "approved"}, {"_id": 0}
+    ).sort("departure_at", 1).to_list(500)
+    travel_per_diem = 0.0
+    travel_km_eur = 0.0
+    travel_accommodation = 0.0
+    travel_other = 0.0
+    travel_km = 0.0
+    travel_list = []
+    for t in travel_docs:
+        c = t.get("computed", {}) or {}
+        travel_per_diem += float(c.get("per_diem_net", 0) or 0)
+        travel_km_eur += float(c.get("km_eur", 0) or 0)
+        travel_accommodation += float(c.get("accommodation_eur", 0) or 0)
+        travel_other += float(c.get("other_eur", 0) or 0)
+        travel_km += float(c.get("km", 0) or 0)
+        travel_list.append({
+            "id": t.get("id"),
+            "trip_purpose": t.get("trip_purpose", ""),
+            "country_name": c.get("country_name", ""),
+            "departure_at": t.get("departure_at"),
+            "arrival_at": t.get("arrival_at"),
+            "per_diem_net": round(float(c.get("per_diem_net", 0) or 0), 2),
+            "km_eur": round(float(c.get("km_eur", 0) or 0), 2),
+            "accommodation_eur": round(float(c.get("accommodation_eur", 0) or 0), 2),
+            "other_eur": round(float(c.get("other_eur", 0) or 0), 2),
+            "total_eur": round(float(c.get("total_eur", 0) or 0), 2),
+        })
+    travel_total = round(travel_per_diem + travel_km_eur + travel_accommodation + travel_other, 2)
+    # Auszahlbetrag inklusive steuerfreier Reisekosten (zusätzlich zum Netto-Lohn)
+    total_payout = round(total_net + travel_total, 2)
+
     return {
         "month": month,
         "user_id": user_id,
@@ -2391,6 +2425,17 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
         "deductions": deductions,
         "total_deductions": total_deductions,
         "total_net": total_net,
+        "travel_expenses": {
+            "trip_count": len(travel_list),
+            "per_diem_total": round(travel_per_diem, 2),
+            "km_total": round(travel_km, 2),
+            "km_total_eur": round(travel_km_eur, 2),
+            "accommodation_total": round(travel_accommodation, 2),
+            "other_total": round(travel_other, 2),
+            "grand_total": travel_total,
+            "trips": travel_list,
+        },
+        "total_payout": total_payout,
     }
 
 
@@ -2435,6 +2480,31 @@ async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Qu
         writer.writerow(["Abzüge gesamt", f"-{payroll['total_deductions']:.2f} EUR"])
     writer.writerow([])
     writer.writerow(["NETTO AUSZAHLUNG", f"{payroll['total_net']:.2f} EUR"])
+
+    # ── Reisekosten (steuerfrei nach §3 Nr. 13/16 EStG) ──
+    tx = payroll.get("travel_expenses") or {}
+    if tx.get("trip_count", 0) > 0:
+        writer.writerow([])
+        writer.writerow(["Reisekosten (steuerfrei)"])
+        writer.writerow(["Datum", "Zweck", "Land", "VMA netto", "KM-Pauschale", "Übernachtung", "Sonstige", "Gesamt"])
+        for tr in tx.get("trips", []):
+            dep = (tr.get("departure_at") or "")[:10]
+            writer.writerow([
+                dep, tr.get("trip_purpose", ""), tr.get("country_name", ""),
+                f"{tr['per_diem_net']:.2f}", f"{tr['km_eur']:.2f}",
+                f"{tr['accommodation_eur']:.2f}", f"{tr['other_eur']:.2f}",
+                f"{tr['total_eur']:.2f}",
+            ])
+        writer.writerow([])
+        writer.writerow(["Verpflegungsmehraufwand", f"{tx['per_diem_total']:.2f} EUR"])
+        writer.writerow(["KM-Pauschale", f"{tx['km_total_eur']:.2f} EUR ({tx['km_total']:.0f} km)"])
+        writer.writerow(["Übernachtungskosten", f"{tx['accommodation_total']:.2f} EUR"])
+        writer.writerow(["Sonstige Reisekosten", f"{tx['other_total']:.2f} EUR"])
+        writer.writerow(["REISEKOSTEN GESAMT", f"{tx['grand_total']:.2f} EUR"])
+
+    if (payroll.get("total_payout") or 0) != payroll.get("total_net", 0):
+        writer.writerow([])
+        writer.writerow(["AUSZAHLBETRAG (Netto + Reisekosten)", f"{payroll['total_payout']:.2f} EUR"])
 
     return Response(
         content=output.getvalue(),

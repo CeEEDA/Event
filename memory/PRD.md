@@ -16,6 +16,14 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Reisekosten / Verpflegungsmehraufwand-Modul (P1, Feature)
+- ✅ **Komplettes Reisekosten-Modul nach §9 EStG** (Inland-Pauschalen 2026: 28€ voll / 14€ teil + KM-Pauschale 0,30€/km, 24 Länder hardcoded mit BMF-2026-Sätzen).
+- ✅ **Backend** (`/app/backend/routes/travel_expenses.py`): Live-Preview-Endpoint, CRUD mit Multi-Part-Belege-Upload (max 6 à 10MB, base64 in MongoDB), Approve/Reject-Workflow, PDF-Reisekostenabrechnung pro Reise (reportlab), Excel-Monatsauswertung für Steuerbüro (openpyxl), Mahlzeiten-Kürzung (Frühstück -20%, Mittag/Abend -40% der vollen Tagespauschale).
+- ✅ **Payroll-Integration**: Genehmigte Reisen werden automatisch in `/api/employee/payroll/{user_id}` aggregiert; Lohn-CSV-Export enthält neuen Reisekosten-Block + Auszahlbetrag = Netto + Reisekosten (steuerfrei nach §3 Nr.13/16 EStG).
+- ✅ **Frontend Mitarbeiter-Self-Service** (`TravelExpensesPage.jsx`): Neue Kachel „Reisekosten" in MitarbeiterDatenPage → eigene Reisen, Live-Berechnung im Dialog, Beleg-Upload (Drag & Drop PDF/JPG/PNG), PDF-Download, Löschen eigener pending Reisen, Liste gruppiert nach Monat mit Status-Badges.
+- ✅ **Frontend Verwaltung** (`AdminZeitDetailPage.jsx`): Neue Sektion „Reisekosten" pro Mitarbeiter-Detail-Seite, monatlich gefilterte Tabelle mit Genehmigen/Ablehnen/Löschen-Aktionen, Summen-Karten (Genehmigt vs. Offen), 1-Klick Excel-Export für Steuerbüro inkl. steuerlicher Hinweise.
+- ✅ **Tests verifiziert** (curl-E2E): 3-Tagesreise DE mit 1×F/M/A gestellt + 250km + 120€ Übernachtung = 238,50€ in Payroll aggregiert; PDF 3062 Bytes; XLSX 5867 Bytes.
+
 ### Feb 2026 – Pi-Onboarding Diagnose-Tools (P1, Hardware-Support)
 - 🐛 **Issue:** Neu aufgesetzter Pi (Bookworm 64-bit + DSE P810-Kabel) tauchte nicht im Portal auf. dse5510_sync.service lief, aber endlose Warnungen „Kein Serial-Port verfuegbar". Root Cause: kein DSE/FTDI-Adapter angeschlossen, nur SIM7600-Ports vorhanden.
 - ✅ **Tools für Hardware-Onboarding bereitgestellt (auf Pi via SSH ausführbar, KEINE App-Code-Änderungen):**
