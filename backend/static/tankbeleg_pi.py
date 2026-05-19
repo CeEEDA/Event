@@ -359,34 +359,43 @@ def decode_sening_bitmap_digit(four_bytes: bytes):
     """Dekodiert Sening MultiFlow Bitmap-Bytes zu einer Ziffer.
 
     Sening rendert eichgueltige Mengen-Ziffern manchmal als Bitmap statt ASCII.
-    Format A (1 Bitmap-Ziffer): [byte1] [byte2] 0x72 0xD3
-        byte1 = 0x83 + d * 8   (d = Ziffer 0..9, definitive Quelle)
-        byte2 = 0x12 - d       (in vielen Drucker-Modi konsistent, aber NICHT
-                                immer - manche Sening-Varianten codieren in
-                                byte2 z.B. eine zweite Stelle oder Schriftgroesse.
-                                byte1 wird daher als Wahrheit genommen.)
-    Format B (2 Bitmap-Ziffern, 4 Bytes): [byte1] [byte2] [byte3] 0xC8
-        byte1 = 0x83 + d1 * 8  (erste Bitmap-Ziffer)
-        byte2 = beliebig       (Plausibilitaets-Byte, ignoriert)
-        byte3 = 0x33 + d2 * 8  (zweite Bitmap-Ziffer, anderes Raster!)
-        byte4 = 0xC8           (Endmarker fuer 2-stelliges Format)
-    Beispiele aus echten Belegen:
-        a3 0e 72 d3 = Ziffer 4 (Beleg 16943, echt 154 L, ASCII zeigt nur "15")
-        b3 0c 72 d3 = Ziffer 6 (Beleg 16944, echt 1296 L, ASCII zeigt nur "129")
-        83 0c 72 d3 = Ziffer 0 (Beleg 16,    echt 150 L,  ASCII zeigt nur "15")
-        8b ce 63 c8 = Ziffern "16" (Beleg 16949, echt 1316 L, ASCII zeigt nur "13")
+    Format A4 (1 Bitmap-Ziffer, 4 Bytes - klassisch): [b1] [b2] 0x72 0xD3
+        b1 = 0x83 + d * 8   (d = Ziffer 0..9)
+    Format A5 (1 Bitmap-Ziffer, 5 Bytes - neuere Firmware ab 2026):
+        [b1] [b2] [b3pad] 0x72 0x{D3 oder C8}
+        b1 = 0x83 + d * 8   (gleiches Codier-Schema wie A4)
+        b3pad = Pad-Byte (z.B. 0x0c oder 0x0e), abhaengig von Schriftgroesse
+        Beispiel-Belege: 0xab 0x2c 0x0c 0x72 0xd3 = Ziffer 5
+                         0x9b 0x0c 0x0e 0x72 0xd3 = Ziffer 3
+                         0xa3 0x0e 0x72 0xc8       = Ziffer 4 (4-Byte mit C8-Marker)
+    Format B (2 Bitmap-Ziffern, 4 Bytes): [b1] [b2] [b3] 0xC8
+        b1 = 0x83 + d1 * 8  (erste Bitmap-Ziffer)
+        b3 = 0x33 + d2 * 8  (zweite Bitmap-Ziffer)
+        b4 = 0xC8           (Endmarker fuer 2-stelliges Format)
 
     Returns:
-        - "X"   wenn Format A erkannt (1 Ziffer)
+        - "X"   wenn Format A4/A5 erkannt (1 Ziffer)
         - "XY"  wenn Format B erkannt (2 Ziffern)
         - None  bei unbekanntem Pattern
     """
     if len(four_bytes) < 4:
         return None
     b1, b2, b3, b4 = four_bytes[0], four_bytes[1], four_bytes[2], four_bytes[3]
+    b5 = four_bytes[4] if len(four_bytes) >= 5 else None
 
-    # Format A: byte3=0x72, byte4=0xD3 (1 Bitmap-Ziffer)
-    if b3 == 0x72 and b4 == 0xD3:
+    # Format A5: 5 Bytes [b1][b2][pad] 0x72 0x{D3|C8} - hoechste Prio, da
+    # neuere Firmware. Pad-Byte (b3) typisch 0x0C oder 0x0E (Schriftgroessen-Hint),
+    # wir akzeptieren jeden Wert unter 0x20 (Control-Byte).
+    if b5 is not None and b4 == 0x72 and b5 in (0xD3, 0xC8) and b3 < 0x20:
+        if 0x83 <= b1 <= 0xCB and (b1 - 0x83) % 8 == 0:
+            d_from_b1 = (b1 - 0x83) // 8
+            if 0 <= d_from_b1 <= 9:
+                return str(d_from_b1)
+
+    # Format A4: byte3=0x72, byte4 in (0xD3, 0xC8) - klassisch + erweitert
+    # 0xC8 als Endmarker fuer Format A4 ist eine neuere Sening-Variante,
+    # zu unterscheiden von Format B durch b3=0x72 vs b3=0x33+d*8.
+    if b3 == 0x72 and b4 in (0xD3, 0xC8):
         if b1 < 0x83 or b1 > 0xCB or (b1 - 0x83) % 8 != 0:
             return None
         d_from_b1 = (b1 - 0x83) // 8
@@ -394,15 +403,13 @@ def decode_sening_bitmap_digit(four_bytes: bytes):
             return None
         return str(d_from_b1)
 
-    # Format B: byte4=0xC8 (2 Bitmap-Ziffern, byte3 codiert zweite Ziffer als 0x33+d*8)
-    if b4 == 0xC8:
-        # Erste Ziffer aus byte1 (gleich wie Format A)
+    # Format B: byte4=0xC8, byte3 NICHT 0x72 (sonst waere Format A4)
+    if b4 == 0xC8 and b3 != 0x72:
         if b1 < 0x83 or b1 > 0xCB or (b1 - 0x83) % 8 != 0:
             return None
         d1 = (b1 - 0x83) // 8
         if not (0 <= d1 <= 9):
             return None
-        # Zweite Ziffer aus byte3 mit Schema 0x33 + d*8
         if b3 < 0x33 or b3 > 0x33 + 9 * 8 or (b3 - 0x33) % 8 != 0:
             return None
         d2 = (b3 - 0x33) // 8
@@ -437,7 +444,7 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
     if idx < 0:
         idx = raw.find(b"M+")
         if idx < 0:
-            return None, None, False
+            return None, None, False, ""
     # Segment-Ende: zuerst nach \x1b\x4a (Form Feed), dann Sening-Line-End-
     # Marker \x1b\x0b\x0c\x60\xc3\x21 (Print-Engine-Reset). Letzteres ist
     # WICHTIG, weil Sening direkt nach diesem Marker oft Bytes wie ...\x31
@@ -471,27 +478,43 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
         else:
             i += 1
     if not digit_runs:
-        return None, None, False
+        return None, None, False, ""
     candidates = [(s, e, d) for (s, e, d) in digit_runs if len(d) >= 2]
     if not candidates:
         candidates = digit_runs
     last_pos, last_end, last_digits = candidates[-1]
 
-    # Schleife: dekodiere konsekutive 4-Byte-Bitmap-Quadrupel
+    # Schleife: dekodiere konsekutive Bitmap-Quadrupel (4-Byte ODER 5-Byte
+    # je nach Format A4/A5/B). Bei 5-Byte-Format (neuere Sening-Firmware ab
+    # 2026) ist zwischen [b2] und [0x72] ein Pad-Byte (0x0c/0x0e) eingefuegt.
     decoded_digits = []
     pos = last_end
     has_unknown_bitmap = False
     unknown_bytes_hex = ""  # Forensik: welche Bytes konnten wir nicht parsen
     while pos + 4 <= len(segment):
-        chunk = segment[pos:pos + 4]
-        digit = decode_sening_bitmap_digit(chunk)
+        # Erst 5-Byte (Format A5) probieren - hat Vorrang vor 4-Byte
+        chunk5 = segment[pos:pos + 5] if pos + 5 <= len(segment) else b""
+        chunk4 = segment[pos:pos + 4]
+        digit = None
+        consumed = 0
+        if len(chunk5) == 5:
+            d5 = decode_sening_bitmap_digit(chunk5)
+            if d5 is not None and chunk5[3] == 0x72 and chunk5[4] in (0xD3, 0xC8) and chunk5[2] < 0x20:
+                # eindeutig A5 (3.Byte ist Pad, 4./5. sind 0x72 + Endmarker)
+                digit = d5
+                consumed = 5
+        if digit is None:
+            d4 = decode_sening_bitmap_digit(chunk4)
+            if d4 is not None:
+                digit = d4
+                consumed = 4
         if digit is None:
             # Pruefe ob hier ueberhaupt ein Bitmap-Suffix beginnt (= unknown)
             if not decoded_digits:
                 # Erstes Quadrupel ist nicht dekodierbar
-                first = chunk[0]
+                first = chunk4[0]
                 # Bekannter Endemarker (03 8e 3a c8) oder ASCII " L" -> nichts unbekannt
-                if first == 0x03 and chunk[1] == 0x8E:
+                if first == 0x03 and chunk4[1] == 0x8E:
                     pass  # Standard-Endemarker, alles OK
                 elif first == 0x20 or first == 0x4C:
                     pass  # Whitespace oder " L" (ASCII-Ende)
@@ -507,16 +530,13 @@ def detect_quantity_in_raw(raw: bytes) -> tuple:
                     )
             break
         decoded_digits.append(digit)
-        # Format A = 1 Ziffer (4 Bytes), Format B = 2 Ziffern (4 Bytes).
-        # decode_sening_bitmap_digit liefert "X" oder "XY" - bei "XY" sind
-        # bereits beide Ziffern aus diesem Quadrupel extrahiert.
-        pos += 4
+        pos += consumed
         # Sicherheits-Limit: max 5 Quadrupel (= bis 10 Bitmap-Ziffern)
         if len(decoded_digits) >= 5:
             break
 
     decoded_str = "".join(decoded_digits) if decoded_digits else None
-    return last_digits, decoded_str, has_unknown_bitmap
+    return last_digits, decoded_str, has_unknown_bitmap, unknown_bytes_hex
 
 
 def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
@@ -527,7 +547,7 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
     wird dieser volle Wert verwendet (z.B. '11461' wenn Parser '1146' liefert).
     """
     # Raw-Stream-Analyse fuer Menge mit Bitmap-Decode (mehrere Ziffern moeglich)
-    raw_qty_digits, raw_qty_bitmap_digits, raw_qty_unknown_bitmap = detect_quantity_in_raw(raw)
+    raw_qty_digits, raw_qty_bitmap_digits, raw_qty_unknown_bitmap, raw_qty_unknown_hex = detect_quantity_in_raw(raw)
     if raw_qty_digits:
         log.info(f"  RAW-Menge: ASCII='{raw_qty_digits}' bitmap_digits={raw_qty_bitmap_digits!r} unknown_bitmap={raw_qty_unknown_bitmap}")
 
@@ -692,7 +712,16 @@ def parse_receipt_sening(raw: bytes, fixed_zaehler_nr: str = "") -> dict:
         ascii_val = int(raw_qty_digits)
         reason = (f"Sening-Bitmap-Suffix erkannt aber nicht dekodierbar - "
                   f"ASCII-Wert: {ascii_val} L. "
-                  f"Bitte Hex-Dump an Entwickler senden zur Pattern-Erweiterung.")
+                  f"Forensic-Hex (12 Bytes): {raw_qty_unknown_hex or '(leer)'}. "
+                  f"Bitte an Entwickler senden zur Pattern-Erweiterung.")
+        # Hex auch als eigenes Feld, damit Frontend es Copy-Paste-freundlich
+        # anzeigen kann (review_bitmap_hex Liste, falls mehrere Belege).
+        existing_hex = result.get("review_bitmap_hex") or []
+        if isinstance(existing_hex, list):
+            existing_hex.append(raw_qty_unknown_hex)
+        else:
+            existing_hex = [raw_qty_unknown_hex]
+        result["review_bitmap_hex"] = existing_hex
         log.warning(f"  [REVIEW] {reason}")
         if isinstance(result.get("review_reason"), list):
             result["review_reason"].append(reason)
