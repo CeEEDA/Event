@@ -178,6 +178,8 @@ export default function AdminPage() {
     { key: "hubarbeitsbuehne", label: "Hubarbeitsbühne" },
     { key: "teleskoplader", label: "Teleskoplader" },
     { key: "baumaschine", label: "Baumaschine" },
+    { key: "adr_karte", label: "ADR-Karte" },
+    { key: "kranschein", label: "Kranschein" },
   ];
 
   const isDocExpired = (d) => d && new Date(d) < new Date();

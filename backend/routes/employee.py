@@ -21,6 +21,8 @@ DOCUMENT_TYPES = [
     "hubarbeitsbuehne",
     "teleskoplader",
     "baumaschine",
+    "adr_karte",
+    "kranschein",
 ]
 
 DOCUMENT_LABELS = {
@@ -33,6 +35,8 @@ DOCUMENT_LABELS = {
     "hubarbeitsbuehne": "Hubarbeitsbühne",
     "teleskoplader": "Teleskoplader",
     "baumaschine": "Baumaschine",
+    "adr_karte": "ADR-Karte",
+    "kranschein": "Kranschein",
 }
 
 
