@@ -14,9 +14,13 @@
                     var p = window.location.pathname;
                     if (p === "/einsatzzentrale" || p.indexOf("/einsatzzentrale/") === 0) {
                         if (!window.__kioskRedirected) {
-                            window.__kioskRedirected = true;
-                            window.stop && window.stop();
-                            window.location.replace("/api/einsatzzentrale/kiosk-page");
+                            // Synchrone HEAD-Probe ist im Browser nicht zuverlaessig,
+                            // daher: Backend-Verfuegbarkeitscheck UEBERLASSEN wir der
+                            // React-Komponente (EinsatzzentralePiPage). Hier nur den
+                            // alten Hard-Redirect entfernen, damit kein JSON-Fehler
+                            // angezeigt wird, falls /api/einsatzzentrale/kiosk-page
+                            // auf der Server-Seite 404 gibt.
+                            // Kein synchroner Redirect mehr.
                         }
                     }
                 } catch (e) {}

@@ -679,7 +679,11 @@ _INSTALL_SCRIPT_PATH = _first_existing(
     _Path("/app/scripts/einsatzzentrale-pi/install_einsatzzentrale_kiosk.sh"),
     _Path("/app/backend/static/install_einsatzzentrale_kiosk.sh"),
 )
-_KIOSK_HTML_PATH = _Path("/app/backend/static/einsatzzentrale-kiosk.html")
+_KIOSK_HTML_PATH = _first_existing(
+    _PROJECT_ROOT / "backend" / "static" / "einsatzzentrale-kiosk.html",
+    _Path(__file__).resolve().parent.parent / "static" / "einsatzzentrale-kiosk.html",
+    _Path("/app/backend/static/einsatzzentrale-kiosk.html"),
+)
 
 
 @router.get("/kiosk-page", response_class=PlainTextResponse)
