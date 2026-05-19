@@ -16,6 +16,15 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+### Feb 2026 – Pi-Onboarding Diagnose-Tools (P1, Hardware-Support)
+- 🐛 **Issue:** Neu aufgesetzter Pi (Bookworm 64-bit + DSE P810-Kabel) tauchte nicht im Portal auf. dse5510_sync.service lief, aber endlose Warnungen „Kein Serial-Port verfuegbar". Root Cause: kein DSE/FTDI-Adapter angeschlossen, nur SIM7600-Ports vorhanden.
+- ✅ **Tools für Hardware-Onboarding bereitgestellt (auf Pi via SSH ausführbar, KEINE App-Code-Änderungen):**
+  - `/usr/local/bin/dse-watch` – Live-Monitor (alle 2s): Service-Status, USB-Adapter-Detection (DSE 1b90 + FTDI 0403), `/dev/dse-rs232`-Symlink, ttyUSB-Liste, Port-Lock (lsof), Modbus-Probe FC04@Page 4.
+  - `/usr/local/bin/dse-sweep` – Auto-FTDI-Discovery via `/sys/...idVendor=0403`, legt persistente udev-Regel für `/dev/dse-rs232` an, scannt Slave 1-10 × Baud 9600/19200/38400 × FC03/FC04.
+  - `/usr/local/bin/dse-sweep2` – Erweiterter Sweep auf Slave 10, 1, 2, 5, 100, 200, 247, 253, 254 (DSE Config Address) × Bauds 9600-115200, korrekte GenComm-Register (Page 4 = 1024, Page 7 = 1792), DTR/RTS-Toggle.
+- 🎯 **Root Cause für „funktioniert hier nicht obwohl gleiche Config":** DSE-Display-Port `P810` läuft ab Werk im **„DSE Configuration"**-Modus – antwortet nur auf das proprietäre 5xxx-Suite-Protokoll, **nicht** auf Modbus RTU. Auf funktionierenden Displays ist der Port auf **„Modbus RTU Slave"** umgestellt (`Edit Configuration → Communications → RS232/P810 Port → Mode = Modbus RTU Slave`, Slave-ID 10, Baud 19200). Lösung verifiziert: User hat Display-Config umgestellt → Pi liefert sofort Daten.
+- 📋 **Empfehlung für Roll-out:** „Master Config" (`.dxc`) aus einem funktionierenden DSE 5510 exportieren und vor Auslieferung auf jedes Neugerät flashen. Spart Pi-seitiges Debugging.
+
 ### Feb 2026 – Generator-Diagnose: Page-3-Status-Bits + Page-8 Alarm-Conditions (P0)
 - 🐛 **Bug:** Diagnose-Block zeigte „Keine status_bits in Telemetrie", weil `dse5510_sync.py` Page-3 Reg-6 nicht las. Damit war der echte Alarm-Grund (Niedriger Öldruck, Tank leer, etc.) im Portal nicht sichtbar.
 - ✅ **Pi-Sync (`dse5510_sync.py`):**
