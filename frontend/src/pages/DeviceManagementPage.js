@@ -895,6 +895,11 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
       )}
 
       {/* Topic File Downloads */}
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2 text-[11px] text-amber-900" data-testid="topic-file-update-hint">
+        <strong>Hinweis:</strong> Die Topic-Datei wurde aktualisiert (kWh-Counter P7R4 hinzugefügt).
+        Bitte neu herunterladen und auf jedem DSE890-Gateway erneut hochladen, damit die kWh-Werte
+        im Portal ankommen.
+      </div>
       <div className="flex flex-wrap gap-2">
         {controller && topicInfo ? (
           <Button
