@@ -1458,12 +1458,34 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
             if now - last_insert >= 60:
                 should_insert = True
         else:
-            # Stromerzeuger: check if running
+            # Stromerzeuger: check if running.
+            # WICHTIG: DSE 890 (MQTT-Broker) splittet GenComm-Register auf mehrere
+            # Subtopics: /engine -> rpm/engine_running/coolant/battery/fuel,
+            # /generator -> voltage_l*/current_l*/frequency/energy_kwh. Damit
+            # die Auswertungs-Charts (Spannung/Strom/Frequenz/kWh) gefuellt
+            # werden muessen wir auch dann inserten wenn das AKTUELLE Topic
+            # selbst keine Engine-Daten enthaelt - dafuer ziehen wir den
+            # persistierten Snapshot/Status aus der DB heran.
             is_running = (
                 telemetry_data.get("engine_running") is True
                 or (telemetry_data.get("rpm") or 0) > 0
                 or gen_update.get("status") == "running"
+                or device_update.get("mqtt_status") == "running"
             )
+            if not is_running and not any(k in telemetry_data for k in ("engine_running", "rpm")):
+                cached_dev = await _db.devices.find_one(
+                    {"id": device_id},
+                    {"_id": 0, "mqtt_status": 1,
+                     "latest_snapshot.engine_running": 1,
+                     "latest_snapshot.rpm": 1}
+                )
+                if cached_dev:
+                    if cached_dev.get("mqtt_status") == "running":
+                        is_running = True
+                    else:
+                        snap_cached = cached_dev.get("latest_snapshot") or {}
+                        if snap_cached.get("engine_running") is True or (snap_cached.get("rpm") or 0) > 0:
+                            is_running = True
             if is_running and now - last_insert >= 300:
                 # In Betrieb: every 5 minutes
                 should_insert = True
@@ -1478,6 +1500,22 @@ async def _ingest_telemetry_device(device_id, topic, raw_payload, parsed, timest
                 "source": "mqtt",
                 "raw_topic": topic,
             }
+            # Snapshot-Merge: jede Inserted-Row enthaelt die zuletzt bekannten
+            # Werte ALLER Felder, nicht nur die im aktuellen Subtopic. Sonst
+            # haette eine /generator-Zeile keine coolant/battery-Werte und
+            # eine /engine-Zeile keine voltage/current-Werte -> Chart-Luecken.
+            try:
+                merged_dev = await _db.devices.find_one(
+                    {"id": device_id}, {"_id": 0, "latest_snapshot": 1}
+                )
+                merged_snap = (merged_dev or {}).get("latest_snapshot") or {}
+                for k in _TELEMETRY_KEYS:
+                    v = merged_snap.get(k)
+                    if v is not None:
+                        telemetry[k] = v
+            except Exception as _merge_e:
+                logger.debug(f"snapshot-merge fehlgeschlagen (ignoriert): {_merge_e}")
+            # Aktuelles Payload ueberschreibt gemergte Werte (frischer)
             telemetry.update(telemetry_data)
             await _db.generator_telemetry.insert_one(telemetry)
             _telemetry_insert_cache[generator_id] = now
