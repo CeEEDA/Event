@@ -1,84 +1,48 @@
 {
-  "summary": "Iteration 43 - PDF Document Upload for Serviceplan Testing. Backend: 12/12 tests passed (100%). Frontend: All features verified. PDF upload works, 25MB limit enforced, attachments metadata stored, PDFs display with file icon + download link, images show as thumbnails. 'Anhänge (Fotos & Dokumente)' section renamed correctly. Messkoffer/Kirmeskiste shows reduced plan (2 sections), Stromerzeuger shows full plan (6 sections).",
+  "summary": "Iteration 43 - Backend-Verifikation des DSE 890 MQTT-Subtopic-Split-Fix. 38/38 MQTT/Generator-Tests bestanden (100%). Hauptagent-Fix funktioniert: /engine und /generator Subtopics erzeugen jeweils einen Insert in generator_telemetry, beide Zeilen sind vollstaendig (Snapshot-Merge fuellt alle Felder). Alle Regressionen (Sentinel-Filter, Throttle, Snapshot-Update, Generator-Monitoring, Diagnostics) bleiben gruen.",
   "backend_issues": {
     "critical": [],
-    "minor": []
+    "minor": [
+      {"endpoint": "tests/test_dse890_sentinel_fix_iteration66.py", "issue": "Zwei Tests geben Werte zurueck statt assert (PytestReturnNotNoneWarning) - kein Funktionsfehler"},
+      {"endpoint": "tests/test_generator_permissions.py", "issue": "Setup schlaegt mit 401 fehl weil kunde@test.com nicht existiert - vorher schon broken, nicht im Scope"}
+    ]
   },
-  "frontend_issues": {
-    "ui_bugs": [],
-    "integration_issues": [],
-    "design_issues": []
-  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
   "features_tested": {
-    "backend_pdf_upload": {
-      "POST upload PDF": "PASS - PDF files uploaded successfully with application/pdf content_type",
-      "POST upload JPEG": "PASS - Regression: JPEG images still work",
-      "POST upload PNG": "PASS - Regression: PNG images still work",
-      "25MB file size limit": "PASS - Files >25MB rejected with 400 status",
-      "GET PDF correct content-type": "PASS - PDF served with application/pdf header",
-      "Attachments metadata stored": "PASS - Entry has attachments array with id, filename, content_type, size",
-      "Images array backward compat": "PASS - Images array also populated for backward compatibility"
+    "fix_verification": {
+      "test_dse890_split_topics_produce_full_history_rows": "PASS - /engine und /generator erzeugen je 1 Insert. /generator-Row hat voltage_l1/2/3=230/229.5/230.5, current_l1/2/3=15.0/14.5/15.2, frequency=50.0, energy_kwh=12345 + gemergte Engine-Werte (rpm=1500, coolant_temp=85, battery_voltage=28.0)",
+      "test_running_fallback_via_mqtt_status": "PASS - /generator-Topic ohne rpm/engine_running, aber Device mqtt_status='running' triggert Insert",
+      "test_running_fallback_via_snapshot_engine_running": "PASS - latest_snapshot.engine_running=True triggert Insert auch bei /generator-Topic ohne Engine-Daten",
+      "test_throttle_blocks_double_insert_within_5min": "PASS - 5-Min-Throttle greift (2x engine -> 1 Insert)",
+      "test_snapshot_updated_when_no_insert": "PASS - Offline-Device: kein Insert, aber latest_snapshot wird korrekt aktualisiert"
     },
-    "backend_regression": {
-      "GET /api/serviceplan": "PASS - List returns plans",
-      "GET /api/serviceplan/{id}": "PASS - Detail returns plan with entries",
-      "POST /api/serviceplan/{id}/entries": "PASS - Create entry works",
-      "GET /api/serviceplan/{plan_id}/entries/{entry_id}/images": "PASS - List images works"
-    },
-    "frontend_anhaenge_section": {
-      "Label renamed": "PASS - Shows 'Anhänge (Fotos & Dokumente)' instead of 'Fotos'",
-      "File input accepts PDF": "PASS - accept attribute: image/*,.pdf,application/pdf",
-      "Drop zone present": "PASS - [data-testid='photo-drop-zone'] found",
-      "Hint text": "PASS - 'Fotos oder PDFs hierher ziehen oder auf Anhang klicken'",
-      "Add attachment button": "PASS - [data-testid='add-photo-btn'] with 'Anhang' text"
-    },
-    "frontend_entry_display": {
-      "PDF with icon + download": "PASS - PDFs show FileText icon with red background and download link",
-      "Images as thumbnails": "PASS - Images display as 16x16 thumbnails",
-      "Anhänge section in entry": "PASS - Expanded entry shows 'Anhänge' header with attachments"
-    },
-    "frontend_reduced_vs_full_plan": {
-      "Messkoffer reduced plan": "PASS - Shows 2 sections: 1-Elektrische Prüfung, 2-Diagnose",
-      "Kirmeskiste reduced plan": "PASS - Shows 2 sections: 1-Elektrische Prüfung, 2-Diagnose",
-      "Stromerzeuger full plan": "PASS - Shows 6 sections: 1-Mechanische, 2-Elektrische, 3-Messwerte, 4-Lasttest, 5-ATS, 6-Diagnose"
+    "regression": {
+      "test_dse890_sentinel_fix_iteration66 (11 Tests)": "PASS",
+      "test_generator_monitoring (13 Tests inkl. POST/GET telemetry)": "PASS",
+      "test_generator_diagnostics (3 Tests)": "PASS"
     }
   },
   "test_report_links": [
-    "/app/backend/tests/test_serviceplan_pdf_upload_iteration43.py",
-    "/app/test_reports/pytest/pytest_serviceplan_pdf_iteration43.xml"
+    "/app/backend/tests/test_dse890_mqtt_split_topics.py",
+    "/app/backend/tests/test_dse890_mqtt_fix_iteration43.py",
+    "/app/backend/tests/test_dse890_sentinel_fix_iteration66.py",
+    "/app/backend/tests/test_generator_monitoring.py",
+    "/app/backend/tests/test_generator_diagnostics.py",
+    "/app/test_reports/pytest/pytest_iteration_43.xml"
   ],
   "action_items": [],
   "critical_code_review_comments": [
-    "Backend upload endpoint (lines 297-342) correctly validates file types and size, stores both images and attachments arrays",
-    "File type validation uses both content-type prefix matching for images and explicit application/pdf check",
-    "Frontend input accept attribute correctly includes image/* and .pdf for file selection",
-    "Drop zone onDrop handler filters files by type and size before adding to pending",
-    "EntryCard correctly differentiates PDF (att.content_type === 'application/pdf') from images for display",
-    "PDF download links use target='_blank' with rel='noopener noreferrer' for security"
+    "mqtt_service.py Z. 1469-1492: is_running-Fallback ist sauber - DB-Snapshot wird NUR konsultiert wenn aktuelles Payload weder engine_running noch rpm enthaelt (verhindert Race-Conditions bei expliziet engine_running=False)",
+    "Snapshot-Merge (Z. 1503-1519) ist try/except-gekapselt; telemetry.update(telemetry_data) am Ende sorgt dafuer dass aktuelle Payload-Werte gemergte ueberschreiben (korrekt)",
+    "Hinweis: mqtt_service.py ist 2147 Zeilen lang - sollte mittelfristig in Module gesplittet werden (kein Blocker fuer diesen Fix)"
   ],
-  "updated_files": [
-    "/app/backend/tests/test_serviceplan_pdf_upload_iteration43.py"
-  ],
-  "success_rate": {
-    "backend": "100% (12/12 tests passed)",
-    "frontend": "100% (all features verified)"
-  },
-  "test_credentials": {
-    "admin": "admin@test.com / password"
-  },
-  "seed_data_created": "Test maintenance entries with PDF/image attachments created via backend tests",
+  "updated_files": ["/app/backend/tests/test_dse890_mqtt_fix_iteration43.py (NEU)"],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "Nicht getestet (backend only)"},
+  "test_credentials": {"admin": "admin@test.com / password", "mitarbeiter": "ma1@test.com / password"},
+  "seed_data_creation": "Pro Test temporaere test_dse890_*-Devices, im finally-Block geloescht. Cleanup verifiziert: 0 Test-Devices/-Telemetry in DB nach Lauf.",
   "retest_needed": false,
   "should_main_agent_self_test": false,
-  "context_for_next_testing_agent": "PDF upload feature fully tested. Key findings: 1) POST /api/serviceplan/{plan_id}/entries/{entry_id}/images accepts PDFs up to 25MB, 2) attachments metadata array stored on entry with id, filename, content_type, size, 3) GET /api/serviceplan/images/{id} returns correct content-type, 4) Frontend shows 'Anhänge (Fotos & Dokumente)' section, 5) PDFs display with FileText icon + download link, images as thumbnails, 6) Messkoffer/Kirmeskiste have reduced plan (sections 1+2 = electrical+diagnosis), 7) Stromerzeuger has full plan (all 6 sections). Test file: /app/backend/tests/test_serviceplan_pdf_upload_iteration43.py",
-  "mocked_apis": {
-    "has_mocked_apis": false,
-    "mocked_apis_list": []
-  },
-  "verification_screenshots": {
-    "serviceplan_list": "Shows 7 devices including Kirmeskiste, Messkoffer, Stromerzeuger",
-    "kirmeskiste_form": "Reduced plan with 2 sections (Elektrische Prüfung, Diagnose)",
-    "stromerzeuger_form": "Full plan with 6 sections (Mechanische, Elektrische, Messwerte, Lasttest, ATS, Diagnose)",
-    "anhaenge_section": "Label 'Anhänge (Fotos & Dokumente)', drop zone with hint 'Fotos oder PDFs hierher ziehen'",
-    "entry_with_attachments": "Shows test_document.pdf, download_test.pdf, metadata_test.pdf with icons + thumbnails"
-  }
+  "context_for_next_testing_agent": "DSE 890 MQTT-Subtopic-Split-Fix verifiziert. Neue Tests: test_dse890_mqtt_fix_iteration43.py (Throttle, mqtt_status-Fallback, Snapshot-Fallback, Snapshot-Update). Command: MONGO_URL=mongodb://localhost:27017 DB_NAME=test_database REACT_APP_BACKEND_URL=<env> pytest tests/test_dse890_mqtt_split_topics.py tests/test_dse890_mqtt_fix_iteration43.py tests/test_dse890_sentinel_fix_iteration66.py tests/test_generator_monitoring.py tests/test_generator_diagnostics.py -v. Hinweis: test_generator_permissions.py schlaegt fehl weil kunde@test.com User fehlt - pre-existing, nicht Scope dieses Reviews.",
+  "mocked_apis": {"has_mocked_apis": false, "mocked_apis_list": []},
+  "rca_of_the_issue": "Bug: _ingest_telemetry_device bestimmte is_running nur aus aktuellem MQTT-Payload (engine_running/rpm). DSE 890 splittet Register auf /engine (rpm/coolant/battery) und /generator (voltage/current/frequency/energy_kwh). /generator hat kein rpm -> is_running=False -> kein Insert -> leere Charts fuer V/A/Hz/kWh. Fix: (1) DB-Snapshot-Fallback fuer is_running wenn aktuelles Topic keine Engine-Felder hat; (2) Snapshot-Merge auf jeden Insert damit jede Zeile alle Felder enthaelt. Verifiziert durch 5 dedizierte + 33 Regression-Tests."
 }
