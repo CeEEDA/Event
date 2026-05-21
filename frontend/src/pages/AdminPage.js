@@ -287,7 +287,10 @@ export default function AdminPage() {
       setUsers(usersRes.data);
       setStats(statsRes.data);
       setAllGenerators(gensRes.data);
-      setAllMesskoffer(devicesRes.data.filter(d => d.device_type === "messkoffer"));
+      // Geister-Messkoffer ausblenden: nur Geraete mit last_seen (= jemals verbunden)
+      setAllMesskoffer(
+        devicesRes.data.filter(d => d.device_type === "messkoffer" && d.last_seen)
+      );
     } catch (error) {
       toast.error("Fehler beim Laden der Daten");
     } finally {

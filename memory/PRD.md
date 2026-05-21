@@ -696,3 +696,6 @@ User language: **German** (Agent must respond in German).
 
 ### Verworfen / nicht benötigt
 - ~~Übersichtskachel auf der Startseite für 8Z-Pis (X von 12 Pis online, Y mit schwachem Signal, Z ohne GPS-Fix)~~ — vom User als nicht benötigt gestrichen (Mai 2026).
+
+## Changelog – Mai 2026 (Patches)
+- 2026-05-21: AdminPage Benutzerverwaltung: Geister-Messkoffer (ohne `last_seen`) werden in der Messkoffer-Berechtigungs-Auswahl (`AdminPage.js` Z.290) jetzt ausgeblendet. Filter: `device_type === "messkoffer" && d.last_seen`. Backend `/api/devices` enriched `last_seen` aus `emu_data` (Pi-Sync-Source-of-Truth) für Messkoffer.
