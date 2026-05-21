@@ -194,6 +194,12 @@ async def list_energy_devices(
         if online_only and not device["is_online"]:
             continue
 
+        # Geister-Devices ausblenden: nie verbunden + keine Messdaten
+        # (User koennte die in der Geraeteverwaltung anlegen aber nie ins Feld
+        # bringen - sollen nicht im Energy-Monitoring auftauchen)
+        if not device.get("last_seen") and not latest:
+            continue
+
         result.append(device)
 
     return result

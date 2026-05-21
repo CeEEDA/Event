@@ -174,7 +174,6 @@ export default function EnergyMonitoringPage() {
   });
 
   const onlineCount = devices.filter(d => d.is_online).length;
-  const totalPower = devices.reduce((sum, d) => sum + (d.latest_data?.P_sum_kW || 0), 0);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="energy-monitoring-page">
@@ -213,7 +212,7 @@ export default function EnergyMonitoringPage() {
       <main className="flex-1 p-4 md:p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-fuchsia-100 flex items-center justify-center">
@@ -233,30 +232,6 @@ export default function EnergyMonitoringPage() {
                 <div>
                   <p className="text-2xl font-bold text-gray-900">{onlineCount}</p>
                   <p className="text-xs text-gray-500">Online</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{Math.round(totalPower * 100) / 100}</p>
-                  <p className="text-xs text-gray-500">kW Gesamt</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <BarChart3 className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {Math.round(devices.reduce((s, d) => s + (d.latest_data?.E_imp_kWh || 0), 0) * 10) / 10}
-                  </p>
-                  <p className="text-xs text-gray-500">kWh Import</p>
                 </div>
               </div>
             </div>
