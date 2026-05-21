@@ -16,6 +16,37 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 ## Implementation Log
+
+### Mai 2026 – Soll/Ist-Arbeitszeit-Übersicht für Mitarbeiter (P1, Feature)
+- ✅ **Backend** (`/app/backend/routes/employee.py` Z.1163-1300): Neuer Endpoint `GET /api/employee/time/overview?token=<token>` liefert: today/week mit Soll/Ist/Diff in Minuten, next_7_days mit is_holiday-Flags, overtime_hours, has_schedule. Berlin-Timezone-aware, Feiertage RLP (Karfreitag, Ostermontag, Pfingstmontag, Fronleichnam, Allerheiligen + Fix-Tage) → Soll=0. Offene Stempelungen werden live mitgerechnet (`now - clock_in - break_min`).
+- ✅ **Frontend Komponente** (`/app/frontend/src/components/WorkTimeOverview.jsx`): zwei Varianten via `compact`-Prop. Live-Refresh alle 60s + `refreshKey` triggert sofortigen Reload nach Stempel-Aktion.
+- ✅ **HubPage**: Kompakte Variante unter Swipe-Slider eingebunden – Heute/Woche Soll/Ist + Feiertags-Banner.
+- ✅ **ArbeitszeitPage**: Ausführliche Variante mit Wochenstreifen Mo-So (farbcodiert: grün=erreicht, sky=teil, lila=Feiertag) + 7-Tage-Vorschau + Stundenkonto-Karte.
+- ✅ **Tests** (iteration 69): 12/12 PASS. Pfingstmontag 25.5.2026 als Feiertag erkannt, has_schedule=false ohne Crash, Live-Stempelung wird in today.ist_minutes eingerechnet, Auth-Edge-Cases (invalid/empty/missing token).
+- ⚠️ Code-Smell aus Review behoben: dead `_ = br`-Variable entfernt + Break-Abzug konsistent zu `_apply_break_deduction` gemacht (nur wenn live_mins > break_min).
+
+### Mai 2026 – DSE 890 kWh-Counter Topic-File-Fix (P0, Bug)
+- 🐛 **Bug**: DSE 8610 MK2 / DSE 890 Gateways publishen den kWh-Counter (Page 7 Register 4) nie via MQTT, weil die Topic-File `dse_universal_module_topics.csv` keine Subscription für P7R4 enthielt. Parser in `mqtt_service.py` Z.1892 erwartete den Wert, aber er kam nie an → "0,0 kWh" Start/Ende/Verbrauch auf der Auswertungsseite.
+- ✅ **Fix in 3 CSV-Dateien**: `dse_universal_module_topics.csv` (Universal, via `/api/download-controller-topics`), `dse8610_module_topics.csv` (Legacy, in /app/ und /app/backend/static/) → kWh-Zeile + Hours/Starts ergänzt: `%GROUP%/%TYPE%/%UID%/hours,,P,,120,0,,,1,7,4,2,0,,,,,,Generator total energy kWh`.
+- ✅ **Frontend Hinweis** in `DeviceManagementPage.js`: Gelbes Banner über Download-Buttons informiert Admin dass Topic-File neu aufs Gateway hochgeladen werden muss.
+- ⚠️ **User-Action erforderlich**: Topic-File aus Portal downloaden + via DSE WebNet Suite auf jedes DSE 890 Gateway neu hochladen.
+
+### Mai 2026 – DSE 890 MQTT Subtopic-Split Telemetry-Bug (P0, Bug)
+- 🐛 **Bug**: Generatoren mit DSE 890 + MQTT-Broker zeigten in der Auswertung leere Charts für Spannung/Strom/Frequenz/kWh, während Batterie/Tankstand/Temperatur funktionierten.
+- 🔍 **Ursache**: DSE 890 splittet GenComm-Register auf separate Subtopics (`/engine` = rpm/coolant/battery, `/generator` = voltage/current/freq/kWh). In `_ingest_telemetry_device` (mqtt_service.py) wurde `is_running` nur aus dem aktuellen Payload bestimmt → `/generator`-Topic ohne `rpm/engine_running` → `is_running=False` → kein Insert in `generator_telemetry`.
+- ✅ **Fix in `mqtt_service.py`** Z.1462-1525: (1) `is_running`-Fallback aus persistiertem `mqtt_status` + `latest_snapshot.engine_running/rpm` der Device-Collection, (2) Snapshot-Merge auf jeden Insert → jede History-Zeile enthält alle Felder gleichzeitig.
+- ✅ **Tests**: 38/38 PASS (iteration 43). Neue Regression-Tests `test_dse890_mqtt_split_topics.py` + `test_dse890_mqtt_fix_iteration43.py`. Alle bestehenden DSE890-/Generator-Monitoring-Tests grün.
+
+### Mai 2026 – ADR-Karte + Kranschein im Dokumente-Bereich
+- ✅ Frontend-DOC_TYPES-Listen in `AdminZeitDetailPage.jsx`, `ProfilePage.jsx`, `EmployeeAdminPage.jsx` um `adr_karte` und `kranschein` ergänzt. Backend hatte beide Keys bereits in `DOCUMENT_TYPES`/`DOCUMENT_LABELS` (employee.py Z.24-25, 38-39). Upload+Ablauf-Tracking funktioniert automatisch über DOC_TYPES-Schleife.
+
+### Mai 2026 – OTA-Update-Mechanik für Tankbeleg-Pi vollständig verifiziert
+- ✅ Backend `/app/backend/routes/ota_updates.py`: Check/Download/Force-Update für 5 Gerätetypen (kirmeskiste, kirmeskiste_8z, messkoffer, dse, tankwagen). 41 Geräte registriert, 9 Tankwagen-Pis flaggable via `force-update-all`.
+- ✅ Pi-Client `tankbeleg_pi.py` Z.1311-1394: Pollt zyklisch + beim Start, lädt Skript, validiert SHA-256, atomic replace + systemd-Restart.
+- ✅ Admin-UI `AdminSettingsPage.js` Z.1284+: Per-Device + Bulk Force-Update mit data-testids.
+
+
+## Implementation Log
 ### Feb 2026 – Reisekosten / Verpflegungsmehraufwand-Modul (P1, Feature)
 - ✅ **Komplettes Reisekosten-Modul nach §9 EStG** (Inland-Pauschalen 2026: 28€ voll / 14€ teil + KM-Pauschale 0,30€/km, 24 Länder hardcoded mit BMF-2026-Sätzen).
 - ✅ **Backend** (`/app/backend/routes/travel_expenses.py`): Live-Preview-Endpoint, CRUD mit Multi-Part-Belege-Upload (max 6 à 10MB, base64 in MongoDB), Approve/Reject-Workflow, PDF-Reisekostenabrechnung pro Reise (reportlab), Excel-Monatsauswertung für Steuerbüro (openpyxl), Mahlzeiten-Kürzung (Frühstück -20%, Mittag/Abend -40% der vollen Tagespauschale).

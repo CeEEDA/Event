@@ -1216,13 +1216,13 @@ async def get_time_overview(token: str = Query(...)):
                 if ci.tzinfo is None:
                     ci = ci.replace(tzinfo=timezone.utc)
                 live_mins = max(0, (datetime.now(timezone.utc) - ci).total_seconds() / 60.0)
-                # Pause vom Wochenplan abziehen (best-effort)
+                # Pause vom Wochenplan abziehen - nur wenn live_mins die Pause
+                # bereits ueberschritten hat (konsistent mit _apply_break_deduction).
                 wd_now = ci.astimezone(_berlin).weekday()
-                br = _soll_minutes_from_schedule(schedule, wd_now)  # nur als Hint; wir nutzen sched-break
                 day_sched = (schedule or {}).get("days", {}).get(_WEEKDAY_MAP.get(wd_now, ""), {}) or {}
                 break_min = int(day_sched.get("break_min") or 0)
-                _ = br  # silence linter
-                ist_by_date[d] = ist_by_date.get(d, 0.0) + max(0, live_mins - break_min)
+                effective = live_mins - break_min if live_mins > break_min else live_mins
+                ist_by_date[d] = ist_by_date.get(d, 0.0) + max(0, effective)
             except (ValueError, TypeError):
                 pass
         else:
