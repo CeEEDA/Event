@@ -19,35 +19,57 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "static"))
 
 
 def test_decode_float_reverse_word_230v():
-    """230.0 V als FLOAT REVERSE WORD (MSB.LSB) -> Word-Swap = CDAB.
+    """230.0 V als ABCD (Big-Endian Word-Order, Standard IEEE754):
     Big-Endian-Float fuer 230.0 = 0x43660000.
-    Reverse-Word => words = [0x0000, 0x4366] (low word first).
+    word_high = 0x4366, word_low = 0x0000 -> words = [0x4366, 0x0000].
     """
-    from messkoffer_logger import _decode_float_reverse_word
+    from messkoffer_logger import _decode_float_reverse_word, CFG
 
+    CFG["modbus_float_format"] = "abcd"
     expected = 230.0
-    # Standard IEEE754 big-endian: ABCD = 43 66 00 00
-    # word_high = 0x4366, word_low = 0x0000
-    # Reverse-Word in Modbus = (low_word, high_word) -> [0x0000, 0x4366]
-    val = _decode_float_reverse_word([0x0000, 0x4366])
+    val = _decode_float_reverse_word([0x4366, 0x0000])
     assert abs(val - expected) < 0.01, f"230V erwartet, bekommen {val}"
 
 
 def test_decode_float_reverse_word_50hz():
-    from messkoffer_logger import _decode_float_reverse_word
+    from messkoffer_logger import _decode_float_reverse_word, CFG
+    CFG["modbus_float_format"] = "abcd"
     expected = 50.0
     # 50.0 = 0x42480000 -> word_high=0x4248, word_low=0x0000
-    val = _decode_float_reverse_word([0x0000, 0x4248])
+    val = _decode_float_reverse_word([0x4248, 0x0000])
     assert abs(val - expected) < 0.01, f"50Hz erwartet, bekommen {val}"
 
 
 def test_decode_float_reverse_word_15_5_kw():
-    """Nicht-runder Wert um Genauigkeit zu testen."""
-    from messkoffer_logger import _decode_float_reverse_word
+    from messkoffer_logger import _decode_float_reverse_word, CFG
+    CFG["modbus_float_format"] = "abcd"
     expected = 15.5
     # 15.5 = 0x41780000
-    val = _decode_float_reverse_word([0x0000, 0x4178])
+    val = _decode_float_reverse_word([0x4178, 0x0000])
     assert abs(val - expected) < 0.01
+
+
+def test_decode_float_cdab_format():
+    """Backward-Kompatibilitaet: falls ein anderes Geraet CDAB-Format
+    nutzt, muss die Konfig-Option das umstellen koennen."""
+    from messkoffer_logger import _decode_float_reverse_word, CFG
+    CFG["modbus_float_format"] = "cdab"
+    val = _decode_float_reverse_word([0x0000, 0x4366])
+    assert abs(val - 230.0) < 0.01
+    CFG["modbus_float_format"] = "abcd"
+
+
+def test_autodetect_float_format_from_frequency():
+    """Auto-Detect erkennt ABCD aus 50 Hz-Probe-Words."""
+    import messkoffer_logger as ml
+    ml._detected_float_format = None
+    ml.CFG["modbus_float_format"] = "auto"
+    fmt = ml._autodetect_float_format([0x4248, 0x0000])
+    assert fmt == "abcd"
+    assert ml._detected_float_format == "abcd"
+    # Cleanup fuer andere Tests
+    ml._detected_float_format = None
+    ml.CFG["modbus_float_format"] = "abcd"
 
 
 def test_decode_float_reverse_word_invalid_length():

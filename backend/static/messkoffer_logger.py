@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.4"
+SCRIPT_VERSION = "2.0.5"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -70,6 +70,7 @@ def load_config():
         "modbus_stopbits": 1,
         "modbus_bytesize": 8,
         "modbus_timeout": 2.0,
+        "modbus_float_format": "auto",   # auto | abcd | cdab | badc | dcba
         # Portal
         "api_url": "",
         "device_key": "",
@@ -236,19 +237,81 @@ REGISTERS = {
 PF_REGISTER = (0x41D, 1)  # Average PF (int hex set)
 
 
-def _decode_float_reverse_word(words):
-    """Float (REVERSE WORD, MSB.LSB) aus 2 16-bit Modbus-Registern.
+_detected_float_format = None  # nach erster erfolgreicher Erkennung gemerkt
 
-    Doku: "FLOAT REVERSE WORD MSB.LSB" = Bytes pro Word sind big-endian,
-    aber die beiden Words sind getauscht (CDAB statt ABCD).
+
+def _try_all_float_formats(words):
+    """Probiert alle 4 Byte/Word-Orderings durch und gibt Liste (fmt, value)
+    fuer die Heuristik zurueck."""
+    import struct
+    if len(words) != 2:
+        return []
+    w0, w1 = words[0] & 0xFFFF, words[1] & 0xFFFF
+    w0b = ((w0 & 0xFF) << 8) | ((w0 >> 8) & 0xFF)
+    w1b = ((w1 & 0xFF) << 8) | ((w1 >> 8) & 0xFF)
+    candidates = {
+        "abcd": (w0 << 16) | w1,
+        "cdab": (w1 << 16) | w0,
+        "badc": (w0b << 16) | w1b,
+        "dcba": (w1b << 16) | w0b,
+    }
+    out = []
+    for fmt, raw in candidates.items():
+        try:
+            v = struct.unpack(">f", raw.to_bytes(4, "big"))[0]
+            out.append((fmt, v))
+        except Exception:
+            pass
+    return out
+
+
+def _autodetect_float_format(freq_words):
+    """Probe-Heuristik: anhand der Frequenz-Register (sollte ~50 Hz sein)
+    ermitteln welches Byte/Word-Ordering verwendet wird. Wird einmalig
+    aufgerufen und das Ergebnis gecached. Fallback: 'abcd'.
+    """
+    global _detected_float_format
+    for fmt, val in _try_all_float_formats(freq_words):
+        if val is not None and 45.0 <= val <= 65.0:
+            _detected_float_format = fmt
+            log.info(f"Float-Format erkannt: {fmt.upper()} (Frequenz-Probe = {val:.2f} Hz)")
+            return fmt
+    log.warning(f"Float-Format Auto-Detect fehlgeschlagen aus Frequenz-Words {freq_words}, fallback ABCD")
+    _detected_float_format = "abcd"
+    return "abcd"
+
+
+def _decode_float_reverse_word(words):
+    """IEEE754 32-bit Float aus 2 Modbus 16-bit Registern dekodieren.
+
+    Das Byte-/Word-Ordering wird ueber CFG['modbus_float_format'] gesteuert
+    ('auto' | 'abcd' | 'cdab' | 'badc' | 'dcba'). Im Modus 'auto' wird beim
+    ersten Read das Format anhand der Frequenz-Register (sollte ~50 Hz sein)
+    automatisch erkannt und gecached.
     """
     import struct
     if len(words) != 2:
         return None
-    # Word-Swap -> Big-Endian-Float
-    swapped = (words[1] << 16) | words[0]
+    fmt = (CFG.get("modbus_float_format") or "auto").lower()
+    if fmt == "auto":
+        fmt = _detected_float_format or "abcd"
+    w0, w1 = words[0] & 0xFFFF, words[1] & 0xFFFF
+    if fmt == "abcd":
+        raw32 = (w0 << 16) | w1
+    elif fmt == "cdab":
+        raw32 = (w1 << 16) | w0
+    elif fmt == "badc":
+        w0 = ((w0 & 0xFF) << 8) | ((w0 >> 8) & 0xFF)
+        w1 = ((w1 & 0xFF) << 8) | ((w1 >> 8) & 0xFF)
+        raw32 = (w0 << 16) | w1
+    elif fmt == "dcba":
+        w0 = ((w0 & 0xFF) << 8) | ((w0 >> 8) & 0xFF)
+        w1 = ((w1 & 0xFF) << 8) | ((w1 >> 8) & 0xFF)
+        raw32 = (w1 << 16) | w0
+    else:
+        raw32 = (w0 << 16) | w1
     try:
-        return struct.unpack(">f", swapped.to_bytes(4, "big"))[0]
+        return struct.unpack(">f", raw32.to_bytes(4, "big"))[0]
     except (struct.error, OverflowError):
         return None
 
@@ -422,6 +485,15 @@ def read_rayleigh():
 
     out = {}
     try:
+        # Block E ZUERST: Frequenz (0x36) - dient als Probe fuer Float-
+        # Byte-Order-Auto-Erkennung. Muss vor allen anderen Bloecken laufen
+        # damit die folgenden Decodes das korrekte Format nutzen.
+        be = _safe_read(0x36, 2)
+        if be and len(be) >= 2:
+            if (CFG.get("modbus_float_format") or "auto").lower() == "auto" and _detected_float_format is None:
+                _autodetect_float_format(be)
+            out["frequency"] = _decode_float_reverse_word(be)
+
         # Block A: Spannung L1/L2/L3 (0x00..0x05) = 6 Register
         ba = _safe_read(0x00, 6)
         if ba and len(ba) >= 6:
@@ -448,11 +520,6 @@ def read_rayleigh():
         if bd and len(bd) >= 4:
             out["total_kw"] = _decode_float_reverse_word(bd[0:2])
             out["total_kva"] = _decode_float_reverse_word(bd[2:4])
-
-        # Block E: Frequenz (0x36) = 2 Register
-        be = _safe_read(0x36, 2)
-        if be and len(be) >= 2:
-            out["frequency"] = _decode_float_reverse_word(be)
 
         # Block F: Energie kWh Import (0x60) + Export (0x62) = 4 Register
         bf = _safe_read(0x60, 4)
