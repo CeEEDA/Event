@@ -22,6 +22,8 @@ const DOC_TYPES = [
   { key: "hubarbeitsbuehne", label: "Hubarbeitsbühne", icon: "🔧" },
   { key: "teleskoplader", label: "Teleskoplader", icon: "🚜" },
   { key: "baumaschine", label: "Baumaschine", icon: "🚧" },
+  { key: "adr_karte", label: "ADR-Karte", icon: "☣️" },
+  { key: "kranschein", label: "Kranschein", icon: "🏗️" },
 ];
 
 const DOCUMENT_LABELS = {};

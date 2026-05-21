@@ -22,6 +22,8 @@ const DOC_TYPES = [
   { key: "hubarbeitsbuehne", label: "Hubarbeitsbühne", icon: "lift" },
   { key: "teleskoplader", label: "Teleskoplader", icon: "tele" },
   { key: "baumaschine", label: "Baumaschine", icon: "machine" },
+  { key: "adr_karte", label: "ADR-Karte", icon: "adr" },
+  { key: "kranschein", label: "Kranschein", icon: "crane" },
 ];
 
 export default function EmployeeAdminPage() {

@@ -138,6 +138,8 @@ export default function AdminZeitDetailPage() {
     { key: "hubarbeitsbuehne", label: "Hubarbeitsbühne" },
     { key: "teleskoplader", label: "Teleskoplader" },
     { key: "baumaschine", label: "Baumaschine" },
+    { key: "adr_karte", label: "ADR-Karte" },
+    { key: "kranschein", label: "Kranschein" },
   ];
   const [docs, setDocs] = useState([]);
   const [uploadingDoc, setUploadingDoc] = useState(null);
