@@ -271,6 +271,11 @@ async def pi_check_update(device_type: str, request: Request):
     force_update = bool(existing and existing.get("force_update"))
     needs_update = (current_hash != repo_hash) or force_update
 
+    # Wenn der Pi nach einem Force-Update den korrekten Hash meldet, das Flag
+    # automatisch zuruecksetzen - sonst pullt der Pi sich bei jedem OTA-Check
+    # erneut selbst und endet im Restart-Loop.
+    auto_clear_force = bool(force_update and current_hash and current_hash == repo_hash)
+
     device_label = pi_hostname or f"{device_type.capitalize()} {pi_id[:8]}"
     await db.ota_checkins.update_one(
         {"device_id": pi_id},
@@ -437,4 +442,6 @@ async def cancel_force_update(device_id: str, admin=Depends(_auth_admin)):
     )
     if result.matched_count == 0:
         raise HTTPException(404, f"Geraet '{device_id}' nicht gefunden")
+    return {"status": "force-update abgebrochen", "device_id": device_id}
+
     return {"status": "force-update abgebrochen", "device_id": device_id}
