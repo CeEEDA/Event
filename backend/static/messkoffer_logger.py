@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.1.0"
+SCRIPT_VERSION = "2.1.1"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -506,70 +506,64 @@ def read_rayleigh():
 
     out = {}
     try:
-        # Block E ZUERST: Frequenz (0x38) - dient als Probe fuer Float-
-        # Byte-Order-Auto-Erkennung. Muss vor allen anderen Bloecken laufen
-        # damit die folgenden Decodes das korrekte Format nutzen.
+        # WICHTIG: Diag v2 hat empirisch gezeigt, dass der RI-F100-C ueber FC04
+        # nur Einzel-Float-Reads (2 Register pro Read) beantwortet. Block-Reads
+        # mit mehr als 2 Registern wurden hier frueher genutzt (Block A=6,
+        # Block B=6, ...) aber fuehrten zu kompletten Timeouts/Fehlern auf
+        # dem realen Meter. Daher: jedes Float einzeln lesen.
+
+        def _read_float(addr):
+            words = _safe_read(addr, 2)
+            if not words or len(words) < 2:
+                return None
+            return _decode_float_reverse_word(words)
+
+        # Frequenz (0x38) ZUERST: optional fuer Auto-Detect des Float-Formats.
         # WICHTIG: Frequenz liegt an 0x38 (30056), NICHT an 0x36 (das ist Avg PF)!
         be = _safe_read(0x38, 2)
         if be and len(be) >= 2:
             if (CFG.get("modbus_float_format") or "auto").lower() == "auto" and _detected_float_format is None:
                 _autodetect_float_format(be)
             out["frequency"] = _decode_float_reverse_word(be)
-            # Diagnose-Log: bei jedem Probe-Read zeigen wir die Rohwerte, damit
-            # man bei Bedarf rueckwaerts pruefen kann ob Float-Decoding stimmt.
             try:
                 fmt = _detected_float_format or "?"
                 log.debug(f"Probe-Read Freq @0x38 raw={be} fmt={fmt} -> {out['frequency']!r}")
             except Exception:
                 pass
 
-        # Block A: Spannung L1/L2/L3 (0x00..0x05) = 6 Register
-        ba = _safe_read(0x00, 6)
-        if ba and len(ba) >= 6:
-            out["voltage_l1"] = _decode_float_reverse_word(ba[0:2])
-            out["voltage_l2"] = _decode_float_reverse_word(ba[2:4])
-            out["voltage_l3"] = _decode_float_reverse_word(ba[4:6])
+        # Spannung L1/L2/L3 (einzeln je 2 Register)
+        out["voltage_l1"] = _read_float(0x00)
+        out["voltage_l2"] = _read_float(0x02)
+        out["voltage_l3"] = _read_float(0x04)
 
-        # Block B: Strom L1/L2/L3 (0x10..0x15) = 6 Register
-        bb = _safe_read(0x10, 6)
-        if bb and len(bb) >= 6:
-            out["current_l1"] = _decode_float_reverse_word(bb[0:2])
-            out["current_l2"] = _decode_float_reverse_word(bb[2:4])
-            out["current_l3"] = _decode_float_reverse_word(bb[4:6])
+        # Strom L1/L2/L3
+        out["current_l1"] = _read_float(0x10)
+        out["current_l2"] = _read_float(0x12)
+        out["current_l3"] = _read_float(0x14)
 
-        # Block C: Leistung L1/L2/L3 (0x18..0x1D) = 6 Register
-        bc = _safe_read(0x18, 6)
-        if bc and len(bc) >= 6:
-            out["power_l1_kw"] = _decode_float_reverse_word(bc[0:2])
-            out["power_l2_kw"] = _decode_float_reverse_word(bc[2:4])
-            out["power_l3_kw"] = _decode_float_reverse_word(bc[4:6])
+        # Leistung L1/L2/L3 (kW)
+        out["power_l1_kw"] = _read_float(0x18)
+        out["power_l2_kw"] = _read_float(0x1A)
+        out["power_l3_kw"] = _read_float(0x1C)
 
-        # Block D: Total kW (0x2A) + Total kVA (0x2C) = 4 Register
-        bd = _safe_read(0x2A, 4)
-        if bd and len(bd) >= 4:
-            out["total_kw"] = _decode_float_reverse_word(bd[0:2])
-            out["total_kva"] = _decode_float_reverse_word(bd[2:4])
+        # Total kW + Total kVA
+        out["total_kw"] = _read_float(0x2A)
+        out["total_kva"] = _read_float(0x2C)
 
-        # Block F: Energie kWh Import (0x60) + Export (0x62) = 4 Register
-        bf = _safe_read(0x60, 4)
-        if bf and len(bf) >= 4:
-            out["energy_imp_kwh"] = _decode_float_reverse_word(bf[0:2])
-            out["energy_exp_kwh"] = _decode_float_reverse_word(bf[2:4])
+        # Energie kWh Import (0x60) + Export (0x62) - existiert evtl. nicht
+        # auf jedem Meter, _safe_read fangt das Exception silent ab.
+        out["energy_imp_kwh"] = _read_float(0x60)
+        out["energy_exp_kwh"] = _read_float(0x62)
 
-        # Block G: Average Power Factor (Float Reverse Word @ 0x36, 2 Register)
-        bg = _safe_read(0x36, 2)
-        if bg and len(bg) >= 2:
-            try:
-                pf_val = _decode_float_reverse_word(bg)
-                # Plausibilitaet: PF muss zwischen -1.0 und 1.0 liegen
-                if pf_val is not None and -1.5 <= pf_val <= 1.5:
-                    out["avg_pf"] = pf_val
-                else:
-                    out["avg_pf"] = None
-            except Exception as pf_e:
-                log.debug(f"PF-Decode fehlgeschlagen (ignoriert): {pf_e}")
+        # Average Power Factor (Float Reverse Word @ 0x36)
+        try:
+            pf_val = _read_float(0x36)
+            if pf_val is not None and -1.5 <= pf_val <= 1.5:
+                out["avg_pf"] = pf_val
+            else:
                 out["avg_pf"] = None
-        else:
+        except Exception as pf_e:
+            log.debug(f"PF-Decode fehlgeschlagen (ignoriert): {pf_e}")
             out["avg_pf"] = None
 
         # Wenn KEINE der primaeren Bloecke geantwortet hat, ist die Verbindung
