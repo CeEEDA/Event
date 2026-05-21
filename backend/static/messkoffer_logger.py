@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.2"
+SCRIPT_VERSION = "2.0.3"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -328,17 +328,28 @@ def _auto_detect_modbus_port() -> str:
 def _create_modbus_client():
     if not MODBUS_AVAILABLE:
         return None
-    # 1. Wenn konfigurierter Port nicht existiert oder noch keiner gefunden:
-    #    Auto-Detect ueber alle USB-Seriell-Ports
     port = CFG.get("modbus_port") or ""
-    if not port or not os.path.exists(port):
-        if port:
+
+    # Robust: nicht nur pruefen ob File-Path existiert, sondern auch ob der
+    # Slave tatsaechlich antwortet. Wenn /dev/rayleigh z.B. als Stub-Symlink
+    # angelegt wurde oder auf das GPS-Geraet zeigt, wuerden Reads dauerhaft
+    # fehlschlagen ohne dass Auto-Detect ausgeloest wird.
+    port_works = False
+    if port and os.path.exists(port):
+        log.info(f"Pruefe konfigurierten Port: {port}")
+        port_works = _probe_port(port)
+        if not port_works:
+            log.warning(f"Konfigurierter Port '{port}' antwortet nicht - starte Auto-Detect ueber alle USB-Seriell-Ports")
+
+    if not port_works:
+        if port and not os.path.exists(port):
             log.warning(f"Konfigurierter Port '{port}' existiert nicht - starte Auto-Detect")
         detected = _auto_detect_modbus_port()
         if detected:
             port = detected
         else:
             return None
+
     try:
         instr = minimalmodbus.Instrument(port, CFG["modbus_slave_id"])
         instr.serial.baudrate = CFG["modbus_baudrate"]
@@ -349,6 +360,7 @@ def _create_modbus_client():
         instr.serial.timeout = CFG["modbus_timeout"]
         instr.mode = minimalmodbus.MODE_RTU
         instr.clear_buffers_before_each_transaction = True
+        log.info(f"Modbus-Verbindung aktiv: {port} @ {CFG['modbus_baudrate']} Slave {CFG['modbus_slave_id']}")
         return instr
     except Exception as e:
         log.error(f"Modbus-Init Fehler ({port}): {e}")
@@ -494,9 +506,9 @@ def logger_loop():
     last_cleanup = time.time()
 
     log.info(
-        f"Logger gestartet: Rayleigh {CFG['modbus_port']} @ "
+        f"Logger gestartet: Rayleigh konfiguriert={CFG['modbus_port']} @ "
         f"{CFG['modbus_baudrate']} 8{CFG['modbus_parity']}{CFG['modbus_stopbits']} "
-        f"Slave {CFG['modbus_slave_id']} - {CFG['log_interval']}s Polling"
+        f"Slave {CFG['modbus_slave_id']} - {CFG['log_interval']}s Polling (Auto-Detect aktiv)"
     )
 
     while True:
