@@ -1161,6 +1161,141 @@ async def get_time_entries(token: str = Query(...), user_id: Optional[str] = Non
     return entries
 
 
+@router.get("/time/overview")
+async def get_time_overview(token: str = Query(...)):
+    """Soll/Ist-Uebersicht fuer den aktuellen User.
+    Liefert taegliche Soll/Ist + woechentliche Soll/Ist + 7-Tage-Vorschau +
+    Stundenkonto-Saldo + Feiertags-Info. Wird auf HubPage (kompakt) und
+    ArbeitszeitPage (ausfuehrlich) angezeigt damit Mitarbeiter beim Stempeln
+    direkt sehen ob sie schon das Soll erreicht haben.
+    """
+    from datetime import date as _date, timedelta
+    import zoneinfo as _zi
+
+    user = await _get_user(token)
+    user_id = user["id"]
+
+    _berlin = _zi.ZoneInfo("Europe/Berlin")
+    now_berlin = datetime.now(timezone.utc).astimezone(_berlin)
+    today = now_berlin.date()
+    year = today.year
+
+    # Wochenplan einmal laden (synchroner Helper braucht das Dict)
+    schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+
+    # Feiertage des Jahres und des Folgejahres (fuer 7-Tage-Vorschau ueber
+    # Jahreswechsel)
+    holidays = _get_holidays(year)
+    if (today + timedelta(days=7)).year != year:
+        holidays = {**holidays, **_get_holidays(year + 1)}
+
+    # Wochenstart (Montag) ... Sonntag
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    # Ist-Minuten pro Datum dieser Woche (aus time_entries)
+    week_from = week_start.isoformat()
+    week_to = (week_end + timedelta(days=1)).isoformat()  # exklusiv
+    ist_by_date: dict = {}
+    cursor = db.time_entries.find(
+        {"user_id": user_id, "date": {"$gte": week_from, "$lt": week_to}},
+        {"_id": 0, "date": 1, "duration_minutes": 1, "clock_in": 1, "clock_out": 1, "type": 1}
+    )
+    async for e in cursor:
+        if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
+            continue
+        d = e.get("date")
+        if not d:
+            continue
+        # Aktive (noch offene) Stempelungen: Differenz bis JETZT live mitrechnen,
+        # sonst sieht der MA beim Einstempeln immer 0h "Ist" obwohl er bereits
+        # einige Zeit eingestempelt ist.
+        if e.get("duration_minutes") is None and e.get("clock_in") and not e.get("clock_out"):
+            try:
+                ci = datetime.fromisoformat(e["clock_in"])
+                if ci.tzinfo is None:
+                    ci = ci.replace(tzinfo=timezone.utc)
+                live_mins = max(0, (datetime.now(timezone.utc) - ci).total_seconds() / 60.0)
+                # Pause vom Wochenplan abziehen (best-effort)
+                wd_now = ci.astimezone(_berlin).weekday()
+                br = _soll_minutes_from_schedule(schedule, wd_now)  # nur als Hint; wir nutzen sched-break
+                day_sched = (schedule or {}).get("days", {}).get(_WEEKDAY_MAP.get(wd_now, ""), {}) or {}
+                break_min = int(day_sched.get("break_min") or 0)
+                _ = br  # silence linter
+                ist_by_date[d] = ist_by_date.get(d, 0.0) + max(0, live_mins - break_min)
+            except (ValueError, TypeError):
+                pass
+        else:
+            ist_by_date[d] = ist_by_date.get(d, 0.0) + float(e.get("duration_minutes") or 0)
+
+    def _day_info(d: _date) -> dict:
+        ds = d.isoformat()
+        weekday = d.weekday()
+        is_holiday = ds in holidays
+        # Soll: 0 bei Feiertag, sonst aus Wochenplan
+        soll = 0 if is_holiday else _soll_minutes_from_schedule(schedule, weekday)
+        ist = int(round(ist_by_date.get(ds, 0.0)))
+        weekday_label = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][weekday]
+        return {
+            "date": ds,
+            "weekday": weekday_label,
+            "weekday_short": weekday_label[:2],
+            "is_holiday": is_holiday,
+            "holiday_name": holidays.get(ds) if is_holiday else None,
+            "soll_minutes": int(soll),
+            "ist_minutes": ist,
+            "diff_minutes": ist - int(soll),
+        }
+
+    # Wochenstruktur
+    week_days = []
+    week_soll = 0
+    week_ist = 0
+    cur = week_start
+    while cur <= week_end:
+        info = _day_info(cur)
+        week_days.append(info)
+        week_soll += info["soll_minutes"]
+        week_ist += info["ist_minutes"]
+        cur += timedelta(days=1)
+
+    today_info = next((d for d in week_days if d["date"] == today.isoformat()), _day_info(today))
+
+    # 7-Tage-Vorschau ab morgen
+    next_7 = []
+    for i in range(1, 8):
+        d = today + timedelta(days=i)
+        info = _day_info(d)
+        # Vorschau: ist_minutes irrelevant, nur Soll/Feiertag
+        next_7.append({
+            "date": info["date"],
+            "weekday": info["weekday"],
+            "weekday_short": info["weekday_short"],
+            "is_holiday": info["is_holiday"],
+            "holiday_name": info["holiday_name"],
+            "soll_minutes": info["soll_minutes"],
+        })
+
+    # Stundenkonto-Saldo (ueberstunden) aus hr_data
+    hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0}) or {}
+    overtime_hours = float(hr.get("overtime_hours") or 0)
+
+    return {
+        "today": today_info,
+        "week": {
+            "start": week_start.isoformat(),
+            "end": week_end.isoformat(),
+            "soll_minutes": week_soll,
+            "ist_minutes": week_ist,
+            "diff_minutes": week_ist - week_soll,
+            "days": week_days,
+        },
+        "next_7_days": next_7,
+        "overtime_hours": overtime_hours,
+        "has_schedule": bool(schedule and (schedule.get("days") or {})),
+    }
+
+
 def _parse_local_time_to_utc(date_str: str, time_str: str) -> datetime:
     """Parse a local German date+time string ('YYYY-MM-DD' + 'HH:MM') as UTC ISO.
     We store everything in UTC; assume the input is already wall-clock and treat it as UTC for now

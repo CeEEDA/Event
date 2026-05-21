@@ -15,6 +15,7 @@ import {
   Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
+import { WorkTimeOverview } from "../components/WorkTimeOverview";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "../components/ui/dialog";
@@ -40,6 +41,7 @@ export default function HubPage() {
   const [clockEntry, setClockEntry] = useState(null);
   const [clockLoading, setClockLoading] = useState(false);
   const [elapsedTime, setElapsedTime] = useState("");
+  const [worktimeRefresh, setWorktimeRefresh] = useState(0);
   const [recentEntries, setRecentEntries] = useState([]);
   const [presence, setPresence] = useState([]); // Admin: Anwesenheits-Liste aller Mitarbeiter
   const [hrData, setHrData] = useState(null);
@@ -261,6 +263,7 @@ export default function HubPage() {
       }
     } catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
     setClockLoading(false);
+    setWorktimeRefresh(k => k + 1);
     loadPresence();
   };
 
@@ -450,6 +453,11 @@ export default function HubPage() {
                 </div>
                 <div className="max-w-[280px]">
                   <SwipeClock clockedIn={clockedIn} onSwipeComplete={handleSwipeClock} disabled={clockLoading} />
+                </div>
+
+                {/* Soll/Ist-Uebersicht (kompakt) */}
+                <div className="mt-3 max-w-[420px]">
+                  <WorkTimeOverview compact refreshKey={worktimeRefresh} />
                 </div>
 
                 {/* Letzte Stempelungen */}

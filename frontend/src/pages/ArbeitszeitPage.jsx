@@ -6,6 +6,7 @@ import {
   ArrowLeft, Clock, CalendarDays, CalendarOff, Palmtree, TrendingUp,
   ThermometerSun, ChevronDown, ChevronUp, Archive,
 } from "lucide-react";
+import { WorkTimeOverview } from "../components/WorkTimeOverview";
 
 export default function ArbeitszeitPage() {
   const { user } = useAuth();
@@ -94,6 +95,9 @@ export default function ArbeitszeitPage() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        {/* Soll/Ist Arbeitszeit-Uebersicht (ausfuehrlich, mit Wochenstreifen + 7-Tage-Vorschau) */}
+        <WorkTimeOverview compact={false} />
+
         {/* Summary Cards */}
         <div className="grid grid-cols-3 gap-3" data-testid="summary-cards">
           <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3">
