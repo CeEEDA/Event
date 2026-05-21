@@ -337,7 +337,8 @@ async def pi_download_update(device_type: str, request: Request):
 
 # ====== Anonymer Download fuer One-Shot-Diagnose-Tools (kein Auth) ======
 DIAGNOSTIC_SCRIPTS = {
-    "messkoffer_diag.py": "messkoffer_diag.py",  # Rayleigh-Modbus-Live-Diag
+    "messkoffer_diag.py": "messkoffer_diag.py",  # Rayleigh-Modbus-Live-Diag v1
+    "messkoffer_diag2.py": "messkoffer_diag2.py",  # Such-Modus v2 (FC04, HEX-Scaled, Slave-Scan)
 }
 
 @router.get("/tools/{filename}")
