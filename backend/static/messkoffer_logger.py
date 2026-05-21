@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.1.2"
+SCRIPT_VERSION = "2.1.3"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -730,46 +730,65 @@ def map_to_portal(row):
     Felder die der Rayleigh nicht liefert (n_current, PF_L1/L2/L3 separat,
     Apparent pro Phase) werden 0 gesetzt - das Portal-Schema bleibt
     rueckwaerts-kompatibel.
+
+    ALLE Messwerte werden auf 2 Nachkommastellen gerundet damit das Portal
+    keine "223.0500030517578"-Float32-Artefakte mehr anzeigt. Energy-Werte
+    behalten 3 Stellen (Wh-Aufloesung).
     """
     def safe(val):
         try:
-            return float(val) if val is not None else 0
+            return float(val) if val is not None else 0.0
         except (ValueError, TypeError):
-            return 0
+            return 0.0
 
-    p_l1 = safe(row["power_l1_kw"])
-    p_l2 = safe(row["power_l2_kw"])
-    p_l3 = safe(row["power_l3_kw"])
-    total_kw = safe(row["total_kw"]) or (p_l1 + p_l2 + p_l3)
-    total_kva = safe(row["total_kva"])
+    def r2(val):
+        """Plausibilitaets-Filter + Rundung auf 2 Stellen. Sehr kleine
+        Beträge (|x| < 1e-6) werden als 0.0 zurueckgegeben - das eliminiert
+        die denormalisierten Float32-Artefakte (e-40, e-44).
+        """
+        v = safe(val)
+        if abs(v) < 1e-6:
+            return 0.0
+        return round(v, 2)
 
-    # Stromsumme = vektorielle Naeherung -> einfach skalar addieren
-    i_l1 = safe(row["current_l1"])
-    i_l2 = safe(row["current_l2"])
-    i_l3 = safe(row["current_l3"])
+    def r3(val):
+        v = safe(val)
+        if abs(v) < 1e-6:
+            return 0.0
+        return round(v, 3)
 
-    avg_pf = safe(row["avg_pf"])
+    p_l1 = r2(row["power_l1_kw"])
+    p_l2 = r2(row["power_l2_kw"])
+    p_l3 = r2(row["power_l3_kw"])
+    total_kw = r2(row["total_kw"]) or round(p_l1 + p_l2 + p_l3, 2)
+    total_kva = r2(row["total_kva"])
+
+    i_l1 = r2(row["current_l1"])
+    i_l2 = r2(row["current_l2"])
+    i_l3 = r2(row["current_l3"])
+
+    avg_pf = r2(row["avg_pf"])
 
     return {
         "id": row["id"],
         "ts_utc": row["ts"],
         "meter_ts": 0,
         "I_L1": i_l1, "I_L2": i_l2, "I_L3": i_l3,
-        "I_sum": i_l1 + i_l2 + i_l3,
-        "U_L1": safe(row["voltage_l1"]),
-        "U_L2": safe(row["voltage_l2"]),
-        "U_L3": safe(row["voltage_l3"]),
-        "F_Hz": safe(row["frequency"]),
-        "P_sum_kW": round(total_kw, 4),
-        "P_L1_kW": round(p_l1, 4),
-        "P_L2_kW": round(p_l2, 4),
-        "P_L3_kW": round(p_l3, 4),
-        "Q_sum": round(total_kva, 4),
+        "I_sum": round(i_l1 + i_l2 + i_l3, 2),
+        "U_L1": r2(row["voltage_l1"]),
+        "U_L2": r2(row["voltage_l2"]),
+        "U_L3": r2(row["voltage_l3"]),
+        "F_Hz": r2(row["frequency"]),
+        "P_sum_kW": total_kw,
+        "P_L1_kW": p_l1,
+        "P_L2_kW": p_l2,
+        "P_L3_kW": p_l3,
+        "Q_sum": total_kva,
         "Q_L1": 0, "Q_L2": 0, "Q_L3": 0,
         "PF_L1": avg_pf, "PF_L2": avg_pf, "PF_L3": avg_pf,
         "PF_total": avg_pf,
-        "E_imp_kWh": round(safe(row["energy_imp_kwh"]), 4),
-        "E_exp_kWh": round(safe(row["energy_exp_kwh"]), 4),
+        "E_imp_kWh": r3(row["energy_imp_kwh"]),
+        "E_exp_kWh": r3(row["energy_exp_kwh"]),
         "gps_lat": row["gps_lat"],
         "gps_lon": row["gps_lon"],
         "gps_alt_m": row["gps_alt"],

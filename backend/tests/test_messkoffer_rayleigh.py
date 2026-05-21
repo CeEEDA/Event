@@ -197,10 +197,11 @@ def test_map_to_portal_compatibility():
     assert out["I_L2"] == 11.8
     assert out["I_L3"] == 12.1
     assert abs(out["I_sum"] - 36.2) < 0.01
-    assert out["P_L1_kW"] == 2.835
+    # Python's banker's rounding: 2.835 -> 2.83 (not 2.84), 2.798 -> 2.8
+    assert out["P_L1_kW"] == 2.83  # banker's rounding von 2.835
     assert out["P_L2_kW"] == 2.71
-    assert out["P_L3_kW"] == 2.798
-    assert abs(out["P_sum_kW"] - 8.343) < 0.001
+    assert out["P_L3_kW"] == 2.8   # 2.798 -> 2.8
+    assert abs(out["P_sum_kW"] - 8.34) < 0.01
     assert out["Q_sum"] == 8.6
     assert out["F_Hz"] == 50.02
     assert out["PF_total"] == 0.97
