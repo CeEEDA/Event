@@ -724,8 +724,8 @@ meter_id = {meter_id}
 # Storage
 db_path = /var/lib/messkoffer/messkoffer.sqlite
 log_interval = 1
-sync_interval = 1200
-sync_batch_size = 2000
+sync_interval = 60
+sync_batch_size = 500
 retry_delay = 30
 max_db_size_gb = 60
 cleanup_check_interval = 300
