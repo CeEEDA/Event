@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.7"
+SCRIPT_VERSION = "2.0.8"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -71,6 +71,12 @@ def load_config():
         "modbus_bytesize": 8,
         "modbus_timeout": 2.0,
         "modbus_float_format": "auto",   # auto | abcd | cdab | badc | dcba
+        # Modbus-Adress-Offset: Das RI-F100-C-COMM-V01.pdf Datenblatt listet
+        # die finalen Wire-Adressen (0x00 = V1-N). Per Standard-Modbus erwartet
+        # minimalmodbus diese 0-basiert. Falls einzelne Firmware-Varianten
+        # einen Versatz von 1 erwarten, kann das hier umgeschaltet werden.
+        # Default = 0 (Datenblatt-konform), Fallback = 1.
+        "modbus_address_offset": 0,
         # Portal
         "api_url": "",
         "device_key": "",
@@ -477,11 +483,14 @@ def read_rayleigh():
         return None
 
     def _safe_read(start_addr_offset, count):
-        """Liest count Register ab Adresse, mit +1 Offset (FC03 vs Datenblatt).
+        """Liest count Register ab Adresse mit konfigurierbarem Wire-Offset.
+        Per Datenblatt RI-F100-C-COMM-V01.pdf ist die Hex-Adresse der finale
+        0-basierte Wire-Offset (0x00 = V1-N). Default modbus_address_offset=0.
         Returns list of int oder None bei Fehler.
         """
         try:
-            return instr.read_registers(start_addr_offset + 1, count, functioncode=3)
+            wire_addr = start_addr_offset + int(CFG.get("modbus_address_offset", 0))
+            return instr.read_registers(wire_addr, count, functioncode=3)
         except Exception as e:
             log.debug(f"read_registers({hex(start_addr_offset)}, {count}) fehlgeschlagen: {e}")
             return None
