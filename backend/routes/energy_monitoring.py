@@ -647,17 +647,34 @@ else
     echo "  gpsd OK"
 fi
 
-# gpsd konfigurieren (USB auto-detect)
+# gpsd konfigurieren - das ANGESCHLOSSENE u-blox/GlobalSat/etc. GPS bekommt
+# einen festen Symlink /dev/gps via udev. gpsd wird DIREKT auf /dev/gps
+# gepointet, USBAUTO ist unzuverlaessig wenn das USB-Geraet schon vor dem
+# gpsd-Start angeschlossen ist (kein hotplug-Event).
+cat > /etc/udev/rules.d/98-gps.rules << 'GPSUDEV_EOF'
+# u-blox 7 / 8 / 9 GNSS Receiver
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1546", ATTRS{{idProduct}}=="01a7", SYMLINK+="gps", MODE="0660", GROUP="dialout", ENV{{ID_GPSD_TYPE}}="ubx"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1546", ATTRS{{idProduct}}=="01a8", SYMLINK+="gps", MODE="0660", GROUP="dialout", ENV{{ID_GPSD_TYPE}}="ubx"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1546", ATTRS{{idProduct}}=="01a9", SYMLINK+="gps", MODE="0660", GROUP="dialout", ENV{{ID_GPSD_TYPE}}="ubx"
+# GlobalSat BU-353 (Prolific PL2303-basiert)
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="067b", ATTRS{{idProduct}}=="2303", SYMLINK+="gps", MODE="0660", GROUP="dialout", ENV{{ID_GPSD_TYPE}}="nmea"
+GPSUDEV_EOF
+
 cat > /etc/default/gpsd << 'GPSD_EOF'
-DEVICES=""
+# Festes Device statt USBAUTO weil u-blox beim Boot schon angeschlossen ist
+# (kein hotplug-Event -> gpsd findet es nicht von alleine).
+DEVICES="/dev/gps"
 GPSD_OPTIONS="-n"
-USBAUTO="true"
+USBAUTO="false"
 START_DAEMON="true"
 GPSD_EOF
 systemctl unmask gpsd gpsd.socket 2>/dev/null || true
 systemctl enable gpsd
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=tty 2>/dev/null || true
+sleep 1
 systemctl restart gpsd || true
-echo "  gpsd konfiguriert (USB Auto-Erkennung aktiv)"
+echo "  gpsd konfiguriert - Device: /dev/gps (per udev Symlink fuer u-blox/GlobalSat)"
 
 # udev-Rule fuer Waveshare USB-RS485 (CH340 / CP2102 / FT232) -> /dev/rayleigh
 echo "  Lege udev-Rule fuer /dev/rayleigh an..."
