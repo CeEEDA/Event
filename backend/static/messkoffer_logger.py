@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.5"
+SCRIPT_VERSION = "2.0.6"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
