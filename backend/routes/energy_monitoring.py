@@ -503,9 +503,9 @@ async def generate_setup_script(device_id: str, request: Request, admin: dict = 
         meter = {
             "id": str(uuid.uuid4()),
             "device_id": device_id,
-            "meter_ip": "192.168.88.240",
-            "meter_name": f"Shelly Pro 3EM ({device_name})",
-            "description": "Automatisch erstellt beim Setup",
+            "meter_ip": "",  # nicht mehr genutzt - Modbus statt HTTP
+            "meter_name": f"Rayleigh RI-F100-C ({device_name})",
+            "description": "Automatisch erstellt beim Setup (Modbus RTU @ /dev/rayleigh)",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.emu_meters.insert_one(meter)
@@ -628,12 +628,15 @@ echo ""
 echo -e "${{YELLOW}}[1/5] Installiere Abhaengigkeiten...${{NC}}"
 apt-get update -qq
 
-# Python + requests
+# Python + requests + Modbus + Serial (fuer Rayleigh RI-F100-C ueber USB-RS485)
 if ! command -v python3 &> /dev/null; then
     apt-get install -y -qq python3 python3-pip
 fi
-python3 -c "import requests" 2>/dev/null || pip3 install requests -q 2>/dev/null || python3 -m pip install requests -q
-echo "  Python3 + requests OK"
+apt-get install -y -qq python3-serial python3-minimalmodbus 2>/dev/null || true
+python3 -c "import requests" 2>/dev/null || pip3 install --break-system-packages requests -q 2>/dev/null || python3 -m pip install requests -q
+python3 -c "import minimalmodbus" 2>/dev/null || pip3 install --break-system-packages minimalmodbus -q 2>/dev/null || python3 -m pip install minimalmodbus -q
+python3 -c "import serial" 2>/dev/null || pip3 install --break-system-packages pyserial -q 2>/dev/null || python3 -m pip install pyserial -q
+echo "  Python3 + requests + minimalmodbus + pyserial OK"
 
 # gpsd fuer USB-GPS
 if ! command -v gpsd &> /dev/null; then
@@ -656,6 +659,19 @@ systemctl enable gpsd
 systemctl restart gpsd || true
 echo "  gpsd konfiguriert (USB Auto-Erkennung aktiv)"
 
+# udev-Rule fuer Waveshare USB-RS485 (CH340 / CP2102 / FT232) -> /dev/rayleigh
+echo "  Lege udev-Rule fuer /dev/rayleigh an..."
+cat > /etc/udev/rules.d/99-rayleigh.rules << 'UDEV_EOF'
+# Waveshare USB-RS485 -> Rayleigh RI-F100-C
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1a86", ATTRS{{idProduct}}=="7523", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1a86", ATTRS{{idProduct}}=="5523", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="10c4", ATTRS{{idProduct}}=="ea60", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6001", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+UDEV_EOF
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=tty 2>/dev/null || true
+echo "  /etc/udev/rules.d/99-rayleigh.rules angelegt"
+
 # ===== SCHRITT 2: LOGGER-SKRIPT =====
 echo -e "${{YELLOW}}[2/5] Installiere Messkoffer-Logger...${{NC}}"
 mkdir -p /var/lib/messkoffer
@@ -669,21 +685,30 @@ echo "  /opt/messkoffer_logger.py erstellt"
 echo -e "${{YELLOW}}[3/5] Schreibe neue Konfiguration...${{NC}}"
 cat > /etc/messkoffer.conf << 'CONFIG_EOF'
 [messkoffer]
-shelly_ip = 192.168.88.240
+# Modbus / Rayleigh RI-F100-C (Default-Werte laut Datenblatt)
+modbus_port = /dev/rayleigh
+modbus_baudrate = 9600
+modbus_slave_id = 1
+modbus_parity = N
+modbus_stopbits = 1
+
+# Portal
 api_url = {api_base}
 device_key = {plain_key}
 device_id = {device_id}
 meter_id = {meter_id}
+
+# Storage
 db_path = /var/lib/messkoffer/messkoffer.sqlite
 log_interval = 1
-sync_interval = 10
-sync_batch_size = 500
+sync_interval = 1200
+sync_batch_size = 2000
 retry_delay = 30
 max_db_size_gb = 60
 cleanup_check_interval = 300
 CONFIG_EOF
 chmod 644 /etc/messkoffer.conf
-echo "  /etc/messkoffer.conf erstellt"
+echo "  /etc/messkoffer.conf erstellt (1s Polling, 20 Min Sync)"
 
 # ===== SCHRITT 4: SYSTEMD-DIENST =====
 echo -e "${{YELLOW}}[4/5] Richte Systemd-Dienst ein...${{NC}}"
@@ -691,12 +716,15 @@ echo -e "${{YELLOW}}[4/5] Richte Systemd-Dienst ein...${{NC}}"
 PI_USER="${{SUDO_USER:-pi}}"
 id "$PI_USER" &>/dev/null || PI_USER="root"
 
+# User in dialout-Gruppe (fuer Serial-Zugriff auf /dev/rayleigh)
+usermod -a -G dialout "$PI_USER" 2>/dev/null || true
+
 # DB-Verzeichnis fuer den User freigeben
 chown "$PI_USER":"$PI_USER" /var/lib/messkoffer
 
 cat > /etc/systemd/system/messkoffer.service << SERVICE_EOF
 [Unit]
-Description=Messkoffer Logger - Shelly Pro 3EM + GPS + Portal Sync
+Description=Messkoffer Logger - Rayleigh RI-F100-C + GPS + Portal Sync
 After=network-online.target gpsd.service
 Wants=network-online.target gpsd.service
 
@@ -731,7 +759,7 @@ if systemctl is-active --quiet messkoffer; then
     echo -e "${{GREEN}}================================================${{NC}}"
     echo ""
     echo "  Geraet:      {device_name}"
-    echo "  Shelly IP:   192.168.88.240"
+    echo "  Modbus:      /dev/rayleigh @ 9600 8N1 Slave 1 (Rayleigh RI-F100-C)"
     echo "  Device-ID:   {device_id}"
     echo "  Meter-ID:    {meter_id}"
     echo "  Datenbank:   /var/lib/messkoffer/messkoffer.sqlite"
@@ -739,19 +767,23 @@ if systemctl is-active --quiet messkoffer; then
     echo "  GPS:         USB Auto-Erkennung aktiv"
     echo ""
     echo "  Was jetzt laeuft:"
-    echo "    - Shelly wird jede Sekunde ausgelesen"
+    echo "    - Rayleigh wird jede Sekunde ueber RS485/Modbus ausgelesen"
     echo "    - GPS-Position wird mitgespeichert"
     echo "    - Daten werden lokal gespeichert (auch ohne Internet)"
-    echo "    - Bei Internet-Verbindung: automatischer Sync zum Portal"
+    echo "    - Sync zum Portal: alle 20 Min (offline-Daten werden nachgesendet)"
     echo ""
     echo "  Befehle:"
     echo "    Live-Log:   sudo journalctl -u messkoffer -f"
     echo "    Status:     sudo systemctl status messkoffer"
     echo "    Neustart:   sudo systemctl restart messkoffer"
     echo "    DB-Groesse: du -sh /var/lib/messkoffer/"
+    echo "    Modbus-Test (Service kurz stoppen + Rohwerte lesen):"
+    echo "      sudo systemctl stop messkoffer"
+    echo "      sudo python3 /opt/messkoffer_logger.py --selftest || true"
+    echo "      sudo systemctl start messkoffer"
     echo ""
     echo -e "${{GREEN}}  HINWEIS: Alte Installation wurde vollstaendig entfernt.${{NC}}"
-    echo -e "${{GREEN}}  Alle alten Configs, Datenbanken und Services geloescht.${{NC}}"
+    echo -e "${{GREEN}}  Bitte einmal rebooten damit die dialout-Gruppe wirkt.${{NC}}"
     echo ""
 else
     echo ""
@@ -759,8 +791,9 @@ else
     echo "  sudo journalctl -u messkoffer -n 30"
     echo ""
     echo "  Haeufige Ursachen:"
-    echo "  - Shelly nicht erreichbar (ping 192.168.88.240)"
-    echo "  - Python-Modul fehlt"
+    echo "  - USB-RS485-Adapter nicht erkannt (ls -la /dev/rayleigh, dmesg | tail)"
+    echo "  - Rayleigh Slave-ID falsch (Default 1)"
+    echo "  - RS485 A/B vertauscht"
     echo ""
 fi
 '''

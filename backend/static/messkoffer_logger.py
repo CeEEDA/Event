@@ -2,30 +2,53 @@
 """
 Messkoffer Logger + Sync - Eventenergie Portal
 ================================================
-Liest Shelly Pro 3EM + USB-GPS, speichert lokal in SQLite,
-synchronisiert automatisch mit dem Portal wenn Internet da ist.
+Liest Rayleigh RI-F100-C Energy Meter ueber Waveshare USB-RS485-Adapter
+(Modbus RTU), kombiniert mit USB-GPS, speichert lokal in SQLite und
+synchronisiert mit dem Portal alle 20 Minuten (Batch-Modus).
+
+Hardware-Setup ab Mai 2026:
+  - Raspberry Pi (gleicher Pi wie vorher)
+  - Waveshare USB → RS485-Adapter (CH340 / CP2102 / FT232)
+  - Rayleigh RI-F100-C MID-Energiezaehler (Modbus RTU @ 9600 8N1, Slave 1)
+  - USB-GPS (gpsd) - optional, bleibt wie vorher
+
+Frueher: Shelly Pro 3EM via WLAN/HTTP (deprecated, einzelner Altbestand
+wurde vorerst nicht migriert).
 
 Voraussetzungen (werden vom Setup-Skript installiert):
-  - python3, python3-gps, requests
-  - gpsd (fuer USB-GPS)
+  - python3, python3-minimalmodbus, python3-serial, python3-gps, requests
+  - gpsd
 
 Konfiguration: /etc/messkoffer.conf
 Logs:          sudo journalctl -u messkoffer -f
 """
 
-import sqlite3
-import requests
-import threading
-import time
-import json
+import configparser
+import hashlib
 import logging
 import os
+import sqlite3
 import sys
-import configparser
-from pathlib import Path
+import threading
+import time
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-# ====== GPS-Modul (optional) ======
+import requests
+
+# Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
+SCRIPT_VERSION = "2.0.0"
+
+# Modbus (minimalmodbus, klein und stabil)
+try:
+    import minimalmodbus  # type: ignore
+    import serial  # type: ignore
+    MODBUS_AVAILABLE = True
+except ImportError:
+    MODBUS_AVAILABLE = False
+
+# GPS (gpsd)
 try:
     from gps import gps as gpsd_connect, WATCH_ENABLE, WATCH_NEWSTYLE
     GPS_AVAILABLE = True
@@ -33,19 +56,30 @@ except ImportError:
     GPS_AVAILABLE = False
 
 
-# ====== Konfiguration ======
+# =========================================================================
+# Konfiguration
+# =========================================================================
 
 def load_config():
     config = {
-        "shelly_ip": "192.168.88.240",
+        # Modbus
+        "modbus_port": "/dev/rayleigh",      # via udev-Rule symlink, fallback /dev/ttyUSB0
+        "modbus_baudrate": 9600,
+        "modbus_slave_id": 1,
+        "modbus_parity": "N",                # N=None, E=Even, O=Odd
+        "modbus_stopbits": 1,
+        "modbus_bytesize": 8,
+        "modbus_timeout": 1.0,
+        # Portal
         "api_url": "",
         "device_key": "",
         "device_id": "",
         "meter_id": "",
+        # Storage
         "db_path": "/var/lib/messkoffer/messkoffer.sqlite",
-        "log_interval": 1,
-        "sync_interval": 10,
-        "sync_batch_size": 500,
+        "log_interval": 1,                   # 1 Sek Polling lokal
+        "sync_interval": 1200,               # 20 Min Batch-Upload
+        "sync_batch_size": 2000,             # 2000 Zeilen pro Batch = 33 Min Daten
         "retry_delay": 30,
         "max_db_size_gb": 60,
         "cleanup_check_interval": 300,
@@ -67,18 +101,35 @@ def load_config():
                     else:
                         config[key] = val
 
-    # Umgebungsvariablen ueberschreiben
-    for env_key, conf_key in [
-        ("MK_SHELLY_IP", "shelly_ip"),
-        ("MK_API_URL", "api_url"),
-        ("MK_DEVICE_KEY", "device_key"),
-        ("MK_DEVICE_ID", "device_id"),
-        ("MK_METER_ID", "meter_id"),
-        ("MK_DB_PATH", "db_path"),
-    ]:
+    # Env-Vars ueberschreiben (gleiche MK_* Praefixe wie vorher fuer
+    # Rueckwaerts-Kompatibilitaet, plus neue MK_MODBUS_*).
+    env_map = {
+        "MK_MODBUS_PORT": "modbus_port",
+        "MK_MODBUS_BAUDRATE": "modbus_baudrate",
+        "MK_MODBUS_SLAVE_ID": "modbus_slave_id",
+        "MK_MODBUS_PARITY": "modbus_parity",
+        "MK_API_URL": "api_url",
+        "MK_DEVICE_KEY": "device_key",
+        "MK_DEVICE_ID": "device_id",
+        "MK_METER_ID": "meter_id",
+        "MK_DB_PATH": "db_path",
+        "MK_SYNC_INTERVAL": "sync_interval",
+    }
+    for env_key, conf_key in env_map.items():
         val = os.environ.get(env_key)
         if val:
-            config[conf_key] = val
+            if isinstance(config[conf_key], int):
+                try:
+                    config[conf_key] = int(val)
+                except ValueError:
+                    pass
+            elif isinstance(config[conf_key], float):
+                try:
+                    config[conf_key] = float(val)
+                except ValueError:
+                    pass
+            else:
+                config[conf_key] = val
 
     return config
 
@@ -88,44 +139,46 @@ CFG = load_config()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("messkoffer")
 
-# ====== Globaler GPS-Zustand ======
+# Globaler GPS-Zustand
 gps_data = {"lat": None, "lon": None, "alt": None, "speed": None, "fix": 0}
 gps_lock = threading.Lock()
 
 
-# ====== Datenbank ======
+# =========================================================================
+# Datenbank
+# =========================================================================
 
 def init_db():
-    """Erstellt DB und Tabelle falls noetig."""
     db_dir = os.path.dirname(CFG["db_path"])
     os.makedirs(db_dir, exist_ok=True)
-
     conn = sqlite3.connect(CFG["db_path"])
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS measurements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts TEXT NOT NULL,
-            a_current REAL, a_voltage REAL, a_act_power REAL, a_aprt_power REAL, a_pf REAL, a_freq REAL,
-            b_current REAL, b_voltage REAL, b_act_power REAL, b_aprt_power REAL, b_pf REAL, b_freq REAL,
-            c_current REAL, c_voltage REAL, c_act_power REAL, c_aprt_power REAL, c_pf REAL, c_freq REAL,
-            n_current REAL, total_current REAL, total_act_power REAL, total_aprt_power REAL,
-            total_energy_wh REAL, total_returned_wh REAL,
-            gps_lat REAL, gps_lon REAL, gps_alt REAL, gps_speed REAL, gps_fix INTEGER DEFAULT 0
+            voltage_l1 REAL, voltage_l2 REAL, voltage_l3 REAL,
+            current_l1 REAL, current_l2 REAL, current_l3 REAL,
+            power_l1_kw REAL, power_l2_kw REAL, power_l3_kw REAL,
+            total_kw REAL, total_kva REAL,
+            avg_pf REAL, frequency REAL,
+            energy_imp_kwh REAL, energy_exp_kwh REAL,
+            gps_lat REAL, gps_lon REAL, gps_alt REAL, gps_speed REAL, gps_fix INTEGER DEFAULT 0,
+            sent INTEGER DEFAULT 0
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_measurements_ts ON measurements(ts)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_measurements_sent ON measurements(sent, id)")
     conn.commit()
     conn.close()
     log.info(f"Datenbank bereit: {CFG['db_path']}")
 
 
 def get_db_size_gb():
-    """Gibt die aktuelle DB-Groesse in GB zurueck."""
     try:
         return os.path.getsize(CFG["db_path"]) / (1024 ** 3)
     except OSError:
@@ -133,90 +186,177 @@ def get_db_size_gb():
 
 
 def cleanup_db():
-    """Loescht aelteste Datensaetze wenn DB > max_db_size_gb."""
     size_gb = get_db_size_gb()
     if size_gb <= CFG["max_db_size_gb"]:
         return
-
     log.warning(f"DB ist {size_gb:.1f} GB (Limit: {CFG['max_db_size_gb']} GB), loesche aelteste Daten...")
     try:
         conn = sqlite3.connect(CFG["db_path"])
-        # Loesche 5% der aeltesten Daten pro Durchlauf
         total = conn.execute("SELECT COUNT(*) FROM measurements").fetchone()[0]
         delete_count = max(int(total * 0.05), 10000)
+        # Nur synchronisierte Datensaetze loeschen damit nichts verloren geht
         conn.execute(f"""
             DELETE FROM measurements WHERE id IN (
-                SELECT id FROM measurements ORDER BY id ASC LIMIT {delete_count}
+                SELECT id FROM measurements WHERE sent=1 ORDER BY id ASC LIMIT {delete_count}
             )
         """)
         conn.commit()
-        # VACUUM um Speicher freizugeben
         conn.execute("VACUUM")
         conn.commit()
         conn.close()
         new_size = get_db_size_gb()
-        log.info(f"Bereinigt: {delete_count} Datensaetze geloescht, DB jetzt {new_size:.1f} GB")
+        log.info(f"Bereinigt: ~{delete_count} synchr. Datensaetze geloescht, DB jetzt {new_size:.1f} GB")
     except Exception as e:
         log.error(f"DB-Bereinigung Fehler: {e}")
 
 
-# ====== Shelly Pro 3EM lesen ======
+# =========================================================================
+# Rayleigh RI-F100-C - Modbus RTU
+# =========================================================================
+# Register-Map laut RI-F100-C-COMM-V01.pdf, Float-Reverse-Word (MSB.LSB).
+# Bei FC03 (Read Holding Register) ist +1 Offset zur Doku-Adresse noetig.
+# minimalmodbus.read_float kann das nicht direkt -> wir lesen Roh-Register
+# und konvertieren selbst.
+REGISTERS = {
+    "voltage_l1":     (0x00, 2),   # V
+    "voltage_l2":     (0x02, 2),   # V
+    "voltage_l3":     (0x04, 2),   # V
+    "current_l1":     (0x10, 2),   # A
+    "current_l2":     (0x12, 2),   # A
+    "current_l3":     (0x14, 2),   # A
+    "power_l1_kw":    (0x18, 2),   # kW
+    "power_l2_kw":    (0x1A, 2),   # kW
+    "power_l3_kw":    (0x1C, 2),   # kW
+    "total_kw":       (0x2A, 2),   # kW
+    "total_kva":      (0x2C, 2),   # kVA
+    "frequency":      (0x36, 2),   # Hz
+    "energy_imp_kwh": (0x60, 2),   # kWh
+    "energy_exp_kwh": (0x62, 2),   # kWh
+}
+PF_REGISTER = (0x41D, 1)  # Average PF (int hex set)
 
-def read_shelly():
-    """Liest aktuelle Messwerte vom Shelly Pro 3EM."""
+
+def _decode_float_reverse_word(words):
+    """Float (REVERSE WORD, MSB.LSB) aus 2 16-bit Modbus-Registern.
+
+    Doku: "FLOAT REVERSE WORD MSB.LSB" = Bytes pro Word sind big-endian,
+    aber die beiden Words sind getauscht (CDAB statt ABCD).
+    """
+    import struct
+    if len(words) != 2:
+        return None
+    # Word-Swap -> Big-Endian-Float
+    swapped = (words[1] << 16) | words[0]
     try:
-        resp = requests.get(
-            f"http://{CFG['shelly_ip']}/rpc/Shelly.GetStatus",
-            timeout=3
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        em = data.get("em:0", {})
-        emdata = data.get("emdata:0", {})
+        return struct.unpack(">f", swapped.to_bytes(4, "big"))[0]
+    except (struct.error, OverflowError):
+        return None
 
-        return {
-            "a_current": em.get("a_current"),
-            "a_voltage": em.get("a_voltage"),
-            "a_act_power": em.get("a_act_power"),
-            "a_aprt_power": em.get("a_aprt_power"),
-            "a_pf": em.get("a_pf"),
-            "a_freq": em.get("a_freq"),
-            "b_current": em.get("b_current"),
-            "b_voltage": em.get("b_voltage"),
-            "b_act_power": em.get("b_act_power"),
-            "b_aprt_power": em.get("b_aprt_power"),
-            "b_pf": em.get("b_pf"),
-            "b_freq": em.get("b_freq"),
-            "c_current": em.get("c_current"),
-            "c_voltage": em.get("c_voltage"),
-            "c_act_power": em.get("c_act_power"),
-            "c_aprt_power": em.get("c_aprt_power"),
-            "c_pf": em.get("c_pf"),
-            "c_freq": em.get("c_freq"),
-            "n_current": em.get("n_current"),
-            "total_current": em.get("total_current"),
-            "total_act_power": em.get("total_act_power"),
-            "total_aprt_power": em.get("total_aprt_power"),
-            "total_energy_wh": emdata.get("total_act", 0),
-            "total_returned_wh": emdata.get("total_act_ret", 0),
-        }
-    except requests.ConnectionError:
+
+def _create_modbus_client():
+    if not MODBUS_AVAILABLE:
+        return None
+    try:
+        instr = minimalmodbus.Instrument(CFG["modbus_port"], CFG["modbus_slave_id"])
+        instr.serial.baudrate = CFG["modbus_baudrate"]
+        instr.serial.bytesize = CFG["modbus_bytesize"]
+        parity_map = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
+        instr.serial.parity = parity_map.get(CFG["modbus_parity"], serial.PARITY_NONE)
+        instr.serial.stopbits = CFG["modbus_stopbits"]
+        instr.serial.timeout = CFG["modbus_timeout"]
+        instr.mode = minimalmodbus.MODE_RTU
+        instr.clear_buffers_before_each_transaction = True
+        return instr
+    except Exception as e:
+        log.error(f"Modbus-Init Fehler ({CFG['modbus_port']}): {e}")
+        return None
+
+
+# Modbus-Client wird einmal global gehalten, bei Fehler neu erzeugt
+_modbus_client = None
+
+
+def _ensure_modbus_client():
+    global _modbus_client
+    if _modbus_client is None:
+        _modbus_client = _create_modbus_client()
+    return _modbus_client
+
+
+def _reset_modbus_client():
+    global _modbus_client
+    try:
+        if _modbus_client and _modbus_client.serial and _modbus_client.serial.is_open:
+            _modbus_client.serial.close()
+    except Exception:
+        pass
+    _modbus_client = None
+
+
+def read_rayleigh():
+    """Liest alle relevanten Register vom RI-F100-C in einem Lese-Burst und
+    einem zusaetzlichen PF-Read. Gibt None zurueck bei Modbus-Fehler.
+    """
+    instr = _ensure_modbus_client()
+    if not instr:
+        return None
+
+    out = {}
+    try:
+        # Block 1: Spannung + Strom + Leistung pro Phase + Total kW/kVA
+        # 0x00 .. 0x2D = 0x2E Register, +1 Offset = lese ab Reg 1, Laenge 46
+        # Wir lesen einen grossen Block und schneiden uns die Words raus.
+        # FC03 = read_registers; Adresse-Offset +1 fuer Float-Reverse-Word.
+        block1 = instr.read_registers(0x00 + 1, 0x2C + 2 - 0x00, functioncode=3)
+        # block1[0..1] = 0x00 / 0x01 -> Voltage L1
+        for key, (addr, _wlen) in REGISTERS.items():
+            if addr >= 0x2E:
+                continue
+            idx = addr  # Adresse direkt als Index im Block (block startet bei 0x00)
+            if idx + 1 < len(block1):
+                val = _decode_float_reverse_word([block1[idx], block1[idx + 1]])
+                if val is not None:
+                    out[key] = val
+
+        # Block 2: Frequenz - 0x36
+        block2 = instr.read_registers(0x36 + 1, 2, functioncode=3)
+        out["frequency"] = _decode_float_reverse_word(block2)
+
+        # Block 3: Energie kWh Imp/Exp - 0x60 + 0x62
+        block3 = instr.read_registers(0x60 + 1, 4, functioncode=3)
+        out["energy_imp_kwh"] = _decode_float_reverse_word(block3[0:2])
+        out["energy_exp_kwh"] = _decode_float_reverse_word(block3[2:4])
+
+        # Block 4: Average Power Factor (1 Register, int, hex, signed: -1..+1, x1000)
+        # Doku: PF-Register sind im integer-Block 0x41A..0x41D, ein Register.
+        # Wertebereich typisch -1000..+1000 = -1.0..+1.0 Cos Phi.
+        try:
+            pf_raw = instr.read_register(PF_REGISTER[0] + 1, functioncode=3, signed=True)
+            out["avg_pf"] = pf_raw / 1000.0 if abs(pf_raw) <= 10000 else None
+        except Exception as pf_e:
+            log.debug(f"PF-Read fehlgeschlagen (ignoriert): {pf_e}")
+            out["avg_pf"] = None
+
+        return out
+    except (minimalmodbus.NoResponseError, minimalmodbus.InvalidResponseError, OSError) as e:
+        log.debug(f"Modbus-Lesefehler: {e}")
+        _reset_modbus_client()
         return None
     except Exception as e:
-        log.debug(f"Shelly Lesefehler: {e}")
+        log.warning(f"Modbus-Lesefehler unerwartet: {e}")
+        _reset_modbus_client()
         return None
 
 
-# ====== GPS Thread ======
+# =========================================================================
+# GPS-Thread (unveraendert)
+# =========================================================================
 
 def gps_thread():
-    """Liest kontinuierlich GPS-Daten via gpsd."""
     global gps_data
     if not GPS_AVAILABLE:
         log.warning("GPS-Modul nicht installiert (python3-gps). GPS deaktiviert.")
         return
-
     while True:
         try:
             session = gpsd_connect(mode=WATCH_ENABLE | WATCH_NEWSTYLE)
@@ -238,127 +378,142 @@ def gps_thread():
 
 
 def get_gps():
-    """Gibt aktuelle GPS-Daten zurueck."""
     with gps_lock:
         return dict(gps_data)
 
 
-# ====== Logger Thread (Hauptschleife) ======
+# =========================================================================
+# Logger-Hauptschleife: 1 Hz Polling lokal
+# =========================================================================
 
 def logger_loop():
-    """Liest Shelly + GPS jede Sekunde, speichert in SQLite."""
     conn = sqlite3.connect(CFG["db_path"])
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-
     read_count = 0
     error_count = 0
     last_cleanup = time.time()
 
-    log.info(f"Logger gestartet: Shelly {CFG['shelly_ip']} alle {CFG['log_interval']}s")
+    log.info(
+        f"Logger gestartet: Rayleigh {CFG['modbus_port']} @ "
+        f"{CFG['modbus_baudrate']} 8{CFG['modbus_parity']}{CFG['modbus_stopbits']} "
+        f"Slave {CFG['modbus_slave_id']} - {CFG['log_interval']}s Polling"
+    )
 
     while True:
         start = time.time()
-
-        shelly = read_shelly()
+        m = read_rayleigh()
         gps = get_gps()
         ts = datetime.now(timezone.utc).isoformat()
 
-        if shelly:
+        if m:
             try:
                 conn.execute("""
                     INSERT INTO measurements (
                         ts,
-                        a_current, a_voltage, a_act_power, a_aprt_power, a_pf, a_freq,
-                        b_current, b_voltage, b_act_power, b_aprt_power, b_pf, b_freq,
-                        c_current, c_voltage, c_act_power, c_aprt_power, c_pf, c_freq,
-                        n_current, total_current, total_act_power, total_aprt_power,
-                        total_energy_wh, total_returned_wh,
+                        voltage_l1, voltage_l2, voltage_l3,
+                        current_l1, current_l2, current_l3,
+                        power_l1_kw, power_l2_kw, power_l3_kw,
+                        total_kw, total_kva, avg_pf, frequency,
+                        energy_imp_kwh, energy_exp_kwh,
                         gps_lat, gps_lon, gps_alt, gps_speed, gps_fix
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
                     ts,
-                    shelly["a_current"], shelly["a_voltage"], shelly["a_act_power"],
-                    shelly["a_aprt_power"], shelly["a_pf"], shelly["a_freq"],
-                    shelly["b_current"], shelly["b_voltage"], shelly["b_act_power"],
-                    shelly["b_aprt_power"], shelly["b_pf"], shelly["b_freq"],
-                    shelly["c_current"], shelly["c_voltage"], shelly["c_act_power"],
-                    shelly["c_aprt_power"], shelly["c_pf"], shelly["c_freq"],
-                    shelly["n_current"], shelly["total_current"],
-                    shelly["total_act_power"], shelly["total_aprt_power"],
-                    shelly["total_energy_wh"], shelly["total_returned_wh"],
+                    m.get("voltage_l1"), m.get("voltage_l2"), m.get("voltage_l3"),
+                    m.get("current_l1"), m.get("current_l2"), m.get("current_l3"),
+                    m.get("power_l1_kw"), m.get("power_l2_kw"), m.get("power_l3_kw"),
+                    m.get("total_kw"), m.get("total_kva"), m.get("avg_pf"), m.get("frequency"),
+                    m.get("energy_imp_kwh"), m.get("energy_exp_kwh"),
                     gps["lat"], gps["lon"], gps["alt"], gps["speed"], gps["fix"],
                 ))
                 conn.commit()
                 read_count += 1
                 error_count = 0
-
                 if read_count % 60 == 0:
-                    log.info(f"Logging OK: {read_count} Datensaetze | "
-                             f"P={shelly['total_act_power']:.0f}W | "
-                             f"GPS={'Fix' if gps['fix'] >= 2 else 'kein Fix'}")
+                    log.info(
+                        f"Logging OK: {read_count} Datensaetze | "
+                        f"P={(m.get('total_kw') or 0):.2f}kW | "
+                        f"V={(m.get('voltage_l1') or 0):.0f}/{(m.get('voltage_l2') or 0):.0f}/{(m.get('voltage_l3') or 0):.0f}V | "
+                        f"PF={(m.get('avg_pf') or 0):.2f} | "
+                        f"GPS={'Fix' if gps['fix'] >= 2 else 'kein Fix'}"
+                    )
             except Exception as e:
                 log.error(f"SQLite Schreibfehler: {e}")
         else:
             error_count += 1
             if error_count <= 3 or error_count % 30 == 0:
-                log.warning(f"Shelly nicht erreichbar ({error_count}x)")
+                log.warning(
+                    f"Rayleigh nicht erreichbar ({error_count}x) - "
+                    f"Port {CFG['modbus_port']}, Slave {CFG['modbus_slave_id']}"
+                )
 
-        # DB-Groesse pruefen (alle 5 Minuten)
         if time.time() - last_cleanup > CFG["cleanup_check_interval"]:
             cleanup_db()
             last_cleanup = time.time()
 
-        # Exaktes 1-Sekunden-Timing
         elapsed = time.time() - start
-        sleep_time = max(0, CFG["log_interval"] - elapsed)
-        time.sleep(sleep_time)
+        time.sleep(max(0, CFG["log_interval"] - elapsed))
 
 
-# ====== Sync Thread ======
+# =========================================================================
+# Sync-Thread: alle 20 Min Batch zum Portal
+# =========================================================================
 
 def map_to_portal(row):
-    """Mappt SQLite-Zeile auf Portal-API-Format (Watt -> kW)."""
+    """SQLite-Zeile -> Portal /energy-monitoring/ingest Format.
+    Felder die der Rayleigh nicht liefert (n_current, PF_L1/L2/L3 separat,
+    Apparent pro Phase) werden 0 gesetzt - das Portal-Schema bleibt
+    rueckwaerts-kompatibel.
+    """
     def safe(val):
         try:
             return float(val) if val is not None else 0
         except (ValueError, TypeError):
             return 0
 
+    p_l1 = safe(row["power_l1_kw"])
+    p_l2 = safe(row["power_l2_kw"])
+    p_l3 = safe(row["power_l3_kw"])
+    total_kw = safe(row["total_kw"]) or (p_l1 + p_l2 + p_l3)
+    total_kva = safe(row["total_kva"])
+
+    # Stromsumme = vektorielle Naeherung -> einfach skalar addieren
+    i_l1 = safe(row["current_l1"])
+    i_l2 = safe(row["current_l2"])
+    i_l3 = safe(row["current_l3"])
+
+    avg_pf = safe(row["avg_pf"])
+
     return {
         "id": row["id"],
         "ts_utc": row["ts"],
         "meter_ts": 0,
-        "I_L1": safe(row["a_current"]),
-        "I_L2": safe(row["b_current"]),
-        "I_L3": safe(row["c_current"]),
-        "I_sum": safe(row["total_current"]),
-        "U_L1": safe(row["a_voltage"]),
-        "U_L2": safe(row["b_voltage"]),
-        "U_L3": safe(row["c_voltage"]),
-        "F_Hz": safe(row["a_freq"]),
-        "P_sum_kW": round(safe(row["total_act_power"]) / 1000, 4),
-        "P_L1_kW": round(safe(row["a_act_power"]) / 1000, 4),
-        "P_L2_kW": round(safe(row["b_act_power"]) / 1000, 4),
-        "P_L3_kW": round(safe(row["c_act_power"]) / 1000, 4),
-        "Q_sum": round(safe(row["total_aprt_power"]) / 1000, 4),
-        "Q_L1": round(safe(row["a_aprt_power"]) / 1000, 4),
-        "Q_L2": round(safe(row["b_aprt_power"]) / 1000, 4),
-        "Q_L3": round(safe(row["c_aprt_power"]) / 1000, 4),
-        "PF_L1": safe(row["a_pf"]),
-        "PF_L2": safe(row["b_pf"]),
-        "PF_L3": safe(row["c_pf"]),
-        "E_imp_kWh": round(safe(row["total_energy_wh"]) / 1000, 4),
-        "E_exp_kWh": round(safe(row["total_returned_wh"]) / 1000, 4),
+        "I_L1": i_l1, "I_L2": i_l2, "I_L3": i_l3,
+        "I_sum": i_l1 + i_l2 + i_l3,
+        "U_L1": safe(row["voltage_l1"]),
+        "U_L2": safe(row["voltage_l2"]),
+        "U_L3": safe(row["voltage_l3"]),
+        "F_Hz": safe(row["frequency"]),
+        "P_sum_kW": round(total_kw, 4),
+        "P_L1_kW": round(p_l1, 4),
+        "P_L2_kW": round(p_l2, 4),
+        "P_L3_kW": round(p_l3, 4),
+        "Q_sum": round(total_kva, 4),
+        "Q_L1": 0, "Q_L2": 0, "Q_L3": 0,
+        "PF_L1": avg_pf, "PF_L2": avg_pf, "PF_L3": avg_pf,
+        "PF_total": avg_pf,
+        "E_imp_kWh": round(safe(row["energy_imp_kwh"]), 4),
+        "E_exp_kWh": round(safe(row["energy_exp_kwh"]), 4),
         "gps_lat": row["gps_lat"],
         "gps_lon": row["gps_lon"],
         "gps_alt_m": row["gps_alt"],
         "gps_speed_mps": row["gps_speed"],
+        "gps_fix": row["gps_fix"],
     }
 
 
 def get_last_sync_id():
-    """Fragt den Server nach der letzten synchronisierten ID."""
     try:
         resp = requests.get(
             f"{CFG['api_url']}/energy-monitoring/ingest/sync-state",
@@ -367,7 +522,7 @@ def get_last_sync_id():
                 "meter_id": CFG["meter_id"],
                 "api_key": CFG["device_key"],
             },
-            timeout=10
+            timeout=10,
         )
         if resp.status_code == 200:
             return resp.json().get("last_sync_id", 0)
@@ -377,7 +532,6 @@ def get_last_sync_id():
 
 
 def push_batch(records, last_id):
-    """Sendet Batch an das Portal."""
     resp = requests.post(
         f"{CFG['api_url']}/energy-monitoring/ingest",
         json={
@@ -387,16 +541,26 @@ def push_batch(records, last_id):
             "records": records,
             "last_sync_id": last_id,
         },
-        timeout=60
+        timeout=120,
     )
     if resp.status_code == 200:
         return resp.json()
     raise Exception(f"Server {resp.status_code}: {resp.text}")
 
 
+def mark_synced(max_id):
+    try:
+        conn = sqlite3.connect(CFG["db_path"])
+        conn.execute("UPDATE measurements SET sent=1 WHERE id<=? AND sent=0", (max_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.error(f"mark_synced Fehler: {e}")
+
+
+# ============================ OTA-Update ===================================
+
 def _get_or_create_pi_id() -> str:
-    """Persistente Pi-ID (UUID) aus /var/lib/messkoffer/pi_id."""
-    import uuid
     id_file = "/var/lib/messkoffer/pi_id"
     try:
         if os.path.exists(id_file):
@@ -414,7 +578,6 @@ def _get_or_create_pi_id() -> str:
 
 
 def _self_script_hash() -> str:
-    import hashlib
     try:
         with open(__file__, "rb") as f:
             return hashlib.sha256(f.read()).hexdigest()
@@ -423,10 +586,6 @@ def _self_script_hash() -> str:
 
 
 def _check_and_apply_ota_update():
-    """Prueft beim Backend ob ein neueres messkoffer_logger.py verfuegbar ist
-    und installiert es. Beendet den Prozess nach erfolgreichem Update -
-    systemd startet automatisch neu (Restart=always).
-    """
     base = CFG.get("api_url")
     if not base:
         return False
@@ -437,23 +596,20 @@ def _check_and_apply_ota_update():
         hostname = socket.gethostname()
     except Exception:
         hostname = ""
-
     try:
-        params = {"pi_id": pi_id, "hostname": hostname, "hash": current_hash}
+        params = {"pi_id": pi_id, "hostname": hostname, "hash": current_hash, "version": SCRIPT_VERSION}
         resp = requests.get(f"{base}/system/ota/pi/messkoffer/check", params=params, timeout=10)
         if resp.status_code != 200:
             return False
         info = resp.json()
         if not info.get("update_available"):
             return False
-        log.info(f"OTA: Update verfuegbar (neuer Hash {info.get('file_hash','?')[:12]})")
-
+        log.info(f"OTA: Update verfuegbar (Hash {info.get('file_hash','?')[:12]})")
         resp2 = requests.get(f"{base}/system/ota/pi/messkoffer/download", params={"pi_id": pi_id}, timeout=30)
         if resp2.status_code != 200:
             log.warning(f"OTA-Download Fehler {resp2.status_code}")
             return False
         new_content = resp2.content
-        import hashlib
         new_hash = hashlib.sha256(new_content).hexdigest()
         expected = info.get("file_hash") or resp2.headers.get("X-Hash", "")
         if expected and new_hash != expected:
@@ -462,19 +618,17 @@ def _check_and_apply_ota_update():
         if len(new_content) < 1000 or b"def main" not in new_content:
             log.warning("OTA: Skript wirkt unvollstaendig - abgebrochen")
             return False
-
         script_path = os.path.realpath(__file__)
-        backup_path = script_path + ".bak"
         try:
             import shutil
-            shutil.copy2(script_path, backup_path)
+            shutil.copy2(script_path, script_path + ".bak")
         except Exception:
             pass
         tmp_path = script_path + ".new"
         with open(tmp_path, "wb") as f:
             f.write(new_content)
         os.replace(tmp_path, script_path)
-        log.info(f"OTA: Skript aktualisiert ({len(new_content)} Bytes). Beende Prozess fuer systemd-Neustart...")
+        log.info(f"OTA: Skript aktualisiert ({len(new_content)} Bytes). Beende fuer systemd-Neustart...")
         try:
             sys.stdout.flush()
             sys.stderr.flush()
@@ -489,21 +643,20 @@ def _check_and_apply_ota_update():
 
 
 def sync_loop():
-    """Synchronisiert lokale Daten mit dem Portal (Hintergrund-Thread).
-    Prueft zusaetzlich vor jedem Sync ob ein OTA-Update vom Backend bereitsteht
-    und installiert es bei Bedarf (analog zu kirmeskiste_sync und tankbeleg_pi).
+    """Synchronisiert alle 20 Minuten - oder beim Wiederverbinden wenn vorher
+    offline (catchup). Speichert weiter lokal wenn keine Verbindung da ist.
     """
     if not CFG["api_url"] or not CFG["device_key"]:
         log.warning("Sync deaktiviert: api_url oder device_key nicht gesetzt")
         return
 
     consecutive_errors = 0
-    log.info("Sync-Thread gestartet")
-
+    log.info(f"Sync-Thread gestartet (Intervall {CFG['sync_interval']}s = {CFG['sync_interval']//60} Min)")
     last_ota_check = 0
+
     while True:
         try:
-            # OTA-Check (alle 5 Min)
+            # OTA-Check alle 5 Min
             if time.time() - last_ota_check > 300:
                 try:
                     _check_and_apply_ota_update()
@@ -516,77 +669,104 @@ def sync_loop():
                 consecutive_errors += 1
                 delay = min(CFG["retry_delay"] * consecutive_errors, 300)
                 if consecutive_errors <= 3 or consecutive_errors % 10 == 0:
-                    log.info(f"Portal nicht erreichbar, warte {delay}s...")
+                    log.info(f"Portal nicht erreichbar, warte {delay}s (Catch-up sobald online)...")
                 time.sleep(delay)
                 continue
 
-            # Neue Datensaetze aus SQLite lesen
-            conn = sqlite3.connect(CFG["db_path"])
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM measurements WHERE id > ? ORDER BY id ASC LIMIT ?",
-                (last_id, CFG["sync_batch_size"])
-            ).fetchall()
-            conn.close()
+            # Alles ab last_id schicken (also auch alte Daten die noch offline
+            # eingesammelt wurden) - in Batches a sync_batch_size
+            while True:
+                conn = sqlite3.connect(CFG["db_path"])
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM measurements WHERE id > ? ORDER BY id ASC LIMIT ?",
+                    (last_id, CFG["sync_batch_size"]),
+                ).fetchall()
+                conn.close()
+                if not rows:
+                    break
+                records = [map_to_portal(dict(r)) for r in rows]
+                new_last_id = records[-1]["id"]
+                result = push_batch(records, new_last_id)
+                inserted = result.get("inserted", 0)
+                mark_synced(new_last_id)
+                last_id = new_last_id
+                log.info(f"Sync OK: {inserted} Datensaetze (bis ID {new_last_id})")
+                if len(records) < CFG["sync_batch_size"]:
+                    break
 
-            if not rows:
-                time.sleep(CFG["sync_interval"])
-                continue
-
-            records = [map_to_portal(dict(r)) for r in rows]
-            new_last_id = records[-1]["id"]
-
-            result = push_batch(records, new_last_id)
-            inserted = result.get("inserted", 0)
-            log.info(f"Sync OK: {inserted} Datensaetze (bis ID {new_last_id})")
             consecutive_errors = 0
-
-            # Sofort weiter wenn voller Batch
-            if len(records) >= CFG["sync_batch_size"]:
-                continue
+            time.sleep(CFG["sync_interval"])
 
         except requests.ConnectionError:
             consecutive_errors += 1
             delay = min(CFG["retry_delay"] * consecutive_errors, 300)
             time.sleep(delay)
-            continue
         except Exception as e:
             consecutive_errors += 1
             delay = min(CFG["retry_delay"] * consecutive_errors, 300)
             log.error(f"Sync Fehler: {e}")
             time.sleep(delay)
-            continue
-
-        time.sleep(CFG["sync_interval"])
 
 
-# ====== Hauptprogramm ======
+# =========================================================================
+# Hauptprogramm
+# =========================================================================
 
 def main():
-    log.info("=" * 55)
-    log.info("  Messkoffer Logger - Eventenergie Portal")
-    log.info("=" * 55)
-    log.info(f"  Shelly:     {CFG['shelly_ip']}")
-    log.info(f"  DB:         {CFG['db_path']}")
-    log.info(f"  Max. DB:    {CFG['max_db_size_gb']} GB")
-    log.info(f"  Intervall:  {CFG['log_interval']}s")
-    log.info(f"  Server:     {CFG['api_url'] or '(kein Sync)'}")
-    log.info(f"  Device-ID:  {CFG['device_id'] or '(nicht gesetzt)'}")
-    log.info(f"  GPS:        {'verfuegbar' if GPS_AVAILABLE else 'nicht installiert'}")
-    log.info("=" * 55)
+    # Selbsttest-Modus: einmal lesen, Rohwerte ausgeben, beenden.
+    if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
+        print("=== Messkoffer Modbus-Selbsttest ===")
+        print(f"  Skript-Version: {SCRIPT_VERSION}")
+        print(f"  Port:           {CFG['modbus_port']}")
+        print(f"  Baudrate:       {CFG['modbus_baudrate']}")
+        print(f"  Slave-ID:       {CFG['modbus_slave_id']}")
+        if not MODBUS_AVAILABLE:
+            print("  FEHLER: minimalmodbus nicht installiert!")
+            sys.exit(2)
+        m = read_rayleigh()
+        if not m:
+            print("  FEHLER: Modbus-Read fehlgeschlagen.")
+            print("  Pruefe: ls -la /dev/rayleigh, RS485 A/B Anschluss, Slave-ID am Geraet")
+            sys.exit(3)
+        print("  --- Werte ---")
+        for k, v in m.items():
+            if v is None:
+                print(f"  {k:20s} = None")
+            elif isinstance(v, float):
+                print(f"  {k:20s} = {v:.3f}")
+            else:
+                print(f"  {k:20s} = {v}")
+        sys.exit(0)
 
-    # DB initialisieren
+    log.info("=" * 60)
+    log.info(f"  Messkoffer Logger v{SCRIPT_VERSION} - Eventenergie Portal")
+    log.info("  Hardware: Waveshare USB-RS485 -> Rayleigh RI-F100-C")
+    log.info("=" * 60)
+    log.info(f"  Modbus:      {CFG['modbus_port']} @ {CFG['modbus_baudrate']} "
+             f"8{CFG['modbus_parity']}{CFG['modbus_stopbits']} Slave={CFG['modbus_slave_id']}")
+    log.info(f"  DB:          {CFG['db_path']}")
+    log.info(f"  Max. DB:     {CFG['max_db_size_gb']} GB")
+    log.info(f"  Polling:     {CFG['log_interval']}s")
+    log.info(f"  Sync:        alle {CFG['sync_interval']}s ({CFG['sync_interval']//60} Min)")
+    log.info(f"  Server:      {CFG['api_url'] or '(kein Sync)'}")
+    log.info(f"  Device-ID:   {CFG['device_id'] or '(nicht gesetzt)'}")
+    log.info(f"  GPS:         {'verfuegbar' if GPS_AVAILABLE else 'nicht installiert'}")
+    log.info(f"  Modbus-lib:  {'verfuegbar' if MODBUS_AVAILABLE else 'FEHLT (apt install python3-minimalmodbus)'}")
+    log.info("=" * 60)
+
+    if not MODBUS_AVAILABLE:
+        log.error("minimalmodbus/pyserial nicht installiert. Abbruch.")
+        sys.exit(1)
+
     init_db()
 
-    # GPS-Thread starten
     t_gps = threading.Thread(target=gps_thread, daemon=True)
     t_gps.start()
 
-    # Sync-Thread starten
     t_sync = threading.Thread(target=sync_loop, daemon=True)
     t_sync.start()
 
-    # Logger-Hauptschleife (blockiert)
     logger_loop()
 
 
