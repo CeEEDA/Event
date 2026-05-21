@@ -699,3 +699,5 @@ User language: **German** (Agent must respond in German).
 
 ## Changelog – Mai 2026 (Patches)
 - 2026-05-21: AdminPage Benutzerverwaltung: Geister-Messkoffer (ohne `last_seen`) werden in der Messkoffer-Berechtigungs-Auswahl (`AdminPage.js` Z.290) jetzt ausgeblendet. Filter: `device_type === "messkoffer" && d.last_seen`. Backend `/api/devices` enriched `last_seen` aus `emu_data` (Pi-Sync-Source-of-Truth) für Messkoffer.
+- 2026-05-21: Kunden-Hub (`HubPage.js`) aufgeräumt für Rolle `kunde`: Time-Clock (Stempeln + Resturlaub + Überstunden), Info-Karte (Admin-Posts + Geburtstage), "Meine Einsätze", Aufgaben-Panel, "Team Chat"-Kachel, "Mitarbeiter-Daten"-Kachel und FAQ-Kachel werden für Kunden ausgeblendet. Module-Grid für Kunden zeigt nur die freigegebenen App-Kacheln (z.B. Energy Monitoring) full-width. Mitarbeiter-Ansicht unverändert (Testing-Agent verifiziert).
+- 2026-05-21: AdminPage Benutzer-Editor: Finance- und Dokumentenverwaltung-Toggles aus dem App-Berechtigungen-Block entfernt (waren bereits ausschliesslich für Rolle kunde sichtbar und sollen dort jetzt nicht mehr erscheinen → Dead-Code entfernt).
