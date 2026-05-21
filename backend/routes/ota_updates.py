@@ -335,6 +335,30 @@ async def pi_download_update(device_type: str, request: Request):
     )
 
 
+# ====== Anonymer Download fuer One-Shot-Diagnose-Tools (kein Auth) ======
+DIAGNOSTIC_SCRIPTS = {
+    "messkoffer_diag.py": "messkoffer_diag.py",  # Rayleigh-Modbus-Live-Diag
+}
+
+@router.get("/tools/{filename}")
+async def download_diagnostic_tool(filename: str):
+    """Public download fuer Diagnose-Skripte (zum Ausfuehren via SSH auf dem Pi).
+    Endpunkt liefert Plain-Python-Text damit man es per `curl | sudo python3 -`
+    direkt ausfuehren kann.
+    """
+    if filename not in DIAGNOSTIC_SCRIPTS:
+        raise HTTPException(404, f"Diagnose-Tool '{filename}' nicht gefunden")
+    path = STATIC_DIR / DIAGNOSTIC_SCRIPTS[filename]
+    if not path.exists():
+        raise HTTPException(404, f"{filename} nicht im Repo vorhanden")
+    return Response(
+        content=path.read_bytes(),
+        media_type="text/x-python",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+
 # ====== Backwards-Compat: alte Tankwagen-Endpoints (delegiert auf generische) ======
 
 @router.get("/tankwagen/check")

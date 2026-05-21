@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.8"
+SCRIPT_VERSION = "2.0.9"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -71,12 +71,11 @@ def load_config():
         "modbus_bytesize": 8,
         "modbus_timeout": 2.0,
         "modbus_float_format": "auto",   # auto | abcd | cdab | badc | dcba
-        # Modbus-Adress-Offset: Das RI-F100-C-COMM-V01.pdf Datenblatt listet
-        # die finalen Wire-Adressen (0x00 = V1-N). Per Standard-Modbus erwartet
-        # minimalmodbus diese 0-basiert. Falls einzelne Firmware-Varianten
-        # einen Versatz von 1 erwarten, kann das hier umgeschaltet werden.
-        # Default = 0 (Datenblatt-konform), Fallback = 1.
-        "modbus_address_offset": 0,
+        # Modbus-Adress-Offset: Das RI-F100-C-COMM-V01.pdf Datenblatt sagt
+        # "apply address offset of +1 for Function 3 Holding Registers". Empirisch
+        # bestaetigt sich das fuer den verbauten Meter, also Default = 1.
+        # Per /etc/messkoffer.conf umschaltbar (z.B. auf 0) falls Firmware abweicht.
+        "modbus_address_offset": 1,
         # Portal
         "api_url": "",
         "device_key": "",
