@@ -376,7 +376,7 @@ export default function HubPage() {
     isStaff && tileAllowed("devices") && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-teal-100 text-teal-600" },
     hasFilesharing && tileAllowed("fileshare") && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
     isStaff && tileAllowed("serviceplan") && { key: "serviceplan", icon: Wrench, label: "Serviceplan", path: "/serviceplan", color: "bg-orange-100 text-orange-600" },
-    { key: "faq", icon: HelpCircle, label: "FAQ", path: "/faq", color: "bg-indigo-100 text-indigo-600" },
+    !isCustomer && { key: "faq", icon: HelpCircle, label: "FAQ", path: "/faq", color: "bg-indigo-100 text-indigo-600" },
     isAdmin && { key: "admin", icon: Users, label: "Benutzer", path: "/admin", color: "bg-gray-100 text-gray-600" },
     isAdmin && { key: "settings", icon: Settings, label: "Einstellungen", path: "/admin/settings", color: "bg-gray-100 text-gray-600" },
   ].filter(Boolean);
@@ -433,6 +433,7 @@ export default function HubPage() {
           </div>
 
           {/* Time Clock Section */}
+          {!isCustomer && (
           <div className="mb-5 bg-white rounded-xl border border-gray-200 p-4" data-testid="time-clock-section">
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Left: Slider + Status */}
@@ -552,9 +553,10 @@ export default function HubPage() {
               )}
             </div>
           </div>
+          )}
 
           {/* Info-Karte: Admin-Posts + Geburtstage */}
-          {(isAdmin || birthdays.length > 0 || infoPosts.length > 0) && (
+          {!isCustomer && (isAdmin || birthdays.length > 0 || infoPosts.length > 0) && (
             <div className="mb-5 bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="info-card">
               <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-fuchsia-50 to-pink-50 border-b border-pink-100">
                 <div className="flex items-center gap-2">
@@ -673,7 +675,7 @@ export default function HubPage() {
           )}
 
           {/* My Shift Plan (Employee) */}
-          {!isAdmin && (
+          {!isAdmin && !isCustomer && (
             <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="my-shift-plan">
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-indigo-600" />
@@ -714,11 +716,12 @@ export default function HubPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 ${isCustomer ? "" : "lg:grid-cols-3"} gap-4`}>
             {/* Left: Module Grid */}
-            <div className="lg:col-span-2">
+            <div className={isCustomer ? "" : "lg:col-span-2"}>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5" data-testid="modules-grid">
                 {/* Chat Tile with unread indicator */}
+                {!isCustomer && (
                 <button
                   onClick={() => handleModuleClick("/chat")}
                   className={`relative bg-white border rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:shadow-md transition-all group text-center ${unreadChats > 0 ? "border-fuchsia-400 ring-2 ring-fuchsia-200" : "border-gray-200 hover:border-fuchsia-400"}`}
@@ -732,8 +735,10 @@ export default function HubPage() {
                     <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center animate-pulse">{unreadChats}</span>
                   )}
                 </button>
+                )}
 
                 {/* Mitarbeiter-Daten Tile (Arbeitszeit, Freie Zeit, Abrechnung) */}
+                {!isCustomer && (
                 <button
                   onClick={() => handleModuleClick("/mitarbeiter-daten")}
                   className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
@@ -744,6 +749,7 @@ export default function HubPage() {
                   </div>
                   <span className="text-[11px] sm:text-xs font-medium text-gray-700 leading-tight">Mitarbeiter-Daten</span>
                 </button>
+                )}
 
                 {modules.map(m => (
                   <button
@@ -762,6 +768,7 @@ export default function HubPage() {
             </div>
 
             {/* Right: Tasks */}
+            {!isCustomer && (
             <div className="bg-white rounded-xl border border-gray-200 flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-180px)]" data-testid="tasks-panel">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">Aufgaben</h2>
@@ -939,6 +946,7 @@ export default function HubPage() {
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>
       </main>

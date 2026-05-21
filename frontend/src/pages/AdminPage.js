@@ -1797,7 +1797,8 @@ export default function AdminPage() {
                     )}
                   </div>
 
-                  {/* Finance App */}
+                  {/* Finance App (nicht fuer Kunden) */}
+                  {formData.role !== "kunde" && (
                   <div className="bg-gray-50 rounded-lg p-4 space-y-4 mt-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -1817,8 +1818,10 @@ export default function AdminPage() {
                       />
                     </div>
                   </div>
+                  )}
 
-                  {/* Dokumentenverwaltung App */}
+                  {/* Dokumentenverwaltung App (nicht fuer Kunden) */}
+                  {formData.role !== "kunde" && (
                   <div className="bg-gray-50 rounded-lg p-4 space-y-4 mt-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -1838,6 +1841,7 @@ export default function AdminPage() {
                       />
                     </div>
                   </div>
+                  )}
 
                   {/* Time-based access for Kunden - Account level */}
                   {formData.role === "kunde" && (

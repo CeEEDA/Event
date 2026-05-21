@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend visibility tests for Kunde/Mitarbeiter Hub + Admin User-Editor toggles. 4/5 PASS. One regression found: Finance & Dokumentenverwaltung toggles never render for Mitarbeiter in Admin user edit modal because they are nested inside the kunde-only App-Berechtigungen wrapper.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminPage.js – user edit modal",
+        "issue": "Finance & Dokumentenverwaltung toggles do NOT appear when editing a Mitarbeiter (e.g. Anna Weber / ma1@test.com). They are wrapped inside the parent App-Berechtigungen <div> at line 1526 which renders only when formData.role === 'kunde'. The inner formData.role !== 'kunde' checks at lines 1801 and 1824 are therefore unreachable.",
+        "selector": "[data-testid='finance-enabled-toggle'], [data-testid='dokumentenverwaltung-enabled-toggle']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "kunde_hub_no_crash": "PASS – /hub renders for kunde@test.com without blank screen or console errors. Body contains only header (Test Kunde, Kunde, Abmelden), 'Willkommen, Test!', single Energy Monitoring tile and footer. No Stempeln/Resturlaub/Überstunden/Meine Einsätze/Team Chat/Mitarbeiter-Daten/FAQ/Aufgaben/Info-Karte present.",
+    "mitarbeiter_hub_regression": "PASS – /hub for ma1@test.com shows time-clock slider ('Zum Einstempeln schieben'), HEUTE/DIESE WOCHE counters, LETZTE STEMPELUNGEN, RESTURLAUB, ÜBERSTUNDEN, MEINE EINSÄTZE, Team Chat tile, Mitarbeiter-Daten tile, FAQ tile, Aufgaben panel and other module tiles (Aufträge, Einsatzplanung, Verwaltung, Power Monitoring, Energy Monitoring, Geräte, FileShare, Serviceplan).",
+    "admin_kunde_edit": "PASS – Editing Test Kunde (kunde@test.com) modal shows App-Berechtigungen with FileShare, Generator-Monitoring, Energy Monitoring (+ Messkoffer selector, Verfügbare Messdaten Zeitraum, Konto-Verfügbarkeit). Finance and Dokumentenverwaltung toggles are NOT shown – correct.",
+    "admin_mitarbeiter_edit_regression": "FAIL – Editing Anna Weber (ma1@test.com) modal shows Hub-Kacheln (Module), ADR-Toggle and Sonderberechtigungen → Abrechnung. Finance and Dokumentenverwaltung toggles are MISSING. Expected: both visible."
+  },
+  "rca_of_the_issue": "AdminPage.js line 1526 wraps the entire App-Berechtigungen section (lines 1526–1798 including its closing) with {formData.role === 'kunde' && (...)} but Finance (1800–1821) and Dokumentenverwaltung (1823–1844) blocks are placed INSIDE that wrapper. Their own {formData.role !== 'kunde'} guard is therefore unreachable. Fix: move the Finance and Dokumentenverwaltung blocks OUT of the kunde-only wrapper (place them after the closing of the parent kunde wrapper, around line ~1798/1798+1, before/after the Hub-Kacheln logic but rendered for any non-kunde role) OR change the parent wrapper logic so Finance/Dokumentenverwaltung remain rendered for non-kunde roles.",
+  "reproduction_steps": [
+    "1. Login as admin@test.com / password",
+    "2. Open /admin",
+    "3. Switch to 'Mitarbeiter' tab",
+    "4. Click pencil (edit) icon on Anna Weber row",
+    "5. Scroll the modal – observe no Finance / Dokumentenverwaltung toggles anywhere",
+    "Expected: Both toggles visible. Actual: Both missing."
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "FIX HIGH: Move Finance and Dokumentenverwaltung toggle blocks OUT of the {formData.role === 'kunde' && ...} App-Berechtigungen wrapper in AdminPage.js so they render for Mitarbeiter (and other non-kunde roles)."
+  ],
+  "critical_code_review_comments": [
+    "AdminPage.js is 2176 lines – consider splitting into smaller components (user-editor modal alone is ~700 lines).",
+    "Dead-code guard: lines 1801 and 1824 use formData.role !== 'kunde' but are inside a parent wrapper requiring role === 'kunde'. Always false."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "80%"},
+  "test_credentials": "admin@test.com/password, ma1@test.com/Anna2026!, kunde@test.com/Kunde2026! – all valid",
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Kunde-Hub and Mitarbeiter-Hub visibility are GREEN. Admin user-edit modal for Kunde role is GREEN. Only failing scenario: Finance/Dokumentenverwaltung toggles for non-kunde users are not rendered due to nesting bug at AdminPage.js line 1526 wrapping lines 1800-1844. Use evaluate() to read text from fixed-positioned overlay div (no role='dialog' attribute) for modal content checks."
+}
