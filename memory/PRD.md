@@ -16,7 +16,21 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
-### Mai 2026 – Messkoffer Rayleigh Float-Decoding Fix v2.0.7 (P0, Bug)
+### Mai 2026 – Messkoffer Rayleigh FC04 Discovery & v2.1.0 (P0, Bug-Final-Fix)
+- 🐛 **Recurring Bug**: Trotz aller vorherigen Fixes (v2.0.6 → v2.0.7 → v2.0.8 → v2.0.9) kamen Spannungswerte weiterhin denormalisiert (e-40, e-42) im Portal an, obwohl Meter physisch 230 V anzeigte.
+- 🔍 **Live-Diagnose-Tool**: `/app/backend/static/messkoffer_diag.py` + `messkoffer_diag2.py` erstellt – Standalone-Skripte die per `curl | sudo python3` auf dem Pi ausführbar sind und alle Modbus-Kombinationen (FC03/FC04, Offset 0/+1, alle 4 Float-Byte-Orderings, Slave-ID-Scan) live durchprobieren. Public-Download via `GET /api/system/ota/tools/{filename}` (anonym).
+- 🎯 **Root Cause empirisch identifiziert**: Der RI-F100-C **antwortet auf FC03 mit den FC04-Setup-Registern** (Slave-ID, Page-Address-Sequenz statt Spannung). Die echten Float-Reverse-Word Messwerte sind nur über **FC04 (Input Register)** abrufbar – das Datenblatt ist hier missverständlich („FC3/4"). Diag v2 lieferte die Beweise:
+  - V1-N FC4 wire=0x00 CDAB → 224.0 V ✓
+  - Frequency FC4 wire=0x38 CDAB → 49.99 Hz ✓
+  - Avg PF FC4 wire=0x36 CDAB → 1.000 ✓
+- ✅ **Fix v2.1.0** (`/app/backend/static/messkoffer_logger.py`):
+  - `modbus_function_code = 4` (vorher 3, jetzt konfigurierbar via `/etc/messkoffer.conf`)
+  - `modbus_address_offset = 0` (kein +1-Shift mehr)
+  - `modbus_float_format = "cdab"` (Default lock auf das per Datenblatt spezifizierte FLOAT REVERSE WORD)
+  - `_safe_read()` nutzt den konfigurierbaren Function Code
+- ✅ **Tests** (`/app/backend/tests/test_messkoffer_rayleigh.py`): 16/16 PASS inkl. neuer Regression-Locks `test_function_code_is_fc04`, `test_address_offset_is_zero`, `test_float_format_default_is_cdab`, `test_decode_diag_v2_real_values` (testet gegen die echten Diag-Roh-Words).
+- ✅ **OTA-Pipeline**: Hash `c8fbb96a2a66...`, 41454 Bytes; force_update auf allen Messkoffer-Pis gesetzt → automatisches Update beim nächsten Heartbeat.
+
 - 🐛 **Bug**: Nach Migration auf Rayleigh RI-F100-C kamen alle Messwerte denormalisiert (e-40, e-44) oder als 0.0 im Portal an, obwohl der Pi v2.0.6 lief und Modbus-Verbindung stand.
 - 🔍 **Root Cause** via Rayleigh RI-F100-C-COMM-V01.pdf bestätigt:
   1. **Frequenz-Adresse falsch**: Script las `0x36` (= "Average PF"!) statt korrekt `0x38` (30056). Probe-Read lieferte daher PF-Bytes `[19, 0]` statt 50-Hz-Float.

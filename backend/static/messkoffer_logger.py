@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.9"
+SCRIPT_VERSION = "2.1.0"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -70,12 +70,17 @@ def load_config():
         "modbus_stopbits": 1,
         "modbus_bytesize": 8,
         "modbus_timeout": 2.0,
-        "modbus_float_format": "auto",   # auto | abcd | cdab | badc | dcba
-        # Modbus-Adress-Offset: Das RI-F100-C-COMM-V01.pdf Datenblatt sagt
-        # "apply address offset of +1 for Function 3 Holding Registers". Empirisch
-        # bestaetigt sich das fuer den verbauten Meter, also Default = 1.
-        # Per /etc/messkoffer.conf umschaltbar (z.B. auf 0) falls Firmware abweicht.
-        "modbus_address_offset": 1,
+        "modbus_float_format": "cdab",   # auto | abcd | cdab | badc | dcba
+                                          # Empirisch verifiziert per Diag v2: CDAB ist korrekt
+                                          # fuer den RI-F100-C (V1-N @ 0x00 FC4 CDAB liefert ~230V).
+        # Adress-Offset: Datenblatt-Hex direkt verwenden (KEIN +1). Diag v2 hat
+        # bestaetigt dass der Meter mit Offset=0 antwortet.
+        "modbus_address_offset": 0,
+        # Function Code: Der RI-F100-C liefert die Float-Reverse-Word Mess-
+        # register ueber FC04 (Input Registers), NICHT FC03 (Holding Registers)
+        # wie das Datenblatt schreibt. FC03 liefert FC04-Setup-Daten zurueck.
+        # Empirisch per Diag v2 verifiziert.
+        "modbus_function_code": 4,
         # Portal
         "api_url": "",
         "device_key": "",
@@ -482,14 +487,19 @@ def read_rayleigh():
         return None
 
     def _safe_read(start_addr_offset, count):
-        """Liest count Register ab Adresse mit konfigurierbarem Wire-Offset.
+        """Liest count Register ab Adresse mit konfigurierbarem Wire-Offset
+        und konfigurierbarem Function Code.
+
         Per Datenblatt RI-F100-C-COMM-V01.pdf ist die Hex-Adresse der finale
         0-basierte Wire-Offset (0x00 = V1-N). Default modbus_address_offset=0.
+        Function Code ist FC04 (Input Registers, ueber Diag v2 verifiziert),
+        per CFG umschaltbar auf FC03 falls eine Firmware abweicht.
         Returns list of int oder None bei Fehler.
         """
         try:
             wire_addr = start_addr_offset + int(CFG.get("modbus_address_offset", 0))
-            return instr.read_registers(wire_addr, count, functioncode=3)
+            fc = int(CFG.get("modbus_function_code", 4))
+            return instr.read_registers(wire_addr, count, functioncode=fc)
         except Exception as e:
             log.debug(f"read_registers({hex(start_addr_offset)}, {count}) fehlgeschlagen: {e}")
             return None
