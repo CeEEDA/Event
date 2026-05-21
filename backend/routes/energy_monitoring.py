@@ -736,13 +736,16 @@ Wants=network-online.target gpsd.service
 
 [Service]
 Type=simple
+# Service laeuft als root - notwendig damit OTA-Updates das Skript in /opt/
+# atomisch ersetzen koennen und Serial-/udev-Zugriff garantiert ist.
+User=root
+Group=root
+WorkingDirectory=/opt
 ExecStart=/usr/bin/python3 /opt/messkoffer_logger.py
 Restart=always
-RestartSec=5
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
-User=$PI_USER
-Group=$PI_USER
 
 [Install]
 WantedBy=multi-user.target
