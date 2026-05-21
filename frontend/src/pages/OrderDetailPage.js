@@ -321,7 +321,7 @@ export default function OrderDetailPage() {
     VALID_TABS.includes(initialTab) ? initialTab : null
   );
 
-  const { isAdmin, user: currentUser } = useAuth();
+  const { isAdmin, canBilling, user: currentUser } = useAuth();
   const isFreelancer = currentUser?.role === "freelancer";
 
   const fetchOrder = useCallback(async () => {
@@ -925,7 +925,7 @@ export default function OrderDetailPage() {
             <Button variant="outline" size="sm" onClick={() => { fetchOrder(); fetchGenerators(); fetchAssets(); }} data-testid="refresh-detail-btn">
               <RefreshCw className="w-4 h-4 mr-1" /> Aktualisieren
             </Button>
-            {isAdmin && (
+            {canBilling && (
               <Button
                 variant="outline"
                 size="sm"
