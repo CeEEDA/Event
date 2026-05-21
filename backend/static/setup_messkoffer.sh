@@ -64,9 +64,12 @@ apt-get install -y \
 echo ""
 echo "[2/8] udev-Regel fuer /dev/rayleigh anlegen..."
 cat > /etc/udev/rules.d/99-rayleigh.rules << 'EOF'
-# CH340/CH341 (haeufigster Waveshare-Chip)
+# Aeltere Waveshare-Adapter (CH340/CH341 - ttyUSB)
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="5523", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+# Neuere Waveshare-Adapter (CH343/CH9102 - ttyACM via cdc_acm)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
 # CP210x (Silicon Labs)
 SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
 # FTDI FT232

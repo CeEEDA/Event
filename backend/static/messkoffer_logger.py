@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.0"
+SCRIPT_VERSION = "2.0.2"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -253,11 +253,94 @@ def _decode_float_reverse_word(words):
         return None
 
 
+def _candidate_serial_ports() -> list:
+    """Liefert eine geordnete Liste moeglicher Ports fuer Auto-Detection.
+    Reihenfolge: /dev/rayleigh (udev-Symlink), dann alle /dev/ttyUSB*, dann
+    alle /dev/ttyACM* (CH343/CH9102 melden sich als ACM).
+    """
+    import glob
+    cands = []
+    if os.path.exists("/dev/rayleigh"):
+        cands.append("/dev/rayleigh")
+    cands.extend(sorted(glob.glob("/dev/ttyUSB*")))
+    cands.extend(sorted(glob.glob("/dev/ttyACM*")))
+    # Doppelte vermeiden (z.B. wenn /dev/rayleigh schon auf /dev/ttyACM1 zeigt)
+    seen, uniq = set(), []
+    for p in cands:
+        try:
+            real = os.path.realpath(p)
+        except Exception:
+            real = p
+        if real not in seen:
+            seen.add(real)
+            uniq.append(p)
+    return uniq
+
+
+def _probe_port(port: str) -> bool:
+    """Versucht einen FC03 Read von Reg 1 (Voltage L1) auf dem Port.
+    Returns True wenn Slave antwortet (egal welcher Wert)."""
+    if not MODBUS_AVAILABLE:
+        return False
+    try:
+        instr = minimalmodbus.Instrument(port, CFG["modbus_slave_id"])
+        instr.serial.baudrate = CFG["modbus_baudrate"]
+        instr.serial.bytesize = CFG["modbus_bytesize"]
+        parity_map = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
+        instr.serial.parity = parity_map.get(CFG["modbus_parity"], serial.PARITY_NONE)
+        instr.serial.stopbits = CFG["modbus_stopbits"]
+        instr.serial.timeout = 0.5  # kurz halten beim Probing
+        instr.mode = minimalmodbus.MODE_RTU
+        instr.clear_buffers_before_each_transaction = True
+        # Voltage L1 lesen (2 Register, FC03, +1 Offset)
+        words = instr.read_registers(1, 2, functioncode=3)
+        try:
+            instr.serial.close()
+        except Exception:
+            pass
+        return isinstance(words, list) and len(words) == 2
+    except Exception as e:
+        log.debug(f"Probe {port} fehlgeschlagen: {e}")
+        return False
+
+
+def _auto_detect_modbus_port() -> str:
+    """Sucht ueber alle /dev/ttyACM* + /dev/ttyUSB* nach einem Port der auf
+    Slave 1 antwortet. Cached das Ergebnis fuer den naechsten Aufruf (CFG
+    wird ueberschrieben, sodass weitere Lese-Versuche direkt klappen)."""
+    cands = _candidate_serial_ports()
+    if not cands:
+        log.warning("Keine /dev/ttyUSB*/ttyACM* Ports gefunden - USB-Adapter angesteckt?")
+        return ""
+    log.info(f"Auto-Detect Modbus: probiere {len(cands)} Port(s): {cands}")
+    for port in cands:
+        if _probe_port(port):
+            log.info(f"Modbus-Slave gefunden auf {port} (Slave {CFG['modbus_slave_id']})")
+            CFG["modbus_port"] = port
+            return port
+    log.warning(
+        f"Auto-Detect: kein Port hat geantwortet. Geprueft: {cands}. "
+        f"Pruefe RS485-Verkabelung (A/B nicht vertauscht), Slave-ID am Geraet."
+    )
+    return ""
+
+
 def _create_modbus_client():
     if not MODBUS_AVAILABLE:
         return None
+    # 1. Wenn konfigurierter Port nicht existiert oder noch keiner gefunden:
+    #    Auto-Detect ueber alle USB-Seriell-Ports
+    port = CFG.get("modbus_port") or ""
+    if not port or not os.path.exists(port):
+        if port:
+            log.warning(f"Konfigurierter Port '{port}' existiert nicht - starte Auto-Detect")
+        detected = _auto_detect_modbus_port()
+        if detected:
+            port = detected
+        else:
+            return None
     try:
-        instr = minimalmodbus.Instrument(CFG["modbus_port"], CFG["modbus_slave_id"])
+        instr = minimalmodbus.Instrument(port, CFG["modbus_slave_id"])
         instr.serial.baudrate = CFG["modbus_baudrate"]
         instr.serial.bytesize = CFG["modbus_bytesize"]
         parity_map = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
@@ -268,7 +351,7 @@ def _create_modbus_client():
         instr.clear_buffers_before_each_transaction = True
         return instr
     except Exception as e:
-        log.error(f"Modbus-Init Fehler ({CFG['modbus_port']}): {e}")
+        log.error(f"Modbus-Init Fehler ({port}): {e}")
         return None
 
 

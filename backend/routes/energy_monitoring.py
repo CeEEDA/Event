@@ -663,9 +663,15 @@ echo "  gpsd konfiguriert (USB Auto-Erkennung aktiv)"
 echo "  Lege udev-Rule fuer /dev/rayleigh an..."
 cat > /etc/udev/rules.d/99-rayleigh.rules << 'UDEV_EOF'
 # Waveshare USB-RS485 -> Rayleigh RI-F100-C
+# Aeltere Adapter (CH340/CH341 - meldet als ttyUSB)
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1a86", ATTRS{{idProduct}}=="7523", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1a86", ATTRS{{idProduct}}=="5523", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+# Neuere Adapter (CH343/CH9102 - meldet als ttyACM via cdc_acm-Treiber)
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1a86", ATTRS{{idProduct}}=="55d3", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{{idVendor}}=="1a86", ATTRS{{idProduct}}=="55d4", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+# CP210x (Silicon Labs)
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="10c4", ATTRS{{idProduct}}=="ea60", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
+# FTDI FT232
 SUBSYSTEM=="tty", ATTRS{{idVendor}}=="0403", ATTRS{{idProduct}}=="6001", SYMLINK+="rayleigh", MODE="0660", GROUP="dialout"
 UDEV_EOF
 udevadm control --reload-rules
