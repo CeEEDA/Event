@@ -178,14 +178,27 @@ async def list_energy_devices(
         latest = latest_map.get(device["id"])
         device["latest_data"] = latest
 
-        # Determine online status (has data in last 5 minutes)
+        # Determine connection status based on age of last data point.
+        # Pi pollt alle ~20 Min. Schwellen:
+        #   < 30 Min  → "online" (gruen)
+        #   30-60 Min → "warning" (gelb)  – einmal verpasstes Polling
+        #   > 60 Min  → "offline" (rot)
         if latest and latest.get("ts_utc"):
             try:
                 last_ts = datetime.fromisoformat(latest["ts_utc"].replace("Z", "+00:00"))
-                device["is_online"] = (datetime.now(timezone.utc) - last_ts).total_seconds() < 300
+                age_sec = (datetime.now(timezone.utc) - last_ts).total_seconds()
+                if age_sec < 1800:  # 30 min
+                    device["connection_status"] = "online"
+                elif age_sec < 3600:  # 60 min
+                    device["connection_status"] = "warning"
+                else:
+                    device["connection_status"] = "offline"
+                device["is_online"] = device["connection_status"] == "online"
             except (ValueError, TypeError):
+                device["connection_status"] = "offline"
                 device["is_online"] = False
         else:
+            device["connection_status"] = "offline"
             device["is_online"] = False
 
         if "image_gridfs_id" in device and device["image_gridfs_id"]:

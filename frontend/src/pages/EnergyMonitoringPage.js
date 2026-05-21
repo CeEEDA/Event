@@ -27,7 +27,12 @@ import "leaflet/dist/leaflet.css";
 
 function DeviceCard({ device, onClick }) {
   const d = device.latest_data;
-  const isOnline = device.is_online;
+  const status = device.connection_status || (device.is_online ? "online" : "offline");
+  const statusCfg = {
+    online:  { label: "Online",  cls: "bg-emerald-500 text-white", pulse: true  },
+    warning: { label: "Verzögert", cls: "bg-amber-500 text-white",  pulse: false },
+    offline: { label: "Offline", cls: "bg-red-500 text-white",     pulse: false },
+  }[status] || { label: "Offline", cls: "bg-gray-400 text-white", pulse: false };
   const lastSeen = d?.ts_utc
     ? new Date(d.ts_utc).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : null;
@@ -46,13 +51,9 @@ function DeviceCard({ device, onClick }) {
           <p className="text-xs text-gray-400 font-mono">{device.serial_number}</p>
         </div>
         <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
-            isOnline
-              ? "bg-emerald-500 text-white"
-              : "bg-gray-400 text-white"
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full bg-white/70 ${isOnline ? "animate-pulse" : ""}`} />
-            {isOnline ? "Online" : "Offline"}
+          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${statusCfg.cls}`}>
+            <span className={`w-1.5 h-1.5 rounded-full bg-white/70 ${statusCfg.pulse ? "animate-pulse" : ""}`} />
+            {statusCfg.label}
           </span>
         </div>
       </div>
