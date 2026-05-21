@@ -15,6 +15,22 @@ User language: **German** (Agent must respond in German).
 - Schausteller Portal (Kirmes Anmeldung)
 - Messprotokoll PDF Generator (ReportLab)
 
+
+### Mai 2026 – Messkoffer Rayleigh Float-Decoding Fix v2.0.7 (P0, Bug)
+- 🐛 **Bug**: Nach Migration auf Rayleigh RI-F100-C kamen alle Messwerte denormalisiert (e-40, e-44) oder als 0.0 im Portal an, obwohl der Pi v2.0.6 lief und Modbus-Verbindung stand.
+- 🔍 **Root Cause** via Rayleigh RI-F100-C-COMM-V01.pdf bestätigt:
+  1. **Frequenz-Adresse falsch**: Script las `0x36` (= "Average PF"!) statt korrekt `0x38` (30056). Probe-Read lieferte daher PF-Bytes `[19, 0]` statt 50-Hz-Float.
+  2. **Float-Auto-Detect-Fallback war ABCD**: Bei fehlgeschlagener Heuristik fiel der Code auf ABCD zurück. Datenblatt spezifiziert aber explizit "FLOAT REVERSE WORD" = **CDAB** (low addr = LSB word).
+  3. **PF_REGISTER auf veralteter Adresse**: War `(0x41D, 1)` (int) - eine Adresse aus einem anderen Meter-Modell. Korrekt: `(0x36, 2)` Float Reverse Word.
+- ✅ **Fix in `/app/backend/static/messkoffer_logger.py`** (Bump auf v2.0.7):
+  - `REGISTERS["frequency"] = (0x38, 2)` (vorher 0x36)
+  - `PF_REGISTER = (0x36, 2)` als Float (vorher (0x41D, 1) int)
+  - Fallback in `_autodetect_float_format` = `"cdab"` (vorher `"abcd"`)
+  - Probe-Read-Debug-Log mit Roh-Words+Format für künftiges Trouble­shoot­ing.
+- ✅ **Tests** (`/app/backend/tests/test_messkoffer_rayleigh.py`): 12/12 PASS inkl. neuer Regression-Locks `test_frequency_register_at_0x38_not_0x36` und `test_autodetect_fallback_is_cdab_when_probe_fails`.
+- ✅ **OTA-Pipeline** liefert v2.0.7 automatisch: Hash `1ec198355fdb...`, 40295 Bytes; Pi pollt periodisch und installiert sich selbst neu.
+- ⚠️ **User-Validierung steht aus**: Sobald Pi v2.0.7 installiert hat UND der Messkoffer an einem aktiven Stromkreis hängt (mit Last), sollten ~230V / 50Hz / plausible Ströme im Portal ankommen. Während des Tests am 21.5. war kein Stromkreis angeschlossen (V=0/0/0, P=0kW), daher konnten die Float-Werte nur indirekt verifiziert werden.
+
 ## Implementation Log
 
 ### Mai 2026 – Soll/Ist-Arbeitszeit-Übersicht für Mitarbeiter (P1, Feature)

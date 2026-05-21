@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.6"
+SCRIPT_VERSION = "2.0.7"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -228,13 +228,15 @@ REGISTERS = {
     "power_l1_kw":    (0x18, 2),   # kW
     "power_l2_kw":    (0x1A, 2),   # kW
     "power_l3_kw":    (0x1C, 2),   # kW
-    "total_kw":       (0x2A, 2),   # kW
-    "total_kva":      (0x2C, 2),   # kVA
-    "frequency":      (0x36, 2),   # Hz
-    "energy_imp_kwh": (0x60, 2),   # kWh
-    "energy_exp_kwh": (0x62, 2),   # kWh
+    "total_kw":       (0x2A, 2),   # kW (Total Active Power)
+    "total_kva":      (0x2C, 2),   # kVA (Total Apparent Power)
+    "frequency":      (0x38, 2),   # Hz - laut RI-F100-C-COMM-V01.pdf an 0x38, NICHT 0x36!
+    "energy_imp_kwh": (0x60, 2),   # kWh Import (siehe Hinweis: Summe der Phasen oder Total kWh)
+    "energy_exp_kwh": (0x62, 2),   # kWh Export
 }
-PF_REGISTER = (0x41D, 1)  # Average PF (int hex set)
+# Average PF liegt laut Datenblatt an 0x36 (Float Reverse Word, 2 Register),
+# NICHT an 0x41D (das war eine falsche Annahme einer anderen Meter-Firmware).
+PF_REGISTER = (0x36, 2)  # Average PF (Float Reverse Word)
 
 
 _detected_float_format = None  # nach erster erfolgreicher Erkennung gemerkt
@@ -268,7 +270,8 @@ def _try_all_float_formats(words):
 def _autodetect_float_format(freq_words):
     """Probe-Heuristik: anhand der Frequenz-Register (sollte ~50 Hz sein)
     ermitteln welches Byte/Word-Ordering verwendet wird. Wird einmalig
-    aufgerufen und das Ergebnis gecached. Fallback: 'abcd'.
+    aufgerufen und das Ergebnis gecached. Fallback: 'cdab' (laut RI-F100-C
+    Datenblatt = "FLOAT REVERSE WORD").
     """
     global _detected_float_format
     for fmt, val in _try_all_float_formats(freq_words):
@@ -276,9 +279,9 @@ def _autodetect_float_format(freq_words):
             _detected_float_format = fmt
             log.info(f"Float-Format erkannt: {fmt.upper()} (Frequenz-Probe = {val:.2f} Hz)")
             return fmt
-    log.warning(f"Float-Format Auto-Detect fehlgeschlagen aus Frequenz-Words {freq_words}, fallback ABCD")
-    _detected_float_format = "abcd"
-    return "abcd"
+    log.warning(f"Float-Format Auto-Detect fehlgeschlagen aus Frequenz-Words {freq_words}, fallback CDAB (Datenblatt-Default)")
+    _detected_float_format = "cdab"
+    return "cdab"
 
 
 def _decode_float_reverse_word(words):
@@ -294,7 +297,7 @@ def _decode_float_reverse_word(words):
         return None
     fmt = (CFG.get("modbus_float_format") or "auto").lower()
     if fmt == "auto":
-        fmt = _detected_float_format or "abcd"
+        fmt = _detected_float_format or "cdab"
     w0, w1 = words[0] & 0xFFFF, words[1] & 0xFFFF
     if fmt == "abcd":
         raw32 = (w0 << 16) | w1
@@ -485,14 +488,22 @@ def read_rayleigh():
 
     out = {}
     try:
-        # Block E ZUERST: Frequenz (0x36) - dient als Probe fuer Float-
+        # Block E ZUERST: Frequenz (0x38) - dient als Probe fuer Float-
         # Byte-Order-Auto-Erkennung. Muss vor allen anderen Bloecken laufen
         # damit die folgenden Decodes das korrekte Format nutzen.
-        be = _safe_read(0x36, 2)
+        # WICHTIG: Frequenz liegt an 0x38 (30056), NICHT an 0x36 (das ist Avg PF)!
+        be = _safe_read(0x38, 2)
         if be and len(be) >= 2:
             if (CFG.get("modbus_float_format") or "auto").lower() == "auto" and _detected_float_format is None:
                 _autodetect_float_format(be)
             out["frequency"] = _decode_float_reverse_word(be)
+            # Diagnose-Log: bei jedem Probe-Read zeigen wir die Rohwerte, damit
+            # man bei Bedarf rueckwaerts pruefen kann ob Float-Decoding stimmt.
+            try:
+                fmt = _detected_float_format or "?"
+                log.debug(f"Probe-Read Freq @0x38 raw={be} fmt={fmt} -> {out['frequency']!r}")
+            except Exception:
+                pass
 
         # Block A: Spannung L1/L2/L3 (0x00..0x05) = 6 Register
         ba = _safe_read(0x00, 6)
@@ -527,12 +538,20 @@ def read_rayleigh():
             out["energy_imp_kwh"] = _decode_float_reverse_word(bf[0:2])
             out["energy_exp_kwh"] = _decode_float_reverse_word(bf[2:4])
 
-        # Block G: Average Power Factor (1 Register, integer, hex set 0x41D)
-        try:
-            pf_raw = instr.read_register(PF_REGISTER[0] + 1, functioncode=3, signed=True)
-            out["avg_pf"] = pf_raw / 1000.0 if abs(pf_raw) <= 10000 else None
-        except Exception as pf_e:
-            log.debug(f"PF-Read fehlgeschlagen (ignoriert): {pf_e}")
+        # Block G: Average Power Factor (Float Reverse Word @ 0x36, 2 Register)
+        bg = _safe_read(0x36, 2)
+        if bg and len(bg) >= 2:
+            try:
+                pf_val = _decode_float_reverse_word(bg)
+                # Plausibilitaet: PF muss zwischen -1.0 und 1.0 liegen
+                if pf_val is not None and -1.5 <= pf_val <= 1.5:
+                    out["avg_pf"] = pf_val
+                else:
+                    out["avg_pf"] = None
+            except Exception as pf_e:
+                log.debug(f"PF-Decode fehlgeschlagen (ignoriert): {pf_e}")
+                out["avg_pf"] = None
+        else:
             out["avg_pf"] = None
 
         # Wenn KEINE der primaeren Bloecke geantwortet hat, ist die Verbindung

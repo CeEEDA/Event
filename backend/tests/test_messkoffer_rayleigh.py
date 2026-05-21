@@ -94,8 +94,8 @@ def test_register_map_completeness():
     for key in required:
         assert key in REGISTERS, f"Register-Map fehlt: {key}"
 
-    # Average PF (= Total Cos Phi) ist separat im Integer-Set
-    assert PF_REGISTER == (0x41D, 1)
+    # Average PF (= Total Cos Phi) ist als Float Reverse Word an 0x36
+    assert PF_REGISTER == (0x36, 2)
 
 
 def test_register_addresses_match_datasheet():
@@ -114,7 +114,7 @@ def test_register_addresses_match_datasheet():
         "power_l3_kw": 0x1C,
         "total_kw": 0x2A,
         "total_kva": 0x2C,
-        "frequency": 0x36,
+        "frequency": 0x38,
         "energy_imp_kwh": 0x60,
         "energy_exp_kwh": 0x62,
     }
