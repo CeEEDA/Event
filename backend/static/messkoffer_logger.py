@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.1.1"
+SCRIPT_VERSION = "2.1.2"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -81,6 +81,11 @@ def load_config():
         # wie das Datenblatt schreibt. FC03 liefert FC04-Setup-Daten zurueck.
         # Empirisch per Diag v2 verifiziert.
         "modbus_function_code": 4,
+        # Inter-Transaction-Delay: Pause in Sekunden ZWISCHEN aufeinanderfolgenden
+        # Modbus-Reads. Empirisch erforderlich beim RI-F100-C: bei <100ms Pause
+        # antwortet der Meter sporadisch nicht (NoResponseError). Default 0.1s
+        # ist ein konservativer Wert; bei stabilem Bus kann man auf 0.05 runter.
+        "modbus_inter_read_delay_s": 0.1,
         # Portal
         "api_url": "",
         "device_key": "",
@@ -494,15 +499,29 @@ def read_rayleigh():
         0-basierte Wire-Offset (0x00 = V1-N). Default modbus_address_offset=0.
         Function Code ist FC04 (Input Registers, ueber Diag v2 verifiziert),
         per CFG umschaltbar auf FC03 falls eine Firmware abweicht.
+
+        Wartet `modbus_inter_read_delay_s` Sekunden NACH jedem Read, damit der
+        Meter Zeit hat sich zwischen Anfragen zu erholen (RI-F100-C antwortet
+        sonst sporadisch nicht).
+
         Returns list of int oder None bei Fehler.
         """
         try:
             wire_addr = start_addr_offset + int(CFG.get("modbus_address_offset", 0))
             fc = int(CFG.get("modbus_function_code", 4))
-            return instr.read_registers(wire_addr, count, functioncode=fc)
+            result = instr.read_registers(wire_addr, count, functioncode=fc)
+            return result
         except Exception as e:
             log.debug(f"read_registers({hex(start_addr_offset)}, {count}) fehlgeschlagen: {e}")
             return None
+        finally:
+            # Inter-Transaction-Delay - WICHTIG fuer den RI-F100-C!
+            try:
+                delay = float(CFG.get("modbus_inter_read_delay_s", 0.1))
+                if delay > 0:
+                    time.sleep(delay)
+            except Exception:
+                pass
 
     out = {}
     try:
