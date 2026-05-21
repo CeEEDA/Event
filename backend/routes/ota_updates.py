@@ -251,6 +251,15 @@ async def pi_check_update(device_type: str, request: Request):
         "lte_act": request.query_params.get("lte_act") or None,
         "gps_lat": _opt_float("gps_lat"),
         "gps_lon": _opt_float("gps_lon"),
+        # Messkoffer-spezifisch: Status der Modbus-/Logger-Pipeline damit der
+        # Admin auch ohne Daten-Ingest sieht warum nichts ankommt.
+        "modbus_ok": request.query_params.get("modbus_ok") or None,
+        "modbus_port": request.query_params.get("modbus_port") or None,
+        "modbus_error": request.query_params.get("modbus_error") or None,
+        "db_rows_total": _opt_int("db_rows_total"),
+        "db_rows_unsynced": _opt_int("db_rows_unsynced"),
+        "last_read_ts": request.query_params.get("last_read_ts") or None,
+        "last_sync_ts": request.query_params.get("last_sync_ts") or None,
     }
 
     repo_hash, file_size = _get_script_hash(device_type)

@@ -275,6 +275,15 @@ def _create_modbus_client():
 # Modbus-Client wird einmal global gehalten, bei Fehler neu erzeugt
 _modbus_client = None
 
+# Status-Tracking fuer OTA-Heartbeat-Telemetrie (damit der Admin remote sieht
+# wieso noch keine Daten ankommen, auch wenn der Pi keine Ingests sendet).
+_pi_status = {
+    "modbus_ok": False,
+    "modbus_error": "",
+    "last_read_ts": "",
+    "last_sync_ts": "",
+}
+
 
 def _ensure_modbus_client():
     global _modbus_client
@@ -337,13 +346,20 @@ def read_rayleigh():
             log.debug(f"PF-Read fehlgeschlagen (ignoriert): {pf_e}")
             out["avg_pf"] = None
 
+        _pi_status["modbus_ok"] = True
+        _pi_status["modbus_error"] = ""
+        _pi_status["last_read_ts"] = datetime.now(timezone.utc).isoformat()
         return out
     except (minimalmodbus.NoResponseError, minimalmodbus.InvalidResponseError, OSError) as e:
         log.debug(f"Modbus-Lesefehler: {e}")
+        _pi_status["modbus_ok"] = False
+        _pi_status["modbus_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         _reset_modbus_client()
         return None
     except Exception as e:
         log.warning(f"Modbus-Lesefehler unerwartet: {e}")
+        _pi_status["modbus_ok"] = False
+        _pi_status["modbus_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         _reset_modbus_client()
         return None
 
@@ -597,7 +613,35 @@ def _check_and_apply_ota_update():
     except Exception:
         hostname = ""
     try:
-        params = {"pi_id": pi_id, "hostname": hostname, "hash": current_hash, "version": SCRIPT_VERSION}
+        # DB-Status mitschicken (damit der Admin remote sieht wieso noch
+        # keine Daten ankommen - z.B. wenn Modbus klappt aber Sync hakt)
+        db_rows_total = -1
+        db_rows_unsynced = -1
+        try:
+            db_path = CFG.get("db_path") or ""
+            if db_path and os.path.exists(db_path):
+                _conn = sqlite3.connect(db_path)
+                row = _conn.execute("SELECT COUNT(*), COALESCE(SUM(CASE WHEN sent=0 THEN 1 ELSE 0 END),0) FROM measurements").fetchone()
+                _conn.close()
+                if row:
+                    db_rows_total = int(row[0] or 0)
+                    db_rows_unsynced = int(row[1] or 0)
+        except Exception as _db_e:
+            log.debug(f"DB-Status-Read fehlgeschlagen: {_db_e}")
+
+        params = {
+            "pi_id": pi_id,
+            "hostname": hostname,
+            "hash": current_hash,
+            "version": SCRIPT_VERSION,
+            "modbus_ok": "1" if _pi_status.get("modbus_ok") else "0",
+            "modbus_port": CFG.get("modbus_port") or "",
+            "modbus_error": _pi_status.get("modbus_error") or "",
+            "db_rows_total": str(db_rows_total) if db_rows_total >= 0 else "",
+            "db_rows_unsynced": str(db_rows_unsynced) if db_rows_unsynced >= 0 else "",
+            "last_read_ts": _pi_status.get("last_read_ts") or "",
+            "last_sync_ts": _pi_status.get("last_sync_ts") or "",
+        }
         resp = requests.get(f"{base}/system/ota/pi/messkoffer/check", params=params, timeout=10)
         if resp.status_code != 200:
             return False
@@ -653,16 +697,28 @@ def sync_loop():
     consecutive_errors = 0
     log.info(f"Sync-Thread gestartet (Intervall {CFG['sync_interval']}s = {CFG['sync_interval']//60} Min)")
     last_ota_check = 0
+    last_status_heartbeat = 0
 
     while True:
         try:
-            # OTA-Check alle 5 Min
-            if time.time() - last_ota_check > 300:
+            # OTA-Update-Check alle 5 Min (versucht Skript-Update)
+            # Status-Heartbeat alle 60 s (sendet modbus_ok + db_rows zum Backend)
+            now = time.time()
+            if now - last_ota_check > 300:
                 try:
                     _check_and_apply_ota_update()
                 except Exception as ota_e:
                     log.debug(f"OTA-Check fehlgeschlagen (ignoriert): {ota_e}")
-                last_ota_check = time.time()
+                last_ota_check = now
+                last_status_heartbeat = now
+            elif now - last_status_heartbeat > 60:
+                # Reiner Status-Heartbeat - gleiche URL, aber wenn Hash gleich
+                # bleibt der Backend-Aufwand minimal (kein Update wird gepullt).
+                try:
+                    _check_and_apply_ota_update()
+                except Exception:
+                    pass
+                last_status_heartbeat = now
 
             last_id = get_last_sync_id()
             if last_id is None:
@@ -691,6 +747,7 @@ def sync_loop():
                 inserted = result.get("inserted", 0)
                 mark_synced(new_last_id)
                 last_id = new_last_id
+                _pi_status["last_sync_ts"] = datetime.now(timezone.utc).isoformat()
                 log.info(f"Sync OK: {inserted} Datensaetze (bis ID {new_last_id})")
                 if len(records) < CFG["sync_batch_size"]:
                     break
