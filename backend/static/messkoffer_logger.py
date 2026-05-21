@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.0.3"
+SCRIPT_VERSION = "2.0.4"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -69,7 +69,7 @@ def load_config():
         "modbus_parity": "N",                # N=None, E=Even, O=Odd
         "modbus_stopbits": 1,
         "modbus_bytesize": 8,
-        "modbus_timeout": 1.0,
+        "modbus_timeout": 2.0,
         # Portal
         "api_url": "",
         "device_key": "",
@@ -336,7 +336,7 @@ def _create_modbus_client():
     # fehlschlagen ohne dass Auto-Detect ausgeloest wird.
     port_works = False
     if port and os.path.exists(port):
-        log.info(f"Pruefe konfigurierten Port: {port}")
+        log.debug(f"Pruefe konfigurierten Port: {port}")
         port_works = _probe_port(port)
         if not port_works:
             log.warning(f"Konfigurierter Port '{port}' antwortet nicht - starte Auto-Detect ueber alle USB-Seriell-Ports")
@@ -360,7 +360,7 @@ def _create_modbus_client():
         instr.serial.timeout = CFG["modbus_timeout"]
         instr.mode = minimalmodbus.MODE_RTU
         instr.clear_buffers_before_each_transaction = True
-        log.info(f"Modbus-Verbindung aktiv: {port} @ {CFG['modbus_baudrate']} Slave {CFG['modbus_slave_id']}")
+        log.debug(f"Modbus-Verbindung aktiv: {port} @ {CFG['modbus_baudrate']} Slave {CFG['modbus_slave_id']}")
         return instr
     except Exception as e:
         log.error(f"Modbus-Init Fehler ({port}): {e}")
@@ -398,48 +398,85 @@ def _reset_modbus_client():
 
 
 def read_rayleigh():
-    """Liest alle relevanten Register vom RI-F100-C in einem Lese-Burst und
+    """Liest alle relevanten Register vom RI-F100-C in kleinen Bloecken und
     einem zusaetzlichen PF-Read. Gibt None zurueck bei Modbus-Fehler.
+
+    WICHTIG: Wir lesen in mehreren kleinen Bloecken (max 8 Register je Read),
+    da Energiezaehler wie der RI-F100-C oft nicht mehr als ~16-32 Register
+    pro FC03-Anfrage beantworten. Ein einziger 46-Register-Block scheitert
+    am Slave (kommt nur per Probe-Test von 2 Reg durch).
     """
     instr = _ensure_modbus_client()
     if not instr:
         return None
 
+    def _safe_read(start_addr_offset, count):
+        """Liest count Register ab Adresse, mit +1 Offset (FC03 vs Datenblatt).
+        Returns list of int oder None bei Fehler.
+        """
+        try:
+            return instr.read_registers(start_addr_offset + 1, count, functioncode=3)
+        except Exception as e:
+            log.debug(f"read_registers({hex(start_addr_offset)}, {count}) fehlgeschlagen: {e}")
+            return None
+
     out = {}
     try:
-        # Block 1: Spannung + Strom + Leistung pro Phase + Total kW/kVA
-        # 0x00 .. 0x2D = 0x2E Register, +1 Offset = lese ab Reg 1, Laenge 46
-        # Wir lesen einen grossen Block und schneiden uns die Words raus.
-        # FC03 = read_registers; Adresse-Offset +1 fuer Float-Reverse-Word.
-        block1 = instr.read_registers(0x00 + 1, 0x2C + 2 - 0x00, functioncode=3)
-        # block1[0..1] = 0x00 / 0x01 -> Voltage L1
-        for key, (addr, _wlen) in REGISTERS.items():
-            if addr >= 0x2E:
-                continue
-            idx = addr  # Adresse direkt als Index im Block (block startet bei 0x00)
-            if idx + 1 < len(block1):
-                val = _decode_float_reverse_word([block1[idx], block1[idx + 1]])
-                if val is not None:
-                    out[key] = val
+        # Block A: Spannung L1/L2/L3 (0x00..0x05) = 6 Register
+        ba = _safe_read(0x00, 6)
+        if ba and len(ba) >= 6:
+            out["voltage_l1"] = _decode_float_reverse_word(ba[0:2])
+            out["voltage_l2"] = _decode_float_reverse_word(ba[2:4])
+            out["voltage_l3"] = _decode_float_reverse_word(ba[4:6])
 
-        # Block 2: Frequenz - 0x36
-        block2 = instr.read_registers(0x36 + 1, 2, functioncode=3)
-        out["frequency"] = _decode_float_reverse_word(block2)
+        # Block B: Strom L1/L2/L3 (0x10..0x15) = 6 Register
+        bb = _safe_read(0x10, 6)
+        if bb and len(bb) >= 6:
+            out["current_l1"] = _decode_float_reverse_word(bb[0:2])
+            out["current_l2"] = _decode_float_reverse_word(bb[2:4])
+            out["current_l3"] = _decode_float_reverse_word(bb[4:6])
 
-        # Block 3: Energie kWh Imp/Exp - 0x60 + 0x62
-        block3 = instr.read_registers(0x60 + 1, 4, functioncode=3)
-        out["energy_imp_kwh"] = _decode_float_reverse_word(block3[0:2])
-        out["energy_exp_kwh"] = _decode_float_reverse_word(block3[2:4])
+        # Block C: Leistung L1/L2/L3 (0x18..0x1D) = 6 Register
+        bc = _safe_read(0x18, 6)
+        if bc and len(bc) >= 6:
+            out["power_l1_kw"] = _decode_float_reverse_word(bc[0:2])
+            out["power_l2_kw"] = _decode_float_reverse_word(bc[2:4])
+            out["power_l3_kw"] = _decode_float_reverse_word(bc[4:6])
 
-        # Block 4: Average Power Factor (1 Register, int, hex, signed: -1..+1, x1000)
-        # Doku: PF-Register sind im integer-Block 0x41A..0x41D, ein Register.
-        # Wertebereich typisch -1000..+1000 = -1.0..+1.0 Cos Phi.
+        # Block D: Total kW (0x2A) + Total kVA (0x2C) = 4 Register
+        bd = _safe_read(0x2A, 4)
+        if bd and len(bd) >= 4:
+            out["total_kw"] = _decode_float_reverse_word(bd[0:2])
+            out["total_kva"] = _decode_float_reverse_word(bd[2:4])
+
+        # Block E: Frequenz (0x36) = 2 Register
+        be = _safe_read(0x36, 2)
+        if be and len(be) >= 2:
+            out["frequency"] = _decode_float_reverse_word(be)
+
+        # Block F: Energie kWh Import (0x60) + Export (0x62) = 4 Register
+        bf = _safe_read(0x60, 4)
+        if bf and len(bf) >= 4:
+            out["energy_imp_kwh"] = _decode_float_reverse_word(bf[0:2])
+            out["energy_exp_kwh"] = _decode_float_reverse_word(bf[2:4])
+
+        # Block G: Average Power Factor (1 Register, integer, hex set 0x41D)
         try:
             pf_raw = instr.read_register(PF_REGISTER[0] + 1, functioncode=3, signed=True)
             out["avg_pf"] = pf_raw / 1000.0 if abs(pf_raw) <= 10000 else None
         except Exception as pf_e:
             log.debug(f"PF-Read fehlgeschlagen (ignoriert): {pf_e}")
             out["avg_pf"] = None
+
+        # Wenn KEINE der primaeren Bloecke geantwortet hat, ist die Verbindung
+        # praktisch tot - signal an Caller als komplett-Fehler.
+        primary_keys = ("voltage_l1", "current_l1", "power_l1_kw", "frequency", "energy_imp_kwh")
+        if not any(out.get(k) is not None for k in primary_keys):
+            log.warning("Alle Primaer-Bloecke fehlgeschlagen - vermutlich Slave nicht erreichbar")
+            _pi_status["modbus_ok"] = False
+            _pi_status["modbus_error"] = "Alle Modbus-Bloecke timed out"
+            _reset_modbus_client()
+            return None
 
         _pi_status["modbus_ok"] = True
         _pi_status["modbus_error"] = ""
