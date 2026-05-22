@@ -10,7 +10,7 @@ Version: 2.0.0 (2026-05-22) - Register-Offsets gemaess offizieller GenComm-Doku 
   - Page 4 L1/L2/L3 Watts jetzt korrekt bei Reg 28-29, 30-31, 32-33
   - Page 7 Energy kWh jetzt bei Reg 8-9 mit Scale 0.1 (vorher Reg 4 = "next maintenance time")
 """
-SCRIPT_VERSION = "2.0.1"
+SCRIPT_VERSION = "2.0.2"
 import usb.core
 import usb.util
 import struct
@@ -466,7 +466,9 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
         records.append(rec)
         ids.append(row_id)
 
-        # Collect alarms
+        # Collect alarms - sammeln, am Ende deduplizieren (pro pos nur einmal,
+        # mit dem juengsten Timestamp). Sonst werden 10 Records = 10x derselbe
+        # Alarm gesendet -> fault_text bekommt mehrfach denselben Text.
         for alarm in raw.get("active_alarms", []):
             all_alarms.append({
                 "ts_utc": raw.get("timestamp", ""),
@@ -475,6 +477,15 @@ def sync_to_portal(db_conn, api_url, device_id, device_key):
                 "description": ALARM_NAMES.get(alarm.get("pos", 0), f"Alarm #{alarm.get('pos')}"),
                 "active": True,
             })
+
+    # Deduplizieren: nur ein Eintrag pro pos, immer mit dem juengsten Timestamp.
+    _seen = {}
+    for a in all_alarms:
+        pos = a.get("alarm_code")
+        prev = _seen.get(pos)
+        if prev is None or a.get("ts_utc", "") > prev.get("ts_utc", ""):
+            _seen[pos] = a
+    all_alarms = list(_seen.values())
 
     if not records and not all_alarms:
         return 0
