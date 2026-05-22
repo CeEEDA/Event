@@ -2615,6 +2615,9 @@ echo "[2/{total_steps}] GPS-Antenne konfigurieren..."
 
 # SIM7600-HAT: GPS PROAKTIV aktivieren (bevor wir nach NMEA suchen).
 # Ohne AT+CGPS=1 sendet der NMEA-Port nichts -> detect_gps_port findet nichts.
+# Zusaetzlich AT+CGPSAUTO=1 setzen, damit GPS persistent ueber Reboot/Stromabriss
+# automatisch wieder anspringt (Modem-Firmware-Konfig, kein systemd noetig).
+SIM7600_AT_PORT=""
 if lsusb | grep -q "1e0e:9001"; then
     echo "  SIM7600 erkannt - aktiviere GPS proaktiv..."
     for at in /dev/sim7600-at /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1; do
@@ -2622,16 +2625,25 @@ if lsusb | grep -q "1e0e:9001"; then
         [ "$at" = "{body.serial_port}" ] && continue
         # 115200 fuer AT-Ports, raw mode
         stty -F "$at" 115200 raw -echo 2>/dev/null || continue
-        # AT+CGPS=1 senden + 1s auf Antwort warten
+        # AT+CGPS=1 senden + 1s auf Antwort warten - Antwort muss OK/CGPS/ERROR sein
+        # (NMEA-Port antwortet mit $GP... -> kein Treffer, Schleife geht weiter)
         (echo -ne "AT+CGPS=1\r\n" > "$at") &
         if timeout 2 head -c 200 "$at" 2>/dev/null | grep -qE "OK|CGPS|ERROR"; then
             echo "    AT+CGPS=1 -> $at akzeptiert (AT-Port erkannt)"
+            SIM7600_AT_PORT="$at"
             wait
+            # AT+CGPSAUTO=1: GPS automatisch beim Modem-Start an. Persistent in
+            # der Modem-Firmware -> ueberlebt Stromabriss/Reboot ohne systemd.
+            (echo -ne "AT+CGPSAUTO=1\r\n" > "$at") &
+            timeout 2 head -c 100 "$at" 2>/dev/null | grep -qE "OK|ERROR" && \
+                echo "    AT+CGPSAUTO=1 -> $at gesetzt (Auto-Start nach Reboot)"
+            wait 2>/dev/null
             break
         fi
         wait 2>/dev/null
     done
     sleep 5  # GPS Engine braucht Zeit zum Hochfahren
+    [ -z "$SIM7600_AT_PORT" ] && echo "  WARNUNG: AT-Port nicht erkannt - GPS evtl. inaktiv"
 fi
 
 # Auto-Detect: NMEA-Verifikation statt nur Port-Existenz pruefen.
@@ -2694,7 +2706,10 @@ sudo systemctl enable gpsd
 sudo systemctl restart gpsd.socket gpsd
 echo "  gpsd konfiguriert fuer: $GPS_DEV (Optionen: -n -b)"
 
-# SIM7600 GPS persistent nach Reboot aktivieren
+# SIM7600 GPS persistent nach Reboot (Fallback, falls AT+CGPSAUTO=1 nicht greift).
+# Service probiert die AT-Port-Kandidaten und schickt AT+CGPS=1 NUR an einen Port,
+# der mit OK/CGPS/ERROR antwortet - NICHT blind an /dev/ttyUSB2 (das ist auf vielen
+# HATs der NMEA-Port -> Befehl waere ein No-Op gewesen).
 if lsusb | grep -q "1e0e:9001"; then
     sudo tee /etc/systemd/system/sim7600-gps.service > /dev/null << 'GPSSVC2'
 [Unit]
@@ -2706,15 +2721,15 @@ Wants=gpsd.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=/bin/sleep 8
-ExecStart=/bin/bash -c 'for p in /dev/ttyUSB2 /dev/sim7600-at; do [ -e "$p" ] && echo -ne "AT+CGPS=1\\r\\n" > "$p" && break; done; sleep 2'
-ExecStop=/bin/bash -c 'for p in /dev/ttyUSB2 /dev/sim7600-at; do [ -e "$p" ] && echo -ne "AT+CGPS=0\\r\\n" > "$p" && break; done'
+ExecStart=/bin/bash -c 'for p in /dev/sim7600-at /dev/ttyUSB3 /dev/ttyUSB2 /dev/ttyUSB1; do [ -e "$p" ] || continue; stty -F "$p" 115200 raw -echo 2>/dev/null || continue; (echo -ne "AT+CGPS=1\\r\\n" > "$p") & if timeout 2 head -c 200 "$p" 2>/dev/null | grep -qE "OK|CGPS|ERROR"; then logger -t sim7600-gps "AT+CGPS=1 auf $p akzeptiert"; wait; break; fi; wait 2>/dev/null; done'
+ExecStop=/bin/bash -c 'for p in /dev/sim7600-at /dev/ttyUSB3 /dev/ttyUSB2 /dev/ttyUSB1; do [ -e "$p" ] || continue; stty -F "$p" 115200 raw -echo 2>/dev/null || continue; (echo -ne "AT+CGPS=0\\r\\n" > "$p") & if timeout 2 head -c 200 "$p" 2>/dev/null | grep -qE "OK|CGPS|ERROR"; then wait; break; fi; wait 2>/dev/null; done'
 
 [Install]
 WantedBy=multi-user.target
 GPSSVC2
     sudo systemctl daemon-reload
     sudo systemctl enable sim7600-gps.service
-    echo "  SIM7600 GPS-Service eingerichtet (Auto-Aktivierung nach Boot)"
+    echo "  SIM7600 GPS-Service eingerichtet (AT-Port-aware Auto-Aktivierung)"
 fi
 {lte_setup_block}
 # ===== SCHRITT {"4" if body.enable_lte else "3"}: PYTHON-UMGEBUNG =====
