@@ -317,6 +317,7 @@ async def get_device_telemetry(
     from_time: Optional[str] = None,
     to_time: Optional[str] = None,
     limit: int = Query(default=500, le=999999),
+    raw: bool = Query(default=False, description="True = ungekuerzte Daten ohne 5-Min-Bucketing (fuer CSV)"),
     user: dict = Depends(get_authenticated_user)
 ):
     """Get telemetry data for a Messkoffer device (optionally filtered by meter and time range)."""
@@ -350,26 +351,48 @@ async def get_device_telemetry(
         if to_time:
             query["ts_utc"]["$lte"] = to_time
 
-    # Wenn die Datenmenge das Limit uebersteigt, downsamplen wir gleichmaessig
-    # ueber den gesamten Zeitraum. Sonst wuerde "sort desc + limit" nur die
-    # juengsten N Records zeigen und der Anfang des Tages haengt ab.
+    # Charts auf 5-Min-Buckets reduzieren: pro 5-Min-Intervall genau 1 Record
+    # (jeweils der letzte = aktuellste Wert im Bucket). Liefert weiterhin
+    # `{items, total, downsampled}` damit UI die echte Record-Anzahl anzeigt.
+    # raw=true (CSV) -> alle Originaldaten ohne Bucketing.
     total_count = await db.emu_data.count_documents(query)
-    if total_count > limit:
-        all_data = await db.emu_data.find(
-            query, {"_id": 0}
-        ).sort("ts_utc", 1).to_list(total_count)
-        # Linear gleichverteiltes Downsampling: alle paar Records eines behalten
-        step = max(1, total_count // limit)
-        data = all_data[::step][:limit]
-        # Letzten Punkt immer mitnehmen, damit aktuellster Wert sichtbar bleibt
-        if all_data and (not data or data[-1] is not all_data[-1]):
-            data.append(all_data[-1])
-        return {"items": data, "total": total_count, "downsampled": True}
-    else:
-        data = await db.emu_data.find(
-            query, {"_id": 0}
-        ).sort("ts_utc", 1).to_list(total_count or limit)
-        return {"items": data, "total": total_count, "downsampled": False}
+    all_data = await db.emu_data.find(
+        query, {"_id": 0}
+    ).sort("ts_utc", 1).to_list(total_count or limit)
+
+    if raw:
+        return {"items": all_data[:limit], "total": total_count, "downsampled": False}
+
+    BUCKET_SEC = 300  # 5 Minuten
+    bucketed = {}
+    for rec in all_data:
+        ts_raw = rec.get("ts_utc")
+        if not ts_raw:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        epoch = int(ts.timestamp())
+        bucket_key = epoch - (epoch % BUCKET_SEC)
+        bucketed[bucket_key] = rec  # letzter Wert im Bucket gewinnt
+
+    data = [bucketed[k] for k in sorted(bucketed.keys())]
+    # Allerletzten Originaleintrag IMMER anhaengen (damit aktuellster Wert
+    # sichtbar bleibt, auch wenn er im selben Bucket wie ein vorheriger liegt)
+    if all_data and (not data or data[-1].get("ts_utc") != all_data[-1].get("ts_utc")):
+        data.append(all_data[-1])
+
+    # Auf limit kuerzen falls trotz 5-Min-Bucketing zu viele Datenpunkte
+    if len(data) > limit:
+        step = max(1, len(data) // limit)
+        data = data[::step][:limit]
+
+    return {
+        "items": data,
+        "total": total_count,
+        "downsampled": len(data) < total_count,
+    }
 
 
 @router.get("/devices/{device_id}/telemetry/latest")

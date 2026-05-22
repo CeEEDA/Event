@@ -746,6 +746,7 @@ async def get_telemetry(
     limit: int = Query(default=5000, ge=1, le=50000),
     from_time: str = Query(default=None),
     to_time: str = Query(default=None),
+    raw: bool = Query(default=False, description="True = ungekuerzte Daten ohne 5-Min-Bucketing"),
     user: dict = Depends(get_authenticated_user),
 ):
     gen = await _resolve_generator(generator_id)
@@ -781,6 +782,27 @@ async def get_telemetry(
     telemetry = await db.generator_telemetry.find(
         query, {"_id": 0}
     ).sort("timestamp", 1).to_list(limit)
+
+    # 5-Min-Bucketing fuer Charts (raw=true umgeht das fuer CSV-Export)
+    if not raw and len(telemetry) > 0:
+        BUCKET_SEC = 300
+        bucketed = {}
+        for rec in telemetry:
+            ts_raw = rec.get("timestamp")
+            if not ts_raw:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            epoch = int(ts.timestamp())
+            bucket_key = epoch - (epoch % BUCKET_SEC)
+            bucketed[bucket_key] = rec
+        last_rec = telemetry[-1]
+        telemetry = [bucketed[k] for k in sorted(bucketed.keys())]
+        # Allerletzten Record immer mitnehmen damit aktuellster Wert sichtbar bleibt
+        if telemetry and telemetry[-1].get("timestamp") != last_rec.get("timestamp"):
+            telemetry.append(last_rec)
 
     # Felder die zu Elektrisch / Mechanisch gehoeren
     ELECTRICAL_FIELDS = {"voltage_l1", "voltage_l2", "voltage_l3", "voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1",

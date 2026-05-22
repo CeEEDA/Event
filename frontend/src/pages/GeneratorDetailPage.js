@@ -345,30 +345,34 @@ export default function GeneratorDetailPage() {
     }
   }, [id, analyseDateFrom, analyseDateTo]);
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     if (analyseData.length === 0) return;
     setExporting(true);
     try {
+      // CSV: ungekuerzt holen (raw=true umgeht 5-Min-Bucketing)
+      const from = new Date(analyseDateFrom).toISOString();
+      const to = new Date(analyseDateTo + "T23:59:59").toISOString();
+      const rawRes = await api.get(
+        `/generators/${id}/telemetry?from_time=${from}&to_time=${to}&limit=50000&raw=true`
+      );
+      const rawData = rawRes.data || [];
       const fields = ["timestamp", "voltage_l1", "voltage_l2", "voltage_l3", "current_l1", "current_l2", "current_l3",
         "power_total_w", "power_kw", "energy_kwh", "frequency", "battery_voltage", "coolant_temp", "oil_pressure",
         "fuel_level", "hours_run", "rpm", "dse_mode"];
       const header = fields.join(";");
-      const rows = analyseData.map(r => fields.map(f => {
-        const v = r[f];
-        return v !== null && v !== undefined ? String(v) : "";
-      }).join(";"));
+      const rows = rawData.map(d => fields.map(f => d[f] ?? "").join(";"));
       const csv = "\uFEFF" + [header, ...rows].join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const name = generator?.name || "generator";
       a.href = url;
+      const name = (generator?.serial_number || generator?.device_code || id).replace(/[^A-Za-z0-9._-]/g, "_");
       a.download = `${name}_${analyseDateFrom}_${analyseDateTo}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`${analyseData.length} Datenpunkte exportiert`);
+      toast.success(`${rawData.length} Datenpunkte exportiert`);
     } catch {
-      toast.error("Export fehlgeschlagen");
+      toast.error("CSV-Export fehlgeschlagen");
     } finally {
       setExporting(false);
     }

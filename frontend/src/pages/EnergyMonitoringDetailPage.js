@@ -197,7 +197,7 @@ export default function EnergyMonitoringDetailPage() {
   const handleExportCSV = async () => {
     setExporting(true);
     try {
-      const params = { limit: 999999 };
+      const params = { limit: 999999, raw: true };
       if (dateFrom) params.from_time = new Date(dateFrom).toISOString();
       if (dateTo) params.to_time = new Date(dateTo + "T23:59:59").toISOString();
       if (selectedMeter !== "all") params.meter_id = selectedMeter;
