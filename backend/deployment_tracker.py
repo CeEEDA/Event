@@ -35,15 +35,40 @@ async def _find_active_order_for_generator(
       2. GPS-Radius-Match (lat/lng innerhalb center_lat/lng + radius_km)
 
     Bei Treffer wird (order_pk, order_label) zurueckgegeben. Sonst None.
+
+    Aufträge, deren end_date in der Vergangenheit liegt, werden ignoriert -
+    sonst werden Maschinen die nach Auftrags-Ende noch laufen weiter dem
+    erledigten Auftrag zugeschrieben.
     """
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+
+    async def _order_is_active(order_pk) -> bool:
+        if order_pk is None:
+            return True
+        doc = await db.orders_cache.find_one(
+            {"$or": [{"primary_key": order_pk}, {"primary_key": str(order_pk)}]},
+            {"_id": 0, "end_date": 1, "date_end": 1}
+        )
+        if not doc:
+            return True  # Kein Cache-Eintrag -> nicht abblocken
+        end_raw = doc.get("end_date") or doc.get("date_end")
+        if not end_raw:
+            return True
+        # end_raw kommt typisch als "YYYY-MM-DD" rein
+        try:
+            return str(end_raw)[:10] >= today_iso
+        except Exception:
+            return True
+
     # 1) Manuelle Zuordnung
     manual = await db.order_settings.find_one(
         {"manual_generator_ids": generator_id}, {"_id": 0, "order_pk": 1}
     )
     if manual:
         order_pk = manual.get("order_pk")
-        label = await _resolve_order_label(db, order_pk)
-        return {"order_pk": order_pk, "order_label": label, "match_via": "manual"}
+        if await _order_is_active(order_pk):
+            label = await _resolve_order_label(db, order_pk)
+            return {"order_pk": order_pk, "order_label": label, "match_via": "manual"}
 
     # 2) GPS-Radius
     if lat is None or lng is None:
@@ -63,6 +88,9 @@ async def _find_active_order_for_generator(
             continue
         radius = float(s.get("radius_km") or 5.0)
         if d <= radius:
+            # Auftrag-Endedatum pruefen - abgelaufene NICHT mehr matchen
+            if not await _order_is_active(s.get("order_pk")):
+                continue
             if best is None or d < best["distance"]:
                 best = {"order_pk": s.get("order_pk"), "distance": d}
     if best is None:
