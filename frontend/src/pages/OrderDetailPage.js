@@ -1292,6 +1292,26 @@ export default function OrderDetailPage() {
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">{g.name}</p>
                               <p className="text-xs text-gray-500 truncate">{g.model} · {g.serial_number}</p>
+                              {(g.latitude != null && g.longitude != null) ? (
+                                <p className="text-[11px] text-gray-400 truncate flex items-center gap-1" data-testid={`add-gen-gps-${g.id}`}>
+                                  <MapPin className="w-3 h-3 inline" />
+                                  {Number(g.latitude).toFixed(4)}, {Number(g.longitude).toFixed(4)}
+                                  <span
+                                    role="link"
+                                    tabIndex={0}
+                                    onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps?q=${g.latitude},${g.longitude}`, "_blank"); }}
+                                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); window.open(`https://www.google.com/maps?q=${g.latitude},${g.longitude}`, "_blank"); } }}
+                                    className="underline hover:text-fuchsia-500 cursor-pointer ml-1"
+                                    data-testid={`add-gen-map-${g.id}`}
+                                  >
+                                    Karte
+                                  </span>
+                                </p>
+                              ) : (
+                                <p className="text-[11px] text-gray-300 truncate" data-testid={`add-gen-nogps-${g.id}`}>
+                                  Keine GPS-Position
+                                </p>
+                              )}
                             </div>
                           </div>
                           <Plus className="w-4 h-4 text-gray-300 group-hover:text-fuchsia-500 flex-shrink-0" />

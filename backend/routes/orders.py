@@ -260,6 +260,18 @@ async def trigger_sync(user: dict = Depends(_auth_user)):
     return result
 
 
+@router.post("/cleanup-expired-assignments")
+async def trigger_cleanup_expired_assignments(user: dict = Depends(_auth_user)):
+    """Admin: Manuell die Auto-Unassign-Routine für abgelaufene Aufträge
+    triggern (sonst läuft sie automatisch 1x täglich)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    from deployment_tracker import cleanup_expired_order_assignments
+    result = await cleanup_expired_order_assignments(_db)
+    return {"ok": True, **result}
+
+
+
 @router.post("/sync/settings")
 async def update_sync_settings(data: dict, user: dict = Depends(_auth_user)):
     """Update sync interval."""

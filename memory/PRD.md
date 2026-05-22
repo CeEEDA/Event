@@ -16,6 +16,20 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Mai 2026 – Auto-Unassign abgelaufener Aufträge + GPS für unzugewiesene Generatoren (P0, Feature)
+- 🎯 **User-Request**: "Job ist am 20.05 zu Ende. Aber die Maschine ist immer noch darauf gebucht – diese muss automatisch entfernt werden, wenn das Schlussdatum rum ist. Außerdem brauche ich bei nicht zugewiesenen Generatoren eine GPS-Position um sie ggf. nach zu buchen."
+- 🐛 **Latent-Bug entdeckt**: `deployment_tracker._order_is_active` prüfte die Felder `end_date` / `date_end`, die im `orders_cache` aber gar nicht existieren – die korrekten Felder sind `dispo_end` / `event_end`. Die bestehende „Ignoriere abgelaufene Aufträge"-Logik feuerte daher nie.
+- ✅ **Backend-Fix** (`/app/backend/deployment_tracker.py`):
+  - `_order_is_active` liest jetzt `dispo_end` → `event_end` → `end_date` → `date_end` (Reihenfolge).
+  - **Neue Funktion `cleanup_expired_order_assignments(db)`**: iteriert alle `order_settings` mit `manual_generator_ids`, prüft das Auftragsende, leert die Zuordnungs-Liste und schließt offene `deployment_history`-Einträge mit `stopped_at = end_date 23:59:59 UTC` + Notiz "Automatisch beendet (Auftragsende erreicht)".
+  - **Daily-Scheduler `start_cleanup_scheduler(db)`** läuft 1× alle 24 h, hängt in `server.py` Startup-Sequence.
+  - **Admin-Endpoint** `POST /api/orders/cleanup-expired-assignments` für manuelle Triggerung.
+- ✅ **Frontend-Fix** (`/app/frontend/src/pages/OrderDetailPage.js`): „Generator zuordnen"-Modal zeigt jetzt unter Name/Modell die GPS-Position (`50.1234, 8.5678`) + „Karte"-Link → öffnet Google Maps in neuem Tab. Wenn keine GPS-Daten vorhanden: "Keine GPS-Position".
+- ✅ **Tests** (`/app/backend/tests/test_cleanup_expired_assignments.py`): 3/3 PASS (expired-cleanup, no-action-on-active, event_end-fallback).
+- ✅ **Live-Test gegen echte DB**: `dispo_end` testweise auf gestern gesetzt → Cleanup hat Generator entfernt + Deployment geschlossen → Rollback OK.
+
+
+
 ### Mai 2026 – Messkoffer Rayleigh FC04 Discovery & v2.1.0 (P0, Bug-Final-Fix)
 - 🐛 **Recurring Bug**: Trotz aller vorherigen Fixes (v2.0.6 → v2.0.7 → v2.0.8 → v2.0.9) kamen Spannungswerte weiterhin denormalisiert (e-40, e-42) im Portal an, obwohl Meter physisch 230 V anzeigte.
 - 🔍 **Live-Diagnose-Tool**: `/app/backend/static/messkoffer_diag.py` + `messkoffer_diag2.py` erstellt – Standalone-Skripte die per `curl | sudo python3` auf dem Pi ausführbar sind und alle Modbus-Kombinationen (FC03/FC04, Offset 0/+1, alle 4 Float-Byte-Orderings, Slave-ID-Scan) live durchprobieren. Public-Download via `GET /api/system/ota/tools/{filename}` (anonym).

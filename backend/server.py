@@ -2382,3 +2382,12 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"DATEV-Scheduler start failed: {e}")
 
+    # Start Deployment-Cleanup-Scheduler (täglich: entfernt Generator-
+    # Zuordnungen für abgelaufene Aufträge)
+    try:
+        from deployment_tracker import start_cleanup_scheduler
+        start_cleanup_scheduler(db)
+        logger.info("Deployment-Cleanup-Scheduler aktiv")
+    except Exception as e:
+        logger.warning(f"Deployment-Cleanup-Scheduler start failed: {e}")
+

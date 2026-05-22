@@ -7,6 +7,7 @@ Wird von beiden Telemetrie-Pfaden aufgerufen:
   - MQTT-Service (`_process_message` in mqtt_service.py)  - Pi-Ingest (`POST /api/generators/ingest` in routes/generators.py)
 """
 from __future__ import annotations
+import asyncio
 import logging
 import math
 import uuid
@@ -47,11 +48,16 @@ async def _find_active_order_for_generator(
             return True
         doc = await db.orders_cache.find_one(
             {"$or": [{"primary_key": order_pk}, {"primary_key": str(order_pk)}]},
-            {"_id": 0, "end_date": 1, "date_end": 1}
+            {"_id": 0, "dispo_end": 1, "event_end": 1, "end_date": 1, "date_end": 1}
         )
         if not doc:
             return True  # Kein Cache-Eintrag -> nicht abblocken
-        end_raw = doc.get("end_date") or doc.get("date_end")
+        end_raw = (
+            doc.get("dispo_end")
+            or doc.get("event_end")
+            or doc.get("end_date")
+            or doc.get("date_end")
+        )
         if not end_raw:
             return True
         # end_raw kommt typisch als "YYYY-MM-DD" rein
@@ -268,3 +274,133 @@ def extract_engine_state(telemetry: dict) -> Optional[bool]:
     if isinstance(rpm, (int, float)):
         return rpm > 0
     return None
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Auto-Cleanup: abgelaufene Auftrags-Zuordnungen täglich entfernen
+# ════════════════════════════════════════════════════════════════════════
+
+async def cleanup_expired_order_assignments(db) -> dict:
+    """Entfernt Generator-Zuordnungen + schließt offene Deployments für
+    Aufträge, deren `dispo_end` (Fallback `event_end`) in der Vergangenheit
+    liegt.
+
+    Wird einmal täglich vom Scheduler aufgerufen und kann auch manuell
+    via Admin-Button getriggert werden.
+    """
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    settings_cursor = db.order_settings.find(
+        {"manual_generator_ids": {"$exists": True, "$ne": []}},
+        {"_id": 0, "order_pk": 1, "manual_generator_ids": 1},
+    )
+
+    unassigned_count = 0
+    closed_count = 0
+    processed_orders = 0
+
+    async for s in settings_cursor:
+        order_pk = s.get("order_pk")
+        if order_pk is None:
+            continue
+        order_doc = await db.orders_cache.find_one(
+            {"$or": [{"primary_key": order_pk}, {"primary_key": str(order_pk)}]},
+            {"_id": 0, "dispo_end": 1, "event_end": 1, "end_date": 1, "date_end": 1, "event": 1, "name": 1, "title": 1},
+        )
+        if not order_doc:
+            continue
+        end_raw = (
+            order_doc.get("dispo_end")
+            or order_doc.get("event_end")
+            or order_doc.get("end_date")
+            or order_doc.get("date_end")
+        )
+        if not end_raw or str(end_raw)[:10] >= today_iso:
+            continue  # Auftrag noch aktiv
+
+        gen_ids = s.get("manual_generator_ids") or []
+        if not gen_ids:
+            continue
+
+        # End-Timestamp = Auftrags-Ende 23:59:59 UTC (oder jetzt, falls Datum
+        # in der Zukunft wäre - hier nicht relevant da bereits abgelaufen)
+        try:
+            ended_at = f"{str(end_raw)[:10]}T23:59:59+00:00"
+        except Exception:
+            ended_at = now_iso
+
+        # 1) Offene auto_assigned-Deployments dieses Auftrags schließen
+        open_dep_cursor = db.deployment_history.find(
+            {
+                "order_pk": order_pk,
+                "generator_id": {"$in": gen_ids},
+                "stopped_at": None,
+            },
+            {"_id": 0, "id": 1, "generator_id": 1},
+        )
+        async for dep in open_dep_cursor:
+            await db.deployment_history.update_one(
+                {"id": dep["id"]},
+                {"$set": {
+                    "stopped_at": ended_at,
+                    "notes": "Automatisch beendet (Auftragsende erreicht)",
+                    "auto_closed_by_scheduler": True,
+                    "auto_closed_at": now_iso,
+                }},
+            )
+            closed_count += 1
+
+        # 2) Alle Zuordnungen aus manual_generator_ids entfernen
+        await db.order_settings.update_one(
+            {"order_pk": order_pk},
+            {"$set": {
+                "manual_generator_ids": [],
+                "updated_at": now_iso,
+                "auto_unassigned_at": now_iso,
+            }},
+        )
+        unassigned_count += len(gen_ids)
+        processed_orders += 1
+        logger.info(
+            f"Auto-Unassign: order_pk={order_pk} end={end_raw} -> "
+            f"{len(gen_ids)} Generatoren entfernt"
+        )
+
+    return {
+        "processed_orders": processed_orders,
+        "unassigned_generators": unassigned_count,
+        "closed_deployments": closed_count,
+        "ran_at": now_iso,
+    }
+
+
+_cleanup_task: Optional[asyncio.Task] = None
+
+
+async def _cleanup_loop(db):
+    """Daily background task: 1x pro Tag (24h) prüft + räumt auf."""
+    # Erst 60 Sekunden warten, damit Server-Startup nicht blockiert wird
+    await asyncio.sleep(60)
+    while True:
+        try:
+            result = await cleanup_expired_order_assignments(db)
+            if result["processed_orders"] > 0:
+                logger.info(f"Deployment-Cleanup-Scheduler: {result}")
+            else:
+                logger.debug("Deployment-Cleanup-Scheduler: nichts zu tun")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Deployment-Cleanup-Scheduler Fehler: {e}")
+        # 24 Stunden warten
+        await asyncio.sleep(24 * 60 * 60)
+
+
+def start_cleanup_scheduler(db):
+    """Startet den Daily-Cleanup-Scheduler (idempotent)."""
+    global _cleanup_task
+    if _cleanup_task is not None and not _cleanup_task.done():
+        return
+    _cleanup_task = asyncio.create_task(_cleanup_loop(db))
+    logger.info("Deployment-Cleanup-Scheduler gestartet (täglich, 24h-Intervall)")
