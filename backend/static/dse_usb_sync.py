@@ -10,7 +10,7 @@ Version: 2.0.0 (2026-05-22) - Register-Offsets gemaess offizieller GenComm-Doku 
   - Page 4 L1/L2/L3 Watts jetzt korrekt bei Reg 28-29, 30-31, 32-33
   - Page 7 Energy kWh jetzt bei Reg 8-9 mit Scale 0.1 (vorher Reg 4 = "next maintenance time")
 """
-SCRIPT_VERSION = "2.0.0"
+SCRIPT_VERSION = "2.0.1"
 import usb.core
 import usb.util
 import struct
@@ -31,17 +31,29 @@ logger = logging.getLogger("dse_usb_sync")
 # ============== GPS via gpsd ==============
 
 def read_gps():
-    """Read GPS position from gpsd (if running)."""
+    """Read GPS position from gpsd (if running).
+
+    gpsd sendet beim Verbindungsaufbau VERSION/DEVICES/WATCH (3 Messages) und
+    danach mehrere SKY-Messages bevor die erste TPV-Message mit lat/lon kommt.
+    Mit `-n 5` wird die TPV oft nicht erreicht. Deshalb lesen wir bis zu
+    `-n 30` Messages oder brechen nach 8s Timeout ab - was zuerst kommt.
+    """
     try:
         import subprocess
         result = subprocess.run(
-            ["gpspipe", "-w", "-n", "5"],
-            capture_output=True, text=True, timeout=8
+            ["gpspipe", "-w", "-n", "30"],
+            capture_output=True, text=True, timeout=10
         )
         for line in result.stdout.splitlines():
             if '"class":"TPV"' in line:
                 import json as _json
-                tpv = _json.loads(line)
+                try:
+                    tpv = _json.loads(line)
+                except (ValueError, _json.JSONDecodeError):
+                    continue
+                # mode 2 = 2D-Fix, mode 3 = 3D-Fix. Beide haben gueltige lat/lon.
+                if tpv.get("mode", 0) < 2:
+                    continue
                 lat = tpv.get("lat")
                 lon = tpv.get("lon")
                 if lat is not None and lon is not None:
