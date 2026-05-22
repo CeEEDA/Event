@@ -75,6 +75,8 @@ export default function EnergyMonitoringDetailPage() {
   const navigate = useNavigate();
   const [device, setDevice] = useState(null);
   const [telemetry, setTelemetry] = useState([]);
+  const [telemetryTotal, setTelemetryTotal] = useState(0);
+  const [telemetryDownsampled, setTelemetryDownsampled] = useState(false);
   const [meterData, setMeterData] = useState([]);
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -130,7 +132,18 @@ export default function EnergyMonitoringDetailPage() {
       }
 
       const res = await api.get(`/energy-monitoring/devices/${id}/telemetry`, { params });
-      setTelemetry(res.data);
+      // Backend liefert {items, total, downsampled}. Aelterer Aufrufer-Code
+      // bekam ein Array - hier robust beides unterstuetzen.
+      const payload = res.data;
+      if (Array.isArray(payload)) {
+        setTelemetry(payload);
+        setTelemetryTotal(payload.length);
+        setTelemetryDownsampled(false);
+      } else {
+        setTelemetry(payload.items || []);
+        setTelemetryTotal(payload.total || (payload.items || []).length);
+        setTelemetryDownsampled(!!payload.downsampled);
+      }
     } catch (err) {
       console.error("Telemetry fetch error:", err);
     }
@@ -190,7 +203,8 @@ export default function EnergyMonitoringDetailPage() {
       if (selectedMeter !== "all") params.meter_id = selectedMeter;
 
       const res = await api.get(`/energy-monitoring/devices/${id}/telemetry`, { params });
-      const data = res.data;
+      const payload = res.data;
+      const data = Array.isArray(payload) ? payload : (payload.items || []);
 
       if (data.length === 0) {
         toast.error("Keine Daten zum Exportieren");
@@ -388,9 +402,11 @@ export default function EnergyMonitoringDetailPage() {
                 {exporting ? "Exportiert..." : "CSV Export"}
               </Button>
 
-              <span className="text-xs text-gray-400 flex items-center gap-1">
+              <span className="text-xs text-gray-400 flex items-center gap-1" data-testid="datapoints-count">
                 <Clock className="w-3 h-3" />
-                {telemetry.length} Datenpunkte
+                {telemetryDownsampled
+                  ? `${telemetry.length.toLocaleString("de-DE")} von ${telemetryTotal.toLocaleString("de-DE")} Datenpunkten (gleichmäßig verteilt)`
+                  : `${telemetry.length.toLocaleString("de-DE")} Datenpunkte`}
               </span>
             </div>
           </div>

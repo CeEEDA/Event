@@ -350,13 +350,26 @@ async def get_device_telemetry(
         if to_time:
             query["ts_utc"]["$lte"] = to_time
 
-    data = await db.emu_data.find(
-        query, {"_id": 0}
-    ).sort("ts_utc", -1).limit(limit).to_list(limit)
-
-    # Return in chronological order
-    data.reverse()
-    return data
+    # Wenn die Datenmenge das Limit uebersteigt, downsamplen wir gleichmaessig
+    # ueber den gesamten Zeitraum. Sonst wuerde "sort desc + limit" nur die
+    # juengsten N Records zeigen und der Anfang des Tages haengt ab.
+    total_count = await db.emu_data.count_documents(query)
+    if total_count > limit:
+        all_data = await db.emu_data.find(
+            query, {"_id": 0}
+        ).sort("ts_utc", 1).to_list(total_count)
+        # Linear gleichverteiltes Downsampling: alle paar Records eines behalten
+        step = max(1, total_count // limit)
+        data = all_data[::step][:limit]
+        # Letzten Punkt immer mitnehmen, damit aktuellster Wert sichtbar bleibt
+        if all_data and (not data or data[-1] is not all_data[-1]):
+            data.append(all_data[-1])
+        return {"items": data, "total": total_count, "downsampled": True}
+    else:
+        data = await db.emu_data.find(
+            query, {"_id": 0}
+        ).sort("ts_utc", 1).to_list(total_count or limit)
+        return {"items": data, "total": total_count, "downsampled": False}
 
 
 @router.get("/devices/{device_id}/telemetry/latest")
