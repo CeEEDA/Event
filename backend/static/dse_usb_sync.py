@@ -10,7 +10,7 @@ Version: 2.0.0 (2026-05-22) - Register-Offsets gemaess offizieller GenComm-Doku 
   - Page 4 L1/L2/L3 Watts jetzt korrekt bei Reg 28-29, 30-31, 32-33
   - Page 7 Energy kWh jetzt bei Reg 8-9 mit Scale 0.1 (vorher Reg 4 = "next maintenance time")
 """
-SCRIPT_VERSION = "2.0.3"
+SCRIPT_VERSION = "2.1.0"
 import usb.core
 import usb.util
 import struct
@@ -22,6 +22,10 @@ import sys
 import logging
 import configparser
 import requests
+import threading
+import re
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -576,6 +580,76 @@ def cleanup_db(db_conn, max_rows=50000):
         db_conn.commit()
 
 
+# ============== OTA Self-Update ==============
+
+def _parse_remote_version(content: str) -> str:
+    """Parse SCRIPT_VERSION = '...' aus geladenem Skript-Content."""
+    m = re.search(r'SCRIPT_VERSION\s*=\s*["\']([0-9]+\.[0-9]+\.[0-9]+)["\']', content)
+    return m.group(1) if m else ""
+
+
+def _version_tuple(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0, 0, 0)
+
+
+def ota_check_and_apply(api_url: str):
+    """Holt die aktuelle Skript-Version vom Portal und ersetzt sich selbst, wenn neuer.
+    Atomisch via tempfile + os.replace + systemctl restart."""
+    try:
+        # Skript-URL: api_url endet auf /api -> /api/energy-monitoring/dse5510-script
+        url = api_url.rstrip("/") + "/energy-monitoring/dse5510-script?variant=usb"
+        resp = requests.get(url, timeout=20)
+        if resp.status_code != 200 or not resp.text:
+            return
+        remote_content = resp.text
+        remote_ver = _parse_remote_version(remote_content)
+        if not remote_ver:
+            return
+        # Nur ersetzen wenn remote > local
+        if _version_tuple(remote_ver) <= _version_tuple(SCRIPT_VERSION):
+            return
+        logger.info(f"OTA: Neue Version verfuegbar: {remote_ver} (aktuell {SCRIPT_VERSION}) - Update wird angewendet")
+        own_path = os.path.realpath(__file__)
+        # Atomisch schreiben: tempfile in selber Directory, dann os.replace
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            prefix=".dse_usb_sync.", suffix=".tmp", dir=os.path.dirname(own_path)
+        )
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                f.write(remote_content)
+            os.chmod(tmp_path, 0o755)
+            os.replace(tmp_path, own_path)
+            logger.info(f"OTA: Datei ersetzt -> {own_path}. Restart via systemd...")
+        except Exception as e:
+            logger.error(f"OTA: Datei-Replace fehlgeschlagen: {e}")
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return
+        # systemd-Restart (oder exit -> systemd Auto-Restart, da Restart=always)
+        try:
+            subprocess.Popen(["sudo", "systemctl", "restart", "dse5510_sync.service"])
+        except Exception:
+            pass
+        time.sleep(2)
+        sys.exit(0)  # Falls systemctl nicht greift, beendet sich -> systemd faengt
+    except Exception as e:
+        logger.debug(f"OTA Check Fehler: {e}")
+
+
+def ota_worker(api_url: str, interval_seconds: int = 600):
+    """Hintergrund-Thread: checkt alle 10 Min auf neue Skript-Version."""
+    # Erst-Check 30s nach Start (damit der Hauptloop sich stabilisiert)
+    time.sleep(30)
+    while True:
+        ota_check_and_apply(api_url)
+        time.sleep(interval_seconds)
+
+
 # ============== Main Loop ==============
 
 def main():
@@ -598,8 +672,14 @@ def main():
         logger.error("Config unvollstaendig: api_url, device_key, device_id erforderlich")
         sys.exit(1)
 
-    logger.info(f"DSE USB Sync gestartet (Device: {device_id[:12]}..., Slave: {slave_id})")
+    logger.info(f"DSE USB Sync gestartet (Device: {device_id[:12]}..., Slave: {slave_id}, Script v{SCRIPT_VERSION})")
     logger.info(f"Portal: {api_url}")
+
+    # OTA-Background-Thread: prueft alle 10 Min ob ein neueres Skript auf dem Portal liegt
+    ota_thread = threading.Thread(
+        target=ota_worker, args=(api_url, 600), daemon=True, name="ota-worker"
+    )
+    ota_thread.start()
 
     db_conn = init_db(db_path)
     dse = DseUsbConnection(slave_id=slave_id)
