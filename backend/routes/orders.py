@@ -949,10 +949,45 @@ async def create_deployment(order_pk: int, data: DeploymentCreate, user: dict = 
 
 @router.get("/deployments/by-generator/{generator_id}")
 async def get_generator_deployments(generator_id: str, user: dict = Depends(_auth_user)):
-    """Get deployment history for a specific generator."""
+    """Get deployment history for a specific generator.
+
+    Falls `order_label` nur als generisches Fallback ("Auftrag #<pk>") in der
+    History gespeichert wurde (z.B. weil der orders_cache zum Zeitpunkt des
+    Auto-Matches noch keinen Event-Namen kannte), loesen wir das Label HIER
+    live aus dem aktuellen orders_cache nach. So sieht der User sofort den
+    Projektnamen / das Event, sobald EpiRent ihn ein-syncted hat - ohne dass
+    wir alte History-Records anfassen muessen.
+    """
     deployments = await _db.deployment_history.find(
         {"generator_id": generator_id}, {"_id": 0}
     ).sort("started_at", -1).to_list(100)
+
+    # Live-Label-Resolve fuer Eintraege mit generischem Fallback
+    pks_to_resolve = set()
+    for d in deployments:
+        pk = d.get("order_pk")
+        label = d.get("order_label") or ""
+        if pk and (not label or label.startswith("Auftrag #")):
+            pks_to_resolve.add(pk)
+
+    if pks_to_resolve:
+        # Beide Typen (int+str) abfangen, weil orders_cache mal so mal so anlegt
+        pk_list = list(pks_to_resolve) + [str(p) for p in pks_to_resolve]
+        cache_docs = await _db.orders_cache.find(
+            {"primary_key": {"$in": pk_list}},
+            {"_id": 0, "primary_key": 1, "name": 1, "title": 1, "event": 1}
+        ).to_list(len(pk_list))
+        pk_to_label = {}
+        for doc in cache_docs:
+            pretty = doc.get("name") or doc.get("title") or doc.get("event")
+            if pretty:
+                pk_to_label[doc["primary_key"]] = pretty
+                pk_to_label[str(doc["primary_key"])] = pretty
+        for d in deployments:
+            pk = d.get("order_pk")
+            if pk and pk in pk_to_label:
+                d["order_label"] = pk_to_label[pk]
+
     return {"deployments": deployments}
 
 
