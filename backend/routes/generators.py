@@ -1482,31 +1482,37 @@ async def ingest_generator_telemetry(payload: PiIngestPayload):
             {"generator_id": generator_id, "alarm_code": {"$regex": "^A"}, "resolved_at": None},
             {"_id": 0, "alarm_code": 1}
         ).to_list(200)
-        any_resolved = False
         for oa in open_alarms:
             if oa["alarm_code"] not in active_alarm_codes:
                 await db.generator_alarms.update_one(
                     {"generator_id": generator_id, "alarm_code": oa["alarm_code"], "resolved_at": None},
                     {"$set": {"resolved_at": now_iso}}
                 )
-                any_resolved = True
-        # Wenn JETZT keine Alarme mehr offen sind -> Snapshot/Status auto-cleanup,
-        # damit der rote Banner & der orange "Aktive Alarme"-Block verschwinden,
-        # sobald die DSE den Alarm zurueckgesetzt hat (z.B. via Stop-Mode oder
-        # ACK an der Maschine). Sonst klebt fault_text dauerhaft im Snapshot.
-        if any_resolved and not active_alarm_codes:
-            await db.devices.update_one(
+        # Snapshot-Auto-Cleanup: wenn JETZT keine Alarme mehr offen UND keine
+        # aktiven Codes im Payload, dann veralteten fault_text/fault_code im
+        # latest_snapshot loeschen. Triggert sowohl wenn Alarme gerade resolved
+        # wurden ALS AUCH wenn sie schon vorher (via ACK/Behoben im UI) gecleart
+        # waren, der Snapshot aber noch klebte. Status zurueck auf "online" wenn
+        # Geraet sonst Daten liefert.
+        if not active_alarm_codes:
+            existing_dev = await db.devices.find_one(
                 {"id": payload.device_id},
-                {"$set": {
-                    "latest_snapshot.fault_text": None,
-                    "latest_snapshot.fault_code": None,
-                    "mqtt_status": device_status,  # neu berechnet aus Telemetrie
-                }}
+                {"_id": 0, "latest_snapshot.fault_text": 1, "latest_snapshot.fault_code": 1}
             )
-            await db.generators.update_one(
-                {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
-                {"$set": {"status": "online" if has_dse_data else "verbunden"}}
-            )
+            existing_snap = (existing_dev or {}).get("latest_snapshot") or {}
+            if existing_snap.get("fault_text") or existing_snap.get("fault_code"):
+                await db.devices.update_one(
+                    {"id": payload.device_id},
+                    {"$set": {
+                        "latest_snapshot.fault_text": None,
+                        "latest_snapshot.fault_code": None,
+                        "mqtt_status": device_status,
+                    }}
+                )
+                await db.generators.update_one(
+                    {"$or": [{"id": generator_id}, {"generator_id": generator_id}]},
+                    {"$set": {"status": "online" if has_dse_data else "verbunden"}}
+                )
 
     # Update generator status based on alarms
     if active_alarm_codes:
