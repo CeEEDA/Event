@@ -2636,19 +2636,26 @@ fi
 
 # Auto-Detect: NMEA-Verifikation statt nur Port-Existenz pruefen.
 # Probiert ALLE plausiblen SIM7600/USB-GPS-Ports - auch mit unterschiedlichen Baudraten.
+# Wichtig: SIM7600 mapping ist NICHT einheitlich - manche HATs streamen NMEA auf
+# ttyUSB1, andere (z.B. SIM7600E-H) auf ttyUSB2. Daher pro Port mehrere Sekunden
+# warten (GPS-Engine braucht ~5-10s nach AT+CGPS=1 bis der erste NMEA-Burst kommt).
 detect_gps_port() {{
-    for port in /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyACM0 /dev/ttyACM1; do
-        [ -e "$port" ] || continue
-        [ "$port" = "{body.serial_port}" ] && continue
-        [ "$port" = "{lte_port}" ] && continue
-        # Baudraten 9600 (Standard NMEA) und 115200 (SIM7600 USB) probieren
-        for baud in 9600 115200; do
-            stty -F "$port" $baud raw -echo 2>/dev/null || continue
-            if timeout 3 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
-                echo "$port"
-                return 0
-            fi
+    for attempt in 1 2 3; do
+        for port in /dev/ttyUSB2 /dev/ttyUSB1 /dev/ttyUSB0 /dev/ttyUSB3 /dev/ttyUSB4 /dev/ttyACM0 /dev/ttyACM1; do
+            [ -e "$port" ] || continue
+            [ "$port" = "{body.serial_port}" ] && continue
+            [ "$port" = "{lte_port}" ] && continue
+            # Baudraten 9600 (Standard NMEA) und 115200 (SIM7600 USB) probieren
+            for baud in 115200 9600; do
+                stty -F "$port" $baud raw -echo 2>/dev/null || continue
+                if timeout 4 cat "$port" 2>/dev/null | grep -qE '^\$(GP|GN|GL|BD)' ; then
+                    echo "$port"
+                    return 0
+                fi
+            done
         done
+        # NMEA noch nicht da -> warten und nochmal probieren (GPS-Engine Cold-Start)
+        sleep 4
     done
     return 1
 }}
@@ -2658,9 +2665,17 @@ if [ -n "$GPS_DEV" ]; then
     echo "  GPS-NMEA-Stream verifiziert auf: $GPS_DEV"
 else
     echo "  WARNUNG: Kein NMEA-Stream gefunden."
-    # Sinnvoller Fallback: bei SIM7600 standardmaessig ttyUSB1 (Standard-Mapping)
-    if lsusb | grep -q "1e0e:9001" && [ -e "/dev/ttyUSB1" ]; then
-        GPS_DEV="/dev/ttyUSB1"
+    # SIM7600 USB-Mapping ist hardware-abhaengig. Auf vielen SIM7600E-H Boards
+    # liegt NMEA auf ttyUSB2 (NICHT ttyUSB1 wie bei einigen Vorgaengern).
+    # Fallback: ttyUSB2 zuerst, da das auf unseren HATs der Standard ist.
+    if lsusb | grep -q "1e0e:9001"; then
+        if [ -e "/dev/ttyUSB2" ]; then
+            GPS_DEV="/dev/ttyUSB2"
+        elif [ -e "/dev/ttyUSB1" ]; then
+            GPS_DEV="/dev/ttyUSB1"
+        else
+            GPS_DEV="/dev/ttyUSB2"
+        fi
     else
         GPS_DEV="/dev/ttyUSB2"
     fi
