@@ -106,9 +106,18 @@ export default function KirmesZaehlerPage() {
 
       const cols = ["ts_utc", "P_sum_kW", "P_L1_kW", "P_L2_kW", "P_L3_kW", "I_L1", "I_L2", "I_L3", "I_sum", "U_L1", "U_L2", "U_L3", "F_Hz", "E_imp_kWh"];
       const headers = ["Zeitstempel", "Leistung ges. (kW)", "Leistung L1 (kW)", "Leistung L2 (kW)", "Leistung L3 (kW)", "Strom L1 (A)", "Strom L2 (A)", "Strom L3 (A)", "Strom ges. (A)", "Spannung L1 (V)", "Spannung L2 (V)", "Spannung L3 (V)", "Frequenz (Hz)", "Energie (kWh)"];
+      // Zahlen mit Komma als Dezimaltrenner ausgeben (DE-Format), sonst
+      // interpretiert Excel z.B. "1.4" als Datum "1. April".
+      const formatCell = (v) => {
+        if (v == null) return "";
+        if (typeof v === "number") return String(v).replace(".", ",");
+        const s = String(v);
+        if (/^-?\d+\.\d+$/.test(s)) return s.replace(".", ",");
+        return s;
+      };
       let csv = headers.join(";") + "\n";
       for (const row of history) {
-        csv += cols.map(c => row[c] ?? "").join(";") + "\n";
+        csv += cols.map(c => formatCell(row[c])).join(";") + "\n";
       }
 
       const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });

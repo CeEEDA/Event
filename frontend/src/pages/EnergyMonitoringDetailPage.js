@@ -226,11 +226,23 @@ export default function EnergyMonitoringDetailPage() {
       ];
 
       let csv = cols.join(";") + "\n";
+      const formatCell = (v) => {
+        if (v == null) return "";
+        // Zahlen mit Komma als Dezimaltrenner ausgeben, damit Excel-DE sie
+        // nicht als Datum interpretiert (z.B. "1.4" -> 1. April 1942).
+        if (typeof v === "number") return String(v).replace(".", ",");
+        // Strings mit reinem Dezimal-Punkt ebenfalls umstellen (z.B. "0.99"),
+        // aber ISO-Timestamps + andere Sonderwerte unangetastet lassen.
+        const s = String(v);
+        if (/^-?\d+\.\d+$/.test(s)) return s.replace(".", ",");
+        return s;
+      };
       for (const row of data) {
-        csv += cols.map(c => row[c] ?? "").join(";") + "\n";
+        csv += cols.map(c => formatCell(row[c])).join(";") + "\n";
       }
 
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      // UTF-8 BOM voranstellen, damit Excel den Zeichensatz korrekt erkennt
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;

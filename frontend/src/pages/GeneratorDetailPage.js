@@ -360,7 +360,16 @@ export default function GeneratorDetailPage() {
         "power_total_w", "power_kw", "energy_kwh", "frequency", "battery_voltage", "coolant_temp", "oil_pressure",
         "fuel_level", "hours_run", "rpm", "dse_mode"];
       const header = fields.join(";");
-      const rows = rawData.map(d => fields.map(f => d[f] ?? "").join(";"));
+      // Zahlen mit Komma als Dezimaltrenner ausgeben (DE-Format), sonst
+      // interpretiert Excel z.B. "1.4" als Datum "1. April".
+      const formatCell = (v) => {
+        if (v == null) return "";
+        if (typeof v === "number") return String(v).replace(".", ",");
+        const s = String(v);
+        if (/^-?\d+\.\d+$/.test(s)) return s.replace(".", ",");
+        return s;
+      };
+      const rows = rawData.map(d => fields.map(f => formatCell(d[f])).join(";"));
       const csv = "\uFEFF" + [header, ...rows].join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
