@@ -16,6 +16,20 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Mai 2026 – Messprotokoll-Nummer mit Verteiler-Nr + Dirty-Confirm beim Schließen (P1, Enhancement)
+- 🎯 **User-Request**: 1) Die Protokollbezeichnung muss die Stromkreisverteiler-Nr enthalten. 2) Bei eingegebenen Daten beim Schließen eine Warnung zeigen, ob gespeichert werden soll.
+- ✅ **Backend** (`/app/backend/routes/orders.py` `create_messprotokoll`):
+  - Wenn `data.verteiler_nr` befüllt → Protokoll-Nr = `{order_no}-V{verteiler_nr}-MP-{NNNN}` (z.B. `260020-08-VF03-MP-0012`).
+  - Wenn leer → unverändert `{order_no}-MP-{NNNN}` (Backwards-kompatibel).
+  - Sanitization: nur alphanumerisch / `-` / `_` in Verteiler-Nr erlaubt (Dateiname-safe).
+- ✅ **Frontend** (`/app/frontend/src/components/MessprotokollDialog.jsx`):
+  - `dirtyRef`-Hook trackt jede `setField`/`updateMessung`-Eingabe.
+  - Neuer `requestClose()`-Handler ersetzt direkte `onClose`-Aufrufe an X-Button und „Abbrechen".
+  - Wenn dirty: `window.confirm("Du hast Eingaben gemacht. Möchtest du das Messprotokoll jetzt speichern? OK = Speichern, Abbrechen = Verwerfen & schließen")`.
+- ✅ **Live-Test via curl**: beide Varianten erzeugen die richtigen Protokoll-Nrn.
+
+
+
 ### Mai 2026 – Auto-Unassign abgelaufener Aufträge + GPS für unzugewiesene Generatoren (P0, Feature)
 - 🎯 **User-Request**: "Job ist am 20.05 zu Ende. Aber die Maschine ist immer noch darauf gebucht – diese muss automatisch entfernt werden, wenn das Schlussdatum rum ist. Außerdem brauche ich bei nicht zugewiesenen Generatoren eine GPS-Position um sie ggf. nach zu buchen."
 - 🐛 **Latent-Bug entdeckt**: `deployment_tracker._order_is_active` prüfte die Felder `end_date` / `date_end`, die im `orders_cache` aber gar nicht existieren – die korrekten Felder sind `dispo_end` / `event_end`. Die bestehende „Ignoriere abgelaufene Aufträge"-Logik feuerte daher nie.

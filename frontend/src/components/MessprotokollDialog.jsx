@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { X, ClipboardCheck, Plus, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import api from "../lib/api";
@@ -51,6 +51,7 @@ const emptyMessung = () => ({ ziel: "", kabel: "", in_a: "", ik_a: "", zs_ohm: "
 export default function MessprotokollDialog({ order, onClose, onSaved }) {
   const [tab, setTab] = useState("kopf");
   const [saving, setSaving] = useState(false);
+  const dirtyRef = useRef(false);
 
   const [form, setForm] = useState({
     auftraggeber: order?.contact_name || order?.event || "",
@@ -74,6 +75,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
   });
 
   const setField = (path, value) => {
+    dirtyRef.current = true;
     setForm((f) => {
       const next = { ...f };
       const keys = path.split(".");
@@ -88,11 +90,29 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
   };
 
   const updateMessung = (idx, key, value) => {
+    dirtyRef.current = true;
     setForm((f) => {
       const arr = [...f.messungen];
       arr[idx] = { ...arr[idx], [key]: value };
       return { ...f, messungen: arr };
     });
+  };
+
+  // Beim Schließen: Falls Eingaben gemacht wurden, vorher fragen ob speichern
+  const requestClose = () => {
+    if (!dirtyRef.current) {
+      onClose?.();
+      return;
+    }
+    const choice = window.confirm(
+      "Du hast Eingaben gemacht. Möchtest du das Messprotokoll jetzt speichern?\n\n" +
+      "OK = Speichern\nAbbrechen = Verwerfen & schließen"
+    );
+    if (choice) {
+      save();
+    } else {
+      onClose?.();
+    }
   };
 
   const save = async () => {
@@ -153,7 +173,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
             <h2 className="text-base font-bold text-gray-900">Neues Messprotokoll</h2>
             <span className="text-xs text-gray-400">Auftrag {order?.order_no}</span>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-md" data-testid="mp-close">
+          <button onClick={requestClose} className="p-1.5 hover:bg-gray-100 rounded-md" data-testid="mp-close">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
@@ -332,7 +352,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 bg-gray-50">
           <span className="text-xs text-gray-500">Protokoll-Nr. wird automatisch vergeben · Prüfer wird aus Benutzeranmeldung übernommen</span>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} data-testid="mp-cancel">Abbrechen</Button>
+            <Button variant="outline" onClick={requestClose} data-testid="mp-cancel">Abbrechen</Button>
             <Button onClick={save} disabled={saving} className="bg-violet-600 hover:bg-violet-700 text-white" data-testid="mp-save">
               {saving ? "Speichere…" : "PDF erstellen & speichern"}
             </Button>

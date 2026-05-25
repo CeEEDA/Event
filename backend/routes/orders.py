@@ -2090,7 +2090,9 @@ async def create_messprotokoll(order_pk: str, data: dict = _Body(...),
     data["pruefer_id"] = user.get("id", "")
     data["pruefer_name"] = user.get("name", user.get("email", ""))
 
-    # Fortlaufende Protokoll-Nr. je Auftrag: {Auftragsnummer}-MP-{NNNN}
+    # Fortlaufende Protokoll-Nr. je Auftrag:
+    #   ohne Verteiler:  {Auftragsnummer}-MP-{NNNN}
+    #   mit Verteiler:   {Auftragsnummer}-V{verteiler_nr}-MP-{NNNN}
     if not data.get("protokoll_nr"):
         order_doc = None
         if order_pk.isdigit():
@@ -2099,7 +2101,13 @@ async def create_messprotokoll(order_pk: str, data: dict = _Body(...),
             order_doc = await _db.orders_cache.find_one({"primary_key": order_pk}, {"_id": 0, "order_no": 1})
         order_no = (order_doc or {}).get("order_no") or data.get("auftrags_nr") or order_pk
         existing_count = await _db.messprotokolle.count_documents({"order_pk": order_pk})
-        data["protokoll_nr"] = f"{order_no}-MP-{existing_count + 1:04d}"
+        verteiler_raw = (data.get("verteiler_nr") or "").strip()
+        # Sicher für Dateinamen: nur alphanumerisch, -, _ behalten
+        verteiler_safe = "".join(ch for ch in verteiler_raw if ch.isalnum() or ch in ("-", "_"))
+        if verteiler_safe:
+            data["protokoll_nr"] = f"{order_no}-V{verteiler_safe}-MP-{existing_count + 1:04d}"
+        else:
+            data["protokoll_nr"] = f"{order_no}-MP-{existing_count + 1:04d}"
 
     if not data.get("pruef_datum"):
         data["pruef_datum"] = datetime.now(timezone.utc).strftime("%d.%m.%Y")
