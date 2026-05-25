@@ -301,15 +301,49 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
 
           {tab === "geraete" && (
             <div className="space-y-4">
-              {form.messgeraete.map((g, i) => (
-                <div key={i} className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold mb-3">Messgerät {i + 1}</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <L label="Fabrikat"><I value={g.fabrikat} onChange={(v) => { const arr = [...form.messgeraete]; arr[i] = { ...arr[i], fabrikat: v }; setField("messgeraete", arr); }} /></L>
-                    <L label="Typ"><I value={g.typ} onChange={(v) => { const arr = [...form.messgeraete]; arr[i] = { ...arr[i], typ: v }; setField("messgeraete", arr); }} /></L>
+              {form.messgeraete.map((g, i) => {
+                const presets = [
+                  { label: "Fluke 1664 FC", fabrikat: "Fluke", typ: "1664 FC" },
+                  { label: "Gossen Profitest Mxtra", fabrikat: "Gossen Metrawatt", typ: "Profitest Mxtra" },
+                ];
+                const selectedIdx = presets.findIndex(p => p.fabrikat === g.fabrikat && p.typ === g.typ);
+                const onPresetChange = (val) => {
+                  const arr = [...form.messgeraete];
+                  if (val === "") {
+                    arr[i] = { ...arr[i], fabrikat: "", typ: "" };
+                  } else {
+                    const p = presets[Number(val)];
+                    arr[i] = { ...arr[i], fabrikat: p.fabrikat, typ: p.typ };
+                  }
+                  setField("messgeraete", arr);
+                };
+                return (
+                  <div key={i} className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold mb-3">Messgerät {i + 1}</h4>
+                    <L label="Gerät auswählen" cols={2}>
+                      <select
+                        value={selectedIdx >= 0 ? String(selectedIdx) : ""}
+                        onChange={(e) => onPresetChange(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:border-violet-400 focus:ring-1 focus:ring-violet-200 outline-none bg-white"
+                        data-testid={`mp-geraet-${i}-preset`}
+                      >
+                        <option value="">— Bitte wählen —</option>
+                        {presets.map((p, pi) => (
+                          <option key={pi} value={String(pi)}>{p.label}</option>
+                        ))}
+                      </select>
+                    </L>
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                      <L label="Fabrikat">
+                        <I value={g.fabrikat} onChange={(v) => { const arr = [...form.messgeraete]; arr[i] = { ...arr[i], fabrikat: v }; setField("messgeraete", arr); }} />
+                      </L>
+                      <L label="Typ">
+                        <I value={g.typ} onChange={(v) => { const arr = [...form.messgeraete]; arr[i] = { ...arr[i], typ: v }; setField("messgeraete", arr); }} />
+                      </L>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
