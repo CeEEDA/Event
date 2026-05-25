@@ -6,6 +6,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 import bcrypt
+import secrets
 
 import re
 import os
@@ -642,7 +643,7 @@ async def register_schausteller(data: SchaustellerRegister):
         if existing.get("email_verified") and existing.get("password_hash"):
             raise HTTPException(status_code=400, detail="Diese E-Mail-Adresse ist bereits registriert. Bitte melden Sie sich an.")
         # Resend verification code
-        code = str(random.randint(100000, 999999))
+        code = f"{secrets.randbelow(900000) + 100000}"
         update = {"verification_code": code, "updated_at": datetime.now(timezone.utc).isoformat()}
         # Update name/firma if provided
         if data.name:
@@ -655,7 +656,7 @@ async def register_schausteller(data: SchaustellerRegister):
         result["email_verified"] = False
         return result
 
-    code = str(random.randint(100000, 999999))
+    code = f"{secrets.randbelow(900000) + 100000}"
     sch_id = str(uuid.uuid4())
     kundennummer = await _get_next_kundennummer()
     sch_doc = {
@@ -857,7 +858,7 @@ async def resend_code(email: str = Query(...)):
         raise HTTPException(status_code=404, detail="Kein Konto gefunden.")
     if sch.get("email_verified"):
         return {"message": "E-Mail bereits bestätigt."}
-    code = str(random.randint(100000, 999999))
+    code = f"{secrets.randbelow(900000) + 100000}"
     await _db.kirmes_schausteller.update_one(
         {"email": email},
         {"$set": {"verification_code": code}}
@@ -886,7 +887,7 @@ async def request_password_reset(data: PasswordResetRequest):
         raise HTTPException(status_code=404, detail="Kein Konto mit dieser E-Mail gefunden.")
     if not sch.get("email_verified"):
         raise HTTPException(status_code=403, detail="E-Mail ist noch nicht verifiziert.")
-    code = str(random.randint(100000, 999999))
+    code = f"{secrets.randbelow(900000) + 100000}"
     await _db.kirmes_schausteller.update_one(
         {"email": data.email},
         {"$set": {"reset_code": code, "reset_requested_at": datetime.now(timezone.utc).isoformat()}}
