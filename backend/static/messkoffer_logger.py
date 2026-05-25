@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.1.3"
+SCRIPT_VERSION = "2.2.0"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -82,10 +82,11 @@ def load_config():
         # Empirisch per Diag v2 verifiziert.
         "modbus_function_code": 4,
         # Inter-Transaction-Delay: Pause in Sekunden ZWISCHEN aufeinanderfolgenden
-        # Modbus-Reads. Empirisch erforderlich beim RI-F100-C: bei <100ms Pause
-        # antwortet der Meter sporadisch nicht (NoResponseError). Default 0.1s
-        # ist ein konservativer Wert; bei stabilem Bus kann man auf 0.05 runter.
-        "modbus_inter_read_delay_s": 0.1,
+        # Modbus-Reads. Empirisch erforderlich beim RI-F100-C: bei <30ms Pause
+        # antwortet der Meter sporadisch nicht (NoResponseError). 
+        # v2.2.0: von 0.1s auf 0.03s reduziert um die 1s/Zyklus-Sollzeit zu
+        # erreichen (15 Reads * 0.1s Delay = 1.5s Overhead waren zu viel).
+        "modbus_inter_read_delay_s": 0.03,
         # Portal
         "api_url": "",
         "device_key": "",
@@ -478,6 +479,10 @@ def _reset_modbus_client():
     _modbus_client = None
 
 
+_last_slow_read = {"energy_imp_kwh": None, "energy_exp_kwh": None, "avg_pf": None}
+_slow_read_counter = 0
+
+
 def read_rayleigh():
     """Liest alle relevanten Register vom RI-F100-C in kleinen Bloecken und
     einem zusaetzlichen PF-Read. Gibt None zurueck bei Modbus-Fehler.
@@ -539,16 +544,27 @@ def read_rayleigh():
 
         # Frequenz (0x38) ZUERST: optional fuer Auto-Detect des Float-Formats.
         # WICHTIG: Frequenz liegt an 0x38 (30056), NICHT an 0x36 (das ist Avg PF)!
-        be = _safe_read(0x38, 2)
-        if be and len(be) >= 2:
-            if (CFG.get("modbus_float_format") or "auto").lower() == "auto" and _detected_float_format is None:
-                _autodetect_float_format(be)
-            out["frequency"] = _decode_float_reverse_word(be)
-            try:
-                fmt = _detected_float_format or "?"
-                log.debug(f"Probe-Read Freq @0x38 raw={be} fmt={fmt} -> {out['frequency']!r}")
-            except Exception:
-                pass
+        # v2.2.0: Nur lesen wenn Format noch nicht erkannt ODER alle 5. Zyklus,
+        # damit der Hauptzyklus unter 1s bleibt.
+        global _slow_read_counter
+        _slow_read_counter = (_slow_read_counter + 1) % 5
+        need_slow = (_slow_read_counter == 0)
+        need_freq = need_slow or _detected_float_format is None
+
+        if need_freq:
+            be = _safe_read(0x38, 2)
+            if be and len(be) >= 2:
+                if (CFG.get("modbus_float_format") or "auto").lower() == "auto" and _detected_float_format is None:
+                    _autodetect_float_format(be)
+                out["frequency"] = _decode_float_reverse_word(be)
+                try:
+                    fmt = _detected_float_format or "?"
+                    log.debug(f"Probe-Read Freq @0x38 raw={be} fmt={fmt} -> {out['frequency']!r}")
+                except Exception:
+                    pass
+        else:
+            # Frequenz aendert sich nur minimal, vorigen Wert wiederverwenden
+            out["frequency"] = _last_slow_read.get("frequency")
 
         # Spannung L1/L2/L3 (einzeln je 2 Register)
         out["voltage_l1"] = _read_float(0x00)
@@ -569,21 +585,29 @@ def read_rayleigh():
         out["total_kw"] = _read_float(0x2A)
         out["total_kva"] = _read_float(0x2C)
 
-        # Energie kWh Import (0x60) + Export (0x62) - existiert evtl. nicht
-        # auf jedem Meter, _safe_read fangt das Exception silent ab.
-        out["energy_imp_kwh"] = _read_float(0x60)
-        out["energy_exp_kwh"] = _read_float(0x62)
-
-        # Average Power Factor (Float Reverse Word @ 0x36)
-        try:
-            pf_val = _read_float(0x36)
-            if pf_val is not None and -1.5 <= pf_val <= 1.5:
-                out["avg_pf"] = pf_val
-            else:
+        # v2.2.0: Energie + PF aendern sich langsam -> nur alle 5 Zyklen lesen,
+        # sonst vorigen Wert wiederverwenden. Spart ~3 Reads/Sekunde Bus-Last.
+        if need_slow:
+            out["energy_imp_kwh"] = _read_float(0x60)
+            out["energy_exp_kwh"] = _read_float(0x62)
+            try:
+                pf_val = _read_float(0x36)
+                if pf_val is not None and -1.5 <= pf_val <= 1.5:
+                    out["avg_pf"] = pf_val
+                else:
+                    out["avg_pf"] = None
+            except Exception as pf_e:
+                log.debug(f"PF-Decode fehlgeschlagen (ignoriert): {pf_e}")
                 out["avg_pf"] = None
-        except Exception as pf_e:
-            log.debug(f"PF-Decode fehlgeschlagen (ignoriert): {pf_e}")
-            out["avg_pf"] = None
+            # Cache Werte fuer naechste 4 Zyklen
+            _last_slow_read["energy_imp_kwh"] = out["energy_imp_kwh"]
+            _last_slow_read["energy_exp_kwh"] = out["energy_exp_kwh"]
+            _last_slow_read["avg_pf"] = out["avg_pf"]
+            _last_slow_read["frequency"] = out.get("frequency")
+        else:
+            out["energy_imp_kwh"] = _last_slow_read.get("energy_imp_kwh")
+            out["energy_exp_kwh"] = _last_slow_read.get("energy_exp_kwh")
+            out["avg_pf"] = _last_slow_read.get("avg_pf")
 
         # Wenn KEINE der primaeren Bloecke geantwortet hat, ist die Verbindung
         # praktisch tot - signal an Caller als komplett-Fehler.
