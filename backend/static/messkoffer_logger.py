@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.3.2"
+SCRIPT_VERSION = "2.4.0"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -190,6 +190,20 @@ def init_db():
             sent INTEGER DEFAULT 0
         )
     """)
+    # v2.4.0: Per-Phase Blind-/Scheinleistung als zusaetzliche Spalten via
+    # ALTER TABLE - alte DBs ohne diese Spalten werden idempotent migriert.
+    for col, dtype in [
+        ("reactive_l1_kvar", "REAL"),
+        ("reactive_l2_kvar", "REAL"),
+        ("reactive_l3_kvar", "REAL"),
+        ("apparent_l1_kva", "REAL"),
+        ("apparent_l2_kva", "REAL"),
+        ("apparent_l3_kva", "REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE measurements ADD COLUMN {col} {dtype}")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert bereits
     conn.execute("CREATE INDEX IF NOT EXISTS idx_measurements_ts ON measurements(ts)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_measurements_sent ON measurements(sent, id)")
     conn.commit()
@@ -596,6 +610,16 @@ def read_rayleigh():
         out["power_l2_kw"] = _read_float(0x1A)
         out["power_l3_kw"] = _read_float(0x1C)
 
+        # v2.4.0: Scheinleistung S_L1/L2/L3 (kVA) - Reg 0x1E/0x20/0x22
+        out["apparent_l1_kva"] = _read_float(0x1E)
+        out["apparent_l2_kva"] = _read_float(0x20)
+        out["apparent_l3_kva"] = _read_float(0x22)
+
+        # v2.4.0: Blindleistung Q_L1/L2/L3 (kvar) - Reg 0x24/0x26/0x28
+        out["reactive_l1_kvar"] = _read_float(0x24)
+        out["reactive_l2_kvar"] = _read_float(0x26)
+        out["reactive_l3_kvar"] = _read_float(0x28)
+
         # Total kW + Total kVA
         out["total_kw"] = _read_float(0x2A)
         out["total_kva"] = _read_float(0x2C)
@@ -710,15 +734,19 @@ def logger_loop():
                         voltage_l1, voltage_l2, voltage_l3,
                         current_l1, current_l2, current_l3,
                         power_l1_kw, power_l2_kw, power_l3_kw,
+                        reactive_l1_kvar, reactive_l2_kvar, reactive_l3_kvar,
+                        apparent_l1_kva, apparent_l2_kva, apparent_l3_kva,
                         total_kw, total_kva, avg_pf, frequency,
                         energy_imp_kwh, energy_exp_kwh,
                         gps_lat, gps_lon, gps_alt, gps_speed, gps_fix
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
                     ts,
                     m.get("voltage_l1"), m.get("voltage_l2"), m.get("voltage_l3"),
                     m.get("current_l1"), m.get("current_l2"), m.get("current_l3"),
                     m.get("power_l1_kw"), m.get("power_l2_kw"), m.get("power_l3_kw"),
+                    m.get("reactive_l1_kvar"), m.get("reactive_l2_kvar"), m.get("reactive_l3_kvar"),
+                    m.get("apparent_l1_kva"), m.get("apparent_l2_kva"), m.get("apparent_l3_kva"),
                     m.get("total_kw"), m.get("total_kva"), m.get("avg_pf"), m.get("frequency"),
                     m.get("energy_imp_kwh"), m.get("energy_exp_kwh"),
                     gps["lat"], gps["lon"], gps["alt"], gps["speed"], gps["fix"],
@@ -800,6 +828,33 @@ def map_to_portal(row):
 
     avg_pf = r2(row["avg_pf"])
 
+    # v2.4.0: Echte per-Phase Blind-/Scheinleistung aus Rayleigh-Registern.
+    # SQLite-Row-Factory liefert kein dict.get(); per Spalten-Existenz-Check.
+    def col(name, default=None):
+        try:
+            v = row[name]
+            return v if v is not None else default
+        except (IndexError, KeyError):
+            return default
+
+    q_l1 = r2(col("reactive_l1_kvar"))
+    q_l2 = r2(col("reactive_l2_kvar"))
+    q_l3 = r2(col("reactive_l3_kvar"))
+    s_l1 = r2(col("apparent_l1_kva"))
+    s_l2 = r2(col("apparent_l2_kva"))
+    s_l3 = r2(col("apparent_l3_kva"))
+
+    # Per-Phase PF = P_Li / S_Li (capped auf -1..+1, fallback avg_pf)
+    def pf_phase(p, s):
+        if not s:
+            return avg_pf
+        v = p / s
+        return round(max(-1.0, min(1.0, v)), 3)
+
+    pf_l1 = pf_phase(p_l1, s_l1)
+    pf_l2 = pf_phase(p_l2, s_l2)
+    pf_l3 = pf_phase(p_l3, s_l3)
+
     return {
         "id": row["id"],
         "ts_utc": row["ts"],
@@ -814,9 +869,14 @@ def map_to_portal(row):
         "P_L1_kW": p_l1,
         "P_L2_kW": p_l2,
         "P_L3_kW": p_l3,
-        "Q_sum": total_kva,
-        "Q_L1": 0, "Q_L2": 0, "Q_L3": 0,
-        "PF_L1": avg_pf, "PF_L2": avg_pf, "PF_L3": avg_pf,
+        # Q (Blindleistung kvar) - echt per Phase, Summe = Vektorsumme
+        "Q_sum": round(q_l1 + q_l2 + q_l3, 2),
+        "Q_L1": q_l1, "Q_L2": q_l2, "Q_L3": q_l3,
+        # S (Scheinleistung kVA) - Total aus dem Meter-Register
+        "S_sum": total_kva,
+        "S_L1": s_l1, "S_L2": s_l2, "S_L3": s_l3,
+        # PF per Phase aus P/S berechnet
+        "PF_L1": pf_l1, "PF_L2": pf_l2, "PF_L3": pf_l3,
         "PF_total": avg_pf,
         "E_imp_kWh": r3(row["energy_imp_kwh"]),
         "E_exp_kWh": r3(row["energy_exp_kwh"]),
