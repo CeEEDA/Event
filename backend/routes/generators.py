@@ -1093,9 +1093,18 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         ],
     }
     gen_running = await db.generators.count_documents(running_query)
-    gen_standby = await db.generators.count_documents({**query, "status": "standby"})
+    # v25.05: Standby/Online schliessen "running" explizit aus damit Laeuft +
+    # Online disjunkt sind (sonst werden Generatoren mit status=standby/online
+    # ABER engine_running=true doppelt gezaehlt).
+    standby_exclude_running = {
+        "$nor": [
+            {"latest_snapshot.engine_running": True},
+            {"latest_snapshot.rpm": {"$gt": 0}},
+        ]
+    }
+    gen_standby = await db.generators.count_documents({**query, "status": "standby", **standby_exclude_running})
     gen_alarm = await db.generators.count_documents({**query, "status": {"$in": ["alarm", "warning"]}})
-    gen_online = await db.generators.count_documents({**query, "status": "online"})
+    gen_online = await db.generators.count_documents({**query, "status": "online", **standby_exclude_running})
     gen_offline = await db.generators.count_documents({**query, "status": "offline"})
 
     # Count virtual generators from devices (Stromerzeuger/Lichtmast not already in generators)
@@ -1120,14 +1129,16 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
                 (dev_last_seen and dev_last_seen >= fresh_threshold) or
                 (snap.get("ts_utc", "") >= fresh_threshold)
             )
+            engine_on = is_fresh and (snap.get("engine_running") is True or (snap.get("rpm") or 0) > 0)
             # Motor-laeuft-Check (orthogonal zu mqtt_status) - nur wenn frisch
-            if is_fresh and (snap.get("engine_running") is True or (snap.get("rpm") or 0) > 0):
+            if engine_on:
                 virtual_running += 1
             if dev.get("mqtt_status") == "alarm":
                 virtual_alarm += 1
-            elif dev.get("mqtt_status") == "online":
+            elif dev.get("mqtt_status") == "online" and not engine_on:
+                # Standby = kommuniziert, Motor aus (sonst doppelt mit running)
                 virtual_online += 1
-            else:
+            elif dev.get("mqtt_status") != "online":
                 virtual_offline += 1
 
     total = gen_total + virtual_online + virtual_offline + virtual_alarm
