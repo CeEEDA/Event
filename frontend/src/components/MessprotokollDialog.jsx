@@ -70,7 +70,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
     messungen: Array.from({ length: 20 }, () => emptyMessung()),
     potenzialausgleich: Object.fromEntries(PA_PUNKTE.map(([k]) => [k, false])),
     erdungswiderstand: "",
-    messgeraete: [{ fabrikat: "", typ: "" }, { fabrikat: "", typ: "" }],
+    messgeraete: [{ fabrikat: "", typ: "" }],
     ergebnis: { keine_maengel: true, maengel: false, plakette: "ja", bemerkungen: "", naechster_termin_monat: "", naechster_termin_jahr: "" },
   });
 

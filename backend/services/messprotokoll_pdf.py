@@ -276,8 +276,8 @@ def generate_messprotokoll_pdf(data: dict) -> bytes:
     y -= 6 * mm
     _section(c, margin, y - 5 * mm, right - margin, "Verwendete Messgeräte")
     y -= 10 * mm
-    for i, mg in enumerate(data.get("messgeraete", [])[:2]):
-        _label(c, margin, y, f"Gerät {i + 1}:", size=8, color=TEXT)
+    for i, mg in enumerate(data.get("messgeraete", [])[:1]):
+        _label(c, margin, y, "Messgerät:", size=8, color=TEXT)
         _value(c, margin + 16 * mm, y, f"{mg.get('fabrikat', '')} – {mg.get('typ', '')}", size=8, bold=False)
         y -= 4.5 * mm
 
