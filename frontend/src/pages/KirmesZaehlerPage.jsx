@@ -69,7 +69,12 @@ export default function KirmesZaehlerPage() {
       params.to_time = new Date(selectedDate + "T23:59:59").toISOString();
       const r = await api.get(`/kirmes/signups/${signupId}/meter-data`, { params });
       setMeterData(r.data);
-    } catch { /* ignore */ }
+    } catch (err) {
+      // Bei Fehler: meterData unverändert lassen damit "Kein Zähler verknüpft"
+      // nicht fälschlich angezeigt wird. Nur einmal pro Tag-Wechsel toasten.
+      // eslint-disable-next-line no-console
+      console.warn("Telemetrie-Abruf fehlgeschlagen:", err?.response?.status, err?.message);
+    }
   }, [signupId, selectedDate]);
 
   useEffect(() => { loadData(); loadMeterData(); }, [loadData, loadMeterData]);
@@ -127,7 +132,12 @@ export default function KirmesZaehlerPage() {
   const latest = meterData?.latest;
   const history = meterData?.history || [];
   const isOnline = meterData?.is_online;
-  const linked = meterData?.linked;
+  // WICHTIG: Verknüpfung aus dem Signup-Objekt selbst ableiten (matcht
+  // EventDetailPage). Wenn wir uns auf meterData.linked verlassen würden,
+  // zeigt die Seite fälschlich "Kein Zähler verknüpft" wenn der
+  // Telemetrie-Endpoint (z.B. wegen Timeout oder fehlender Daten am
+  // gewählten Tag) noch nicht zurück ist.
+  const linked = !!(signup?.emu_device_id && signup?.emu_meter_id) || !!meterData?.linked;
 
   // Chart data with full timestamp for proper X-axis scaling
   const chartData = history.map(h => ({
