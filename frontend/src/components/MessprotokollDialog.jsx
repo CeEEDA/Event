@@ -46,7 +46,7 @@ const PA_PUNKTE = [
   ["wasser_zwischenzaehler", "Wasserzwischenzähler"],
 ];
 
-const emptyMessung = () => ({ ziel: "", kabel: "", in_a: "", ik_a: "", zs_ohm: "", riso_ohne: "", riso_mit: "", rcd_ma: "", ta_ms: "", rpe_ohm: "" });
+const emptyMessung = () => ({ ziel: "", kabel: "", in_a: "", ik_a: "", zs_ohm: "", riso_ohne: "", rcd_ma: "", ta_ms: "", rpe_ohm: "" });
 
 export default function MessprotokollDialog({ order, onClose, onSaved }) {
   const [tab, setTab] = useState("kopf");
@@ -258,8 +258,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
                     <th className="px-1 py-2 w-16">I_n (A)</th>
                     <th className="px-1 py-2 w-16">I_k (A)</th>
                     <th className="px-1 py-2 w-16">Z_S (Ω)</th>
-                    <th className="px-1 py-2 w-16">R_iso oV</th>
-                    <th className="px-1 py-2 w-16">R_iso mV</th>
+                    <th className="px-1 py-2 w-16">R_iso (MΩ)</th>
                     <th className="px-1 py-2 w-16">RCD I_n</th>
                     <th className="px-1 py-2 w-16">t_a (ms)</th>
                     <th className="px-1 py-2 w-16">R_PE (Ω)</th>
@@ -269,7 +268,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
                   {form.messungen.map((m, i) => (
                     <tr key={i} className="border-b border-gray-100">
                       <td className="px-1 py-1 text-center text-gray-500 font-mono">{i + 1}</td>
-                      {["ziel", "kabel", "in_a", "ik_a", "zs_ohm", "riso_ohne", "riso_mit", "rcd_ma", "ta_ms", "rpe_ohm"].map((k) => (
+                      {["ziel", "kabel", "in_a", "ik_a", "zs_ohm", "riso_ohne", "rcd_ma", "ta_ms", "rpe_ohm"].map((k) => (
                         <td key={k} className="px-0.5 py-0.5">
                           <input
                             value={m[k] || ""}

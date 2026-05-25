@@ -200,10 +200,10 @@ def generate_messprotokoll_pdf(data: dict) -> bytes:
     _label(c, margin, y, f"Stromkreisverteiler-Nr.: {data.get('verteiler_nr', '')}", size=8, color=TEXT)
     y -= 5 * mm
 
-    # Tabellen-Header
+    # Tabellen-Header (ohne R_iso mV – nicht durch DIN VDE 0100-600 gefordert)
     headers = ["Nr.", "Zielbezeichnung", "Kabel", "I_n (A)", "I_k (A)", "Z_S (Ω)",
-               "R_iso oV (MΩ)", "R_iso mV", "RCD I_n (mA)", "t_a (ms)", "R_PE (Ω)"]
-    col_widths = [8, 36, 18, 13, 13, 14, 18, 14, 18, 13, 14]
+               "R_iso (MΩ)", "RCD I_n (mA)", "t_a (ms)", "R_PE (Ω)"]
+    col_widths = [8, 36, 22, 14, 14, 16, 22, 20, 16, 18]
     xs = [margin]
     for w in col_widths:
         xs.append(xs[-1] + w * mm)
@@ -229,7 +229,6 @@ def generate_messprotokoll_pdf(data: dict) -> bytes:
             str(row.get("ik_a", "") or ""),
             str(row.get("zs_ohm", "") or ""),
             str(row.get("riso_ohne", "") or ""),
-            str(row.get("riso_mit", "") or ""),
             str(row.get("rcd_ma", "") or ""),
             str(row.get("ta_ms", "") or ""),
             str(row.get("rpe_ohm", "") or ""),
