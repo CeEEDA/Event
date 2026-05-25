@@ -1143,9 +1143,12 @@ async def clock_out(token: str = Query(...), body: dict = {}):
 @router.get("/time/entries")
 async def get_time_entries(token: str = Query(...), user_id: Optional[str] = None,
                             date_from: Optional[str] = None, date_to: Optional[str] = None):
-    """Get time entries. Admin can view other users."""
+    """Get time entries. Admin OR Verwaltung kann andere User einsehen."""
     caller = await _get_user(token)
-    target_id = user_id if user_id and caller.get("role") == "admin" else caller["id"]
+    # v25.05 Fix: Vorher hat hier nur role=="admin" gegriffen - User mit
+    # Verwaltungs-Permission sahen daher in der Mitarbeiter-Stundenansicht
+    # immer ihre eigenen Stunden. Jetzt korrekt ueber _has_verwaltung().
+    target_id = user_id if user_id and _has_verwaltung(caller) else caller["id"]
 
     query = {"user_id": target_id}
     if date_from:
@@ -2732,9 +2735,10 @@ async def release_payroll(user_id: str, month: str = Query(...), token: str = Qu
 
 @router.get("/payroll/{user_id}/releases")
 async def get_payroll_releases(user_id: str, token: str = Query(...)):
-    """Get all released payrolls for a user. Admins see all, employees see own."""
+    """Get all released payrolls for a user. Admin/Verwaltung sehen alle,
+    Mitarbeiter nur die eigenen."""
     caller = await _get_user(token)
-    target_id = user_id if caller.get("role") == "admin" else caller["id"]
+    target_id = user_id if _has_verwaltung(caller) else caller["id"]
     releases = await db.payroll_releases.find({"user_id": target_id}, {"_id": 0}).sort("month", -1).to_list(200)
     return releases
 
