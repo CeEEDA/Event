@@ -212,8 +212,11 @@ export default function EnergyMonitoringDetailPage() {
       }
 
       // CSV Header
+      // ts_local: UTC -> Europe/Berlin (UTC+1 Winter, UTC+2 Sommer DST), Format
+      // "YYYY-MM-DD HH:MM:SS,mmm" damit Excel-DE es als lokales Zeit-Datum
+      // erkennt. ts_utc bleibt zusaetzlich als Referenz/Sortierschluessel.
       const cols = [
-        "ts_utc", "meter_ts",
+        "ts_local", "ts_utc", "meter_ts",
         "I_L1", "I_L2", "I_L3", "I_sum",
         "U_L1", "U_L2", "U_L3",
         "F_Hz",
@@ -224,6 +227,24 @@ export default function EnergyMonitoringDetailPage() {
         "gps_lat", "gps_lon", "gps_alt_m",
         "http_ok", "error",
       ];
+
+      // Berlin-Lokal-Zeitstempel via Intl.DateTimeFormat (haelt automatisch
+      // DST-Uebergaenge ein, kein extra dayjs/luxon noetig).
+      const localFmt = new Intl.DateTimeFormat("de-DE", {
+        timeZone: "Europe/Berlin",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      });
+      const toLocal = (utcIso) => {
+        if (!utcIso) return "";
+        const d = new Date(utcIso);
+        if (Number.isNaN(d.getTime())) return utcIso;
+        const parts = Object.fromEntries(
+          localFmt.formatToParts(d).filter(p => p.type !== "literal").map(p => [p.type, p.value])
+        );
+        const ms = String(d.getUTCMilliseconds()).padStart(3, "0");
+        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second},${ms}`;
+      };
 
       let csv = cols.join(";") + "\n";
       const formatCell = (v) => {
@@ -238,7 +259,8 @@ export default function EnergyMonitoringDetailPage() {
         return s;
       };
       for (const row of data) {
-        csv += cols.map(c => formatCell(row[c])).join(";") + "\n";
+        const rowWithLocal = { ...row, ts_local: toLocal(row.ts_utc) };
+        csv += cols.map(c => formatCell(rowWithLocal[c])).join(";") + "\n";
       }
 
       // UTF-8 BOM voranstellen, damit Excel den Zeichensatz korrekt erkennt

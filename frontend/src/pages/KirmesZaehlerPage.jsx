@@ -104,8 +104,24 @@ export default function KirmesZaehlerPage() {
       const history = r.data?.history || [];
       if (history.length === 0) { toast.error("Keine Daten zum Exportieren"); return; }
 
-      const cols = ["ts_utc", "P_sum_kW", "P_L1_kW", "P_L2_kW", "P_L3_kW", "I_L1", "I_L2", "I_L3", "I_sum", "U_L1", "U_L2", "U_L3", "F_Hz", "E_imp_kWh"];
-      const headers = ["Zeitstempel", "Leistung ges. (kW)", "Leistung L1 (kW)", "Leistung L2 (kW)", "Leistung L3 (kW)", "Strom L1 (A)", "Strom L2 (A)", "Strom L3 (A)", "Strom ges. (A)", "Spannung L1 (V)", "Spannung L2 (V)", "Spannung L3 (V)", "Frequenz (Hz)", "Energie (kWh)"];
+      const cols = ["ts_local", "ts_utc", "P_sum_kW", "P_L1_kW", "P_L2_kW", "P_L3_kW", "I_L1", "I_L2", "I_L3", "I_sum", "U_L1", "U_L2", "U_L3", "F_Hz", "E_imp_kWh"];
+      const headers = ["Zeit (Europe/Berlin)", "Zeit (UTC)", "Leistung ges. (kW)", "Leistung L1 (kW)", "Leistung L2 (kW)", "Leistung L3 (kW)", "Strom L1 (A)", "Strom L2 (A)", "Strom L3 (A)", "Strom ges. (A)", "Spannung L1 (V)", "Spannung L2 (V)", "Spannung L3 (V)", "Frequenz (Hz)", "Energie (kWh)"];
+      // Berlin-Lokal-Zeitstempel (mit DST-Auto-Umstellung)
+      const localFmt = new Intl.DateTimeFormat("de-DE", {
+        timeZone: "Europe/Berlin",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      });
+      const toLocal = (utcIso) => {
+        if (!utcIso) return "";
+        const d = new Date(utcIso);
+        if (Number.isNaN(d.getTime())) return utcIso;
+        const parts = Object.fromEntries(
+          localFmt.formatToParts(d).filter(p => p.type !== "literal").map(p => [p.type, p.value])
+        );
+        const ms = String(d.getUTCMilliseconds()).padStart(3, "0");
+        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second},${ms}`;
+      };
       // Zahlen mit Komma als Dezimaltrenner ausgeben (DE-Format), sonst
       // interpretiert Excel z.B. "1.4" als Datum "1. April".
       const formatCell = (v) => {
@@ -117,7 +133,8 @@ export default function KirmesZaehlerPage() {
       };
       let csv = headers.join(";") + "\n";
       for (const row of history) {
-        csv += cols.map(c => formatCell(row[c])).join(";") + "\n";
+        const rowWithLocal = { ...row, ts_local: toLocal(row.ts_utc) };
+        csv += cols.map(c => formatCell(rowWithLocal[c])).join(";") + "\n";
       }
 
       const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
