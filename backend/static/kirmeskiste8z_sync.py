@@ -190,7 +190,8 @@ def check_and_apply_update(conf):
         script_path.write_bytes(new_content)
         os.chmod(str(script_path), 0o755)
         log.info("OTA: Update installiert, Service-Neustart...")
-        os.system("sudo systemctl restart kirmeskiste8z_sync")
+        import subprocess
+        subprocess.run(["sudo", "systemctl", "restart", "kirmeskiste8z_sync"], check=False)
         sys.exit(0)
     except requests.ConnectionError:
         log.debug("Portal nicht erreichbar fuer OTA-Check")

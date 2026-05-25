@@ -696,7 +696,7 @@ async def kiosk_page(request: Request):
         raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
     raw = _KIOSK_HTML_PATH.read_text(encoding="utf-8")
     import hashlib
-    build_id = hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
+    build_id = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
     # In das HTML einbauen (vor </head>): meta-Tag + JS-Konstante.
     inject = (
         f'<meta name="kiosk-build-id" content="{build_id}" />\n'
@@ -720,7 +720,7 @@ async def kiosk_page(request: Request):
 
 @router.get("/build-id")
 async def kiosk_build_id(request: Request):
-    """Liefert den md5-Hash der aktuellen kiosk.html.
+    """Liefert den sha256-Hash der aktuellen kiosk.html.
 
     Vom Pi-Kiosk-JS alle 30 s gepollt. Bei Aenderung des Hashs reloadet der
     Pi seine Seite automatisch -> Code-Updates landen instant auf dem Pi.
@@ -729,7 +729,7 @@ async def kiosk_build_id(request: Request):
     if not _KIOSK_HTML_PATH.exists():
         raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
     import hashlib
-    build_id = hashlib.md5(_KIOSK_HTML_PATH.read_bytes()).hexdigest()[:12]
+    build_id = hashlib.sha256(_KIOSK_HTML_PATH.read_bytes()).hexdigest()[:12]
     return {
         "build_id": build_id,
         "ts": datetime.now(timezone.utc).isoformat(),

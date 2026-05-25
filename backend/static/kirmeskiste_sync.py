@@ -217,7 +217,8 @@ def check_and_apply_update(conf):
         log.info("Starte Dienst neu...")
 
         # Neustart via systemd
-        os.system("sudo systemctl restart kirmeskiste_sync")
+        import subprocess
+        subprocess.run(["sudo", "systemctl", "restart", "kirmeskiste_sync"], check=False)
         sys.exit(0)
 
     except requests.ConnectionError:
