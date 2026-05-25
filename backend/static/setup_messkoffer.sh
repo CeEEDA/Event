@@ -1,12 +1,12 @@
 #!/bin/bash
 # =====================================================
-# Messkoffer Pi - Setup-Skript v2.0
+# Messkoffer Pi - Setup-Skript v2.1
 # Eventenergie Deutschland GmbH & Co. KG
 # =====================================================
 # Hardware (ab Mai 2026):
 #   - Raspberry Pi (3/4/5)
 #   - Waveshare USB <-> RS485-Adapter (CH340/CP2102/FT232)
-#   - Rayleigh RI-F100-C MID-Energiezaehler (Modbus RTU Slave 1)
+#   - Rayleigh RI-F100-C MID-Energiezaehler (Modbus RTU Slave 1, 19200 Baud)
 #   - USB-GPS (optional)
 #
 # Eine Ausfuehrung. Dann reboot. Dann laeuft alles.
@@ -18,6 +18,10 @@
 #     PASTE-DEVICE-KEY-HERE \
 #     mk-001 \
 #     meter-001
+#
+# v2.1: IDEMPOTENT - Re-Run ueberschreibt bestehende Werte in /etc/messkoffer.conf
+#       NICHT mit leeren Strings wenn Args weggelassen werden. Du kannst das
+#       Setup also gefahrlos x-mal ausfuehren ohne die Konfig zu zerlegen.
 # =====================================================
 
 set -e
@@ -27,21 +31,37 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-API_URL="${1:-${MK_API_URL:-}}"
-DEVICE_KEY="${2:-${MK_DEVICE_KEY:-}}"
-DEVICE_ID="${3:-${MK_DEVICE_ID:-}}"
-METER_ID="${4:-${MK_METER_ID:-}}"
+# --- Args -------------------------------------------------------------------
+# Wenn Arg leer/nicht uebergeben, dann aus /etc/messkoffer.conf weiter-erhalten
+# (nicht ueberschreiben mit "").
+EXISTING_CONF="/etc/messkoffer.conf"
+read_existing() {
+    local key="$1"
+    if [ -f "$EXISTING_CONF" ]; then
+        # Greift "key = value" oder "key=value" - Whitespace tolerant.
+        grep -E "^[[:space:]]*${key}[[:space:]]*=" "$EXISTING_CONF" 2>/dev/null \
+            | head -1 | sed -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//" \
+            | sed -E 's/[[:space:]]+$//'
+    fi
+}
+
+API_URL="${1:-${MK_API_URL:-$(read_existing api_url)}}"
+DEVICE_KEY="${2:-${MK_DEVICE_KEY:-$(read_existing device_key)}}"
+DEVICE_ID="${3:-${MK_DEVICE_ID:-$(read_existing device_id)}}"
+METER_ID="${4:-${MK_METER_ID:-$(read_existing meter_id)}}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_USER="${SUDO_USER:-pi}"
 
 echo "=============================================="
-echo "  Messkoffer Pi Setup v2.0"
+echo "  Messkoffer Pi Setup v2.1 (idempotent)"
 echo "  Rayleigh RI-F100-C + USB-RS485 + GPS"
 echo "  Eventenergie Deutschland"
 echo "=============================================="
 echo "  API:        ${API_URL:-(spaeter in /etc/messkoffer.conf eintragen)}"
 echo "  Device:     ${DEVICE_ID:-(noch nicht gesetzt)}"
+echo "  Meter:      ${METER_ID:-(noch nicht gesetzt)}"
+echo "  DeviceKey:  $([ -n "$DEVICE_KEY" ] && echo "(gesetzt, ${#DEVICE_KEY} Zeichen)" || echo "(leer!)")"
 echo "=============================================="
 
 # --- 1. System aktualisieren -----------------------------------------------
@@ -131,8 +151,9 @@ echo "[6/8] /etc/messkoffer.conf schreiben..."
 cat > /etc/messkoffer.conf << EOF
 [messkoffer]
 # Modbus / Rayleigh RI-F100-C
+# v2.1: 19200 Baud (max. vom RI-F100-C supportet, hardware-seitig fest umgestellt)
 modbus_port = /dev/rayleigh
-modbus_baudrate = 9600
+modbus_baudrate = 19200
 modbus_slave_id = 1
 modbus_parity = N
 modbus_stopbits = 1
@@ -146,13 +167,28 @@ meter_id = ${METER_ID}
 # Storage
 db_path = /var/lib/messkoffer/messkoffer.sqlite
 log_interval = 1
-sync_interval = 1200
+sync_interval = 60
 sync_batch_size = 2000
 max_db_size_gb = 60
 EOF
 chmod 0640 /etc/messkoffer.conf
 chown root:dialout /etc/messkoffer.conf
 echo "  /etc/messkoffer.conf geschrieben"
+
+# Warnung wenn essentielle Felder leer sind (z.B. bei erstem Setup-Lauf
+# ohne Args). Sonst laeuft der Logger zwar, sendet aber ins Leere.
+MISSING=()
+[ -z "$API_URL" ] && MISSING+=("api_url")
+[ -z "$DEVICE_KEY" ] && MISSING+=("device_key")
+[ -z "$DEVICE_ID" ] && MISSING+=("device_id")
+[ -z "$METER_ID" ] && MISSING+=("meter_id")
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo ""
+    echo "  ⚠️  WARNUNG: Folgende Felder in /etc/messkoffer.conf sind LEER:"
+    printf "       - %s\n" "${MISSING[@]}"
+    echo "     Bitte manuell ergaenzen, sonst kommen keine Daten am Portal an!"
+    echo ""
+fi
 
 # --- 7. systemd-Service -----------------------------------------------------
 echo ""
