@@ -38,7 +38,7 @@ from pathlib import Path
 import requests
 
 # Skript-Version - wird bei jedem OTA-Check zum Portal gemeldet
-SCRIPT_VERSION = "2.3.1"
+SCRIPT_VERSION = "2.3.2"
 
 # Modbus (minimalmodbus, klein und stabil)
 try:
@@ -829,6 +829,19 @@ def map_to_portal(row):
 
 
 def get_last_sync_id():
+    """Holt die letzte vom Server bestaetigte ID. v2.3.2: Sendet auch
+    die lokale MAX(id) als `pi_max_id` mit damit das Backend einen
+    Auto-Recovery durchfuehren kann falls die Pi-SQLite-DB neu ist.
+    """
+    pi_max_id = 0
+    try:
+        conn = sqlite3.connect(CFG["db_path"])
+        row = conn.execute("SELECT MAX(id) FROM measurements").fetchone()
+        conn.close()
+        if row and row[0] is not None:
+            pi_max_id = int(row[0])
+    except Exception:
+        pass
     try:
         resp = requests.get(
             f"{CFG['api_url']}/energy-monitoring/ingest/sync-state",
@@ -836,6 +849,7 @@ def get_last_sync_id():
                 "device_id": CFG["device_id"],
                 "meter_id": CFG["meter_id"],
                 "api_key": CFG["device_key"],
+                "pi_max_id": pi_max_id,
             },
             timeout=10,
         )

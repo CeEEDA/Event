@@ -3091,8 +3091,15 @@ async def ingest_data(data: IngestBatch):
 
 
 @router.get("/ingest/sync-state")
-async def get_sync_state(device_id: str, meter_id: str, api_key: str):
-    """Get the last synced ID for a device/meter pair."""
+async def get_sync_state(device_id: str, meter_id: str, api_key: str, pi_max_id: int = 0):
+    """Get the last synced ID for a device/meter pair.
+
+    v2.3.2: Optional `pi_max_id` param – wenn der Pi seine aktuelle MAX(id)
+    aus seiner SQLite-DB mitschickt und diese deutlich kleiner als der
+    Server-State ist (z.B. nach Setup-Skript-Re-Run mit DB-Wipe), wird der
+    Server-State automatisch resettet damit ein erneutes manuelles Eingreifen
+    nicht noetig ist.
+    """
     # Verify per-device key
     device = await db.devices.find_one({"id": device_id})
     actual_device_id = device_id
@@ -3124,7 +3131,29 @@ async def get_sync_state(device_id: str, meter_id: str, api_key: str):
         {"device_id": actual_device_id, "meter_id": meter_id},
         {"_id": 0}
     )
-    return {"last_sync_id": state.get("last_sync_id", 0) if state else 0}
+    current = state.get("last_sync_id", 0) if state else 0
+
+    # Auto-Recovery: Wenn Pi mit niedrigerer MAX-ID kommt als der Server-State
+    # kennt (mit 100er Toleranz fuer Race-Conditions), hat der Pi seine
+    # SQLite-DB gewiped (Setup-Skript-Re-Run, neu geflashtes Image, etc.).
+    # Reset damit der Pi seine neuen IDs ab 1 senden kann.
+    if pi_max_id > 0 and current > pi_max_id + 100:
+        logger.warning(
+            f"Auto-Sync-Reset: device={actual_device_id} meter={meter_id} - "
+            f"Pi-MAX-ID ({pi_max_id}) << Server-State ({current}). "
+            f"Setze last_sync_id=0 (Pi hat vermutlich SQLite gewiped)."
+        )
+        await db.emu_sync_state.update_one(
+            {"device_id": actual_device_id, "meter_id": meter_id},
+            {"$set": {
+                "last_sync_id": 0,
+                "auto_reset_at": datetime.now(timezone.utc).isoformat(),
+                "auto_reset_reason": f"pi_max_id={pi_max_id} < server_state={current}",
+            }},
+            upsert=True
+        )
+        current = 0
+    return {"last_sync_id": current}
 
 
 @router.post("/ingest/generate-key")
