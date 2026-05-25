@@ -1066,14 +1066,33 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
     # "running" zaehlt nach echter Motor-Bewegung (engine_running ODER rpm>0),
     # UNABHAENGIG vom status-Feld. Ein Generator kann gleichzeitig "alarm" und
     # "laufend" sein - der Single-Value-Status verliert sonst die Motor-Info.
-    gen_running = await db.generators.count_documents({
+    #
+    # WICHTIG (Fix 25.05): Generatoren die vor langer Zeit zuletzt mit
+    # engine_running=true gesehen wurden, danach aber offline sind, duerfen
+    # NICHT mehr als "running" gezaehlt werden. Wir filtern auf last_seen
+    # innerhalb der letzten 5 Minuten.
+    from datetime import datetime, timezone, timedelta
+    fresh_threshold = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    running_query = {
         **query,
-        "$or": [
-            {"latest_snapshot.engine_running": True},
-            {"latest_snapshot.rpm": {"$gt": 0}},
-            {"status": "running"},  # Fallback fuer Datensaetze ohne snapshot
+        "$and": [
+            {
+                "$or": [
+                    {"latest_snapshot.engine_running": True},
+                    {"latest_snapshot.rpm": {"$gt": 0}},
+                    {"status": "running"},
+                ]
+            },
+            {
+                "$or": [
+                    {"last_seen": {"$gte": fresh_threshold}},
+                    {"latest_snapshot.ts_utc": {"$gte": fresh_threshold}},
+                    {"status": "running"},  # MQTT-Live-Devices ohne last_seen-Update
+                ]
+            },
         ],
-    })
+    }
+    gen_running = await db.generators.count_documents(running_query)
     gen_standby = await db.generators.count_documents({**query, "status": "standby"})
     gen_alarm = await db.generators.count_documents({**query, "status": {"$in": ["alarm", "warning"]}})
     gen_online = await db.generators.count_documents({**query, "status": "online"})
@@ -1096,8 +1115,13 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
         if dev.get("serial_number") not in existing_serials:
             existing_serials.add(dev["serial_number"])
             snap = dev.get("latest_snapshot") or {}
-            # Motor-laeuft-Check (orthogonal zu mqtt_status)
-            if snap.get("engine_running") is True or (snap.get("rpm") or 0) > 0:
+            dev_last_seen = dev.get("last_seen", "")
+            is_fresh = (
+                (dev_last_seen and dev_last_seen >= fresh_threshold) or
+                (snap.get("ts_utc", "") >= fresh_threshold)
+            )
+            # Motor-laeuft-Check (orthogonal zu mqtt_status) - nur wenn frisch
+            if is_fresh and (snap.get("engine_running") is True or (snap.get("rpm") or 0) > 0):
                 virtual_running += 1
             if dev.get("mqtt_status") == "alarm":
                 virtual_alarm += 1
