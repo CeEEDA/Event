@@ -222,7 +222,6 @@ export default function EnergyMonitoringDetailPage() {
         "F_Hz",
         "P_sum_kW", "P_L1_kW", "P_L2_kW", "P_L3_kW",
         "Q_sum", "Q_L1", "Q_L2", "Q_L3",
-        "S_sum", "S_L1", "S_L2", "S_L3",
         "PF_L1", "PF_L2", "PF_L3",
         "E_imp_kWh", "E_exp_kWh",
         "gps_lat", "gps_lon", "gps_alt_m",
