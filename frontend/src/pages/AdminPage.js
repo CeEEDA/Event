@@ -23,6 +23,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import SchaustellerEditModal from "../components/admin/SchaustellerEditModal";
+import PasswordResetModal from "../components/admin/PasswordResetModal";
 import api, { getErrorMsg } from "../lib/api";
 import { 
   Users, 
@@ -1898,198 +1900,30 @@ export default function AdminPage() {
       </Dialog>
 
       {/* Password Management Modal */}
-      <Dialog open={passwordModalOpen} onOpenChange={setPasswordModalOpen}>
-        <DialogContent className="bg-white max-w-md" data-testid="password-modal">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-gray-900">
-              <KeyRound className="w-5 h-5 text-fuchsia-600" />
-              Passwort verwalten
-            </DialogTitle>
-          </DialogHeader>
-
-          {passwordTarget && (
-            <div className="space-y-5">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-sm text-gray-500">Benutzer</p>
-                <p className="font-medium text-gray-900">{passwordTarget.name} ({passwordTarget.email})</p>
-              </div>
-
-              {/* Set new password */}
-              <div className="space-y-3">
-                <h4 className="text-sm font-semibold text-gray-700">Neues Passwort setzen</h4>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Neues Passwort (min. 6 Zeichen)"
-                    className="border-gray-300 flex-1"
-                    data-testid="admin-new-password-input"
-                  />
-                  <Button
-                    onClick={handleSetPassword}
-                    disabled={!newPassword || newPassword.length < 6}
-                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
-                    data-testid="admin-set-password-btn"
-                  >
-                    Setzen
-                  </Button>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200" />
-
-              {/* Generate reset link */}
-              <div className="space-y-3">
-                <h4 className="text-sm font-semibold text-gray-700">Reset-Link erstellen</h4>
-                <p className="text-xs text-gray-500">
-                  Erstellt einen einmaligen Link, mit dem der Benutzer sein Passwort selbst zurücksetzen kann.
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={handleGenerateResetLink}
-                    className="flex-1 border-gray-300"
-                    data-testid="admin-generate-reset-link-btn"
-                  >
-                    <Link2 className="w-4 h-4 mr-2" />
-                    Link generieren
-                  </Button>
-                  <Button
-                    onClick={handleSendResetEmail}
-                    className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
-                    data-testid="admin-send-reset-email-btn"
-                  >
-                    <Mail className="w-4 h-4 mr-2" />
-                    Per E-Mail senden
-                  </Button>
-                </div>
-
-                {resetLink && (
-                  <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-medium text-fuchsia-700">Reset-Link (24h gültig):</p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs text-fuchsia-600 break-all flex-1">{resetLink}</code>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 flex-shrink-0"
-                        onClick={() => copyToClipboard(resetLink)}
-                        data-testid="copy-reset-link-btn"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <PasswordResetModal
+        open={passwordModalOpen}
+        onOpenChange={setPasswordModalOpen}
+        target={passwordTarget}
+        newPassword={newPassword}
+        setNewPassword={setNewPassword}
+        resetLink={resetLink}
+        onSetPassword={handleSetPassword}
+        onGenerateResetLink={handleGenerateResetLink}
+        onSendResetEmail={handleSendResetEmail}
+        onCopyLink={copyToClipboard}
+      />
 
       {/* Schausteller Edit Modal */}
-      <Dialog open={schaustellerModalOpen} onOpenChange={setSchaustellerModalOpen}>
-        <DialogContent className="bg-white max-w-lg max-h-[90vh] overflow-y-auto" data-testid="schausteller-modal">
-          <DialogHeader>
-            <DialogTitle className="text-gray-900 flex items-center gap-2">
-              <Tent className="w-5 h-5 text-amber-600" />
-              Schausteller bearbeiten
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-gray-700 text-sm">Firma</Label>
-                <Input value={schaustellerForm.firma} onChange={e => setSchaustellerForm(f => ({ ...f, firma: e.target.value }))} className="border-gray-300" data-testid="sch-firma-input" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-gray-700 text-sm">Name</Label>
-                <Input value={schaustellerForm.name} onChange={e => setSchaustellerForm(f => ({ ...f, name: e.target.value }))} className="border-gray-300" data-testid="sch-name-input" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-gray-700 text-sm">Straße</Label>
-              <Input value={schaustellerForm.strasse} onChange={e => setSchaustellerForm(f => ({ ...f, strasse: e.target.value }))} className="border-gray-300" data-testid="sch-strasse-input" />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-gray-700 text-sm">PLZ</Label>
-                <Input value={schaustellerForm.plz} onChange={e => setSchaustellerForm(f => ({ ...f, plz: e.target.value }))} className="border-gray-300" data-testid="sch-plz-input" />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label className="text-gray-700 text-sm">Ort</Label>
-                <Input value={schaustellerForm.ort} onChange={e => setSchaustellerForm(f => ({ ...f, ort: e.target.value }))} className="border-gray-300" data-testid="sch-ort-input" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-gray-700 text-sm">Steuernummer</Label>
-              <Input value={schaustellerForm.steuernummer} onChange={e => setSchaustellerForm(f => ({ ...f, steuernummer: e.target.value }))} className="border-gray-300" data-testid="sch-steuernummer-input" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-gray-700 text-sm">E-Mail</Label>
-              <Input type="email" value={schaustellerForm.email} onChange={e => setSchaustellerForm(f => ({ ...f, email: e.target.value }))} className="border-gray-300" data-testid="sch-email-input" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-gray-700 text-sm">Telefon</Label>
-              <Input value={schaustellerForm.telefon} onChange={e => setSchaustellerForm(f => ({ ...f, telefon: e.target.value }))} className="border-gray-300" data-testid="sch-telefon-input" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-gray-700 text-sm">Rechnungs-E-Mail</Label>
-              <Input type="email" value={schaustellerForm.rechnungs_email} onChange={e => setSchaustellerForm(f => ({ ...f, rechnungs_email: e.target.value }))} className="border-gray-300" data-testid="sch-rechnungs-email-input" />
-              <p className="text-[10px] text-gray-400">Rechnungen werden an diese Adresse versendet</p>
-            </div>
-            <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-              <input
-                type="checkbox"
-                id="kauf_auf_rechnung"
-                checked={schaustellerForm.kauf_auf_rechnung || false}
-                onChange={e => setSchaustellerForm(f => ({ ...f, kauf_auf_rechnung: e.target.checked }))}
-                className="rounded border-gray-300 text-fuchsia-600 focus:ring-fuchsia-500"
-                data-testid="sch-kauf-auf-rechnung"
-              />
-              <label htmlFor="kauf_auf_rechnung" className="text-sm text-gray-700 cursor-pointer">
-                Kauf auf Rechnung <span className="text-xs text-gray-400">(keine Zahlungsmittel-Hinterlegung nötig)</span>
-              </label>
-            </div>
-
-            {/* Password Management */}
-            <div className="pt-3 border-t border-gray-200 space-y-3">
-              <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-fuchsia-600" />
-                Passwort verwalten
-              </h4>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-sm text-gray-500 mb-2">Neues Passwort setzen</p>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    value={schaustellerNewPassword}
-                    onChange={(e) => setSchaustellerNewPassword(e.target.value)}
-                    placeholder="Neues Passwort (min. 6 Zeichen)"
-                    className="border-gray-300 flex-1"
-                    data-testid="sch-new-password-input"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleSetSchaustellerPassword}
-                    disabled={!schaustellerNewPassword || schaustellerNewPassword.length < 6}
-                    className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
-                    data-testid="sch-set-password-btn"
-                  >
-                    Setzen
-                  </Button>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-1">Setzt das Passwort und markiert die E-Mail als bestätigt</p>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setSchaustellerModalOpen(false)}>Abbrechen</Button>
-            <Button onClick={handleSaveSchausteller} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="save-schausteller-btn">Speichern</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SchaustellerEditModal
+        open={schaustellerModalOpen}
+        onOpenChange={setSchaustellerModalOpen}
+        form={schaustellerForm}
+        setForm={setSchaustellerForm}
+        newPassword={schaustellerNewPassword}
+        setNewPassword={setSchaustellerNewPassword}
+        onSetPassword={handleSetSchaustellerPassword}
+        onSave={handleSaveSchausteller}
+      />
 
       {/* Confirm Dialog */}
       <ConfirmDialog
