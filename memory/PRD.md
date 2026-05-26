@@ -16,6 +16,33 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – fints_banking.py Refactoring (Code-Review Schritt 5, P1)
+- 🎯 **User-Request**: "schritt 5 als nächstes" — Backend-Datei `fints_banking.py` mit hoher Komplexität vereinfachen.
+- ✅ **Toter Code entfernt**: `fetch_transactions()` (synchrone Legacy-Variante, 75 LOC) — wurde nirgends mehr aufgerufen (alle Konsumenten in `routes/kirmes.py` + `tests/` nutzen `fetch_transactions_persisted`).
+- ✅ **Helper-Funktionen extrahiert** für bessere Lesbarkeit:
+  - `_parse_tx_data(t)` (28 LOC) – Normalisiert eine fints-Transaction in flaches Dict; eliminiert 23-Zeilen-Duplikat
+  - `_sweep_paid_invoices(db)` (18 LOC) – Sweep-Logik für offene Mahnungs-Tasks bei bereits-bezahlten Rechnungen
+  - `_resolve_billing_assignees(db)` (10 LOC) – Sucht alle Admins + Mitarbeiter mit `permissions.can_billing`
+  - `_close_mahnung_tasks(db, invoice_id, reason)` (10 LOC) – Schliesst offene `payment_reminder`-Tasks
+  - `_mark_invoice_paid(db, m)` (16 LOC) – Markiert Rechnung bezahlt + schliesst zugehörige Mahnungs-Tasks
+  - `_create_amount_mismatch_task(db, m)` (45 LOC) – Erstellt Admin-Aufgabe bei Betragsabweichung, idempotent
+  - `_save_payment_suggestion(db, m)` (10 LOC) – Speichert Zahlungs-Vorschlag bei Firmenname-Match
+- ✅ **`auto_match_and_mark()` Haupt-Loop**: von 162 LOC auf **~35 LOC** geschrumpft. Liest jetzt als 4-Schritt-Pipeline (Sweep → Fetch → Match → Per-Match-Handle).
+- ✅ **Imports aufgeräumt**: `base64`, `uuid`, `time` auf Modul-Ebene (statt mehrfach inline import).
+- ✅ **Tests** (`tests/test_fints_auto_close_mahnung.py`): **2/2 PASS** unverändert (Mock-basiert: `fetch_transactions_persisted` mit AsyncMock → `auto_match_and_mark` läuft komplett durch, prüft Invoice-bezahlt + Mahnungs-Task-geschlossen + Sweep-Cleanup).
+- ✅ **Backend-Service**: nach Hot-Reload läuft sauber, `/api/health` antwortet 200.
+- 📊 **Datei-Statistik**: 612 → 571 LOC (-41 absolut, aber **Komplexitäts-Reduktion deutlich grösser**: 162-LOC-Monsterfunktion → 35-LOC-Pipeline + 6 benannte Helper).
+- 📊 **Gesamt-Statistik nach Schritt 1–5**:
+  - AdminPage.js: 1963 → 1298 (−665)
+  - UserEditModal.jsx: 717 → 294 (−423)
+  - AdminZeitDetailPage.jsx: 1508 → 1014 (−494)
+  - ChatPage.jsx: 1069 → 838 (−231)
+  - fints_banking.py: 612 → 571 (−41)
+  - **18 neue Frontend-Komponenten + 6 neue Backend-Helper**
+  - Parent-LOC-Reduktion: **−1854 Zeilen**
+
+
+
 ### Feb 2026 – ChatPage Refactoring (Code-Review Schritt 4) + iOS-Mobile-Keyboard-Bug-Fix (P0)
 - 🎯 **User-Request**: "Schritt4 . Achte auch drauf, wenn ich auf dem Smartphone etwas eingebe wischt das Bild weg und ich kann keinen Text sehen. Das müssen wir in dem Zuge auch Optimieren."
 - ✅ **4 neue Sub-Komponenten unter `/app/frontend/src/components/chat/`**:
