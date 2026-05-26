@@ -251,9 +251,7 @@ export default function UserEditModal({
                 />
 
                 {/* Time-based access for Kunden - Account level */}
-                {formData.role === "kunde" && (
-                  <AccountAvailabilityCard formData={formData} setFormData={setFormData} />
-                )}
+                <AccountAvailabilityCard formData={formData} setFormData={setFormData} />
               </div>
               )}
 

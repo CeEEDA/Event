@@ -16,6 +16,25 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – UserEditModal weiter zerlegt (Code-Review Schritt 2, P1)
+- 🎯 **User-Request**: "mach bei schritt 2 weiter" — UserEditModal.jsx (717 LOC) in Sub-Komponenten zerlegen, um unter 400 LOC zu kommen.
+- ✅ **5 neue Sub-Komponenten unter `/app/frontend/src/components/admin/user_modal/`**:
+  - `FreelancerAssignment.jsx` (150 LOC) – Auftrags-Liste + Suche + Multi-Select für Freelancer
+  - `FilesharingAppCard.jsx` (61 LOC) – FileShare-Toggle + Max-Größe + can_write/can_delete
+  - `GeneratorMonitoringCard.jsx` (138 LOC) – Generator-Auswahl + Datenfreigabe (Elektr./Mech.) + Zeitraum
+  - `EnergyMonitoringCard.jsx` (114 LOC) – Messkoffer-Auswahl + Zeitraum
+  - `AccountAvailabilityCard.jsx` (71 LOC) – Permanent/Temporary Konto-Verfügbarkeit
+- ✅ **UserEditModal.jsx**: 717 → 294 Zeilen (**-59%**). Ziel <400 LOC erreicht. Unused Imports (FolderOpen, Activity, Zap, CalendarDays, Search, Briefcase) entfernt; nur noch `Truck` (für ADR-Toggle direkt im Modal) verbleibt.
+- ✅ **Cosmetic-Fix**: Redundanter `formData.role === "kunde"`-Wrapper um `AccountAvailabilityCard` entfernt (war bereits in der Kunde-only Section).
+- ✅ **Strategie**: State weiter im Parent (AdminPage.js), UserEditModal reicht Props 1:1 an Sub-Komponenten durch. Alle data-testids 1:1 erhalten.
+- ✅ **Tests** (iteration_72): 9/9 PASS via testing_agent_v3_fork. Alle Sub-Komponenten rendern korrekt für Kunde/Mitarbeiter/Freelancer/Admin; bedingte Felder erscheinen/verschwinden korrekt bei Toggle-Klicks. Kein UI-Regression.
+- 📊 **Gesamt-Statistik nach Schritt 1+2**:
+  - AdminPage.js: 1963 → 1298 (−665)
+  - UserEditModal.jsx: 717 → 294 (−423)
+  - 9 neue Komponenten (Avg ~102 LOC, alle <300 LOC)
+
+
+
 ### Feb 2026 – AdminPage.js Refactoring – Modale in Sub-Komponenten extrahiert (P0, Code-Health)
 - 🎯 **User-Request**: "starte in der Reihenfolge der Empfehlung und arbeite eins nach dem anderen ab." (Code-Review-Empfehlung sequenziell abarbeiten, beginnend mit `AdminPage.js` >2000 Zeilen).
 - ✅ **Refactoring-Strategie (User-Choice)**: State bleibt komplett im Parent (`AdminPage.js`), die neuen Sub-Komponenten erhalten alle State-Werte + Setter + Handler über Props. Damit keine Logik-Verschiebung, nur reine JSX-Extraktion → regression-arm.
