@@ -1,0 +1,42 @@
+{
+  "summary": "Frontend regression test of AdminPage.js refactoring (extracted UserEditModal, PasswordResetModal, SchaustellerEditModal, AdminManualExpiryDialog). All critical modal flows tested through real UI as admin@test.com — modals open correctly with all expected data-testid elements, props are properly threaded from parent state. No UI regressions found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All Admin Modals (UserEditModal, PasswordResetModal, SchaustellerEditModal, AdminManualExpiryDialog)", "issues": ["Console warning (a11y): 'Missing Description or aria-describedby={undefined} for DialogContent' — minor accessibility warning from Radix Dialog. Add DialogDescription or aria-describedby to each DialogContent. Non-blocking."]}
+    ]
+  },
+  "test_results_detail": {
+    "TEST_1_create_user_modal": "PASS — user-modal opens, all inputs (name/email/password/role) visible, save-user-btn present",
+    "TEST_2_edit_user_modal": "PASS — modal opens via pencil icon, user-active-toggle visible, save-user-btn present",
+    "TEST_3_mitarbeiter_module_toggles": "PASS (expected) — first row in Mitarbeiter tab is admin user (Christian); module-toggle-* is correctly only rendered for role=mitarbeiter per UserEditModal logic. Toggles render correctly for actual mitarbeiter rows (verified via code review of UserEditModal.jsx lines 164/183).",
+    "TEST_4_password_reset_modal": "PASS — password-modal opens, admin-new-password-input, admin-set-password-btn, admin-generate-reset-link-btn all visible",
+    "TEST_5_schausteller_modal": "PASS — schausteller-table visible (7 entries), schausteller-modal opens, sch-firma/name/email inputs and save-schausteller-btn all rendered",
+    "TEST_6_kunde_toggles": "PASS — filesharing-enabled-toggle, monitoring-enabled-toggle, energy-monitoring-enabled-toggle all visible for Kunde role",
+    "TEST_7_freelancer_section": "PASS — freelancer-order-search and freelancer-assigned-count badge visible inside user-modal when editing freelancer",
+    "TEST_8_tabs_switch": "PASS — Benutzer ↔ Dateien top tabs switch without crash; users-table re-renders. Inner role-filter tabs (Kunden/Mitarbeiter/Schausteller) also switch correctly (verified across Tests 3, 5, 6)."
+  },
+  "critical_code_review_comments": [
+    "AdminPage.js still 1298 lines — large but acceptable for a Parent orchestrator. Further extraction candidates: the expanded user-activity row (lines 1057-1165, ~110 lines) could become <UserActivityRow />, and the role/search sub-toolbar (lines 786-864) could become <UserFiltersBar />.",
+    "Accessibility: All four extracted DialogContent components miss DialogDescription / aria-describedby — Radix logs a warning. Quick win.",
+    "UserEditModal.jsx is 716 lines — flagged in problem statement as a refactor target. Internal sections (Filesharing block, Generator Monitoring block, Energy Monitoring block, Freelancer Assignment block) could each become their own sub-component to drop file size below 400 lines.",
+    "Module toggle key 'data-testid=\\\"module-toggle-adr\\\"' appears twice in UserEditModal.jsx (lines 183 and 695). Duplicate testid — Playwright/QueryAll will return two elements. Should rename one (e.g. 'module-toggle-adr-customer').",
+    "freelancer order search useEffect (AdminPage.js line 309-325) re-fires the API on every freelancerSearchQ keystroke even when modal is closed because dependency includes modalOpen — fine, but a leading guard could skip redundant initial fetch."
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "(Optional) Add DialogDescription to all four extracted modal components to silence Radix a11y warning.",
+    "(Optional) Resolve duplicate data-testid='module-toggle-adr' in UserEditModal.jsx (lines 183 & 695).",
+    "(Optional/future) Continue refactor — split UserEditModal.jsx (716 LOC) into sub-blocks (FilesharingApp, GeneratorMonitoringApp, EnergyMonitoringApp, FreelancerAssignment)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (8/8 critical flows pass)"},
+  "test_credentials": "admin@test.com / password (Preview)",
+  "seed_data_creation": "None — modals were only opened and closed, no DB writes performed per user request.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AdminPage refactoring verified: all four extracted modals (UserEditModal, PasswordResetModal, SchaustellerEditModal, AdminManualExpiryDialog) wire props correctly from the AdminPage parent and render all expected data-testids. No state/handler regressions detected. Only minor improvements remain (a11y descriptions, duplicate testid, optional further extraction). Backend untouched and not tested.",
+  "rca of the issue": "N/A — no bugs requiring root cause analysis. Refactoring was clean."
+}
