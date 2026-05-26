@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend regression test of AdminZeitDetailPage Schritt-3 refactoring (5 sub-components extracted into /admin/zeit_detail/). Login as admin@test.com → /verwaltung/zeiterfassung → click on Anna Weber row → detail page (/verwaltung/zeiterfassung/:userId) lädt sauber. Alle 5 Sub-Sektionen (WeeklyScheduleSection, PayrollSection, TravelExpensesSection, MonthlyBreakdownSection, AuditLogSection) rendern korrekt mit allen erwarteten data-testids. Toggle-/Berechnen-/Expand-Aktionen funktionieren wie vor Refactor. Keine JS-Errors in der Konsole.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "TEST_1_navigation_to_detail": "PASS — Klick auf data-testid='time-user-<annaId>' (Listen-Row ist ein onClick-div) navigiert sauber zu /verwaltung/zeiterfassung/ce0fdf31-…; Page rendert ohne JS-Fehler.",
+    "TEST_2_weekly_schedule_section": "PASS — work-schedule-section sichtbar; schedule-{montag,dienstag,mittwoch,donnerstag,freitag,samstag}-soll-hours alle 6 vorhanden; hourly-wage, surcharge-sunday, surcharge-holiday, surcharge-special, surcharge-night, save-schedule-btn alle visible.",
+    "TEST_3_payroll_section": "PASS — payroll-section sichtbar; payroll-month + calc-payroll-btn präsent. Nach Klick auf 'Berechnen' rendert die Tabelle (Datum/Tag/Von/Bis/Std./Typ/…), die Aggregat-Kacheln (Grundlohn/Zuschläge/Brutto Gesamt), der Abzüge-Bereich (Input + 'Abzug'-Button) und der release-payroll-btn ('Speichern & Freigeben').",
+    "TEST_4_travel_section_empty": "PASS — travel-section sichtbar mit Header 'REISEKOSTEN – 2026-05' und Empty-State 'Keine Reisen in diesem Monat'.",
+    "TEST_5_monthly_breakdown": "PASS — month-2026-05/04/03/02/01 alle gerendert. Klick auf einen Monat expandiert die Sektion und zeigt 'Manuell erfassen'-Zeile mit add-time-row-2026-05, add-time-date-2026-05, add-time-start-2026-05, add-time-end-2026-05, add-time-save-2026-05 (alle count=1). Bestehende Einträge erscheinen als time-row-<id>.",
+    "TEST_6_audit_section_toggle": "PASS — audit-section sichtbar; Klick auf audit-toggle öffnet die Liste; audit-refresh wird nach dem Öffnen sichtbar (count=1, visible=true).",
+    "TEST_7_smoke_no_js_errors": "PASS — keine echten console.error Einträge während des kompletten Flows (Login → Liste → Detail → Berechnen → Monat expandieren → Audit toggeln). Lediglich pre-existing Radix-a11y-warnings für Dialog-Components (außerhalb dieses Refactors)."
+  },
+  "critical_code_review_comments": [
+    "Saubere 1:1-JSX-Extraktion: Alle Props (formData, schedule, payroll, monthsData, audit-state, sämtliche Setter und Handler) werden vom Parent AdminZeitDetailPage.jsx korrekt durchgereicht. State bleibt komplett im Parent — kein lokaler State in den Sub-Komponenten.",
+    "Alle data-testids unverändert vom alten Code übernommen: work-schedule-section, payroll-section, travel-section, audit-section, month-<key>, add-time-{row,date,start,end,save}-<key>, time-row-<id>, edit-row-<id>, save-edit-<id>, cancel-edit-<id> etc.",
+    "MonthlyBreakdownSection: add-time-* testids sind month-key-suffixed (z.B. add-time-date-2026-05) — das stimmt mit dem alten Verhalten überein. Die im Review-Request genannten 'add-time-date / add-time-start …' (ohne Suffix) sind also nur als Pattern zu lesen; die tatsächlichen IDs sind month-spezifisch.",
+    "Datei-Größe: AdminZeitDetailPage.jsx ist von 1508 → 1014 LOC gesunken; jede Sub-Komponente bleibt klein (96–170 LOC). Gute Trennung, lesbar.",
+    "Pre-existing (nicht durch dieses Refactor verursacht): Browser-Default <input type='date|time'> wird in MonthlyBreakdownSection (manuell erfassen) und in der Genehmigte-Abwesenheit-Zeile statt der shadcn-Calendar-Komponente verwendet — bekanntes Muster in diesem App-Bereich, kein neuer Regression.",
+    "Pre-existing: Anwesenheit-Pills oben (Mitarbeiterverwaltung-Liste) haben sehr blasse Farben — minor Kontrast-Hinweis, aber nicht Teil des Schritt-3-Refactors."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (7/7 critical flows pass)"},
+  "test_credentials": "admin@test.com / password (Preview)",
+  "seed_data_creation": "Keine — nur Buttons/Toggles geklickt, keine Speichern-Aktion ausgeführt, keine DB-Writes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Schritt-3 AdminZeitDetailPage-Refactoring verifiziert. Zum Navigieren zur Detail-Seite NICHT page.click(text='Anna Weber') verwenden — die Listen-Rows sind onClick-divs ohne Anchor. Nutze stattdessen data-testid='time-user-<userId>' (Anna Weber: ce0fdf31-9efa-43f1-9914-e9224a7faa30) oder direktes Navigieren zu /verwaltung/zeiterfassung/<userId>. Mai-Monat ist standardmäßig expandiert; ein zweiter Klick auf month-2026-05 kollabiert. Alle 5 Sub-Komponenten-Files unter /app/frontend/src/components/admin/zeit_detail/ getestet — keine Regression.",
+  "rca of the issue": "N/A — kein Bug gefunden; Refactor ist regression-frei."
+}

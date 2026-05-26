@@ -6,12 +6,17 @@ import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
-  ArrowLeft, Clock, User, MapPin, Save, Palmtree, TrendingUp,
-  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive, Briefcase,
-  DollarSign, Download, Moon, Sun, StickyNote, Eye, FileText, Check, Heart, FileDown,
-  Pencil, X, History, Plane, AlertCircle,
+  ArrowLeft, User, Save, Palmtree, TrendingUp,
+  Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive,
+  Download, StickyNote, Eye, FileText, Heart, FileDown,
+  History,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
+import WeeklyScheduleSection from "../components/admin/zeit_detail/WeeklyScheduleSection";
+import PayrollSection from "../components/admin/zeit_detail/PayrollSection";
+import TravelExpensesSection from "../components/admin/zeit_detail/TravelExpensesSection";
+import MonthlyBreakdownSection from "../components/admin/zeit_detail/MonthlyBreakdownSection";
+import AuditLogSection from "../components/admin/zeit_detail/AuditLogSection";
 
 export default function AdminZeitDetailPage() {
   const { user } = useAuth();
@@ -766,358 +771,47 @@ export default function AdminZeitDetailPage() {
         )}
 
         {/* Regelarbeitszeit */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="work-schedule-section">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Briefcase className="w-4 h-4 text-indigo-600" />
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Regelarbeitszeit</p>
-            </div>
-            <div className="text-xs text-gray-500">Woche: <span className="font-bold text-indigo-700">{Math.floor(weeklyTotalMin / 60)}h {weeklyTotalMin % 60 > 0 ? `${weeklyTotalMin % 60}m` : ""}</span></div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] text-gray-400 uppercase tracking-wider">
-                  <th className="text-left pb-2 pr-2 font-semibold w-28">Tag</th>
-                  <th className="text-left pb-2 px-2 font-semibold">Sollstunden</th>
-                  <th className="text-left pb-2 px-2 font-semibold">Pause (Min.)</th>
-                  <th className="text-right pb-2 pl-2 font-semibold">Summe</th>
-                </tr>
-              </thead>
-              <tbody>
-                {WEEKDAYS.map(day => {
-                  const d = schedule[day] || {};
-                  const mins = calcDayHours(day);
-                  const h = mins !== null ? Math.floor(mins / 60) : null;
-                  const m = mins !== null ? mins % 60 : null;
-                  // Migrationshilfe: zeige berechnete Stunden aus alter start/end-Logik
-                  // automatisch im neuen Sollstunden-Feld an, wenn der User noch nicht gespeichert hat
-                  const sollDisplay = (d.soll_hours != null && d.soll_hours !== "")
-                    ? d.soll_hours
-                    : (d.start && d.end
-                        ? (((parseInt(d.end.split(":")[0]) * 60 + parseInt(d.end.split(":")[1]))
-                            - (parseInt(d.start.split(":")[0]) * 60 + parseInt(d.start.split(":")[1]))
-                            - (parseInt(d.break_min) || 0)) / 60).toFixed(2).replace(/\.?0+$/, "")
-                        : "");
-                  return (
-                    <tr key={day} className="border-t border-gray-50">
-                      <td className="py-1.5 pr-2 font-medium text-gray-700">{WEEKDAY_LABELS[day]}</td>
-                      <td className="py-1.5 px-2">
-                        <input
-                          type="number" min="0" max="24" step="0.25"
-                          value={sollDisplay}
-                          onChange={e => updateDay(day, "soll_hours", e.target.value)}
-                          placeholder="0"
-                          className="border border-gray-200 rounded px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                          data-testid={`schedule-${day}-soll-hours`}
-                        />
-                        <span className="text-[10px] text-gray-400 ml-1">h</span>
-                      </td>
-                      <td className="py-1.5 px-2">
-                        <input type="number" min="0" step="5" value={d.break_min || ""} onChange={e => updateDay(day, "break_min", e.target.value)}
-                          placeholder="0" className="border border-gray-200 rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid={`schedule-${day}-break`} />
-                      </td>
-                      <td className="py-1.5 pl-2 text-right">
-                        {mins !== null ? (
-                          <span className="font-bold text-indigo-700">{h}h{m > 0 ? ` ${m}m` : ""}</span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {/* Hourly wage & surcharges */}
-          <div className="mt-4 pt-3 border-t border-gray-100 space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div>
-                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Stundenlohn (EUR)</label>
-                <input type="number" step="0.01" min="0" value={hourlyWage} onChange={e => setHourlyWage(e.target.value)}
-                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="hourly-wage" placeholder="0.00" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Sonntagszuschlag %</label>
-                <input type="number" min="0" value={surcharges.sunday} onChange={e => setSurcharges(p => ({ ...p, sunday: parseFloat(e.target.value) || 0 }))}
-                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-sunday" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Feiertagszuschlag %</label>
-                <input type="number" min="0" value={surcharges.holiday} onChange={e => setSurcharges(p => ({ ...p, holiday: parseFloat(e.target.value) || 0 }))}
-                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-holiday" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Bes. Feiertag %</label>
-                <input type="number" min="0" value={surcharges.special_holiday} onChange={e => setSurcharges(p => ({ ...p, special_holiday: parseFloat(e.target.value) || 0 }))}
-                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-special" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400 font-semibold uppercase block mb-1">Nachtzuschlag %</label>
-                <input type="number" min="0" value={surcharges.night} onChange={e => setSurcharges(p => ({ ...p, night: parseFloat(e.target.value) || 0 }))}
-                  className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-indigo-400" data-testid="surcharge-night" />
-              </div>
-            </div>
-            <p className="text-[10px] text-gray-400">Bes. Feiertage: 24.12. ab 14 Uhr, 25./26.12., 1. Mai | Nacht: 20:00–06:00 Uhr</p>
-          </div>
-
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <Button onClick={saveSchedule} disabled={savingSchedule} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="save-schedule-btn">
-              <Save className="w-3.5 h-3.5 mr-1.5" /> {savingSchedule ? "Speichern..." : "Speichern"}
-            </Button>
-          </div>
-        </div>
+        <WeeklyScheduleSection
+          weeklyTotalMin={weeklyTotalMin}
+          schedule={schedule}
+          calcDayHours={calcDayHours}
+          updateDay={updateDay}
+          hourlyWage={hourlyWage}
+          setHourlyWage={setHourlyWage}
+          surcharges={surcharges}
+          setSurcharges={setSurcharges}
+          saveSchedule={saveSchedule}
+          savingSchedule={savingSchedule}
+        />
 
         {/* Payroll / Lohnabrechnung */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="payroll-section">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-emerald-600" />
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Lohnabrechnung</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="month" value={payrollMonth} onChange={e => setPayrollMonth(e.target.value)}
-                className="border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400" data-testid="payroll-month" />
-              <Button onClick={loadPayroll} size="sm" variant="outline" disabled={loadingPayroll} data-testid="calc-payroll-btn">
-                {loadingPayroll ? "Berechne..." : "Berechnen"}
-              </Button>
-              {payroll && (
-                <Button onClick={downloadCsv} size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" data-testid="download-csv-btn">
-                  <Download className="w-3.5 h-3.5 mr-1" /> CSV
-                </Button>
-              )}
-            </div>
-          </div>
-          {payroll && (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-[10px] text-gray-400 uppercase tracking-wider">
-                      <th className="text-left pb-2 pr-1 font-semibold">Datum</th>
-                      <th className="text-left pb-2 px-1 font-semibold">Tag</th>
-                      <th className="text-left pb-2 px-1 font-semibold">Von</th>
-                      <th className="text-left pb-2 px-1 font-semibold">Bis</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Std.</th>
-                      <th className="text-left pb-2 px-1 font-semibold">Typ</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Nacht</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Grund</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Zuschlag</th>
-                      <th className="text-right pb-2 pl-1 font-semibold">Gesamt</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payroll.rows.map((r, i) => {
-                      const typeColors = {
-                        regular: "text-gray-500", sunday: "text-orange-600", holiday: "text-red-600", special: "text-red-700 font-bold",
-                      };
-                      const typeLabels = { regular: "Normal", sunday: "Sonntag", holiday: "Feiertag", special: "Bes. Feiertag" };
-                      return (
-                        <tr key={i} className="border-t border-gray-50">
-                          <td className="py-1 pr-1 text-gray-700">{new Date(r.date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</td>
-                          <td className="py-1 px-1 text-gray-500">{r.weekday}</td>
-                          <td className="py-1 px-1">{r.clock_in}</td>
-                          <td className="py-1 px-1">{r.clock_out}</td>
-                          <td className="py-1 px-1 text-right font-medium">{r.total_hours.toFixed(1)}</td>
-                          <td className={`py-1 px-1 text-[10px] font-semibold ${typeColors[r.surcharge_type]}`}>
-                            {typeLabels[r.surcharge_type]}{r.holiday_name ? ` (${r.holiday_name})` : ""}
-                          </td>
-                          <td className="py-1 px-1 text-right">{r.night_min > 0 ? <span className="text-violet-600">{Math.round(r.night_min / 6) / 10}h</span> : "—"}</td>
-                          <td className="py-1 px-1 text-right">{r.base_wage.toFixed(2)}€</td>
-                          <td className="py-1 px-1 text-right text-orange-600">{(r.surcharge_wage + r.night_wage) > 0 ? `+${(r.surcharge_wage + r.night_wage).toFixed(2)}€` : "—"}</td>
-                          <td className="py-1 pl-1 text-right font-bold">{r.total_wage.toFixed(2)}€</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div className="bg-gray-50 rounded-lg p-2.5 text-center">
-                  <p className="text-[10px] text-gray-400 uppercase font-semibold">Grundlohn</p>
-                  <p className="text-lg font-bold text-gray-800">{payroll.totals.regular_wage?.toFixed(2)}€</p>
-                </div>
-                <div className="bg-orange-50 rounded-lg p-2.5 text-center">
-                  <p className="text-[10px] text-orange-500 uppercase font-semibold">Zuschläge</p>
-                  <p className="text-lg font-bold text-orange-700">
-                    {((payroll.totals.sunday_wage || 0) + (payroll.totals.holiday_wage || 0) + (payroll.totals.special_wage || 0) + (payroll.totals.night_wage || 0)).toFixed(2)}€
-                  </p>
-                </div>
-                <div className="bg-emerald-50 rounded-lg p-2.5 text-center">
-                  <p className="text-[10px] text-emerald-500 uppercase font-semibold">Brutto Gesamt</p>
-                  <p className="text-lg font-bold text-emerald-700">{payroll.total_gross?.toFixed(2)}€</p>
-                </div>
-              </div>
-
-              {/* Deductions / Abzüge */}
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Abzüge</p>
-                {(payroll.deductions || []).map(d => (
-                  <div key={d.id} className="flex items-center gap-2 py-1 group">
-                    <span className="text-sm text-gray-700 flex-1">{d.text}</span>
-                    <span className="text-sm font-bold text-red-600">-{parseFloat(d.amount).toFixed(2)}€</span>
-                    <button onClick={() => removeDeduction(d.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500" data-testid={`remove-deduction-${d.id}`}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 mt-2">
-                  <input type="text" placeholder="z.B. Arbeitshose" value={newDeduction.text} onChange={e => setNewDeduction(p => ({ ...p, text: e.target.value }))}
-                    className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-300" data-testid="deduction-text" />
-                  <input type="number" step="0.01" min="0" placeholder="Betrag" value={newDeduction.amount} onChange={e => setNewDeduction(p => ({ ...p, amount: e.target.value }))}
-                    className="w-24 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-300" data-testid="deduction-amount" />
-                  <Button onClick={addDeduction} size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" data-testid="add-deduction-btn">
-                    <span className="text-base font-bold mr-1">−</span> Abzug
-                  </Button>
-                </div>
-              </div>
-
-              {/* Net total */}
-              {(payroll.total_deductions || 0) > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-700">Netto Auszahlung</span>
-                  <span className="text-xl font-bold text-emerald-700">{payroll.total_net?.toFixed(2)}€</span>
-                </div>
-              )}
-
-              {/* Release Button */}
-              <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {releasedMonths[payrollMonth] && (
-                    <span className="text-xs text-green-600 flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" /> Freigegeben am {new Date(releasedMonths[payrollMonth]).toLocaleDateString("de-DE")}
-                    </span>
-                  )}
-                </div>
-                <Button onClick={releasePayroll} disabled={releasingPayroll || !payroll} size="sm" className="bg-green-600 hover:bg-green-700" data-testid="release-payroll-btn">
-                  <Save className="w-3.5 h-3.5 mr-1.5" /> {releasingPayroll ? "Wird freigegeben..." : "Speichern & Freigeben"}
-                </Button>
-              </div>
-            </>
-          )}
-          {!payroll && !loadingPayroll && (
-            <p className="text-sm text-gray-400 text-center py-4">Monat auswählen und "Berechnen" klicken</p>
-          )}
-        </div>
+        <PayrollSection
+          payrollMonth={payrollMonth}
+          setPayrollMonth={setPayrollMonth}
+          loadPayroll={loadPayroll}
+          loadingPayroll={loadingPayroll}
+          payroll={payroll}
+          downloadCsv={downloadCsv}
+          newDeduction={newDeduction}
+          setNewDeduction={setNewDeduction}
+          addDeduction={addDeduction}
+          removeDeduction={removeDeduction}
+          releasePayroll={releasePayroll}
+          releasingPayroll={releasingPayroll}
+          releasedMonths={releasedMonths}
+        />
 
         {/* Reisekosten / Travel Expenses */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="travel-section">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Plane className="w-4 h-4 text-cyan-600" />
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Reisekosten – {payrollMonth}</p>
-            </div>
-            {travelTrips.length > 0 && (
-              <Button onClick={downloadTravelXlsx} size="sm" variant="outline" className="text-cyan-700 border-cyan-300 hover:bg-cyan-50" data-testid="travel-xlsx-btn">
-                <Download className="w-3.5 h-3.5 mr-1" /> Excel (Steuerbüro)
-              </Button>
-            )}
-          </div>
-
-          {loadingTravel ? (
-            <p className="text-sm text-gray-400 text-center py-3">Lade...</p>
-          ) : travelTrips.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-3">Keine Reisen in diesem Monat</p>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-[10px] text-gray-400 uppercase tracking-wider">
-                      <th className="text-left pb-2 pr-1 font-semibold">Datum</th>
-                      <th className="text-left pb-2 px-1 font-semibold">Zweck</th>
-                      <th className="text-left pb-2 px-1 font-semibold">Land</th>
-                      <th className="text-right pb-2 px-1 font-semibold">VMA</th>
-                      <th className="text-right pb-2 px-1 font-semibold">KM</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Übern.</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Sonst.</th>
-                      <th className="text-right pb-2 px-1 font-semibold">Gesamt</th>
-                      <th className="pb-2 px-1 font-semibold text-center">Status</th>
-                      <th className="pb-2 pl-1 font-semibold"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {travelTrips.map(t => {
-                      const c = t.computed || {};
-                      const dep = new Date(t.departure_at);
-                      const statusCls = {
-                        submitted: "bg-amber-100 text-amber-700",
-                        approved: "bg-emerald-100 text-emerald-700",
-                        rejected: "bg-red-100 text-red-700",
-                      }[t.status] || "bg-gray-100 text-gray-700";
-                      const statusLbl = { submitted: "Offen", approved: "Genehmigt", rejected: "Abgelehnt" }[t.status] || t.status;
-                      return (
-                        <tr key={t.id} className="border-t border-gray-50">
-                          <td className="py-1 pr-1 text-gray-700 whitespace-nowrap">{dep.toLocaleDateString("de-DE", { day:"2-digit", month:"2-digit"})}</td>
-                          <td className="py-1 px-1 max-w-[180px] truncate" title={t.trip_purpose}>{t.trip_purpose}</td>
-                          <td className="py-1 px-1 text-gray-500">{c.country_name}</td>
-                          <td className="py-1 px-1 text-right">{(c.per_diem_net || 0).toFixed(2)}€</td>
-                          <td className="py-1 px-1 text-right text-gray-500">{(c.km_eur || 0).toFixed(2)}€</td>
-                          <td className="py-1 px-1 text-right text-gray-500">{(c.accommodation_eur || 0).toFixed(2)}€</td>
-                          <td className="py-1 px-1 text-right text-gray-500">{(c.other_eur || 0).toFixed(2)}€</td>
-                          <td className="py-1 px-1 text-right font-bold">{(c.total_eur || 0).toFixed(2)}€</td>
-                          <td className="py-1 px-1 text-center">
-                            <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${statusCls}`} title={t.rejection_reason || ""}>
-                              {statusLbl}
-                            </span>
-                          </td>
-                          <td className="py-1 pl-1">
-                            <div className="flex items-center justify-end gap-0.5">
-                              <button onClick={() => downloadTripPdf(t.id)} className="p-1 text-gray-400 hover:text-cyan-600 rounded" title="PDF" data-testid={`tx-pdf-${t.id}`}>
-                                <FileDown className="w-3.5 h-3.5" />
-                              </button>
-                              {t.status !== "approved" && (
-                                <button onClick={() => approveTrip(t.id)} className="p-1 text-gray-400 hover:text-emerald-600 rounded" title="Genehmigen" data-testid={`tx-approve-${t.id}`}>
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              {t.status !== "rejected" && (
-                                <button onClick={() => rejectTrip(t.id)} className="p-1 text-gray-400 hover:text-red-500 rounded" title="Ablehnen" data-testid={`tx-reject-${t.id}`}>
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              <button onClick={() => deleteTripAdmin(t.id)} className="p-1 text-gray-400 hover:text-red-700 rounded" title="Löschen" data-testid={`tx-delete-${t.id}`}>
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {/* Summen */}
-              {(() => {
-                const approved = travelTrips.filter(t => t.status === "approved");
-                const submitted = travelTrips.filter(t => t.status === "submitted");
-                const approvedTotal = approved.reduce((s, t) => s + (t.computed?.total_eur || 0), 0);
-                const pendingTotal = submitted.reduce((s, t) => s + (t.computed?.total_eur || 0), 0);
-                return (
-                  <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <div className="bg-emerald-50 rounded-lg p-2.5 text-center">
-                      <p className="text-[10px] text-emerald-600 uppercase font-semibold">Genehmigt (in Lohn)</p>
-                      <p className="text-lg font-bold text-emerald-700">{approvedTotal.toFixed(2)}€</p>
-                      <p className="text-[10px] text-emerald-500">{approved.length} Reisen</p>
-                    </div>
-                    {submitted.length > 0 && (
-                      <div className="bg-amber-50 rounded-lg p-2.5 text-center">
-                        <p className="text-[10px] text-amber-600 uppercase font-semibold">Offen (Prüfung)</p>
-                        <p className="text-lg font-bold text-amber-700">{pendingTotal.toFixed(2)}€</p>
-                        <p className="text-[10px] text-amber-500">{submitted.length} Reisen</p>
-                      </div>
-                    )}
-                    <div className="bg-cyan-50 rounded-lg p-2.5 text-center">
-                      <p className="text-[10px] text-cyan-600 uppercase font-semibold">Steuerfrei nach §3 Nr.13/16 EStG</p>
-                      <p className="text-[10px] text-cyan-700 mt-1.5">Nur „Genehmigt" fließt in die Lohnabrechnung</p>
-                    </div>
-                  </div>
-                );
-              })()}
-            </>
-          )}
-        </div>
+        <TravelExpensesSection
+          payrollMonth={payrollMonth}
+          travelTrips={travelTrips}
+          loadingTravel={loadingTravel}
+          downloadTravelXlsx={downloadTravelXlsx}
+          downloadTripPdf={downloadTripPdf}
+          approveTrip={approveTrip}
+          rejectTrip={rejectTrip}
+          deleteTripAdmin={deleteTripAdmin}
+        />
 
         {/* Vacation & Überstundenabbau Entries */}
         <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="vacation-section">
@@ -1286,222 +980,34 @@ export default function AdminZeitDetailPage() {
         })()}
 
         {/* Monthly Breakdown */}
-        <div className="space-y-2">
-          {months.filter(m => m.idx <= currentMonth).map(m => {
-            const stats = getMonthStats(m.key);
-            const isOpen = expandedMonth === m.key;
-
-            return (
-              <div key={m.key} className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid={`month-${m.key}`}>
-                <button onClick={() => setExpandedMonth(isOpen ? null : m.key)} className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors">
-                  <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="text-sm font-semibold text-gray-900">{m.label}</span>
-                  <div className="flex items-center gap-2 ml-auto">
-                    {stats.totalMins > 0 && <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded"><Clock className="w-3 h-3 inline mr-0.5 -mt-0.5" />{fmtH(stats.totalMins)}</span>}
-                    {stats.vacDays > 0 && <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded"><Palmtree className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.vacDays}T</span>}
-                    {stats.sickDays > 0 && <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded"><ThermometerSun className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.sickDays}T</span>}
-                    {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                  </div>
-                </button>
-                {isOpen && (
-                  <div className="border-t border-gray-100 divide-y divide-gray-50">
-                    {/* Manual Entry Add Row (Admin only) */}
-                    <div className="px-4 py-2 bg-emerald-50/40 flex items-center gap-2 text-xs flex-wrap" data-testid={`add-time-row-${m.key}`}>
-                      <Plus className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                      <span className="font-semibold text-emerald-700 mr-1">Manuell erfassen:</span>
-                      <input
-                        type="date"
-                        value={addRow[m.key]?.date || ""}
-                        min={`${m.key}-01`}
-                        max={`${m.key}-31`}
-                        onChange={e => updateAddRow(m.key, "date", e.target.value)}
-                        className="border border-emerald-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                        data-testid={`add-time-date-${m.key}`}
-                      />
-                      <input
-                        type="time"
-                        value={addRow[m.key]?.start || ""}
-                        onChange={e => updateAddRow(m.key, "start", e.target.value)}
-                        placeholder="Start"
-                        className="border border-emerald-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                        data-testid={`add-time-start-${m.key}`}
-                      />
-                      <span className="text-gray-400">—</span>
-                      <input
-                        type="time"
-                        value={addRow[m.key]?.end || ""}
-                        onChange={e => updateAddRow(m.key, "end", e.target.value)}
-                        placeholder="Ende"
-                        className="border border-emerald-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                        data-testid={`add-time-end-${m.key}`}
-                      />
-                      <Button
-                        onClick={() => submitAddRow(m.key)}
-                        disabled={addingRow === m.key}
-                        size="sm"
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white h-7 text-xs px-2.5 ml-auto"
-                        data-testid={`add-time-save-${m.key}`}
-                      >
-                        <Save className="w-3 h-3 mr-1" /> {addingRow === m.key ? "Speichere…" : "Hinzufügen"}
-                      </Button>
-                    </div>
-                    {stats.vacs.map(v => (
-                      <div key={v.id} className="px-4 py-2.5 flex items-center gap-3 bg-sky-50/50">
-                        <Palmtree className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-sky-700">Urlaub</span>
-                        <span className="text-xs text-sky-600">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })} — {new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</span>
-                        <span className="text-xs font-bold text-sky-700 ml-auto">{v.days} Tage</span>
-                      </div>
-                    ))}
-                    {stats.sicks.map(r => (
-                      <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 bg-red-50/50">
-                        <ThermometerSun className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-red-600">Krank</span>
-                        <span className="text-xs text-red-500">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}{r.end_date !== r.start_date && ` — ${new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`}</span>
-                        <span className="text-xs font-bold text-red-600 ml-auto">{r.days} Tage</span>
-                      </div>
-                    ))}
-                    {stats.offs.map(r => (
-                      <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 bg-amber-50/50">
-                        <TrendingUp className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-amber-700">Überstundenabbau</span>
-                        <span className="text-xs text-amber-600">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</span>
-                      </div>
-                    ))}
-                    {stats.entries.map(e => editEntryId === e.id ? (
-                      <div key={e.id} className="px-4 py-2 flex items-center gap-2 text-xs bg-amber-50/60 flex-wrap" data-testid={`edit-row-${e.id}`}>
-                        <Pencil className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                        <input type="date" value={editDraft.date} onChange={ev => setEditDraft(d => ({ ...d, date: ev.target.value }))} className="border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                        <input type="time" value={editDraft.start} onChange={ev => setEditDraft(d => ({ ...d, start: ev.target.value }))} className="border border-amber-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                        <span className="text-gray-400">—</span>
-                        <input type="time" value={editDraft.end} onChange={ev => setEditDraft(d => ({ ...d, end: ev.target.value }))} className="border border-amber-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                        <div className="ml-auto flex gap-1">
-                          <Button onClick={() => saveEditEntry(e.id)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-7 text-xs px-2" data-testid={`save-edit-${e.id}`}>
-                            <Save className="w-3 h-3 mr-1" /> Speichern
-                          </Button>
-                          <Button onClick={() => setEditEntryId(null)} size="sm" variant="ghost" className="h-7 text-xs px-2" data-testid={`cancel-edit-${e.id}`}>
-                            <X className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div key={e.id} className="px-4 py-2.5 flex items-center gap-3 text-xs group hover:bg-gray-50/70" data-testid={`time-row-${e.id}`}>
-                        <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        <span className="font-medium text-gray-700 w-24 flex-shrink-0">{new Date(e.clock_in).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
-                        <span className="text-green-600 font-medium">{formatTime(e.clock_in)}</span>
-                        <span className="text-gray-300">—</span>
-                        <span className={`font-medium ${e.clock_out ? "text-red-500" : "text-amber-500"}`}>{e.clock_out ? formatTime(e.clock_out) : "Aktiv"}</span>
-                        {(e.manual || e.edited_by) && (
-                          <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold" title={e.manual ? `Manuell durch ${e.manual_by_name || "Admin"}` : `Bearbeitet durch ${e.edited_by_name || "Admin"}`}>
-                            {e.manual ? "manuell" : "geändert"}
-                          </span>
-                        )}
-                        {e.break_min > 0 && (
-                          <span className="text-[9px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full font-semibold" title={`${e.break_min} Min. Pause automatisch abgezogen`}>
-                            −{e.break_min}m Pause
-                          </span>
-                        )}
-                        <span className="font-bold text-gray-900 ml-auto">{e.duration_minutes > 0 ? fmtH(e.duration_minutes) : "—"}</span>
-                        {e.clock_in_lat && <a href={`https://www.google.com/maps?q=${e.clock_in_lat},${e.clock_in_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-fuchsia-600" onClick={ev => ev.stopPropagation()}><MapPin className="w-3 h-3" /></a>}
-                        {e.clock_out_lat && <a href={`https://www.google.com/maps?q=${e.clock_out_lat},${e.clock_out_lng}`} target="_blank" rel="noreferrer" className="text-gray-400 hover:text-green-600" onClick={ev => ev.stopPropagation()}><MapPin className="w-3 h-3" /></a>}
-                        <button onClick={() => startEditEntry(e)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-amber-600 p-0.5" title="Bearbeiten" data-testid={`edit-time-${e.id}`}>
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => deleteEntry(e.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-0.5" title="Löschen" data-testid={`delete-time-${e.id}`}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                    {stats.entries.length === 0 && stats.vacs.length === 0 && stats.sicks.length === 0 && stats.offs.length === 0 && (
-                      <div className="px-4 py-3 text-center text-xs text-gray-400">Noch keine Stempel-Einträge — oben „Manuell erfassen" nutzen</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <MonthlyBreakdownSection
+          months={months}
+          currentMonth={currentMonth}
+          expandedMonth={expandedMonth}
+          setExpandedMonth={setExpandedMonth}
+          getMonthStats={getMonthStats}
+          fmtH={fmtH}
+          addRow={addRow}
+          updateAddRow={updateAddRow}
+          submitAddRow={submitAddRow}
+          addingRow={addingRow}
+          editEntryId={editEntryId}
+          setEditEntryId={setEditEntryId}
+          editDraft={editDraft}
+          setEditDraft={setEditDraft}
+          startEditEntry={startEditEntry}
+          saveEditEntry={saveEditEntry}
+          deleteEntry={deleteEntry}
+        />
 
         {/* Audit-Log (Protokoll der manuellen Aenderungen) */}
-        <div id="audit-section" className="bg-white rounded-xl border border-gray-200" data-testid="audit-section">
-          <button
-            type="button"
-            onClick={() => setAuditOpen(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 hover:bg-violet-50/40 transition-colors"
-            data-testid="audit-toggle"
-          >
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-violet-600" />
-              <span className="font-semibold text-sm text-gray-900">Änderungs­protokoll</span>
-              <span className="text-xs text-gray-500">– manuelle Eingriffe an Zeit / Urlaub / Stammdaten</span>
-              {auditEntries.length > 0 && (
-                <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold">
-                  {auditEntries.length}
-                </span>
-              )}
-            </div>
-            {auditOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-          </button>
-          {auditOpen && (
-            <div className="border-t border-gray-100">
-              {auditLoading ? (
-                <div className="px-4 py-6 text-center text-xs text-gray-400">Lade…</div>
-              ) : auditEntries.length === 0 ? (
-                <div className="px-4 py-6 text-center text-xs text-gray-400">Noch keine protokollierten Änderungen.</div>
-              ) : (
-                <ul className="divide-y divide-gray-50">
-                  {auditEntries.map(a => {
-                    const dt = new Date(a.created_at);
-                    const when = dt.toLocaleString("de-DE", {
-                      day: "2-digit", month: "2-digit", year: "numeric",
-                      hour: "2-digit", minute: "2-digit"
-                    });
-                    const actionLabel = {
-                      time_manual_create: "Zeit manuell angelegt",
-                      time_edit:          "Zeit korrigiert",
-                      time_delete:        "Zeit gelöscht",
-                      vacation_add:       "Urlaub hinzugefügt",
-                      vacation_delete:    "Urlaub gelöscht",
-                      time_off_admin_create: "Abwesenheit eingetragen",
-                      time_off_delete:    "Abwesenheit gelöscht",
-                      hr_data_update:     "HR-Daten geändert",
-                      work_schedule_update: "Regelarbeitszeit geändert",
-                      deduction_add:      "Lohnabzug hinzugefügt",
-                      deduction_delete:   "Lohnabzug gelöscht",
-                      payroll_release:    "Lohn freigegeben",
-                    }[a.action] || a.action;
-                    return (
-                      <li key={a.id} className="px-4 py-2.5 hover:bg-gray-50" data-testid={`audit-row-${a.id}`}>
-                        <div className="flex items-start gap-3">
-                          <span className="text-[10px] font-mono text-gray-400 mt-0.5 whitespace-nowrap">{when}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm text-gray-900 truncate">
-                              <span className="text-[10px] inline-block bg-violet-50 text-violet-700 font-semibold uppercase px-1.5 py-0.5 rounded mr-2">{actionLabel}</span>
-                              {a.summary}
-                            </div>
-                            <div className="text-[11px] text-gray-500 mt-0.5">
-                              durch <span className="font-medium">{a.performed_by_name}</span>
-                              {a.performed_by_role && <span className="text-gray-400"> · {a.performed_by_role}</span>}
-                            </div>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <div className="px-4 py-2 border-t border-gray-100 flex justify-end">
-                <button
-                  onClick={loadAuditLog}
-                  className="text-[11px] text-violet-600 hover:text-violet-800"
-                  data-testid="audit-refresh"
-                >
-                  ↻ Aktualisieren
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <AuditLogSection
+          auditOpen={auditOpen}
+          setAuditOpen={setAuditOpen}
+          auditEntries={auditEntries}
+          auditLoading={auditLoading}
+          loadAuditLog={loadAuditLog}
+        />
       </div>
     </div>
   );
