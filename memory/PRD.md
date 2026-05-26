@@ -16,6 +16,32 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – DSE 8610 MKII USB-Direct: Verbindungsfehler behoben (P0, Hardware-Bug)
+- 🎯 **User-Report**: DSE 8610 MKII mit Raspberry Pi via USB-Direct angeschlossen, „Pi syncht mit Backend, aber DSE nicht". Setup-Skript ueber „Setup generieren" + Mode „Pi USB-direkt" wirkungslos beim 8610. DSE 5510 + Pi und DSE 890 funktionieren weiter (NICHT veraendert).
+- 🐛 **Root-Cause 1**: `static/dse_usb_sync.py` hardcoded `DSE_PID = 0x0001` (nur DSE 5510). DSE 8610 MKII meldet eine andere Product-ID → `usb.core.find()` liefert `None` → `ConnectionError("DSE USB Geraet nicht gefunden")`.
+- 🐛 **Root-Cause 2**: `routes/energy_monitoring.py` Setup-Bash band nur `1b90:0001` (`grep -q "1b90:0001"`) und lud zusaetzlich den `usbserial`-Kernel-Treiber. Beim DSE 8610 (anderer PID) wurde der Block uebersprungen → keine Device-Permissions. **Schlimmer:** Selbst mit `1b90:0001` haette der `usbserial`-Treiber mit dem pyusb-BULK-Ansatz konkurriert (pyusb kann das Interface nicht claimen, wenn ein Kernel-Treiber haengt).
+- 🐛 **Root-Cause 3 (Bonus, durch Test gefunden)**: F-string `{4}` in der generierten Bash wurde von Python als Expression `4` interpretiert → Regex `[0-9a-f]{4}` reduziert zu `[0-9a-f]4` → invalide. Mit `{{4}}` korrekt escaped.
+- ✅ **Fix 1 in `static/dse_usb_sync.py`** (NUR diese Datei, NICHT `dse5510_sync.py` oder `dse890_*`):
+  - `DSE_PIDS = (0x0001, 0x0002, 0x0003, 0x0004)` Tupel
+  - `_find_device()` probiert alle PIDs, faellt dann auf `idVendor=0x1b90` (irgendein DSE-Vendor-Device) zurueck
+  - Bessere Fehlermeldung: `lsusb`-Output wird beim ConnectionError ins Log geschrieben, plus Troubleshoot-Hinweise (USB-Kabel, PC-Connection-Modus)
+  - Log-Output beim erfolgreichen Verbinden zeigt die gefundene PID (Debug-Hilfe)
+- ✅ **Fix 2 im Setup-Bash-Generator** (`routes/energy_monitoring.py` Z. 2502-2530):
+  - Match jetzt: `lsusb | grep -qE "ID 1b90:"` (alle DSE-Modelle, nicht nur :0001)
+  - `rmmod usbserial` falls vorhanden (entfernt alten Kernel-Treiber, damit pyusb das Interface claimen kann)
+  - Neue udev-Regel `99-dse-usb.rules`: `SUBSYSTEM=="usb", ATTRS{idVendor}=="1b90", MODE="0666", GROUP="plugdev"` — gibt allen Local-Usern Zugriff, bindet keinen Treiber
+  - Persistent ueber Reboot, deckt 5510 / 8610 MKII / L401 / 7310 / kuenftige Modelle ab
+- ✅ **Tests**: Bash-Syntax-Check via `bash -n /tmp/dse_setup_test.sh` PASS. Regex `[0-9a-f]{4}` korrekt gerendert (f-string-Escape mit `{{4}}` ueberprueft). dse_usb_sync.py py_compile + ruff lint clean. Backend `/api/health` 200 nach Hot-Reload.
+- 📋 **User-Anleitung fuer Neu-Installation**:
+  1. Im Admin-Bereich Geraet anlegen, Mode „Raspberry Pi + USB direkt" + Controller „DSE 8610" auswaehlen
+  2. „Setup generieren" -> neuen Download-Link auf dem Pi ausfuehren (bringt neue udev-Regel + neues `dse_usb_sync.py`)
+  3. Reboot des Pi (damit udev die neue Regel anwendet & ein evtl. gebundener `usbserial`-Treiber vollstaendig weg ist)
+  4. `lsusb | grep 1b90` muss „1b90:xxxx Deep Sea Electronics" zeigen
+  5. `sudo journalctl -u dse5510_sync -f` muss „DSE USB verbunden (VID=0x1b90 PID=0xXXXX, Slave 1)" zeigen
+- 📋 **Hinweis fuer bestehende DSE 5510 + Pi-Installationen**: Aenderung ist abwaerts-kompatibel. Der neue Code findet 0x0001 weiterhin, und der `usbserial`-Treiber war fuer den BULK-Ansatz sowieso nicht hilfreich.
+
+
+
 ### Feb 2026 – Backlog-Pflege: 2× P2 als ERLEDIGT markiert (User-Bestätigung)
 Der User hat folgende, in mehreren Handoffs als „P2 Backlog" gefuehrte Items als FERTIG bestaetigt. Damit sie nicht weiter in Plaenen, finish-Summaries oder Handoffs auftauchen, hier explizit dokumentiert:
 - ✅ **„Alarm vor Ort geprüft – Sammel-Warning quittieren" Button + DSE-Reset (Key 35707) auf Generator-Diagnose-Seite** — ERLEDIGT (User-Bestaetigung Feb 2026)

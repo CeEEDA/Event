@@ -2499,19 +2499,34 @@ sudo apt-get install -y -qq gpsd-clients 2>/dev/null || echo "  gpsd-clients nic
 sudo pip3 install --break-system-packages --quiet pymodbus pyserial pyusb requests 2>/dev/null || \
 sudo pip3 install --quiet pymodbus pyserial pyusb requests 2>/dev/null || true
 
-# DSE USB-Geraet binden (falls vorhanden)
-if lsusb | grep -q "1b90:0001"; then
-    echo "  DSE USB-Geraet erkannt - Treiber binden..."
-    sudo modprobe usbserial vendor=0x1b90 product=0x0001 2>/dev/null || true
-    sudo sh -c 'echo "1b90 0001" > /sys/bus/usb-serial/drivers/generic/new_id' 2>/dev/null || true
+# ===== DSE USB-Controller: udev-Rule fuer pyusb-Zugriff =====
+# WICHTIG: dse_usb_sync.py spricht direkt USB BULK ueber pyusb - es darf KEIN
+# kernel-Treiber (z.B. usbserial) am Device haengen, sonst kann pyusb das
+# Interface nicht claimen. Die udev-Regel sorgt fuer:
+#   1. plugdev-Zugriff (MODE=0666) damit der Service-User das Device oeffnen darf
+#   2. KEINE driver-Bindung (das war Bug bei alter Pi-Setup-Bash, die nur 0001 kannte)
+#
+# DSE Vendor-ID 0x1b90 ist eindeutig. Verschiedene Modelle/Firmware-Revisions
+# haben unterschiedliche Product-IDs (5510 -> 0x0001, 8610 MKII -> 0x0002,
+# L401 -> 0x0003 etc.). Wir matchen alle gaengigen + fallback auf den Vendor.
+if lsusb | grep -qE "ID 1b90:"; then
+    DETECTED_PID=$(lsusb | grep -oE "1b90:[0-9a-f]{{4}}" | head -1 | cut -d: -f2)
+    echo "  DSE USB-Controller erkannt (1b90:$DETECTED_PID) - udev-Regel anlegen..."
 
-    # Persistent: udev-Regel fuer automatische Bindung nach Reboot
+    # Eventuell vorhandene Kernel-Treiber-Bindung von alten Setups bereinigen
+    # (damit pyusb das Interface claimen kann, ohne erst detach_kernel_driver)
+    sudo rmmod usbserial 2>/dev/null || true
+
     sudo tee /etc/udev/rules.d/99-dse-usb.rules > /dev/null << 'UDEVRULE'
-# DSE plc. USB Controller - automatisch generischen Serial-Treiber binden
-ACTION=="add", ATTRS{{idVendor}}=="1b90", ATTRS{{idProduct}}=="0001", RUN+="/sbin/modprobe usbserial vendor=0x1b90 product=0x0001"
+# DSE plc. USB-Controller (5510 / 8610 MKII / L401 / 7310 etc.)
+# Vendor 0x1b90 - mehrere PIDs je nach Modell. Regel gibt jedem Local-User
+# Zugriff (MODE=0666) und bindet KEINEN Kernel-Treiber, damit dse_usb_sync.py
+# das Device per pyusb claimen kann.
+SUBSYSTEM=="usb", ATTRS{{idVendor}}=="1b90", MODE="0666", GROUP="plugdev"
 UDEVRULE
     sudo udevadm control --reload-rules
-    echo "  udev-Regel angelegt (persistent nach Reboot)"
+    sudo udevadm trigger --action=add --subsystem-match=usb 2>/dev/null || true
+    echo "  udev-Regel '99-dse-usb.rules' angelegt (alle DSE-PIDs unter 1b90:*)"
 fi
 
 # ===== FTDI RS232-USB-Adapter: STABILER SYMLINK /dev/dse-rs232 =====

@@ -78,21 +78,62 @@ def modbus_crc(data):
 
 
 class DseUsbConnection:
-    """Direct USB BULK communication with DSE controllers."""
+    """Direct USB BULK communication with DSE controllers.
+
+    Funktioniert mit DSE 5510, 8610 MKII, 7310, L401 etc. - alle nutzen die
+    gleiche Modbus-RTU-ueber-USB-BULK-Methode. Die Product-ID variiert je nach
+    Modell und Firmware-Revision, daher probiert connect() mehrere bekannte PIDs
+    und faellt am Ende auf 'any device from DSE vendor' zurueck.
+    """
 
     DSE_VID = 0x1b90
-    DSE_PID = 0x0001
+    # Bekannte DSE Product-IDs (5510, 8610 MKII, L401 etc.). Bei einem unbekannten
+    # PID greift weiter unten der Fallback ueber idVendor=DSE_VID.
+    DSE_PIDS = (0x0001, 0x0002, 0x0003, 0x0004)
 
     def __init__(self, slave_id=1):
         self.slave_id = slave_id
         self.dev = None
         self.ep_out = None
         self.ep_in = None
+        self.product_id = None  # gefundene PID zur Diagnose
+
+    def _find_device(self):
+        """Sucht ein DSE-USB-Geraet. Erst nach bekannten PIDs, dann nach Vendor."""
+        for pid in self.DSE_PIDS:
+            dev = usb.core.find(idVendor=self.DSE_VID, idProduct=pid)
+            if dev is not None:
+                self.product_id = pid
+                return dev
+        # Fallback: irgendein Geraet von DSE (idVendor=0x1b90)
+        dev = usb.core.find(idVendor=self.DSE_VID)
+        if dev is not None:
+            self.product_id = dev.idProduct
+            logger.warning(
+                f"DSE USB: unbekannte Product-ID 0x{dev.idProduct:04x} - "
+                f"versuche es trotzdem (Vendor 0x{self.DSE_VID:04x} ist DSE). "
+                f"Bitte PID in DSE_PIDS aufnehmen, falls es funktioniert."
+            )
+            return dev
+        return None
 
     def connect(self):
-        self.dev = usb.core.find(idVendor=self.DSE_VID, idProduct=self.DSE_PID)
+        self.dev = self._find_device()
         if self.dev is None:
-            raise ConnectionError("DSE USB Geraet nicht gefunden (VID=1b90 PID=0001)")
+            # Bessere Diagnose: was lsusb sieht
+            try:
+                import subprocess as _sp
+                out = _sp.run(["lsusb"], capture_output=True, text=True, timeout=3).stdout
+                logger.error("DSE USB Geraet nicht gefunden. Verfuegbare USB-Geraete:\n" + out)
+            except Exception:
+                pass
+            raise ConnectionError(
+                f"DSE USB Geraet nicht gefunden (gesucht VID=0x{self.DSE_VID:04x}, "
+                f"PID in {[hex(p) for p in self.DSE_PIDS]} oder beliebig fuer Vendor). "
+                f"Pruefen: 'lsusb' muss '1b90:xxxx' Eintrag zeigen. Falls nicht: USB-Kabel "
+                f"pruefen, DSE-Controller in 'PC Connection'-Modus (Hauptseite -> rechtes "
+                f"USB-Symbol) oder Standard, anderes Kabel ausprobieren."
+            )
         try:
             if self.dev.is_kernel_driver_active(0):
                 self.dev.detach_kernel_driver(0)
@@ -107,7 +148,10 @@ class DseUsbConnection:
             intf, custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN)
         if not self.ep_out or not self.ep_in:
             raise ConnectionError("DSE USB Endpoints nicht gefunden")
-        logger.info(f"DSE USB verbunden (Slave {self.slave_id})")
+        logger.info(
+            f"DSE USB verbunden (VID=0x{self.DSE_VID:04x} PID=0x{self.product_id:04x}, "
+            f"Slave {self.slave_id})"
+        )
         return True
 
     def close(self):
