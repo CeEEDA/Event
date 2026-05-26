@@ -16,6 +16,32 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – AdminZeitDetailPage.jsx Refactoring (Code-Review Schritt 3, P1)
+- 🎯 **User-Request**: "schritt 3" — `AdminZeitDetailPage.jsx` (1508 LOC, hohe Komplexität) zerlegen.
+- ✅ **5 neue Sub-Komponenten unter `/app/frontend/src/components/admin/zeit_detail/`**:
+  - `WeeklyScheduleSection.jsx` (124 LOC) – Regelarbeitszeit (Mo-Sa, Sollstunden, Pause) + Stundenlohn + Zuschläge (Sonntag/Feiertag/bes. Feiertag/Nacht)
+  - `PayrollSection.jsx` (154 LOC) – Lohnabrechnung pro Monat: Tabelle, Aggregate, Abzüge (Add/Remove), Netto-Auszahlung, Freigabe-Button + CSV-Export
+  - `TravelExpensesSection.jsx` (135 LOC) – Reisekosten-Tabelle + Aggregate + Excel-Export (Steuerbüro) + Genehmigen/Ablehnen/Löschen/PDF-Download je Reise
+  - `MonthlyBreakdownSection.jsx` (170 LOC) – Akkordeon pro Monat mit Manuell-Erfassen-Add-Row, Stempel-Liste mit Inline-Edit/Löschen, Urlaub/Krank/Überstundenabbau-Einträge
+  - `AuditLogSection.jsx` (96 LOC) – Änderungsprotokoll-Akkordeon mit 12 Action-Labels
+- ✅ **AdminZeitDetailPage.jsx**: 1508 → 1014 Zeilen (**-33%**). Unused Imports (11 Icons) entfernt; Lint clean.
+- ✅ **Strategie**: State weiter im Parent, alle Setter + Handler werden 1:1 durchgereicht. Alle data-testids 1:1 erhalten.
+- ✅ **Tests** (iteration_73): 7/7 PASS via testing_agent_v3_fork:
+  - Navigation zur Detail-Seite (Klick auf `time-user-<id>` div in der Mitarbeiter-Liste)
+  - WeeklyScheduleSection rendert alle 6 Tage + 4 Zuschlags-Inputs + Stundenlohn
+  - PayrollSection: Berechnen→Tabelle, Abzüge-CRUD, release-payroll-btn
+  - TravelExpensesSection: Empty-State + Excel-Export-Button
+  - MonthlyBreakdownSection: Monatsliste, Expand, Manuell-Erfassen-Inputs
+  - AuditLogSection: Toggle öffnet Liste + Refresh-Button
+  - Smoke: kein neuer JS-Error in der Konsole
+- 📊 **Gesamt-Statistik nach Schritt 1+2+3**:
+  - AdminPage.js: 1963 → 1298 (−665)
+  - UserEditModal.jsx: 717 → 294 (−423)
+  - AdminZeitDetailPage.jsx: 1508 → 1014 (−494)
+  - **14 neue Komponenten** insgesamt (Avg ~110 LOC, alle <300 LOC)
+
+
+
 ### Feb 2026 – UserEditModal weiter zerlegt (Code-Review Schritt 2, P1)
 - 🎯 **User-Request**: "mach bei schritt 2 weiter" — UserEditModal.jsx (717 LOC) in Sub-Komponenten zerlegen, um unter 400 LOC zu kommen.
 - ✅ **5 neue Sub-Komponenten unter `/app/frontend/src/components/admin/user_modal/`**:

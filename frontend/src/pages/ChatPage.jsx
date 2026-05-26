@@ -6,12 +6,16 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Send, Plus, Users, User, Paperclip, Image,
-  MessageSquare, X, Search, Check, CheckCheck, Loader2,
-  FileText, Download, UserPlus, UserMinus, ChevronRight, Camera, Pencil,
+  ArrowLeft, Send, Users, User, Paperclip,
+  MessageSquare, X, CheckCheck, Loader2,
+  ChevronRight, Camera,
   SmilePlus, MessageCircle, CornerDownRight,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
+import ChatSidebar from "../components/chat/ChatSidebar";
+import ChatDetailPanel from "../components/chat/ChatDetailPanel";
+import NewChatModal from "../components/chat/NewChatModal";
+import NewGroupModal from "../components/chat/NewGroupModal";
 
 const API = BACKEND_URL;
 
@@ -60,6 +64,9 @@ export default function ChatPage() {
 
   // iOS-Tastatur-Fix: passe Container-Höhe an die VisualViewport an,
   // damit das Eingabefeld nicht hinter der virtuellen Tastatur verschwindet.
+  // Zusaetzlich: ChatPage-Container ist `position: fixed inset-0`, dazu sperren
+  // wir Body-Scroll, damit iOS Safari beim Tastatur-Aufgehen nicht den ganzen
+  // Body nach oben scrollt und den Chat wegwischt.
   const [viewportHeight, setViewportHeight] = useState(null);
   useEffect(() => {
     const vp = typeof window !== "undefined" ? window.visualViewport : null;
@@ -71,6 +78,18 @@ export default function ChatPage() {
     return () => {
       vp.removeEventListener("resize", update);
       vp.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  // Body-Scroll-Lock waehrend ChatPage gemountet ist (verhindert iOS Auto-Scroll).
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
     };
   }, []);
 
@@ -397,7 +416,7 @@ export default function ChatPage() {
 
   return (
     <div
-      className="flex flex-col bg-gray-50 safe-area-pad"
+      className="fixed inset-0 flex flex-col bg-gray-50 safe-area-pad"
       style={{ height: viewportHeight ? `${viewportHeight}px` : "100dvh" }}
       data-testid="chat-page"
     >
@@ -412,53 +431,17 @@ export default function ChatPage() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar - Conversation List */}
-        <aside className={`${activeConvo ? "hidden md:flex" : "flex"} w-full md:w-72 lg:w-80 bg-white border-r border-gray-200 flex-col flex-shrink-0`}>
-          <div className="p-3 border-b border-gray-100 flex items-center gap-2">
-            <Button size="sm" onClick={() => setShowNewChat(true)} className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs" data-testid="new-chat-btn">
-              <User className="w-3.5 h-3.5 mr-1" /> Direktnachricht
-            </Button>
-            {isAdmin && (
-              <Button size="sm" variant="outline" onClick={() => setShowNewGroup(true)} className="text-xs" data-testid="new-group-btn">
-                <Users className="w-3.5 h-3.5 mr-1" /> Gruppe
-              </Button>
-            )}
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {conversations.length === 0 ? (
-              <div className="p-6 text-center text-gray-400 text-sm">
-                <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                Noch keine Chats
-              </div>
-            ) : conversations.map(c => (
-              <button
-                key={c.id}
-                onClick={() => openConvo(c)}
-                className={`w-full text-left px-3 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors flex items-center gap-3 ${activeConvo?.id === c.id ? "bg-fuchsia-50 border-l-2 border-l-fuchsia-500" : ""}`}
-                data-testid={`convo-${c.id}`}
-              >
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${c.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
-                  {c.avatar_path ? (
-                    <img src={getAvatarUrl(c)} alt="" className="w-full h-full object-cover" />
-                  ) : c.type === "direct" && memberAvatars[c.members?.find(id => id !== user?.id)] ? (
-                    <img src={memberAvatars[c.members?.find(id => id !== user?.id)]} alt="" className="w-full h-full object-cover" />
-                  ) : c.type === "group" ? <Users className="w-4 h-4 text-blue-600" /> : <User className="w-4 h-4 text-gray-500" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-900 truncate">{c.display_name}</span>
-                    {c.last_message?.sent_at && <span className="text-[10px] text-gray-400 flex-shrink-0 ml-1">{formatTime(c.last_message.sent_at)}</span>}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-gray-500 truncate">{c.last_message?.text || "Keine Nachrichten"}</p>
-                    {c.unread_count > 0 && (
-                      <span className="ml-1 w-5 h-5 rounded-full bg-fuchsia-600 text-white text-[10px] flex items-center justify-center flex-shrink-0">{c.unread_count}</span>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </aside>
+        <ChatSidebar
+          activeConvo={activeConvo}
+          conversations={conversations}
+          openConvo={openConvo}
+          isAdmin={isAdmin}
+          setShowNewChat={setShowNewChat}
+          setShowNewGroup={setShowNewGroup}
+          user={user}
+          memberAvatars={memberAvatars}
+          getAvatarUrl={getAvatarUrl}
+        />
 
         {/* Chat Area */}
         <main className={`${!activeConvo ? "hidden md:flex" : "flex"} flex-1 flex-col min-w-0`}>
@@ -686,7 +669,16 @@ export default function ChatPage() {
                               <Input
                                 value={threadInput}
                                 onChange={e => setThreadInput(e.target.value)}
+                                onFocus={(e) => {
+                                  const inputEl = e.currentTarget;
+                                  setTimeout(() => {
+                                    try { inputEl.scrollIntoView({ block: "end", behavior: "smooth" }); } catch (_) { /* ignore */ }
+                                  }, 300);
+                                }}
                                 placeholder="Antworten..."
+                                autoComplete="off"
+                                autoCorrect="off"
+                                enterKeyHint="send"
                                 className="h-8 text-sm bg-white"
                                 data-testid={`thread-input-${m.id}`}
                                 autoFocus
@@ -760,16 +752,24 @@ export default function ChatPage() {
                 <Input
                   value={newMsg}
                   onChange={e => setNewMsg(e.target.value)}
-                  onFocus={() => {
-                    // iOS: nach dem Aufgehen der Tastatur ans Ende scrollen,
-                    // aber NUR wenn der User ohnehin am Ende war (sonst bleibt seine Lese-Position erhalten).
-                    if (isAtBottom) {
-                      setTimeout(() => {
+                  onFocus={(e) => {
+                    // iOS/Android Keyboard: nach dem Aufgehen der Tastatur das Eingabefeld
+                    // selbst in den sichtbaren Bereich scrollen, damit der eingegebene Text
+                    // immer sichtbar bleibt (Bug: Bild wischt weg / Text nicht lesbar auf Mobil).
+                    const inputEl = e.currentTarget;
+                    setTimeout(() => {
+                      try {
+                        inputEl.scrollIntoView({ block: "end", behavior: "smooth" });
+                      } catch (_) { /* ignore */ }
+                      if (isAtBottom) {
                         messagesEndRef.current?.scrollIntoView({ block: "end" });
-                      }, 250);
-                    }
+                      }
+                    }, 300);
                   }}
                   placeholder="Nachricht schreiben..."
+                  autoComplete="off"
+                  autoCorrect="off"
+                  enterKeyHint="send"
                   className="flex-1 border-0 bg-gray-100 focus-visible:ring-0 text-sm"
                   data-testid="chat-message-input"
                 />
@@ -783,287 +783,56 @@ export default function ChatPage() {
       </div>
 
       {/* Chat Detail Panel */}
-      {showDetail && activeConvo && (
-        <>
-          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowDetail(false)} />
-          <div className="fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl" data-testid="chat-detail-panel" onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="px-4 py-4 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex-1" />
-                <button onClick={() => setShowDetail(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-              </div>
-              <div className="flex flex-col items-center text-center">
-                {/* Avatar */}
-                <div className="relative mb-3">
-                  <div className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden ${activeConvo.type === "group" ? "bg-blue-100" : "bg-gray-100"}`}>
-                    {activeConvo.avatar_path ? (
-                      <img src={getAvatarUrl(activeConvo)} alt="" className="w-full h-full object-cover" />
-                    ) : activeConvo.type === "group" ? <Users className="w-7 h-7 text-blue-600" /> : <User className="w-7 h-7 text-gray-500" />}
-                  </div>
-                  {isAdmin && activeConvo.type === "group" && (
-                    <>
-                      <input type="file" ref={avatarInputRef} accept="image/*" className="hidden" onChange={e => { if (e.target.files[0]) uploadAvatar(e.target.files[0]); e.target.value = ""; }} />
-                      <button
-                        onClick={() => avatarInputRef.current?.click()}
-                        className="absolute -bottom-1 -right-1 w-7 h-7 bg-fuchsia-600 rounded-full flex items-center justify-center text-white hover:bg-fuchsia-700 transition-colors shadow-md"
-                        title="Gruppenbild ändern"
-                        data-testid="change-avatar-btn"
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-                {/* Name */}
-                {editingName ? (
-                  <div className="flex items-center gap-2 w-full max-w-[200px]">
-                    <input
-                      value={editName}
-                      onChange={e => setEditName(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") saveGroupName(); if (e.key === "Escape") setEditingName(false); }}
-                      className="text-sm font-semibold text-center border border-fuchsia-300 rounded-lg px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-fuchsia-400"
-                      autoFocus
-                      data-testid="edit-group-name-input"
-                    />
-                    <button onClick={saveGroupName} className="text-fuchsia-600 hover:text-fuchsia-700"><Check className="w-4 h-4" /></button>
-                    <button onClick={() => setEditingName(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="font-semibold text-gray-900 text-sm">{activeConvo.display_name}</h3>
-                    {isAdmin && activeConvo.type === "group" && (
-                      <button onClick={() => { setEditName(activeConvo.display_name || ""); setEditingName(true); }} className="text-gray-400 hover:text-fuchsia-600" title="Name ändern" data-testid="edit-name-btn">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                )}
-                <p className="text-[10px] text-gray-400 mt-0.5">{activeConvo.type === "group" ? "Gruppenchat" : "Direktnachricht"}</p>
-              </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="flex border-b border-gray-100">
-              {[
-                { key: "members", label: "Mitglieder", icon: Users },
-                { key: "files", label: "Dateien", icon: FileText },
-                { key: "images", label: "Fotos", icon: Image },
-              ].map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => setDetailTab(t.key)}
-                  className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${detailTab === t.key ? "text-fuchsia-600 border-b-2 border-fuchsia-600" : "text-gray-500 hover:text-gray-700"}`}
-                  data-testid={`detail-tab-${t.key}`}
-                >
-                  <t.icon className="w-3.5 h-3.5" />
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Members Tab */}
-              {detailTab === "members" && (
-                <div className="p-3 space-y-1">
-                  <p className="text-[10px] text-gray-400 uppercase font-medium px-2 mb-2">{convoMembers.length} Mitglieder</p>
-                  {convoMembers.map(m => (
-                    <div key={m.id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50" data-testid={`member-${m.id}`}>
-                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <User className="w-4 h-4 text-gray-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {m.name} {m.id === user?.id && <span className="text-gray-400">(Du)</span>}
-                        </p>
-                        <p className="text-[10px] text-gray-400">{m.role}{m.id === convoCreatedBy ? " · Ersteller" : ""}</p>
-                      </div>
-                      {isAdmin && activeConvo.type === "group" && m.id !== convoCreatedBy && m.id !== user?.id && (
-                        <button
-                          onClick={() => removeMember(m.id)}
-                          className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                          title="Entfernen"
-                          data-testid={`remove-member-${m.id}`}
-                        >
-                          <UserMinus className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-
-                  {/* Add Member Section (Admin + Group only) */}
-                  {isAdmin && activeConvo.type === "group" && nonMembers.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                      <p className="text-[10px] text-gray-400 uppercase font-medium px-2 mb-2">Mitglied hinzufügen</p>
-                      <div className="relative px-2 mb-2">
-                        <Search className="w-3.5 h-3.5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input
-                          value={addMemberSearch}
-                          onChange={e => setAddMemberSearch(e.target.value)}
-                          placeholder="Suchen..."
-                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-fuchsia-400"
-                          data-testid="add-member-search"
-                        />
-                      </div>
-                      {nonMembers.map(u => (
-                        <button
-                          key={u.id}
-                          onClick={() => addMember(u.id)}
-                          className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-fuchsia-50 transition-colors"
-                          data-testid={`add-member-${u.id}`}
-                        >
-                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                            <User className="w-4 h-4 text-gray-500" />
-                          </div>
-                          <div className="flex-1 min-w-0 text-left">
-                            <p className="text-sm text-gray-900 truncate">{u.name}</p>
-                            <p className="text-[10px] text-gray-400">{u.role}</p>
-                          </div>
-                          <UserPlus className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Files Tab */}
-              {detailTab === "files" && (
-                <div className="p-3">
-                  {convoFiles.length === 0 ? (
-                    <div className="py-8 text-center text-gray-400">
-                      <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-xs">Keine Dateien geteilt</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {convoFiles.map(f => (
-                        <a
-                          key={f.attachment_id}
-                          href={`${API}/api/chat/conversations/${activeConvo.id}/file/${f.attachment_id}?token=${token}`}
-                          target="_blank" rel="noreferrer"
-                          className="flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-gray-50 transition-colors group"
-                          data-testid={`file-${f.attachment_id}`}
-                        >
-                          <div className="w-9 h-9 rounded-lg bg-fuchsia-50 flex items-center justify-center flex-shrink-0">
-                            <FileText className="w-4 h-4 text-fuchsia-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-gray-900 truncate">{f.filename}</p>
-                            <p className="text-[10px] text-gray-400">{f.sender_name} · {new Date(f.created_at).toLocaleDateString("de-DE")}</p>
-                          </div>
-                          <Download className="w-4 h-4 text-gray-400 group-hover:text-fuchsia-600 flex-shrink-0" />
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Images Tab */}
-              {detailTab === "images" && (
-                <div className="p-3">
-                  {convoImages.length === 0 ? (
-                    <div className="py-8 text-center text-gray-400">
-                      <Image className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-xs">Keine Fotos geteilt</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {convoImages.map(img => (
-                        <a
-                          key={img.attachment_id}
-                          href={`${API}/api/chat/conversations/${activeConvo.id}/file/${img.attachment_id}?token=${token}`}
-                          target="_blank" rel="noreferrer"
-                          className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-80 transition-opacity"
-                          data-testid={`image-${img.attachment_id}`}
-                        >
-                          <img
-                            loading="lazy"
-                            src={`${API}/api/chat/conversations/${activeConvo.id}/file/${img.attachment_id}?token=${token}&thumbnail=1&size=240`}
-                            alt={img.filename}
-                            className="w-full h-full object-cover"
-                          />
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+      <ChatDetailPanel
+        show={showDetail}
+        onClose={() => setShowDetail(false)}
+        activeConvo={activeConvo}
+        isAdmin={isAdmin}
+        user={user}
+        getAvatarUrl={getAvatarUrl}
+        avatarInputRef={avatarInputRef}
+        uploadAvatar={uploadAvatar}
+        editingName={editingName}
+        setEditingName={setEditingName}
+        editName={editName}
+        setEditName={setEditName}
+        saveGroupName={saveGroupName}
+        detailTab={detailTab}
+        setDetailTab={setDetailTab}
+        convoMembers={convoMembers}
+        convoCreatedBy={convoCreatedBy}
+        removeMember={removeMember}
+        nonMembers={nonMembers}
+        addMemberSearch={addMemberSearch}
+        setAddMemberSearch={setAddMemberSearch}
+        addMember={addMember}
+        convoFiles={convoFiles}
+        convoImages={convoImages}
+        API={API}
+        token={token}
+      />
 
       {/* New Direct Chat Modal */}
-      {showNewChat && (
-        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => setShowNewChat(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()} data-testid="new-chat-modal">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Neue Nachricht</h3>
-              <button onClick={() => setShowNewChat(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-3">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
-                <Input value={searchUsers} onChange={e => setSearchUsers(e.target.value)} placeholder="Suchen..." className="pl-8 text-sm" data-testid="search-users-input" />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 pb-3">
-              {filteredUsers.map(u => (
-                <button key={u.id} onClick={() => startDirectChat(u)} className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 flex items-center gap-3" data-testid={`start-chat-${u.id}`}>
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                    <User className="w-4 h-4 text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{u.name}</p>
-                    <p className="text-xs text-gray-400">{u.role}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <NewChatModal
+        open={showNewChat}
+        onClose={() => setShowNewChat(false)}
+        searchUsers={searchUsers}
+        setSearchUsers={setSearchUsers}
+        filteredUsers={filteredUsers}
+        startDirectChat={startDirectChat}
+      />
 
       {/* New Group Modal */}
-      {showNewGroup && (
-        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => setShowNewGroup(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()} data-testid="new-group-modal">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Neue Gruppe</h3>
-              <button onClick={() => setShowNewGroup(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-3 space-y-3">
-              <Input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Gruppenname..." className="text-sm" data-testid="group-name-input" />
-              <p className="text-xs text-gray-500">Mitglieder auswählen:</p>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 pb-3">
-              {chatUsers.map(u => {
-                const sel = selectedMembers.includes(u.id);
-                return (
-                  <button key={u.id} onClick={() => setSelectedMembers(prev => sel ? prev.filter(x => x !== u.id) : [...prev, u.id])}
-                    className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-3 ${sel ? "bg-fuchsia-50" : "hover:bg-gray-50"}`}
-                    data-testid={`group-member-${u.id}`}
-                  >
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center ${sel ? "bg-fuchsia-600 border-fuchsia-600" : "border-gray-300"}`}>
-                      {sel && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    <span className="text-sm text-gray-900">{u.name}</span>
-                    <span className="text-xs text-gray-400">{u.role}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="p-3 border-t border-gray-200">
-              <Button onClick={createGroup} disabled={!groupName.trim() || selectedMembers.length === 0} className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white" data-testid="create-group-btn">
-                Gruppe erstellen ({selectedMembers.length} Mitglieder)
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewGroupModal
+        open={showNewGroup}
+        onClose={() => setShowNewGroup(false)}
+        groupName={groupName}
+        setGroupName={setGroupName}
+        chatUsers={chatUsers}
+        selectedMembers={selectedMembers}
+        setSelectedMembers={setSelectedMembers}
+        createGroup={createGroup}
+      />
     </div>
   );
 }

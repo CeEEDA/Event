@@ -1,0 +1,38 @@
+{
+  "summary": "Frontend regression test for Schritt 4 ChatPage-Refactoring (extraktion in 4 Sub-Komponenten unter /app/frontend/src/components/chat/) UND iOS-Mobile-Keyboard-Bug-Fix. Login als admin@test.com → /chat lädt sauber. Alle data-testids (chat-page, new-chat-btn, new-group-btn, convo-*, chat-message-input, send-message-btn, new-chat-modal, new-group-modal, chat-detail-panel, detail-tab-{members,files,images}) vorhanden und funktional. Mobile-Viewport (390x844): position:fixed + body overflow:hidden + autoComplete='off' + enterKeyHint='send' bestätigt. Input bleibt nach Focus + Texteingabe im Sichtfeld (y=800, bottom=836, viewport=844). Keine Regression.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_detail": {
+    "TEST_1_chat_page_loads": "PASS — /chat rendert mit data-testid='chat-page'. Sidebar mit new-chat-btn und new-group-btn (Admin) sichtbar bei Desktop-Viewport (1920x1080).",
+    "TEST_2_convo_opens": "PASS — Klick auf convo-* (3 Konversationen vorhanden: Anna Weber, Test Kunde, TEST_Group_d78a9b) öffnet Chat-Bereich, Nachrichten werden geladen, chat-message-input und send-message-btn sichtbar.",
+    "TEST_3_new_chat_modal": "PASS — Klick auf new-chat-btn öffnet new-chat-modal. search-users-input visible, 16 start-chat-* Buttons. X-Button schließt Modal sauber.",
+    "TEST_4_new_group_modal": "PASS — Klick auf new-group-btn öffnet new-group-modal. group-name-input + 16 group-member-* + create-group-btn visible. X-Button schließt Modal.",
+    "TEST_5_chat_detail_panel": "PASS — Klick auf chat-header-detail-btn (ChevronRight) öffnet chat-detail-panel. Alle drei Tabs (detail-tab-members, detail-tab-files, detail-tab-images) klickbar und wechseln den Inhalt. Schließen via X-Button funktioniert.",
+    "TEST_6_mobile_keyboard_fix_position": "PASS — Auf Mobile-Viewport (390x844): document.querySelector('[data-testid=chat-page]').className enthält 'fixed' (vollständig: 'fixed inset-0 flex flex-col bg-gray-50 safe-area-pad'). getComputedStyle(document.body).overflow === 'hidden' ✓. getComputedStyle(document.documentElement).overflow === 'hidden' ✓.",
+    "TEST_7_mobile_input_attributes": "PASS — chat-message-input hat autoComplete='off', autoCorrect='off', enterKeyHint='send' (alle drei über getAttribute() verifiziert).",
+    "TEST_8_mobile_input_in_viewport": "PASS — Mobile (390x844): Input bounding box BEFORE focus: y=800, bottom=836, viewport_h=844 → IM VIEWPORT. Nach focus() + type('Hallo Mobile Test') + 600ms wait: y=800, bottom=836 → IDENTISCH, Input bleibt sichtbar. Getippter Text 'Hallo Mobile Test' bleibt im Input erhalten (input_value()-Check).",
+    "TEST_9_thread_reply_input_code_check": "PASS (Code-Review) — In ChatPage.jsx Zeile 668-695: thread-input-{m.id} hat ebenfalls autoComplete='off', autoCorrect='off', enterKeyHint='send' und onFocus mit scrollIntoView(block:'end') nach 300ms. Identisches Fix-Pattern wie bei message-input.",
+    "TEST_10_console_no_errors": "PASS — Nur ein harmloser 404 (vermutlich Avatar/Optional-Resource), keine JS-Errors die Funktionalität blockieren."
+  },
+  "critical_code_review_comments": [
+    "Sauber durchgeführte Sub-Komponenten-Extraktion: ChatSidebar (69 LOC), ChatDetailPanel (255 LOC), NewChatModal (45 LOC), NewGroupModal (55 LOC). ChatPage.jsx ist von 1069 → 838 LOC reduziert. State + Setter + Handler werden korrekt als Props durchgereicht, kein lokaler State in den Sub-Komponenten.",
+    "iOS-Mobile-Keyboard-Bug-Fix vollständig implementiert: (1) Container .className='fixed inset-0 ...' verifiziert, (2) useEffect setzt document.body.style.overflow='hidden' UND document.documentElement.style.overflow='hidden' mit Cleanup, (3) onFocus auf Input ruft inputEl.scrollIntoView({block:'end', behavior:'smooth'}) nach 300ms — sowohl für message-input als auch thread-input, (4) DOM-Attribute autoComplete='off', autoCorrect='off', enterKeyHint='send' korrekt gesetzt.",
+    "Container-Height-Berechnung via window.visualViewport ist ein guter zusätzlicher Schutz gegen iOS-Tastatur-Resize (useEffect mit vp.resize + vp.scroll Listener, Cleanup vorhanden).",
+    "Empfehlung (kein Blocker): ChatDetailPanel könnte ein data-testid='detail-close-btn' am X-Button bekommen (aktuell nur via 'chat-detail-panel button' selektierbar). Gleiches für die X-Buttons in NewChatModal und NewGroupModal — würde Selektion stabilisieren.",
+    "Echte iOS-Safari-Keyboard-Simulation ist in Playwright nicht möglich; die 4 indirekten Checks (fixed container, body overflow:hidden, DOM-Attribute, Input-bounding-box im Viewport) bestätigen die Implementierung. Ein finaler manueller Test auf echtem iPhone-Gerät durch den User wird empfohlen, ist aber technisch sauber umgesetzt."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (10/10 Checks pass)"},
+  "test_credentials": "admin@test.com / password (Preview)",
+  "seed_data_creation": "Keine — nur Lesen + Modal-Open/Close, keine Speicher-Aktionen.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Schritt-4 ChatPage-Refactoring + Mobile-Keyboard-Bug-Fix verifiziert. Drei Konversationen sind im Preview vorhanden (Anna Weber mit echten Nachrichten, Test Kunde leer, TEST_Group_d78a9b leer). Für Mobile-Tests Viewport auf 390x844 setzen UND nach Reload explizit auf [data-testid^='convo-'] warten (loadConversations() ist asynchron, sonst convo_count=0 wegen Race-Condition). Echte iOS-Keyboard-Simulation in Playwright nicht möglich → DOM-Attribute + body overflow + container .fixed + bounding-box-im-Viewport sind die 4 prüfbaren Checks (alle PASS).",
+  "rca of the issue": "N/A — Refactor + Mobile-Bug-Fix sind regression-frei und korrekt umgesetzt."
+}
