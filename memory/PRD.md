@@ -16,6 +16,32 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – ChatPage Refactoring (Code-Review Schritt 4) + iOS-Mobile-Keyboard-Bug-Fix (P0)
+- 🎯 **User-Request**: "Schritt4 . Achte auch drauf, wenn ich auf dem Smartphone etwas eingebe wischt das Bild weg und ich kann keinen Text sehen. Das müssen wir in dem Zuge auch Optimieren."
+- ✅ **4 neue Sub-Komponenten unter `/app/frontend/src/components/chat/`**:
+  - `ChatSidebar.jsx` (69 LOC) – Konversations-Liste mit Avatar + Unread-Badge + Last-Message-Preview
+  - `ChatDetailPanel.jsx` (255 LOC) – Rechtes Slide-In-Panel mit 3 Tabs (Mitglieder/Dateien/Fotos), Avatar-Upload, Name-Edit für Admin
+  - `NewChatModal.jsx` (45 LOC) – Neue-Direktnachricht-Dialog
+  - `NewGroupModal.jsx` (55 LOC) – Neue-Gruppe-Dialog mit Mitgliederauswahl
+- ✅ **ChatPage.jsx**: 1069 → 838 Zeilen (**-22%**). 9 ungenutzte Lucide-Icons entfernt. Lint clean.
+- 🚨 **iOS-Mobile-Keyboard-Bug-Fix**:
+  - Root-Container ist jetzt `position: fixed inset-0` (kein normaler Document-Flow mehr) — verhindert iOS-Safari-Auto-Scroll, der den Chat beim Tastatur-Aufgehen aus dem Sichtfeld geschoben hat
+  - `document.body.style.overflow = "hidden"` + `documentElement.style.overflow = "hidden"` als useEffect mit Cleanup — sperrt Body-Scroll während ChatPage gemountet
+  - `onFocus` am Input scrollt das Input-Element SELBST per `inputEl.scrollIntoView({block:'end', behavior:'smooth'})` nach 300ms (statt nur messagesEndRef wie vorher)
+  - DOM-Attribute: `autoComplete="off"`, `autoCorrect="off"`, `enterKeyHint="send"` ergänzt — verhindert Autocomplete-Suggestion-Bar die das Input weiter wegschiebt; Keyboard zeigt Senden-Symbol
+  - Gleicher Fix auf Thread-Reply-Input
+- ✅ **Tests** (iteration_74): 10/10 PASS via testing_agent_v3_fork. Mobile-Viewport 390x844: Input bounding_box y=800, bottom=836 bleibt nach focus()+type() identisch. Container .fixed, body overflow:hidden, alle DOM-Attribute korrekt. Refactoring regression-frei.
+- 📊 **Gesamt-Statistik nach Schritt 1+2+3+4**:
+  - AdminPage.js: 1963 → 1298 (−665)
+  - UserEditModal.jsx: 717 → 294 (−423)
+  - AdminZeitDetailPage.jsx: 1508 → 1014 (−494)
+  - ChatPage.jsx: 1069 → 838 (−231)
+  - **18 neue Komponenten** insgesamt
+  - Gesamt-LOC-Reduktion in Parent-Dateien: **-1813 Zeilen** (-30%)
+- 📋 **Empfehlung vom Testing-Agent (non-blocking)**: `data-testid="detail-close-btn"` an X-Buttons in ChatDetailPanel/NewChatModal/NewGroupModal für stabilere Selektor-Reichweite. **Hinweis User**: Echte iOS-Safari-Keyboard-Simulation ist in Playwright nicht möglich — bitte abschließend einmal auf einem echten iPhone testen.
+
+
+
 ### Feb 2026 – AdminZeitDetailPage.jsx Refactoring (Code-Review Schritt 3, P1)
 - 🎯 **User-Request**: "schritt 3" — `AdminZeitDetailPage.jsx` (1508 LOC, hohe Komplexität) zerlegen.
 - ✅ **5 neue Sub-Komponenten unter `/app/frontend/src/components/admin/zeit_detail/`**:
