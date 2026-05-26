@@ -1,0 +1,43 @@
+{
+  "summary": "Frontend regression test of UserEditModal Schritt-2 refactoring (5 sub-components extracted into /admin/user_modal/). All required data-testids render correctly when the modal is opened for Kunde, Mitarbeiter and Freelancer roles. Conditional fields appear/disappear correctly when their parent toggle is flipped. No regressions vs. iteration_71 (the previous full-modal test).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All admin Dialog modals", "issues": ["Console warning (a11y): 'Missing Description or aria-describedby={undefined} for DialogContent' — pre-existing, already flagged in iteration_71."]}
+    ]
+  },
+  "test_results_detail": {
+    "TEST_1_kunde_modal_opens": "PASS — Kunden tab → pencil → data-testid='user-modal' opens with App-Berechtigungen section visible",
+    "TEST_2_kunde_main_toggles_present": "PASS — filesharing-enabled-toggle, monitoring-enabled-toggle, energy-monitoring-enabled-toggle all present",
+    "TEST_3_filesharing_card_conditional": "PASS — FileShare ON → filesharing-max-size-input, filesharing-write-toggle, filesharing-delete-toggle render (FilesharingAppCard)",
+    "TEST_4_generator_monitoring_card_conditional": "PASS — Generator-Monitoring ON → monitoring-access-all-toggle, gen-share-electrical-toggle, gen-share-mechanical-toggle, gen-data-access-start, gen-data-access-end render (GeneratorMonitoringCard)",
+    "TEST_5_energy_monitoring_card_conditional": "PASS — Energy-Monitoring ON → energy-access-all-toggle, data-access-start-input, data-access-end-input render (EnergyMonitoringCard)",
+    "TEST_6_account_availability_card": "PASS — access-type-permanent + access-type-temporary buttons present; toggling to 'temporary' shows access-start-input + access-end-input; back to 'permanent' hides them again (AccountAvailabilityCard)",
+    "TEST_7_freelancer_assignment_section": "PASS — Edited 'Test 12' (Freelancer): freelancer-order-search present, freelancer-assigned-count badge shows '3 Aufträge zugewiesen' (FreelancerAssignment)",
+    "TEST_8_mitarbeiter_module_toggles": "PASS — Edited Anna Weber (Mitarbeiter): all 9 module-toggle-* (orders/einsatzplanung/kirmes/verwaltung/power_monitoring/energy_monitoring/devices/fileshare/serviceplan), module-toggle-adr, and can-billing-toggle render correctly",
+    "TEST_9_save_button_clickable": "PASS — save-user-btn is enabled and clickable inside all role modals (Kunde, Mitarbeiter, Freelancer)"
+  },
+  "critical_code_review_comments": [
+    "Refactor was a clean 1:1 JSX extraction — props are correctly forwarded (formData, setFormData, updateFilesharingApp, updateGeneratorMonitoringApp, updateEnergyMonitoringApp, toggleGeneratorId, toggleEnergyDeviceId, allGenerators, allMesskoffer, freelancer-Setter). All data-testids preserved.",
+    "AccountAvailabilityCard line 9: signature receives formData+setFormData directly — note the wrapper at UserEditModal:254 has a redundant `formData.role === 'kunde'` check, since this whole block is already inside the kunde-only branch (line 227). Minor dead-code, not a bug.",
+    "Pre-existing console error 'Encountered two children with the same key, dev-test-dse890-fix-fbd8701a' appears in GeneratorMonitoringCard's generator list when the gm-toggle is opened — duplicate generator IDs in /api/generators response, not introduced by this refactor.",
+    "Pre-existing a11y warning (Missing Description for DialogContent) still emitted — same as iteration_71.",
+    "All 5 sub-components are now small (61–150 LOC) and focused. UserEditModal.jsx is down from 717 → 295 LOC as advertised. Good separation."
+  ],
+  "test_report_links": [],
+  "action_items": [
+    "(Optional, pre-existing) Add DialogDescription to silence Radix a11y warning.",
+    "(Optional, pre-existing) Investigate duplicate generator id 'dev-test-dse890-fix-fbd8701a' in /api/generators causing React duplicate-key warning in GeneratorMonitoringCard.",
+    "(Optional cosmetic) Remove the redundant `formData.role === 'kunde'` wrapper around <AccountAvailabilityCard /> at UserEditModal.jsx:254 (already inside the kunde-only branch)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (9/9 critical flows pass)"},
+  "test_credentials": "admin@test.com / password (Preview)",
+  "seed_data_creation": "None — only opened modals and flipped toggles; no Speichern clicked, no DB writes performed per user request.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Schritt-2 UserEditModal refactoring verified end-to-end via real UI. 5 sub-components (FreelancerAssignment, FilesharingAppCard, GeneratorMonitoringCard, EnergyMonitoringCard, AccountAvailabilityCard) all render with the expected data-testids and respond correctly to their parent toggle state. State remains in AdminPage.js and props are threaded correctly through UserEditModal. Only previously-known minor issues remain (a11y warning, duplicate generator key from backend response). Backend untouched and not tested in this iteration.",
+  "rca of the issue": "N/A — no bugs found; refactor is regression-free."
+}
