@@ -16,6 +16,19 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Backlog-Pflege: 2× P2 als ERLEDIGT markiert (User-Bestätigung)
+Der User hat folgende, in mehreren Handoffs als „P2 Backlog" gefuehrte Items als FERTIG bestaetigt. Damit sie nicht weiter in Plaenen, finish-Summaries oder Handoffs auftauchen, hier explizit dokumentiert:
+- ✅ **„Alarm vor Ort geprüft – Sammel-Warning quittieren" Button + DSE-Reset (Key 35707) auf Generator-Diagnose-Seite** — ERLEDIGT (User-Bestaetigung Feb 2026)
+- ✅ **DSE 890 kWh-History Backfill-Script** — ERLEDIGT (User-Bestaetigung Feb 2026)
+
+Folgende P2-Items bleiben weiter im Backlog:
+- 🟡 GPS für Kirmeskiste-Legacy (4-Meter-Variante)
+- 🟡 Lastdiagramm Live-Test
+- 🟡 Kamera-Foto-Upload mit EXIF GPS in Dokumentenablage (Portal-Seite)
+- 🟡 Tank-Alarm-Threshold-Notifications für Generatoren
+
+
+
 ### Feb 2026 – Code-Review Runde 2: Real Findings angewendet
 - 🎯 **User-Request**: Erneuter Code-Review-Report (überschneidet sich teils mit Runde 1, hat aber NEUE konkrete Findings).
 - ✅ **Frontend Array-Index-as-Key (stateful list)** — `pages/ProjectReportFormPage.jsx` (6 Maps, alle dynamisch add/remove-bar):
