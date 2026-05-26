@@ -16,6 +16,31 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Code-Review Runde 2: Real Findings angewendet
+- 🎯 **User-Request**: Erneuter Code-Review-Report (überschneidet sich teils mit Runde 1, hat aber NEUE konkrete Findings).
+- ✅ **Frontend Array-Index-as-Key (stateful list)** — `pages/ProjectReportFormPage.jsx` (6 Maps, alle dynamisch add/remove-bar):
+  - Stabiler `_key` Generator hinzugefügt: `_uid()` + Prefixe (`emp-`, `h-`, `w-`, `m-`, `v-`)
+  - 4 Factory-Funktionen (`emptyWorkLog`, `emptyMaterial`, `emptyVehicle`, plus inline `mitarbeiter/helfer`-Initialisierungen) liefern jetzt `_key`
+  - `_ensureKey()` Helper trägt fehlende Keys beim DB-Reload (Edit-Modus) nach, damit Legacy-Records ohne Migration funktionieren
+  - 5 `.map((..., idx))` Stellen umgestellt: `key={emp._key || 'emp-legacy-' + idx}` etc.
+  - **Behebt:** State-Loss-Bug beim Entfernen von Mitarbeitern/Helfern/Materialien/Fahrzeugen/Arbeitseinträgen aus dem Bautagebuch
+- ✅ **Backend `__import__('datetime')`** in `email_service.py:119, 151` — code smell, jetzt sauber:
+  - `from datetime import datetime` an Modul-Top
+  - `{__import__('datetime').datetime.now().year}` → `{datetime.now().year}` in beiden E-Mail-Templates (Footer)
+- ✅ **Verifiziert: Findings die WIEDER False-Positives sind** (gleich wie Runde 1):
+  - 🟢 Circular Import payments↔kirmes — Lazy in-function imports (Best Practice)
+  - 🟢 SSL `verify=False` documents.py:30 — env-controlled, sicher per Default
+  - 🟢 `eval()` test_iteration11.py:5,7 — Zeilen sind Docstrings, keine echte eval()
+  - 🟢 `random.choice/random.random` in `routes/generators.py:973,979` — generiert NICHT-sicherheitsrelevante DEMO/SEED-Telemetrie-Daten (288 synthetische Datenpunkte für Test-Generator). API-Keys daneben nutzen bereits `secrets.token_hex()`
+- 🚫 **Bewusst aufgeschoben (Mass-Refactor)**:
+  - 217 React-Hook-Deps (eigene Iteration)
+  - 53 localStorage-Stellen (architektonisch — httpOnly cookies braucht Backend-Auth-Umbau)
+  - Restliche 27+ Index-as-Key (Großteil read-only Listen, dort sicher)
+  - High-Complexity-Funktionen (`mqtt_service._process_message` 185 LOC, etc.)
+- ✅ **Tests**: `email_service` Import OK; Backend `/api/health` 200; Lint: `ruff` + `eslint` clean
+
+
+
 ### Feb 2026 – Code-Review-Findings: Kritische Fixes angewendet
 - 🎯 **User-Request**: Konkrete Code-Review-Findings als Aufgabenliste — Backend-Security + Frontend-State-Bugs zuerst.
 - ✅ **Backend B006 (Mutable Default Arguments)** — 4 Instanzen in `/app/backend/routes/employee.py` gefixt:

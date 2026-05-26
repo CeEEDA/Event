@@ -23,9 +23,10 @@ const FAHRZEUG_TYPEN = [
 ];
 
 const emptyEmployee = () => ({ name: "", rolle: "T" });
-const emptyWorkLog = () => ({ datum: new Date().toISOString().slice(0, 10), beschreibung: "", stunden: {} });
-const emptyMaterial = () => ({ pos: 0, material: "", vorbereitung: "", verarbeitet: "", bestellung: "" });
-const emptyVehicle = () => ({ typ: "PKW", km: 0, stunden: 0 });
+const _uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const emptyWorkLog = () => ({ _key: `w-${_uid()}`, datum: new Date().toISOString().slice(0, 10), beschreibung: "", stunden: {} });
+const emptyMaterial = () => ({ _key: `m-${_uid()}`, pos: 0, material: "", vorbereitung: "", verarbeitet: "", bestellung: "" });
+const emptyVehicle = () => ({ _key: `v-${_uid()}`, typ: "PKW", km: 0, stunden: 0 });
 
 export default function ProjectReportFormPage() {
   const { reportId } = useParams();
@@ -58,7 +59,7 @@ export default function ProjectReportFormPage() {
     uebernachtung_naechte: 0,
   });
 
-  const [mitarbeiter, setMitarbeiter] = useState([{ name: user?.name || "", rolle: "T", is_user: true }]);
+  const [mitarbeiter, setMitarbeiter] = useState([{ _key: `emp-init`, name: user?.name || "", rolle: "T", is_user: true }]);
   const [helfer, setHelfer] = useState([]);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [workLog, setWorkLog] = useState([emptyWorkLog()]);
@@ -110,11 +111,13 @@ export default function ProjectReportFormPage() {
           uebernachtung_zeitraum: data.uebernachtung_zeitraum || "",
           uebernachtung_naechte: data.uebernachtung_naechte || 0,
         });
-        setMitarbeiter(data.mitarbeiter?.filter(m => m.is_user !== false)?.length ? data.mitarbeiter.filter(m => m.is_user !== false) : []);
-        setHelfer(data.mitarbeiter?.filter(m => m.is_user === false) || []);
-        setWorkLog(data.work_log?.length ? data.work_log : [emptyWorkLog()]);
-        setMaterial(data.material?.length ? data.material : [emptyMaterial()]);
-        setFahrzeuge(data.fahrzeuge?.length ? data.fahrzeuge : [emptyVehicle()]);
+        // Helper: Stabilen _key fuer existierende DB-Records nachtragen (Edit-Modus)
+        const _ensureKey = (prefix) => (arr) => (arr || []).map((it, i) => it._key ? it : { ...it, _key: `${prefix}-${_uid()}-${i}` });
+        setMitarbeiter(_ensureKey("emp")(data.mitarbeiter?.filter(m => m.is_user !== false)?.length ? data.mitarbeiter.filter(m => m.is_user !== false) : []));
+        setHelfer(_ensureKey("h")(data.mitarbeiter?.filter(m => m.is_user === false) || []));
+        setWorkLog(_ensureKey("w")(data.work_log?.length ? data.work_log : [emptyWorkLog()]));
+        setMaterial(_ensureKey("m")(data.material?.length ? data.material : [emptyMaterial()]));
+        setFahrzeuge(_ensureKey("v")(data.fahrzeuge?.length ? data.fahrzeuge : [emptyVehicle()]));
         setSigTechData(data.unterschrift_techniker);
         setSigKundeData(data.unterschrift_kunde);
         if (data.unterschrift_kunde) setLocked(true);
@@ -324,13 +327,13 @@ export default function ProjectReportFormPage() {
             <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Users className="w-4 h-4 text-fuchsia-500" /> Mitarbeiter
             </h2>
-            <Button size="sm" variant="outline" onClick={() => setMitarbeiter(m => [...m, { name: "", rolle: "T", is_user: true }])} className="h-7 text-xs" data-testid="add-employee">
+            <Button size="sm" variant="outline" onClick={() => setMitarbeiter(m => [...m, { _key: `emp-${_uid()}`, name: "", rolle: "T", is_user: true }])} className="h-7 text-xs" data-testid="add-employee">
               <Plus className="w-3 h-3 mr-1" /> Mitarbeiter
             </Button>
           </div>
           <div className="space-y-2">
             {mitarbeiter.map((emp, idx) => (
-              <div key={idx} className="flex items-center gap-2" data-testid={`employee-${idx}`}>
+              <div key={emp._key || `emp-legacy-${idx}`} className="flex items-center gap-2" data-testid={`employee-${idx}`}>
                 <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
                 <select
                   value={emp.name}
@@ -365,13 +368,13 @@ export default function ProjectReportFormPage() {
               <span className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
                 <UserPlus className="w-3.5 h-3.5 text-gray-400" /> Externes Personal
               </span>
-              <Button size="sm" variant="outline" onClick={() => setHelfer(h => [...h, { name: "", rolle: "H", is_user: false }])} className="h-6 text-[10px]" data-testid="add-helfer">
+              <Button size="sm" variant="outline" onClick={() => setHelfer(h => [...h, { _key: `h-${_uid()}`, name: "", rolle: "H", is_user: false }])} className="h-6 text-[10px]" data-testid="add-helfer">
                 <Plus className="w-3 h-3 mr-1" /> Hinzufuegen
               </Button>
             </div>
             <div className="space-y-2">
               {helfer.map((h, idx) => (
-                <div key={idx} className="flex items-center gap-2" data-testid={`helfer-${idx}`}>
+                <div key={h._key || `h-legacy-${idx}`} className="flex items-center gap-2" data-testid={`helfer-${idx}`}>
                   <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
                   <Input value={h.name} onChange={e => setHelfer(hl => hl.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
                     placeholder="Name des Helfers" className="flex-1 h-8 text-sm" />
@@ -406,7 +409,7 @@ export default function ProjectReportFormPage() {
             return (
           <div className="space-y-4">
             {workLog.map((wl, wIdx) => (
-              <div key={wIdx} className="border border-gray-200 rounded-lg p-3 bg-gray-50/50" data-testid={`worklog-row-${wIdx}`}>
+              <div key={wl._key || `wl-legacy-${wIdx}`} className="border border-gray-200 rounded-lg p-3 bg-gray-50/50" data-testid={`worklog-row-${wIdx}`}>
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-36 shrink-0">
                     <Label className="text-[10px] text-gray-400 uppercase">Datum</Label>
@@ -499,7 +502,7 @@ export default function ProjectReportFormPage() {
               </thead>
               <tbody>
                 {material.map((m, idx) => (
-                  <tr key={idx} className="border-t border-gray-100" data-testid={`material-row-${idx}`}>
+                  <tr key={m._key || `material-legacy-${idx}`} className="border-t border-gray-100" data-testid={`material-row-${idx}`}>
                     <td className="px-2 py-1 font-mono text-gray-400">{idx + 1}</td>
                     <td className="px-1 py-1">
                       <Input value={m.material} onChange={e => setMaterial(ml => ml.map((x, i) => i === idx ? { ...x, material: e.target.value } : x))}
@@ -540,7 +543,7 @@ export default function ProjectReportFormPage() {
           </div>
           <div className="space-y-2">
             {fahrzeuge.map((v, idx) => (
-              <div key={idx} className="flex items-center gap-2" data-testid={`vehicle-${idx}`}>
+              <div key={v._key || `vehicle-legacy-${idx}`} className="flex items-center gap-2" data-testid={`vehicle-${idx}`}>
                 <select value={v.typ} onChange={e => setFahrzeuge(f => f.map((x, i) => i === idx ? { ...x, typ: e.target.value } : x))}
                   className="h-8 border rounded px-2 text-xs w-40">
                   {FAHRZEUG_TYPEN.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}

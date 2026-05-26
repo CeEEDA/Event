@@ -1,6 +1,7 @@
 import smtplib
 import os
 import logging
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
@@ -116,7 +117,7 @@ def send_password_reset_email(to_email: str, user_name: str, reset_link: str) ->
     </p>
   </div>
   <div style="background:#fafafa;padding:16px 32px;border-top:1px solid #eee;">
-    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {__import__('datetime').datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
+    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
   </div>
 </div>
 </body></html>"""
@@ -148,7 +149,7 @@ def send_admin_reset_email(to_email: str, user_name: str, reset_link: str) -> bo
     </p>
   </div>
   <div style="background:#fafafa;padding:16px 32px;border-top:1px solid #eee;">
-    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {__import__('datetime').datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
+    <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">&copy; {datetime.now().year} Eventenergie Deutschland GmbH &amp; Co. KG</p>
   </div>
 </div>
 </body></html>"""
