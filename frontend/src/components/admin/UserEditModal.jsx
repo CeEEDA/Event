@@ -692,7 +692,7 @@ export default function UserEditModal({
                       <Switch
                         checked={!!formData.apps.modules?.adr}
                         onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), adr: checked } } }))}
-                        data-testid="module-toggle-adr"
+                        data-testid="module-toggle-adr-admin"
                       />
                     </div>
                   </div>

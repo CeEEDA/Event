@@ -16,6 +16,25 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – AdminPage.js Refactoring – Modale in Sub-Komponenten extrahiert (P0, Code-Health)
+- 🎯 **User-Request**: "starte in der Reihenfolge der Empfehlung und arbeite eins nach dem anderen ab." (Code-Review-Empfehlung sequenziell abarbeiten, beginnend mit `AdminPage.js` >2000 Zeilen).
+- ✅ **Refactoring-Strategie (User-Choice)**: State bleibt komplett im Parent (`AdminPage.js`), die neuen Sub-Komponenten erhalten alle State-Werte + Setter + Handler über Props. Damit keine Logik-Verschiebung, nur reine JSX-Extraktion → regression-arm.
+- ✅ **Neue Komponenten unter `/app/frontend/src/components/admin/`**:
+  - `SchaustellerEditModal.jsx` (126 Zeilen) – Firma/Name/Adresse/Steuer-Nr/Email-Bearbeitung + Passwort setzen
+  - `PasswordResetModal.jsx` (114 Zeilen) – Passwort setzen + 24h-Reset-Link generieren/per Mail
+  - `UserEditModal.jsx` (717 Zeilen) – Komplettes User-Modal (Mitarbeiter-Module, Freelancer-Auftragszuweisung, Kunde-App-Berechtigungen für FileShare/Generator-Monitoring/Energy-Monitoring, Konto-Verfügbarkeit-Zeitraum, ADR-Toggle)
+  - `AdminManualExpiryDialog.jsx` (56 Zeilen) – Manueller Ablaufdatum-Dialog wenn KI beim Doc-Upload kein Datum erkennt
+- ✅ **AdminPage.js**: 1963 → 1298 Zeilen (**-34%**). Unused Imports entfernt (Dialog/Select/Switch/diverse Icons), Lint clean.
+- ✅ **Bug-Fix**: Duplicate `data-testid="module-toggle-adr"` in UserEditModal (zweimal: Mitarbeiter + Admin Sektion) → Admin-Variante umbenannt zu `module-toggle-adr-admin`.
+- ✅ **Tests** (iteration 71): 8/8 PASS via testing_agent_v3_fork — alle Modale öffnen, alle data-testids erreichbar, alle Form-Inputs funktional, alle Speichern-Buttons reagieren. Tab-Switch (Kunden/Mitarbeiter/Schausteller) ohne Crash.
+- 📋 **Optionale Folge-Refactorings** (noch nicht ausgeführt):
+  - UserEditModal.jsx (717 LOC) ist groß — die internen Sektionen (Filesharing/GeneratorMonitoring/EnergyMonitoring/FreelancerAssignment) könnten jeweils eigene Sub-Komponenten werden, um unter 400 LOC zu kommen.
+  - DialogDescription / aria-describedby für die 4 extrahierten Modale (Radix a11y-Warning) — non-blocking.
+  - User-Activity-Row (~110 Zeilen in AdminPage.js Z.1057-1165) als `<UserActivityRow />` extrahieren.
+  - User-Filters-Bar (Z.786-864) als `<UserFiltersBar />`.
+
+
+
 ### Mai 2026 – Messprotokoll-Nummer mit Verteiler-Nr + Dirty-Confirm beim Schließen (P1, Enhancement)
 - 🎯 **User-Request**: 1) Die Protokollbezeichnung muss die Stromkreisverteiler-Nr enthalten. 2) Bei eingegebenen Daten beim Schließen eine Warnung zeigen, ob gespeichert werden soll.
 - ✅ **Backend** (`/app/backend/routes/orders.py` `create_messprotokoll`):
