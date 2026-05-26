@@ -271,8 +271,9 @@ async def update_profile(token: str = Query(...),
 
 
 @router.put("/profile/password")
-async def change_password(token: str = Query(...), body: dict = {}):
+async def change_password(token: str = Query(...), body: dict | None = None):
     """Change own password."""
+    body = body or {}
     user = await _get_user(token)
     old_pw = body.get("old_password", "")
     new_pw = body.get("new_password", "")
@@ -521,8 +522,9 @@ Falls absolut kein Ablaufdatum erkennbar ist, antworte NUR: KEINS"""
 
 
 @router.put("/documents/{doc_id}")
-async def update_document(doc_id: str, token: str = Query(...), body: dict = {}):
+async def update_document(doc_id: str, token: str = Query(...), body: dict | None = None):
     """Update expiry date manually."""
+    body = body or {}
     caller = await _get_user(token)
     doc = await db.employee_documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
@@ -705,8 +707,9 @@ async def get_time_presence(token: str = Query(...)):
 
 
 @router.post("/time/clock-in")
-async def clock_in(token: str = Query(...), body: dict = {}):
+async def clock_in(token: str = Query(...), body: dict | None = None):
     """Clock in with GPS coordinates."""
+    body = body or {}
     user = await _get_user(token)
     # Check not already clocked in
     existing = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
@@ -1096,8 +1099,9 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
 
 
 @router.post("/time/clock-out")
-async def clock_out(token: str = Query(...), body: dict = {}):
+async def clock_out(token: str = Query(...), body: dict | None = None):
     """Clock out with GPS coordinates. Auto-calculates overtime vs. schedule."""
+    body = body or {}
     user = await _get_user(token)
     entry = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
     if not entry:

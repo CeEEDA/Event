@@ -23,6 +23,7 @@ PORT = "/dev/ttyUSB0"
 BAUD = 9600
 REPLY = b"\x00"
 SILENCE_EXIT = 30.0   # Sekunden Stille NACH erstem Byte -> beenden
+PRE_DATA_TIMEOUT = 180.0  # Sekunden warten auf ersten Beleg-Byte
 MAX_RUNTIME = 900.0   # Hard-Limit 15 Minuten
 
 OUT_FILE = f"/tmp/tankbeleg_capture_{int(time.time())}.bin"

@@ -16,6 +16,31 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Code-Review-Findings: Kritische Fixes angewendet
+- 🎯 **User-Request**: Konkrete Code-Review-Findings als Aufgabenliste — Backend-Security + Frontend-State-Bugs zuerst.
+- ✅ **Backend B006 (Mutable Default Arguments)** — 4 Instanzen in `/app/backend/routes/employee.py` gefixt:
+  - `change_password()`, `update_document()`, `clock_in()`, `clock_out()` → `body: dict = {}` → `body: dict | None = None` + `body = body or {}` nach Docstring
+- ✅ **Backend F821 (Undefined Variables)** — alle 4 Instanzen gefixt:
+  - `routes/kirmes.py:1765`: fehlender `logger = logging.getLogger(__name__)` ergänzt
+  - `static/tankbeleg_capture.py` (3×): fehlende Konstante `PRE_DATA_TIMEOUT = 180.0` ergänzt
+- ✅ **Frontend Array-Index-as-Key (Stateful-List-Bug)** — `pages/schausteller/SignupForm.jsx:78` (kritischer Bug, da Entries hinzufügbar/entfernbar):
+  - Beim Anlegen wird jetzt ein stabiler `_key` generiert (`s-{Date.now()}-{random}` bzw. `w-...`)
+  - Map nutzt `key={extra._key || 'legacy-' + idx}` (Fallback für noch nicht migrierte Sessions)
+  - Behebt potenziellen State-Loss-Bug beim Entfernen einer Anschluss-Zeile
+- ✅ **Verifiziert: Code-Review-Falschpositive**:
+  - 🟢 **SSL `verify=False`** in `routes/documents.py:30` — Tatsache: kein Hardcode. `_ssl_verify_param()` liefert nur `False`, wenn explizit per Env `STORAGE_SSL_VERIFY=false` für legacy Windows-Server gesetzt — Default = sicher.
+  - 🟢 **`eval()` in `tests/test_iteration11.py:5,7`** — Tatsache: kein eval() im gesamten Backend. Die zitierten Zeilen sind Docstring-Bullet-Points.
+  - 🟢 **Circular Import** `payments.py` ↔ `kirmes.py` — Tatsache: Lazy in-function imports (Z. 199 / 1488 / 1659), nicht top-level. Bestes Pattern für solche Cross-References, kein echtes Problem.
+- ✅ **Tests**: `tests/test_fints_auto_close_mahnung.py` 2/2 PASS (Regression von Schritt 5). `/api/employee/profile/password` mit leerem Body → korrekt 400. Backend hot-reloaded, `/api/health` antwortet 200.
+- 🚫 **Bewusst NICHT angegangen** (nicht in Scope für Quick-Fix-Iteration):
+  - 217+ Missing React Hook Dependencies — Mass-Refactor, jede Änderung riskiert Re-Render-Loops; muss case-by-case in dedizierten Iterationen
+  - 30+ weitere Array-Index-as-Key Stellen — Großteil sind read-only Display-Listen (z.B. Buchungsübersicht in SignupForm.jsx:152, MqttConfigPage Status-Rows) — hier Index als Key sicher
+  - TypeScript-Migration (0% Coverage, 120 JS-Dateien) — eigenes Großprojekt
+  - `localStorage` → `httpOnly cookies` (33 Stellen) — architektonische Entscheidung, braucht User-Diskussion
+  - 683 hochkomplexe Funktionen — die 5 grössten (incl. `_process_message`/MQTT 185 LOC, `match_transactions_to_invoices` 95 LOC) bleiben offene Backlog-Items
+
+
+
 ### Feb 2026 – fints_banking.py Refactoring (Code-Review Schritt 5, P1)
 - 🎯 **User-Request**: "schritt 5 als nächstes" — Backend-Datei `fints_banking.py` mit hoher Komplexität vereinfachen.
 - ✅ **Toter Code entfernt**: `fetch_transactions()` (synchrone Legacy-Variante, 75 LOC) — wurde nirgends mehr aufgerufen (alle Konsumenten in `routes/kirmes.py` + `tests/` nutzen `fetch_transactions_persisted`).

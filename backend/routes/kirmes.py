@@ -13,6 +13,7 @@ import os
 import asyncio
 import logging
 
+logger = logging.getLogger(__name__)
 mahnung_logger = logging.getLogger("mahnung_checker")
 
 

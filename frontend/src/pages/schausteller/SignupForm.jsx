@@ -75,7 +75,7 @@ export function SignupForm({ selectedEvent, signupForm, setSignupForm, additiona
 
         {/* Zusätzliche Anschlüsse */}
         {additionalSignups.map((extra, idx) => (
-          <div key={idx} className={`border rounded-xl p-4 space-y-4 relative ${extra.isWohnwagen ? "border-amber-200" : "border-gray-200"}`} data-testid={`extra-signup-${idx}`}>
+          <div key={extra._key || `legacy-${idx}`} className={`border rounded-xl p-4 space-y-4 relative ${extra.isWohnwagen ? "border-amber-200" : "border-gray-200"}`} data-testid={`extra-signup-${idx}`}>
             <div className="flex items-center justify-between mb-1">
               <span className={`text-xs font-semibold uppercase tracking-wider ${extra.isWohnwagen ? "text-amber-600" : "text-gray-500"}`}>
                 {extra.isWohnwagen ? `Wohnwagen ${idx + 1}` : `${idx + 2}. Anschluss`}
@@ -125,11 +125,11 @@ export function SignupForm({ selectedEvent, signupForm, setSignupForm, additiona
 
         {/* Buttons */}
         <div className="flex flex-col gap-2">
-          <button type="button" onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: signupForm.payment_method, isWohnwagen: false }])}
+          <button type="button" onClick={() => setAdditionalSignups(prev => [...prev, { _key: `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: signupForm.payment_method, isWohnwagen: false }])}
             className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-fuchsia-300 rounded-lg text-sm font-medium text-fuchsia-600 hover:bg-fuchsia-50 hover:border-fuchsia-400 transition-colors" data-testid="add-extra-signup-btn">
             <Plus className="w-4 h-4" /> Weiteren Anschluss anmelden
           </button>
-          <button type="button" onClick={() => setAdditionalSignups(prev => [...prev, { platznummer: "", fahrgeschaeft: "Wohnwagen", connection_type: "", payment_method: signupForm.payment_method, isWohnwagen: true }])}
+          <button type="button" onClick={() => setAdditionalSignups(prev => [...prev, { _key: `w-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, platznummer: "", fahrgeschaeft: "Wohnwagen", connection_type: "", payment_method: signupForm.payment_method, isWohnwagen: true }])}
             className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-amber-300 rounded-lg text-sm font-medium text-amber-600 hover:bg-amber-50 hover:border-amber-400 transition-colors" data-testid="add-wohnwagen-btn">
             <Plus className="w-4 h-4" /> Wohnwagen-Anschluss anmelden
           </button>
