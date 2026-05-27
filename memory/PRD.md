@@ -16,6 +16,23 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – KirmesZaehlerPage: Auswertung auf Dispo-Zeitraum clampen + 5-Min-Chart-Bucketing (P0, Bug)
+- 🎯 **User-Report**: Bei abgeschlossener Kirmes (z.B. „Osterkirmes Neuwied 2026", Dispo 20.3.–14.4.26) zeigt die Zaehlerauswertung den Stand „heute" (z.B. 27.5.26). Da der Zaehler inzwischen auf einer anderen Kirmes laeuft, sind dort fuer diese Anmeldung keine Daten. Zudem war die Datenmenge fuer die Chart-Anzeige zu hoch.
+- 🐛 **Bug 1**: `KirmesZaehlerPage.jsx` initialisierte `selectedDate = today` ohne Beruecksichtigung des Event-Zeitraums. Nach Event-Ende blieb der Tag-Picker auf „heute" haengen.
+- 🐛 **Bug 2**: Chart-Datenpunkt-Anzahl = jeder einzelne Telemetrie-Sample (kann pro Tag mehrere Tausend sein). Recharts-Performance leidet, Linie wirkt verrauscht.
+- ✅ **Fix 1: Dispo-Zeitraum-Clamping in `KirmesZaehlerPage.jsx`**:
+  - Nach Event-Load: `useEffect` clampt `selectedDate` auf `dispo_end` (Fallback: `end_date`), falls aktueller Tag jenseits liegt — und auf `dispo_start` (Fallback: `start_date`) falls davor.
+  - `goDay()` blockiert Navigation ueber `dispo_end` hinaus oder vor `dispo_start` zurueck (`canGoPrev`/`canGoNext`).
+  - „Heute"-Button springt jetzt auf `effectiveToday = min(today, dispo_end)` mit Tooltip „Event endete YYYY-MM-DD - Sprung zum letzten Datentag" falls Event vorbei.
+- ✅ **Fix 2: 5-Min-Chart-Bucketing**:
+  - Neue Helper-Funktion `bucketHistory(history, bucketMinutes=5)`: gruppiert per `Math.floor(t / bucketMs) * bucketMs`, behaelt LETZTEN Eintrag je Bucket (matched Messkoffer-Verhalten).
+  - `chartData` rendert jetzt aus `chartHistory = bucketHistory(history, 5)` statt aus voller `history`.
+  - **Metrik-Karten** (P, U, I, kWh, Hz) nutzen weiterhin `dayLatest = history[last]` = letzter exakter Wert (nicht gebucketed) → Live-Anzeige bleibt praezise.
+  - **CSV-Export** (`handleExportCSV`) nutzt `history` direkt (volle Aufloesung, keine Aenderung).
+- ✅ **Tests**: ESLint clean, Smoke-Test (Kirmes-Liste rendert, Navigation funktioniert).
+
+
+
 ### Feb 2026 – DSE 8610 MKII USB-Direct: Verbindungsfehler behoben (P0, Hardware-Bug)
 - 🎯 **User-Report**: DSE 8610 MKII mit Raspberry Pi via USB-Direct angeschlossen, „Pi syncht mit Backend, aber DSE nicht". Setup-Skript ueber „Setup generieren" + Mode „Pi USB-direkt" wirkungslos beim 8610. DSE 5510 + Pi und DSE 890 funktionieren weiter (NICHT veraendert).
 - 🐛 **Root-Cause 1**: `static/dse_usb_sync.py` hardcoded `DSE_PID = 0x0001` (nur DSE 5510). DSE 8610 MKII meldet eine andere Product-ID → `usb.core.find()` liefert `None` → `ConnectionError("DSE USB Geraet nicht gefunden")`.

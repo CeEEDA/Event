@@ -33,6 +33,29 @@ function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Bucket telemetry history into N-minute slots for chart display.
+ * Liefert genau einen Datenpunkt pro Bucket (den LETZTEN Eintrag im Bucket - so
+ * matched es das Messkoffer-Verhalten). CSV-Export nutzt diese Funktion NICHT
+ * und behaelt volle Aufloesung.
+ */
+function bucketHistory(history, bucketMinutes = 5) {
+  if (!history || history.length === 0) return [];
+  const bucketMs = bucketMinutes * 60 * 1000;
+  const buckets = new Map();
+  for (const h of history) {
+    if (!h.ts_utc) continue;
+    const t = new Date(h.ts_utc).getTime();
+    const key = Math.floor(t / bucketMs) * bucketMs;
+    // Letzter Wert im Bucket gewinnt (Map-Set ueberschreibt)
+    buckets.set(key, h);
+  }
+  // Sortiert nach Bucket-Start-Zeit
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, h]) => h);
+}
+
 export default function KirmesZaehlerPage() {
   const { eventId, signupId } = useParams();
   const navigate = useNavigate();
@@ -43,7 +66,8 @@ export default function KirmesZaehlerPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // Day-based navigation: start with today
+  // Day-based navigation: defaults to today, wird in useEffect nach Event-Load
+  // auf den Dispo-Zeitraum geklemmt (siehe weiter unten).
   const [selectedDate, setSelectedDate] = useState(toLocalDateStr(new Date()));
 
   const loadData = useCallback(async () => {
@@ -79,19 +103,45 @@ export default function KirmesZaehlerPage() {
 
   useEffect(() => { loadData(); loadMeterData(); }, [loadData, loadMeterData]);
 
+  // Wenn das Event geladen wird: selectedDate auf den Dispo-Zeitraum clampen.
+  // Damit zeigt die Auswertung nach Event-Ende automatisch den LETZTEN Daten-
+  // Tag (= dispo_end), statt "heute" (wo der Zaehler ggf. auf anderer Kirmes
+  // laeuft -> dort sind keine Daten zugeordnet).
+  const minDate = event?.dispo_start || event?.start_date || null;
+  const maxDate = event?.dispo_end || event?.end_date || null;
+  useEffect(() => {
+    if (!maxDate) return;
+    const today = toLocalDateStr(new Date());
+    // Wenn aktueller Tag NACH Event-Ende: auf Event-Ende clampen
+    if (today > maxDate) {
+      setSelectedDate(prev => prev > maxDate ? maxDate : prev);
+    }
+    // Falls der User per URL vor den Aufbau navigiert: auf Aufbau clampen
+    if (minDate && selectedDate < minDate) {
+      setSelectedDate(minDate);
+    }
+  }, [maxDate, minDate, selectedDate]);
+
   // Auto-refresh every 30s
   useEffect(() => {
     const iv = setInterval(loadMeterData, 30000);
     return () => clearInterval(iv);
   }, [loadMeterData]);
 
-  // Day navigation helpers
+  // Day navigation helpers (mit Dispo-Zeitraum-Clamping)
   const goDay = (offset) => {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + offset);
-    setSelectedDate(toLocalDateStr(d));
+    const next = toLocalDateStr(d);
+    if (maxDate && next > maxDate) return; // nicht ueber Ausbau hinaus
+    if (minDate && next < minDate) return; // nicht vor Aufbau zurueck
+    setSelectedDate(next);
   };
-  const isToday = selectedDate === toLocalDateStr(new Date());
+  const todayStr = toLocalDateStr(new Date());
+  const effectiveToday = maxDate && todayStr > maxDate ? maxDate : todayStr;
+  const isAtEffectiveToday = selectedDate === effectiveToday;
+  const canGoNext = !maxDate || selectedDate < maxDate;
+  const canGoPrev = !minDate || selectedDate > minDate;
   const displayDate = new Date(selectedDate).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
 
   const handleExportCSV = async () => {
@@ -165,8 +215,10 @@ export default function KirmesZaehlerPage() {
   // gewählten Tag) noch nicht zurück ist.
   const linked = !!(signup?.emu_device_id && signup?.emu_meter_id) || !!meterData?.linked;
 
-  // Chart data with full timestamp for proper X-axis scaling
-  const chartData = history.map(h => ({
+  // Chart-Daten: Auf 5-Min-Buckets reduzieren (matched Messkoffer-Verhalten).
+  // CSV-Export nutzt history direkt mit voller Aufloesung - siehe handleExportCSV.
+  const chartHistory = bucketHistory(history, 5);
+  const chartData = chartHistory.map(h => ({
     timestamp: h.ts_utc ? new Date(h.ts_utc).getTime() : 0,
     time: h.ts_utc ? new Date(h.ts_utc).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "",
     leistung: h.P_sum_kW != null ? parseFloat(h.P_sum_kW.toFixed(3)) : null,
@@ -236,18 +288,20 @@ export default function KirmesZaehlerPage() {
             </div>
             <div className="flex items-center gap-1 sm:gap-2 sm:ml-auto">
               <Button variant="outline" size="sm" onClick={() => goDay(-1)}
+                disabled={!canGoPrev}
                 className="h-8 w-8 p-0" data-testid="day-prev">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <button
-                onClick={() => setSelectedDate(toLocalDateStr(new Date()))}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-w-[180px] text-center ${isToday ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200" : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"}`}
+                onClick={() => setSelectedDate(effectiveToday)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-w-[180px] text-center ${isAtEffectiveToday ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200" : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"}`}
+                title={maxDate && todayStr > maxDate ? `Event endete ${maxDate} - Sprung zum letzten Datentag` : "Heute"}
                 data-testid="day-display"
               >
                 {displayDate}
               </button>
               <Button variant="outline" size="sm" onClick={() => goDay(1)}
-                disabled={isToday}
+                disabled={!canGoNext}
                 className="h-8 w-8 p-0" data-testid="day-next">
                 <ChevronRight className="w-4 h-4" />
               </Button>
