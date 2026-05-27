@@ -73,6 +73,7 @@ L.Icon.Default.mergeOptions({
 import { OpenLocationCode } from "open-location-code";
 import { openExternal } from "../lib/openExternal";
 import MessprotokollDialog from "../components/MessprotokollDialog";
+import BulkDismantleMapDialog from "../components/BulkDismantleMapDialog";
 import GpsLockPicker from "../components/GpsLockPicker";
 
 const olcInstance = new OpenLocationCode();
@@ -297,6 +298,7 @@ export default function OrderDetailPage() {
   const [messprotokolle, setMessprotokolle] = useState([]);
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
   const [editingMessprotokoll, setEditingMessprotokoll] = useState(null);
+  const [showBulkDismantle, setShowBulkDismantle] = useState(false);
   const [docCount, setDocCount] = useState(0);
 
   // Einsatztagebuch
@@ -1605,6 +1607,17 @@ export default function OrderDetailPage() {
                 Artikel positionieren
               </h2>
               <div className="flex items-center gap-3">
+                {assets.filter(a => (a.status || "placed") === "placed").length > 0 && (
+                  <button
+                    onClick={() => setShowBulkDismantle(true)}
+                    className="px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 transition-colors inline-flex items-center gap-1 border border-red-200"
+                    title="Mehrere Artikel im Umkreis per Karte als abgebaut markieren"
+                    data-testid="bulk-dismantle-open"
+                  >
+                    <PackageMinus className="w-3.5 h-3.5" />
+                    Abbau-Karte
+                  </button>
+                )}
                 {isAdmin && assets.length > 0 && (
                   <button
                     onClick={toggleCopyMode}
@@ -3118,6 +3131,14 @@ export default function OrderDetailPage() {
                 if (!editingMessprotokoll) setDocCount((c) => c + 1);
                 setEditingMessprotokoll(null);
               }}
+            />
+          )}
+
+          {showBulkDismantle && (
+            <BulkDismantleMapDialog
+              orderPk={pk}
+              onClose={() => setShowBulkDismantle(false)}
+              onDone={fetchAssets}
             />
           )}
 

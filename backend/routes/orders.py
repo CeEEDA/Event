@@ -350,6 +350,10 @@ class AssetMove(BaseModel):
     target_order_pk: int
 
 
+class BulkDismantle(BaseModel):
+    asset_ids: list[str]
+
+
 class CopyToOrder(BaseModel):
     target_order_pk: int
     asset_ids: list[str] = []
@@ -1070,6 +1074,33 @@ async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
     return {"ok": True}
+
+
+@router.post("/epirent/{order_pk}/assets/bulk-dismantle")
+async def bulk_dismantle_assets(
+    order_pk: int, data: BulkDismantle, user: dict = Depends(_auth_user),
+):
+    """Markiert mehrere Artikel auf einmal als 'abgebaut'.
+    Anwendungsfall: Trupp C steht am Auftragsende vor 50 Verteilern und will
+    sie per Karten-Auswahl in einem Rutsch abhaken statt 50x einzeln zu tippen.
+    Idempotent: bereits abgebaute Items werden ignoriert."""
+    if not data.asset_ids:
+        return {"ok": True, "updated": 0}
+    now = datetime.now(timezone.utc).isoformat()
+    actor = user.get("name", user.get("email", ""))
+    result = await _db.order_assets.update_many(
+        {
+            "order_pk": order_pk,
+            "id": {"$in": data.asset_ids},
+            "status": {"$ne": "dismantled"},
+        },
+        {"$set": {
+            "status": "dismantled",
+            "dismantled_at": now,
+            "dismantled_by": actor,
+        }},
+    )
+    return {"ok": True, "updated": result.modified_count}
 
 
 @router.patch("/epirent/{order_pk}/assets/{asset_id}/move")
