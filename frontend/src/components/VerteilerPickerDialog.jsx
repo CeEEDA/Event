@@ -100,8 +100,10 @@ export default function VerteilerPickerDialog({ orderPk, currentId, onClose, onS
           </button>
         </div>
 
-        {/* Map */}
-        <div className="flex-1 min-h-0 relative" style={{ minHeight: 360 }}>
+        {/* Map - feste Pixel-Hoehe, weil flex-1 + min-h-0 das Leaflet-Container
+           auf 0px Hoehe schrumpfen liess (Tailwind min-h-0 ueberschreibt inline
+           minHeight) und die Karte dann trotz geladenen Tiles unsichtbar blieb. */}
+        <div className="relative h-[60vh] max-h-[560px] min-h-[360px]">
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">Lade Verteiler...</div>
           ) : assets.length === 0 ? (
