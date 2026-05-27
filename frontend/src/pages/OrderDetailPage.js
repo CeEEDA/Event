@@ -296,6 +296,7 @@ export default function OrderDetailPage() {
   // Messprotokolle
   const [messprotokolle, setMessprotokolle] = useState([]);
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
+  const [editingMessprotokoll, setEditingMessprotokoll] = useState(null);
   const [docCount, setDocCount] = useState(0);
 
   // Einsatztagebuch
@@ -2588,6 +2589,24 @@ export default function OrderDetailPage() {
                       {isAdmin && (
                         <button
                           onClick={async () => {
+                            try {
+                              const res = await api.get(`/orders/messprotokoll/${pk}/${mp.id}`);
+                              setEditingMessprotokoll(res.data);
+                              setShowMessprotokollDialog(true);
+                            } catch (e) {
+                              toast.error(e?.response?.data?.detail || "Messprotokoll konnte nicht geladen werden");
+                            }
+                          }}
+                          className="p-1.5 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-600"
+                          title="Messprotokoll bearbeiten"
+                          data-testid={`messprotokoll-edit-${mp.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={async () => {
                             if (!window.confirm(`Messprotokoll ${mp.protokoll_nr} wirklich löschen?`)) return;
                             try {
                               await api.delete(`/orders/messprotokoll/${pk}/${mp.id}`);
@@ -3059,8 +3078,14 @@ export default function OrderDetailPage() {
           {showMessprotokollDialog && (
             <MessprotokollDialog
               order={{ ...order, primary_key: pk }}
-              onClose={() => setShowMessprotokollDialog(false)}
-              onSaved={() => { setShowMessprotokollDialog(false); fetchMessprotokolle(); setDocCount((c) => c + 1); }}
+              existing={editingMessprotokoll}
+              onClose={() => { setShowMessprotokollDialog(false); setEditingMessprotokoll(null); }}
+              onSaved={() => {
+                setShowMessprotokollDialog(false);
+                fetchMessprotokolle();
+                if (!editingMessprotokoll) setDocCount((c) => c + 1);
+                setEditingMessprotokoll(null);
+              }}
             />
           )}
 

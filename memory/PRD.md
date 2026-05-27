@@ -16,6 +16,28 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Messprotokolle als Admin bearbeitbar (Feature)
+- 🎯 **User-Request**: „aendere hier, dass ich als admin die Messdaten anpassen kann" (Screenshot: Messprotokoll-Liste auf Order-Detail-Seite, nur PDF-Open + Delete vorhanden, kein Edit-Button).
+- ✅ **Backend** in `routes/orders.py`:
+  - `GET /orders/messprotokoll/{order_pk}/{doc_id}` (Admin-only): liefert ein einzelnes Messprotokoll inkl. vollstaendiger `data`-Formular-Daten zum Vorbefuellen
+  - `PUT /orders/messprotokoll/{order_pk}/{doc_id}` (Admin-only): generiert PDF mit neuen Daten neu, ueberschreibt die gespeicherte PDF-Datei (selber Pfad/Dateiname), aktualisiert `messprotokolle.data` + Audit-Felder (`updated_by`, `updated_at`).
+  - **Forensische Kette**: Protokoll-Nr., `pruefer_id`, `pruefer_name` werden NICHT veraendert (kommen weiter aus dem urspruenglichen Datensatz). Pruef-Datum bleibt erhalten falls nicht explizit neu gesetzt.
+  - `order_documents.uploaded_at` bleibt erhalten (kein Re-Sort der Liste), separates `updated_at`-Feld dazu.
+- ✅ **Frontend `components/MessprotokollDialog.jsx`**:
+  - Neue Prop `existing={mp}` — wenn gesetzt, laeuft Dialog im Edit-Modus
+  - Header zeigt „Messprotokoll bearbeiten · Nr. XYZ" statt „Neues Messprotokoll · Auftrag ABC"
+  - `initialForm` lädt aus `existing.data` (alle Felder vorbefuellt), bei neuem MP wie bisher leeres Template
+  - `save()` macht `PUT` bei Edit, sonst `POST` (unveraendert)
+  - Save-Button-Label: „PDF aktualisieren & speichern" vs. „PDF erstellen & speichern"
+- ✅ **Frontend `pages/OrderDetailPage.js`**:
+  - Edit-Button (violet, Pencil-Icon) neben dem PDF-Open-Button in jeder MP-Zeile, NUR fuer `isAdmin`
+  - Klick: holt vollstaendige Daten via `GET /orders/messprotokoll/{pk}/{mp.id}`, oeffnet Dialog mit `existing={...}`
+  - `editingMessprotokoll`-State + Reset bei Close
+  - `setDocCount` wird nur bei NEU (kein `existing`) erhoeht — beim Update bleibt die Dokumenten-Anzahl gleich
+- ✅ **Tests**: ruff + eslint clean; Backend Import OK; unauth GET/PUT auf neue Endpoints → korrekt 403
+
+
+
 ### Feb 2026 – KirmesZaehlerPage: Auswertung auf Dispo-Zeitraum clampen + 5-Min-Chart-Bucketing (P0, Bug)
 - 🎯 **User-Report**: Bei abgeschlossener Kirmes (z.B. „Osterkirmes Neuwied 2026", Dispo 20.3.–14.4.26) zeigt die Zaehlerauswertung den Stand „heute" (z.B. 27.5.26). Da der Zaehler inzwischen auf einer anderen Kirmes laeuft, sind dort fuer diese Anmeldung keine Daten. Zudem war die Datenmenge fuer die Chart-Anzeige zu hoch.
 - 🐛 **Bug 1**: `KirmesZaehlerPage.jsx` initialisierte `selectedDate = today` ohne Beruecksichtigung des Event-Zeitraums. Nach Event-Ende blieb der Tag-Picker auf „heute" haengen.

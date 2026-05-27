@@ -2180,6 +2180,95 @@ async def list_messprotokolle(order_pk: str,
     return rows
 
 
+@router.get("/messprotokoll/{order_pk}/{doc_id}")
+async def get_messprotokoll(order_pk: str, doc_id: str,
+                              credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Liefert ein einzelnes Messprotokoll inkl. vollstaendiger Formular-Daten
+    (zum Vorbefuellen im Edit-Dialog). Admin-only."""
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins duerfen Messprotokolle bearbeiten")
+    mp = await _db.messprotokolle.find_one({"id": doc_id, "order_pk": order_pk}, {"_id": 0})
+    if not mp:
+        raise HTTPException(status_code=404, detail="Messprotokoll nicht gefunden")
+    return mp
+
+
+@router.put("/messprotokoll/{order_pk}/{doc_id}")
+async def update_messprotokoll(order_pk: str, doc_id: str, data: dict = _Body(...),
+                                 credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Aktualisiert ein bestehendes Messprotokoll: regeneriert das PDF mit neuen
+    Daten, ueberschreibt die gespeicherte PDF-Datei und aktualisiert den DB-
+    Datensatz. Protokoll-Nr. und ID bleiben gleich. Admin-only."""
+    payload = _decode_jwt_token(credentials.credentials)
+    user = await _db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins duerfen Messprotokolle bearbeiten")
+
+    mp = await _db.messprotokolle.find_one({"id": doc_id, "order_pk": order_pk}, {"_id": 0})
+    if not mp:
+        raise HTTPException(status_code=404, detail="Messprotokoll nicht gefunden")
+
+    # Protokoll-Nr., Pruefer und Datum aus dem bestehenden Datensatz uebernehmen
+    # (Admin darf alles ANDERE anpassen, aber die forensische Kette - wer wann
+    # geprueft hat - bleibt unveraendert; siehe Audit-Log).
+    data["protokoll_nr"] = mp.get("protokoll_nr") or data.get("protokoll_nr")
+    data["pruefer_id"] = mp.get("pruefer_id") or data.get("pruefer_id")
+    data["pruefer_name"] = mp.get("pruefer_name") or data.get("pruefer_name")
+    if not data.get("pruef_datum"):
+        data["pruef_datum"] = mp.get("pruef_datum") or datetime.now(timezone.utc).strftime("%d.%m.%Y")
+
+    # PDF neu generieren
+    try:
+        from services.messprotokoll_pdf import generate_messprotokoll_pdf
+        pdf_bytes = generate_messprotokoll_pdf(data)
+    except Exception as e:
+        logger.error(f"Messprotokoll PDF-Fehler bei Update: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF-Erzeugung fehlgeschlagen: {e}")
+
+    # Gespeicherte PDF-Datei UEBERSCHREIBEN (selber Dateiname, selber Pfad)
+    document_id = mp.get("document_id") or doc_id
+    od = await _db.order_documents.find_one({"id": document_id, "order_pk": order_pk}, {"_id": 0})
+    if not od:
+        raise HTTPException(status_code=404, detail="Zugehoeriges Dokument nicht gefunden")
+    file_path = _os.path.join(_ORDER_DOC_STORAGE, order_pk, od.get("filename", f"{doc_id}.pdf"))
+    _os.makedirs(_os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "wb") as f:
+        f.write(pdf_bytes)
+
+    # order_documents-Eintrag: Groesse aktualisieren, uploaded_at NICHT
+    # ueberschreiben (sonst rutscht das Dokument in der Liste nach vorn,
+    # obwohl es derselbe MP ist). Stattdessen separates updated_at-Feld.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await _db.order_documents.update_one(
+        {"id": document_id, "order_pk": order_pk},
+        {"$set": {
+            "size": len(pdf_bytes),
+            "updated_by": user.get("name", user.get("email", "")),
+            "updated_at": now_iso,
+        }}
+    )
+
+    # messprotokolle: data komplett ersetzen, Audit-Felder ergaenzen
+    await _db.messprotokolle.update_one(
+        {"id": doc_id, "order_pk": order_pk},
+        {"$set": {
+            "data": data,
+            "pruef_datum": data["pruef_datum"],
+            "updated_by": user.get("name", user.get("email", "")),
+            "updated_at": now_iso,
+        }}
+    )
+
+    logger.info(f"Messprotokoll {mp.get('protokoll_nr')} aktualisiert durch {user.get('name')}")
+    return {
+        "id": doc_id,
+        "protokoll_nr": data["protokoll_nr"],
+        "message": "Messprotokoll aktualisiert",
+    }
+
+
 @router.delete("/messprotokoll/{order_pk}/{doc_id}")
 async def delete_messprotokoll(order_pk: str, doc_id: str,
                                 credentials: HTTPAuthorizationCredentials = Depends(security)):

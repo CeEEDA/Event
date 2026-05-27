@@ -48,12 +48,9 @@ const PA_PUNKTE = [
 
 const emptyMessung = () => ({ ziel: "", kabel: "", in_a: "", ik_a: "", zs_ohm: "", riso_ohne: "", rcd_ma: "", ta_ms: "", rpe_ohm: "" });
 
-export default function MessprotokollDialog({ order, onClose, onSaved }) {
-  const [tab, setTab] = useState("kopf");
-  const [saving, setSaving] = useState(false);
-  const dirtyRef = useRef(false);
-
-  const [form, setForm] = useState({
+export default function MessprotokollDialog({ order, onClose, onSaved, existing = null }) {
+  const isEdit = !!existing;
+  const initialForm = existing?.data || {
     auftraggeber: order?.contact_name || order?.event || "",
     kunden_nr: order?.customer_no || "",
     anlage: order?.event || order?.contact_name || "",
@@ -72,7 +69,13 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
     erdungswiderstand: "",
     messgeraete: [{ fabrikat: "", typ: "" }],
     ergebnis: { keine_maengel: true, maengel: false, plakette: "ja", bemerkungen: "", naechster_termin_monat: "", naechster_termin_jahr: "" },
-  });
+  };
+
+  const [tab, setTab] = useState("kopf");
+  const [saving, setSaving] = useState(false);
+  const dirtyRef = useRef(false);
+
+  const [form, setForm] = useState(initialForm);
 
   const setField = (path, value) => {
     dirtyRef.current = true;
@@ -118,9 +121,15 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
   const save = async () => {
     setSaving(true);
     try {
-      const res = await api.post(`/orders/messprotokoll/${order.primary_key || order.id || order.order_pk}`, form);
-      toast.success(`Messprotokoll ${res.data.protokoll_nr} erstellt`);
-      onSaved?.(res.data);
+      const orderPk = order.primary_key || order.id || order.order_pk;
+      if (isEdit) {
+        const res = await api.put(`/orders/messprotokoll/${orderPk}/${existing.id}`, form);
+        toast.success(`Messprotokoll ${res.data.protokoll_nr} aktualisiert`);
+      } else {
+        const res = await api.post(`/orders/messprotokoll/${orderPk}`, form);
+        toast.success(`Messprotokoll ${res.data.protokoll_nr} erstellt`);
+      }
+      onSaved?.();
       onClose?.();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Speichern fehlgeschlagen");
@@ -170,8 +179,8 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-violet-600" />
-            <h2 className="text-base font-bold text-gray-900">Neues Messprotokoll</h2>
-            <span className="text-xs text-gray-400">Auftrag {order?.order_no}</span>
+            <h2 className="text-base font-bold text-gray-900">{isEdit ? "Messprotokoll bearbeiten" : "Neues Messprotokoll"}</h2>
+            <span className="text-xs text-gray-400">{isEdit ? `Nr. ${existing.protokoll_nr || ""}` : `Auftrag ${order?.order_no || ""}`}</span>
           </div>
           <button onClick={requestClose} className="p-1.5 hover:bg-gray-100 rounded-md" data-testid="mp-close">
             <X className="w-5 h-5 text-gray-500" />
@@ -387,7 +396,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved }) {
           <div className="flex gap-2">
             <Button variant="outline" onClick={requestClose} data-testid="mp-cancel">Abbrechen</Button>
             <Button onClick={save} disabled={saving} className="bg-violet-600 hover:bg-violet-700 text-white" data-testid="mp-save">
-              {saving ? "Speichere…" : "PDF erstellen & speichern"}
+              {saving ? "Speichere…" : (isEdit ? "PDF aktualisieren & speichern" : "PDF erstellen & speichern")}
             </Button>
           </div>
         </div>
