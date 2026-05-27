@@ -11,7 +11,7 @@
  * Auswahl liefert via onSelect: { label, plus_code, latitude, longitude, id }.
  */
 import { useEffect, useState, useMemo } from "react";
-import { MapContainer, Marker, Popup } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapTileLayer from "./MapTileLayer";
@@ -19,6 +19,17 @@ import { X, MapPin, Plug } from "lucide-react";
 import { Button } from "./ui/button";
 import api from "../lib/api";
 import { toast } from "sonner";
+
+// Force size recalc when MapContainer is rendered inside a modal
+// (sonst bleibt die Map weiß, weil das Layout beim Mounten 0px Höhe hat).
+function InvalidateOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    const timers = [50, 200, 500, 1000].map(t => setTimeout(() => map.invalidateSize(), t));
+    return () => timers.forEach(clearTimeout);
+  }, [map]);
+  return null;
+}
 
 const verteilerIcon = (selected) =>
   L.divIcon({
@@ -106,6 +117,7 @@ export default function VerteilerPickerDialog({ orderPk, currentId, onClose, onS
               style={{ height: "100%", width: "100%" }}
               scrollWheelZoom={true}
             >
+              <InvalidateOnMount />
               <MapTileLayer />
               {assets.map((a) => (
                 <Marker
