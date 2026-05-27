@@ -16,6 +16,25 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Messprotokoll mit Verteiler-Asset verknuepfen via Karte (Feature)
+- 🎯 **User-Request**: Workflow Trupp A setzt Verteiler Mo, Trupp C misst Do auf grossem Gelaende (>400 Artikel). Anstatt die Verteiler-Nr. manuell zu tippen, soll der Pruefer auf der Karte den Verteiler auswaehlen koennen.
+- ✅ **Neue Komponente `components/VerteilerPickerDialog.jsx`** (170 LOC):
+  - Vollbild-Map-Dialog mit Leaflet (selbe Lib wie DeviceManagementPage)
+  - Laed `GET /api/orders/epirent/{orderPk}/assets`, filtert auf `asset_type === "verteiler"` (case-insensitive) + `status === "placed"` + valide Koordinaten
+  - Custom Marker-Icons (orange = unausgewaehlt, violet = ausgewaehlt) mit „V"-Label
+  - Auto-Zoom: bei 1 Verteiler → Zoom 17, sonst Zoom 14 ueber Schwerpunkt
+  - Klick auf Marker oder Popup-„Auswaehlen" markiert; Footer zeigt aktuelle Auswahl + Verknuepfen-Button
+  - Empty-State („Trupp A muss die Verteiler zuerst positionieren")
+- ✅ **`components/MessprotokollDialog.jsx` erweitert**:
+  - Neuer „📍 Auf Karte"-Button neben dem Stromkreisverteiler-Nr.-Input (orange Pill)
+  - Bei Auswahl: `verteiler_nr` (Label), `verteiler_asset_id`, `verteiler_plus_code`, `verteiler_lat`/`lng` werden ins Form gesetzt; Hinweis-Pille „🔗 Verknuepft mit Asset · Plus Code: ..." zeigt aktuellen Link
+  - Toast „Verteiler 'XYZ' verknuepft"
+- ✅ **Backend** unveraendert — die bestehenden POST/PUT `/orders/messprotokoll` Endpoints speichern beliebige Felder im `data`-Dict, daher landen die neuen Felder automatisch in `messprotokolle.data`. PDF-Generator nutzt nur `verteiler_nr`, ignoriert die zusaetzlichen Asset-Felder.
+- ✅ **Tests**: ESLint clean, Smoke-Test (Orders-Liste lädt mit 27 Auftraegen, kein JS-Error aus den Aenderungen).
+- 📋 **So nutzt du es**: Im Messprotokoll-Dialog auf „Auf Karte" klicken → Verteiler-Marker waehlen → „Verknuepfen". Beim naechsten Bearbeiten/Reload des MP ist die Verknuepfung sichtbar.
+
+
+
 ### Feb 2026 – Messprotokolle als Admin bearbeitbar (Feature)
 - 🎯 **User-Request**: „aendere hier, dass ich als admin die Messdaten anpassen kann" (Screenshot: Messprotokoll-Liste auf Order-Detail-Seite, nur PDF-Open + Delete vorhanden, kein Edit-Button).
 - ✅ **Backend** in `routes/orders.py`:

@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
-import { X, ClipboardCheck, Plus, Trash2 } from "lucide-react";
+import { X, ClipboardCheck, Plus, Trash2, MapPin } from "lucide-react";
 import { Button } from "./ui/button";
 import api from "../lib/api";
 import { toast } from "sonner";
+import VerteilerPickerDialog from "./VerteilerPickerDialog";
 
 const BESICHTIGEN_PUNKTE = [
   ["betriebsmittel", "Auswahl der Betriebsmittel"],
@@ -73,6 +74,7 @@ export default function MessprotokollDialog({ order, onClose, onSaved, existing 
 
   const [tab, setTab] = useState("kopf");
   const [saving, setSaving] = useState(false);
+  const [showVerteilerPicker, setShowVerteilerPicker] = useState(false);
   const dirtyRef = useRef(false);
 
   const [form, setForm] = useState(initialForm);
@@ -244,7 +246,26 @@ export default function MessprotokollDialog({ order, onClose, onSaved, existing 
                   ))}
                 </div>
               </L>
-              <L label="Stromkreisverteiler-Nr." cols={2}><I value={form.verteiler_nr} onChange={(v) => setField("verteiler_nr", v)} /></L>
+              <L label="Stromkreisverteiler-Nr." cols={2}>
+                <div className="flex items-center gap-2">
+                  <I value={form.verteiler_nr} onChange={(v) => setField("verteiler_nr", v)} />
+                  <button
+                    type="button"
+                    onClick={() => setShowVerteilerPicker(true)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors text-xs font-medium whitespace-nowrap"
+                    title="Verteiler aus der Karte des Auftrags auswählen"
+                    data-testid="link-verteiler-btn"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    Auf Karte
+                  </button>
+                </div>
+                {form.verteiler_asset_id && form.verteiler_plus_code && (
+                  <p className="text-[10px] text-orange-600 mt-1">
+                    🔗 Verknüpft mit Asset · Plus Code: {form.verteiler_plus_code}
+                  </p>
+                )}
+              </L>
             </div>
           )}
 
@@ -401,6 +422,25 @@ export default function MessprotokollDialog({ order, onClose, onSaved, existing 
           </div>
         </div>
       </div>
+      {showVerteilerPicker && (
+        <VerteilerPickerDialog
+          orderPk={order?.primary_key || order?.id || order?.order_pk}
+          currentId={form.verteiler_asset_id}
+          onClose={() => setShowVerteilerPicker(false)}
+          onSelect={(v) => {
+            setForm(f => ({
+              ...f,
+              verteiler_nr: v.label,
+              verteiler_asset_id: v.id,
+              verteiler_plus_code: v.plus_code,
+              verteiler_lat: v.latitude,
+              verteiler_lng: v.longitude,
+            }));
+            dirtyRef.current = true;
+            toast.success(`Verteiler "${v.label}" verknüpft`);
+          }}
+        />
+      )}
     </div>
   );
 }
