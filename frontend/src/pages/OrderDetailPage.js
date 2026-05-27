@@ -2025,6 +2025,38 @@ export default function OrderDetailPage() {
                     In Google Maps öffnen
                   </a>
 
+                  {/* Verknuepftes Messprotokoll-PDF (falls vorhanden) */}
+                  {(() => {
+                    const linkedMps = (messprotokolle || []).filter(
+                      (mp) => mp?.data?.verteiler_asset_id === selectedAsset.id,
+                    );
+                    if (linkedMps.length === 0) return null;
+                    return linkedMps.map((mp) => (
+                      <button
+                        key={mp.id}
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const resp = await api.get(
+                              `/orders/order-documents/${pk}/${mp.document_id}/file`,
+                              { responseType: "blob" },
+                            );
+                            const url = window.URL.createObjectURL(resp.data);
+                            window.open(url, "_blank");
+                          } catch {
+                            toast.error("Messprotokoll-PDF nicht gefunden");
+                          }
+                        }}
+                        className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-violet-50 text-violet-700 rounded-lg text-sm font-medium hover:bg-violet-100 transition-colors"
+                        data-testid={`asset-detail-messprotokoll-${mp.id}`}
+                        title={`Messprotokoll ${mp.protokoll_nr} oeffnen`}
+                      >
+                        <ClipboardCheck className="w-4 h-4" />
+                        Messprotokoll {mp.protokoll_nr} öffnen
+                      </button>
+                    ));
+                  })()}
+
                   {/* Kommentare */}
                   <div className="pt-2 border-t border-gray-100" data-testid="asset-comments-section">
                     <div className="flex items-center gap-2 mb-3">

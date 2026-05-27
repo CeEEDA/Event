@@ -2175,7 +2175,8 @@ async def list_messprotokolle(order_pk: str,
     rows = await _db.messprotokolle.find(
         {"order_pk": order_pk},
         {"_id": 0, "id": 1, "protokoll_nr": 1, "pruefer_name": 1, "pruef_datum": 1,
-         "created_at": 1, "created_by": 1, "document_id": 1}
+         "created_at": 1, "created_by": 1, "document_id": 1,
+         "data.verteiler_asset_id": 1, "data.verteiler_nr": 1}
     ).sort("created_at", -1).to_list(200)
     return rows
 
