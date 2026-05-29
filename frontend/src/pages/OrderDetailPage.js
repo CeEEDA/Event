@@ -27,6 +27,7 @@ import {
   Box,
   GitFork,
   Fuel,
+  Network,
   Check,
   X,
   Pencil,
@@ -125,6 +126,7 @@ const ASSET_TYPES = [
   { value: "Stromerzeuger", icon: Zap, color: "#f97316" },
   { value: "Verteiler", icon: GitFork, color: "#f97316" },
   { value: "Tank", icon: Fuel, color: "#f97316" },
+  { value: "Netzwerk", icon: Network, color: "#f97316" },
   { value: "Sonstiges", icon: Box, color: "#f97316" },
 ];
 
@@ -139,6 +141,7 @@ const makeAssetIcon = (type) => {
     Stromerzeuger: `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`,
     Verteiler: `<line x1="12" y1="3" x2="12" y2="15" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><line x1="6" y1="9" x2="12" y2="15" stroke="#fff" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="9" x2="12" y2="15" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="18" r="2.5" fill="#fff"/>`,
     Tank: `<path d="M3 22V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14M3 22h10M13 12h4l3 3v7M13 22h9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    Netzwerk: `<rect x="9" y="2" width="6" height="6" rx="1" fill="none" stroke="#fff" stroke-width="2"/><rect x="3" y="16" width="6" height="6" rx="1" fill="none" stroke="#fff" stroke-width="2"/><rect x="15" y="16" width="6" height="6" rx="1" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 8v4M6 16v-2h12v2" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>`,
     Sonstiges: `<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="#fff" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="#fff" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="#fff" stroke-width="2" stroke-linecap="round"/>`,
   };
   const svg = icons[type] || icons.Sonstiges;

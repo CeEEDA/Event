@@ -45,6 +45,8 @@ const TYPE_COLORS = {
   Stromerzeuger: "#ea580c",
   Verteiler: "#16a34a",
   Lichtmast: "#ca8a04",
+  Tank: "#0891b2",
+  Netzwerk: "#7c3aed",
   Sonstiges: "#6b7280",
 };
 
