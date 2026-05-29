@@ -28,7 +28,7 @@ def init_device_routes(_db, _decode_jwt_token, _fs):
     fs = _fs
 
 
-DEVICE_TYPES = ["stromerzeuger", "lichtmast", "messkoffer", "kirmeskiste", "verteiler"]
+DEVICE_TYPES = ["stromerzeuger", "lichtmast", "messkoffer", "kirmeskiste", "verteiler", "tank"]
 
 
 # ============== Models ==============
@@ -65,6 +65,10 @@ class DeviceCreate(BaseModel):
     dse_gateway_uid: Optional[str] = None
     # Kirmeskiste variant: "standard" (Live, alte Variante) | "8z" (8 Impulszähler, SIM7600)
     kirmeskiste_variant: Optional[str] = None
+    # Tank-spezifische Felder (Pruefstoff-Behaelter, z.B. Dieseltank am Tankwagen)
+    tank_capacity: Optional[str] = None  # Tankinhalt als Freitext (z.B. "5.000 L Diesel")
+    last_inspection_date: Optional[str] = None  # ISO-Datum YYYY-MM-DD
+    next_inspection_date: Optional[str] = None  # ISO-Datum YYYY-MM-DD
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -115,6 +119,10 @@ class DeviceUpdate(BaseModel):
     dse_gateway_uid: Optional[str] = None
     # Kirmeskiste variant: "standard" | "8z"
     kirmeskiste_variant: Optional[str] = None
+    # Tank-spezifische Felder
+    tank_capacity: Optional[str] = None
+    last_inspection_date: Optional[str] = None
+    next_inspection_date: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
@@ -235,6 +243,10 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)
         # Kirmeskiste-Variante: nur fuer device_type="kirmeskiste" relevant.
         # Defaults: bestehende ("standard") bleibt unangetastet, neue Pi-Generation = "8z".
         "kirmeskiste_variant": (data.kirmeskiste_variant or "standard") if data.device_type == "kirmeskiste" else None,
+        # Tank-spezifische Felder (nur fuer device_type="tank" relevant)
+        "tank_capacity": data.tank_capacity if data.device_type == "tank" else None,
+        "last_inspection_date": data.last_inspection_date if data.device_type == "tank" else None,
+        "next_inspection_date": data.next_inspection_date if data.device_type == "tank" else None,
         "latitude": data.latitude,
         "longitude": data.longitude,
         "created_at": datetime.now(timezone.utc).isoformat(),

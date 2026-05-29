@@ -39,6 +39,8 @@ import {
   EyeOff,
   Shield,
   MapPin,
+  Fuel,
+  Calendar,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import EventLog from "../components/EventLog";
@@ -936,6 +938,7 @@ const DEVICE_TYPES = [
   { value: "messkoffer", label: "Messkoffer", icon: Settings },
   { value: "kirmeskiste", label: "Kirmeskiste", icon: Settings },
   { value: "verteiler", label: "Verteiler", icon: Settings },
+  { value: "tank", label: "Tank", icon: Fuel },
 ];
 
 // Online status helper: online < 10min, idle < 1h, offline > 1h
@@ -990,6 +993,9 @@ const EMPTY_FORM = {
   dse_module_uid: "",
   dse_gateway_uid: "",
   kirmeskiste_variant: "standard",
+  tank_capacity: "",
+  last_inspection_date: "",
+  next_inspection_date: "",
   latitude: "",
   longitude: "",
 };
@@ -1675,6 +1681,81 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
                 />
               )}
             </>
+          )}
+
+          {/* Tank-spezifische Felder: Tankinhalt + TUEV-Pruefungen */}
+          {formData.device_type === "tank" && (
+            <div className="border-t border-gray-100 pt-4 space-y-4">
+              <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                <Fuel className="w-4 h-4 text-fuchsia-600" />
+                Tank-Daten
+              </h3>
+              <div>
+                <Label className="text-gray-700 text-sm">Tankinhalt</Label>
+                <Input
+                  value={formData.tank_capacity}
+                  onChange={(e) => update("tank_capacity", e.target.value)}
+                  placeholder="z.B. 5.000 L Diesel oder 3.000 L Benzin"
+                  className="mt-1"
+                  data-testid="tank-capacity-input"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Volumen + Inhaltsstoff als Freitext</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-fuchsia-500" />
+                  Pruefung (TUEV / Sachkundige)
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-gray-600 text-xs">Aktuelle Pruefung</Label>
+                    <Input
+                      type="date"
+                      value={formData.last_inspection_date}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        update("last_inspection_date", v);
+                        // Auto-Vorschlag: +5 Jahre fuer naechste Pruefung,
+                        // nur wenn noch leer (User kann jederzeit ueberschreiben).
+                        if (v && !formData.next_inspection_date) {
+                          const d = new Date(v);
+                          if (!Number.isNaN(d.getTime())) {
+                            d.setFullYear(d.getFullYear() + 5);
+                            update("next_inspection_date", d.toISOString().slice(0, 10));
+                          }
+                        }
+                      }}
+                      className="mt-1"
+                      data-testid="tank-last-inspection-input"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-gray-600 text-xs">Naechste Pruefung faellig</Label>
+                    <Input
+                      type="date"
+                      value={formData.next_inspection_date}
+                      onChange={(e) => update("next_inspection_date", e.target.value)}
+                      className="mt-1"
+                      data-testid="tank-next-inspection-input"
+                    />
+                    {formData.next_inspection_date && (() => {
+                      const next = new Date(formData.next_inspection_date);
+                      if (Number.isNaN(next.getTime())) return null;
+                      const days = Math.ceil((next.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                      let cls = "text-emerald-600";
+                      let label = `noch ${days} Tage`;
+                      if (days < 0) { cls = "text-red-600 font-semibold"; label = `seit ${-days} Tagen ueberfaellig`; }
+                      else if (days <= 30) { cls = "text-amber-600 font-semibold"; label = `nur noch ${days} Tage`; }
+                      else if (days <= 90) cls = "text-amber-500";
+                      return <p className={`text-[10px] mt-1 ${cls}`} data-testid="tank-next-inspection-badge">{label}</p>;
+                    })()}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-2">
+                  Pruefberichte als PDF in der Dateiablage unten hochladen.
+                </p>
+              </div>
+            </div>
           )}
 
           {/* Notes */}
