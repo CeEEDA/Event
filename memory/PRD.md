@@ -1016,3 +1016,4 @@ Folgende P2-Items bleiben weiter im Backlog:
   - Frontend `DeviceManagementPage.js`: Tank-Tile (Fuel-Icon) im Geraetetyp-Picker; spezielle „Tank-Daten"-Sektion (nur sichtbar bei `device_type==="tank"`): Tankinhalt-Input + TUEV-Pruefdatums-Paar mit Auto-Vorschlag (+5 Jahre fuer naechste Pruefung wenn leer) und Badge „noch X Tage" / „seit X Tagen ueberfaellig" (gruen/gelb/rot je nach Faelligkeit).
   - Pruefberichte koennen ab dem 1. Speichern ueber die bestehende „Dateiablage"-Sektion am Geraet hochgeladen werden (existierende `/api/devices/{id}/documents` Endpoints).
   - Verifiziert E2E + Backend POST.
+- 2026-05-29: **Tankinhalt: Freitext -> Dropdown (P2):** Auf User-Wunsch das Freitext-Eingabefeld in ein `<select>` mit den 3 Standard-Tankgroessen `1.150 L / 3.000 L / 16.000 L` umgewandelt. Default-Option „Bitte waehlen...". Werte sind weiterhin als String im Backend gespeichert (rueckwaerts-kompatibel mit aelteren manuellen Eintraegen).

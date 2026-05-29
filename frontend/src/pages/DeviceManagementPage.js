@@ -1692,14 +1692,18 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
               </h3>
               <div>
                 <Label className="text-gray-700 text-sm">Tankinhalt</Label>
-                <Input
-                  value={formData.tank_capacity}
+                <select
+                  value={formData.tank_capacity || ""}
                   onChange={(e) => update("tank_capacity", e.target.value)}
-                  placeholder="z.B. 5.000 L Diesel oder 3.000 L Benzin"
-                  className="mt-1"
+                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white"
                   data-testid="tank-capacity-input"
-                />
-                <p className="text-[10px] text-gray-400 mt-1">Volumen + Inhaltsstoff als Freitext</p>
+                >
+                  <option value="">Bitte wählen...</option>
+                  <option value="1.150 L">1.150 L</option>
+                  <option value="3.000 L">3.000 L</option>
+                  <option value="16.000 L">16.000 L</option>
+                </select>
+                <p className="text-[10px] text-gray-400 mt-1">Nenn-Volumen des Tanks</p>
               </div>
               <div>
                 <h4 className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1.5">
