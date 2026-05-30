@@ -339,6 +339,33 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Feb 2026 – Code-Review Runde 3: Quick-Wins + False-Positive-Audit
+- 🎯 **User-Request**: 3. Code-Review-Bericht mit 236+ Findings — gegen die bereits durch Runde 1+2 abgearbeitete Liste abgleichen und NUR echte neue Findings angehen.
+- ✅ **Verifiziert als False-Positives** (bereits durch Runde 1+2 / Architekturentscheidungen abgedeckt):
+  - 🟢 `admin_settings.py` ↔ `server.py` Circular → Lazy in-function import (`get_db()` Z.53-55), identisches Pattern wie kirmes↔payments (Best Practice, kein echtes Problem)
+  - 🟢 `SSL verify=False` in `documents.py:30` → env-controlled, Default = sicher (bereits Runde 1 verifiziert)
+  - 🟢 `eval()` in `test_iteration11.py:5,7` → Docstring-Bullet-Points, kein eval() (bereits Runde 1 verifiziert)
+  - 🟢 `random.*` in `generators.py:973,979` → SEED/DEMO-Telemetrie (nicht security-relevant)
+  - 🟢 **F821 Undefined Variables** = 0 Treffer (`ruff check . --select F821` → "All checks passed!") — bereits in Runde 2 alle 4 Fälle gefixt
+  - 🟢 **Component inside render** = 0 Treffer (`react/no-unstable-nested-components` lint clean)
+  - 🟢 **Console-Statements** = 1 Treffer (nicht 11): `TankwagenLiveStreamPage:101` ist intentional `console.debug` (Production-gefiltert) mit erklärendem Kommentar — bleibt
+- ✅ **Echte Findings gefixt**:
+  - **Empty Catch-Blocks in `SchaustellerAnmeldungPage.jsx`** (9× `catch { /* ignore */ }` → `catch (e) { console.debug("...", e); }`) — Lines 31, 42, 66, 70, 81, 97, 135, 163, 194. Diagnose-Logs ergänzen ohne Verhaltensänderung
+  - **Empty Catch in `ServiceplanPage.js:1034`** (`catch { /* orders optional */ }` → mit `console.debug`)
+  - **Array-Index-as-Key in `ServiceplanPage.js:367`** (`pendingImages.map((file, idx))` ist add/remove-bar) → Stabiler Key `${file.name}-${file.lastModified}-${file.size}-${idx}` statt nackten `idx`. Behebt potenziellen State-Loss beim Entfernen mittlerer Bild-Slots
+- ✅ **Andere Array-Index-as-Key Lokationen geprüft, als sicher bestätigt**:
+  - 🟢 `OrderDetailPage:1568` (`t.members.map`) — Strings in read-only Anzeige, kein State
+  - 🟢 `ServiceplanPage:291` (`form.load_test.map`) — FIXES Template-Array (25%/50%/75%/100%), kein add/remove; `idx` ist sogar semantisch (`updateLoadTest(idx, ...)`)
+  - 🟢 `ServiceplanPage:628` (`lt.map`) — Read-only PDF-Preview-Render
+  - 🟢 `MqttConfigPage:499` (`importPlan.plan.map`) — Read-only Import-Plan-Anzeige
+  - 🟢 `DeviceManagementPage:1894` (`info.readings.map`) — Read-only Zählerstands-Anzeige, `data-testid={reading-${i}}` braucht `i` ohnehin
+- 🚫 **Bewusst aufgeschoben** (architektonische Großprojekte):
+  - 236 Hook-Deps (Mass-Refactor mit Re-Render-Loop-Risiko)
+  - 54 localStorage-Stellen (braucht Backend-Auth-Umbau für httpOnly cookies)
+  - High-Complexity-Funktionen (`mqtt_service._process_message` 185 LOC, `migrate_db.migrate` 134 LOC) — eigene Iterationen
+  - Type-Hint-Coverage 17.6% → 100% (großes eigenes Projekt)
+- ✅ **Tests**: `eslint` clean auf beiden Frontend-Files, Backend `/api/health` 200, Frontend HTTP 200.
+
 ### Mai 2026 – Tankstatus-Kiosk: AND-Logic Suchfeld (P0, Feature - verifiziert)
 - 🎯 **User-Request**: "Auf der Einsatzzentrale-Kiosk-Tankstatus-Seite ein Suchfeld einbauen, das gleichzeitig nach Standort, Bezeichnung UND Kommentaren filtert."
 - ✅ **Frontend** (`/app/backend/static/einsatzzentrale-kiosk.html`):

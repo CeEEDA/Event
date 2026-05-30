@@ -28,7 +28,7 @@ export default function SchaustellerAnmeldungPage() {
   const [step, setStep] = useState(() => {
     try {
       if (sessionStorage.getItem("schausteller_session")) return "dashboard";
-    } catch { /* ignore */ }
+    } catch (e) { console.debug("sessionStorage read failed (private mode?)", e); }
     return "auth";
   });
   const [showImpressum, setShowImpressum] = useState(false);
@@ -39,7 +39,7 @@ export default function SchaustellerAnmeldungPage() {
     try {
       const saved = sessionStorage.getItem("schausteller_session");
       if (saved) return JSON.parse(saved);
-    } catch { /* ignore */ }
+    } catch (e) { console.debug("session parse failed", e); }
     return null;
   });
   const [events, setEvents] = useState([]);
@@ -63,11 +63,11 @@ export default function SchaustellerAnmeldungPage() {
   const [pendingSessionId, setPendingSessionId] = useState(null);
 
   const loadBookings = useCallback(async (schId) => {
-    try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch { /* ignore */ }
+    try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch (e) { console.debug("loadBookings failed", e); }
   }, []);
 
   const loadLastdiagramme = useCallback(async (schId) => {
-    try { const r = await api.get(`/kirmes/public/lastdiagramm/available?schausteller_id=${schId}`); setLastdiagramme(r.data); } catch { /* ignore */ }
+    try { const r = await api.get(`/kirmes/public/lastdiagramm/available?schausteller_id=${schId}`); setLastdiagramme(r.data); } catch (e) { console.debug("loadLastdiagramme failed", e); }
   }, []);
 
   const loadEvents = useCallback(async () => {
@@ -78,7 +78,7 @@ export default function SchaustellerAnmeldungPage() {
         const found = r.data.find(e => e.id === preselectedEvent);
         if (found) setSelectedEvent(found);
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.debug("loadEvents failed", e); }
   }, [preselectedEvent]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
@@ -94,7 +94,7 @@ export default function SchaustellerAnmeldungPage() {
 
   const goToDashboard = useCallback((sch) => {
     setSchausteller(sch);
-    try { sessionStorage.setItem("schausteller_session", JSON.stringify(sch)); } catch { /* ignore */ }
+    try { sessionStorage.setItem("schausteller_session", JSON.stringify(sch)); } catch (e) { console.debug("session persist failed", e); }
     loadBookings(sch.id);
     loadLastdiagramme(sch.id);
     if (preselectedEvent && selectedEvent) { setStep("signup"); }
@@ -132,7 +132,7 @@ export default function SchaustellerAnmeldungPage() {
         toast.success("Kaution erfolgreich bezahlt!");
         setPaymentChecking(false);
         setPaidAmount(typeof r.data?.amount === "number" ? r.data.amount : null);
-        try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch { /* ignore */ }
+        try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch (e) { console.debug("replaceState (paid) failed", e); }
         if (schausteller) {
           loadBookings(schausteller.id);
           loadLastdiagramme(schausteller.id);
@@ -160,7 +160,7 @@ export default function SchaustellerAnmeldungPage() {
   }, [schausteller, loadBookings, loadLastdiagramme]);
 
   const handleContinueAfterPayment = useCallback(() => {
-    try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch { /* ignore */ }
+    try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch (e) { console.debug("replaceState (continue) failed", e); }
     setPaymentCheckTimedOut(false);
     setPaymentCheckError("");
     setPendingSessionId(null);
@@ -191,7 +191,7 @@ export default function SchaustellerAnmeldungPage() {
       pollPaymentStatus(sessionId);
     } else if (paymentResult === "cancelled") {
       toast.error("Zahlung abgebrochen");
-      try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch { /* ignore */ }
+      try { window.history.replaceState({}, "", "/kirmes/anmeldung"); } catch (e) { console.debug("replaceState (cancel) failed", e); }
     }
   }, [searchParams, pollPaymentStatus]);
 

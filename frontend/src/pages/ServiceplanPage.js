@@ -364,7 +364,7 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
         >
           <div className="flex flex-wrap gap-2">
             {pendingImages.map((file, idx) => (
-              <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 group">
+              <div key={`${file.name}-${file.lastModified}-${file.size}-${idx}`} className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 group">
                 {file.type === "application/pdf" ? (
                   <div className="w-full h-full bg-red-50 flex flex-col items-center justify-center">
                     <FileText className="w-6 h-6 text-red-500" />
@@ -1031,7 +1031,7 @@ export default function ServiceplanPage() {
       });
       active.sort((a, b) => String(a.dispo_start || "").localeCompare(String(b.dispo_start || "")));
       setOrders(active);
-    } catch { /* orders optional */ }
+    } catch (e) { console.debug("loadOrders (optional) failed", e); }
   }, []);
 
   useEffect(() => { loadData(); loadOrders(); }, [loadData, loadOrders]);
