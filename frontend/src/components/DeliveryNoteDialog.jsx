@@ -66,6 +66,15 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
       };
     }));
   };
+  const removeGroup = (gIdx) => {
+    const g = groups[gIdx];
+    const cnt = g?.items?.length || 0;
+    const msg = cnt > 0
+      ? `Gruppe "${g.chapter_title}" mit ${cnt} Artikel${cnt === 1 ? "" : "n"} wirklich löschen?`
+      : `Gruppe "${g.chapter_title}" wirklich löschen?`;
+    if (!window.confirm(msg)) return;
+    setGroups(gs => gs.filter((_, gi) => gi !== gIdx));
+  };
 
   const handleSubmit = async () => {
     const totalItems = groups.reduce((sum, g) => sum + g.items.length, 0);
@@ -186,16 +195,26 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
                         {g.chapter_title}
                         <span className="text-xs font-normal text-violet-500/80">({g.items.length} Artikel)</span>
                       </h3>
-                      <Button size="sm" variant="outline" onClick={() => addItemToGroup(gIdx)} className="h-7 text-xs border-violet-300 text-violet-700 hover:bg-violet-100" data-testid={`add-item-${gIdx}`}>
-                        <Plus className="w-3 h-3 mr-1" /> Artikel hinzufügen
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => addItemToGroup(gIdx)} className="h-7 text-xs border-violet-300 text-violet-700 hover:bg-violet-100" data-testid={`add-item-${gIdx}`}>
+                          <Plus className="w-3 h-3 mr-1" /> Artikel hinzufügen
+                        </Button>
+                        <button
+                          onClick={() => removeGroup(gIdx)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          title="Gesamte Gruppe inkl. Artikel löschen"
+                          data-testid={`remove-group-${gIdx}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
                           <tr>
-                            <th className="text-left px-3 py-1.5 w-16">Pos.</th>
-                            <th className="text-left px-3 py-1.5 w-20">Art-Nr.</th>
+                            <th className="text-left px-3 py-1.5 w-20">Pos.</th>
+                            <th className="text-left px-3 py-1.5 w-24">Art-Nr.</th>
                             <th className="text-left px-3 py-1.5">Bezeichnung</th>
                             <th className="text-right px-3 py-1.5 w-20">Menge</th>
                             <th className="text-left px-3 py-1.5 w-20">Einheit</th>
