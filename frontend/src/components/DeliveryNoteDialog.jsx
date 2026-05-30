@@ -143,23 +143,6 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
       const r = await api.post(`/orders/epirent/${orderPk}/delivery-notes`, body);
       toast.success(`Lieferschein ${r.data.delivery_note_no} erstellt`);
 
-      const token = localStorage.getItem("token");
-      const pdfResp = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/api/orders/epirent/${orderPk}/delivery-notes/${r.data.id}/pdf`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (pdfResp.ok) {
-        const blob = await pdfResp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `Lieferschein_${r.data.delivery_note_no}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-
       onOpenChange(false);
       onCreated && onCreated(r.data);
     } catch (e) {
