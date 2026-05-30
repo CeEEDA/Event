@@ -350,6 +350,14 @@ class AssetMove(BaseModel):
     target_order_pk: int
 
 
+class AssetEdit(BaseModel):
+    asset_type: Optional[str] = None
+    label: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    plus_code: Optional[str] = None
+
+
 class BulkDismantle(BaseModel):
     asset_ids: list[str]
 
@@ -1101,6 +1109,26 @@ async def bulk_dismantle_assets(
         }},
     )
     return {"ok": True, "updated": result.modified_count}
+
+
+@router.patch("/epirent/{order_pk}/assets/{asset_id}")
+async def edit_order_asset(
+    order_pk: int, asset_id: str, data: AssetEdit, user: dict = Depends(_auth_user),
+):
+    """Aktualisiert die Metadaten eines Assets (Typ, Bezeichnung, Position,
+    Plus Code). Status/dismantled-Felder werden hier NICHT angefasst — dafuer
+    gibt es separate Endpoints (/status, /move, /bulk-dismantle)."""
+    asset = await _db.order_assets.find_one({"id": asset_id, "order_pk": order_pk}, {"_id": 0})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset nicht gefunden")
+    update = {k: v for k, v in data.dict(exclude_unset=True).items() if v is not None}
+    if not update:
+        return asset
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update["updated_by"] = user.get("name", user.get("email", ""))
+    await _db.order_assets.update_one({"id": asset_id, "order_pk": order_pk}, {"$set": update})
+    updated = await _db.order_assets.find_one({"id": asset_id, "order_pk": order_pk}, {"_id": 0})
+    return updated
 
 
 @router.patch("/epirent/{order_pk}/assets/{asset_id}/move")
