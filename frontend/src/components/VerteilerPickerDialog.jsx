@@ -20,10 +20,23 @@ import { MapContainer, Marker, Popup, Circle, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapTileLayer from "./MapTileLayer";
-import { X, MapPin, Plug, Crosshair, Loader2 } from "lucide-react";
+import AssetEditDialog from "./AssetEditDialog";
+import { OpenLocationCode } from "open-location-code";
+import { X, MapPin, Plug, Crosshair, Loader2, Pencil } from "lucide-react";
 import { Button } from "./ui/button";
 import api from "../lib/api";
 import { toast } from "sonner";
+
+// Lokal definiert, damit der Picker nicht auf Props vom Aufrufer angewiesen ist
+// (MessprotokollDialog ist generisch, soll keine OrderDetailPage-Internals durchreichen).
+const ASSET_TYPES_LOCAL = [
+  { value: "Lichtmast" }, { value: "Stromerzeuger" }, { value: "Verteiler" },
+  { value: "Tank" }, { value: "Netzwerk" }, { value: "Sonstiges" },
+];
+const olcLocal = new OpenLocationCode();
+const encodePlusCodeLocal = (lat, lng) => {
+  try { return olcLocal.encode(lat, lng, 10); } catch { return ""; }
+};
 
 // Force size recalc when MapContainer is rendered inside a modal
 // (sonst bleibt die Map weiß, weil das Layout beim Mounten 0px Höhe hat).
@@ -85,9 +98,24 @@ export default function VerteilerPickerDialog({ orderPk, currentId, onClose, onS
   const [gpsError, setGpsError] = useState(null);
   const [nearbyOnly, setNearbyOnly] = useState(true);
   const [radius, setRadius] = useState(200); // Meter
+  const [editingAsset, setEditingAsset] = useState(null);
   const watchIdRef = useRef(null);
 
   // Assets laden
+  const reloadAssets = async () => {
+    try {
+      const res = await api.get(`/orders/epirent/${orderPk}/assets`);
+      const verteiler = (res.data?.assets || []).filter(
+        (a) => (a.asset_type || "").toLowerCase() === "verteiler"
+          && (a.status || "placed") === "placed"
+          && a.latitude != null && a.longitude != null,
+      );
+      setAssets(verteiler);
+    } catch {
+      toast.error("Verteiler konnten nicht geladen werden");
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -264,12 +292,23 @@ export default function VerteilerPickerDialog({ orderPk, currentId, onClose, onS
                     <div className="text-xs">
                       <div className="font-semibold text-gray-900">{a.label || "Verteiler"}</div>
                       {a.plus_code && <div className="text-gray-500 mt-0.5">Plus: {a.plus_code}</div>}
-                      <button
-                        onClick={() => setSelectedId(a.id)}
-                        className="mt-1.5 text-fuchsia-600 hover:text-fuchsia-800 font-medium"
-                      >
-                        Auswählen
-                      </button>
+                      <div className="mt-1.5 flex items-center gap-3">
+                        <button
+                          onClick={() => setSelectedId(a.id)}
+                          className="text-fuchsia-600 hover:text-fuchsia-800 font-medium"
+                          data-testid={`verteiler-popup-select-${a.id}`}
+                        >
+                          Auswählen
+                        </button>
+                        <button
+                          onClick={() => setEditingAsset(a)}
+                          className="text-gray-500 hover:text-gray-800 font-medium inline-flex items-center gap-1"
+                          data-testid={`verteiler-popup-edit-${a.id}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Bearbeiten
+                        </button>
+                      </div>
                     </div>
                   </Popup>
                 </Marker>
@@ -298,6 +337,17 @@ export default function VerteilerPickerDialog({ orderPk, currentId, onClose, onS
           </div>
         </div>
       </div>
+
+      {editingAsset && (
+        <AssetEditDialog
+          orderPk={orderPk}
+          asset={editingAsset}
+          assetTypes={ASSET_TYPES_LOCAL}
+          encodePlusCode={encodePlusCodeLocal}
+          onClose={() => { setEditingAsset(null); reloadAssets(); }}
+          onSaved={() => { reloadAssets(); setEditingAsset(null); }}
+        />
+      )}
     </div>
   );
 }
