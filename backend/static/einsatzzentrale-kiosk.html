@@ -2348,7 +2348,7 @@ var DOC_CATS = [
 // kann direkt am Pi den neuen Tankstand erfassen, ohne in die React-App
 // muessen. Sortierung nach Kritikalitaet, Refresh alle 30s.
 // ============================================================================
-var tankState = { forecast: [], assets: [], selectedAsset: null, sortBy: "criticality", onlyCritical: false };
+var tankState = { forecast: [], assets: [], selectedAsset: null, sortBy: "criticality", onlyCritical: false, search: "" };
 var tankRefreshTimer = null;
 
 function loadTankData(cb) {
@@ -2374,6 +2374,7 @@ function renderTankPanel() {
     '<main class="kiosk-main">' +
       '<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">' +
         '<button id="tank-back" class="btn">← Zurück</button>' +
+        '<input id="tank-search" type="search" placeholder="🔎 Suche Bezeichnung / Plus Code / Kommentar..." value="'+esc(tankState.search||"")+'" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;" />' +
         '<label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">' +
           '<input type="checkbox" id="tank-only-critical"' + (tankState.onlyCritical ? " checked" : "") + '/> Nur kritisch/warn' +
         '</label>' +
@@ -2383,7 +2384,7 @@ function renderTankPanel() {
           '<option value="fuel_asc"' + (tankState.sortBy==="fuel_asc"?" selected":"") + '>Tankstand ↑</option>' +
           '<option value="label"' + (tankState.sortBy==="label"?" selected":"") + '>Name A-Z</option>' +
         '</select>' +
-        '<div style="margin-left:auto;font-size:12px;color:var(--text-muted);">Auto-Refresh 30 s</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);">Auto-Refresh 30 s</div>' +
       '</div>' +
       '<div id="tank-list"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
     '</main></div>'
@@ -2392,6 +2393,7 @@ function renderTankPanel() {
   document.getElementById("tank-back").addEventListener("click", function(){ state.activeTile=null; state.phase="workspace"; if(tankRefreshTimer){clearInterval(tankRefreshTimer);tankRefreshTimer=null;} render(); });
   document.getElementById("tank-only-critical").addEventListener("change", function(e){ tankState.onlyCritical = e.target.checked; renderTankList(); });
   document.getElementById("tank-sort").addEventListener("change", function(e){ tankState.sortBy = e.target.value; renderTankList(); });
+  document.getElementById("tank-search").addEventListener("input", function(e){ tankState.search = e.target.value; renderTankList(); });
 
   loadTankData(renderTankList);
   if (tankRefreshTimer) clearInterval(tankRefreshTimer);
@@ -2406,16 +2408,39 @@ function renderTankList() {
   var el = document.getElementById("tank-list"); if (!el) return;
   var fc = tankState.forecast.slice();
   if (tankState.onlyCritical) fc = fc.filter(function(f){ return f.criticality === "critical" || f.criticality === "warn"; });
+
+  // Token-basierte AND-Suche ueber Bezeichnung, Plus Code, Lat/Lng, Kommentare
+  var query = (tankState.search || "").trim().toLowerCase();
+  if (query) {
+    var tokens = query.split(/\s+/).filter(Boolean);
+    fc = fc.filter(function(f){
+      var hay = [
+        f.asset_label || "", f.plus_code || "",
+        f.latitude != null ? String(f.latitude.toFixed ? f.latitude.toFixed(5) : f.latitude) : "",
+        f.longitude != null ? String(f.longitude.toFixed ? f.longitude.toFixed(5) : f.longitude) : "",
+      ].concat(f.comments || []).join(" ").toLowerCase();
+      return tokens.every(function(t){ return hay.indexOf(t) !== -1; });
+    });
+  }
+
   if (tankState.sortBy === "hours_asc") fc.sort(function(a,b){ return (a.hours_remaining||1e9)-(b.hours_remaining||1e9); });
   else if (tankState.sortBy === "fuel_asc") fc.sort(function(a,b){ return (a.current_fuel_l||1e9)-(b.current_fuel_l||1e9); });
   else if (tankState.sortBy === "label") fc.sort(function(a,b){ return (a.asset_label||"").localeCompare(b.asset_label||""); });
+  // default "criticality" -> Backend liefert schon sortiert
 
-  // Plus: Generatoren ohne Reading anzeigen
+  // Pristine-Liste (noch keine Readings) bei aktiver Suche ebenfalls filtern
   var seen = {}; fc.forEach(function(f){ seen[f.asset_id] = true; });
   var pristine = tankState.assets.filter(function(a){ return !seen[a.id]; });
+  if (query) {
+    var tokens2 = query.split(/\s+/).filter(Boolean);
+    pristine = pristine.filter(function(a){
+      var hay = [a.label||"", a.plus_code||"", a.latitude||"", a.longitude||""].join(" ").toLowerCase();
+      return tokens2.every(function(t){ return hay.indexOf(t) !== -1; });
+    });
+  }
 
   if (fc.length === 0 && pristine.length === 0) {
-    el.innerHTML = '<div class="empty">Keine Stromerzeuger im Auftrag.</div>';
+    el.innerHTML = '<div class="empty">'+(query ? 'Keine Treffer fuer „'+esc(query)+'"' : 'Keine Stromerzeuger im Auftrag.')+'</div>';
     return;
   }
 
@@ -2427,8 +2452,9 @@ function renderTankList() {
     html += '<div class="kiosk-card" style="padding:14px;border-left:6px solid '+color+';">' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">' +
         '<div style="flex:1;min-width:0;">' +
-          '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
             '<strong style="font-size:15px;">'+esc(f.asset_label||"Generator")+'</strong>' +
+            (f.plus_code ? '<span style="font-size:11px;color:#7c3aed;font-family:monospace;background:#f5f3ff;padding:1px 6px;border-radius:4px;">'+esc(f.plus_code)+'</span>' : '') +
             '<span style="font-size:11px;font-weight:700;color:'+color+';">'+critLabel+'</span>' +
             '<span style="font-size:11px;color:#9ca3af;">'+f.readings_count+' Readings</span>' +
           '</div>' +

@@ -193,6 +193,16 @@ async def tank_readings_forecast(order_pk: int, user: dict = Depends(_auth_user)
         {"_id": 0},
     ).sort("recorded_at", 1).to_list(5000)
 
+    # Asset-Metadaten (plus_code, lat/lng) fuer Suche & Standortanzeige nachladen
+    asset_ids = list({r["asset_id"] for r in rows})
+    assets_meta = {}
+    if asset_ids:
+        async for a in _db.order_assets.find(
+            {"order_pk": order_pk, "id": {"$in": asset_ids}},
+            {"_id": 0, "id": 1, "plus_code": 1, "latitude": 1, "longitude": 1, "label": 1},
+        ):
+            assets_meta[a["id"]] = a
+
     grouped: dict[str, list] = {}
     for r in rows:
         grouped.setdefault(r["asset_id"], []).append(r)
@@ -252,6 +262,9 @@ async def tank_readings_forecast(order_pk: int, user: dict = Depends(_auth_user)
         out.append({
             "asset_id": asset_id,
             "asset_label": latest.get("asset_label") or "",
+            "plus_code": (assets_meta.get(asset_id) or {}).get("plus_code") or "",
+            "latitude": (assets_meta.get(asset_id) or {}).get("latitude"),
+            "longitude": (assets_meta.get(asset_id) or {}).get("longitude"),
             "tank_size_l": latest.get("tank_size_l"),
             "current_fuel_l": latest.get("fuel_level_l"),
             "current_percent": percent,
@@ -264,6 +277,7 @@ async def tank_readings_forecast(order_pk: int, user: dict = Depends(_auth_user)
             "eta_empty": eta_empty,
             "criticality": criticality,
             "readings_count": len(readings),
+            "comments": [r.get("comment") for r in readings if r.get("comment")],
         })
 
     # Sortierung: kritisch zuerst (hours_remaining aufsteigend, None ans Ende)
