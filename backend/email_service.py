@@ -54,8 +54,8 @@ def send_email_with_attachment(to_email: str, subject: str, html_body: str, atta
     msg["To"] = to_email
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    att = MIMEApplication(attachment_bytes, _subtype="pdf")
-    att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+    att = MIMEApplication(attachment_bytes, _subtype="pdf", Name=attachment_filename)
+    att.add_header("Content-Disposition", f'attachment; filename="{attachment_filename}"')
     msg.attach(att)
 
     try:
@@ -76,8 +76,8 @@ def send_email_with_attachment(to_email: str, subject: str, html_body: str, atta
                 bcc_msg["From"] = f"{cfg['sender_name']} <{cfg['user']}>"
                 bcc_msg["To"] = bcc_addr
                 bcc_msg.attach(MIMEText(html_body, "html", "utf-8"))
-                bcc_att = MIMEApplication(attachment_bytes, _subtype="pdf")
-                bcc_att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+                bcc_att = MIMEApplication(attachment_bytes, _subtype="pdf", Name=attachment_filename)
+                bcc_att.add_header("Content-Disposition", f'attachment; filename="{attachment_filename}"')
                 bcc_msg.attach(bcc_att)
 
                 with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
