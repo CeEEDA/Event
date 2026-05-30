@@ -414,7 +414,7 @@ export default function OrderDetailPage() {
   }, [pk]);
 
   const fetchDeliveryNotes = useCallback(async () => {
-    if (!isAdmin) return;
+    if (isFreelancer) return;
     setDeliveryNotesLoading(true);
     try {
       const { data } = await api.get(`/orders/epirent/${pk}/delivery-notes`);
@@ -425,7 +425,7 @@ export default function OrderDetailPage() {
     } finally {
       setDeliveryNotesLoading(false);
     }
-  }, [pk, isAdmin]);
+  }, [pk, isFreelancer]);
 
   const fetchMessprotokolle = useCallback(async () => {
     try {
@@ -1396,7 +1396,7 @@ export default function OrderDetailPage() {
                   { key: "tankstatus", label: "Tankstatus", desc: "Tankrunde · Prognose · CSV", icon: Fuel, color: "amber", count: 0, isLink: true },
                   { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
                   { key: "diary", label: "Einsatztagebuch", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
-                  { key: "delivery-notes", label: "Lieferscheine", desc: "Anlegen & Verwalten", icon: FileText, color: "violet", count: deliveryNotes.length, adminOnly: true },
+                  { key: "delivery-notes", label: "Lieferscheine", desc: "Anlegen & Verwalten", icon: FileText, color: "violet", count: deliveryNotes.length, hideForFreelancer: true },
                 ].filter(t => (!t.hideForFreelancer || !isFreelancer) && (!t.adminOnly || isAdmin)).map((t) => {
                   const colorMap = {
                     orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
@@ -2560,7 +2560,7 @@ export default function OrderDetailPage() {
           )}
 
           {/* Lieferscheine Section */}
-          {activeTab === "delivery-notes" && isAdmin && (
+          {activeTab === "delivery-notes" && !isFreelancer && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="delivery-notes-section">
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-center justify-between flex-wrap gap-2">
