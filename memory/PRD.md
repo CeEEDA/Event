@@ -339,6 +339,30 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Lieferschein V4: Überschriften (type=21) + Neue Gruppe hinzufügen
+- 🎯 **User-Request 1**: "Wir haben Überschriften drin. Diese sind komplett an der falschen Stelle." — Ursache: meine Sortierung nach `position_no_str` schob alle Überschriften (mit leerem `pos`) nach vorn ans Ende der Tabelle, statt sie zwischen die Artikel zu setzen wo sie hingehören.
+- 🎯 **User-Request 2**: "Neue Gruppe hinzufügen" als zusätzliche Funktion.
+- 🔍 **Erkenntnisse**:
+  - EpiRent hat 3 Item-Typen pro Kapitel:
+    - `type=0`: normaler Artikel (mit pos="1.1", product_no, amount_total)
+    - `type=21`: **Überschrift / Sub-Heading** (mit leerem pos, prod=0, amount=0, aber `title`)
+    - `type=5`: Kapitel (nur auf Top-Level)
+  - Die echte Anzeige-Reihenfolge in EpiRent ist `_pos_no_intern` (1000, 2000, 3000, ...), NICHT `position_no_str`.
+- ✅ **Backend** (`/app/backend/routes/orders.py`):
+  - `_fetch_chapter_items` sortiert jetzt nach `_pos_no_intern` statt `position_no_str` → richtige Interleaved-Reihenfolge.
+  - Sub-Items bekommen `is_heading=True` wenn `type=21`, und `amount=0` + `product_no=""` für Überschriften.
+  - PDF-Generator rendert Überschrift-Zeilen mit `LIGHT_GRAY` Hintergrund + `SPAN` Spalte 1-4 (Bezeichnung über volle Breite, kursiv).
+- ✅ **Frontend** (`DeliveryNoteDialog.jsx`):
+  - **Überschrift-Zeilen** in Gruppen-Tabelle anders gerendert: graues `bg-gray-50/80`, "ÜBERSCHRIFT"-Tag in Pos-Spalte, Input über `colSpan={5}` für Titel (italic, dashed-border), nur Löschen-Button. Keine Menge/Einheit/Bemerkung-Felder.
+  - **Header-Buttons pro Gruppe**: "+ Artikel" (lila) und "+ Überschrift" (grau) ergänzt → User kann frei mischen.
+  - **`+ Neue Gruppe hinzufügen`-Button** unterhalb aller Gruppen (gestrichelte Border, violet). Öffnet `window.prompt` für Gruppenname, fügt leere Gruppe mit nächster Pos-Nr an.
+  - Gruppen-Count zeigt jetzt `(N Artikel, M Überschriften)` statt nur Artikel-Count.
+  - Pos-Nr-Generierung bei "+ Artikel" basiert jetzt auf Artikel-Count (ignoriert Headings) → keine falschen Pos-Nrn wenn Headings dazwischen.
+  - `addItemToGroup` / `addHeadingToGroup` / `removeGroup` / `addNewGroup` separat als Helper-Funktionen.
+- ✅ **Live-Test gegen Auftrag 251017-01 (PK 21, "Rock am Ring 2026 | Outfield Netzwerk")**:
+  - Backend `/prefill`: 8 Gruppen mit korrekt **interleaved Headings + Articles** (z.B. Hauptanbindungen: `T13 nach D9 + A2 + D10` → 1.1, 1.2 → `D5 nach D5 KB` → 1.3, 1.4 → `T8 nach B9 und C3` → 1.5, 1.6 → ...)
+  - Frontend: Gruppe 0 zeigt 8 Headings + 17 Artikel-Inputs korrekt verschachtelt. Add-Group-Button vorhanden.
+
 ### Mai 2026 – Lieferschein V3: Echte EpiRent-Hierarchie (Kapitel + Artikel)
 - 🎯 **User-Request**: Maske + PDF sollen die **Kapitel-Struktur** zeigen mit darunter den **echten Artikeln** (Pos 1.1 Messwandler 250A statt nur "Wandlermessung" Kapitel-Name).
 - 🔍 **Entdeckung**: EpiRent legt Sub-Artikel NICHT in `order_items[].sub_items` ab. Stattdessen liefert jedes Kapitel im Order-Response das Feld `_ref_chapter_items: "journal/filter?chid=14388"` als Pointer auf den Sub-Endpoint. **`GET /v1/journal/filter?chid={chapter_pk}`** liefert die echten Artikel mit `position_no_str` (z.B. "1.1", "3.2"), `product_no`, `inventory_no`, `title`, `amount_total`, `warehouse_str`.

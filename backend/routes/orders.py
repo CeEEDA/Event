@@ -990,8 +990,10 @@ def _generate_delivery_note_pdf(
         Paragraph("<b>Bemerkung</b>", s_cell_b),
     ]]
     chapter_row_indices = []  # fuer special styling
+    heading_row_indices = []  # fuer Sub-Header-Styling (Ueberschriften zwischen Artikeln)
     for idx, p in enumerate(positions):
         is_chap = p.get("is_chapter", False)
+        is_heading = p.get("is_heading", False)
         try:
             amount = p.get("amount") or 0
             amount_str = f"{float(amount):g}" if amount else ""
@@ -1003,6 +1005,14 @@ def _generate_delivery_note_pdf(
             rows.append([
                 Paragraph(f"<b>{p.get('pos') or (idx + 1)}</b>", s_cell_b),
                 Paragraph(f"<b>{p.get('title') or ''}</b>", s_cell_b),
+                "", "", "",
+            ])
+        elif is_heading:
+            # Ueberschrift-Zeile: nur Bezeichnung, kursiv, hellgrauer Hintergrund
+            heading_row_indices.append(len(rows))
+            rows.append([
+                "",
+                Paragraph(f"<i>{p.get('title') or ''}</i>", s_cell),
                 "", "", "",
             ])
         else:
@@ -1032,6 +1042,10 @@ def _generate_delivery_note_pdf(
     for ri in chapter_row_indices:
         tbl_style.append(("BACKGROUND", (0, ri), (-1, ri), HEADER_BG))
         tbl_style.append(("LINEABOVE", (0, ri), (-1, ri), 0.4, PURPLE))
+    # Ueberschrift-Zeilen leicht abheben (hellgrau, kursiv)
+    for ri in heading_row_indices:
+        tbl_style.append(("BACKGROUND", (0, ri), (-1, ri), LIGHT_GRAY))
+        tbl_style.append(("SPAN", (1, ri), (-1, ri)))  # Bezeichnung ueber gesamte Breite
     tbl.setStyle(TableStyle(tbl_style))
     elems.append(tbl)
     elems.append(Spacer(1, 4*mm))
@@ -1135,9 +1149,10 @@ async def _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk):
 async def _fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk):
     """Helper: holt Sub-Artikel eines Kapitels via /v1/journal/filter?chid={chapter_pk}.
 
-    EpiRent strukturiert order_items in 2 Ebenen:
+    EpiRent strukturiert order_items in 2+ Ebenen:
     - Top-Level Eintraege mit type=5 sind Kapitel (chapter_id=0)
-    - Sub-Artikel zu einem Kapitel werden ueber chid-Filter abgefragt
+    - In Kapitel: type=0 sind Artikel, type=21 sind "Ueberschriften" (Sub-Headings ohne Menge)
+    - Reihenfolge: das Feld `_pos_no_intern` (1000, 2000, 3000, ...) gibt die EpiRent-Anzeige-Reihenfolge an
     """
     if not chapter_pk:
         return []
@@ -1151,15 +1166,8 @@ async def _fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk):
             payload = j.get("payload") or []
             if not isinstance(payload, list):
                 return []
-            # Sortiere nach position_no_str (z.B. "3.1", "3.2", "3.3")
-            def _sort_key(it):
-                pos = str(it.get("position_no_str", "0"))
-                try:
-                    parts = [int(p) for p in pos.split(".") if p.isdigit()]
-                    return tuple(parts)
-                except Exception:
-                    return (999,)
-            return sorted(payload, key=_sort_key)
+            # Sortiere nach _pos_no_intern (echte EpiRent-Anzeige-Reihenfolge)
+            return sorted(payload, key=lambda it: it.get("_pos_no_intern", 999999))
     except Exception as e:
         logger.warning(f"Chapter-items-Lookup fehlgeschlagen fuer chid={chapter_pk}: {e}")
         return []
@@ -1224,13 +1232,16 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
         sub_items_raw = await _fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk)
         items = []
         for sub in sub_items_raw:
+            sub_type = sub.get("type", 0)
+            is_heading = (sub_type == 21)
             # Echte Menge: amount_total bevorzugt (1), amount_base ist 0 bei diesem Modus
-            amt = sub.get("amount_total") or sub.get("amount_base") or sub.get("amount_external") or 1
+            amt = 0 if is_heading else (sub.get("amount_total") or sub.get("amount_base") or sub.get("amount_external") or 1)
             items.append({
                 "primary_key": sub.get("primary_key"),
+                "is_heading": is_heading,
                 "pos": sub.get("position_no_str") or "",
                 "title": sub.get("title") or "",
-                "product_no": str(sub.get("product_no", "")) if sub.get("product_no") else "",
+                "product_no": str(sub.get("product_no", "")) if sub.get("product_no") and not is_heading else "",
                 "inventory_no": sub.get("inventory_no", "") or "",
                 "amount": amt,
                 "unit": sub.get("unit_product", "") or "",
@@ -1260,6 +1271,7 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "unit": sub["unit"],
                 "remark": sub["remark"],
                 "is_chapter": False,
+                "is_heading": sub.get("is_heading", False),
             })
 
     sched = raw.get("order_schedule") or []
@@ -1354,6 +1366,7 @@ async def create_delivery_note(order_pk: int, body: dict, user: dict = Depends(_
                     "remark": it.get("remark") or "",
                     "product_no": it.get("product_no") or "",
                     "is_chapter": False,
+                    "is_heading": bool(it.get("is_heading", False)),
                 })
     notes_override = body.get("notes_override")
     sig_sender = body.get("signature_sender_b64")
