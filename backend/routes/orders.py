@@ -1109,8 +1109,12 @@ def _generate_delivery_note_pdf(
 
 
 async def _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk):
-    """Helper: Adresse + Kontakt-Details aus EpiRent /v1/contact/{pk}."""
-    out = {"street": "", "postal_code": "", "city": "", "phone": "", "email": ""}
+    """Helper: Adresse + Kontakt-Details aus EpiRent /v1/contact/{pk}.
+
+    Extrahiert auch E-Mail-Adressen aus dem `communication[]`-Array
+    (type=3 = E-Mail; is_invoice=True markiert die Rechnungs-Mail).
+    """
+    out = {"street": "", "postal_code": "", "city": "", "phone": "", "email": "", "email_invoice": "", "emails": []}
     if not contact_pk:
         return out
     try:
@@ -1126,7 +1130,23 @@ async def _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk):
                 out["postal_code"] = a.get("postal_code", "") or ""
                 out["city"] = a.get("city", "") or ""
                 out["phone"] = cd.get("phone", "") or ""
-                out["email"] = cd.get("email", "") or ""
+                # E-Mails aus communication[]
+                emails = []
+                for comm in (cd.get("communication") or []):
+                    uplink = (comm.get("uplink") or "").strip()
+                    if comm.get("type") == 3 and "@" in uplink:
+                        emails.append({
+                            "email": uplink,
+                            "is_invoice": bool(comm.get("is_invoice")),
+                            "description": comm.get("description", "") or "",
+                        })
+                out["emails"] = emails
+                if emails:
+                    # primaere E-Mail: erste nicht-invoice, sonst irgendeine
+                    primary = next((e["email"] for e in emails if not e["is_invoice"]), emails[0]["email"])
+                    invoice = next((e["email"] for e in emails if e["is_invoice"]), "")
+                    out["email"] = primary
+                    out["email_invoice"] = invoice
     except Exception as e:
         logger.warning(f"Kontakt-Lookup fehlgeschlagen fuer PK={contact_pk}: {e}")
     return out
@@ -1173,6 +1193,36 @@ async def list_delivery_notes(order_pk: int, user: dict = Depends(_auth_user)):
         {"_id": 0, "signature_sender_b64": 0, "signature_receiver_b64": 0, "pdf_b64": 0},
     ).sort("created_at", -1).to_list(500)
     return docs
+
+
+@router.get("/epirent/{order_pk}/customer-emails")
+async def get_customer_emails(order_pk: int, user: dict = Depends(_auth_user)):
+    """Liefert die im EpiRent-Kontakt hinterlegten E-Mail-Adressen.
+
+    Frontend nutzt das im Lieferschein-E-Mail-Dialog fuer schnelle 1-Klick-Buttons.
+    """
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Freelancer haben keinen Zugriff")
+    await _check_freelancer_order_access(user, order_pk)
+
+    config = await _get_epirent_config()
+    api_url = config.get("api_url", "").rstrip("/")
+    api_key = config.get("api_key", "")
+    ssl_skip = config.get("ssl_skip", False)
+
+    raw = await _get_full_order(api_url, api_key, order_pk, ssl_skip)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+
+    contact = raw.get("contact") or {}
+    contact_pk = contact.get("primary_key")
+    details = await _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk)
+    return {
+        "customer_name": contact.get("name") or "",
+        "primary": details.get("email") or "",
+        "invoice": details.get("email_invoice") or "",
+        "all": details.get("emails") or [],
+    }
 
 
 @router.get("/epirent/{order_pk}/delivery-notes/prefill")

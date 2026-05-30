@@ -339,6 +339,23 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Lieferschein V7: Kunden-E-Mail Default + Manuelle Eingabe
+- 🎯 **User-Request**: "Default E-Mail als erste, unten manuell eintragen und versenden."
+- 🔍 **EpiRent-Datenstruktur**: E-Mails sind im `communication[]`-Array des Kontakts (type=3 = E-Mail, `is_invoice=true` markiert Rechnungs-Mail, `uplink` = die Adresse).
+- ✅ **Backend** (`/app/backend/routes/orders.py`):
+  - `_fetch_contact_address` extrahiert jetzt zusätzlich `email`, `email_invoice`, und Liste `emails[]` aus dem communication-Array.
+  - Neuer Endpoint `GET /api/orders/epirent/{pk}/customer-emails` liefert `{customer_name, primary, invoice, all[]}`.
+- ✅ **Frontend** (`DeliveryNoteEmailDialog.jsx` umgebaut):
+  - Lädt Kunden-Mails beim Öffnen via `/customer-emails` Endpoint.
+  - **Quick-Send-Cards oben**: pro Empfänger-Kategorie (Kunde / Rechnung / Zuletzt verwendet) eine violette Card mit der Adresse und dezidiertem Senden-Button (1-Klick-Versand).
+  - **Manuelles Eingabefeld darunter** (durch dünne Border getrennt): Input + Outline-Send-Button für freie Adressen, Enter-Taste sendet.
+  - Empty-State: Amber-Warning wenn keine Kunden-Mail bei EpiRent hinterlegt ("Bitte manuell eingeben").
+  - Versand-Historie bleibt darunter als ausklappbare `<details>`-Liste.
+- ✅ **Live-Verifikation**:
+  - Backend Auftrag 302 (Mamo): `primary=Timo.Morgenstern@Mamo-starkstrom.de`, all=[1 Eintrag].
+  - Backend Auftrag 21 (Rock am Ring): leer (keine Mail bei EpiRent).
+  - Frontend Playwright: 1 Quick-Email-Row sichtbar, manueller Versand-Button ebenfalls.
+
 ### Mai 2026 – Lieferschein V6: E-Mail-Versand + Abrechnungs-Doku-Integration
 - 🎯 **User-Request 1**: Pfeil-Icon rechts in Lieferschein-Liste, öffnet Dialog mit E-Mail-Feld, Lieferschein wird per Mail versendet. Erneut klicken: bestehende E-Mail anzeigen + erneut senden oder ändern.
 - 🎯 **User-Request 2**: Lieferschein in die "Abrechnungs-Doku" (oben rechts beim Auftrag) mit einbauen.
