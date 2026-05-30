@@ -301,6 +301,7 @@ export default function OrderDetailPage() {
   // Messprotokolle
   const [messprotokolle, setMessprotokolle] = useState([]);
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
+  const [prefillVerteiler, setPrefillVerteiler] = useState(null);
   const [editingMessprotokoll, setEditingMessprotokoll] = useState(null);
   const [showBulkDismantle, setShowBulkDismantle] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
@@ -632,11 +633,30 @@ export default function OrderDetailPage() {
       setAssetLng("");
       setAssetComment("");
       fetchAssets();
+      return created;
     } catch {
       toast.error("Fehler beim Hinzufügen");
     } finally {
       setAddingAsset(false);
     }
+  };
+
+  // "Speichern + Messprotokoll" - nur fuer Verteiler. Legt den Verteiler an
+  // und oeffnet direkt die Messprotokoll-Maske mit vorausgewaehlter Verknuepfung,
+  // sodass Trupp A in einem Rutsch Setzen + Pruefprotokoll erledigen kann.
+  const addAssetThenMessprotokoll = async () => {
+    if ((assetType || "").toLowerCase() !== "verteiler") return;
+    const created = await addAsset();
+    if (!created?.id) return;
+    setPrefillVerteiler({
+      id: created.id,
+      label: created.label || "Verteiler",
+      plus_code: created.plus_code || "",
+      latitude: created.latitude,
+      longitude: created.longitude,
+    });
+    setEditingMessprotokoll(null);
+    setShowMessprotokollDialog(true);
   };
 
   const deleteAsset = async (assetId) => {
@@ -1708,6 +1728,20 @@ export default function OrderDetailPage() {
                   {addingAsset ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
                   Hinzufügen
                 </Button>
+                {(assetType || "").toLowerCase() === "verteiler" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 border-fuchsia-400 text-fuchsia-700 hover:bg-fuchsia-50"
+                    onClick={addAssetThenMessprotokoll}
+                    disabled={addingAsset || !assetLat || !assetLng}
+                    title="Verteiler anlegen und direkt das Messprotokoll oeffnen (mit Verknuepfung)"
+                    data-testid="add-asset-with-messprotokoll-btn"
+                  >
+                    <ClipboardCheck className="w-3 h-3 mr-1" />
+                    + Messprotokoll
+                  </Button>
+                )}
               </div>
               <div className="mt-2.5">
                 <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1.5">
@@ -3152,12 +3186,14 @@ export default function OrderDetailPage() {
             <MessprotokollDialog
               order={{ ...order, primary_key: pk }}
               existing={editingMessprotokoll}
-              onClose={() => { setShowMessprotokollDialog(false); setEditingMessprotokoll(null); }}
+              prefillVerteiler={prefillVerteiler}
+              onClose={() => { setShowMessprotokollDialog(false); setEditingMessprotokoll(null); setPrefillVerteiler(null); }}
               onSaved={() => {
                 setShowMessprotokollDialog(false);
                 fetchMessprotokolle();
                 if (!editingMessprotokoll) setDocCount((c) => c + 1);
                 setEditingMessprotokoll(null);
+                setPrefillVerteiler(null);
               }}
             />
           )}

@@ -49,7 +49,7 @@ const PA_PUNKTE = [
 
 const emptyMessung = () => ({ ziel: "", kabel: "", in_a: "", ik_a: "", zs_ohm: "", riso_ohne: "", rcd_ma: "", ta_ms: "", rpe_ohm: "" });
 
-export default function MessprotokollDialog({ order, onClose, onSaved, existing = null }) {
+export default function MessprotokollDialog({ order, onClose, onSaved, existing = null, prefillVerteiler = null }) {
   const isEdit = !!existing;
   const initialForm = existing?.data || {
     auftraggeber: order?.contact_name || order?.event || "",
@@ -57,7 +57,11 @@ export default function MessprotokollDialog({ order, onClose, onSaved, existing 
     anlage: order?.event || order?.contact_name || "",
     auftrags_nr: order?.order_no || "",
     auftragnehmer: "Eventenergie Deutschland GmbH & Co. KG",
-    verteiler_nr: "",
+    verteiler_nr: prefillVerteiler?.label || "",
+    verteiler_asset_id: prefillVerteiler?.id || undefined,
+    verteiler_plus_code: prefillVerteiler?.plus_code || undefined,
+    verteiler_lat: prefillVerteiler?.latitude ?? undefined,
+    verteiler_lng: prefillVerteiler?.longitude ?? undefined,
     normen: { din_vde_0100_600: true, din_vde_0105: false, dguv_v3: true },
     pruefart: { neuanlage: false, erweiterung: false, aenderung: false, instandsetzung: false, wiederholung: true },
     netz_volt: "400",
