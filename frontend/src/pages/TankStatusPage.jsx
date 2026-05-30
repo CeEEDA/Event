@@ -59,10 +59,13 @@ export default function TankStatusPage() {
 
   // Form-State
   const [selectedAsset, setSelectedAsset] = useState(null);
+  const [readingMode, setReadingMode] = useState("normal"); // "commissioning" | "normal"
   const [tankSizeL, setTankSizeL] = useState("");
   const [fuelLevelL, setFuelLevelL] = useState("");
+  const [fuelPercent, setFuelPercent] = useState("");
   const [loadKw, setLoadKw] = useState("");
   const [runtimeH, setRuntimeH] = useState("");
+  const [kwhTotal, setKwhTotal] = useState("");
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [photoFile, setPhotoFile] = useState(null);
@@ -112,13 +115,19 @@ export default function TankStatusPage() {
 
   useEffect(() => { loadAll(); }, [pk]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Hat das Asset schon ein Reading? (-> Tankgroesse muss nicht erneut eingegeben werden)
-  const lastReadingForAsset = useMemo(() => {
+  // Hat das Asset schon eine Inbetriebnahme?
+  const commissioning = useMemo(() => {
     if (!selectedAsset) return null;
-    return readings.find((r) => r.asset_id === selectedAsset.id) || null;
+    return readings.find((r) => r.asset_id === selectedAsset.id && r.reading_type === "commissioning") || null;
   }, [selectedAsset, readings]);
 
-  const knownTankSize = lastReadingForAsset?.tank_size_l;
+  // Modus automatisch setzen: ohne Inbetriebnahme -> commissioning erzwingen
+  useEffect(() => {
+    if (!selectedAsset) return;
+    setReadingMode(commissioning ? "normal" : "commissioning");
+  }, [selectedAsset, commissioning]);
+
+  const knownTankSize = commissioning?.tank_size_l;
 
   // Sortiere Assets nach GPS-Naehe falls verfuegbar, sonst alphabetisch
   const sortedAssets = useMemo(() => {
@@ -131,37 +140,60 @@ export default function TankStatusPage() {
   }, [stromerzeuger, gps]);
 
   const submitReading = async () => {
-    if (!selectedAsset) { toast.error("Bitte Generator waehlen"); return; }
-    const fl = parseFloat(fuelLevelL);
-    if (!Number.isFinite(fl) || fl < 0) { toast.error("Tankstand in L eingeben"); return; }
+    if (!selectedAsset) { toast.error("Bitte Generator wählen"); return; }
     const payload = {
       asset_id: selectedAsset.id,
-      fuel_level_l: fl,
-      tank_size_l: knownTankSize ? undefined : parseFloat(tankSizeL),
-      load_kw: loadKw ? parseFloat(loadKw) : undefined,
-      runtime_h: runtimeH ? parseFloat(runtimeH) : undefined,
+      reading_type: readingMode,
       comment: comment || "",
       latitude: gps.lat ?? undefined,
       longitude: gps.lng ?? undefined,
     };
+
+    if (readingMode === "commissioning") {
+      const ts = parseFloat(tankSizeL);
+      const fl = parseFloat(fuelLevelL);
+      const rh = parseFloat(runtimeH);
+      const kwh = parseFloat(kwhTotal);
+      if (!Number.isFinite(ts) || ts <= 0) { toast.error("Tankgröße pflicht"); return; }
+      if (!Number.isFinite(fl) || fl < 0) { toast.error("Tankstand (L) pflicht"); return; }
+      if (!Number.isFinite(rh) || rh < 0) { toast.error("Betriebsstunden pflicht"); return; }
+      if (!Number.isFinite(kwh) || kwh < 0) { toast.error("kWh-Zählerstand pflicht"); return; }
+      payload.tank_size_l = ts;
+      payload.fuel_level_l = fl;
+      payload.runtime_h = rh;
+      payload.kwh_total = kwh;
+      if (loadKw) payload.load_kw = parseFloat(loadKw);
+    } else {
+      // normales Reading
+      const kwh = parseFloat(kwhTotal);
+      const lkw = parseFloat(loadKw);
+      const fl = parseFloat(fuelLevelL);
+      const fp = parseFloat(fuelPercent);
+      if (!Number.isFinite(kwh) || kwh < 0) { toast.error("kWh-Zählerstand pflicht"); return; }
+      if (!Number.isFinite(lkw) || lkw < 0) { toast.error("Aktuelle Last (kW) pflicht"); return; }
+      if (!Number.isFinite(fl) && !Number.isFinite(fp)) {
+        toast.error("Tankstand: bitte Liter ODER Prozent angeben");
+        return;
+      }
+      payload.kwh_total = kwh;
+      payload.load_kw = lkw;
+      if (Number.isFinite(fl)) payload.fuel_level_l = fl;
+      else payload.fuel_percent = fp;
+      if (runtimeH) payload.runtime_h = parseFloat(runtimeH);
+    }
+
     setSubmitting(true);
     try {
       const res = await api.post(`/orders/epirent/${pk}/tank-readings`, payload);
-      // Optional Foto hinterher hochladen
       if (photoFile && res.data?.id) {
         const fd = new FormData();
         fd.append("file", photoFile);
         try { await api.post(`/orders/epirent/${pk}/tank-readings/${res.data.id}/photo`, fd, { headers: { "Content-Type": "multipart/form-data" } }); }
         catch { toast.warning("Reading gespeichert, Foto-Upload fehlgeschlagen"); }
       }
-      toast.success("Tankstand erfasst");
-      // Reset
-      setFuelLevelL("");
-      setLoadKw("");
-      setRuntimeH("");
-      setComment("");
-      setPhotoFile(null);
-      setTankSizeL("");
+      toast.success(readingMode === "commissioning" ? "Inbetriebnahme erfasst" : "Tankstand erfasst");
+      setFuelLevelL(""); setFuelPercent(""); setLoadKw(""); setRuntimeH(""); setKwhTotal("");
+      setComment(""); setPhotoFile(null); setTankSizeL("");
       await loadAll();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Speichern fehlgeschlagen");
@@ -308,93 +340,107 @@ export default function TankStatusPage() {
               ) : (
                 <div className="space-y-3">
                   <div className="pb-2 border-b border-gray-100">
-                    <p className="text-xs text-gray-500">Tankstand für</p>
+                    <p className="text-xs text-gray-500">Erfassung für</p>
                     <p className="font-semibold text-gray-900">{selectedAsset.label}</p>
-                    {knownTankSize ? (
-                      <p className="text-[11px] text-emerald-600 mt-0.5">Tankgröße bereits hinterlegt: <span className="font-mono">{knownTankSize} L</span></p>
+                    {commissioning ? (
+                      <p className="text-[11px] text-emerald-600 mt-0.5">
+                        Inbetriebnahme am {formatEta(commissioning.recorded_at)} · Tankgröße {commissioning.tank_size_l} L
+                      </p>
                     ) : (
-                      <p className="text-[11px] text-amber-600 mt-0.5">Erster Eintrag — bitte Tankgröße angeben</p>
+                      <p className="text-[11px] text-amber-600 mt-0.5 font-semibold">
+                        ⚠️ Noch keine Inbetriebnahme — bitte zuerst Inbetriebnahme erfassen
+                      </p>
                     )}
                   </div>
 
-                  {!knownTankSize && (
-                    <div>
-                      <Label className="text-xs text-gray-600">Tankgröße (Liter) *</Label>
-                      <Input
-                        type="number" step="1" min="0"
-                        value={tankSizeL}
-                        onChange={(e) => setTankSizeL(e.target.value)}
-                        placeholder="z.B. 1000"
-                        data-testid="tank-size-input"
-                      />
+                  {/* Modus-Toggle - nur wenn Inbetriebnahme existiert (sonst hart auf commissioning) */}
+                  {commissioning && (
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-lg" data-testid="tank-mode-toggle">
+                      <button
+                        type="button"
+                        onClick={() => setReadingMode("normal")}
+                        className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-colors ${readingMode === "normal" ? "bg-white shadow text-amber-700" : "text-gray-500"}`}
+                        data-testid="tank-mode-normal"
+                      >
+                        Tankrunde
+                      </button>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label className="text-xs text-gray-600">Tankstand (Liter) *</Label>
-                      <Input
-                        type="number" step="1" min="0"
-                        value={fuelLevelL}
-                        onChange={(e) => setFuelLevelL(e.target.value)}
-                        placeholder="z.B. 850"
-                        data-testid="tank-fuel-input"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-600">Last (kW)</Label>
-                      <Input
-                        type="number" step="0.1" min="0"
-                        value={loadKw}
-                        onChange={(e) => setLoadKw(e.target.value)}
-                        placeholder="z.B. 45"
-                        data-testid="tank-load-input"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs text-gray-600">Betriebsstunden (h)</Label>
-                      <Input
-                        type="number" step="0.1" min="0"
-                        value={runtimeH}
-                        onChange={(e) => setRuntimeH(e.target.value)}
-                        placeholder="z.B. 124.5"
-                        data-testid="tank-runtime-input"
-                      />
-                      <p className="text-[10px] text-gray-400 mt-1">Aus Generator-Display ablesen — bessere Verbrauchsprognose</p>
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs text-gray-600">Kommentar</Label>
-                      <Input
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        placeholder="z.B. Refill durch Tankwagen"
-                        data-testid="tank-comment-input"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs text-gray-600 flex items-center gap-1">
-                        <Camera className="w-3 h-3" /> Foto Tank-Display (optional)
-                      </Label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
-                        className="mt-1 text-xs"
-                        data-testid="tank-photo-input"
-                      />
-                      {photoFile && <p className="text-[10px] text-gray-500 mt-1">{photoFile.name} · {Math.round(photoFile.size / 1024)} KB</p>}
-                    </div>
+                  {readingMode === "commissioning" ? (
+                    <>
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-800">
+                        <strong>Inbetriebnahme-Daten</strong> — alles Pflicht. Zeitstempel wird automatisch erfasst.
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-600">Tankgröße (Liter) *</Label>
+                        <Input type="number" step="1" min="0" value={tankSizeL} onChange={(e) => setTankSizeL(e.target.value)} placeholder="z.B. 1150" data-testid="tank-size-input" />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-600">Tankstand bei Inbetriebnahme (Liter) *</Label>
+                        <Input type="number" step="1" min="0" value={fuelLevelL} onChange={(e) => setFuelLevelL(e.target.value)} placeholder="z.B. 1100" data-testid="tank-fuel-input" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-gray-600">Betriebsstunden *</Label>
+                          <Input type="number" step="0.1" min="0" value={runtimeH} onChange={(e) => setRuntimeH(e.target.value)} placeholder="z.B. 8800.0" data-testid="tank-runtime-input" />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">kWh-Zählerstand *</Label>
+                          <Input type="number" step="0.1" min="0" value={kwhTotal} onChange={(e) => setKwhTotal(e.target.value)} placeholder="z.B. 12000.0" data-testid="tank-kwh-input" />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-[11px] text-emerald-800">
+                        <strong>Tankrunde</strong> — kWh + kW + (Liter ODER Prozent). Das jeweils Andere wird automatisch berechnet (Tankgröße: {knownTankSize} L).
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-gray-600">kWh-Zählerstand *</Label>
+                          <Input type="number" step="0.1" min="0" value={kwhTotal} onChange={(e) => setKwhTotal(e.target.value)} placeholder="kumuliert" data-testid="tank-kwh-input" />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Last (kW) *</Label>
+                          <Input type="number" step="0.1" min="0" value={loadKw} onChange={(e) => setLoadKw(e.target.value)} placeholder="aktuell" data-testid="tank-load-input" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-gray-600">Tankstand (Liter)</Label>
+                          <Input type="number" step="1" min="0" value={fuelLevelL} onChange={(e) => { setFuelLevelL(e.target.value); setFuelPercent(""); }} placeholder="z.B. 750" data-testid="tank-fuel-input" />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">ODER Prozent (%)</Label>
+                          <Input type="number" step="1" min="0" max="100" value={fuelPercent} onChange={(e) => { setFuelPercent(e.target.value); setFuelLevelL(""); }} placeholder="z.B. 65" data-testid="tank-percent-input" />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-600">Betriebsstunden (empfohlen für genaue Prognose)</Label>
+                        <Input type="number" step="0.1" min="0" value={runtimeH} onChange={(e) => setRuntimeH(e.target.value)} placeholder="vom Display ablesen" data-testid="tank-runtime-input" />
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <Label className="text-xs text-gray-600">Kommentar</Label>
+                    <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="z.B. Refill durch Tankwagen" data-testid="tank-comment-input" />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-600 flex items-center gap-1"><Camera className="w-3 h-3" /> Foto Tank-Display (optional)</Label>
+                    <input type="file" accept="image/*" capture="environment" onChange={(e) => setPhotoFile(e.target.files?.[0] || null)} className="mt-1 text-xs" data-testid="tank-photo-input" />
+                    {photoFile && <p className="text-[10px] text-gray-500 mt-1">{photoFile.name} · {Math.round(photoFile.size / 1024)} KB</p>}
                   </div>
 
                   <Button
                     onClick={submitReading}
-                    disabled={submitting || !fuelLevelL || (!knownTankSize && !tankSizeL)}
-                    className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                    disabled={submitting}
+                    className={`w-full ${readingMode === "commissioning" ? "bg-amber-500 hover:bg-amber-600" : "bg-emerald-500 hover:bg-emerald-600"} text-white`}
                     data-testid="tank-submit-btn"
                   >
                     {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Fuel className="w-4 h-4 mr-1" />}
-                    Tankstand speichern
+                    {readingMode === "commissioning" ? "Inbetriebnahme speichern" : "Tankstand speichern"}
                   </Button>
                 </div>
               )}

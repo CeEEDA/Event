@@ -1036,3 +1036,8 @@ Folgende P2-Items bleiben weiter im Backlog:
   **Frontend `OrderDetailPage.js`:** Neues Tile „Tankstatus" (amber Fuel-Icon) im Auftrags-Module-Grid, navigiert auf die neue Route.
   **Einsatzzentrale-Kiosk (`einsatzzentrale-kiosk.html`):** Neues Tile „⛽ Tankstatus" im Workspace, `renderTankPanel()` mit Read+Write (Liste sortierbar nach Kritikalitaet/Restzeit/Tankstand/Name, „Nur kritisch"-Toggle, „Erfassen"-Button pro Generator oeffnet ein In-Page-Modal). Auto-Refresh alle 30s. Syntax validiert (alle 5 Script-Bloecke parsen sauber).
   **Forecast-Beispiel:** Tag 1: 850 L, 120,5 h. Tag 2: 670 L, 130,5 h. Tag 3: 490 L, 140,5 h. → avg 18 L/h, hours_remaining 27.2, eta_empty +1 Tag.
+- 2026-05-30: **Tankstatus-Umbau: Inbetriebnahme + Normales Reading (P0):**
+  Workflow nun zweistufig:
+  1. **Inbetriebnahme** (einmalig pro Generator): Pflicht: tank_size_l, fuel_level_l, runtime_h, kwh_total. Zeitstempel automatisch. Backend verweigert weitere Commissioning-Eintraege fuer dasselbe Asset.
+  2. **Normales Reading** (ab da): Pflicht: kwh_total + load_kw + (fuel_level_l ODER fuel_percent). Das fehlende Mass wird aus Tankgroesse automatisch berechnet (z.B. 65 % von 1150 L → 747.5 L). Backend verweigert normale Readings bis Inbetriebnahme existiert.
+  CSV-Export erweitert um `reading_type` + `kwh_total`. Frontend `TankStatusPage.jsx` zeigt automatisch das richtige Formular: bei Auswahl eines Generators ohne Commissioning erscheint roter Warn-Header + Inbetriebnahme-Felder; nach Commissioning gruenes Banner + Normal-Felder mit Liter-ODER-Prozent-Doppelfeld. Einsatzzentrale-Kiosk-Modal spiegelt dieselbe Logik. E2E verifiziert: Inbetriebnahme 1150L/1100L/8800h/12000kWh → Normal-Reading 65 %/45kW/12450kWh → Backend rechnet 747.5 L aus.

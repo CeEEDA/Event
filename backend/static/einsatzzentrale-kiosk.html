@@ -2470,36 +2470,59 @@ function renderTankList() {
 
 function openTankErfassenModal() {
   var a = tankState.selectedAsset; if (!a) return;
-  // Letztes Reading -> Tank-Groesse uebernehmen
+  // Pruefen ob Inbetriebnahme existiert
   var f = tankState.forecast.find(function(x){return x.asset_id===a.id;});
+  var hasCommissioning = !!f; // forecast existiert nur wenn mindestens 1 Reading da ist - aber wir brauchen wirklich commissioning
+  // Backend liefert tank_size_l in forecast nur wenn commissioning existiert (oder ueberhaupt readings)
+  // Wir checken extra: Asset-IDs mit reading_type=commissioning. Da forecast alle Readings nutzt, vorher Pruefung via separatem Call:
+  // Vereinfacht: wenn `f` existiert UND f.tank_size_l > 0 -> Inbetriebnahme bereits da (alle Readings teilen tank_size_l)
+  var isCommissioning = !f;  // ohne forecast = noch keine Readings = Inbetriebnahme noetig
   var knownSize = f ? f.tank_size_l : null;
   var modal = document.createElement("div");
   modal.id = "tank-modal";
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px;";
   modal.innerHTML =
-    '<div style="background:white;border-radius:14px;max-width:480px;width:100%;padding:20px;box-shadow:0 25px 60px rgba(0,0,0,0.35);">' +
+    '<div style="background:white;border-radius:14px;max-width:480px;width:100%;padding:20px;box-shadow:0 25px 60px rgba(0,0,0,0.35);max-height:90vh;overflow:auto;">' +
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">' +
-        '<div style="width:40px;height:40px;border-radius:10px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:22px;">⛽</div>' +
-        '<div><h2 style="margin:0;font-size:16px;">Tankstand erfassen</h2>' +
+        '<div style="width:40px;height:40px;border-radius:10px;background:'+(isCommissioning?'#fef3c7':'#d1fae5')+';color:'+(isCommissioning?'#92400e':'#065f46')+';display:flex;align-items:center;justify-content:center;font-size:22px;">'+(isCommissioning?'🚀':'⛽')+'</div>' +
+        '<div><h2 style="margin:0;font-size:16px;">'+(isCommissioning?'Inbetriebnahme erfassen':'Tankrunde')+'</h2>' +
         '<div style="font-size:12px;color:#6b7280;">'+esc(a.label||"Generator")+'</div></div>' +
         '<button id="tank-modal-close" style="margin-left:auto;background:none;border:none;font-size:22px;cursor:pointer;color:#9ca3af;">×</button>' +
       '</div>' +
-      (knownSize ? '<div style="font-size:11px;color:#059669;margin-bottom:8px;">Tankgröße: <strong>'+knownSize+' L</strong></div>' :
-                   '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Tankgröße (Liter) *</label>' +
-                   '<input id="tank-size" type="number" placeholder="z.B. 1000" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>') +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
-        '<div><label style="font-size:12px;color:#6b7280;">Tankstand (L) *</label>' +
+      (isCommissioning ?
+        '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px;margin-bottom:10px;font-size:11px;color:#92400e;"><strong>Erst-Inbetriebnahme</strong> — alle Felder pflicht.</div>' +
+        '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Tankgröße (Liter) *</label>' +
+          '<input id="tank-size" type="number" placeholder="z.B. 1150" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+        '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Tankstand (L) *</label>' +
           '<input id="tank-fuel" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
-        '<div><label style="font-size:12px;color:#6b7280;">Last (kW)</label>' +
-          '<input id="tank-load" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
-      '</div>' +
-      '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Betriebsstunden</label>' +
-        '<input id="tank-runtime" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
+          '<div><label style="font-size:12px;color:#6b7280;">Betriebsstunden *</label>' +
+            '<input id="tank-runtime" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+          '<div><label style="font-size:12px;color:#6b7280;">kWh-Zähler *</label>' +
+            '<input id="tank-kwh" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+        '</div>'
+      :
+        '<div style="background:#d1fae5;border:1px solid #86efac;border-radius:8px;padding:8px;margin-bottom:10px;font-size:11px;color:#065f46;">Tankgröße: <strong>'+knownSize+' L</strong> · kWh + kW + (L oder %) pflicht.</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
+          '<div><label style="font-size:12px;color:#6b7280;">kWh-Zähler *</label>' +
+            '<input id="tank-kwh" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+          '<div><label style="font-size:12px;color:#6b7280;">Last (kW) *</label>' +
+            '<input id="tank-load" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
+          '<div><label style="font-size:12px;color:#6b7280;">Liter</label>' +
+            '<input id="tank-fuel" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+          '<div><label style="font-size:12px;color:#6b7280;">ODER Prozent</label>' +
+            '<input id="tank-pct" type="number" max="100" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+        '</div>' +
+        '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Betriebsstunden (für genauere Prognose)</label>' +
+          '<input id="tank-runtime" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>'
+      ) +
       '<div style="margin-bottom:14px;"><label style="font-size:12px;color:#6b7280;">Kommentar</label>' +
         '<input id="tank-comment" type="text" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
         '<button id="tank-modal-cancel" class="btn">Abbrechen</button>' +
-        '<button id="tank-modal-save" class="btn-primary">Speichern</button>' +
+        '<button id="tank-modal-save" class="btn-primary">'+(isCommissioning?'Inbetriebnahme speichern':'Speichern')+'</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(modal);
@@ -2509,16 +2532,28 @@ function openTankErfassenModal() {
   document.getElementById("tank-modal-cancel").addEventListener("click", closeModal);
   document.getElementById("tank-modal-save").addEventListener("click", function(){
     var pk = state.order.primary_key || state.order.order_pk;
-    var body = { asset_id: a.id };
-    var fl = parseFloat(document.getElementById("tank-fuel").value); if(!isFinite(fl)){ alert("Tankstand pflicht"); return; }
-    body.fuel_level_l = fl;
-    if (!knownSize) {
+    var body = { asset_id: a.id, reading_type: isCommissioning ? "commissioning" : "normal" };
+    var kwh = parseFloat(document.getElementById("tank-kwh").value);
+    var fl = parseFloat(document.getElementById("tank-fuel").value);
+    var rt = parseFloat(document.getElementById("tank-runtime").value);
+    if (isCommissioning) {
       var ts = parseFloat(document.getElementById("tank-size").value);
-      if (!isFinite(ts)){ alert("Tankgröße pflicht beim ersten Eintrag"); return; }
-      body.tank_size_l = ts;
+      if (!isFinite(ts)) { alert("Tankgröße pflicht"); return; }
+      if (!isFinite(fl)) { alert("Tankstand pflicht"); return; }
+      if (!isFinite(rt)) { alert("Betriebsstunden pflicht"); return; }
+      if (!isFinite(kwh)) { alert("kWh-Zähler pflicht"); return; }
+      body.tank_size_l = ts; body.fuel_level_l = fl; body.runtime_h = rt; body.kwh_total = kwh;
+    } else {
+      var lv = parseFloat(document.getElementById("tank-load").value);
+      var pct = parseFloat(document.getElementById("tank-pct").value);
+      if (!isFinite(kwh)) { alert("kWh-Zähler pflicht"); return; }
+      if (!isFinite(lv)) { alert("Last (kW) pflicht"); return; }
+      if (!isFinite(fl) && !isFinite(pct)) { alert("Liter ODER Prozent pflicht"); return; }
+      body.kwh_total = kwh; body.load_kw = lv;
+      if (isFinite(fl)) body.fuel_level_l = fl;
+      else body.fuel_percent = pct;
+      if (isFinite(rt)) body.runtime_h = rt;
     }
-    var lv = parseFloat(document.getElementById("tank-load").value); if(isFinite(lv)) body.load_kw = lv;
-    var rt = parseFloat(document.getElementById("tank-runtime").value); if(isFinite(rt)) body.runtime_h = rt;
     var cm = document.getElementById("tank-comment").value; if(cm) body.comment = cm;
     api("/api/orders/epirent/" + pk + "/tank-readings", { method: "POST", body: body })
       .then(function(){ closeModal(); loadTankData(renderTankList); })

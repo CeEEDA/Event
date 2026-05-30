@@ -48,11 +48,13 @@ async def _auth_user(creds: HTTPAuthorizationCredentials = Depends(security)) ->
 
 class TankReadingCreate(BaseModel):
     asset_id: str
-    tank_size_l: Optional[float] = None  # nur beim ersten Reading je Asset Pflicht
-    fuel_level_l: float
+    reading_type: Optional[str] = "normal"  # "commissioning" oder "normal"
+    tank_size_l: Optional[float] = None  # nur bei commissioning Pflicht
+    fuel_level_l: Optional[float] = None
     fuel_percent: Optional[float] = None
     load_kw: Optional[float] = None
-    runtime_h: Optional[float] = None
+    runtime_h: Optional[float] = None  # Betriebsstunden Generator-Display
+    kwh_total: Optional[float] = None  # kWh-Zaehlerstand kumuliert
     comment: Optional[str] = ""
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -71,21 +73,50 @@ async def create_tank_reading(
     if (asset.get("asset_type") or "").lower() != "stromerzeuger":
         raise HTTPException(status_code=400, detail="Tankstatus nur fuer Stromerzeuger")
 
-    # Tankgroesse: beim ersten Reading des Assets Pflicht, danach aus letztem Reading uebernehmen
-    last = await _db.tank_readings.find_one(
-        {"order_pk": order_pk, "asset_id": data.asset_id},
+    reading_type = (data.reading_type or "normal").lower()
+    existing_commissioning = await _db.tank_readings.find_one(
+        {"order_pk": order_pk, "asset_id": data.asset_id, "reading_type": "commissioning"},
         {"_id": 0, "tank_size_l": 1},
-        sort=[("recorded_at", -1)],
     )
-    tank_size_l = data.tank_size_l
-    if last and last.get("tank_size_l"):
-        tank_size_l = tank_size_l or last["tank_size_l"]
-    if not tank_size_l or tank_size_l <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Tankgroesse muss beim ersten Eintrag fuer dieses Asset angegeben werden",
-        )
-    if data.fuel_level_l < 0 or data.fuel_level_l > tank_size_l * 1.05:
+
+    if reading_type == "commissioning":
+        # Pflicht: tank_size_l, fuel_level_l, runtime_h, kwh_total
+        if existing_commissioning:
+            raise HTTPException(status_code=400, detail="Inbetriebnahme bereits erfasst")
+        missing = []
+        if not data.tank_size_l or data.tank_size_l <= 0: missing.append("Tankgroesse")
+        if data.fuel_level_l is None: missing.append("Tankstand (L)")
+        if data.runtime_h is None: missing.append("Betriebsstunden")
+        if data.kwh_total is None: missing.append("kWh-Zaehlerstand")
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Pflichtfelder fehlen: {', '.join(missing)}")
+        tank_size_l = float(data.tank_size_l)
+        fuel_level_l = float(data.fuel_level_l)
+        fuel_percent = round(fuel_level_l / tank_size_l * 100, 1)
+    else:
+        # Normales Reading: erst nach Inbetriebnahme moeglich
+        if not existing_commissioning:
+            raise HTTPException(
+                status_code=400,
+                detail="Bitte zuerst Inbetriebnahme erfassen (Tankgroesse + Betriebsstunden + kWh)",
+            )
+        tank_size_l = float(existing_commissioning["tank_size_l"])
+        missing = []
+        if data.kwh_total is None: missing.append("kWh-Zaehlerstand")
+        if data.load_kw is None: missing.append("Aktuelle Last (kW)")
+        if data.fuel_level_l is None and data.fuel_percent is None:
+            missing.append("Tankstand (L) oder Prozent")
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Pflichtfelder fehlen: {', '.join(missing)}")
+        # Liter <-> Prozent autom. berechnen, je nachdem was angegeben wurde
+        if data.fuel_level_l is not None:
+            fuel_level_l = float(data.fuel_level_l)
+            fuel_percent = round(fuel_level_l / tank_size_l * 100, 1)
+        else:
+            fuel_percent = float(data.fuel_percent)
+            fuel_level_l = round(tank_size_l * fuel_percent / 100, 1)
+
+    if fuel_level_l < 0 or fuel_level_l > tank_size_l * 1.05:
         raise HTTPException(status_code=400, detail="Tankstand liegt ausserhalb plausibler Grenzen")
 
     doc = {
@@ -94,12 +125,14 @@ async def create_tank_reading(
         "asset_id": data.asset_id,
         "asset_label": asset.get("label") or "",
         "asset_type": asset.get("asset_type") or "",
+        "reading_type": reading_type,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
-        "tank_size_l": float(tank_size_l),
-        "fuel_level_l": float(data.fuel_level_l),
-        "fuel_percent": float(data.fuel_percent) if data.fuel_percent is not None else round(data.fuel_level_l / tank_size_l * 100, 1),
+        "tank_size_l": tank_size_l,
+        "fuel_level_l": fuel_level_l,
+        "fuel_percent": fuel_percent,
         "load_kw": float(data.load_kw) if data.load_kw is not None else None,
         "runtime_h": float(data.runtime_h) if data.runtime_h is not None else None,
+        "kwh_total": float(data.kwh_total) if data.kwh_total is not None else None,
         "comment": (data.comment or "").strip(),
         "photo_id": None,
         "created_by": user.get("name") or user.get("email") or "",
@@ -250,18 +283,20 @@ async def export_tank_readings_csv(order_pk: int, user: dict = Depends(_auth_use
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
     writer.writerow([
-        "recorded_at", "asset_label", "tank_size_l", "fuel_level_l", "fuel_percent",
-        "load_kw", "runtime_h", "latitude", "longitude", "comment", "created_by",
+        "recorded_at", "reading_type", "asset_label", "tank_size_l", "fuel_level_l", "fuel_percent",
+        "load_kw", "runtime_h", "kwh_total", "latitude", "longitude", "comment", "created_by",
     ])
     for r in rows:
         writer.writerow([
             r.get("recorded_at", ""),
+            r.get("reading_type", "normal"),
             r.get("asset_label", ""),
             r.get("tank_size_l", ""),
             r.get("fuel_level_l", ""),
             r.get("fuel_percent", ""),
             r.get("load_kw", "") if r.get("load_kw") is not None else "",
             r.get("runtime_h", "") if r.get("runtime_h") is not None else "",
+            r.get("kwh_total", "") if r.get("kwh_total") is not None else "",
             r.get("latitude", "") if r.get("latitude") is not None else "",
             r.get("longitude", "") if r.get("longitude") is not None else "",
             (r.get("comment") or "").replace("\n", " "),
