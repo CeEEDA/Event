@@ -803,49 +803,7 @@ def _generate_delivery_note_pdf(
     logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "portal_logo.png")
 
     def draw_header_footer(canv, doc):
-        canv.saveState()
-        # ===== HEADER: Logo gross + duenne Trennlinie =====
-        if os.path.exists(logo_path):
-            # Portal-Logo: 460x107 -> Verhaeltnis ~4.3:1. Wir nehmen 50mm breit
-            logo_w = 50*mm
-            logo_h = logo_w / 4.3
-            canv.drawImage(logo_path, LEFT, page_h - 10*mm - logo_h,
-                           width=logo_w, height=logo_h, mask="auto", preserveAspectRatio=True)
-        # duenne Trennlinie
-        canv.setStrokeColor(PURPLE)
-        canv.setLineWidth(0.4)
-        canv.line(LEFT, page_h - 23*mm, page_w - RIGHT, page_h - 23*mm)
-
-        # ===== FOOTER mit nur 2 Spalten (Adresse / Registereintrag) =====
-        footer_y = 22*mm
-        canv.setStrokeColor(BORDER)
-        canv.setLineWidth(0.3)
-        canv.line(LEFT, footer_y, page_w - RIGHT, footer_y)
-
-        col_w = USABLE_W / 2.0
-        cols = [
-            ("Eventenergie Deutschland GmbH & Co. KG",
-             "Thyssenstraße 10",
-             "56626 Andernach",
-             "Tel.: +49 (0) 2632 30921-0",
-             "Hotline: +49 (0) 800 POWER24",
-             "info@eventenergie-deutschland.de",
-             "www.eventenergie-deutschland.de"),
-            ("Amtsgericht Koblenz: HRA 22723",
-             "Finanzamt Mayen",
-             "Ust.-ID: DE 333489815"),
-        ]
-        for ci, lines in enumerate(cols):
-            x = LEFT + ci * col_w + 2
-            for li, txt in enumerate(lines):
-                canv.setFont("Helvetica", 6)
-                canv.setFillColor(MUTED)
-                canv.drawString(x, footer_y - 4 - li * 7, txt)
-        # Seiten-Nr
-        canv.setFont("Helvetica", 6.5)
-        canv.setFillColor(MUTED)
-        canv.drawRightString(page_w - RIGHT, 8*mm, f"Seite {doc.page}")
-        canv.restoreState()
+        _draw_ee_brand_chrome(canv, doc)
 
     doc = BaseDocTemplate(
         buf, pagesize=A4,
@@ -1150,6 +1108,69 @@ async def _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk):
     except Exception as e:
         logger.warning(f"Kontakt-Lookup fehlgeschlagen fuer PK={contact_pk}: {e}")
     return out
+
+
+def _draw_ee_brand_chrome(canv, doc, page_w_mm=None, footer_y_mm=22, top_mm=10, left_mm=18, right_mm=18):
+    """Wiederverwendbarer Painter fuer Eventenergie-Briefpapier-Header/Footer.
+
+    Wird sowohl vom Lieferschein als auch von der Abrechnungs-PDF benutzt,
+    damit beide Dokumente identisch aussehen.
+    Erwartet: A4 Pagesize.
+    """
+    import os
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as _c
+
+    PURPLE = _c.HexColor("#7c3aed")
+    BORDER = _c.HexColor("#d1d5db")
+    MUTED = _c.HexColor("#6b7280")
+    page_w, page_h = A4
+    LEFT = left_mm * mm
+    RIGHT = right_mm * mm
+
+    canv.saveState()
+    # ===== HEADER: Logo (50mm breit) + Purple-Trennlinie =====
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "portal_logo.png")
+    if os.path.exists(logo_path):
+        logo_w = 50 * mm
+        logo_h = logo_w / 4.3
+        canv.drawImage(logo_path, LEFT, page_h - top_mm * mm - logo_h,
+                       width=logo_w, height=logo_h, mask="auto", preserveAspectRatio=True)
+    canv.setStrokeColor(PURPLE)
+    canv.setLineWidth(0.4)
+    canv.line(LEFT, page_h - 23 * mm, page_w - RIGHT, page_h - 23 * mm)
+
+    # ===== FOOTER: 2-Spalten Pflichtangaben =====
+    footer_y = footer_y_mm * mm
+    canv.setStrokeColor(BORDER)
+    canv.setLineWidth(0.3)
+    canv.line(LEFT, footer_y, page_w - RIGHT, footer_y)
+    USABLE_W = page_w - LEFT - RIGHT
+    col_w = USABLE_W / 2.0
+    cols = [
+        ("Eventenergie Deutschland GmbH & Co. KG",
+         "Thyssenstraße 10",
+         "56626 Andernach",
+         "Tel.: +49 (0) 2632 30921-0",
+         "Hotline: +49 (0) 800 POWER24",
+         "info@eventenergie-deutschland.de",
+         "www.eventenergie-deutschland.de"),
+        ("Amtsgericht Koblenz: HRA 22723",
+         "Finanzamt Mayen",
+         "Ust.-ID: DE 333489815"),
+    ]
+    for ci, lines in enumerate(cols):
+        x = LEFT + ci * col_w + 2
+        for li, txt in enumerate(lines):
+            canv.setFont("Helvetica", 6)
+            canv.setFillColor(MUTED)
+            canv.drawString(x, footer_y - 4 - li * 7, txt)
+    # Seiten-Nr rechts
+    canv.setFont("Helvetica", 6.5)
+    canv.setFillColor(MUTED)
+    canv.drawRightString(page_w - RIGHT, 8 * mm, f"Seite {doc.page}")
+    canv.restoreState()
 
 
 async def _fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk):
@@ -2349,22 +2370,23 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     s_small = ParagraphStyle("SM", fontSize=7, textColor=colors.grey)
 
     pw, ph = A4
-    W = pw - 30*mm
+    W = pw - 36*mm  # 18mm Rand links + rechts (wie Lieferschein)
 
     # ═══════════════════════════════════════
     # PART 1: Summary pages (platypus)
     # ═══════════════════════════════════════
     summary_buf = io.BytesIO()
-    doc = SimpleDocTemplate(summary_buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    # SimpleDocTemplate mit Brand-Chrome via onFirstPage/onLaterPages.
+    # topMargin = 30mm (Header bis 23mm + Puffer); bottomMargin = 30mm (Footer ab 22mm + Puffer)
+    doc = SimpleDocTemplate(
+        summary_buf, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm,
+        topMargin=30*mm, bottomMargin=30*mm,
+    )
     elems = []
 
-    # Logo
-    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "logo.png")
-    if os.path.exists(logo_path):
-        elems.append(RLImage(logo_path, width=55*mm, height=12.8*mm))
-    elems.append(Spacer(1, 10*mm))
-    elems.append(Paragraph("Dokumentation", s_title))
-    elems.append(Spacer(1, 8*mm))
+    elems.append(Paragraph("Abrechnungs-Doku", s_title))
+    elems.append(Spacer(1, 4*mm))
 
     # Cover info
     cover = [
@@ -2501,7 +2523,7 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
         ]))
         elems.append(ft)
 
-    doc.build(elems)
+    doc.build(elems, onFirstPage=_draw_ee_brand_chrome, onLaterPages=_draw_ee_brand_chrome)
     summary_buf.seek(0)
 
     # ═══════════════════════════════════════

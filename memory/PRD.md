@@ -339,6 +339,17 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Abrechnungs-PDF im Lieferschein-Design (Brand-Chrome)
+- 🎯 **User-Request**: Abrechnungs-PDF auf das gleiche Design wie der Lieferschein umstellen.
+- ✅ **Refactoring**: Header/Footer-Painter zu wiederverwendbarem Modul-Helper `_draw_ee_brand_chrome(canv, doc)` extrahiert. Lieferschein-PDF nutzt ihn jetzt via `PageTemplate.onPage`, Abrechnungs-PDF via `SimpleDocTemplate.build(onFirstPage=, onLaterPages=)`.
+- ✅ **Abrechnungs-PDF** (`GET /api/orders/epirent/{pk}/billing-pdf`):
+  - Inline-Logo (alt: `static/logo.png`, 55×12.8mm) durch das Portal-Logo (50mm) im Helper ersetzt.
+  - Alter "Dokumentation"-Titel → "Abrechnungs-Doku" in Purple (gleich wie "Lieferschein").
+  - 2-Spalten-Pflichtangaben-Footer + Purple-Trennlinie + Seitennummerierung jetzt auf allen Seiten.
+  - Margins angepasst (top=30mm, bottom=30mm, left/right=18mm) damit Content nicht mit Header/Footer kollidiert.
+  - `W = pw - 36*mm` (entspricht 18mm Rand wie Lieferschein), vorher `pw - 30*mm`.
+- ✅ **Verifikation für Auftrag 21 (Rock am Ring)**: 23 Seiten generiert (Cover + Stunden + 4 Lieferscheine eingebettet). Übersichtstabelle zeigt "Lieferscheine: 4". Logo oben links, Footer ohne Geschäftsführung/IBAN.
+
 ### Mai 2026 – Lieferschein V7: Kunden-E-Mail Default + Manuelle Eingabe
 - 🎯 **User-Request**: "Default E-Mail als erste, unten manuell eintragen und versenden."
 - 🔍 **EpiRent-Datenstruktur**: E-Mails sind im `communication[]`-Array des Kontakts (type=3 = E-Mail, `is_invoice=true` markiert Rechnungs-Mail, `uplink` = die Adresse).
