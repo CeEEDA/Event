@@ -2098,6 +2098,10 @@ from routes.order_diary import router as order_diary_router, init_order_diary_ro
 init_order_diary_routes(db, decode_jwt_token)
 app.include_router(order_diary_router)
 
+from routes.tank_status import router as tank_status_router, init_tank_status_routes
+init_tank_status_routes(db, decode_jwt_token)
+app.include_router(tank_status_router)
+
 from routes.einsatzzentrale import router as einsatzzentrale_router, init_einsatzzentrale_routes
 init_einsatzzentrale_routes(db, verify_password, create_jwt_token, decode_jwt_token, get_default_apps)
 app.include_router(einsatzzentrale_router)

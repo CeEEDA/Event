@@ -1369,6 +1369,7 @@ export default function OrderDetailPage() {
                   { key: "documents-link", label: "Dokumente", desc: "Lageplan, Fotos & Unterlagen", icon: FolderOpen, color: "fuchsia", count: docCount },
                   { key: "reports", label: "Projektberichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
                   { key: "fuel", label: "Tankbelege", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
+                  { key: "tankstatus", label: "Tankstatus", desc: "Tankrunde · Prognose · CSV", icon: Fuel, color: "amber", count: 0, isLink: true },
                   { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
                   { key: "diary", label: "Einsatztagebuch", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
                 ].filter(t => !t.hideForFreelancer || !isFreelancer).map((t) => {
@@ -1391,6 +1392,10 @@ export default function OrderDetailPage() {
                         }
                         if (t.key === "documents-link") {
                           navigate(`/orders/${pk}/dokumente`);
+                          return;
+                        }
+                        if (t.key === "tankstatus") {
+                          navigate(`/orders/${pk}/tankstatus`);
                           return;
                         }
                         setActiveTab(t.key);

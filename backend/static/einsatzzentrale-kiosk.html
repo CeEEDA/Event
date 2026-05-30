@@ -1057,6 +1057,7 @@ function renderOrderSelect() {
 // ============================================================================
 var TILES = [
   { key:"maschinen", label:"Maschinenliste", desc:"Generatoren, Verteiler, Lichtmasten", icon:"⚙️", cls:"tile-bg-emerald" },
+  { key:"tank",      label:"Tankstatus",     desc:"Tankrunde · Prognose · Refill",        icon:"⛽", cls:"tile-bg-amber" },
   { key:"diary",     label:"Einsatztagebuch", desc:"Störungen & Verlauf",                  icon:"📓", cls:"tile-bg-slate" },
   { key:"docs",      label:"Dokumentenablage",desc:"Pläne, Fotos, Messprotokolle",         icon:"📂", cls:"tile-bg-blue" },
   { key:"artikel",   label:"Artikelliste",    desc:"Alle positionierten Artikel ansehen",  icon:"📍", cls:"tile-bg-fuchsia" },
@@ -1323,6 +1324,7 @@ function renderTilePanel() {
   if (state.activeTile === "docs") { return renderDocsPanel(); }
   if (state.activeTile === "maschinen") { return renderMaschinenPanel(); }
   if (state.activeTile === "multi") { return renderMultiPanel(); }
+  if (state.activeTile === "tank") { return renderTankPanel(); }
   // Platzhalter fuer die noch-nicht-implementierten Tiles
   var root = document.getElementById("root"); root.innerHTML = "";
   root.appendChild($(
@@ -2339,6 +2341,190 @@ var DOC_CATS = [
   { key:"fotos",          label:"Fotos",          icon:"📷" },
   { key:"sonstiges",      label:"Sonstiges",      icon:"📄" }
 ];
+
+// ============================================================================
+// TANKSTATUS - Read+Write Panel
+// Use-Case: Tankwagen-Trupp am Kiosk-Pi sieht sofort wer kritisch ist und
+// kann direkt am Pi den neuen Tankstand erfassen, ohne in die React-App
+// muessen. Sortierung nach Kritikalitaet, Refresh alle 30s.
+// ============================================================================
+var tankState = { forecast: [], assets: [], selectedAsset: null, sortBy: "criticality", onlyCritical: false };
+var tankRefreshTimer = null;
+
+function loadTankData(cb) {
+  var o = state.order; if (!o) return;
+  var pk = o.primary_key || o.order_pk;
+  Promise.all([
+    api("/api/orders/epirent/" + pk + "/assets").catch(function(){ return { assets: [] }; }),
+    api("/api/orders/epirent/" + pk + "/tank-readings/forecast").catch(function(){ return { forecast: [] }; }),
+  ]).then(function(arr){
+    tankState.assets = (arr[0].assets || []).filter(function(a){
+      return (a.asset_type || "").toLowerCase() === "stromerzeuger";
+    });
+    tankState.forecast = arr[1].forecast || [];
+    if (cb) cb();
+  });
+}
+
+function renderTankPanel() {
+  var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }
+  var root = document.getElementById("root"); root.innerHTML = "";
+  root.appendChild($(
+    '<div>' + renderHeader("Auftrag #" + (o.order_no || o.primary_key) + " · Tankstatus") +
+    '<main class="kiosk-main">' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">' +
+        '<button id="tank-back" class="btn">← Zurück</button>' +
+        '<label style="font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">' +
+          '<input type="checkbox" id="tank-only-critical"' + (tankState.onlyCritical ? " checked" : "") + '/> Nur kritisch/warn' +
+        '</label>' +
+        '<select id="tank-sort" style="padding:6px 10px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">' +
+          '<option value="criticality"' + (tankState.sortBy==="criticality"?" selected":"") + '>Kritikalität</option>' +
+          '<option value="hours_asc"' + (tankState.sortBy==="hours_asc"?" selected":"") + '>Restzeit ↑</option>' +
+          '<option value="fuel_asc"' + (tankState.sortBy==="fuel_asc"?" selected":"") + '>Tankstand ↑</option>' +
+          '<option value="label"' + (tankState.sortBy==="label"?" selected":"") + '>Name A-Z</option>' +
+        '</select>' +
+        '<div style="margin-left:auto;font-size:12px;color:var(--text-muted);">Auto-Refresh 30 s</div>' +
+      '</div>' +
+      '<div id="tank-list"><div class="empty"><div class="spinner" style="margin:0 auto"></div></div></div>' +
+    '</main></div>'
+  ));
+  attachLogout();
+  document.getElementById("tank-back").addEventListener("click", function(){ state.activeTile=null; state.phase="workspace"; if(tankRefreshTimer){clearInterval(tankRefreshTimer);tankRefreshTimer=null;} render(); });
+  document.getElementById("tank-only-critical").addEventListener("change", function(e){ tankState.onlyCritical = e.target.checked; renderTankList(); });
+  document.getElementById("tank-sort").addEventListener("change", function(e){ tankState.sortBy = e.target.value; renderTankList(); });
+
+  loadTankData(renderTankList);
+  if (tankRefreshTimer) clearInterval(tankRefreshTimer);
+  tankRefreshTimer = setInterval(function(){ loadTankData(renderTankList); }, 30000);
+}
+
+function tankCritColor(c) {
+  return c === "critical" ? "#dc2626" : (c === "warn" ? "#d97706" : "#059669");
+}
+
+function renderTankList() {
+  var el = document.getElementById("tank-list"); if (!el) return;
+  var fc = tankState.forecast.slice();
+  if (tankState.onlyCritical) fc = fc.filter(function(f){ return f.criticality === "critical" || f.criticality === "warn"; });
+  if (tankState.sortBy === "hours_asc") fc.sort(function(a,b){ return (a.hours_remaining||1e9)-(b.hours_remaining||1e9); });
+  else if (tankState.sortBy === "fuel_asc") fc.sort(function(a,b){ return (a.current_fuel_l||1e9)-(b.current_fuel_l||1e9); });
+  else if (tankState.sortBy === "label") fc.sort(function(a,b){ return (a.asset_label||"").localeCompare(b.asset_label||""); });
+
+  // Plus: Generatoren ohne Reading anzeigen
+  var seen = {}; fc.forEach(function(f){ seen[f.asset_id] = true; });
+  var pristine = tankState.assets.filter(function(a){ return !seen[a.id]; });
+
+  if (fc.length === 0 && pristine.length === 0) {
+    el.innerHTML = '<div class="empty">Keine Stromerzeuger im Auftrag.</div>';
+    return;
+  }
+
+  var html = '<div style="display:grid;gap:10px;">';
+  fc.forEach(function(f){
+    var color = tankCritColor(f.criticality);
+    var percent = Math.max(2, Math.min(100, f.current_percent||0));
+    var critLabel = f.criticality === "critical" ? "KRITISCH" : (f.criticality === "warn" ? "WARNUNG" : "OK");
+    html += '<div class="kiosk-card" style="padding:14px;border-left:6px solid '+color+';">' +
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<strong style="font-size:15px;">'+esc(f.asset_label||"Generator")+'</strong>' +
+            '<span style="font-size:11px;font-weight:700;color:'+color+';">'+critLabel+'</span>' +
+            '<span style="font-size:11px;color:#9ca3af;">'+f.readings_count+' Readings</span>' +
+          '</div>' +
+          '<div style="height:8px;background:#e5e7eb;border-radius:999px;margin:8px 0;overflow:hidden;">' +
+            '<div style="height:100%;background:'+color+';width:'+percent+'%;"></div>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;font-size:12px;">' +
+            '<div><span style="color:#9ca3af;">Tankstand:</span> <strong>'+f.current_fuel_l+' / '+f.tank_size_l+' L</strong> ('+(f.current_percent||0)+'%)</div>' +
+            '<div><span style="color:#9ca3af;">Ø Verbrauch:</span> <strong>'+(f.avg_lph!=null?f.avg_lph+' L/h':"—")+'</strong></div>' +
+            '<div><span style="color:#9ca3af;">Restzeit:</span> <strong>'+(f.hours_remaining!=null?f.hours_remaining+' h':"—")+'</strong></div>' +
+            '<div><span style="color:#9ca3af;">Leer ab:</span> <strong>'+(f.eta_empty?new Date(f.eta_empty).toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"}):"—")+'</strong></div>' +
+          '</div>' +
+        '</div>' +
+        '<button class="btn-primary tank-quick-erfassen" data-asset-id="'+f.asset_id+'" style="white-space:nowrap;">⛽ Erfassen</button>' +
+      '</div>' +
+    '</div>';
+  });
+  if (pristine.length > 0) {
+    html += '<div style="margin-top:8px;font-size:12px;color:#6b7280;font-weight:600;">Noch ohne Reading ('+pristine.length+'):</div>';
+    pristine.forEach(function(a){
+      html += '<div class="kiosk-card" style="padding:10px 14px;display:flex;align-items:center;gap:12px;background:#f9fafb;">' +
+        '<strong style="flex:1;">'+esc(a.label||"Stromerzeuger")+'</strong>' +
+        '<button class="btn-primary tank-quick-erfassen" data-asset-id="'+a.id+'">⛽ Erstes Reading</button>' +
+      '</div>';
+    });
+  }
+  html += '</div>';
+  el.innerHTML = html;
+
+  Array.prototype.forEach.call(document.querySelectorAll(".tank-quick-erfassen"), function(btn){
+    btn.addEventListener("click", function(){
+      var aid = btn.getAttribute("data-asset-id");
+      var asset = tankState.assets.find(function(x){return x.id===aid;});
+      tankState.selectedAsset = asset || { id: aid, label: aid };
+      openTankErfassenModal();
+    });
+  });
+}
+
+function openTankErfassenModal() {
+  var a = tankState.selectedAsset; if (!a) return;
+  // Letztes Reading -> Tank-Groesse uebernehmen
+  var f = tankState.forecast.find(function(x){return x.asset_id===a.id;});
+  var knownSize = f ? f.tank_size_l : null;
+  var modal = document.createElement("div");
+  modal.id = "tank-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px;";
+  modal.innerHTML =
+    '<div style="background:white;border-radius:14px;max-width:480px;width:100%;padding:20px;box-shadow:0 25px 60px rgba(0,0,0,0.35);">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">' +
+        '<div style="width:40px;height:40px;border-radius:10px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:22px;">⛽</div>' +
+        '<div><h2 style="margin:0;font-size:16px;">Tankstand erfassen</h2>' +
+        '<div style="font-size:12px;color:#6b7280;">'+esc(a.label||"Generator")+'</div></div>' +
+        '<button id="tank-modal-close" style="margin-left:auto;background:none;border:none;font-size:22px;cursor:pointer;color:#9ca3af;">×</button>' +
+      '</div>' +
+      (knownSize ? '<div style="font-size:11px;color:#059669;margin-bottom:8px;">Tankgröße: <strong>'+knownSize+' L</strong></div>' :
+                   '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Tankgröße (Liter) *</label>' +
+                   '<input id="tank-size" type="number" placeholder="z.B. 1000" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>') +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">' +
+        '<div><label style="font-size:12px;color:#6b7280;">Tankstand (L) *</label>' +
+          '<input id="tank-fuel" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+        '<div><label style="font-size:12px;color:#6b7280;">Last (kW)</label>' +
+          '<input id="tank-load" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+      '</div>' +
+      '<div style="margin-bottom:10px;"><label style="font-size:12px;color:#6b7280;">Betriebsstunden</label>' +
+        '<input id="tank-runtime" type="number" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+      '<div style="margin-bottom:14px;"><label style="font-size:12px;color:#6b7280;">Kommentar</label>' +
+        '<input id="tank-comment" type="text" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin-top:4px;"/></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+        '<button id="tank-modal-cancel" class="btn">Abbrechen</button>' +
+        '<button id="tank-modal-save" class="btn-primary">Speichern</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  function closeModal(){ if(modal && modal.parentNode){ modal.parentNode.removeChild(modal); } }
+  document.getElementById("tank-modal-close").addEventListener("click", closeModal);
+  document.getElementById("tank-modal-cancel").addEventListener("click", closeModal);
+  document.getElementById("tank-modal-save").addEventListener("click", function(){
+    var pk = state.order.primary_key || state.order.order_pk;
+    var body = { asset_id: a.id };
+    var fl = parseFloat(document.getElementById("tank-fuel").value); if(!isFinite(fl)){ alert("Tankstand pflicht"); return; }
+    body.fuel_level_l = fl;
+    if (!knownSize) {
+      var ts = parseFloat(document.getElementById("tank-size").value);
+      if (!isFinite(ts)){ alert("Tankgröße pflicht beim ersten Eintrag"); return; }
+      body.tank_size_l = ts;
+    }
+    var lv = parseFloat(document.getElementById("tank-load").value); if(isFinite(lv)) body.load_kw = lv;
+    var rt = parseFloat(document.getElementById("tank-runtime").value); if(isFinite(rt)) body.runtime_h = rt;
+    var cm = document.getElementById("tank-comment").value; if(cm) body.comment = cm;
+    api("/api/orders/epirent/" + pk + "/tank-readings", { method: "POST", body: body })
+      .then(function(){ closeModal(); loadTankData(renderTankList); })
+      .catch(function(e){ alert("Speichern fehlgeschlagen: " + (e.message || e)); });
+  });
+}
 
 function renderDocsPanel() {
   var o = state.order; if (!o) { state.phase = "workspace"; render(); return; }

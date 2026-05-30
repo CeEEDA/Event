@@ -38,6 +38,7 @@ import ProjectReportFormPage from "./pages/ProjectReportFormPage";
 import StundenberichteListPage from "./pages/StundenberichteListPage";
 import TextbausteineAdminPage from "./pages/TextbausteineAdminPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
+import TankStatusPage from "./pages/TankStatusPage";
 import FinancePage from "./pages/FinancePage";
 import VerwaltungPage from "./pages/VerwaltungPage";
 import FuelManagementPage from "./pages/FuelManagementPage";
@@ -252,6 +253,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <OrderDocumentsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/orders/:pk/tankstatus"
+        element={
+          <ProtectedRoute>
+            <TankStatusPage />
           </ProtectedRoute>
         }
       />
