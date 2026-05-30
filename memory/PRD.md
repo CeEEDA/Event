@@ -340,24 +340,25 @@ Folgende P2-Items bleiben weiter im Backlog:
 ## Implementation Log
 
 ### Mai 2026 – Lieferschein-PDF im Eventenergie-Briefpapier-Stil (P1, Feature)
-- 🎯 **User-Request**: Lieferscheine generieren für EpiRent-Aufträge. Design = Kombi aus dem Eventenergie-Briefpapier (Logo, Pflichtangaben-Footer) und dem bestehenden Projektbericht-PDF-Stil (Purple #7c3aed Tabellen-Header, Helvetica, sauberes 3-Spalten-Meta-Layout). Positionen sollen die 3 Top-Level-Kapitel aus EpiRent sein (z.B. Wandlermessung / Verteiler / Zuleitung & Zubehör), keine Untersub-Items.
+- 🎯 **User-Request**: Lieferscheine generieren für EpiRent-Aufträge. Design = Kombi aus dem Eventenergie-Briefpapier (Logo, Pflichtangaben-Footer) und dem bestehenden Projektbericht-PDF-Stil. Positionen sollen die 3 Top-Level-Kapitel aus EpiRent sein. Trigger NICHT im Header — **im Auftrags-Module-Grid unten**.
 - ✅ **Logo extrahiert** aus `Briefpapier_2024_Teba_alt.pdf` → `/app/backend/static/briefpapier_logo.jpeg` (763×168px JPEG, 30 KB).
 - ✅ **Backend** (`/app/backend/routes/orders.py`):
-  - Neue Funktion `_generate_delivery_note_pdf(raw_order, contact_details, delivery_note_no)` baut DIN-A4-PDF mit `BaseDocTemplate` + `PageTemplate` + Frame und Canvas-Painter `draw_header_footer` für Header (Logo + Firma-Strip + Purple-Trennlinie) und Footer (4-Spalten-Pflichtangaben: Adresse, Amtsgericht/USt-ID, Geschäftsführung, Bank).
-  - Inhalt: Empfänger-Adressblock (aus EpiRent `address_delivery`, Fallback Kunden-Kontakt-PK), Meta-Tabelle (Lieferschein-Nr, Auftrags-Nr, Datum, Kunden-Nr, Event-Zeitraum, Dispo-Zeitraum), Anschreiben, Positionen-Tabelle (5 Spalten: Pos / Bezeichnung / Menge / Einheit / Bemerkung) gefüllt aus `order_items`, Hinweis-Block (aus `notes`), Lieferungs-Disclaimer, 2-Spalten-Unterschriften-Block.
-  - Neuer Endpoint: `GET /api/orders/epirent/{order_pk}/delivery-note.pdf` (Admin/Mitarbeiter, **Freelancer 403**)
-  - Lieferschein-Nr.-Generierung: Atomarer `find_one_and_update` auf `delivery_note_counters` (upsert, `$inc: seq`) → fortlaufende Nummer pro Auftrag, Format `{order_no_fmt}-LS-{NNN}` (z.B. `260247-01-LS-001`).
-  - Audit-Log: jede Generierung schreibt nach `delivery_notes` (Nr, Auftrags-PK, User-ID, Timestamp).
+  - Funktion `_generate_delivery_note_pdf(...)` baut DIN-A4-PDF mit Canvas-Painter für Header (Logo + Firma-Strip + Purple-Trennlinie) und Footer (4-Spalten-Pflichtangaben).
+  - Inhalt: Empfänger-Adressblock (aus EpiRent `address_delivery`, Fallback Kunden-Kontakt-PK), Meta-Tabelle (LS-Nr, Auftrags-Nr, Datum, Kd-Nr, Event/Dispo-Zeiträume), Anschreiben, Positionen-Tabelle (Pos/Bezeichnung/Menge/Einheit/Bemerkung) aus `order_items`, Hinweis aus `notes`, 2-Spalten-Unterschriftenblock.
+  - Endpoint: `GET /api/orders/epirent/{order_pk}/delivery-note.pdf` (Admin/Mitarbeiter; **Freelancer 403**).
+  - Lieferschein-Nr.: Atomarer `find_one_and_update` auf `delivery_note_counters` → `{order_no_fmt}-LS-{NNN}`.
+  - Audit-Log in `delivery_notes` (LS-Nr, Auftrag-PK, User, Timestamp).
 - ✅ **Frontend** (`/app/frontend/src/pages/OrderDetailPage.js`):
-  - Neuer Admin-Button "📄 Lieferschein" (violet) in der Action-Bar neben "Abrechnung PDF" und "Aktualisieren".
-  - Klick: Authenticated `fetch` → Blob → `<a download>`-Trick mit Dateinamen `Lieferschein_{order_no}.pdf` → Toast "Lieferschein erstellt".
-  - `FileText` Lucide-Icon ergänzt.
-  - `data-testid="delivery-note-pdf-btn"` für Tests.
-- ✅ **Live-Test gegen echte EpiRent-API** (Auftrag 260247-01, PK 302, Kunde Mamo Industrieservice):
-  - HTTP 200, 41 KB PDF, 1 Seite, alle Felder korrekt: LS-Nr. `260247-01-LS-001`, Lieferadresse (Rasselsteiner Straße 106, 56564 Neuwied) aus Kunden-Kontakt-Lookup, 3 Positionen (Wandlermessung, Verteiler, Zuleitung & Zubehör), Pflichtangaben-Footer, Logo + Trennlinie korrekt.
+  - Neue Kachel "Lieferschein" (FileText-Icon, violet) im "Auftrags-Module"-Grid unten — Admin-only via `adminOnly`-Flag (filterte mit `(!t.adminOnly || isAdmin)`).
+  - Subtitle: "PDF nach Briefpapier-Vorlage". Klick triggert Inline-Async-Action (kein navigate): `fetch` mit Bearer-Token → Blob → `<a download>` → Toast "Lieferschein erstellt".
+  - `data-testid="tile-delivery-note"` für Tests.
+  - Alter Header-Button "Lieferschein" entfernt (User-Wunsch: nur in Modul-Grid).
+- ✅ **Live-Test gegen echte EpiRent-API** (Auftrag 260247-01 / PK 302, Kunde Mamo Industrieservice):
+  - PDF: HTTP 200, ~42 KB, 1 Seite, LS-Nr. `260247-01-LS-001`, Lieferadresse via Kunden-Kontakt-Lookup gezogen (EpiRent `address_delivery` leer).
   - Counter funktioniert: zweiter Aufruf → `LS-002`.
-- 🚫 **Bewusst NICHT enthalten** (Kapitel-Untersub-Artikel mit Mengen/Seriennummern): EpiRent-API liefert über alle 12 getesteten Endpoint-Varianten (`/v1/order_item`, `/v1/order/{pk}/positions`, `/v1/packing_note/order/{pk}`, etc.) **keine** Untersub-Items für die Kapitel. Top-Level-Kapitel-Bezeichnungen waren explizite User-Vorgabe.
-- 📋 **User-Anschluss**: Trigger ist aktuell nur "manuell per Button" (auf User-Wunsch). Auto-Trigger bei Asset-Status "delivered" oder Bulk-Generation kann später ergänzt werden.
+  - **End-to-end Playwright-Test (Admin-Login → Auftrag 302 → Klick auf Lieferschein-Kachel → Download startet)** → PASS, Dateiname `Lieferschein_260247-01.pdf`, Toast "Lieferschein erstellt" sichtbar.
+- 🚫 **Bewusst NICHT enthalten** (Sub-Artikel pro Kapitel): EpiRent-API liefert über alle 12 getesteten Endpoint-Varianten keine Sub-Items für Kapitel. Top-Level-Kapitel-Bezeichnungen waren explizite User-Vorgabe.
+- 📋 **Anschluss**: Trigger ist aktuell nur "manuell per Klick" auf der Kachel (User-Wunsch). Auto-Trigger / Bulk-Generation / Lieferschein-Liste mit Re-Download können später ergänzt werden.
 
 ### Feb 2026 – Code-Review Runde 3: Quick-Wins + False-Positive-Audit
 - 🎯 **User-Request**: 3. Code-Review-Bericht mit 236+ Findings — gegen die bereits durch Runde 1+2 abgearbeitete Liste abgleichen und NUR echte neue Findings angehen.

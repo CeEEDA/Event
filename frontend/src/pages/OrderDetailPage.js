@@ -972,41 +972,6 @@ export default function OrderDetailPage() {
                 <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
               </Button>
             )}
-            {isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-violet-300 text-violet-700 hover:bg-violet-50"
-                onClick={async () => {
-                  try {
-                    const token = localStorage.getItem("token");
-                    const r = await fetch(`${BACKEND_URL}/api/orders/epirent/${pk}/delivery-note.pdf`, {
-                      headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (!r.ok) {
-                      const txt = await r.text();
-                      toast.error(`Lieferschein-Fehler: ${txt || r.status}`);
-                      return;
-                    }
-                    const blob = await r.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `Lieferschein_${order?.order_no || pk}.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    toast.success("Lieferschein erstellt");
-                  } catch (e) {
-                    toast.error(`Lieferschein-Fehler: ${e.message || e}`);
-                  }
-                }}
-                data-testid="delivery-note-pdf-btn"
-              >
-                <FileText className="w-4 h-4 mr-1" /> Lieferschein
-              </Button>
-            )}
             <Logo size="small" />
           </div>
         </div>
@@ -1408,7 +1373,8 @@ export default function OrderDetailPage() {
                   { key: "tankstatus", label: "Tankstatus", desc: "Tankrunde · Prognose · CSV", icon: Fuel, color: "amber", count: 0, isLink: true },
                   { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
                   { key: "diary", label: "Einsatztagebuch", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
-                ].filter(t => !t.hideForFreelancer || !isFreelancer).map((t) => {
+                  { key: "delivery-note", label: "Lieferschein", desc: "PDF nach Briefpapier-Vorlage", icon: FileText, color: "violet", count: 0, adminOnly: true, isAction: true },
+                ].filter(t => (!t.hideForFreelancer || !isFreelancer) && (!t.adminOnly || isAdmin)).map((t) => {
                   const colorMap = {
                     orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
                     fuchsia: "bg-fuchsia-50 text-fuchsia-600 group-hover:bg-fuchsia-100",
@@ -1432,6 +1398,34 @@ export default function OrderDetailPage() {
                         }
                         if (t.key === "tankstatus") {
                           navigate(`/orders/${pk}/tankstatus`);
+                          return;
+                        }
+                        if (t.key === "delivery-note") {
+                          (async () => {
+                            try {
+                              const token = localStorage.getItem("token");
+                              const r = await fetch(`${BACKEND_URL}/api/orders/epirent/${pk}/delivery-note.pdf`, {
+                                headers: { Authorization: `Bearer ${token}` },
+                              });
+                              if (!r.ok) {
+                                const txt = await r.text();
+                                toast.error(`Lieferschein-Fehler: ${txt || r.status}`);
+                                return;
+                              }
+                              const blob = await r.blob();
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement("a");
+                              a.href = url;
+                              a.download = `Lieferschein_${order?.order_no || pk}.pdf`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                              toast.success("Lieferschein erstellt");
+                            } catch (e) {
+                              toast.error(`Lieferschein-Fehler: ${e.message || e}`);
+                            }
+                          })();
                           return;
                         }
                         setActiveTab(t.key);
