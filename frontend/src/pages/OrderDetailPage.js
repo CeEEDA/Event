@@ -265,16 +265,20 @@ export default function OrderDetailPage() {
   // Gefilterte Asset-Liste (Suche + Typ-Filter). Wird sowohl von der Tabelle
   // als auch von den Karten-Markern verwendet, damit Filter konsistent greift.
   const filteredAssets = (() => {
-    const q = assetSearch.trim().toLowerCase();
+    // AND-Suche: jeder Whitespace-getrennte Token muss irgendwo im Haystack
+    // vorkommen. Dadurch funktioniert "UVB Buehne" auch wenn "UVB-ME-63" im
+    // Label und "Buehne 1" im Kommentar steht (vorher klappte nur Substring
+    // "UVB Buehne" als zusammenhaengende Zeichenkette).
+    const tokens = assetSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return assets.filter((a) => {
       if (assetTypeFilter !== "all" && a.asset_type !== assetTypeFilter) return false;
-      if (!q) return true;
+      if (tokens.length === 0) return true;
       const haystack = [
         a.asset_type, a.label, a.plus_code, a.created_by,
         a.latitude?.toFixed?.(5), a.longitude?.toFixed?.(5),
         ...(a.comments || []).map(c => c.text),
       ].filter(Boolean).join(" ").toLowerCase();
-      return haystack.includes(q);
+      return tokens.every((t) => haystack.includes(t));
     });
   })();
   const [selectedAsset, setSelectedAsset] = useState(null);
