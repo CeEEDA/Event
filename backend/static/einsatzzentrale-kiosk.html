@@ -3010,12 +3010,77 @@ function openArtikelDetail(a) {
                  '</div>';
         }).join("") + '</div>'
       ) : '<div class="art-comments"><h4>Kommentare</h4><div style="font-size:13px;color:#9ca3af;">Keine Kommentare vorhanden.</div></div>') +
+      // Tankhistorie - nur fuer Stromerzeuger, lazy-loaded
+      ((a.asset_type || "").toLowerCase() === "stromerzeuger" ?
+        '<div class="art-comments" id="art-tank-history"><h4>Tankhistorie</h4><div style="font-size:13px;color:#9ca3af;">Lade Readings...</div></div>' : '') +
       '<div class="actions"><button class="btn primary" id="art-close">Schließen</button></div>' +
     '</div></div>'
   );
   document.body.appendChild(modal);
   modal.querySelector("#art-close").addEventListener("click", function(){ modal.remove(); });
   modal.addEventListener("click", function(e){ if (e.target === modal) modal.remove(); });
+
+  // Tankhistorie nachladen (nur Stromerzeuger)
+  if ((a.asset_type || "").toLowerCase() === "stromerzeuger" && state.order) {
+    var pk = state.order.primary_key || state.order.order_pk;
+    api("/api/orders/epirent/" + pk + "/tank-readings?asset_id=" + encodeURIComponent(a.id)).then(function(d){
+      var el = modal.querySelector("#art-tank-history"); if (!el) return;
+      var rs = (d && d.readings) || [];
+      if (rs.length === 0) {
+        el.innerHTML = '<h4>Tankhistorie</h4><div style="font-size:13px;color:#9ca3af;">Noch keine Tankrunde erfasst.</div>';
+        return;
+      }
+      // Backend sortiert recorded_at DESC. Wir wollen Chronologie (aelteste zuerst), damit Verbrauch sichtbar wird.
+      rs = rs.slice().reverse();
+      var html = '<h4>Tankhistorie (' + rs.length + ')</h4>';
+      html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">' +
+        '<thead><tr style="text-align:left;color:#6b7280;border-bottom:1px solid #e5e7eb;">' +
+          '<th style="padding:4px 6px;">Zeitpunkt</th>' +
+          '<th style="padding:4px 6px;">Typ</th>' +
+          '<th style="padding:4px 6px;text-align:right;">Stand</th>' +
+          '<th style="padding:4px 6px;text-align:right;">Last</th>' +
+          '<th style="padding:4px 6px;text-align:right;">Betr.-Std.</th>' +
+          '<th style="padding:4px 6px;text-align:right;">kWh</th>' +
+          '<th style="padding:4px 6px;">Erfasst von</th>' +
+        '</tr></thead><tbody>';
+      var prev = null;
+      rs.forEach(function(r){
+        var typeBadge = r.reading_type === "commissioning" ?
+          '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">INBETRIEBN.</span>' :
+          '<span style="background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">RUNDE</span>';
+        // Verbrauch zum vorherigen Reading
+        var deltaHtml = "";
+        if (prev && r.reading_type !== "commissioning") {
+          var df = (prev.fuel_level_l || 0) - (r.fuel_level_l || 0);
+          if (df > 0) {
+            var hours = null;
+            if (prev.runtime_h != null && r.runtime_h != null && r.runtime_h > prev.runtime_h) hours = r.runtime_h - prev.runtime_h;
+            else { try { hours = (new Date(r.recorded_at) - new Date(prev.recorded_at)) / 3600000; } catch(e){} }
+            if (hours && hours > 0) {
+              var lph = (df / hours).toFixed(1);
+              deltaHtml = ' <span style="font-size:10px;color:#dc2626;">-' + df.toFixed(0) + ' L · ' + lph + ' L/h</span>';
+            }
+          } else if (df < -5) {
+            deltaHtml = ' <span style="font-size:10px;color:#059669;">+' + (-df).toFixed(0) + ' L (Refill)</span>';
+          }
+        }
+        html += '<tr style="border-bottom:1px solid #f3f4f6;">' +
+          '<td style="padding:4px 6px;font-family:monospace;font-size:11px;">' + esc(fmtDateTime(r.recorded_at)) + '</td>' +
+          '<td style="padding:4px 6px;">' + typeBadge + '</td>' +
+          '<td style="padding:4px 6px;text-align:right;font-family:monospace;"><strong>' + (r.fuel_level_l != null ? r.fuel_level_l : '—') + ' L</strong> <span style="color:#9ca3af;">(' + (r.fuel_percent != null ? r.fuel_percent + '%' : '—') + ')</span>' + deltaHtml + '</td>' +
+          '<td style="padding:4px 6px;text-align:right;font-family:monospace;">' + (r.load_kw != null ? r.load_kw + ' kW' : '—') + '</td>' +
+          '<td style="padding:4px 6px;text-align:right;font-family:monospace;">' + (r.runtime_h != null ? r.runtime_h + ' h' : '—') + '</td>' +
+          '<td style="padding:4px 6px;text-align:right;font-family:monospace;">' + (r.kwh_total != null ? r.kwh_total : '—') + '</td>' +
+          '<td style="padding:4px 6px;color:#6b7280;">' + esc(r.created_by || '—') + (r.comment ? ' · <span style="color:#9ca3af;">' + esc(r.comment) + '</span>' : '') + '</td>' +
+        '</tr>';
+        prev = r;
+      });
+      html += '</tbody></table></div>';
+      el.innerHTML = html;
+    }).catch(function(){
+      var el = modal.querySelector("#art-tank-history"); if (el) el.innerHTML = '<h4>Tankhistorie</h4><div style="font-size:13px;color:#dc2626;">Konnte Readings nicht laden.</div>';
+    });
+  }
 }
 
 // ============================================================================
