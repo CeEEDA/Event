@@ -339,6 +339,17 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Tankstatus-Kiosk: AND-Logic Suchfeld (P0, Feature - verifiziert)
+- 🎯 **User-Request**: "Auf der Einsatzzentrale-Kiosk-Tankstatus-Seite ein Suchfeld einbauen, das gleichzeitig nach Standort, Bezeichnung UND Kommentaren filtert."
+- ✅ **Frontend** (`/app/backend/static/einsatzzentrale-kiosk.html`):
+  - Suchfeld `#tank-search` in `renderTankPanel()` zwischen „Zurück" und „Nur kritisch"-Checkbox eingebaut (flex:1, Placeholder „🔎 Suche Bezeichnung / Plus Code / Kommentar...")
+  - `tankState.search` als persistenter State (überlebt Auto-Refresh alle 30s)
+  - `renderTankList()` splittet Query in Tokens (whitespace), filtert `forecast`-Liste UND Pristine-Assets per `tokens.every(t => hay.indexOf(t) !== -1)`
+  - Such-Heuristik durchsucht: `asset_label`, `plus_code`, `latitude.toFixed(5)`, `longitude.toFixed(5)`, `comments[]`
+  - Empty-State-Hinweis bei 0 Treffern mit Query-Echo
+- ✅ **Backend** (`/app/backend/routes/tank_status.py`): GET `/orders/epirent/{pk}/tank-readings/forecast` liefert `plus_code`, `latitude`, `longitude`, `comments[]` pro Generator (bereits vorhanden).
+- ✅ **Smoke-Test**: Kiosk-Seite lädt ohne JS-Errors (Playwright screenshot, 0 pageerrors); `tank-search` im DOM bestätigt.
+
 ### Mai 2026 – Soll/Ist-Arbeitszeit-Übersicht für Mitarbeiter (P1, Feature)
 - ✅ **Backend** (`/app/backend/routes/employee.py` Z.1163-1300): Neuer Endpoint `GET /api/employee/time/overview?token=<token>` liefert: today/week mit Soll/Ist/Diff in Minuten, next_7_days mit is_holiday-Flags, overtime_hours, has_schedule. Berlin-Timezone-aware, Feiertage RLP (Karfreitag, Ostermontag, Pfingstmontag, Fronleichnam, Allerheiligen + Fix-Tage) → Soll=0. Offene Stempelungen werden live mitgerechnet (`now - clock_in - break_min`).
 - ✅ **Frontend Komponente** (`/app/frontend/src/components/WorkTimeOverview.jsx`): zwei Varianten via `compact`-Prop. Live-Refresh alle 60s + `refreshKey` triggert sofortigen Reload nach Stempel-Aktion.
