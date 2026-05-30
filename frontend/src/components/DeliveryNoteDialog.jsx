@@ -11,15 +11,14 @@ import { toast } from "sonner";
 
 /**
  * Dialog zum Anlegen eines neuen Lieferscheins.
- * Lädt Vorbefüllung via /delivery-notes/prefill, erlaubt Bearbeitung der
- * Positionen (Menge/Bemerkung), zwei Signatur-Pads (Lieferant/Empfänger),
- * Ort der Übergabe und Hinweis. POSTet /delivery-notes -> generiert PDF.
+ * Strukturiert Positionen nach Kapitel (aus EpiRent) mit darunter den Artikeln.
+ * Pro Artikel: Menge editierbar. Pro Gruppe: "+ Artikel zur Gruppe".
  */
 export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCreated }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [prefill, setPrefill] = useState(null);
-  const [positions, setPositions] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [notes, setNotes] = useState("");
   const [signedLocation, setSignedLocation] = useState("");
   const sigSenderRef = useRef(null);
@@ -31,7 +30,13 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
     api.get(`/orders/epirent/${orderPk}/delivery-notes/prefill`)
       .then(r => {
         setPrefill(r.data);
-        setPositions((r.data.positions || []).map(p => ({ ...p })));
+        // Deep clone groups so user-edits don't mutate prefill
+        setGroups((r.data.groups || []).map(g => ({
+          chapter_pk: g.chapter_pk,
+          chapter_pos: g.chapter_pos,
+          chapter_title: g.chapter_title,
+          items: (g.items || []).map(it => ({ ...it })),
+        })));
         setNotes("");
         setSignedLocation(r.data.delivery_address?.city || "");
       })
@@ -39,27 +44,42 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
       .finally(() => setLoading(false));
   }, [open, orderPk]);
 
-  const addPosition = () => {
-    setPositions(p => [...p, {
-      pos: String(p.length + 1), title: "", amount: 1, unit: "", remark: "",
-    }]);
+  const updateItem = (gIdx, iIdx, key, val) => {
+    setGroups(gs => gs.map((g, gi) => gi !== gIdx ? g : ({
+      ...g,
+      items: g.items.map((it, ii) => ii !== iIdx ? it : ({ ...it, [key]: val })),
+    })));
   };
-  const removePosition = (idx) => {
-    setPositions(p => p.filter((_, i) => i !== idx));
+  const removeItem = (gIdx, iIdx) => {
+    setGroups(gs => gs.map((g, gi) => gi !== gIdx ? g : ({
+      ...g,
+      items: g.items.filter((_, ii) => ii !== iIdx),
+    })));
   };
-  const updatePos = (idx, key, val) => {
-    setPositions(p => p.map((row, i) => i === idx ? { ...row, [key]: val } : row));
+  const addItemToGroup = (gIdx) => {
+    setGroups(gs => gs.map((g, gi) => {
+      if (gi !== gIdx) return g;
+      const nextPos = `${g.chapter_pos}.${g.items.length + 1}`;
+      return {
+        ...g,
+        items: [...g.items, { pos: nextPos, title: "", amount: 1, unit: "Stk.", remark: "", product_no: "" }],
+      };
+    }));
   };
 
   const handleSubmit = async () => {
-    if (positions.length === 0) {
-      toast.error("Mindestens eine Position erforderlich");
+    const totalItems = groups.reduce((sum, g) => sum + g.items.length, 0);
+    if (totalItems === 0) {
+      toast.error("Mindestens ein Artikel erforderlich");
       return;
     }
-    const empty = positions.find(p => !p.title || String(p.title).trim() === "");
-    if (empty) {
-      toast.error("Alle Positionen brauchen eine Bezeichnung");
-      return;
+    for (const g of groups) {
+      for (const it of g.items) {
+        if (!it.title || String(it.title).trim() === "") {
+          toast.error(`Alle Artikel brauchen eine Bezeichnung (Gruppe: ${g.chapter_title})`);
+          return;
+        }
+      }
     }
 
     const sigSender = sigSenderRef.current && !sigSenderRef.current.isEmpty()
@@ -70,12 +90,18 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
     setSaving(true);
     try {
       const body = {
-        positions: positions.map(p => ({
-          pos: String(p.pos || ""),
-          title: String(p.title || ""),
-          amount: Number(p.amount) || 0,
-          unit: String(p.unit || ""),
-          remark: String(p.remark || ""),
+        groups: groups.map(g => ({
+          chapter_pk: g.chapter_pk,
+          chapter_pos: g.chapter_pos,
+          chapter_title: g.chapter_title,
+          items: g.items.map(it => ({
+            pos: String(it.pos || ""),
+            title: String(it.title || ""),
+            amount: Number(it.amount) || 0,
+            unit: String(it.unit || ""),
+            remark: String(it.remark || ""),
+            product_no: String(it.product_no || ""),
+          })),
         })),
         notes_override: notes || null,
         signature_sender_b64: sigSender,
@@ -85,7 +111,6 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
       const r = await api.post(`/orders/epirent/${orderPk}/delivery-notes`, body);
       toast.success(`Lieferschein ${r.data.delivery_note_no} erstellt`);
 
-      // Direkt PDF runterladen
       const token = localStorage.getItem("token");
       const pdfResp = await fetch(
         `${process.env.REACT_APP_BACKEND_URL}/api/orders/epirent/${orderPk}/delivery-notes/${r.data.id}/pdf`,
@@ -114,7 +139,7 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0" data-testid="delivery-note-dialog">
+      <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0" data-testid="delivery-note-dialog">
         <DialogHeader className="px-5 pt-5 pb-3 border-b">
           <DialogTitle className="flex items-center gap-2 text-base">
             <FileText className="w-4 h-4 text-violet-600" />
@@ -148,57 +173,72 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
                 </div>
               </div>
 
-              {/* Positionen */}
-              <div className="bg-white rounded-lg border border-gray-200">
-                <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-700">Positionen</h3>
-                  <Button size="sm" variant="outline" onClick={addPosition} className="h-7 text-xs" data-testid="add-position-btn">
-                    <Plus className="w-3 h-3 mr-1" /> Position hinzufügen
-                  </Button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-violet-50/50 text-xs text-gray-600">
-                      <tr>
-                        <th className="text-left px-3 py-2 w-16">Pos.</th>
-                        <th className="text-left px-3 py-2">Bezeichnung</th>
-                        <th className="text-right px-3 py-2 w-24">Menge</th>
-                        <th className="text-left px-3 py-2 w-24">Einheit</th>
-                        <th className="text-left px-3 py-2">Bemerkung</th>
-                        <th className="w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {positions.map((p, i) => (
-                        <tr key={i} data-testid={`position-row-${i}`}>
-                          <td className="px-3 py-1">
-                            <Input value={p.pos} onChange={e => updatePos(i, "pos", e.target.value)} className="h-8 text-xs" data-testid={`pos-no-${i}`} />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input value={p.title} onChange={e => updatePos(i, "title", e.target.value)} className="h-8 text-xs font-medium" data-testid={`pos-title-${i}`} />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input type="number" min="0" step="0.5" value={p.amount} onChange={e => updatePos(i, "amount", e.target.value)} className="h-8 text-xs text-right" data-testid={`pos-amount-${i}`} />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input value={p.unit} onChange={e => updatePos(i, "unit", e.target.value)} className="h-8 text-xs" placeholder="Stk." data-testid={`pos-unit-${i}`} />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input value={p.remark} onChange={e => updatePos(i, "remark", e.target.value)} className="h-8 text-xs" placeholder="optional" data-testid={`pos-remark-${i}`} />
-                          </td>
-                          <td className="px-1">
-                            <button onClick={() => removePosition(i)} className="p-1 text-gray-300 hover:text-red-500" title="Position löschen" data-testid={`pos-remove-${i}`}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {positions.length === 0 && (
-                        <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">Keine Positionen — klicke "Position hinzufügen"</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+              {/* Gruppen + Artikel */}
+              <div className="space-y-3">
+                {groups.length === 0 && (
+                  <div className="text-center text-sm text-gray-400 py-6">Keine Gruppen aus EpiRent</div>
+                )}
+                {groups.map((g, gIdx) => (
+                  <div key={g.chapter_pk || gIdx} className="bg-white rounded-lg border border-violet-200/60" data-testid={`group-${gIdx}`}>
+                    <div className="px-3 py-2 bg-violet-50/70 border-b border-violet-200/60 flex items-center justify-between rounded-t-lg">
+                      <h3 className="text-sm font-bold text-violet-800 flex items-center gap-2">
+                        <span className="text-xs font-mono text-violet-500">{g.chapter_pos}</span>
+                        {g.chapter_title}
+                        <span className="text-xs font-normal text-violet-500/80">({g.items.length} Artikel)</span>
+                      </h3>
+                      <Button size="sm" variant="outline" onClick={() => addItemToGroup(gIdx)} className="h-7 text-xs border-violet-300 text-violet-700 hover:bg-violet-100" data-testid={`add-item-${gIdx}`}>
+                        <Plus className="w-3 h-3 mr-1" /> Artikel hinzufügen
+                      </Button>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase tracking-wide">
+                          <tr>
+                            <th className="text-left px-3 py-1.5 w-16">Pos.</th>
+                            <th className="text-left px-3 py-1.5 w-20">Art-Nr.</th>
+                            <th className="text-left px-3 py-1.5">Bezeichnung</th>
+                            <th className="text-right px-3 py-1.5 w-20">Menge</th>
+                            <th className="text-left px-3 py-1.5 w-20">Einheit</th>
+                            <th className="text-left px-3 py-1.5">Bemerkung</th>
+                            <th className="w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {g.items.map((it, iIdx) => (
+                            <tr key={iIdx} data-testid={`item-${gIdx}-${iIdx}`}>
+                              <td className="px-3 py-1">
+                                <Input value={it.pos} onChange={e => updateItem(gIdx, iIdx, "pos", e.target.value)} className="h-8 text-xs" data-testid={`item-pos-${gIdx}-${iIdx}`} />
+                              </td>
+                              <td className="px-3 py-1">
+                                <Input value={it.product_no || ""} onChange={e => updateItem(gIdx, iIdx, "product_no", e.target.value)} className="h-8 text-xs text-gray-500" data-testid={`item-prodno-${gIdx}-${iIdx}`} />
+                              </td>
+                              <td className="px-3 py-1">
+                                <Input value={it.title} onChange={e => updateItem(gIdx, iIdx, "title", e.target.value)} className="h-8 text-xs font-medium" data-testid={`item-title-${gIdx}-${iIdx}`} />
+                              </td>
+                              <td className="px-3 py-1">
+                                <Input type="number" min="0" step="0.5" value={it.amount} onChange={e => updateItem(gIdx, iIdx, "amount", e.target.value)} className="h-8 text-xs text-right font-semibold" data-testid={`item-amount-${gIdx}-${iIdx}`} />
+                              </td>
+                              <td className="px-3 py-1">
+                                <Input value={it.unit} onChange={e => updateItem(gIdx, iIdx, "unit", e.target.value)} className="h-8 text-xs" placeholder="Stk." data-testid={`item-unit-${gIdx}-${iIdx}`} />
+                              </td>
+                              <td className="px-3 py-1">
+                                <Input value={it.remark} onChange={e => updateItem(gIdx, iIdx, "remark", e.target.value)} className="h-8 text-xs" placeholder="optional" data-testid={`item-remark-${gIdx}-${iIdx}`} />
+                              </td>
+                              <td className="px-1">
+                                <button onClick={() => removeItem(gIdx, iIdx)} className="p-1 text-gray-300 hover:text-red-500" title="Artikel löschen" data-testid={`item-remove-${gIdx}-${iIdx}`}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {g.items.length === 0 && (
+                            <tr><td colSpan={7} className="px-3 py-4 text-center text-xs text-gray-400 italic">Keine Artikel in dieser Gruppe — "Artikel hinzufügen" klicken</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {/* Hinweis */}

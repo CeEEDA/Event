@@ -989,25 +989,36 @@ def _generate_delivery_note_pdf(
         Paragraph("<b>Einheit</b>", s_cell_b),
         Paragraph("<b>Bemerkung</b>", s_cell_b),
     ]]
+    chapter_row_indices = []  # fuer special styling
     for idx, p in enumerate(positions):
+        is_chap = p.get("is_chapter", False)
         try:
             amount = p.get("amount") or 0
             amount_str = f"{float(amount):g}" if amount else ""
         except Exception:
             amount_str = str(p.get("amount", ""))
-        rows.append([
-            Paragraph(str(p.get("pos") or (idx + 1)), s_cell),
-            Paragraph(str(p.get("title") or ""), s_cell_b),
-            Paragraph(amount_str, s_cell_r),
-            Paragraph(str(p.get("unit") or ""), s_cell),
-            Paragraph(str(p.get("remark") or ""), s_cell),
-        ])
+        if is_chap:
+            # Kapitel-Zeile: nur Pos + Titel, fett, lila Hintergrund
+            chapter_row_indices.append(len(rows))
+            rows.append([
+                Paragraph(f"<b>{p.get('pos') or (idx + 1)}</b>", s_cell_b),
+                Paragraph(f"<b>{p.get('title') or ''}</b>", s_cell_b),
+                "", "", "",
+            ])
+        else:
+            rows.append([
+                Paragraph(str(p.get("pos") or (idx + 1)), s_cell),
+                Paragraph(str(p.get("title") or ""), s_cell),
+                Paragraph(amount_str, s_cell_r),
+                Paragraph(str(p.get("unit") or ""), s_cell),
+                Paragraph(str(p.get("remark") or ""), s_cell),
+            ])
     if not positions:
         rows.append([Paragraph("—", s_cell), Paragraph("Keine Positionen", s_cell), "", "", ""])
 
     col_widths = [12*mm, USABLE_W - 12*mm - 22*mm - 22*mm - 50*mm, 22*mm, 22*mm, 50*mm]
     tbl = Table(rows, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(TableStyle([
+    tbl_style = [
         ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
         ("LINEBELOW", (0, 0), (-1, 0), 0.6, PURPLE),
         ("LINEBELOW", (0, 1), (-1, -1), 0.25, BORDER),
@@ -1016,8 +1027,12 @@ def _generate_delivery_note_pdf(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT_GRAY]),
-    ]))
+    ]
+    # Kapitel-Zeilen visuell hervorheben (lila Hintergrund)
+    for ri in chapter_row_indices:
+        tbl_style.append(("BACKGROUND", (0, ri), (-1, ri), HEADER_BG))
+        tbl_style.append(("LINEABOVE", (0, ri), (-1, ri), 0.4, PURPLE))
+    tbl.setStyle(TableStyle(tbl_style))
     elems.append(tbl)
     elems.append(Spacer(1, 4*mm))
 
@@ -1117,6 +1132,39 @@ async def _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk):
     return out
 
 
+async def _fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk):
+    """Helper: holt Sub-Artikel eines Kapitels via /v1/journal/filter?chid={chapter_pk}.
+
+    EpiRent strukturiert order_items in 2 Ebenen:
+    - Top-Level Eintraege mit type=5 sind Kapitel (chapter_id=0)
+    - Sub-Artikel zu einem Kapitel werden ueber chid-Filter abgefragt
+    """
+    if not chapter_pk:
+        return []
+    try:
+        headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+        async with httpx.AsyncClient(timeout=15, verify=not ssl_skip) as c:
+            r = await c.get(f"{api_url}/v1/journal/filter", headers=headers, params={"chid": chapter_pk})
+            if r.status_code != 200:
+                return []
+            j = r.json()
+            payload = j.get("payload") or []
+            if not isinstance(payload, list):
+                return []
+            # Sortiere nach position_no_str (z.B. "3.1", "3.2", "3.3")
+            def _sort_key(it):
+                pos = str(it.get("position_no_str", "0"))
+                try:
+                    parts = [int(p) for p in pos.split(".") if p.isdigit()]
+                    return tuple(parts)
+                except Exception:
+                    return (999,)
+            return sorted(payload, key=_sort_key)
+    except Exception as e:
+        logger.warning(f"Chapter-items-Lookup fehlgeschlagen fuer chid={chapter_pk}: {e}")
+        return []
+
+
 @router.get("/epirent/{order_pk}/delivery-notes")
 async def list_delivery_notes(order_pk: int, user: dict = Depends(_auth_user)):
     """Liste aller Lieferscheine zu einem Auftrag.
@@ -1167,14 +1215,52 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
     }
 
     positions = []
+    groups = []
     for i, it in enumerate(raw.get("order_items") or []):
-        positions.append({
-            "pos": it.get("position_no_str") or str(i + 1),
-            "title": it.get("title") or "",
-            "amount": it.get("amount_base") or 1,
-            "unit": it.get("unit_product") or "",
-            "remark": "",
+        chapter_pk = it.get("primary_key")
+        chapter_title = it.get("title") or ""
+        chapter_pos = it.get("position_no_str") or str(i + 1)
+        # Sub-Artikel pro Kapitel via _ref_chapter_items
+        sub_items_raw = await _fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk)
+        items = []
+        for sub in sub_items_raw:
+            # Echte Menge: amount_total bevorzugt (1), amount_base ist 0 bei diesem Modus
+            amt = sub.get("amount_total") or sub.get("amount_base") or sub.get("amount_external") or 1
+            items.append({
+                "primary_key": sub.get("primary_key"),
+                "pos": sub.get("position_no_str") or "",
+                "title": sub.get("title") or "",
+                "product_no": str(sub.get("product_no", "")) if sub.get("product_no") else "",
+                "inventory_no": sub.get("inventory_no", "") or "",
+                "amount": amt,
+                "unit": sub.get("unit_product", "") or "",
+                "warehouse": sub.get("warehouse_str", "") or "",
+                "remark": "",
+            })
+        groups.append({
+            "chapter_pk": chapter_pk,
+            "chapter_pos": chapter_pos,
+            "chapter_title": chapter_title,
+            "items": items,
         })
+        # Backward-compat: flatten in legacy "positions" array (chapter as header row)
+        positions.append({
+            "pos": chapter_pos,
+            "title": chapter_title,
+            "amount": 0,
+            "unit": "",
+            "remark": "",
+            "is_chapter": True,
+        })
+        for sub in items:
+            positions.append({
+                "pos": sub["pos"],
+                "title": sub["title"],
+                "amount": sub["amount"],
+                "unit": sub["unit"],
+                "remark": sub["remark"],
+                "is_chapter": False,
+            })
 
     sched = raw.get("order_schedule") or []
     dispo_start = dispo_end = event_start = event_end = ""
@@ -1199,7 +1285,8 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
         "customer_no": raw.get("customer_no", ""),
         "customer_name": contact.get("name") or "",
         "delivery_address": deliv,
-        "positions": positions,
+        "groups": groups,
+        "positions": positions,  # legacy flat list (chapters + items)
         "event_start": event_start, "event_end": event_end,
         "dispo_start": dispo_start, "dispo_end": dispo_end,
         "notes": raw.get("notes") or "",
@@ -1246,6 +1333,28 @@ async def create_delivery_note(order_pk: int, body: dict, user: dict = Depends(_
     delivery_note_no = f"{order_no_fmt}-LS-{seq:03d}"
 
     positions = body.get("positions") or []
+    groups = body.get("groups") or []
+    # Falls Frontend "groups" schickt -> flatten zu positions mit is_chapter-Flag
+    if groups and not positions:
+        for g in groups:
+            positions.append({
+                "pos": g.get("chapter_pos") or "",
+                "title": g.get("chapter_title") or "",
+                "amount": 0,
+                "unit": "",
+                "remark": "",
+                "is_chapter": True,
+            })
+            for it in (g.get("items") or []):
+                positions.append({
+                    "pos": it.get("pos") or "",
+                    "title": it.get("title") or "",
+                    "amount": it.get("amount") or 0,
+                    "unit": it.get("unit") or "",
+                    "remark": it.get("remark") or "",
+                    "product_no": it.get("product_no") or "",
+                    "is_chapter": False,
+                })
     notes_override = body.get("notes_override")
     sig_sender = body.get("signature_sender_b64")
     sig_receiver = body.get("signature_receiver_b64")

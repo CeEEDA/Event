@@ -339,6 +339,23 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Lieferschein V3: Echte EpiRent-Hierarchie (Kapitel + Artikel)
+- 🎯 **User-Request**: Maske + PDF sollen die **Kapitel-Struktur** zeigen mit darunter den **echten Artikeln** (Pos 1.1 Messwandler 250A statt nur "Wandlermessung" Kapitel-Name).
+- 🔍 **Entdeckung**: EpiRent legt Sub-Artikel NICHT in `order_items[].sub_items` ab. Stattdessen liefert jedes Kapitel im Order-Response das Feld `_ref_chapter_items: "journal/filter?chid=14388"` als Pointer auf den Sub-Endpoint. **`GET /v1/journal/filter?chid={chapter_pk}`** liefert die echten Artikel mit `position_no_str` (z.B. "1.1", "3.2"), `product_no`, `inventory_no`, `title`, `amount_total`, `warehouse_str`.
+- ✅ **Backend** (`/app/backend/routes/orders.py`):
+  - Neuer Helper `_fetch_chapter_items(api_url, api_key, ssl_skip, chapter_pk)` → fetcht via `/v1/journal/filter?chid=...`, sortiert nach Pos-Nr. ("3.1"<"3.2"<"3.3").
+  - `prefill_delivery_note` erweitert: gibt jetzt `groups[]` zurück mit `{chapter_pk, chapter_pos, chapter_title, items: [{primary_key, pos, title, product_no, inventory_no, amount, unit, warehouse, remark}]}`. Bonus: `positions[]` Backward-Compat-Flat-Liste (mit `is_chapter`-Flag).
+  - `create_delivery_note` akzeptiert `groups[]` und flattet intern zu `positions[]` mit Kapitel-Header-Zeilen (`is_chapter=True`) + Artikel-Zeilen.
+  - PDF-Generator: Kapitel-Zeilen bekommen `HEADER_BG`-Hintergrund + violette `LINEABOVE` → optisch klare Trennung.
+- ✅ **Frontend** (`/app/frontend/src/components/DeliveryNoteDialog.jsx` komplett umgeschrieben, 311 Zeilen):
+  - State `groups[]` statt flacher `positions[]`.
+  - Pro Gruppe: violette Header-Card mit `chapter_pos`-Badge + `chapter_title` + `({n} Artikel)` + "+ Artikel hinzufügen"-Button (eigene Gruppe-Verantwortung).
+  - Pro Artikel-Tabelle: Spalten Pos / **Art-Nr.** / Bezeichnung / Menge / Einheit / Bemerkung — alle editierbar inline, Trash-Icon pro Zeile.
+  - Add-Item-Funktion generiert automatisch neue Pos-Nr (`{chapter_pos}.{n+1}`).
+- ✅ **Live-Test gegen Auftrag 260247-01 (PK 302)**:
+  - Backend `/prefill` → 3 Gruppen mit 5 echten Artikeln (Messwandler 250A, Verteiler 125A 1/1/2/2/6, Kabel 5x35mm² 50m, Verlängerung CEE 125A 5m, Kreuzerder 1,5m inkl.3m 1x16) inkl. Art-Nrn 1286/1044/1018/1091.
+  - **End-to-end Playwright-Test (PASS)**: Login → Auftrag → Tile → Anlegen → 3 Gruppen mit 1/1/3 Items sichtbar → Menge bei "Kabel 5x35mm² 50m" auf 3 geändert + Bemerkung gesetzt → "Lieferschein generieren" → PDF `LS-007.pdf` heruntergeladen → PDF-Inhalt verifiziert (Kapitel-Header + alle 5 Artikel mit korrekten Mengen + Bemerkung "Lieferung Auto-Tor 3" eingebettet).
+
 ### Mai 2026 – Lieferschein-Workflow ausgebaut: Submenu + Form-Maske mit Signaturen (P1, Feature)
 - 🎯 **User-Request**: Lieferschein-Erstellung wie Projektberichte umbauen — also Kachel öffnet **Liste/Submenu**, "Lieferschein anlegen"-Button öffnet **Form-Maske** mit aus EpiRent vorbefüllten Positionen (Menge editierbar), zwei Unterschrift-Pads, dann PDF generieren + persistieren.
 - ✅ **Backend** (`/app/backend/routes/orders.py`):
