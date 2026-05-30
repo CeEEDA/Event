@@ -1508,9 +1508,19 @@ async def get_delivery_note_pdf_by_id(order_pk: int, ls_id: str, user: dict = De
 
 @router.delete("/epirent/{order_pk}/delivery-notes/{ls_id}")
 async def delete_delivery_note(order_pk: int, ls_id: str, user: dict = Depends(_auth_user)):
-    """Loescht einen Lieferschein (nur Admin)."""
+    """Loescht einen Lieferschein (nur Admin, und nur solange noch nicht per E-Mail versandt)."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admin darf Lieferscheine loeschen")
+    existing = await _db.delivery_notes.find_one(
+        {"id": ls_id, "order_pk": order_pk}, {"_id": 0, "id": 1, "email_log": 1},
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
+    if (existing.get("email_log") or []):
+        raise HTTPException(
+            status_code=423,
+            detail="Lieferschein wurde bereits per E-Mail versandt und ist gesperrt",
+        )
     r = await _db.delivery_notes.delete_one({"id": ls_id, "order_pk": order_pk})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
@@ -1536,6 +1546,20 @@ async def email_delivery_note(order_pk: int, ls_id: str, body: dict, user: dict 
     doc = await _db.delivery_notes.find_one({"id": ls_id, "order_pk": order_pk}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
+
+    # Lock-Stufe 1: bereits unterschrieben -> nur Admin darf (re-)versenden
+    if doc.get("has_signatures") and user.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Lieferschein ist unterschrieben - nur Admin darf versenden",
+        )
+    # Lock-Stufe 2: bereits per E-Mail versandt -> komplett gesperrt
+    if (doc.get("email_log") or []):
+        raise HTTPException(
+            status_code=423,
+            detail="Lieferschein wurde bereits versandt und ist gesperrt",
+        )
+
     pdf_b64 = doc.get("pdf_b64")
     if not pdf_b64:
         raise HTTPException(status_code=410, detail="PDF nicht mehr verfuegbar")

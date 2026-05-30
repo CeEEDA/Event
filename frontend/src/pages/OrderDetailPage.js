@@ -2588,7 +2588,11 @@ export default function OrderDetailPage() {
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {deliveryNotes.map((ln) => (
+                {deliveryNotes.map((ln) => {
+                  const alreadySent = (ln.email_log?.length || 0) > 0;
+                  const canEmail = ln.id && !alreadySent && (!ln.has_signatures || isAdmin);
+                  const canDelete = ln.id && isAdmin && !alreadySent;
+                  return (
                   <div key={ln.id || ln.delivery_note_no} className="p-4 hover:bg-violet-50/30 transition-colors" data-testid={`delivery-note-${ln.id || ln.delivery_note_no}`}>
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="flex-1 min-w-0">
@@ -2600,11 +2604,14 @@ export default function OrderDetailPage() {
                           {ln.has_signatures && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">unterschrieben</span>
                           )}
-                          {(ln.email_log?.length || 0) > 0 && (
+                          {alreadySent && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 flex items-center gap-1" title={`zuletzt an ${ln.last_email_to}`}>
                               <Send className="w-2.5 h-2.5" />
                               versendet{ln.email_log.length > 1 ? ` (${ln.email_log.length}×)` : ""}
                             </span>
+                          )}
+                          {alreadySent && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700" title="Versandt – Dokument ist gesperrt">gesperrt</span>
                           )}
                         </div>
                         <p className="text-sm text-gray-700">
@@ -2613,19 +2620,11 @@ export default function OrderDetailPage() {
                         <p className="text-xs text-gray-500 mt-0.5">von {ln.created_by_name || "—"}</p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {ln.id && (
+                        {canEmail && (
                           <button
                             onClick={() => setEmailLs(ln)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              (ln.email_log?.length || 0) > 0
-                                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-600"
-                                : "bg-gray-50 hover:bg-gray-100 text-gray-600"
-                            }`}
-                            title={
-                              (ln.email_log?.length || 0) > 0
-                                ? `Versandt an ${ln.last_email_to} — erneut senden oder ändern`
-                                : "Per E-Mail versenden"
-                            }
+                            className="p-1.5 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 text-gray-600"
+                            title="Per E-Mail versenden"
                             data-testid={`delivery-note-email-${ln.id}`}
                           >
                             <Send className="w-4 h-4" />
@@ -2660,7 +2659,7 @@ export default function OrderDetailPage() {
                             <FileDown className="w-4 h-4" />
                           </button>
                         )}
-                        {ln.id && isAdmin && (
+                        {canDelete && (
                           <button
                             onClick={async () => {
                               if (!window.confirm(`Lieferschein ${ln.delivery_note_no} wirklich löschen?`)) return;
@@ -2682,7 +2681,8 @@ export default function OrderDetailPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
