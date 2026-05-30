@@ -1170,7 +1170,7 @@ async def list_delivery_notes(order_pk: int, user: dict = Depends(_auth_user)):
     await _check_freelancer_order_access(user, order_pk)
     docs = await _db.delivery_notes.find(
         {"order_pk": order_pk},
-        {"_id": 0, "signature_sender_b64": 0, "signature_receiver_b64": 0},
+        {"_id": 0, "signature_sender_b64": 0, "signature_receiver_b64": 0, "pdf_b64": 0},
     ).sort("created_at", -1).to_list(500)
     return docs
 
@@ -1444,6 +1444,80 @@ async def delete_delivery_note(order_pk: int, ls_id: str, user: dict = Depends(_
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
     return {"deleted": True}
+
+
+@router.post("/epirent/{order_pk}/delivery-notes/{ls_id}/email")
+async def email_delivery_note(order_pk: int, ls_id: str, body: dict, user: dict = Depends(_auth_user)):
+    """Versendet einen Lieferschein per E-Mail an die angegebene Adresse.
+
+    Body: {to_email: str}
+
+    Mehrfaches Versenden ist erlaubt. Jeder Versand wird in `email_log` getrackt.
+    """
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Freelancer duerfen keine Lieferscheine versenden")
+    await _check_freelancer_order_access(user, order_pk)
+
+    to_email = (body.get("to_email") or "").strip()
+    if not to_email or "@" not in to_email:
+        raise HTTPException(status_code=400, detail="Gueltige E-Mail erforderlich")
+
+    doc = await _db.delivery_notes.find_one({"id": ls_id, "order_pk": order_pk}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
+    pdf_b64 = doc.get("pdf_b64")
+    if not pdf_b64:
+        raise HTTPException(status_code=410, detail="PDF nicht mehr verfuegbar")
+
+    import base64 as _b64
+    pdf_bytes = _b64.b64decode(pdf_b64)
+    ls_no = doc.get("delivery_note_no", ls_id)
+
+    # E-Mail-Inhalt
+    subject = f"Lieferschein {ls_no} – Eventenergie Deutschland"
+    html = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f5f5;">
+<div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5;">
+  <div style="padding:24px 28px;background:#7c3aed;color:#fff;">
+    <h2 style="margin:0;font-size:18px;">Lieferschein {ls_no}</h2>
+  </div>
+  <div style="padding:24px 28px;color:#1f2937;line-height:1.5;font-size:14px;">
+    <p>Sehr geehrte Damen und Herren,</p>
+    <p>anbei erhalten Sie den Lieferschein zum Auftrag.</p>
+    <p>Bei Rueckfragen erreichen Sie uns unter <a href="tel:+49263230921-0">+49 (0) 2632 30921-0</a> oder
+    per Mail an <a href="mailto:info@eventenergie-deutschland.de">info@eventenergie-deutschland.de</a>.</p>
+    <p style="margin-top:24px;">Mit freundlichen Gruessen<br/>Eventenergie Deutschland GmbH &amp; Co. KG</p>
+  </div>
+</div>
+</body></html>
+"""
+    try:
+        from email_service import send_email_with_attachment
+        send_email_with_attachment(
+            to_email=to_email,
+            subject=subject,
+            html_body=html,
+            attachment_bytes=pdf_bytes,
+            attachment_filename=f"Lieferschein_{ls_no}.pdf",
+        )
+    except Exception as e:
+        logger.error(f"E-Mail-Versand Lieferschein {ls_no} an {to_email} fehlgeschlagen: {e}")
+        raise HTTPException(status_code=502, detail=f"E-Mail-Versand fehlgeschlagen: {str(e)[:200]}")
+
+    # Versand-Log persistieren (im Lieferschein-Dokument)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "to": to_email,
+        "sent_at": now_iso,
+        "sent_by_user_id": user.get("id"),
+        "sent_by_name": user.get("name", user.get("email", "")),
+    }
+    await _db.delivery_notes.update_one(
+        {"id": ls_id, "order_pk": order_pk},
+        {"$push": {"email_log": entry}, "$set": {"last_email_to": to_email, "last_email_at": now_iso}},
+    )
+
+    return {"sent": True, "to": to_email, "sent_at": now_iso}
 
 
 
@@ -2200,6 +2274,9 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
     # Fetch data
     reports = await _db.project_reports.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("created_at", 1).to_list(500)
     fuel_receipts = await _db.fuel_receipts.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("date", 1).to_list(500)
+    delivery_notes_for_billing = await _db.delivery_notes.find(
+        {"order_pk": order_pk}, {"_id": 0}
+    ).sort("created_at", 1).to_list(500)
     adj = await _db.fuel_adjustments.find_one({"order_pk": str(order_pk)}, {"_id": 0})
     fuel_pct = adj.get("adjustment_percent", 0) if adj else 0
 
@@ -2249,6 +2326,7 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
         [Paragraph("Zeitraum:", s_label), Paragraph(f"{raw.get('date_start', '')} - {raw.get('date_end', '')}", s_value)],
         [Paragraph("Projektberichte:", s_label), Paragraph(f"<b>{len(reports)}</b>", s_value_bold)],
         [Paragraph("Tankbelege:", s_label), Paragraph(f"<b>{len(fuel_receipts)}</b>", s_value_bold)],
+        [Paragraph("Lieferscheine:", s_label), Paragraph(f"<b>{len(delivery_notes_for_billing)}</b>", s_value_bold)],
     ]
     ct = Table(cover, colWidths=[35*mm, W - 35*mm])
     ct.setStyle(TableStyle([
@@ -2436,6 +2514,18 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
         fuel_reader = PdfReader(fuel_pdf_buf)
         for page in fuel_reader.pages:
             writer.add_page(page)
+    # Add delivery note pages (aus delivery_notes Collection -> pdf_b64)
+    for ln in delivery_notes_for_billing:
+        pdf_b64 = ln.get("pdf_b64")
+        if not pdf_b64:
+            continue
+        try:
+            ln_bytes = base64.b64decode(pdf_b64)
+            ln_reader = PdfReader(io.BytesIO(ln_bytes))
+            for page in ln_reader.pages:
+                writer.add_page(page)
+        except Exception as e:
+            logger.warning(f"Lieferschein {ln.get('delivery_note_no')} konnte nicht angehaengt werden: {e}")
 
     final_buf = io.BytesIO()
     writer.write(final_buf)

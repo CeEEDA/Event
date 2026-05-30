@@ -339,6 +339,27 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Lieferschein V6: E-Mail-Versand + Abrechnungs-Doku-Integration
+- 🎯 **User-Request 1**: Pfeil-Icon rechts in Lieferschein-Liste, öffnet Dialog mit E-Mail-Feld, Lieferschein wird per Mail versendet. Erneut klicken: bestehende E-Mail anzeigen + erneut senden oder ändern.
+- 🎯 **User-Request 2**: Lieferschein in die "Abrechnungs-Doku" (oben rechts beim Auftrag) mit einbauen.
+- ✅ **Backend** (`/app/backend/routes/orders.py`):
+  - Neuer Endpoint `POST /api/orders/epirent/{order_pk}/delivery-notes/{ls_id}/email` mit Body `{to_email}`. Nutzt vorhandenes `email_service.send_email_with_attachment` (Ionos SMTP, bereits konfiguriert).
+  - E-Mail-HTML in Eventenergie-Branding (Purple Header), PDF als Attachment mit Dateinamen `Lieferschein_{no}.pdf`, Subject `"Lieferschein {no} – Eventenergie Deutschland"`.
+  - Versand-Log persistiert: `$push email_log[]` mit `{to, sent_at, sent_by_user_id, sent_by_name}` + Quick-Access-Felder `last_email_to` / `last_email_at` für Vorbefüllung.
+  - 400 bei ungültiger Mail, 502 bei SMTP-Fehler.
+  - **Billing-PDF-Integration**: `GET /epirent/{pk}/billing-pdf` lädt zusätzlich alle `delivery_notes` zum Auftrag, zeigt sie als Zeile "Lieferscheine: N" in der Übersicht und hängt jedes gespeicherte PDF (base64-decode) per `PdfWriter.add_page` ans Ende der Abrechnungs-PDF an.
+  - Liste-Endpoint Projektion: `pdf_b64` auch ausgeschlossen (Bandbreite) — wird sowieso nur via `/{ls_id}/pdf` ausgeliefert.
+- ✅ **Frontend**:
+  - **Neue Komponente** `/app/frontend/src/components/DeliveryNoteEmailDialog.jsx` (95 Zeilen): Mail-Input, "Versand-Historie" als `<details>`-Element mit allen vergangenen Empfängern, smarte Button-Beschriftung ("Versenden" beim ersten Mal, "Erneut senden" wenn bereits versendet), Enter-Taste sendet.
+  - **OrderDetailPage**: 
+    - Neuer `Send`-Icon-Button vor dem Download-Button bei jedem Lieferschein. Hintergrundfarbe **emerald** wenn bereits versendet, sonst **grau**.
+    - Tooltip zeigt letzte E-Mail-Adresse.
+    - Inline-Badge "versendet" (mit N× Counter wenn >1 Versand) neben "unterschrieben"-Badge.
+    - Dialog-State `emailLs` (= aktuell zu versendender Lieferschein).
+- ✅ **Live-Verifikation**:
+  - Backend: LS-Liste enthält `email_log`/`last_email_to`/`last_email_at`. Ungültige Mail → 400.
+  - Frontend: E2E-Test mit Playwright — 2 Mail-Buttons in Liste sichtbar, Dialog öffnet beim Klick mit korrekter LS-Nr. im Header und Mail-Input-Feld.
+
 ### Mai 2026 – Lieferschein V5: PDF-Layout-Politur (Logo + Einheit + Footer)
 - 🎯 **User-Request**: 3 Korrekturen im PDF:
   1. Logo oben ist schlecht → das saubere Portal-Logo verwenden

@@ -76,6 +76,7 @@ import { OpenLocationCode } from "open-location-code";
 import { openExternal } from "../lib/openExternal";
 import MessprotokollDialog from "../components/MessprotokollDialog";
 import DeliveryNoteDialog from "../components/DeliveryNoteDialog";
+import DeliveryNoteEmailDialog from "../components/DeliveryNoteEmailDialog";
 import BulkDismantleMapDialog from "../components/BulkDismantleMapDialog";
 import AssetEditDialog from "../components/AssetEditDialog";
 import GpsLockPicker from "../components/GpsLockPicker";
@@ -308,6 +309,7 @@ export default function OrderDetailPage() {
   const [deliveryNotes, setDeliveryNotes] = useState([]);
   const [deliveryNotesLoading, setDeliveryNotesLoading] = useState(false);
   const [showDeliveryNoteDialog, setShowDeliveryNoteDialog] = useState(false);
+  const [emailLs, setEmailLs] = useState(null);  // currently emailed Lieferschein
 
   // Messprotokolle
   const [messprotokolle, setMessprotokolle] = useState([]);
@@ -2598,6 +2600,12 @@ export default function OrderDetailPage() {
                           {ln.has_signatures && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">unterschrieben</span>
                           )}
+                          {(ln.email_log?.length || 0) > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 flex items-center gap-1" title={`zuletzt an ${ln.last_email_to}`}>
+                              <Send className="w-2.5 h-2.5" />
+                              versendet{ln.email_log.length > 1 ? ` (${ln.email_log.length}×)` : ""}
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-gray-700">
                           erstellt am {ln.created_at ? new Date(ln.created_at).toLocaleString("de-DE") : "—"}
@@ -2605,6 +2613,24 @@ export default function OrderDetailPage() {
                         <p className="text-xs text-gray-500 mt-0.5">von {ln.created_by_name || "—"}</p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {ln.id && (
+                          <button
+                            onClick={() => setEmailLs(ln)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              (ln.email_log?.length || 0) > 0
+                                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-600"
+                                : "bg-gray-50 hover:bg-gray-100 text-gray-600"
+                            }`}
+                            title={
+                              (ln.email_log?.length || 0) > 0
+                                ? `Versandt an ${ln.last_email_to} — erneut senden oder ändern`
+                                : "Per E-Mail versenden"
+                            }
+                            data-testid={`delivery-note-email-${ln.id}`}
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                        )}
                         {ln.id && (
                           <button
                             onClick={async () => {
@@ -3361,6 +3387,17 @@ export default function OrderDetailPage() {
             orderPk={pk}
             onCreated={() => { fetchDeliveryNotes(); }}
           />
+
+          {/* Lieferschein per E-Mail versenden Dialog */}
+          {emailLs && (
+            <DeliveryNoteEmailDialog
+              open={!!emailLs}
+              onOpenChange={(o) => { if (!o) setEmailLs(null); }}
+              orderPk={pk}
+              ls={emailLs}
+              onSent={() => { setEmailLs(null); fetchDeliveryNotes(); }}
+            />
+          )}
 
           {/* GPS Lock Picker (WhatsApp-Style Position-Modal) */}
           <GpsLockPicker
