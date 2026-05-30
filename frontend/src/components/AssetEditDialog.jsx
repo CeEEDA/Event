@@ -11,7 +11,7 @@ import { MapContainer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapTileLayer from "./MapTileLayer";
-import { X, MapPin, Save, Loader2, Eye, Crosshair } from "lucide-react";
+import { X, MapPin, Save, Loader2, Eye, Crosshair, MessageSquare, Trash2, Send } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -57,6 +57,9 @@ export default function AssetEditDialog({
   const [saving, setSaving] = useState(false);
   const [recenterKey, setRecenterKey] = useState(0); // trigger PanTo only on programmatic changes
   const markerRef = useRef(null);
+  const [comments, setComments] = useState(asset?.comments || []);
+  const [newComment, setNewComment] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
 
   if (!asset) return null;
 
@@ -103,6 +106,35 @@ export default function AssetEditDialog({
       (err) => toast.error(err.message || "GPS-Fehler"),
       { enableHighAccuracy: true, timeout: 15000 },
     );
+  };
+
+  const addComment = async () => {
+    const text = newComment.trim();
+    if (!text) return;
+    setPostingComment(true);
+    try {
+      const res = await api.post(
+        `/orders/epirent/${orderPk}/assets/${asset.id}/comments`,
+        { text },
+      );
+      setComments((cs) => [...cs, res.data]);
+      setNewComment("");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Kommentar konnte nicht gespeichert werden");
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const deleteComment = async (commentId) => {
+    const prev = comments;
+    setComments((cs) => cs.filter((c) => c.id !== commentId)); // optimistic
+    try {
+      await api.delete(`/orders/epirent/${orderPk}/assets/${asset.id}/comments/${commentId}`);
+    } catch (e) {
+      setComments(prev); // revert
+      toast.error(e?.response?.data?.detail || "Löschen nicht möglich");
+    }
   };
 
   const submit = async () => {
@@ -260,6 +292,76 @@ export default function AssetEditDialog({
                 <span className="text-[10px] text-gray-400 font-medium block mb-1">Status</span>
                 <p className="text-sm font-medium text-gray-900">{(asset.status || "placed") === "placed" ? "Gestellt" : "Abgebaut"}</p>
               </div>
+            </div>
+
+            {/* Kommentare - editierbar in der gleichen Maske */}
+            <div className="pt-3 border-t border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-fuchsia-500" />
+                Kommentare
+                {comments.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700 text-[10px] font-semibold">
+                    {comments.length}
+                  </span>
+                )}
+              </h4>
+
+              {comments.length === 0 ? (
+                <p className="text-[11px] text-gray-400 italic py-1.5" data-testid="asset-edit-comments-empty">
+                  Noch keine Kommentare.
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1" data-testid="asset-edit-comments-list">
+                  {comments.map((c) => (
+                    <div key={c.id} className="bg-gray-50 rounded-lg p-2 border border-gray-100" data-testid={`asset-edit-comment-${c.id}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs text-gray-800 whitespace-pre-wrap flex-1">{c.text}</p>
+                        <button
+                          type="button"
+                          onClick={() => deleteComment(c.id)}
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                          title="Löschen"
+                          data-testid={`asset-edit-comment-delete-${c.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        {c.created_by || "—"}
+                        {c.created_at && ` · ${new Date(c.created_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <form
+                onSubmit={(e) => { e.preventDefault(); addComment(); }}
+                className="mt-2 flex gap-2"
+              >
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      addComment();
+                    }
+                  }}
+                  placeholder="Neuer Kommentar… (Strg+Enter zum Senden)"
+                  rows={2}
+                  className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-fuchsia-500 resize-none"
+                  data-testid="asset-edit-comment-input"
+                />
+                <button
+                  type="submit"
+                  disabled={!newComment.trim() || postingComment}
+                  className="flex-shrink-0 self-end px-2.5 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+                  data-testid="asset-edit-comment-submit"
+                >
+                  {postingComment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                </button>
+              </form>
             </div>
           </div>
         </div>

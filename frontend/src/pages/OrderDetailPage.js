@@ -3176,7 +3176,7 @@ export default function OrderDetailPage() {
               asset={editingAsset}
               assetTypes={ASSET_TYPES}
               encodePlusCode={encodePlusCode}
-              onClose={() => setEditingAsset(null)}
+              onClose={() => { setEditingAsset(null); fetchAssets(); }}
               onSaved={() => { fetchAssets(); setEditingAsset(null); }}
             />
           )}
