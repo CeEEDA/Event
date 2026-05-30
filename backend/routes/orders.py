@@ -800,35 +800,29 @@ def _generate_delivery_note_pdf(
     BOTTOM = 28*mm
     USABLE_W = page_w - LEFT - RIGHT
 
-    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "briefpapier_logo.jpeg")
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "portal_logo.png")
 
     def draw_header_footer(canv, doc):
         canv.saveState()
-        # ===== HEADER: Logo + Firmenname/Adresse mini-strip oben =====
+        # ===== HEADER: Logo gross + duenne Trennlinie =====
         if os.path.exists(logo_path):
-            # Original Logo: 763x168 -> Verhaeltnis ~4.54:1. Wir nehmen 28mm breit, 6.2mm hoch
-            logo_w = 28*mm
-            logo_h = logo_w / 4.54
-            canv.drawImage(logo_path, LEFT, page_h - 13*mm - logo_h,
+            # Portal-Logo: 460x107 -> Verhaeltnis ~4.3:1. Wir nehmen 50mm breit
+            logo_w = 50*mm
+            logo_h = logo_w / 4.3
+            canv.drawImage(logo_path, LEFT, page_h - 10*mm - logo_h,
                            width=logo_w, height=logo_h, mask="auto", preserveAspectRatio=True)
-        canv.setFont("Helvetica-Bold", 9)
-        canv.setFillColor(DARK)
-        canv.drawString(LEFT + 32*mm, page_h - 14*mm, "EVENTENERGIE DEUTSCHLAND")
-        canv.setFont("Helvetica", 6.5)
-        canv.setFillColor(MUTED)
-        canv.drawString(LEFT + 32*mm, page_h - 17.5*mm, "Eventenergie Deutschland GmbH & Co. KG  |  Thyssenstraße 10  |  56626 Andernach")
         # duenne Trennlinie
         canv.setStrokeColor(PURPLE)
         canv.setLineWidth(0.4)
-        canv.line(LEFT, page_h - 19.5*mm, page_w - RIGHT, page_h - 19.5*mm)
+        canv.line(LEFT, page_h - 23*mm, page_w - RIGHT, page_h - 23*mm)
 
-        # ===== FOOTER mit 4-Spalten-Pflichtangaben =====
+        # ===== FOOTER mit nur 2 Spalten (Adresse / Registereintrag) =====
         footer_y = 22*mm
         canv.setStrokeColor(BORDER)
         canv.setLineWidth(0.3)
         canv.line(LEFT, footer_y, page_w - RIGHT, footer_y)
 
-        col_w = USABLE_W / 4.0
+        col_w = USABLE_W / 2.0
         cols = [
             ("Eventenergie Deutschland GmbH & Co. KG",
              "Thyssenstraße 10",
@@ -840,14 +834,6 @@ def _generate_delivery_note_pdf(
             ("Amtsgericht Koblenz: HRA 22723",
              "Finanzamt Mayen",
              "Ust.-ID: DE 333489815"),
-            ("Geschäftsführung:",
-             "Christian Ecker",
-             "Michael Giangrasso",
-             "Marco Döhr"),
-            ("Teba Landau",
-             "IBAN: DE86 7413 1000",
-             "      0002 6260 00",
-             "BIC: TEKRDE71"),
         ]
         for ci, lines in enumerate(cols):
             x = LEFT + ci * col_w + 2
@@ -863,9 +849,9 @@ def _generate_delivery_note_pdf(
 
     doc = BaseDocTemplate(
         buf, pagesize=A4,
-        leftMargin=LEFT, rightMargin=RIGHT, topMargin=TOP + 12*mm, bottomMargin=BOTTOM,
+        leftMargin=LEFT, rightMargin=RIGHT, topMargin=TOP + 18*mm, bottomMargin=BOTTOM,
     )
-    frame = Frame(LEFT, BOTTOM, USABLE_W, page_h - TOP - 22*mm - BOTTOM, showBoundary=0)
+    frame = Frame(LEFT, BOTTOM, USABLE_W, page_h - TOP - 28*mm - BOTTOM, showBoundary=0)
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=draw_header_footer)])
 
     elems = []
@@ -1236,6 +1222,9 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
             is_heading = (sub_type == 21)
             # Echte Menge: amount_total bevorzugt (1), amount_base ist 0 bei diesem Modus
             amt = 0 if is_heading else (sub.get("amount_total") or sub.get("amount_base") or sub.get("amount_external") or 1)
+            # Einheit: EpiRent liefert sie oft leer -> Default "Stk." fuer normale Artikel
+            unit_raw = (sub.get("unit_product") or "").strip()
+            unit = "" if is_heading else (unit_raw or "Stk.")
             items.append({
                 "primary_key": sub.get("primary_key"),
                 "is_heading": is_heading,
@@ -1244,7 +1233,7 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "product_no": str(sub.get("product_no", "")) if sub.get("product_no") and not is_heading else "",
                 "inventory_no": sub.get("inventory_no", "") or "",
                 "amount": amt,
-                "unit": sub.get("unit_product", "") or "",
+                "unit": unit,
                 "warehouse": sub.get("warehouse_str", "") or "",
                 "remark": "",
             })

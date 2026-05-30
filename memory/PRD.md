@@ -339,6 +339,22 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Lieferschein V5: PDF-Layout-Politur (Logo + Einheit + Footer)
+- 🎯 **User-Request**: 3 Korrekturen im PDF:
+  1. Logo oben ist schlecht → das saubere Portal-Logo verwenden
+  2. Einheit-Spalte ist leer (EpiRent liefert `unit_product` oft leer)
+  3. Footer: Geschäftsführung + Bank-Zeile entfernen
+- ✅ **Logo**: `https://customer-assets.emergentagent.com/job_client-file-portal/artifacts/35th6vn9_cropped-logo.webp` (460×107 RGBA) heruntergeladen, als PNG nach `/app/backend/static/portal_logo.png` konvertiert. PDF-Header: Logo jetzt 50mm breit (statt 28mm), Position oben links, gefolgt von Purple-Trennlinie. Text "EVENTENERGIE DEUTSCHLAND" + mini-Adress-Strip entfernt — überflüssig, da im Logo enthalten. `topMargin` von `TOP + 12mm` auf `TOP + 18mm` angehoben, Frame-Top von `22mm` auf `28mm` für mehr Headroom.
+- ✅ **Einheit-Default**: `_fetch_chapter_items`-Loop setzt jetzt `unit = unit_raw or "Stk."` für normale Artikel (heading-Items behalten leer). EpiRent's leere `unit_product`-Felder werden so automatisch zu "Stk.".
+- ✅ **Footer reduziert**: Von 4 Spalten (Adresse / Amtsgericht / Geschäftsführung / Bank) auf nur 2 Spalten (Adresse / Amtsgericht+Finanzamt+USt-ID). `col_w = USABLE_W / 2.0`, Cols-Liste auf 2 Einträge gekürzt.
+- ✅ **Live-Verifikation**:
+  - Neuer LS-002 für Auftrag 251017-01 generiert, PDF-Text-Check:
+    - `Geschäftsführung im PDF: False` ✓
+    - `IBAN im PDF: False` ✓
+    - `Amtsgericht im PDF: True` ✓
+  - Prefill-Test: alle Artikel haben jetzt `unit="Stk."` (vorher leer).
+  - Visueller Screenshot des PDF: Logo perfekt platziert, klares 2-Spalten-Footer.
+
 ### Mai 2026 – Lieferschein V4: Überschriften (type=21) + Neue Gruppe hinzufügen
 - 🎯 **User-Request 1**: "Wir haben Überschriften drin. Diese sind komplett an der falschen Stelle." — Ursache: meine Sortierung nach `position_no_str` schob alle Überschriften (mit leerem `pos`) nach vorn ans Ende der Tabelle, statt sie zwischen die Artikel zu setzen wo sie hingehören.
 - 🎯 **User-Request 2**: "Neue Gruppe hinzufügen" als zusätzliche Funktion.
