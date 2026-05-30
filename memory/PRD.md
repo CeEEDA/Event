@@ -339,6 +339,42 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Lieferschein-Workflow ausgebaut: Submenu + Form-Maske mit Signaturen (P1, Feature)
+- 🎯 **User-Request**: Lieferschein-Erstellung wie Projektberichte umbauen — also Kachel öffnet **Liste/Submenu**, "Lieferschein anlegen"-Button öffnet **Form-Maske** mit aus EpiRent vorbefüllten Positionen (Menge editierbar), zwei Unterschrift-Pads, dann PDF generieren + persistieren.
+- ✅ **Backend** (`/app/backend/routes/orders.py`):
+  - **Neue Endpoints**:
+    - `GET /api/orders/epirent/{pk}/delivery-notes` → Liste aller LS (ohne Signatur-PNGs).
+    - `GET /api/orders/epirent/{pk}/delivery-notes/prefill` → Vorbefüllung: Lieferadresse (Fallback auf Kunden-Kontakt), Positionen aus `order_items` (Pos/Bezeichnung/Menge=1/Einheit/Remark=""), Event/Dispo, Hinweis-Vorschlag, vorgeschlagene LS-Nr.
+    - `POST /api/orders/epirent/{pk}/delivery-notes` → Body `{positions[], notes_override, signature_sender_b64, signature_receiver_b64, signed_at_location}` → Counter inkrementieren, PDF generieren mit eingebetteten Signaturen, in MongoDB persistieren (base64 im Dokument).
+    - `GET /api/orders/epirent/{pk}/delivery-notes/{id}/pdf` → Re-Download des gespeicherten PDFs.
+    - `DELETE /api/orders/epirent/{pk}/delivery-notes/{id}` → Löschen (nur Admin).
+  - `_generate_delivery_note_pdf` erweitert: optionale `positions[]`-Liste, `notes_override`, **Signatur-Bilder als RLImage** über die Unterschriftslinie eingebettet (sig_w x 22mm), Ort/Datum-Label dynamisch ("Andernach, 30.05.2026 15:16 · Lieferant").
+  - Helper `_fetch_contact_address()` für DRY-Lookup von Kontakt-PK → Adresse.
+  - **Storage**: PDF wird als base64 im `delivery_notes` Dokument gespeichert (~55 KB pro Lieferschein mit Signaturen — vertretbar). Vorteil: Re-Download immer möglich, keine externe Storage-Abhängigkeit, Audit-trail komplett.
+- ✅ **Frontend**:
+  - **Neue Komponente** `/app/frontend/src/components/DeliveryNoteDialog.jsx` (276 Zeilen): 
+    - Auto-Load der Prefill beim Öffnen → Positionen-State editierbar (Input pro Zelle, Position hinzufügen/entfernen)
+    - 2 `react-signature-canvas` Pads (Lieferant + Empfänger, je 32px hoch, touch-fähig)
+    - Ort der Übergabe (vorbefüllt aus Lieferadresse.city)
+    - Hinweis-Textarea (Placeholder = EpiRent.notes)
+    - "Lieferschein generieren"-Button: POST → Auto-Download des PDFs → Dialog schließt → Liste refresht
+  - **OrderDetailPage.js**:
+    - Kachel "Lieferscheine" (FileText, violet) öffnet jetzt Tab `delivery-notes` (statt direkten PDF-Download). Count-Badge = `deliveryNotes.length`.
+    - Neue Section listet LS mit: violet Badge, LS-Nr. monospace, "unterschrieben"-Badge (emerald), Datum/Uhrzeit, Ersteller, PDF-Download-Button, Löschen-Button.
+    - Header der Section: "+ Lieferschein anlegen"-Button öffnet Dialog.
+    - `fetchDeliveryNotes()` useCallback, initial-load via Haupt-useEffect.
+- ✅ **End-to-End-Test (Playwright, alle 5 Steps PASS)** mit Auftrag 260247-01 / PK 302:
+  1. Tile "Lieferscheine" → Section gerendert (5 historische LS aus früheren Tests sichtbar)
+  2. "+ Lieferschein anlegen"-Button → Dialog öffnet, Prefill korrekt geladen (Wandlermessung/Verteiler/Zuleitung & Zubehör als Pos 1/2/3, Adresse Rasselsteiner Straße 106, vorgeschlagene Nr `LS-006`)
+  3. Position 0 editiert (Menge: 1→2, Einheit: "Stk.", Bemerkung: "inkl. Wandler 200/5A")
+  4. Lieferant-Signatur per Maus auf Canvas gezeichnet
+  5. "Lieferschein generieren" geklickt → PDF-Download `Lieferschein_260247-01-LS-006.pdf` startet, Dialog schließt, **LS-006 erscheint sofort oben in Liste mit grünem "unterschrieben"-Badge**, Toast erscheint
+- 📋 **Behoben gegenüber V1**: 
+  - V1 hatte nur direkten Download ohne Submenu
+  - V1 hatte keine Signatur-Embedding ins PDF
+  - V1 hatte keine Liste der Lieferscheine pro Auftrag
+  - V1 ließ Menge nicht editieren
+
 ### Mai 2026 – Lieferschein-PDF im Eventenergie-Briefpapier-Stil (P1, Feature)
 - 🎯 **User-Request**: Lieferscheine generieren für EpiRent-Aufträge. Design = Kombi aus dem Eventenergie-Briefpapier (Logo, Pflichtangaben-Footer) und dem bestehenden Projektbericht-PDF-Stil. Positionen sollen die 3 Top-Level-Kapitel aus EpiRent sein. Trigger NICHT im Header — **im Auftrags-Module-Grid unten**.
 - ✅ **Logo extrahiert** aus `Briefpapier_2024_Teba_alt.pdf` → `/app/backend/static/briefpapier_logo.jpeg` (763×168px JPEG, 30 KB).

@@ -729,16 +729,39 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery_note_no: str):
-    """Generate a Lieferschein-PDF (Eventenergie-Briefpapier-Stil). Returns io.BytesIO."""
+def _generate_delivery_note_pdf(
+    raw_order: dict,
+    contact_details: dict,
+    delivery_note_no: str,
+    positions: list = None,
+    notes_override: str = None,
+    signature_sender_b64: str = None,
+    signature_receiver_b64: str = None,
+    signed_at_location: str = None,
+    signed_at_iso: str = None,
+):
+    """Generate a Lieferschein-PDF (Eventenergie-Briefpapier-Stil).
+
+    Args:
+        positions: Optional list of {pos, title, amount, unit, remark}. Falls None,
+                   werden order_items vom raw_order genommen.
+        signature_sender_b64 / signature_receiver_b64: Optional data-URL PNGs der Unterschriften.
+        signed_at_location: Optional Ort der Unterschrift.
+        signed_at_iso: Optional ISO Datum/Uhrzeit der Unterschrift.
+        notes_override: Optional Notiz-Text (statt raw_order.notes).
+    Returns:
+        io.BytesIO
+    """
     import io
     import os
+    import base64
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib import colors
+    from reportlab.lib.utils import ImageReader
     from reportlab.platypus import (
         BaseDocTemplate, PageTemplate, Frame, Table, TableStyle,
-        Paragraph, Spacer,
+        Paragraph, Spacer, Image as RLImage,
     )
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
@@ -946,8 +969,19 @@ def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery
     ))
     elems.append(Spacer(1, 4*mm))
 
-    # ===== POSITIONEN-TABELLE (3 Kapitel aus EpiRent) =====
-    items = raw_order.get("order_items") or []
+    # ===== POSITIONEN-TABELLE =====
+    if positions is None:
+        # Fallback: aus order_items (Kapitel-Koepfen)
+        positions = []
+        for i, it in enumerate(raw_order.get("order_items") or []):
+            positions.append({
+                "pos": it.get("position_no_str") or str(i + 1),
+                "title": it.get("title") or "",
+                "amount": it.get("amount_base") or 0,
+                "unit": it.get("unit_product") or "",
+                "remark": "",
+            })
+
     rows = [[
         Paragraph("<b>Pos.</b>", s_cell_b),
         Paragraph("<b>Bezeichnung</b>", s_cell_b),
@@ -955,26 +989,21 @@ def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery
         Paragraph("<b>Einheit</b>", s_cell_b),
         Paragraph("<b>Bemerkung</b>", s_cell_b),
     ]]
-    pos_num = 0
-    for it in items:
-        pos_num += 1
-        pos_no = it.get("position_no_str") or str(pos_num)
-        title = it.get("title") or ""
-        amount = it.get("amount_base") or 0
+    for idx, p in enumerate(positions):
         try:
+            amount = p.get("amount") or 0
             amount_str = f"{float(amount):g}" if amount else ""
         except Exception:
-            amount_str = str(amount)
-        unit = it.get("unit_product") or ""
+            amount_str = str(p.get("amount", ""))
         rows.append([
-            Paragraph(str(pos_no), s_cell),
-            Paragraph(title, s_cell_b),
+            Paragraph(str(p.get("pos") or (idx + 1)), s_cell),
+            Paragraph(str(p.get("title") or ""), s_cell_b),
             Paragraph(amount_str, s_cell_r),
-            Paragraph(unit, s_cell),
-            Paragraph("", s_cell),
+            Paragraph(str(p.get("unit") or ""), s_cell),
+            Paragraph(str(p.get("remark") or ""), s_cell),
         ])
-    if pos_num == 0:
-        rows.append([Paragraph("—", s_cell), Paragraph("Keine Positionen im Auftrag", s_cell), "", "", ""])
+    if not positions:
+        rows.append([Paragraph("—", s_cell), Paragraph("Keine Positionen", s_cell), "", "", ""])
 
     col_widths = [12*mm, USABLE_W - 12*mm - 22*mm - 22*mm - 50*mm, 22*mm, 22*mm, 50*mm]
     tbl = Table(rows, colWidths=col_widths, repeatRows=1)
@@ -993,7 +1022,7 @@ def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery
     elems.append(Spacer(1, 4*mm))
 
     # ===== HINWEIS =====
-    notes = raw_order.get("notes") or ""
+    notes = notes_override if notes_override is not None else (raw_order.get("notes") or "")
     if notes:
         elems.append(Paragraph(f"<b>Hinweis:</b> {notes}", s_value))
         elems.append(Spacer(1, 3*mm))
@@ -1003,17 +1032,59 @@ def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery
         "Mängel sind unverzüglich schriftlich anzuzeigen.",
         s_value,
     ))
-    elems.append(Spacer(1, 12*mm))
+    elems.append(Spacer(1, 10*mm))
 
     # ===== UNTERSCHRIFTEN =====
     sig_w = (USABLE_W - 10*mm) / 2
+
+    def _sig_cell(b64_data, label):
+        """Erzeuge eine Zelle mit (optional) Unterschriftsbild + Linie + Label."""
+        if b64_data:
+            try:
+                if b64_data.startswith("data:"):
+                    b64_data = b64_data.split(",", 1)[1]
+                img_bytes = base64.b64decode(b64_data)
+                img = RLImage(io.BytesIO(img_bytes), width=sig_w - 8*mm, height=22*mm, kind="proportional")
+                return img
+            except Exception:
+                return Paragraph("_______________________________", s_sig)
+        return Paragraph("_______________________________", s_sig)
+
+    sig_sender_cell = _sig_cell(signature_sender_b64, "Lieferant")
+    sig_receiver_cell = _sig_cell(signature_receiver_b64, "Empfänger")
+
+    # Optional Ort/Datum darunter
+    sign_meta = ""
+    if signed_at_iso or signed_at_location:
+        when = ""
+        if signed_at_iso:
+            try:
+                # ISO 2026-05-30T15:30:00 -> 30.05.2026 15:30
+                from datetime import datetime as _dt
+                dtobj = _dt.fromisoformat(signed_at_iso.replace("Z", "+00:00"))
+                when = dtobj.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                when = signed_at_iso
+        parts = [p for p in [signed_at_location, when] if p]
+        sign_meta = ", ".join(parts)
+
+    label_left = "Datum / Unterschrift Lieferant"
+    label_right = "Datum / Unterschrift Empfänger"
+    if sign_meta:
+        label_left = f"{sign_meta}  ·  Lieferant"
+        label_right = f"{sign_meta}  ·  Empfänger"
+
     sig_block = Table([
-        [Paragraph("_______________________________", s_sig), Paragraph("_______________________________", s_sig)],
-        [Paragraph("Datum / Unterschrift Lieferant", s_sig_label), Paragraph("Datum / Unterschrift Empfänger", s_sig_label)],
-    ], colWidths=[sig_w, sig_w], spaceBefore=2)
+        [sig_sender_cell, sig_receiver_cell],
+        [Paragraph("———————————————————", s_sig), Paragraph("———————————————————", s_sig)],
+        [Paragraph(label_left, s_sig_label), Paragraph(label_right, s_sig_label)],
+    ], colWidths=[sig_w, sig_w])
     sig_block.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
         ("TOPPADDING", (0, 0), (-1, -1), 1),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
     elems.append(sig_block)
 
@@ -1022,16 +1093,54 @@ def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery
     return buf
 
 
-@router.get("/epirent/{order_pk}/delivery-note.pdf")
-async def get_delivery_note_pdf(order_pk: int, user: dict = Depends(_auth_user)):
-    """Generiert einen Lieferschein-PDF (Eventenergie-Briefpapier-Stil) fuer einen EpiRent-Auftrag.
+async def _fetch_contact_address(api_url, api_key, ssl_skip, contact_pk):
+    """Helper: Adresse + Kontakt-Details aus EpiRent /v1/contact/{pk}."""
+    out = {"street": "", "postal_code": "", "city": "", "phone": "", "email": ""}
+    if not contact_pk:
+        return out
+    try:
+        headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+        async with httpx.AsyncClient(timeout=10, verify=not ssl_skip) as c:
+            r = await c.get(f"{api_url}/v1/contact/{contact_pk}", headers=headers)
+            cd = r.json().get("payload")
+            if isinstance(cd, list) and cd:
+                cd = cd[0]
+            if isinstance(cd, dict):
+                a = cd.get("address") or {}
+                out["street"] = a.get("street", "") or ""
+                out["postal_code"] = a.get("postal_code", "") or ""
+                out["city"] = a.get("city", "") or ""
+                out["phone"] = cd.get("phone", "") or ""
+                out["email"] = cd.get("email", "") or ""
+    except Exception as e:
+        logger.warning(f"Kontakt-Lookup fehlgeschlagen fuer PK={contact_pk}: {e}")
+    return out
 
-    Verwendet die 3 Top-Level-Kapitel aus order_items als Positionen.
-    Pro Aufruf wird eine fortlaufende Lieferschein-Nr. vergeben und persistiert.
+
+@router.get("/epirent/{order_pk}/delivery-notes")
+async def list_delivery_notes(order_pk: int, user: dict = Depends(_auth_user)):
+    """Liste aller Lieferscheine zu einem Auftrag.
+
+    Frontend nutzt das fuer die Submenu-Anzeige (mit "Lieferschein anlegen"-Button).
     """
-    from fastapi.responses import StreamingResponse
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Lieferscheine sind fuer Freelancer nicht verfuegbar")
+    await _check_freelancer_order_access(user, order_pk)
+    docs = await _db.delivery_notes.find(
+        {"order_pk": order_pk},
+        {"_id": 0, "signature_sender_b64": 0, "signature_receiver_b64": 0},
+    ).sort("created_at", -1).to_list(500)
+    return docs
 
-    # Freelancer haben kein Lieferschein-Recht
+
+@router.get("/epirent/{order_pk}/delivery-notes/prefill")
+async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user)):
+    """Liefert die Vorbefuellung fuer eine neue Lieferschein-Maske:
+    - Empfaenger-Adresse (aus EpiRent address_delivery oder Kontakt)
+    - Positionen aus order_items (mit position_no, title, amount, unit)
+    - Vorgeschlagene LS-Nr. (naechste Sequenz)
+    - Event/Dispo Zeitraum, Hinweise
+    """
     if user.get("role") == "freelancer":
         raise HTTPException(status_code=403, detail="Lieferscheine sind fuer Freelancer nicht verfuegbar")
     await _check_freelancer_order_access(user, order_pk)
@@ -1045,29 +1154,87 @@ async def get_delivery_note_pdf(order_pk: int, user: dict = Depends(_auth_user))
     if not raw:
         raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
 
-    # Kontaktdaten holen (Adresse fuer Empfaenger-Block)
     contact = raw.get("contact") or {}
-    contact_pk = contact.get("primary_key")
-    contact_details = {"street": "", "postal_code": "", "city": "", "phone": "", "email": ""}
-    if contact_pk:
-        try:
-            headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
-            async with httpx.AsyncClient(timeout=10, verify=not ssl_skip) as c:
-                r = await c.get(f"{api_url}/v1/contact/{contact_pk}", headers=headers)
-                cd = r.json().get("payload")
-                if isinstance(cd, list) and cd:
-                    cd = cd[0]
-                if isinstance(cd, dict):
-                    a = cd.get("address") or {}
-                    contact_details["street"] = a.get("street", "") or ""
-                    contact_details["postal_code"] = a.get("postal_code", "") or ""
-                    contact_details["city"] = a.get("city", "") or ""
-                    contact_details["phone"] = cd.get("phone", "") or ""
-                    contact_details["email"] = cd.get("email", "") or ""
-        except Exception as e:
-            logger.warning(f"Kontakt-Lookup fehlgeschlagen fuer PK={contact_pk}: {e}")
+    addr_d = raw.get("address_delivery") or {}
+    contact_details = await _fetch_contact_address(api_url, api_key, ssl_skip, contact.get("primary_key"))
 
-    # Fortlaufende Lieferschein-Nr. pro Auftrag
+    deliv = {
+        "name": addr_d.get("name") or contact.get("name") or "",
+        "street": addr_d.get("street") or contact_details["street"],
+        "postal_code": addr_d.get("postal_code") or contact_details["postal_code"],
+        "city": addr_d.get("city") or contact_details["city"],
+        "country": addr_d.get("country") or "Deutschland",
+    }
+
+    positions = []
+    for i, it in enumerate(raw.get("order_items") or []):
+        positions.append({
+            "pos": it.get("position_no_str") or str(i + 1),
+            "title": it.get("title") or "",
+            "amount": it.get("amount_base") or 1,
+            "unit": it.get("unit_product") or "",
+            "remark": "",
+        })
+
+    sched = raw.get("order_schedule") or []
+    dispo_start = dispo_end = event_start = event_end = ""
+    for s in sched:
+        nm = s.get("name", "")
+        if nm == "Dispo":
+            dispo_start = s.get("date_start") or ""
+            dispo_end = s.get("date_end") or ""
+        elif nm == "Event":
+            event_start = s.get("date_start") or ""
+            event_end = s.get("date_end") or ""
+
+    # Naechste Sequenz vorhersehen (ohne $inc, damit reine Vorschau)
+    counter = await _db.delivery_note_counters.find_one({"order_pk": order_pk}) or {}
+    next_seq = (counter.get("seq", 0) or 0) + 1
+    order_no_fmt = raw.get("order_no_fmt") or str(raw.get("order_no", ""))
+    suggested_no = f"{order_no_fmt}-LS-{next_seq:03d}"
+
+    return {
+        "order_no_fmt": order_no_fmt,
+        "event": raw.get("event") or "",
+        "customer_no": raw.get("customer_no", ""),
+        "customer_name": contact.get("name") or "",
+        "delivery_address": deliv,
+        "positions": positions,
+        "event_start": event_start, "event_end": event_end,
+        "dispo_start": dispo_start, "dispo_end": dispo_end,
+        "notes": raw.get("notes") or "",
+        "suggested_delivery_note_no": suggested_no,
+    }
+
+
+@router.post("/epirent/{order_pk}/delivery-notes")
+async def create_delivery_note(order_pk: int, body: dict, user: dict = Depends(_auth_user)):
+    """Erstellt einen Lieferschein-Datensatz, generiert das PDF und persistiert beides.
+
+    Body: {
+      positions: [{pos, title, amount, unit, remark}, ...],
+      notes_override?: str,
+      signature_sender_b64?: data-URL PNG,
+      signature_receiver_b64?: data-URL PNG,
+      signed_at_location?: str,
+    }
+    """
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Lieferscheine sind fuer Freelancer nicht verfuegbar")
+    await _check_freelancer_order_access(user, order_pk)
+
+    config = await _get_epirent_config()
+    api_url = config.get("api_url", "").rstrip("/")
+    api_key = config.get("api_key", "")
+    ssl_skip = config.get("ssl_skip", False)
+
+    raw = await _get_full_order(api_url, api_key, order_pk, ssl_skip)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+
+    contact = raw.get("contact") or {}
+    contact_details = await _fetch_contact_address(api_url, api_key, ssl_skip, contact.get("primary_key"))
+
     order_no_fmt = raw.get("order_no_fmt") or str(raw.get("order_no", ""))
     counter = await _db.delivery_note_counters.find_one_and_update(
         {"order_pk": order_pk},
@@ -1078,24 +1245,94 @@ async def get_delivery_note_pdf(order_pk: int, user: dict = Depends(_auth_user))
     seq = (counter or {}).get("seq", 1)
     delivery_note_no = f"{order_no_fmt}-LS-{seq:03d}"
 
-    pdf_buf = _generate_delivery_note_pdf(raw, contact_details, delivery_note_no)
+    positions = body.get("positions") or []
+    notes_override = body.get("notes_override")
+    sig_sender = body.get("signature_sender_b64")
+    sig_receiver = body.get("signature_receiver_b64")
+    signed_loc = body.get("signed_at_location") or ""
+    signed_iso = datetime.now(timezone.utc).isoformat()
+    import uuid as _uuid_ls
 
-    # Audit-Log
-    try:
-        await _db.delivery_notes.insert_one({
-            "order_pk": order_pk,
-            "delivery_note_no": delivery_note_no,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "created_by_user_id": user.get("id"),
-            "created_by_name": user.get("name", user.get("email", "")),
-        })
-    except Exception as e:
-        logger.warning(f"Lieferschein-Audit-Log fehlgeschlagen: {e}")
+    pdf_buf = _generate_delivery_note_pdf(
+        raw, contact_details, delivery_note_no,
+        positions=positions,
+        notes_override=notes_override,
+        signature_sender_b64=sig_sender,
+        signature_receiver_b64=sig_receiver,
+        signed_at_location=signed_loc,
+        signed_at_iso=signed_iso,
+    )
 
-    headers = {
-        "Content-Disposition": f'attachment; filename="Lieferschein_{delivery_note_no}.pdf"',
+    # Persist PDF in MongoDB-GridFS-aehnlich -> wir nutzen base64 im Dokument (klein genug)
+    pdf_bytes = pdf_buf.getvalue()
+    import base64 as _b64
+    pdf_b64 = _b64.b64encode(pdf_bytes).decode("ascii")
+
+    doc = {
+        "id": str(_uuid_ls.uuid4()),
+        "order_pk": order_pk,
+        "delivery_note_no": delivery_note_no,
+        "seq": seq,
+        "positions": positions,
+        "notes_override": notes_override or "",
+        "signature_sender_b64": sig_sender or "",
+        "signature_receiver_b64": sig_receiver or "",
+        "signed_at_location": signed_loc,
+        "signed_at": signed_iso,
+        "has_signatures": bool(sig_sender or sig_receiver),
+        "pdf_b64": pdf_b64,
+        "pdf_size": len(pdf_bytes),
+        "created_at": signed_iso,
+        "created_by_user_id": user.get("id"),
+        "created_by_name": user.get("name", user.get("email", "")),
     }
-    return StreamingResponse(pdf_buf, media_type="application/pdf", headers=headers)
+    await _db.delivery_notes.insert_one(doc)
+    return {
+        "id": doc["id"],
+        "delivery_note_no": delivery_note_no,
+        "seq": seq,
+        "pdf_size": len(pdf_bytes),
+        "created_at": signed_iso,
+        "has_signatures": doc["has_signatures"],
+    }
+
+
+@router.get("/epirent/{order_pk}/delivery-notes/{ls_id}/pdf")
+async def get_delivery_note_pdf_by_id(order_pk: int, ls_id: str, user: dict = Depends(_auth_user), token: str = None):
+    """Liefert das gespeicherte PDF eines bereits erstellten Lieferscheins."""
+    from fastapi.responses import StreamingResponse
+    import io
+    import base64 as _b64
+
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Lieferscheine sind fuer Freelancer nicht verfuegbar")
+    await _check_freelancer_order_access(user, order_pk)
+
+    doc = await _db.delivery_notes.find_one({"id": ls_id, "order_pk": order_pk}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
+
+    pdf_b64 = doc.get("pdf_b64")
+    if not pdf_b64:
+        raise HTTPException(status_code=410, detail="PDF nicht mehr verfuegbar")
+    pdf_bytes = _b64.b64decode(pdf_b64)
+    fname = f"Lieferschein_{doc.get('delivery_note_no', ls_id)}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.delete("/epirent/{order_pk}/delivery-notes/{ls_id}")
+async def delete_delivery_note(order_pk: int, ls_id: str, user: dict = Depends(_auth_user)):
+    """Loescht einen Lieferschein (nur Admin)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admin darf Lieferscheine loeschen")
+    r = await _db.delivery_notes.delete_one({"id": ls_id, "order_pk": order_pk})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lieferschein nicht gefunden")
+    return {"deleted": True}
 
 
 

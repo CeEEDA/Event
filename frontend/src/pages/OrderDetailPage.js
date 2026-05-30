@@ -75,6 +75,7 @@ L.Icon.Default.mergeOptions({
 import { OpenLocationCode } from "open-location-code";
 import { openExternal } from "../lib/openExternal";
 import MessprotokollDialog from "../components/MessprotokollDialog";
+import DeliveryNoteDialog from "../components/DeliveryNoteDialog";
 import BulkDismantleMapDialog from "../components/BulkDismantleMapDialog";
 import AssetEditDialog from "../components/AssetEditDialog";
 import GpsLockPicker from "../components/GpsLockPicker";
@@ -303,6 +304,11 @@ export default function OrderDetailPage() {
   const [projectReports, setProjectReports] = useState([]);
   const [projectReportsLoading, setProjectReportsLoading] = useState(false);
 
+  // Lieferscheine
+  const [deliveryNotes, setDeliveryNotes] = useState([]);
+  const [deliveryNotesLoading, setDeliveryNotesLoading] = useState(false);
+  const [showDeliveryNoteDialog, setShowDeliveryNoteDialog] = useState(false);
+
   // Messprotokolle
   const [messprotokolle, setMessprotokolle] = useState([]);
   const [showMessprotokollDialog, setShowMessprotokollDialog] = useState(false);
@@ -404,6 +410,20 @@ export default function OrderDetailPage() {
       setProjectReportsLoading(false);
     }
   }, [pk]);
+
+  const fetchDeliveryNotes = useCallback(async () => {
+    if (!isAdmin) return;
+    setDeliveryNotesLoading(true);
+    try {
+      const { data } = await api.get(`/orders/epirent/${pk}/delivery-notes`);
+      setDeliveryNotes(data || []);
+    } catch (e) {
+      console.debug("fetchDeliveryNotes failed", e);
+      setDeliveryNotes([]);
+    } finally {
+      setDeliveryNotesLoading(false);
+    }
+  }, [pk, isAdmin]);
 
   const fetchMessprotokolle = useCallback(async () => {
     try {
@@ -521,9 +541,10 @@ export default function OrderDetailPage() {
     fetchMessprotokolle();
     fetchDiary();
     fetchTrupps();
+    fetchDeliveryNotes();
     // Document count
     api.get(`/orders/order-documents/${pk}`).then(r => setDocCount(r.data?.length || 0)).catch(() => {});
-  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle, fetchDiary, fetchTrupps]);
+  }, [fetchOrder, fetchAssets, fetchFuelReceipts, fetchProjectReports, fetchMessprotokolle, fetchDiary, fetchTrupps, fetchDeliveryNotes]);
 
   useEffect(() => {
     // fetchGenerators auch ohne center_lat ausfuehren - manuell zugeordnete
@@ -1373,7 +1394,7 @@ export default function OrderDetailPage() {
                   { key: "tankstatus", label: "Tankstatus", desc: "Tankrunde · Prognose · CSV", icon: Fuel, color: "amber", count: 0, isLink: true },
                   { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
                   { key: "diary", label: "Einsatztagebuch", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
-                  { key: "delivery-note", label: "Lieferschein", desc: "PDF nach Briefpapier-Vorlage", icon: FileText, color: "violet", count: 0, adminOnly: true, isAction: true },
+                  { key: "delivery-notes", label: "Lieferscheine", desc: "Anlegen & Verwalten", icon: FileText, color: "violet", count: deliveryNotes.length, adminOnly: true },
                 ].filter(t => (!t.hideForFreelancer || !isFreelancer) && (!t.adminOnly || isAdmin)).map((t) => {
                   const colorMap = {
                     orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
@@ -1398,34 +1419,6 @@ export default function OrderDetailPage() {
                         }
                         if (t.key === "tankstatus") {
                           navigate(`/orders/${pk}/tankstatus`);
-                          return;
-                        }
-                        if (t.key === "delivery-note") {
-                          (async () => {
-                            try {
-                              const token = localStorage.getItem("token");
-                              const r = await fetch(`${BACKEND_URL}/api/orders/epirent/${pk}/delivery-note.pdf`, {
-                                headers: { Authorization: `Bearer ${token}` },
-                              });
-                              if (!r.ok) {
-                                const txt = await r.text();
-                                toast.error(`Lieferschein-Fehler: ${txt || r.status}`);
-                                return;
-                              }
-                              const blob = await r.blob();
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement("a");
-                              a.href = url;
-                              a.download = `Lieferschein_${order?.order_no || pk}.pdf`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(url);
-                              toast.success("Lieferschein erstellt");
-                            } catch (e) {
-                              toast.error(`Lieferschein-Fehler: ${e.message || e}`);
-                            }
-                          })();
                           return;
                         }
                         setActiveTab(t.key);
@@ -2564,6 +2557,111 @@ export default function OrderDetailPage() {
           </div>
           )}
 
+          {/* Lieferscheine Section */}
+          {activeTab === "delivery-notes" && isAdmin && (
+          <div className="bg-white rounded-lg border border-gray-200" data-testid="delivery-notes-section">
+            <div className="p-4 border-b border-gray-100">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-violet-500" />
+                  Lieferscheine
+                  {deliveryNotesLoading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                </h2>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-violet-600 hover:bg-violet-700 text-white"
+                  onClick={() => setShowDeliveryNoteDialog(true)}
+                  data-testid="open-delivery-note-dialog-btn"
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Lieferschein anlegen
+                </Button>
+              </div>
+            </div>
+
+            {deliveryNotes.length === 0 && !deliveryNotesLoading ? (
+              <div className="p-8 text-center text-gray-400">
+                <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Noch keine Lieferscheine für diesen Auftrag</p>
+                <p className="text-xs mt-1">Klicke "Lieferschein anlegen" um einen zu erstellen</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {deliveryNotes.map((ln) => (
+                  <div key={ln.id || ln.delivery_note_no} className="p-4 hover:bg-violet-50/30 transition-colors" data-testid={`delivery-note-${ln.id || ln.delivery_note_no}`}>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-violet-100 text-violet-700">
+                            Lieferschein
+                          </span>
+                          <span className="text-xs text-gray-500 font-mono">{ln.delivery_note_no}</span>
+                          {ln.has_signatures && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">unterschrieben</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-700">
+                          erstellt am {ln.created_at ? new Date(ln.created_at).toLocaleString("de-DE") : "—"}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">von {ln.created_by_name || "—"}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {ln.id && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const token = localStorage.getItem("token");
+                                const r = await fetch(`${BACKEND_URL}/api/orders/epirent/${pk}/delivery-notes/${ln.id}/pdf`, {
+                                  headers: { Authorization: `Bearer ${token}` },
+                                });
+                                if (!r.ok) { toast.error("PDF nicht verfügbar"); return; }
+                                const blob = await r.blob();
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = `Lieferschein_${ln.delivery_note_no}.pdf`;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                              } catch (e) {
+                                toast.error("PDF-Fehler");
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600"
+                            title="PDF herunterladen"
+                            data-testid={`delivery-note-pdf-${ln.id}`}
+                          >
+                            <FileDown className="w-4 h-4" />
+                          </button>
+                        )}
+                        {ln.id && (
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Lieferschein ${ln.delivery_note_no} wirklich löschen?`)) return;
+                              try {
+                                await api.delete(`/orders/epirent/${pk}/delivery-notes/${ln.id}`);
+                                toast.success("Lieferschein gelöscht");
+                                fetchDeliveryNotes();
+                              } catch (e) {
+                                toast.error(`Fehler: ${e?.response?.data?.detail || e.message}`);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400"
+                            title="Löschen"
+                            data-testid={`delivery-note-delete-${ln.id}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          )}
+
           {/* Tankbelege Section */}
           {activeTab === "fuel" && !isFreelancer && (
           <div className="bg-white rounded-lg border border-gray-200" data-testid="fuel-receipts-section">
@@ -3255,6 +3353,14 @@ export default function OrderDetailPage() {
               onSaved={() => { fetchAssets(); setEditingAsset(null); }}
             />
           )}
+
+          {/* Lieferschein anlegen Dialog */}
+          <DeliveryNoteDialog
+            open={showDeliveryNoteDialog}
+            onOpenChange={setShowDeliveryNoteDialog}
+            orderPk={pk}
+            onCreated={() => { fetchDeliveryNotes(); }}
+          />
 
           {/* GPS Lock Picker (WhatsApp-Style Position-Modal) */}
           <GpsLockPicker
