@@ -2660,7 +2660,7 @@ export default function OrderDetailPage() {
                             <FileDown className="w-4 h-4" />
                           </button>
                         )}
-                        {ln.id && (
+                        {ln.id && isAdmin && (
                           <button
                             onClick={async () => {
                               if (!window.confirm(`Lieferschein ${ln.delivery_note_no} wirklich löschen?`)) return;
@@ -2673,7 +2673,7 @@ export default function OrderDetailPage() {
                               }
                             }}
                             className="p-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 text-red-400"
-                            title="Löschen"
+                            title="Löschen (nur Admin)"
                             data-testid={`delivery-note-delete-${ln.id}`}
                           >
                             <Trash2 className="w-4 h-4" />
