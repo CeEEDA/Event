@@ -339,6 +339,20 @@ Folgende P2-Items bleiben weiter im Backlog:
 
 ## Implementation Log
 
+### Mai 2026 – Logo-Vereinheitlichung + ASCII-Mail-Text
+- 🎯 **User-Request**: Alle Logos gleich ziehen + Umlaute aus E-Mail-Text entfernen.
+- ✅ **Logo-Vereinheitlichung** auf das Portal-Logo (`/app/backend/static/portal_logo.png`, 460×107 RGBA, lila Eventenergie-Schriftzug), 50mm breit ~ 11.6mm hoch (4.3:1):
+  - **Lieferschein-PDF**: bereits via `_draw_ee_brand_chrome` ✓
+  - **Abrechnungs-PDF**: bereits via `_draw_ee_brand_chrome` ✓
+  - **Projektbericht-PDF** (`/app/backend/routes/project_reports.py:309`): `static/logo.png` → `static/portal_logo.png`, Größe 45×10.5mm → 50×11.6mm.
+  - **Tankbeleg-PDF** (`/app/backend/routes/fuel_receipts.py`): Remote-URL-Fetch (`LOGO_URL` von customer-assets) ersetzt durch lokales `static/portal_logo.png`. Eliminiert Netzwerk-Dependency + jedes Mal HTTP-Roundtrip pro Beleg-Generierung. Logo-Größe auf 50×11.6mm vereinheitlicht (war 55×20mm).
+  - `import os` in fuel_receipts.py ergänzt für path-join.
+- ✅ **E-Mail-Text vollständig ASCII-safe** (`/app/backend/routes/orders.py` `email_delivery_note`):
+  - Subject: `–` (em-dash U+2013) → `-` (ASCII hyphen)
+  - Body: "Rueckfragen" → "Fragen" (kürzer + neutraler), "zum Auftrag" → "zu Ihrem Auftrag" (höflicher Ton)
+  - Verifiziert via Python-Check: 0 Non-ASCII-Zeichen im Body. Keine Mojibake-Probleme mehr in Mail-Clients mit alten Encoding-Settings.
+- ✅ **Verifikation**: Tankbeleg-PDF-Screenshot zeigt Portal-Logo identisch zum Lieferschein. Backend Hot-Reload aktiv.
+
 ### Mai 2026 – Abrechnungs-PDF im Lieferschein-Design (Brand-Chrome)
 - 🎯 **User-Request**: Abrechnungs-PDF auf das gleiche Design wie der Lieferschein umstellen.
 - ✅ **Refactoring**: Header/Footer-Painter zu wiederverwendbarem Modul-Helper `_draw_ee_brand_chrome(canv, doc)` extrahiert. Lieferschein-PDF nutzt ihn jetzt via `PageTemplate.onPage`, Abrechnungs-PDF via `SimpleDocTemplate.build(onFirstPage=, onLaterPages=)`.

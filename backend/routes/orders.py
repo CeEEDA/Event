@@ -1544,8 +1544,8 @@ async def email_delivery_note(order_pk: int, ls_id: str, body: dict, user: dict 
     pdf_bytes = _b64.b64decode(pdf_b64)
     ls_no = doc.get("delivery_note_no", ls_id)
 
-    # E-Mail-Inhalt
-    subject = f"Lieferschein {ls_no} – Eventenergie Deutschland"
+    # E-Mail-Inhalt (komplett ASCII-safe, keine Umlaute / Sonderzeichen)
+    subject = f"Lieferschein {ls_no} - Eventenergie Deutschland"
     html = f"""<!DOCTYPE html>
 <html><body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f5f5f5;">
 <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e5e5;">
@@ -1554,8 +1554,8 @@ async def email_delivery_note(order_pk: int, ls_id: str, body: dict, user: dict 
   </div>
   <div style="padding:24px 28px;color:#1f2937;line-height:1.5;font-size:14px;">
     <p>Sehr geehrte Damen und Herren,</p>
-    <p>anbei erhalten Sie den Lieferschein zum Auftrag.</p>
-    <p>Bei Rueckfragen erreichen Sie uns unter <a href="tel:+49263230921-0">+49 (0) 2632 30921-0</a> oder
+    <p>anbei erhalten Sie den Lieferschein zu Ihrem Auftrag.</p>
+    <p>Bei Fragen erreichen Sie uns unter <a href="tel:+49263230921-0">+49 (0) 2632 30921-0</a> oder
     per Mail an <a href="mailto:info@eventenergie-deutschland.de">info@eventenergie-deutschland.de</a>.</p>
     <p style="margin-top:24px;">Mit freundlichen Gruessen<br/>Eventenergie Deutschland GmbH &amp; Co. KG</p>
   </div>

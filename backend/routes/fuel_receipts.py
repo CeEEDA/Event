@@ -8,6 +8,7 @@ import math
 import base64
 import bcrypt
 import httpx
+import os
 
 router = APIRouter(prefix="/api/fuel-receipts", tags=["fuel-receipts"])
 security = HTTPBearer()
@@ -445,13 +446,12 @@ async def export_all_receipts_pdf(
     adj = await _db.fuel_adjustments.find_one({"order_pk": str(order_pk)}, {"_id": 0})
     pct = adj.get("adjustment_percent", 0) if adj else 0
 
-    # Fetch logo once
+    # Logo aus lokalem static-Ordner (statt remote URL fetch)
     logo_img = None
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(LOGO_URL, timeout=10)
-            if resp.status_code == 200:
-                logo_img = ImageReader(BytesIO(resp.content))
+        local_logo = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "portal_logo.png")
+        if os.path.exists(local_logo):
+            logo_img = ImageReader(local_logo)
     except Exception:
         pass
 
@@ -595,12 +595,12 @@ async def export_fuel_receipt_pdf(
         if pct != 0:
             qty = round(qty * (1 + pct / 100), 1)
 
+    # Logo aus lokalem static-Ordner (statt remote URL fetch)
     logo_img = None
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(LOGO_URL, timeout=10)
-            if resp.status_code == 200:
-                logo_img = ImageReader(BytesIO(resp.content))
+        local_logo = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "portal_logo.png")
+        if os.path.exists(local_logo):
+            logo_img = ImageReader(local_logo)
     except Exception:
         pass
 
@@ -639,7 +639,8 @@ def _draw_receipt_page(c, doc, display_qty, logo_img=None):
     # Logo
     if logo_img:
         try:
-            c.drawImage(logo_img, margin, h - 45 * mm, width=55 * mm, height=20 * mm, preserveAspectRatio=True, mask="auto")
+            # Portal-Logo 460x107 -> 4.3:1. Einheitlich 50mm breit (~11.6mm hoch)
+            c.drawImage(logo_img, margin, h - 38 * mm, width=50 * mm, height=11.6 * mm, preserveAspectRatio=True, mask="auto")
         except Exception:
             c.setFont("Helvetica-Bold", 16)
             c.setFillColor(HexColor("#1f2937"))

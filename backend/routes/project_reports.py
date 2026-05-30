@@ -306,12 +306,13 @@ def _generate_report_pdf(report: dict) -> io.BytesIO:
     elems = []
 
     # ── HEADER: Logo + Title ──
-    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "logo.png")
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "portal_logo.png")
     header_data = [[Paragraph("Projektbericht", s_title), ""]]
     if os.path.exists(logo_path):
-        logo = RLImage(logo_path, width=45*mm, height=10.5*mm)
+        # Portal-Logo 460x107 -> Verhaeltnis ~4.3:1. 50mm breit ~ 11.6mm hoch
+        logo = RLImage(logo_path, width=50*mm, height=11.6*mm)
         header_data = [[Paragraph("Projektbericht", s_title), logo]]
-    ht = Table(header_data, colWidths=[W - 50*mm, 50*mm])
+    ht = Table(header_data, colWidths=[W - 55*mm, 55*mm])
     ht.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (1, 0), "RIGHT"),
