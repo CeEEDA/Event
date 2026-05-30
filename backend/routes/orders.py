@@ -729,6 +729,377 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _generate_delivery_note_pdf(raw_order: dict, contact_details: dict, delivery_note_no: str):
+    """Generate a Lieferschein-PDF (Eventenergie-Briefpapier-Stil). Returns io.BytesIO."""
+    import io
+    import os
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        BaseDocTemplate, PageTemplate, Frame, Table, TableStyle,
+        Paragraph, Spacer,
+    )
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+
+    PURPLE = colors.HexColor("#7c3aed")
+    BORDER = colors.HexColor("#d1d5db")
+    HEADER_BG = colors.HexColor("#ede9fe")
+    LIGHT_GRAY = colors.HexColor("#f9fafb")
+    DARK = colors.HexColor("#1f2937")
+    MUTED = colors.HexColor("#6b7280")
+
+    s_title = ParagraphStyle("T", fontSize=20, fontName="Helvetica-Bold", textColor=PURPLE, alignment=TA_LEFT, spaceAfter=4, leading=22)
+    s_meta_lbl = ParagraphStyle("ML", fontSize=8, textColor=MUTED, fontName="Helvetica")
+    s_meta_val = ParagraphStyle("MV", fontSize=9, textColor=DARK, fontName="Helvetica-Bold")
+    s_sender_small = ParagraphStyle("SS", fontSize=6.5, textColor=MUTED, fontName="Helvetica")
+    s_addr_label = ParagraphStyle("AL", fontSize=7, textColor=MUTED, fontName="Helvetica", spaceAfter=1)
+    s_addr_val = ParagraphStyle("AV", fontSize=10, textColor=DARK, fontName="Helvetica", leading=12)
+    s_h2 = ParagraphStyle("H2", fontSize=11, fontName="Helvetica-Bold", textColor=PURPLE, spaceBefore=4, spaceAfter=3)  # noqa: F841
+    s_label = ParagraphStyle("L", fontSize=8, textColor=MUTED, fontName="Helvetica")  # noqa: F841
+    s_value = ParagraphStyle("V", fontSize=9, textColor=DARK, fontName="Helvetica")
+    s_cell = ParagraphStyle("C", fontSize=9, textColor=DARK, leading=11)
+    s_cell_b = ParagraphStyle("CB", fontSize=9, textColor=DARK, fontName="Helvetica-Bold", leading=11)
+    s_cell_r = ParagraphStyle("CR", fontSize=9, textColor=DARK, leading=11, alignment=TA_RIGHT)
+    s_intro = ParagraphStyle("I", fontSize=9.5, textColor=DARK, leading=13, fontName="Helvetica")
+    s_footer_col = ParagraphStyle("FC", fontSize=6.5, textColor=MUTED, leading=8.5, fontName="Helvetica")  # noqa: F841
+    s_footer_lbl = ParagraphStyle("FL", fontSize=6.5, textColor=MUTED, leading=8.5, fontName="Helvetica-Bold")  # noqa: F841
+    s_sig = ParagraphStyle("SG", fontSize=8, textColor=DARK, fontName="Helvetica", alignment=TA_CENTER)
+    s_sig_label = ParagraphStyle("SGL", fontSize=7, textColor=MUTED, fontName="Helvetica", alignment=TA_CENTER)
+
+    buf = io.BytesIO()
+    page_w, page_h = A4
+
+    LEFT = 18*mm
+    RIGHT = 18*mm
+    TOP = 12*mm
+    BOTTOM = 28*mm
+    USABLE_W = page_w - LEFT - RIGHT
+
+    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "briefpapier_logo.jpeg")
+
+    def draw_header_footer(canv, doc):
+        canv.saveState()
+        # ===== HEADER: Logo + Firmenname/Adresse mini-strip oben =====
+        if os.path.exists(logo_path):
+            # Original Logo: 763x168 -> Verhaeltnis ~4.54:1. Wir nehmen 28mm breit, 6.2mm hoch
+            logo_w = 28*mm
+            logo_h = logo_w / 4.54
+            canv.drawImage(logo_path, LEFT, page_h - 13*mm - logo_h,
+                           width=logo_w, height=logo_h, mask="auto", preserveAspectRatio=True)
+        canv.setFont("Helvetica-Bold", 9)
+        canv.setFillColor(DARK)
+        canv.drawString(LEFT + 32*mm, page_h - 14*mm, "EVENTENERGIE DEUTSCHLAND")
+        canv.setFont("Helvetica", 6.5)
+        canv.setFillColor(MUTED)
+        canv.drawString(LEFT + 32*mm, page_h - 17.5*mm, "Eventenergie Deutschland GmbH & Co. KG  |  Thyssenstraße 10  |  56626 Andernach")
+        # duenne Trennlinie
+        canv.setStrokeColor(PURPLE)
+        canv.setLineWidth(0.4)
+        canv.line(LEFT, page_h - 19.5*mm, page_w - RIGHT, page_h - 19.5*mm)
+
+        # ===== FOOTER mit 4-Spalten-Pflichtangaben =====
+        footer_y = 22*mm
+        canv.setStrokeColor(BORDER)
+        canv.setLineWidth(0.3)
+        canv.line(LEFT, footer_y, page_w - RIGHT, footer_y)
+
+        col_w = USABLE_W / 4.0
+        cols = [
+            ("Eventenergie Deutschland GmbH & Co. KG",
+             "Thyssenstraße 10",
+             "56626 Andernach",
+             "Tel.: +49 (0) 2632 30921-0",
+             "Hotline: +49 (0) 800 POWER24",
+             "info@eventenergie-deutschland.de",
+             "www.eventenergie-deutschland.de"),
+            ("Amtsgericht Koblenz: HRA 22723",
+             "Finanzamt Mayen",
+             "Ust.-ID: DE 333489815"),
+            ("Geschäftsführung:",
+             "Christian Ecker",
+             "Michael Giangrasso",
+             "Marco Döhr"),
+            ("Teba Landau",
+             "IBAN: DE86 7413 1000",
+             "      0002 6260 00",
+             "BIC: TEKRDE71"),
+        ]
+        for ci, lines in enumerate(cols):
+            x = LEFT + ci * col_w + 2
+            for li, txt in enumerate(lines):
+                canv.setFont("Helvetica", 6)
+                canv.setFillColor(MUTED)
+                canv.drawString(x, footer_y - 4 - li * 7, txt)
+        # Seiten-Nr
+        canv.setFont("Helvetica", 6.5)
+        canv.setFillColor(MUTED)
+        canv.drawRightString(page_w - RIGHT, 8*mm, f"Seite {doc.page}")
+        canv.restoreState()
+
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=LEFT, rightMargin=RIGHT, topMargin=TOP + 12*mm, bottomMargin=BOTTOM,
+    )
+    frame = Frame(LEFT, BOTTOM, USABLE_W, page_h - TOP - 22*mm - BOTTOM, showBoundary=0)
+    doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=draw_header_footer)])
+
+    elems = []
+
+    # ===== ABSENDERZEILE (kleine Zeile ueber Empfaenger) =====
+    elems.append(Paragraph(
+        "Eventenergie Deutschland GmbH &amp; Co. KG  ·  Thyssenstraße 10  ·  56626 Andernach",
+        s_sender_small,
+    ))
+    elems.append(Spacer(1, 4*mm))
+
+    # ===== EMPFAENGER + META =====
+    contact = raw_order.get("contact") or {}
+    customer_name = contact.get("name") or ""
+    addr_d = raw_order.get("address_delivery") or {}
+    # Bevorzugt explizite Lieferadresse, sonst Kontakt-Adresse
+    deliv_street = addr_d.get("street") or contact_details.get("street", "")
+    deliv_plz = addr_d.get("postal_code") or contact_details.get("postal_code", "")
+    deliv_city = addr_d.get("city") or contact_details.get("city", "")
+    deliv_country = addr_d.get("country") or "Deutschland"
+    addr_name = addr_d.get("name") or customer_name
+
+    addr_lines = []
+    if addr_name:
+        addr_lines.append(f"<b>{addr_name}</b>")
+    if deliv_street:
+        addr_lines.append(deliv_street)
+    if deliv_plz or deliv_city:
+        addr_lines.append(f"{deliv_plz} {deliv_city}".strip())
+    if deliv_country and deliv_country.lower() not in ("deutschland", "de", ""):
+        addr_lines.append(deliv_country)
+    addr_html = "<br/>".join(addr_lines) if addr_lines else "—"
+
+    order_no_fmt = raw_order.get("order_no_fmt") or str(raw_order.get("order_no", ""))
+    # Parse Dispo / Event Schedule
+    sched = raw_order.get("order_schedule") or []
+    dispo_start = dispo_end = event_start = event_end = ""
+    for s in sched:
+        nm = s.get("name", "")
+        if nm == "Dispo":
+            dispo_start = s.get("date_start") or ""
+            dispo_end = s.get("date_end") or ""
+        elif nm == "Event":
+            event_start = s.get("date_start") or ""
+            event_end = s.get("date_end") or ""
+
+    def _fmt_de(d):
+        if not d or d == "0000-00-00":
+            return ""
+        try:
+            y, m, day = d.split("-")
+            return f"{day}.{m}.{y}"
+        except Exception:
+            return d
+
+    meta_data = [
+        [Paragraph("Lieferschein-Nr.", s_meta_lbl), Paragraph(delivery_note_no, s_meta_val)],
+        [Paragraph("Auftrags-Nr.", s_meta_lbl), Paragraph(order_no_fmt, s_meta_val)],
+        [Paragraph("Datum", s_meta_lbl), Paragraph(datetime.now(timezone.utc).astimezone().strftime("%d.%m.%Y"), s_meta_val)],
+        [Paragraph("Kunden-Nr.", s_meta_lbl), Paragraph(str(raw_order.get("customer_no", "")), s_meta_val)],
+    ]
+    if event_start or event_end:
+        meta_data.append([Paragraph("Event", s_meta_lbl), Paragraph(f"{_fmt_de(event_start)} – {_fmt_de(event_end)}", s_meta_val)])
+    if dispo_start or dispo_end:
+        meta_data.append([Paragraph("Dispo", s_meta_lbl), Paragraph(f"{_fmt_de(dispo_start)} – {_fmt_de(dispo_end)}", s_meta_val)])
+
+    meta_t = Table(meta_data, colWidths=[28*mm, 47*mm])
+    meta_t.setStyle(TableStyle([
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    addr_para = Paragraph(addr_html, s_addr_val)
+    addr_block = Table(
+        [[Paragraph("LIEFERADRESSE", s_addr_label)], [addr_para]],
+        colWidths=[USABLE_W - 75*mm - 5*mm],
+    )
+    addr_block.setStyle(TableStyle([
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (0, 0), 0.4, PURPLE),
+    ]))
+
+    head_t = Table([[addr_block, meta_t]], colWidths=[USABLE_W - 75*mm - 5*mm + 5*mm, 75*mm])
+    head_t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    elems.append(head_t)
+    elems.append(Spacer(1, 6*mm))
+
+    # ===== TITEL =====
+    elems.append(Paragraph("Lieferschein", s_title))
+    event_text = raw_order.get("event") or ""
+    if event_text:
+        elems.append(Spacer(1, 1*mm))
+        elems.append(Paragraph(f"<i>{event_text}</i>", s_intro))
+    elems.append(Spacer(1, 4*mm))
+    elems.append(Paragraph(
+        "Sehr geehrte Damen und Herren,<br/>"
+        "wir liefern Ihnen zu o. g. Auftrag folgende Positionen:",
+        s_intro,
+    ))
+    elems.append(Spacer(1, 4*mm))
+
+    # ===== POSITIONEN-TABELLE (3 Kapitel aus EpiRent) =====
+    items = raw_order.get("order_items") or []
+    rows = [[
+        Paragraph("<b>Pos.</b>", s_cell_b),
+        Paragraph("<b>Bezeichnung</b>", s_cell_b),
+        Paragraph("<b>Menge</b>", s_cell_b),
+        Paragraph("<b>Einheit</b>", s_cell_b),
+        Paragraph("<b>Bemerkung</b>", s_cell_b),
+    ]]
+    pos_num = 0
+    for it in items:
+        pos_num += 1
+        pos_no = it.get("position_no_str") or str(pos_num)
+        title = it.get("title") or ""
+        amount = it.get("amount_base") or 0
+        try:
+            amount_str = f"{float(amount):g}" if amount else ""
+        except Exception:
+            amount_str = str(amount)
+        unit = it.get("unit_product") or ""
+        rows.append([
+            Paragraph(str(pos_no), s_cell),
+            Paragraph(title, s_cell_b),
+            Paragraph(amount_str, s_cell_r),
+            Paragraph(unit, s_cell),
+            Paragraph("", s_cell),
+        ])
+    if pos_num == 0:
+        rows.append([Paragraph("—", s_cell), Paragraph("Keine Positionen im Auftrag", s_cell), "", "", ""])
+
+    col_widths = [12*mm, USABLE_W - 12*mm - 22*mm - 22*mm - 50*mm, 22*mm, 22*mm, 50*mm]
+    tbl = Table(rows, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, PURPLE),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.25, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT_GRAY]),
+    ]))
+    elems.append(tbl)
+    elems.append(Spacer(1, 4*mm))
+
+    # ===== HINWEIS =====
+    notes = raw_order.get("notes") or ""
+    if notes:
+        elems.append(Paragraph(f"<b>Hinweis:</b> {notes}", s_value))
+        elems.append(Spacer(1, 3*mm))
+
+    elems.append(Paragraph(
+        "Bitte prüfen Sie die Lieferung auf Vollständigkeit und Unversehrtheit. "
+        "Mängel sind unverzüglich schriftlich anzuzeigen.",
+        s_value,
+    ))
+    elems.append(Spacer(1, 12*mm))
+
+    # ===== UNTERSCHRIFTEN =====
+    sig_w = (USABLE_W - 10*mm) / 2
+    sig_block = Table([
+        [Paragraph("_______________________________", s_sig), Paragraph("_______________________________", s_sig)],
+        [Paragraph("Datum / Unterschrift Lieferant", s_sig_label), Paragraph("Datum / Unterschrift Empfänger", s_sig_label)],
+    ], colWidths=[sig_w, sig_w], spaceBefore=2)
+    sig_block.setStyle(TableStyle([
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]))
+    elems.append(sig_block)
+
+    doc.build(elems)
+    buf.seek(0)
+    return buf
+
+
+@router.get("/epirent/{order_pk}/delivery-note.pdf")
+async def get_delivery_note_pdf(order_pk: int, user: dict = Depends(_auth_user)):
+    """Generiert einen Lieferschein-PDF (Eventenergie-Briefpapier-Stil) fuer einen EpiRent-Auftrag.
+
+    Verwendet die 3 Top-Level-Kapitel aus order_items als Positionen.
+    Pro Aufruf wird eine fortlaufende Lieferschein-Nr. vergeben und persistiert.
+    """
+    from fastapi.responses import StreamingResponse
+
+    # Freelancer haben kein Lieferschein-Recht
+    if user.get("role") == "freelancer":
+        raise HTTPException(status_code=403, detail="Lieferscheine sind fuer Freelancer nicht verfuegbar")
+    await _check_freelancer_order_access(user, order_pk)
+
+    config = await _get_epirent_config()
+    api_url = config.get("api_url", "").rstrip("/")
+    api_key = config.get("api_key", "")
+    ssl_skip = config.get("ssl_skip", False)
+
+    raw = await _get_full_order(api_url, api_key, order_pk, ssl_skip)
+    if not raw:
+        raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+
+    # Kontaktdaten holen (Adresse fuer Empfaenger-Block)
+    contact = raw.get("contact") or {}
+    contact_pk = contact.get("primary_key")
+    contact_details = {"street": "", "postal_code": "", "city": "", "phone": "", "email": ""}
+    if contact_pk:
+        try:
+            headers = {"X-EPI-NO-SESSION": "True", "X-EPI-ACC-TOK": api_key}
+            async with httpx.AsyncClient(timeout=10, verify=not ssl_skip) as c:
+                r = await c.get(f"{api_url}/v1/contact/{contact_pk}", headers=headers)
+                cd = r.json().get("payload")
+                if isinstance(cd, list) and cd:
+                    cd = cd[0]
+                if isinstance(cd, dict):
+                    a = cd.get("address") or {}
+                    contact_details["street"] = a.get("street", "") or ""
+                    contact_details["postal_code"] = a.get("postal_code", "") or ""
+                    contact_details["city"] = a.get("city", "") or ""
+                    contact_details["phone"] = cd.get("phone", "") or ""
+                    contact_details["email"] = cd.get("email", "") or ""
+        except Exception as e:
+            logger.warning(f"Kontakt-Lookup fehlgeschlagen fuer PK={contact_pk}: {e}")
+
+    # Fortlaufende Lieferschein-Nr. pro Auftrag
+    order_no_fmt = raw.get("order_no_fmt") or str(raw.get("order_no", ""))
+    counter = await _db.delivery_note_counters.find_one_and_update(
+        {"order_pk": order_pk},
+        {"$inc": {"seq": 1}, "$setOnInsert": {"order_pk": order_pk}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (counter or {}).get("seq", 1)
+    delivery_note_no = f"{order_no_fmt}-LS-{seq:03d}"
+
+    pdf_buf = _generate_delivery_note_pdf(raw, contact_details, delivery_note_no)
+
+    # Audit-Log
+    try:
+        await _db.delivery_notes.insert_one({
+            "order_pk": order_pk,
+            "delivery_note_no": delivery_note_no,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by_user_id": user.get("id"),
+            "created_by_name": user.get("name", user.get("email", "")),
+        })
+    except Exception as e:
+        logger.warning(f"Lieferschein-Audit-Log fehlgeschlagen: {e}")
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="Lieferschein_{delivery_note_no}.pdf"',
+    }
+    return StreamingResponse(pdf_buf, media_type="application/pdf", headers=headers)
+
+
+
+
 @router.put("/epirent/{order_pk}/settings")
 async def update_order_settings(
     order_pk: int, data: OrderSettingsUpdate, user: dict = Depends(_auth_user)

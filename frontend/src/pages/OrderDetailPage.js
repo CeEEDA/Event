@@ -56,6 +56,7 @@ import {
   Copy,
   CheckSquare,
   Square,
+  FileText,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
@@ -969,6 +970,41 @@ export default function OrderDetailPage() {
                 data-testid="billing-pdf-btn"
               >
                 <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                onClick={async () => {
+                  try {
+                    const token = localStorage.getItem("token");
+                    const r = await fetch(`${BACKEND_URL}/api/orders/epirent/${pk}/delivery-note.pdf`, {
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (!r.ok) {
+                      const txt = await r.text();
+                      toast.error(`Lieferschein-Fehler: ${txt || r.status}`);
+                      return;
+                    }
+                    const blob = await r.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `Lieferschein_${order?.order_no || pk}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    toast.success("Lieferschein erstellt");
+                  } catch (e) {
+                    toast.error(`Lieferschein-Fehler: ${e.message || e}`);
+                  }
+                }}
+                data-testid="delivery-note-pdf-btn"
+              >
+                <FileText className="w-4 h-4 mr-1" /> Lieferschein
               </Button>
             )}
             <Logo size="small" />
