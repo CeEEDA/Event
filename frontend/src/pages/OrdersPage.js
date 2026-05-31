@@ -100,11 +100,14 @@ export default function OrdersPage() {
   const isFreelancer = user?.role === "freelancer";
   const handleLogout = () => { logout(); navigate("/login"); };
 
-  const today = toISODate(new Date());
+  // Default-Fenster: 14 Tage in der Vergangenheit bis 14 Tage in der Zukunft.
+  // Der Nutzer kann den Zeitraum jederzeit anpassen.
+  const defaultFrom = toISODate(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000));
+  const defaultTo = toISODate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
 
-  // Default: nur aktive Jobs (heute im Veranstaltungszeitraum)
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo] = useState(today);
+  // Default: aktive Jobs im 28-Tage-Fenster um Heute
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo, setDateTo] = useState(defaultTo);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("confirmed");
   const [orders, setOrders] = useState([]);
