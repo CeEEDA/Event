@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
@@ -185,8 +185,28 @@ function RadiusCircle({ center, radiusKm }) {
 
 function FitBounds({ center, generators, assets, radiusKm }) {
   const map = useMap();
+  // Wir fitten nur dann, wenn sich die TATSAECHLICHEN Koordinaten aendern -
+  // nicht bei jedem Re-Render (z.B. wenn ein Popup geoeffnet wird und im
+  // Hintergrund ein Polling generators/assets neu zuweist). Damit bleibt
+  // der manuell gezoomte/gepannte Karten-Stand erhalten.
+  const lastKeyRef = useRef("");
   useEffect(() => {
     if (!center || !center[0]) return;
+    const key = JSON.stringify({
+      c: [Number(center[0]).toFixed(6), Number(center[1]).toFixed(6)],
+      r: radiusKm,
+      g: generators
+        .filter(g => Number.isFinite(Number(g.latitude)))
+        .map(g => `${g.id}:${Number(g.latitude).toFixed(6)},${Number(g.longitude).toFixed(6)}`)
+        .sort(),
+      a: assets
+        .filter(a => Number.isFinite(Number(a.latitude)))
+        .map(a => `${a.id}:${Number(a.latitude).toFixed(6)},${Number(a.longitude).toFixed(6)}`)
+        .sort(),
+    });
+    if (key === lastKeyRef.current) return;
+    lastKeyRef.current = key;
+
     const points = [[center[0], center[1]]];
     generators.forEach((g) => {
       if (Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude))) {
@@ -933,7 +953,11 @@ export default function OrderDetailPage() {
     return acc;
   }, { total: 0 });
 
-  if (loading) {
+  // Nur beim allerersten Laden Full-Page-Spinner zeigen.
+  // Spaetere Aktualisierungen (Aktualisieren-Button etc.) duerfen die
+  // Seite nicht abreissen, sonst remountet die Karte und der manuell
+  // gezoomte/gepannte Stand geht verloren.
+  if (loading && !order) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-fuchsia-500" />
