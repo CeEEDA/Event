@@ -185,27 +185,15 @@ function RadiusCircle({ center, radiusKm }) {
 
 function FitBounds({ center, generators, assets, radiusKm }) {
   const map = useMap();
-  // Wir fitten nur dann, wenn sich die TATSAECHLICHEN Koordinaten aendern -
-  // nicht bei jedem Re-Render (z.B. wenn ein Popup geoeffnet wird und im
-  // Hintergrund ein Polling generators/assets neu zuweist). Damit bleibt
-  // der manuell gezoomte/gepannte Karten-Stand erhalten.
-  const lastKeyRef = useRef("");
+  // Wir fitten NUR einmal: beim ersten Render, sobald wir wirklich Daten
+  // (center + ggf. Marker) haben. Danach behaelt der Nutzer die Hoheit ueber
+  // Zoom und Pan. So bleibt der manuell gewaehlte Karten-Stand erhalten -
+  // auch wenn der Asset-Filter unten wechselt oder eine Aktualisierung lief.
+  const hasFittedRef = useRef(false);
   useEffect(() => {
+    if (hasFittedRef.current) return;
     if (!center || !center[0]) return;
-    const key = JSON.stringify({
-      c: [Number(center[0]).toFixed(6), Number(center[1]).toFixed(6)],
-      r: radiusKm,
-      g: generators
-        .filter(g => Number.isFinite(Number(g.latitude)))
-        .map(g => `${g.id}:${Number(g.latitude).toFixed(6)},${Number(g.longitude).toFixed(6)}`)
-        .sort(),
-      a: assets
-        .filter(a => Number.isFinite(Number(a.latitude)))
-        .map(a => `${a.id}:${Number(a.latitude).toFixed(6)},${Number(a.longitude).toFixed(6)}`)
-        .sort(),
-    });
-    if (key === lastKeyRef.current) return;
-    lastKeyRef.current = key;
+    hasFittedRef.current = true;
 
     const points = [[center[0], center[1]]];
     generators.forEach((g) => {
