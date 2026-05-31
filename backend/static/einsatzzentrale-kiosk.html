@@ -805,6 +805,20 @@ function stopTokenRefresh() {
 // Utilities
 function $(html) { var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]}); }
+// Multi-Token AND-Suche: 'rock ring' findet nur Eintraege die BEIDE Tokens
+// irgendwo im Haystack enthalten (Reihenfolge egal). Konsistent mit der
+// Auftrags-Suche im Portal.
+function kioskTokens(q) {
+  return String(q || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+function kioskMatch(hay, tokens) {
+  if (!tokens.length) return true;
+  var h = String(hay || "").toLowerCase();
+  for (var i = 0; i < tokens.length; i++) {
+    if (h.indexOf(tokens[i]) === -1) return false;
+  }
+  return true;
+}
 function initials(n) { return (n || "?").split(/\s+/).map(function(p){return p[0];}).slice(0,2).join("").toUpperCase(); }
 function fmtDate(iso) {
   if (!iso) return "—";
@@ -863,8 +877,8 @@ function renderUserSelect() {
   var input = document.getElementById("user-filter");
 
   function paint(filter) {
-    var q = (filter || "").trim().toLowerCase();
-    var visible = q ? allUsers.filter(function(u){return (u.name||"").toLowerCase().indexOf(q)>-1;}) : allUsers;
+    var tokens = kioskTokens(filter);
+    var visible = tokens.length ? allUsers.filter(function(u){ return kioskMatch(u.name, tokens); }) : allUsers;
     area.innerHTML = "";
     if (visible.length === 0) { area.appendChild($('<p style="color:#9ca3af;">Keine Mitarbeiter gefunden.</p>')); return; }
     var grid = $('<div class="kiosk-grid users"></div>');
@@ -1014,8 +1028,11 @@ function renderOrderSelect() {
   var area = document.getElementById("order-area");
   var input = document.getElementById("order-filter");
   function paint(filter) {
-    var q = (filter || "").trim().toLowerCase();
-    var visible = q ? allOrders.filter(function(o){return [o.order_no,o.contact_name,o.address,o.event].filter(Boolean).some(function(v){return String(v).toLowerCase().indexOf(q)>-1;});}) : allOrders;
+    var tokens = kioskTokens(filter);
+    var visible = tokens.length ? allOrders.filter(function(o){
+      var hay = [o.order_no, o.contact_name, o.address, o.event].filter(Boolean).join(" ");
+      return kioskMatch(hay, tokens);
+    }) : allOrders;
     area.innerHTML = "";
     if (visible.length === 0) {
       area.appendChild($('<div class="empty">' + (q ? "Keine Aufträge passen zum Filter." : "Keine aktiven Aufträge im Zeitraum.") + '</div>'));
@@ -1562,6 +1579,7 @@ function paintMultiDiary(data) {
 
   // Filter anwenden: Suche + Status
   var q = (multiState.diarySearch || "").trim().toLowerCase();
+  var tokens = kioskTokens(q);
   var status = multiState.diaryStatus || "all";
   var truppMap = {}; diaryState.trupps.forEach(function(t){ truppMap[t.id] = t; });
 
@@ -1569,12 +1587,12 @@ function paintMultiDiary(data) {
     if (status === "open" && e.status !== "open") return false;
     if (status === "in_progress" && e.status !== "in_progress") return false;
     if (status === "resolved" && e.status !== "resolved") return false;
-    if (q) {
+    if (tokens.length) {
       var truppNames = (e.assigned_trupp_ids || []).map(function(tid){ var t = truppMap[tid]; return t ? t.name : ""; }).join(" ");
       var hay = [e.reason, e.caller_name, e.caller_phone, e.location, e.created_by_name,
                  e.resolved_by_name, e.resolved_note, truppNames]
-                .filter(Boolean).join(" ").toLowerCase();
-      if (hay.indexOf(q) === -1) return false;
+                .filter(Boolean).join(" ");
+      if (!kioskMatch(hay, tokens)) return false;
     }
     return true;
   });
@@ -1856,17 +1874,18 @@ function loadMultiArtikel() {
 
 function paintMultiArt() {
   var q = (multiState.artSearch || "").trim().toLowerCase();
+  var tokens = kioskTokens(q);
   var ftype = multiState.artType || "all";
   var fstatus = multiState.artStatus || "all";
   var items = artikelState.items.filter(function(a) {
     if (ftype !== "all" && a.asset_type !== ftype) return false;
     if (fstatus !== "all" && (a.status || "placed") !== fstatus) return false;
-    if (q) {
+    if (tokens.length) {
       // Kommentartext mit in den Suchindex
       var commentText = (a.comments || []).map(function(c){ return (c.text || "") + " " + (c.author_name || ""); }).join(" ");
       var hay = [a.label, a.asset_type, a.plus_code, a.created_by, a.created_by_name,
-                 a.latitude, a.longitude, commentText].filter(function(v){ return v != null && v !== ""; }).join(" ").toLowerCase();
-      if (hay.indexOf(q) === -1) return false;
+                 a.latitude, a.longitude, commentText].filter(function(v){ return v != null && v !== ""; }).join(" ");
+      if (!kioskMatch(hay, tokens)) return false;
     }
     return true;
   });
@@ -2162,12 +2181,13 @@ function loadMaschinen(silent) {
 
 function paintMaschinen() {
   var q = (maschState.search || "").trim().toLowerCase();
+  var tokens = kioskTokens(q);
   var items = maschState.items.filter(function(g) {
     if (maschState.filterStatus === "online" && g.status !== "online") return false;
     if (maschState.filterStatus === "offline" && g.status === "online") return false;
-    if (q) {
-      var hay = [g.name, g.model, g.serial_number].filter(Boolean).join(" ").toLowerCase();
-      if (hay.indexOf(q) === -1) return false;
+    if (tokens.length) {
+      var hay = [g.name, g.model, g.serial_number].filter(Boolean).join(" ");
+      if (!kioskMatch(hay, tokens)) return false;
     }
     return true;
   });
@@ -2913,12 +2933,13 @@ function loadArtikel() {
 
 function paintArtikel() {
   var q = (artikelState.search || "").trim().toLowerCase();
+  var tokens = kioskTokens(q);
   var items = artikelState.items.filter(function(a) {
     if (artikelState.filterType !== "all" && a.asset_type !== artikelState.filterType) return false;
     if (artikelState.filterStatus !== "all" && (a.status || "placed") !== artikelState.filterStatus) return false;
-    if (q) {
-      var hay = [a.label, a.asset_type, a.plus_code, a.created_by].filter(Boolean).join(" ").toLowerCase();
-      if (hay.indexOf(q) === -1) return false;
+    if (tokens.length) {
+      var hay = [a.label, a.asset_type, a.plus_code, a.created_by].filter(Boolean).join(" ");
+      if (!kioskMatch(hay, tokens)) return false;
     }
     return true;
   });
@@ -3308,10 +3329,11 @@ function _wireSidePanelActions(area, onChangeCb) {
 function paintDiary(filter) {
   var area = document.getElementById("diary-area"); if (!area) return;
   var q = (filter || "").trim().toLowerCase();
+  var tokens = kioskTokens(q);
   var truppMap = {}; diaryState.trupps.forEach(function(t){ truppMap[t.id] = t; });
-  var entries = q ? diaryState.entries.filter(function(e){
-    return [e.caller_name, e.caller_phone, e.reason, e.location, e.created_by_name].filter(Boolean)
-      .some(function(v){ return String(v).toLowerCase().indexOf(q)>-1; });
+  var entries = tokens.length ? diaryState.entries.filter(function(e){
+    var hay = [e.caller_name, e.caller_phone, e.reason, e.location, e.created_by_name].filter(Boolean).join(" ");
+    return kioskMatch(hay, tokens);
   }) : diaryState.entries;
   if (!entries.length) {
     area.innerHTML = '<div class="empty" style="padding:32px;">' + (q ? "Keine Einträge passen zum Filter." : "Noch keine Störungsmeldungen.") + '</div>';
