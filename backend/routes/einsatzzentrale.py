@@ -81,6 +81,48 @@ async def _track_pi_request(request: Request) -> Optional[dict]:
     return pi
 
 
+async def _track_browser_token(request: Request) -> Optional[dict]:
+    """Wertet ?bt=<token> Query oder X-Browser-Token Header aus.
+
+    Wenn vorhanden -> validiert (existiert, nicht widerrufen, nicht abgelaufen)
+    und aktualisiert click_count + last_used_*. Bei Fehler -> 401.
+    Wenn kein bt-Param vorhanden -> None (Endpoint bleibt offen fuer Pi-Mode).
+    """
+    bt = request.headers.get("x-browser-token") or request.query_params.get("bt")
+    if not bt:
+        return None
+    doc = await _db.einsatzzentrale_browser_tokens.find_one({"token": bt}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=401, detail="Ungueltiger Browser-Token")
+    if doc.get("revoked"):
+        raise HTTPException(status_code=401, detail="Browser-Token widerrufen")
+    valid_until = doc.get("valid_until")
+    if valid_until:
+        try:
+            vu = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+            if vu < datetime.now(timezone.utc):
+                raise HTTPException(status_code=401, detail="Browser-Token abgelaufen")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+    # Track Verwendung (best-effort)
+    try:
+        ip = (request.headers.get("x-forwarded-for") or request.client.host or "").split(",")[0].strip()
+        ua = (request.headers.get("user-agent") or "")[:200]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await _db.einsatzzentrale_browser_tokens.update_one(
+            {"id": doc["id"]},
+            {
+                "$inc": {"click_count": 1},
+                "$set": {"last_used_at": now_iso, "last_used_ip": ip, "last_used_ua": ua},
+            },
+        )
+    except Exception:
+        pass
+    return doc
+
+
 # ----------------------------------------------------------------------------
 # 1. User-Liste (PUBLIC, Kiosk)
 # ----------------------------------------------------------------------------
@@ -690,8 +732,10 @@ _KIOSK_HTML_PATH = _first_existing(
 async def kiosk_page(request: Request):
     """Standalone Kiosk-HTML (kein React, kein HMR, kein Reload-Loop)."""
     # Optional Pi-Auth (X-Pi-Id/X-Pi-Key) - updates last_seen wenn Pi-Header da.
+    # ODER Browser-Token (?bt=<token>) fuer temporaere Browser-Zugaenge.
     # Bei falschen Credentials -> 401. Bei fehlenden Credentials -> offen.
     await _track_pi_request(request)
+    await _track_browser_token(request)
     if not _KIOSK_HTML_PATH.exists():
         raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
     raw = _KIOSK_HTML_PATH.read_text(encoding="utf-8")
@@ -726,6 +770,7 @@ async def kiosk_build_id(request: Request):
     Pi seine Seite automatisch -> Code-Updates landen instant auf dem Pi.
     """
     await _track_pi_request(request)
+    await _track_browser_token(request)
     if not _KIOSK_HTML_PATH.exists():
         raise HTTPException(status_code=404, detail="Kiosk-Page nicht verfuegbar")
     import hashlib
@@ -896,6 +941,98 @@ async def pi_heartbeat(pi_id: str, key: str):
         {"$set": {"last_seen": now, "status": "online"}}
     )
     return {"ok": True, "server_time": now}
+
+
+# ----------------------------------------------------------------------------
+# 7. Browser-Tokens (temporaerer Browser-Zugang ohne Pi)
+# ----------------------------------------------------------------------------
+
+class BrowserTokenCreate(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+    valid_until: str  # ISO datetime z.B. "2026-06-15T18:00:00"
+
+
+@router.get("/browser-tokens")
+async def list_browser_tokens(user: dict = Depends(_require_admin)):
+    """Liste aller Browser-Tokens (Admin). Token selbst wird mitgeliefert
+    damit man den Link nachtraeglich kopieren kann."""
+    docs = await _db.einsatzzentrale_browser_tokens.find(
+        {}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    now = datetime.now(timezone.utc)
+    for d in docs:
+        # status ableiten
+        if d.get("revoked"):
+            d["status"] = "widerrufen"
+        else:
+            vu = d.get("valid_until")
+            try:
+                vu_d = datetime.fromisoformat((vu or "").replace("Z", "+00:00"))
+                d["status"] = "abgelaufen" if vu_d < now else "aktiv"
+            except Exception:
+                d["status"] = "aktiv"
+    return {"tokens": docs}
+
+
+@router.post("/browser-tokens")
+async def create_browser_token(
+    body: BrowserTokenCreate, request: Request, user: dict = Depends(_require_admin)
+):
+    """Erzeugt einen neuen Browser-Token-Link. valid_until darf max. 90 Tage
+    in der Zukunft liegen (Sicherheitsdeckel)."""
+    label = body.label.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Label erforderlich")
+    try:
+        vu = datetime.fromisoformat(body.valid_until.replace("Z", "+00:00"))
+        if vu.tzinfo is None:
+            vu = vu.replace(tzinfo=timezone.utc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ungueltiges Datum (ISO-Format erwartet)")
+    now = datetime.now(timezone.utc)
+    if vu <= now:
+        raise HTTPException(status_code=400, detail="Gueltigkeitsende muss in der Zukunft liegen")
+    if vu > now + timedelta(days=90):
+        raise HTTPException(status_code=400, detail="Max. 90 Tage Gueltigkeit erlaubt")
+
+    token = _uuid_setup.uuid4().hex + _uuid_setup.uuid4().hex[:16]  # 48 Zeichen
+    doc = {
+        "id": str(_uuid_setup.uuid4()),
+        "label": label,
+        "token": token,
+        "valid_until": vu.isoformat(),
+        "revoked": False,
+        "created_at": now.isoformat(),
+        "created_by": user.get("name") or user.get("email"),
+        "click_count": 0,
+        "last_used_at": None,
+        "last_used_ip": None,
+        "last_used_ua": None,
+    }
+    await _db.einsatzzentrale_browser_tokens.insert_one(doc)
+    doc.pop("_id", None)
+
+    portal_url = (
+        request.headers.get("x-forwarded-proto-host")
+        or (request.headers.get("origin") or "").rstrip("/")
+        or _build_portal_url_from_request(request)
+        or _os_setup.environ.get("PORTAL_URL", "https://eventenergie.app").rstrip("/")
+    )
+    kiosk_url = f"{portal_url}/einsatzzentrale?bt={token}"
+    return {**doc, "kiosk_url": kiosk_url}
+
+
+@router.delete("/browser-tokens/{token_id}")
+async def revoke_browser_token(token_id: str, user: dict = Depends(_require_admin)):
+    """Widerruft einen Browser-Token (setzt revoked=true). Wir loeschen NICHT,
+    damit das Audit-Log (Klicks, letzte Nutzung) erhalten bleibt."""
+    res = await _db.einsatzzentrale_browser_tokens.update_one(
+        {"id": token_id},
+        {"$set": {"revoked": True, "revoked_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Token nicht gefunden")
+    return {"message": "Token widerrufen"}
 
 
 # --- Pi-Service Code-Download (wird vom Install-Skript geholt) -------------

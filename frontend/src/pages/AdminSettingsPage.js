@@ -871,6 +871,268 @@ function EinsatzzentralePiSection() {
 }
 
 
+/* ───── Einsatzzentrale Browser-Tokens (temporaerer Browser-Zugang) ───── */
+function EinsatzzentraleBrowserTokensSection() {
+  const [tokens, setTokens] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [label, setLabel] = useState("");
+  // Default: in 8 Stunden ablaufen
+  const defaultValidUntil = () => {
+    const d = new Date();
+    d.setHours(d.getHours() + 8);
+    // YYYY-MM-DDTHH:MM (lokal, ohne Sekunden) — passt zu <input type=datetime-local>
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const [validUntil, setValidUntil] = useState(defaultValidUntil());
+  const [creating, setCreating] = useState(false);
+  const [lastLink, setLastLink] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.get("/einsatzzentrale/browser-tokens");
+      setTokens(res.data.tokens || []);
+    } catch (e) {
+      toast.error("Tokens konnten nicht geladen werden: " + (e.response?.data?.detail || e.message));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const buildKioskUrl = (token) => {
+    const portalUrl = (process.env.REACT_APP_BACKEND_URL || window.location.origin).replace(/\/$/, "");
+    return `${portalUrl}/einsatzzentrale?bt=${token}`;
+  };
+
+  const createToken = async () => {
+    if (!label.trim()) { toast.error("Bitte Bezeichnung eingeben"); return; }
+    if (!validUntil) { toast.error("Bitte Ablaufdatum waehlen"); return; }
+    setCreating(true);
+    try {
+      // datetime-local liefert lokale Zeit ohne TZ — wir ergaenzen den lokalen Offset
+      // damit der Server die Eingabe als europaeisches Datum interpretiert.
+      const local = new Date(validUntil);
+      const iso = local.toISOString();
+      const res = await api.post("/einsatzzentrale/browser-tokens", {
+        label: label.trim(),
+        valid_until: iso,
+      });
+      // Prefer locally-constructed URL using REACT_APP_BACKEND_URL because
+      // the backend's auto-detected URL can point to an internal cluster host.
+      setLastLink(buildKioskUrl(res.data.token));
+      setLabel("");
+      setValidUntil(defaultValidUntil());
+      toast.success("Browser-Link erstellt");
+      load();
+    } catch (e) {
+      toast.error("Fehler: " + (e.response?.data?.detail || e.message));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const copyLink = (url, id) => {
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    toast.success("Link kopiert");
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const revoke = async (t) => {
+    if (!window.confirm(`Link "${t.label}" wirklich widerrufen?`)) return;
+    try {
+      await api.delete(`/einsatzzentrale/browser-tokens/${t.id}`);
+      toast.success("Link widerrufen");
+      load();
+    } catch (e) {
+      toast.error("Fehler: " + (e.response?.data?.detail || e.message));
+    }
+  };
+
+  const fmtRel = (iso) => {
+    if (!iso) return "nie";
+    const d = new Date(iso); const now = new Date();
+    const min = Math.round((now - d) / 60000);
+    if (min < 1) return "gerade eben";
+    if (min < 60) return `vor ${min} Min`;
+    if (min < 1440) return `vor ${Math.round(min / 60)} h`;
+    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  };
+  const fmtDate = (iso) => {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+    catch { return iso; }
+  };
+  const statusBadge = (s) => {
+    if (s === "aktiv") return "bg-green-100 text-green-700";
+    if (s === "abgelaufen") return "bg-gray-100 text-gray-600";
+    return "bg-red-100 text-red-700"; // widerrufen
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="einsatzzentrale-browser-tokens-section">
+      <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+            <Link2 className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Einsatzzentrale — Browser-Zugang (temporaer)</h3>
+            <p className="text-[10px] text-violet-100">Link erzeugen, im Browser oeffnen, zeitlich gesperrt</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Erzeugt einen einmaligen Link, der die Einsatzzentrale-Oberflaeche in einem normalen Browser-Tab oeffnet.
+          Funktioniert auf beliebig vielen Geraeten parallel bis zum Ablauf. Praktisch fuer Vertretungen oder externe Disponenten ohne dediziertem Pi.
+        </p>
+
+        <div className="flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-xs font-medium text-gray-700 mb-1 block">Bezeichnung *</label>
+            <Input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="z.B. Vertretung Bereitschaft Mai"
+              className="text-sm"
+              data-testid="ez-bt-label"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-xs font-medium text-gray-700 mb-1 block">Gueltig bis *</label>
+            <Input
+              type="datetime-local"
+              value={validUntil}
+              onChange={e => setValidUntil(e.target.value)}
+              className="text-sm"
+              data-testid="ez-bt-valid-until"
+            />
+          </div>
+          <Button
+            onClick={createToken}
+            disabled={creating}
+            className="bg-violet-600 hover:bg-violet-700 text-white text-xs"
+            data-testid="ez-bt-create-btn"
+          >
+            {creating ? "Erstelle..." : "Link erzeugen"}
+          </Button>
+        </div>
+
+        {lastLink && (
+          <div className="space-y-2 bg-violet-50 border border-violet-200 rounded-lg p-3" data-testid="ez-bt-last-link">
+            <div className="text-[11px] font-medium text-violet-900">Neuer Link bereit — direkt kopieren oder oeffnen:</div>
+            <div className="relative">
+              <pre className="bg-white border border-violet-200 rounded p-2 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap break-all select-all">{lastLink}</pre>
+              <button
+                onClick={() => copyLink(lastLink, "last")}
+                className={`absolute top-2 right-2 px-2 py-1 text-[10px] rounded ${copiedId === "last" ? "bg-green-600 text-white" : "bg-violet-600 text-white hover:bg-violet-700"}`}
+                data-testid="ez-bt-copy-last"
+              >
+                {copiedId === "last" ? "Kopiert!" : "Kopieren"}
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => window.open(lastLink, "_blank", "noopener,noreferrer")}
+                className="text-[11px] text-violet-700 hover:underline"
+                data-testid="ez-bt-open-last"
+              >
+                In neuem Tab oeffnen →
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-semibold text-gray-700">Bestehende Links ({tokens.length})</h4>
+            <button onClick={load} className="text-[10px] text-violet-600 hover:underline" data-testid="ez-bt-reload">↻ Aktualisieren</button>
+          </div>
+          {loading ? (
+            <div className="text-center py-4 text-xs text-gray-400">Lade…</div>
+          ) : !tokens.length ? (
+            <div className="text-center py-6 text-xs text-gray-400">Noch keine Browser-Links erstellt.</div>
+          ) : (
+            <div className="space-y-2" data-testid="ez-bt-list">
+              {tokens.map(t => {
+                const url = buildKioskUrl(t.token);
+                return (
+                  <div key={t.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200" data-testid={`ez-bt-row-${t.id}`}>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900">{t.label}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusBadge(t.status)}`}>{t.status}</span>
+                          {(t.click_count > 0) && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700" title="Anzahl Aufrufe">
+                              {t.click_count} Aufruf{t.click_count === 1 ? "" : "e"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          Gueltig bis: <span className="font-mono">{fmtDate(t.valid_until)}</span>
+                          {" · "}
+                          Erstellt {fmtRel(t.created_at)} von {t.created_by || "—"}
+                        </div>
+                        {(t.last_used_at) && (
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            Letzte Nutzung: {fmtRel(t.last_used_at)}
+                            {t.last_used_ip && <> · IP <code className="text-gray-500">{t.last_used_ip}</code></>}
+                            {t.last_used_ua && <span className="ml-1 text-gray-400" title={t.last_used_ua}>· {(t.last_used_ua || "").slice(0, 40)}…</span>}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {t.status === "aktiv" && (
+                          <>
+                            <button
+                              onClick={() => copyLink(url, t.id)}
+                              className={`px-2 py-1 text-[10px] rounded ${copiedId === t.id ? "bg-green-600 text-white" : "bg-violet-600 text-white hover:bg-violet-700"}`}
+                              data-testid={`ez-bt-copy-${t.id}`}
+                            >
+                              {copiedId === t.id ? "Kopiert!" : "Link kopieren"}
+                            </button>
+                            <button
+                              onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+                              className="px-2 py-1 text-[10px] rounded text-violet-700 hover:bg-violet-50 border border-violet-200"
+                              data-testid={`ez-bt-open-${t.id}`}
+                            >
+                              Oeffnen
+                            </button>
+                            <button
+                              onClick={() => revoke(t)}
+                              className="px-2 py-1 text-[10px] text-red-600 hover:bg-red-50 rounded"
+                              data-testid={`ez-bt-revoke-${t.id}`}
+                            >
+                              Widerrufen
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <span className="px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-medium">Browser-Only</span>
+          <span className="px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-medium">Mehrfach-Geraet</span>
+          <span className="px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-medium">Zeitlich begrenzt</span>
+          <span className="px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-medium">Audit-Log</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ───── Tankbeleg Pi - One-Liner Setup Generator ───── */
 function TankbelegPiSection() {
   const [deviceName, setDeviceName] = useState("");
@@ -2226,6 +2488,9 @@ export default function AdminSettingsPage() {
 
           {/* Einsatzzentrale Pi-Kioske */}
           <EinsatzzentralePiSection />
+
+          {/* Einsatzzentrale Browser-Tokens (temporaer) */}
+          <EinsatzzentraleBrowserTokensSection />
           {/* Hilfsmittel */}
           <div id="hilfsmittel-section">
             <HilfsmittelSection />
