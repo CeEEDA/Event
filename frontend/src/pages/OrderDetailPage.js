@@ -707,9 +707,12 @@ export default function OrderDetailPage() {
     try {
       await api.delete(`/orders/epirent/${pk}/assets/${assetId}`);
       toast.success("Artikel entfernt");
+      setSelectedAsset(null);
       fetchAssets();
-    } catch {
-      toast.error("Fehler beim Löschen");
+    } catch (e) {
+      // Backend liefert bei verlinkten Messprotokollen 409 mit klarer
+      // Fehlermeldung - die wollen wir 1:1 dem Admin zeigen.
+      toast.error(e?.response?.data?.detail || "Fehler beim Loeschen");
     }
   };
 
@@ -2164,6 +2167,32 @@ export default function OrderDetailPage() {
                     <MapPin className="w-4 h-4" />
                     In Google Maps öffnen
                   </a>
+
+                  {/* Loeschen - nur Admin. Backend rejected mit 409, wenn noch
+                      Messprotokolle auf diesen Artikel zeigen (typisch
+                      Verteiler), damit es keine Geister-MPs gibt. */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lbl = selectedAsset.label || selectedAsset.asset_type || "Artikel";
+                        if (window.confirm(
+                          `Artikel "${lbl}" wirklich endgueltig loeschen?\n\n` +
+                          `Diese Aktion kann nicht rueckgaengig gemacht werden. ` +
+                          `Falls noch Messprotokolle auf diesen Artikel verweisen, ` +
+                          `wird das Loeschen vom Server abgelehnt - dann erst die ` +
+                          `Messprotokolle entfernen.`
+                        )) {
+                          deleteAsset(selectedAsset.id);
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
+                      data-testid="asset-detail-delete-btn"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Artikel loeschen (Admin)
+                    </button>
+                  )}
 
                   {/* Verknuepftes Messprotokoll-PDF (falls vorhanden) */}
                   {(() => {

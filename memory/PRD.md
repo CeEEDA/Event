@@ -16,6 +16,14 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: Admin-Lösch-Button im Asset-Detail-Modal
+- 🎯 **User-Request**: Im Asset-Detail-Modal (OrderDetailPage) soll der Admin einen Lösch-Button haben, um falsch angelegte/duplizierte Artikel direkt rauswerfen zu können.
+- ✅ **Frontend** (`OrderDetailPage.js` Asset-Detail-Modal): Roter „Artikel loeschen (Admin)"-Button unterhalb von „In Google Maps öffnen", nur sichtbar wenn `isAdmin === true`. Vor dem Aufruf `window.confirm` mit Hinweis auf 409-Reject bei verknüpften Messprotokollen.
+- ✅ **Backend-Schutz war bereits da**: `DELETE /api/orders/epirent/{pk}/assets/{id}` (orders.py ~Z. 1967) — Admin-only + Messprotokoll-Reference-Check (HTTP 409 mit deutscher Fehlermeldung), die im Frontend via `e.response.data.detail` direkt im Toast angezeigt wird.
+- ✅ **Modal schließt sich automatisch** nach erfolgreichem Delete (`setSelectedAsset(null)`), Asset-Liste wird via `fetchAssets()` aktualisiert.
+
+
+
 ### Feb 2026 – Bugfix: Hard-Cap 500 in Asset-GET-Endpoint entfernt
 - 🐛 **User-Report (Live)**: „Ich hab die Artikel kopiert, es kommen die Verteiler nicht alle an. Kann es sein, dass wir physikalisch nicht mehr als 500 Positionen speichern können?"
 - 🎯 **Root Cause**: `GET /api/orders/epirent/{order_pk}/assets` hatte `.sort("created_at", -1).to_list(500)` → bei >500 Assets im Auftrag fielen die zuerst angelegten/kopierten 100+ stillschweigend raus. Bei Großevents (Rock am Ring 280+ Verteiler + Lichtmasten + Stromerzeuger + Tanks) extrem realistisch.
