@@ -16,6 +16,17 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Verteiler verschwinden nach Messung (Typ-Wechsel-Schutz)
+- 🐛 **Root Cause**: Im `AssetEditDialog` konnte `asset_type` (z.B. „Verteiler" → „Lichtmast") stillschweigend geändert werden. Folge: Verteiler verschwand aus VerteilerPicker (filtert nach `asset_type === "verteiler"`) und aus typgefilterten Listen. 2 Messprotokolle (260020-08-VB5-MP-0002/0003) zeigten danach auf einen vermeintlichen „Lichtmast" – kategorisch falsch. Beispielfall: Asset `169289a2…`, Auftrag #260 Rock am Ring Outfield, umgetypt am 30.05.2026.
+- ✅ **Backend-Schutz** (`PATCH /api/orders/epirent/{order_pk}/assets/{asset_id}`):
+  - Wenn alter `asset_type == "Verteiler"` und neuer Typ ≠ alt → Referenz-Check auf `messprotokolle.data.verteiler_asset_id`. Bei `ref_count > 0` → **HTTP 409** mit deutscher Fehlermeldung.
+  - Bei jedem erfolgreichen Typ-Wechsel → automatischer System-Audit-Kommentar an `comments[]` angehängt: „Artikeltyp geaendert: X -> Y" (kind=`system`, mit User-Name + Timestamp).
+- ✅ **Frontend-Schutz** (`AssetEditDialog.jsx`): `window.confirm`-Dialog vor dem PATCH, wenn `assetType !== asset.asset_type`. Hinweistext erwähnt 409-Reject bei verknüpften Messprotokollen.
+- ✅ **Datenreparatur Live-DB**: Asset `169289a2-a658-4c5f-8b5e-27cbd490cf7d` zurückgesetzt auf `asset_type=Verteiler` inkl. System-Audit-Kommentar zur Nachvollziehbarkeit.
+- ✅ **Testing**: Curl-Tests bestanden: 409 bei MP-verknüpftem Verteiler, erlaubter Typ-Wechsel ohne MP-Referenz fügt Audit-Kommentar an, reines Label-Update fügt KEINEN Audit-Kommentar an.
+
+
+
 ### Feb 2026 – Messprotokoll mit Verteiler-Asset verknuepfen via Karte (Feature)
 - 🎯 **User-Request**: Workflow Trupp A setzt Verteiler Mo, Trupp C misst Do auf grossem Gelaende (>400 Artikel). Anstatt die Verteiler-Nr. manuell zu tippen, soll der Pruefer auf der Karte den Verteiler auswaehlen koennen.
 - ✅ **Neue Komponente `components/VerteilerPickerDialog.jsx`** (170 LOC):

@@ -2025,16 +2025,56 @@ async def edit_order_asset(
 ):
     """Aktualisiert die Metadaten eines Assets (Typ, Bezeichnung, Position,
     Plus Code). Status/dismantled-Felder werden hier NICHT angefasst — dafuer
-    gibt es separate Endpoints (/status, /move, /bulk-dismantle)."""
+    gibt es separate Endpoints (/status, /move, /bulk-dismantle).
+
+    Schutz gegen Daten-Inkonsistenzen: Wenn ein Asset noch in Messprotokollen
+    referenziert wird (typisch fuer Verteiler), darf der `asset_type` NICHT
+    umgestellt werden - sonst zeigen Messprotokolle auf einen Lichtmast/Tank
+    und der Verteiler verschwindet aus der Verteiler-Ansicht.
+    """
     asset = await _db.order_assets.find_one({"id": asset_id, "order_pk": order_pk}, {"_id": 0})
     if not asset:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
     update = {k: v for k, v in data.dict(exclude_unset=True).items() if v is not None}
     if not update:
         return asset
+
+    # Asset-Typ-Wechsel: Referenz-Check, wenn von "Verteiler" auf anderen Typ
+    new_type = update.get("asset_type")
+    old_type = asset.get("asset_type")
+    type_changed = new_type is not None and new_type != old_type
+    if type_changed and (old_type or "").lower() == "verteiler":
+        ref_count = await _db.messprotokolle.count_documents({"data.verteiler_asset_id": asset_id})
+        if ref_count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Typ-Wechsel abgelehnt: {ref_count} Messprotokoll(e) verweisen "
+                    f"noch auf diesen Verteiler. Bitte erst die Messprotokolle "
+                    f"loeschen oder einem anderen Verteiler zuweisen, bevor der "
+                    f"Typ geaendert wird."
+                ),
+            )
+
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     update["updated_by"] = user.get("name", user.get("email", ""))
-    await _db.order_assets.update_one({"id": asset_id, "order_pk": order_pk}, {"$set": update})
+
+    set_ops: dict = {"$set": update}
+    if type_changed:
+        # Audit-Kommentar bei jedem Typ-Wechsel, damit forensisch
+        # nachvollziehbar bleibt wer wann den Typ geaendert hat.
+        import uuid
+        audit = {
+            "id": str(uuid.uuid4()),
+            "text": f"Artikeltyp geaendert: {old_type or '?'} -> {new_type}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": user.get("name") or user.get("email") or "System",
+            "created_by_id": user.get("id") or user.get("user_id") or user.get("email") or "",
+            "kind": "system",
+        }
+        set_ops["$push"] = {"comments": audit}
+
+    await _db.order_assets.update_one({"id": asset_id, "order_pk": order_pk}, set_ops)
     updated = await _db.order_assets.find_one({"id": asset_id, "order_pk": order_pk}, {"_id": 0})
     return updated
 

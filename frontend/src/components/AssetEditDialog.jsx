@@ -146,6 +146,22 @@ export default function AssetEditDialog({
       toast.error("Bitte gültige Koordinaten setzen");
       return;
     }
+    // Schutz gegen versehentliches Umtypen: wenn der User den Artikeltyp
+    // tatsaechlich geaendert hat, vor dem Speichern bestaetigen lassen.
+    // Verteiler -> anderer Typ ist besonders heikel (Messprotokolle haengen
+    // an Verteilern); das Backend wirft hier sowieso 409, falls noch MPs
+    // verknuepft sind.
+    const originalType = asset?.asset_type || "";
+    if (assetType !== originalType) {
+      const ok = window.confirm(
+        `Artikeltyp wirklich von "${originalType}" auf "${assetType}" ändern?\n\n` +
+        `Achtung: Wenn dieser Artikel in anderen Ansichten (z.B. VerteilerPicker, ` +
+        `Tankstatus-Karte) sichtbar war, kann er nach dem Typ-Wechsel dort ` +
+        `verschwinden. Falls Messprotokolle damit verknüpft sind, wird der ` +
+        `Wechsel vom Server abgelehnt.`
+      );
+      if (!ok) return;
+    }
     const payload = {
       asset_type: assetType,
       label: label || assetType,
