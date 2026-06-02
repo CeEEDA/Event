@@ -1909,10 +1909,18 @@ async def get_generator_deployments(generator_id: str, user: dict = Depends(_aut
 
 @router.get("/epirent/{order_pk}/assets")
 async def get_order_assets(order_pk: int, user: dict = Depends(_auth_user)):
-    """Get all manually placed assets for an order."""
+    """Get all manually placed assets for an order.
+
+    Kein hartes 500er-Limit mehr: Bei Grossevents (Rock am Ring, 24h Rennen
+    etc.) hat ein Auftrag schnell mehrere hundert Verteiler / Lichtmasten /
+    Tanks. Vorher: `to_list(500)` + Sort DESC nach created_at hat die zuerst
+    angelegten/kopierten Artikel ab Position 501 stillschweigend verschluckt -
+    User hat das als "Verteiler kommen nicht alle an" wahrgenommen.
+    Neu: 10.000 als Sicherheits-Cap (immer noch DOS-Schutz, aber praktisch
+    unbeschraenkt fuer realistische Auftraege)."""
     assets = await _db.order_assets.find(
         {"order_pk": order_pk}, {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    ).sort("created_at", -1).to_list(10000)
     return {"assets": assets}
 
 

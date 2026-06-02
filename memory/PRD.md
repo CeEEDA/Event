@@ -16,6 +16,13 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Hard-Cap 500 in Asset-GET-Endpoint entfernt
+- 🐛 **User-Report (Live)**: „Ich hab die Artikel kopiert, es kommen die Verteiler nicht alle an. Kann es sein, dass wir physikalisch nicht mehr als 500 Positionen speichern können?"
+- 🎯 **Root Cause**: `GET /api/orders/epirent/{order_pk}/assets` hatte `.sort("created_at", -1).to_list(500)` → bei >500 Assets im Auftrag fielen die zuerst angelegten/kopierten 100+ stillschweigend raus. Bei Großevents (Rock am Ring 280+ Verteiler + Lichtmasten + Stromerzeuger + Tanks) extrem realistisch.
+- ✅ **Fix** (`/app/backend/routes/orders.py` ~Z. 1915): Limit auf 10.000 angehoben (immer noch DOS-Schutz, aber praktisch unbeschränkt). Copy-Endpoint nutzt eh async-for-Cursor ohne Limit, der ist OK.
+
+
+
 ### Feb 2026 – Bugfix: Verteiler verschwinden nach Messung (Typ-Wechsel-Schutz)
 - 🐛 **Root Cause**: Im `AssetEditDialog` konnte `asset_type` (z.B. „Verteiler" → „Lichtmast") stillschweigend geändert werden. Folge: Verteiler verschwand aus VerteilerPicker (filtert nach `asset_type === "verteiler"`) und aus typgefilterten Listen. 2 Messprotokolle (260020-08-VB5-MP-0002/0003) zeigten danach auf einen vermeintlichen „Lichtmast" – kategorisch falsch. Beispielfall: Asset `169289a2…`, Auftrag #260 Rock am Ring Outfield, umgetypt am 30.05.2026.
 - ✅ **Backend-Schutz** (`PATCH /api/orders/epirent/{order_pk}/assets/{asset_id}`):
