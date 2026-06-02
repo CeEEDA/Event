@@ -139,7 +139,7 @@ const assetTypeIcon = (type) => {
   return cfg;
 };
 
-const makeAssetIcon = (type) => {
+const makeAssetIcon = (type, selected = false) => {
   const icons = {
     Lichtmast: `<circle cx="12" cy="5" r="3" fill="#fff" stroke="#fff" stroke-width="1.5"/><line x1="12" y1="8" x2="12" y2="20" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`,
     Stromerzeuger: `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`,
@@ -149,9 +149,17 @@ const makeAssetIcon = (type) => {
     Sonstiges: `<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="#fff" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="#fff" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="#fff" stroke-width="2" stroke-linecap="round"/>`,
   };
   const svg = icons[type] || icons.Sonstiges;
+  // Bei Auswahl im Kopier-Modus: gruener Hintergrund + dicker weisser Ring +
+  // kleines Check-Badge unten rechts, damit die selektierten Marker sofort
+  // sichtbar sind, ohne dass man in die Liste scrollen muss.
+  const bg = selected ? "#10b981" : "#f97316";
+  const ring = selected ? "0 0 0 3px #fff, 0 0 0 5px #10b981, 0 2px 8px rgba(16,185,129,.55)" : "0 2px 8px rgba(249,115,22,.5)";
+  const checkBadge = selected
+    ? `<div style="position:absolute;bottom:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #10b981;display:flex;align-items:center;justify-content:center;"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>`
+    : "";
   return L.divIcon({
     className: "",
-    html: `<div style="width:32px;height:32px;border-radius:50%;background:#f97316;border:3px solid #fff;box-shadow:0 2px 8px rgba(249,115,22,.5);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24">${svg}</svg></div>`,
+    html: `<div style="position:relative;width:32px;height:32px;"><div style="width:32px;height:32px;border-radius:50%;background:${bg};border:3px solid #fff;box-shadow:${ring};display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24">${svg}</svg></div>${checkBadge}</div>`,
     iconSize: [32, 32],
     iconAnchor: [16, 16],
   });
@@ -1146,14 +1154,17 @@ export default function OrderDetailPage() {
                       .filter((a) => typeof a.latitude === "number" && typeof a.longitude === "number" && isFinite(a.latitude) && isFinite(a.longitude))
                       .map((a) => (
                       <Marker
-                        key={a.id}
+                        key={`${a.id}-${copyMode ? (selectedAssetIds.has(a.id) ? "sel" : "nosel") : "view"}`}
                         position={[a.latitude, a.longitude]}
-                        icon={makeAssetIcon(a.asset_type)}
+                        icon={makeAssetIcon(a.asset_type, copyMode && selectedAssetIds.has(a.id))}
                         eventHandlers={{
-                          // Klick auf Asset-Marker oeffnet direkt das Detail-Modal
-                          // (Doppel-Workflow: Popup wird nicht mehr angezeigt, Modal hat
-                          // die Karten-Ansicht, Status, Kommentare und Move-Funktion).
-                          click: () => setSelectedAsset(a),
+                          // Im Kopier-Modus: Klick togglet die Auswahl
+                          // (analog zur Checkbox in der Liste).
+                          // Sonst: oeffnet das Asset-Detail-Modal.
+                          click: () => {
+                            if (copyMode) toggleAssetSelected(a.id);
+                            else setSelectedAsset(a);
+                          },
                         }}
                       />
                     ))}
