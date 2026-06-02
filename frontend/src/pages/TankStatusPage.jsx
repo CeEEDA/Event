@@ -376,6 +376,29 @@ export default function TankStatusPage() {
                     )}
                   </div>
 
+                  {/* Kommentare aus Artikel-Anlage (kontextuelle Hinweise fuer den Fahrer) */}
+                  {(selectedAsset.comments && selectedAsset.comments.length > 0) && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5" data-testid="erfassen-asset-comments">
+                      <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-800 uppercase tracking-wide mb-1.5">
+                        <MessageSquare className="w-3 h-3" />
+                        Kommentare aus Artikel-Anlage ({selectedAsset.comments.length})
+                      </div>
+                      <ul className="space-y-1.5">
+                        {selectedAsset.comments.map((c, idx) => (
+                          <li key={c.id || idx} className="text-[11px] text-gray-800">
+                            <div className="whitespace-pre-wrap break-words">{c.text}</div>
+                            <div className="text-[10px] text-gray-500">
+                              {c.author_name || c.author || "—"}
+                              {c.created_at && (
+                                <> · {new Date(c.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {/* Modus-Toggle - nur wenn Inbetriebnahme existiert (sonst hart auf commissioning) */}
                   {commissioning && (
                     <div className="flex gap-2 p-1 bg-gray-100 rounded-lg" data-testid="tank-mode-toggle">
@@ -643,13 +666,19 @@ export default function TankStatusPage() {
                     >
                       <MapContainer
                         center={[Number(detailAsset.latitude), Number(detailAsset.longitude)]}
-                        zoom={16}
+                        zoom={17}
                         scrollWheelZoom={true}
                         style={{ height: "100%", width: "100%" }}
                       >
                         <TileLayer
-                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution='Tiles &copy; Esri'
+                          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                          maxZoom={19}
+                        />
+                        <TileLayer
+                          attribution='Labels &copy; Esri'
+                          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                          maxZoom={19}
                         />
                         <Marker
                           position={[Number(detailAsset.latitude), Number(detailAsset.longitude)]}
