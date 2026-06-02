@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Fuel, Crosshair, AlertTriangle, Camera, Trash2, Download, Loader2, ChevronRight, Calendar } from "lucide-react";
+import { ArrowLeft, Fuel, Crosshair, AlertTriangle, Camera, Trash2, Download, Loader2, ChevronRight, Calendar, MapPin, MessageSquare, ExternalLink, X } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -78,6 +78,9 @@ export default function TankStatusPage() {
   const [minFuel, setMinFuel] = useState("");
   const [maxFuel, setMaxFuel] = useState("");
   const [onlyCritical, setOnlyCritical] = useState(false);
+
+  // Popup: Standort + Kommentare aus Artikel-Anlage
+  const [detailAsset, setDetailAsset] = useState(null);
   const [sortBy, setSortBy] = useState("criticality");
 
   useEffect(() => {
@@ -128,6 +131,14 @@ export default function TankStatusPage() {
   }, [selectedAsset, commissioning]);
 
   const knownTankSize = commissioning?.tank_size_l;
+
+  // Lookup: asset_id -> komplettes Asset-Objekt (Position, plus_code, comments)
+  // damit wir im Prognose-Popup direkt die Daten aus der Artikel-Anlage zeigen koennen.
+  const assetById = useMemo(() => {
+    const m = {};
+    stromerzeuger.forEach((a) => { m[a.id] = a; });
+    return m;
+  }, [stromerzeuger]);
 
   // Sortiere Assets nach GPS-Naehe falls verfuegbar, sonst alphabetisch
   const sortedAssets = useMemo(() => {
@@ -476,8 +487,17 @@ export default function TankStatusPage() {
                 {visibleForecast.map((f) => {
                   const s = CRIT_STYLES[f.criticality] || CRIT_STYLES.ok;
                   const percent = f.current_percent ?? 0;
+                  const asset = assetById[f.asset_id];
+                  const hasDetails = !!asset;
                   return (
-                    <div key={f.asset_id} className={`rounded-lg border p-3 ${s.bg}`} data-testid={`forecast-${f.asset_id}`}>
+                    <div
+                      key={f.asset_id}
+                      className={`rounded-lg border p-3 ${s.bg} ${hasDetails ? "cursor-pointer hover:shadow-md transition-shadow" : ""}`}
+                      data-testid={`forecast-${f.asset_id}`}
+                      onClick={hasDetails ? () => setDetailAsset(asset) : undefined}
+                      role={hasDetails ? "button" : undefined}
+                      tabIndex={hasDetails ? 0 : undefined}
+                    >
                       <div className="flex items-center gap-3">
                         <span className={`w-2.5 h-2.5 rounded-full ${s.dot}`} />
                         <div className="flex-1 min-w-0">
@@ -485,6 +505,14 @@ export default function TankStatusPage() {
                             <h3 className="text-sm font-semibold text-gray-900">{f.asset_label}</h3>
                             <span className={`text-[10px] font-bold ${s.text}`}>{s.label.toUpperCase()}</span>
                             <span className="text-[10px] text-gray-400">{f.readings_count} Readings</span>
+                            {hasDetails && (asset.latitude != null || (asset.comments && asset.comments.length)) && (
+                              <span className="text-[10px] text-fuchsia-600 inline-flex items-center gap-0.5">
+                                {asset.latitude != null && <MapPin className="w-2.5 h-2.5" />}
+                                {asset.comments && asset.comments.length > 0 && (
+                                  <span className="inline-flex items-center gap-0.5"><MessageSquare className="w-2.5 h-2.5" /> {asset.comments.length}</span>
+                                )}
+                              </span>
+                            )}
                           </div>
                           {/* Tank-Balken */}
                           <div className="mt-1.5 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -556,6 +584,95 @@ export default function TankStatusPage() {
           </div>
         )}
       </div>
+
+      {/* Popup: Standort + Kommentare aus Artikel-Anlage */}
+      {detailAsset && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3 sm:p-6"
+          onClick={() => setDetailAsset(null)}
+          data-testid="asset-detail-popup"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 sticky top-0 bg-white">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-fuchsia-50 text-fuchsia-600 flex items-center justify-center shrink-0">
+                  <Fuel className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 truncate">{detailAsset.label || "Stromerzeuger"}</h2>
+                  <p className="text-[11px] text-gray-500 truncate">{detailAsset.asset_type || "—"}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailAsset(null)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 shrink-0"
+                data-testid="asset-detail-close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Standort */}
+              <div>
+                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <MapPin className="w-3 h-3" /> Standort
+                </h3>
+                {detailAsset.latitude != null && detailAsset.longitude != null ? (
+                  <div className="space-y-2">
+                    <div className="text-xs font-mono text-gray-700 bg-gray-50 px-2 py-1.5 rounded border border-gray-200">
+                      {Number(detailAsset.latitude).toFixed(6)}, {Number(detailAsset.longitude).toFixed(6)}
+                    </div>
+                    {detailAsset.plus_code && (
+                      <div className="text-[11px] text-gray-600">
+                        Plus-Code: <span className="font-mono">{detailAsset.plus_code}</span>
+                      </div>
+                    )}
+                    <a
+                      href={`https://www.google.com/maps?q=${detailAsset.latitude},${detailAsset.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-fuchsia-600 hover:text-fuchsia-700"
+                      data-testid="asset-detail-maps-link"
+                    >
+                      In Google Maps öffnen <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Keine Position hinterlegt.</p>
+                )}
+              </div>
+
+              {/* Kommentare */}
+              <div>
+                <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3" /> Kommentare ({(detailAsset.comments || []).length})
+                </h3>
+                {(detailAsset.comments || []).length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">Keine Kommentare hinterlegt.</p>
+                ) : (
+                  <ul className="space-y-2" data-testid="asset-detail-comments">
+                    {(detailAsset.comments || []).map((c, idx) => (
+                      <li key={c.id || idx} className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs">
+                        <div className="text-gray-800 whitespace-pre-wrap break-words">{c.text}</div>
+                        <div className="text-[10px] text-gray-500 mt-1">
+                          {c.author_name || c.author || "—"}
+                          {c.created_at && (
+                            <> · {new Date(c.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
