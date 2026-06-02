@@ -1967,9 +1967,25 @@ async def update_asset_status(order_pk: int, asset_id: str, user: dict = Depends
 @router.delete("/epirent/{order_pk}/assets/{asset_id}")
 async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(_auth_user)):
     """Delete a manually placed asset. Nur Admin (Asset-Loeschen ist
-    irreversibel - kein Soft-Delete)."""
+    irreversibel - kein Soft-Delete).
+
+    Schutz gegen Daten-Inkonsistenzen: wenn dieser Asset noch in Messprotokollen
+    referenziert wird (typisch fuer Verteiler), wird das Loeschen verweigert -
+    sonst entstehen Geister-Protokolle mit toter `verteiler_asset_id`.
+    """
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Nur Admin darf Artikel loeschen")
+    # Referenz-Check: Messprotokolle, die diesen Asset noch zeigen
+    ref_count = await _db.messprotokolle.count_documents({"data.verteiler_asset_id": asset_id})
+    if ref_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Loeschen abgelehnt: {ref_count} Messprotokoll(e) verweisen "
+                f"noch auf diesen Artikel. Bitte erst die Messprotokolle "
+                f"loeschen oder das Asset stattdessen als 'abgebaut' markieren."
+            ),
+        )
     result = await _db.order_assets.delete_one({"id": asset_id, "order_pk": order_pk})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
@@ -3364,6 +3380,41 @@ async def search_assignable_orders(q: str = "", limit: int = Query(50, ge=1, le=
 # ============================================================================
 
 _MOVE_RE = re.compile(r"Verschoben aus Auftrag #(\d+) nach #(\d+)", re.IGNORECASE)
+
+
+@router.get("/asset-orphan-messprotokolle")
+async def asset_orphan_messprotokolle(_admin: dict = Depends(_require_admin)):
+    """Listet Messprotokolle, deren referenzierter Verteiler-Asset nicht mehr
+    existiert (Geister-Protokolle). Hilft beim Aufraeumen nach versehentlichem
+    Loeschen eines Verteilers (passierte vor der Loesch-Schutz-Aenderung)."""
+    mps = await _db.messprotokolle.find(
+        {"data.verteiler_asset_id": {"$nin": [None, ""]}},
+        {"_id": 0, "id": 1, "protokoll_nr": 1, "order_pk": 1, "pruef_datum": 1,
+         "created_at": 1, "created_by": 1, "data.verteiler_asset_id": 1, "data.verteiler_nr": 1},
+    ).to_list(2000)
+    vid_set = set(mps and [m.get("data", {}).get("verteiler_asset_id") for m in mps] or [])
+    vid_set.discard(None)
+    vid_set.discard("")
+    existing = set()
+    if vid_set:
+        async for a in _db.order_assets.find({"id": {"$in": list(vid_set)}}, {"_id": 0, "id": 1}):
+            existing.add(a.get("id"))
+    orphans = []
+    for m in mps:
+        vid = (m.get("data") or {}).get("verteiler_asset_id")
+        if vid and vid not in existing:
+            orphans.append({
+                "id": m.get("id"),
+                "protokoll_nr": m.get("protokoll_nr"),
+                "order_pk": m.get("order_pk"),
+                "pruef_datum": m.get("pruef_datum"),
+                "created_at": m.get("created_at"),
+                "created_by": m.get("created_by"),
+                "verteiler_asset_id": vid,
+                "verteiler_nr": (m.get("data") or {}).get("verteiler_nr"),
+            })
+    orphans.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"orphans": orphans, "count": len(orphans)}
 
 
 @router.get("/asset-move-audit")

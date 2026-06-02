@@ -17,6 +17,7 @@ import { toast } from "sonner";
 export default function AdminAssetMoveAuditPage() {
   const navigate = useNavigate();
   const [moves, setMoves] = useState([]);
+  const [orphans, setOrphans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filterOrder, setFilterOrder] = useState("");
@@ -27,8 +28,12 @@ export default function AdminAssetMoveAuditPage() {
       const params = {};
       if (q.trim()) params.q = q.trim();
       if (filterOrder.trim() && /^\d+$/.test(filterOrder.trim())) params.order_pk = filterOrder.trim();
-      const res = await api.get("/orders/asset-move-audit", { params });
-      setMoves(res.data.moves || []);
+      const [movesRes, orphRes] = await Promise.all([
+        api.get("/orders/asset-move-audit", { params }),
+        api.get("/orders/asset-orphan-messprotokolle"),
+      ]);
+      setMoves(movesRes.data.moves || []);
+      setOrphans(orphRes.data.orphans || []);
     } catch (e) {
       toast.error("Audit konnte nicht geladen werden: " + (e.response?.data?.detail || e.message));
     } finally {
@@ -204,6 +209,53 @@ export default function AdminAssetMoveAuditPage() {
           <Hash className="w-3 h-3 inline mr-1" />
           Quelle: Audit-Kommentare „Verschoben aus Auftrag #X nach #Y" in `order_assets.comments`.
         </div>
+
+        {/* Geister-Messprotokolle (Verteiler wurde geloescht, Protokoll blieb zurueck) */}
+        {orphans.length > 0 && (
+          <div className="bg-white border border-red-200 rounded-lg overflow-hidden mt-6" data-testid="orphan-section">
+            <div className="px-4 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-600" />
+              <h2 className="text-sm font-semibold text-red-900">
+                Geister-Messprotokolle ({orphans.length})
+              </h2>
+              <span className="text-[11px] text-red-700 ml-2">
+                Messprotokolle, deren Verteiler-Asset nicht mehr existiert. Hier liegen die „verschwundenen" Verteiler-Standorte.
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Protokoll-Nr</th>
+                    <th className="px-3 py-2 text-left">Verteiler-Nr</th>
+                    <th className="px-3 py-2 text-left">Auftrag</th>
+                    <th className="px-3 py-2 text-left">Prüf-Datum</th>
+                    <th className="px-3 py-2 text-left">Erstellt</th>
+                    <th className="px-3 py-2 text-left">Erstellt von</th>
+                    <th className="px-3 py-2 text-left">Tote Asset-ID</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {orphans.map((o) => (
+                    <tr key={o.id} className="hover:bg-gray-50" data-testid={`orphan-row-${o.id}`}>
+                      <td className="px-3 py-2 text-xs font-mono">{o.protokoll_nr || "—"}</td>
+                      <td className="px-3 py-2 text-xs font-semibold text-red-700">{o.verteiler_nr || "—"}</td>
+                      <td className="px-3 py-2 text-xs">
+                        <button onClick={() => navigate(`/orders/${o.order_pk}`)} className="text-fuchsia-600 hover:underline font-mono">
+                          #{o.order_pk}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{o.pruef_datum || "—"}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{fmtDate(o.created_at)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{o.created_by || "—"}</td>
+                      <td className="px-3 py-2 text-[10px] font-mono text-gray-400 truncate max-w-[180px]">{o.verteiler_asset_id}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
