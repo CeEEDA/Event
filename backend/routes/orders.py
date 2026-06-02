@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import httpx
 import asyncio
 import math
+import re
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 security = HTTPBearer()
@@ -1965,7 +1966,10 @@ async def update_asset_status(order_pk: int, asset_id: str, user: dict = Depends
 
 @router.delete("/epirent/{order_pk}/assets/{asset_id}")
 async def delete_order_asset(order_pk: int, asset_id: str, user: dict = Depends(_auth_user)):
-    """Delete a manually placed asset."""
+    """Delete a manually placed asset. Nur Admin (Asset-Loeschen ist
+    irreversibel - kein Soft-Delete)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admin darf Artikel loeschen")
     result = await _db.order_assets.delete_one({"id": asset_id, "order_pk": order_pk})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Asset nicht gefunden")
@@ -2029,7 +2033,10 @@ async def move_order_asset(
     gebucht statt auf Auftrag B (gleicher Termin, andere Kostenstelle). Statt
     loeschen + neu anlegen kann der User den Eintrag direkt umhaengen - dabei
     bleiben Kommentare, Position und Status erhalten. Audit-Spur als Kommentar.
+    Nur Admin (folgenschwere Aktion - Asset verschwindet aus Quell-Auftrag).
     """
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admin darf Artikel verschieben")
     if data.target_order_pk == order_pk:
         raise HTTPException(400, "Ziel-Auftrag muss vom aktuellen Auftrag verschieden sein")
     target = await _db.orders_cache.find_one(
@@ -3350,3 +3357,98 @@ async def search_assignable_orders(q: str = "", limit: int = Query(50, ge=1, le=
         "event_end": o.get("event_end") or o.get("dispo_end") or "",
         "address": o.get("address") or "",
     } for o in rows]
+
+
+# ============================================================================
+# Verschoben-Audit: zeigt alle Asset-Verschiebungen (Move-Operationen)
+# ============================================================================
+
+_MOVE_RE = re.compile(r"Verschoben aus Auftrag #(\d+) nach #(\d+)", re.IGNORECASE)
+
+
+@router.get("/asset-move-audit")
+async def asset_move_audit(
+    order_pk: int | None = Query(None, description="Optional: nur Moves aus diesem Quell-Auftrag"),
+    q: str = Query("", description="Optional: Filter auf Label/Asset-Typ/User"),
+    limit: int = Query(500, ge=1, le=2000),
+    _admin: dict = Depends(_require_admin),
+):
+    """Audit-Trail aller Asset-Verschiebungen.
+
+    Liest alle Assets, deren Kommentar-Audit-Log Eintraege vom Typ
+    'Verschoben aus Auftrag #X nach #Y' enthaelt, und gibt sie als flache
+    Liste zurueck. Ein Asset, das mehrfach verschoben wurde, erscheint
+    mehrfach (ein Eintrag pro Move-Vorgang). Aktueller Standort
+    (order_pk + order_no) wird mitgeliefert, damit Admins verlorene Artikel
+    direkt wiederfinden koennen.
+    """
+    # Build pipeline: filter assets that have at least one move-comment
+    match_filter = {"comments.text": {"$regex": "Verschoben aus Auftrag"}}
+    assets = await _db.order_assets.find(match_filter, {"_id": 0}).to_list(limit)
+
+    # Sammle order_pks zur Anreicherung
+    referenced_pks = set()
+    raw_entries: list[dict] = []
+    for a in assets:
+        for c in (a.get("comments") or []):
+            txt = (c.get("text") or "").strip()
+            m = _MOVE_RE.search(txt)
+            if not m:
+                continue
+            from_pk = int(m.group(1))
+            to_pk = int(m.group(2))
+            referenced_pks.add(from_pk)
+            referenced_pks.add(to_pk)
+            referenced_pks.add(a.get("order_pk"))
+            raw_entries.append({
+                "asset_id": a.get("id"),
+                "label": a.get("label"),
+                "asset_type": a.get("asset_type"),
+                "from_pk": from_pk,
+                "to_pk": to_pk,
+                "current_pk": a.get("order_pk"),
+                "moved_by": c.get("created_by") or "?",
+                "moved_at": c.get("created_at") or "",
+                "latitude": a.get("latitude"),
+                "longitude": a.get("longitude"),
+                "plus_code": a.get("plus_code"),
+                "status": a.get("status") or "placed",
+            })
+
+    # Auftragsnummern fuer alle referenzierten PKs holen
+    referenced_pks = {p for p in referenced_pks if isinstance(p, int)}
+    order_info: dict[int, dict] = {}
+    if referenced_pks:
+        rows = await _db.orders_cache.find(
+            {"primary_key": {"$in": list(referenced_pks)}},
+            {"_id": 0, "primary_key": 1, "order_no": 1, "event": 1, "contact_name": 1},
+        ).to_list(2000)
+        order_info = {r["primary_key"]: r for r in rows}
+
+    for e in raw_entries:
+        e["from_order_no"] = (order_info.get(e["from_pk"]) or {}).get("order_no") or f"#{e['from_pk']}"
+        e["to_order_no"] = (order_info.get(e["to_pk"]) or {}).get("order_no") or f"#{e['to_pk']}"
+        e["current_order_no"] = (order_info.get(e["current_pk"]) or {}).get("order_no") or f"#{e['current_pk']}"
+        e["from_event"] = (order_info.get(e["from_pk"]) or {}).get("event") or ""
+        e["current_event"] = (order_info.get(e["current_pk"]) or {}).get("event") or ""
+
+    # Optional: nur Moves aus einem bestimmten Quell-Auftrag
+    if order_pk is not None:
+        raw_entries = [e for e in raw_entries if e["from_pk"] == order_pk]
+
+    # Optional: Volltext-Filter
+    if q:
+        s = q.lower()
+        raw_entries = [
+            e for e in raw_entries
+            if s in (e.get("label") or "").lower()
+            or s in (e.get("asset_type") or "").lower()
+            or s in (e.get("moved_by") or "").lower()
+            or s in (e.get("from_order_no") or "").lower()
+            or s in (e.get("to_order_no") or "").lower()
+            or s in (e.get("current_order_no") or "").lower()
+        ]
+
+    # Sort neueste zuerst
+    raw_entries.sort(key=lambda e: e.get("moved_at") or "", reverse=True)
+    return {"moves": raw_entries, "count": len(raw_entries)}

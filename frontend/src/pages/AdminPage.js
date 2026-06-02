@@ -710,6 +710,15 @@ export default function AdminPage() {
             <h1 className="text-lg font-semibold text-gray-900">Benutzerverwaltung</h1>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/admin/asset-move-audit")}
+              className="text-xs hidden sm:inline-flex"
+              data-testid="open-asset-move-audit"
+            >
+              Verschoben-Audit
+            </Button>
             <Logo size="small" />
           </div>
         </div>

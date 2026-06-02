@@ -876,7 +876,15 @@ export default function OrderDetailPage() {
       const parts = [];
       if (data.copied_assets) parts.push(`${data.copied_assets} Artikel`);
       if (data.copied_generators) parts.push(`${data.copied_generators} Generator${data.copied_generators === 1 ? "" : "en"}`);
-      toast.success(`${parts.join(" + ") || "Nichts neues"} kopiert nach ${targetLabel}`);
+      // Persistenter Toast mit Direkt-Sprung in den Ziel-Auftrag, damit der User
+      // sofort sieht, dass die Sachen angekommen sind (zuvor unklar -> "kommt nicht an").
+      toast.success(`${parts.join(" + ") || "Nichts neues"} kopiert nach ${targetLabel}`, {
+        action: {
+          label: "Auftrag öffnen",
+          onClick: () => { window.location.href = `/orders/${targetOrderPk}`; },
+        },
+        duration: 8000,
+      });
       setCopyDialogOpen(false);
       setCopyMode(false);
       setSelectedAssetIds(new Set());

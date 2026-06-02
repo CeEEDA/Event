@@ -11,6 +11,7 @@ import HubPage from "./pages/HubPage";
 import FAQPage from "./pages/FAQPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage from "./pages/AdminPage";
+import AdminAssetMoveAuditPage from "./pages/AdminAssetMoveAuditPage";
 import SharedFilePage from "./pages/SharedFilePage";
 import GeneratorDashboardPage from "./pages/GeneratorDashboardPage";
 import GeneratorDetailPage from "./pages/GeneratorDetailPage";
@@ -213,6 +214,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/asset-move-audit"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminAssetMoveAuditPage />
           </ProtectedRoute>
         }
       />
