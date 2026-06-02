@@ -17,11 +17,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Fuel, Crosshair, AlertTriangle, Camera, Trash2, Download, Loader2, ChevronRight, Calendar, MapPin, MessageSquare, ExternalLink, X } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import api from "../lib/api";
 import { toast } from "sonner";
+
+// Stromerzeuger-Icon fuer den Popup-Marker (orange Pin mit Blitz-Glyph).
+const popupAssetIcon = L.divIcon({
+  className: "ts-asset-icon",
+  html: `<div style="width:30px;height:30px;border-radius:50% 50% 50% 0;background:#f97316;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:#fff;font-weight:700;font-size:14px;line-height:1;">⚡</span></div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 30],
+  popupAnchor: [0, -28],
+});
 
 function haversineM(lat1, lng1, lat2, lng2) {
   if ([lat1, lng1, lat2, lng2].some((v) => v == null || Number.isNaN(v))) return Infinity;
@@ -623,6 +635,30 @@ export default function TankStatusPage() {
                 </h3>
                 {detailAsset.latitude != null && detailAsset.longitude != null ? (
                   <div className="space-y-2">
+                    {/* Interaktive Karte: zoom-/pan-bar */}
+                    <div
+                      className="rounded-lg overflow-hidden border border-gray-200"
+                      style={{ height: 240 }}
+                      data-testid="asset-detail-map"
+                    >
+                      <MapContainer
+                        center={[Number(detailAsset.latitude), Number(detailAsset.longitude)]}
+                        zoom={16}
+                        scrollWheelZoom={true}
+                        style={{ height: "100%", width: "100%" }}
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <Marker
+                          position={[Number(detailAsset.latitude), Number(detailAsset.longitude)]}
+                          icon={popupAssetIcon}
+                        >
+                          <Popup>{detailAsset.label || "Stromerzeuger"}</Popup>
+                        </Marker>
+                      </MapContainer>
+                    </div>
                     <div className="text-xs font-mono text-gray-700 bg-gray-50 px-2 py-1.5 rounded border border-gray-200">
                       {Number(detailAsset.latitude).toFixed(6)}, {Number(detailAsset.longitude).toFixed(6)}
                     </div>

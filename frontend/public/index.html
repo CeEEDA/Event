@@ -184,10 +184,29 @@
                 api_host: "https://us.i.posthog.com",
                 person_profiles: "identified_only", // or 'always' to create profiles for anonymous users as well,
                 session_recording: {
-                    recordCrossOriginIframes: true,
+                    recordCrossOriginIframes: false,
                     capturePerformance: false,
                 },
             });
+            // Cross-Origin / Leaflet-Tile-Fehler aus dem PostHog Session-Recorder
+            // sollen NICHT die React-Dev-Error-Overlay-Rote-Wand triggern.
+            // (Diese Errors sind harmlos und passieren wenn der Recorder versucht,
+            //  auf Iframes anderer Origins zuzugreifen.)
+            window.addEventListener("error", function (e) {
+                var src = (e.filename || "") + " " + (e.message || "");
+                if (/posthog/i.test(src) || /Permission denied to access property/i.test(e.message || "")) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    return true;
+                }
+            }, true);
+            window.addEventListener("unhandledrejection", function (e) {
+                var msg = String((e.reason && (e.reason.stack || e.reason.message)) || e.reason || "");
+                if (/posthog/i.test(msg) || /Permission denied to access property/i.test(msg)) {
+                    e.preventDefault();
+                    return true;
+                }
+            }, true);
         </script>
     </body>
 </html>
