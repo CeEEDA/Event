@@ -347,31 +347,78 @@ async def _run_files_backup() -> dict:
 # ── Retention Cleanup ──
 
 async def _cleanup_old_backups():
-    """Delete backups older than the configured retention period."""
+    """Delete backups older than the configured retention period.
+
+    Doppelte Sicherung:
+    1. DB-registrierte Backups loeschen (DB-Eintrag + File).
+    2. Verwaiste Files auf der Festplatte: alles unter BACKUP_BASE_DIR/db
+       und BACKUP_BASE_DIR/files, dessen mtime aelter ist als cutoff,
+       wird zusaetzlich entfernt - auch wenn KEIN DB-Eintrag dazu existiert.
+       Hintergrund: Bei Server-Crash, manuellem mongodump, oder Migrationen
+       entstehen Backup-Files OHNE DB-Registrierung. Diese sind dem alten
+       Cleanup durch die Lappen gegangen und haben C:\\ vollgemacht.
+    """
     db = get_db()
     settings = await db.app_config.find_one({"config_type": "backup"}, {"_id": 0})
     retention_days = (settings or DEFAULT_SETTINGS).get("retention_days", 7)
 
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    now = datetime.now(timezone.utc)
+    cutoff_iso = (now - timedelta(days=retention_days)).isoformat()
+    cutoff_ts = (now - timedelta(days=retention_days)).timestamp()
 
+    # 1) DB-registrierte Backups
     old_backups = await db.backups.find(
-        {"created_at": {"$lt": cutoff}}, {"_id": 0}
-    ).to_list(1000)
+        {"created_at": {"$lt": cutoff_iso}}, {"_id": 0}
+    ).to_list(10000)
 
-    deleted = 0
+    deleted_db = 0
     for backup in old_backups:
         file_path = backup.get("file_path", "")
         if file_path and os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except OSError as e:
-                logger.error(f"Fehler beim Löschen: {file_path}: {e}")
+                logger.error(f"Fehler beim Loeschen: {file_path}: {e}")
         await db.backups.delete_one({"id": backup["id"]})
-        deleted += 1
+        deleted_db += 1
 
-    if deleted:
-        logger.info(f"Retention: {deleted} alte Backup(s) gelöscht (älter als {retention_days} Tage)")
+    # 2) Verwaiste Files auf der Festplatte
+    deleted_orphans = 0
+    orphan_bytes = 0
+    for sub in ("db", "files"):
+        sub_dir = BACKUP_BASE_DIR / sub
+        if not sub_dir.exists():
+            continue
+        for f in sub_dir.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                if f.stat().st_mtime < cutoff_ts:
+                    orphan_bytes += f.stat().st_size
+                    f.unlink()
+                    deleted_orphans += 1
+            except OSError as e:
+                logger.error(f"Fehler beim Loeschen verwaister Backup-Datei {f}: {e}")
+
+    # 3) Alte Verzeichnisse wie pre-migration nach 60 Tagen weg
+    legacy_cutoff_ts = (now - timedelta(days=60)).timestamp()
+    for legacy in ("pre-migration",):
+        legacy_dir = BACKUP_BASE_DIR / legacy
+        if legacy_dir.exists() and legacy_dir.is_dir():
+            try:
+                if legacy_dir.stat().st_mtime < legacy_cutoff_ts:
+                    shutil.rmtree(legacy_dir, ignore_errors=True)
+                    logger.info(f"Legacy-Backup-Ordner geloescht: {legacy_dir}")
+            except OSError as e:
+                logger.error(f"Fehler beim Loeschen Legacy-Dir {legacy_dir}: {e}")
+
+    if deleted_db or deleted_orphans:
+        logger.info(
+            f"Retention: {deleted_db} DB-registriertes + {deleted_orphans} verwaiste "
+            f"Backup(s) geloescht ({round(orphan_bytes / (1024*1024*1024), 2)} GB freigegeben, "
+            f"aelter als {retention_days} Tage)"
+        )
 
 
 # ── Background Scheduler ──
