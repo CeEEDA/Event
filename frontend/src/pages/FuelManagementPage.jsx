@@ -9,9 +9,10 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, Download, Fuel, Filter,
   Warehouse, Truck, CheckCircle, Clock, XCircle,
-  Image as ImageIcon, AlertTriangle,
+  Image as ImageIcon, AlertTriangle, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
+import FuelReceiptModal from "../components/FuelReceiptModal";
 
 const STATUS_CONFIG = {
   confirmed: { label: "Bestätigt", color: "text-emerald-700", bg: "bg-emerald-50", icon: CheckCircle },
@@ -29,6 +30,7 @@ export default function FuelManagementPage() {
   const [filterCategory, setFilterCategory] = useState("alle");
   const [loading, setLoading] = useState(true);
   const [bitmapReceipt, setBitmapReceipt] = useState(null);
+  const [editReceipt, setEditReceipt] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -215,6 +217,11 @@ export default function FuelManagementPage() {
                               <ImageIcon className="w-4 h-4" />
                             </Button>
                           )}
+                          {r.id && isAdmin && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-blue-600" onClick={() => setEditReceipt(r)} title="Beleg bearbeiten" data-testid={`edit-fuel-${r.id}`}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
                           {r.id && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-amber-600" onClick={() => {
                               const token = localStorage.getItem("token");
@@ -267,6 +274,15 @@ export default function FuelManagementPage() {
             />
           </div>
         </div>
+      )}
+      {editReceipt && (
+        <FuelReceiptModal
+          receipt={editReceipt}
+          orderPk={editReceipt.order_pk}
+          orderName={editReceipt.customer_name || editReceipt.order_name}
+          onClose={() => setEditReceipt(null)}
+          onSave={() => { setEditReceipt(null); loadData(); }}
+        />
       )}
     </div>
   );
