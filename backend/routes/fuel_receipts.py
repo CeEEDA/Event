@@ -299,7 +299,9 @@ async def list_fuel_receipts(
         query["order_pk"] = order_pk
     if category:
         query["category"] = category
-    receipts = await _db.fuel_receipts.find(query, {"_id": 0, "bitmap_png_base64": 0}).sort("created_at", -1).to_list(500)
+    # Verwaltung: KEIN Limit - Buchhaltung braucht alle Belege.
+    # to_list(length=None) = ungebremst (motor laedt alles).
+    receipts = await _db.fuel_receipts.find(query, {"_id": 0, "bitmap_png_base64": 0}).sort("created_at", -1).to_list(length=None)
     # Backfill missing beleg_nr
     for r in receipts:
         if not r.get("beleg_nr"):
@@ -362,9 +364,10 @@ async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user))
     if user.get("role") == "freelancer":
         raise HTTPException(status_code=403, detail="Freelancer haben keinen Zugriff auf Tankbelege")
     """Get all fuel receipts for a specific order with adjustment applied."""
+    # Auftrag-Detail: 250 reichen (groesste reale Aufträge ~200 Belege).
     receipts = await _db.fuel_receipts.find(
         {"order_pk": str(order_pk)}, {"_id": 0, "bitmap_png_base64": 0}
-    ).sort("date", -1).to_list(100)
+    ).sort("date", -1).to_list(250)
 
     # Backfill missing beleg_nr
     for r in receipts:
@@ -436,9 +439,10 @@ async def export_all_receipts_pdf(
     from io import BytesIO
     from starlette.responses import Response
 
+    # Sammel-PDF-Export: gleicher Cap wie Auftrag-Detail (250).
     receipts = await _db.fuel_receipts.find(
         {"order_pk": str(order_pk)}, {"_id": 0}
-    ).sort("date", -1).to_list(100)
+    ).sort("date", -1).to_list(250)
 
     if not receipts:
         raise HTTPException(status_code=404, detail="Keine Belege fuer diesen Auftrag")
