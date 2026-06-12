@@ -296,7 +296,13 @@ async def list_fuel_receipts(
     if fuel_type:
         query["fuel_type"] = fuel_type
     if order_pk:
-        query["order_pk"] = order_pk
+        # Typ-tolerant: String- und Integer-Variante matchen (s. by-order Endpoint Kommentar)
+        or_clauses = [{"order_pk": order_pk}]
+        try:
+            or_clauses.append({"order_pk": int(order_pk)})
+        except (ValueError, TypeError):
+            pass
+        query["$or"] = or_clauses
     if category:
         query["category"] = category
     # Verwaltung: KEIN Limit - Buchhaltung braucht alle Belege.
@@ -363,10 +369,25 @@ async def get_fuel_receipt_bitmap(
 async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user)):
     if user.get("role") == "freelancer":
         raise HTTPException(status_code=403, detail="Freelancer haben keinen Zugriff auf Tankbelege")
-    """Get all fuel receipts for a specific order with adjustment applied."""
-    # Auftrag-Detail: 250 reichen (groesste reale Aufträge ~200 Belege).
+    """Get all fuel receipts for a specific order with adjustment applied.
+
+    WICHTIG: Wir matchen sowohl String- als auch Integer-`order_pk`.
+    Hintergrund: Historisch wurden Belege teils mit `order_pk: "240"` (String,
+    Standard von der Pi) und teils mit `order_pk: 240` (Integer, durch
+    bestimmte Migrationen / manuelle Eingaben) gespeichert. MongoDB-Queries
+    sind typstrikt - ein simpler `{"order_pk": "240"}`-Match wuerde die
+    Integer-Belege still verschlucken. Der User hat das bemerkt: "Im Auftrag
+    nur 102 Belege, in der Verwaltung 14 mehr".
+    """
+    pk_str = str(order_pk)
+    or_clauses = [{"order_pk": pk_str}]
+    try:
+        pk_int = int(order_pk)
+        or_clauses.append({"order_pk": pk_int})
+    except (ValueError, TypeError):
+        pass
     receipts = await _db.fuel_receipts.find(
-        {"order_pk": str(order_pk)}, {"_id": 0, "bitmap_png_base64": 0}
+        {"$or": or_clauses}, {"_id": 0, "bitmap_png_base64": 0}
     ).sort("date", -1).to_list(250)
 
     # Backfill missing beleg_nr
@@ -440,8 +461,16 @@ async def export_all_receipts_pdf(
     from starlette.responses import Response
 
     # Sammel-PDF-Export: gleicher Cap wie Auftrag-Detail (250).
+    # Typ-tolerant filtern (siehe by-order Endpoint), damit auch Integer-
+    # order_pk-Belege erfasst werden.
+    pk_str = str(order_pk)
+    or_clauses = [{"order_pk": pk_str}]
+    try:
+        or_clauses.append({"order_pk": int(order_pk)})
+    except (ValueError, TypeError):
+        pass
     receipts = await _db.fuel_receipts.find(
-        {"order_pk": str(order_pk)}, {"_id": 0}
+        {"$or": or_clauses}, {"_id": 0}
     ).sort("date", -1).to_list(250)
 
     if not receipts:

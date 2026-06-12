@@ -2395,3 +2395,27 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Deployment-Cleanup-Scheduler start failed: {e}")
 
+    # Einmalige Datennormalisierung: fuel_receipts.order_pk auf String castet.
+    # Historisch lag das Feld gemischt als Int und String in der DB -> by-order
+    # Filter fand nur die String-Variante, Int-Belege fielen still raus.
+    async def _normalize_fuel_receipt_order_pk():
+        try:
+            cur = db.fuel_receipts.find(
+                {"order_pk": {"$type": "int"}},
+                {"_id": 1, "order_pk": 1},
+            )
+            count = 0
+            async for doc in cur:
+                await db.fuel_receipts.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"order_pk": str(doc["order_pk"])}},
+                )
+                count += 1
+            if count:
+                logger.info(f"fuel_receipts.order_pk normalisiert: {count} Int -> String")
+        except Exception as e:
+            logger.warning(f"fuel_receipts.order_pk normalization failed: {e}")
+
+    asyncio.create_task(_normalize_fuel_receipt_order_pk())
+
+
