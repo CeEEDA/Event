@@ -674,8 +674,9 @@ export default function HubPage() {
             </div>
           )}
 
-          {/* My Shift Plan (Employee) */}
-          {!isAdmin && !isCustomer && (
+          {/* My Shift Plan - sichtbar fuer alle Nicht-Kunden (Admin sieht
+              ggf. eigene Schichten, falls er sich selbst eingeplant hat). */}
+          {!isCustomer && (
             <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="my-shift-plan">
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays className="w-4 h-4 text-indigo-600" />

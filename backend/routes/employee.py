@@ -3214,3 +3214,55 @@ async def get_my_shift_plan(token: str = Query(...)):
         "week_key": {"$in": released_weeks},
     }, {"_id": 0}).sort("date", 1).to_list(100)
     return {"assignments": assignments, "released_weeks": released_weeks}
+
+
+
+@router.get("/shift-plan/debug-user-plan/{user_id}")
+async def debug_user_plan(user_id: str, token: str = Query(...)):
+    """Admin-only: Diagnose-Endpoint. Simuliert was ein bestimmter Mitarbeiter
+    in seiner my-plan-Ansicht sehen wuerde - ohne Mitarbeiter-Passwort.
+    Zeigt zusaetzlich ALLE Assignments (auch nicht released, auch ausserhalb
+    aktuelle/naechste Woche), damit Bug-Diagnose moeglich ist."""
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User nicht gefunden")
+
+    from datetime import timedelta
+    today = datetime.now(timezone.utc).date()
+    monday = today - timedelta(days=today.weekday())
+    current_week = monday.strftime("%G-W%V")
+    next_week = (monday + timedelta(days=7)).strftime("%G-W%V")
+
+    released = []
+    async for r in db.shift_releases.find({}, {"_id": 0}).sort("week_key", -1):
+        released.append(r)
+
+    all_assignments = await db.shift_assignments.find(
+        {"user_id": user_id}, {"_id": 0}
+    ).sort("date", -1).to_list(500)
+
+    released_keys_current_and_next = [
+        r["week_key"] for r in released
+        if r.get("week_key") in (current_week, next_week)
+    ]
+    visible = [a for a in all_assignments if a.get("week_key") in released_keys_current_and_next]
+
+    return {
+        "user": {"id": user.get("id"), "name": user.get("name"), "email": user.get("email")},
+        "server_time_utc": datetime.now(timezone.utc).isoformat(),
+        "server_today_date": today.isoformat(),
+        "current_week_key": current_week,
+        "next_week_key": next_week,
+        "all_releases": released,
+        "all_assignments_for_user": all_assignments,
+        "would_be_visible_in_my_plan": visible,
+        "diagnostics": {
+            "total_assignments": len(all_assignments),
+            "visible_count": len(visible),
+            "released_current_or_next": released_keys_current_and_next,
+            "assignments_without_week_key": [a.get("id") for a in all_assignments if not a.get("week_key")],
+        },
+    }
