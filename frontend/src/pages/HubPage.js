@@ -238,9 +238,14 @@ export default function HubPage() {
   // My shift plan (employee view)
   const [myPlan, setMyPlan] = useState([]);
   useEffect(() => {
+    if (!token) return;
     api.get(`/employee/shift-plan/my-plan?token=${token}`)
       .then(r => setMyPlan(r.data?.assignments || []))
-      .catch(() => {});
+      .catch(err => {
+        // Nicht stumm verschlucken - sonst rätselt der User warum nichts da ist.
+        // eslint-disable-next-line no-console
+        console.warn("[my-plan] Laden fehlgeschlagen:", err?.response?.status, err?.response?.data);
+      });
   }, [token]);
 
 
