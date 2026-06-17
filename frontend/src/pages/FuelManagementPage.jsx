@@ -73,9 +73,11 @@ export default function FuelManagementPage() {
     return true;
   });
 
-  const totalLiters = filtered.reduce((s, r) => s + (r.quantity_liters || 0), 0);
-  const lagerLiters = receipts.filter(r => r.category === "lager").reduce((s, r) => s + (r.quantity_liters || 0), 0);
-  const kundeLiters = receipts.filter(r => r.category !== "lager").reduce((s, r) => s + (r.quantity_liters || 0), 0);
+  // Summen IMMER pro Beleg aufrunden, dann summieren (Tankwagen-Regel).
+  // Konsistent mit Abrechnungs-PDF und Auftrag-Übersicht.
+  const totalLiters = filtered.reduce((s, r) => s + Math.ceil(r.quantity_liters || 0), 0);
+  const lagerLiters = receipts.filter(r => r.category === "lager").reduce((s, r) => s + Math.ceil(r.quantity_liters || 0), 0);
+  const kundeLiters = receipts.filter(r => r.category !== "lager").reduce((s, r) => s + Math.ceil(r.quantity_liters || 0), 0);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="fuel-management-page">

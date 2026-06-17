@@ -953,11 +953,14 @@ export default function OrderDetailPage() {
     } catch { toast.error("Fehler"); }
   };
 
-  // Liter summary helpers
+  // Liter summary helpers - WICHTIG: gleiche Regel wie im Abrechnungs-PDF:
+  // pro Beleg AUFRUNDEN auf naechste ganze Zahl (Tankwagen kennt keine
+  // Kommastellen), dann summieren. Sonst weichen UI-Summe und PDF-Summe ab.
   const fuelSummary = fuelReceipts.reduce((acc, r) => {
-    acc.total += r.quantity_liters || 0;
+    const liters = Math.ceil(r.quantity_liters || 0);
+    acc.total += liters;
     const key = r.fuel_type || "other";
-    acc[key] = (acc[key] || 0) + (r.quantity_liters || 0);
+    acc[key] = (acc[key] || 0) + liters;
     return acc;
   }, { total: 0 });
 

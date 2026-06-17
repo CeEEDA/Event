@@ -326,8 +326,14 @@ async def fuel_receipt_stats(user: dict = Depends(_auth_user)):
     total = await _db.fuel_receipts.count_documents({})
     pending = await _db.fuel_receipts.count_documents({"status": "pending"})
     confirmed = await _db.fuel_receipts.count_documents({"status": "confirmed"})
+    # Tankwagen-Regel: pro Beleg AUFRUNDEN, dann summieren - konsistent
+    # mit UI-Summen und Abrechnungs-PDF.
     pipeline = [
-        {"$group": {"_id": "$fuel_type", "total_liters": {"$sum": "$quantity_liters"}, "count": {"$sum": 1}}},
+        {"$group": {
+            "_id": "$fuel_type",
+            "total_liters": {"$sum": {"$ceil": {"$ifNull": ["$quantity_liters", 0]}}},
+            "count": {"$sum": 1},
+        }},
     ]
     by_type = await _db.fuel_receipts.aggregate(pipeline).to_list(10)
     return {
