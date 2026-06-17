@@ -2439,7 +2439,7 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
 
     # Fetch data
     reports = await _db.project_reports.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("created_at", 1).to_list(500)
-    fuel_receipts = await _db.fuel_receipts.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("date", 1).to_list(500)
+    fuel_receipts = await _db.fuel_receipts.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("date", 1).to_list(length=None)
     delivery_notes_for_billing = await _db.delivery_notes.find(
         {"order_pk": order_pk}, {"_id": 0}
     ).sort("created_at", 1).to_list(500)
@@ -2585,9 +2585,14 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
         total_liters = 0
         total_cost = 0
         for fr in fuel_receipts:
-            liters = fr.get("quantity_liters", 0) or 0
+            liters_raw = fr.get("quantity_liters", 0) or 0
             if fuel_pct:
-                liters = round(liters * (1 + fuel_pct / 100), 1)
+                liters_raw = liters_raw * (1 + fuel_pct / 100)
+            # Geschaeftsregel: Tankwagen kennt nur ganze Liter -> immer
+            # auf naechste ganze Zahl AUFRUNDEN (nicht kaufmaennisch runden).
+            # Einzelne Tankbelege behalten ihre Originalmenge - nur in der
+            # Abrechnungs-Gesamtansicht wird aufgerundet.
+            liters = int(math.ceil(liters_raw))
             price = fr.get("price_per_liter", 0) or 0
             cost = liters * price
             total_liters += liters
@@ -2596,13 +2601,13 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
                 Paragraph(fr.get("date", ""), s_cell),
                 Paragraph(fr.get("beleg_nr", ""), s_cell),
                 Paragraph(fr.get("fuel_type_label", fr.get("fuel_type", "")), s_cell),
-                Paragraph(f"{liters:.1f}", s_cell_c),
+                Paragraph(f"{liters}", s_cell_c),
                 Paragraph(f"{price:.3f}" if price else "", s_cell_c),
                 Paragraph(f"{cost:.2f}" if price else "", s_cell_c),
             ])
         fr_rows.append([
             Paragraph("<b>GESAMT</b>", s_cell_bold), "", "",
-            Paragraph(f"<b>{total_liters:.1f} L</b>", s_total),
+            Paragraph(f"<b>{total_liters} L</b>", s_total),
             "",
             Paragraph(f"<b>{total_cost:.2f} EUR</b>", s_total),
         ])
