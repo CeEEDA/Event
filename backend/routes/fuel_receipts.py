@@ -413,8 +413,14 @@ async def get_receipts_by_order(order_pk: str, user: dict = Depends(_auth_user))
 
     for r in receipts:
         r["original_quantity_liters"] = r["quantity_liters"]
+        # Tankwagen-Regel: nach Adjustment auf naechste ganze Zahl aufrunden.
+        # Ohne Adjustment: Originalwert aufrunden (= Anzeige-Liter, Tankwagen
+        # kennt keine Kommastellen). Original bleibt unter
+        # `original_quantity_liters` fuer Audit.
+        raw = r["quantity_liters"] or 0
         if pct != 0:
-            r["quantity_liters"] = round(r["quantity_liters"] * (1 + pct / 100), 1)
+            raw = raw * (1 + pct / 100)
+        r["quantity_liters"] = math.ceil(raw)
         r["adjustment_percent"] = pct
 
     return receipts
@@ -500,7 +506,9 @@ async def export_all_receipts_pdf(
     for doc in receipts:
         qty = doc["quantity_liters"]
         if pct != 0:
-            qty = round(qty * (1 + pct / 100), 1)
+            qty = qty * (1 + pct / 100)
+        # Aufrunden vor Anzeige - konsistent mit Zusammenstellung.
+        qty = int(math.ceil(qty or 0))
         _draw_receipt_page(c, doc, qty, logo_img)
         c.showPage()
 
@@ -632,7 +640,9 @@ async def export_fuel_receipt_pdf(
         adj = await _db.fuel_adjustments.find_one({"order_pk": doc["order_pk"]}, {"_id": 0})
         pct = adj.get("adjustment_percent", 0) if adj else 0
         if pct != 0:
-            qty = round(qty * (1 + pct / 100), 1)
+            qty = qty * (1 + pct / 100)
+    # Aufrunden vor Anzeige - konsistent mit Zusammenstellung.
+    qty = int(math.ceil(qty or 0))
 
     # Logo aus lokalem static-Ordner (statt remote URL fetch)
     logo_img = None
@@ -658,10 +668,19 @@ async def export_fuel_receipt_pdf(
 
 
 def _draw_receipt_page(c, doc, display_qty, logo_img=None):
-    """Draw a single receipt page on the canvas."""
+    """Draw a single receipt page on the canvas.
+
+    Tankwagen-Regel: Einzelbeleg-PDF zeigt IMMER den auf naechste ganze Zahl
+    AUFGERUNDETEN Liter-Wert. So ist der Beleg-PDF konsistent mit der
+    Zusammenstellungs-/Abrechnungs-Tabelle (die ebenfalls ceil verwendet) und
+    es entstehen keine Mismatches wie '142 L im Beleg, 143 L in der Summe'.
+    """
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.colors import HexColor
+
+    # Aufrunden auf naechste ganze Zahl - Tankwagen kennt keine Kommastellen.
+    display_qty = int(math.ceil(float(display_qty or 0)))
 
     w, h = A4
     margin = 25 * mm
@@ -740,7 +759,7 @@ def _draw_receipt_page(c, doc, display_qty, logo_img=None):
     row_y -= 8 * mm
     c.setFont("Courier-Bold", 14)
     c.drawString(label_x, row_y, "Menge bei 15 C")
-    c.drawRightString(val_x, row_y, f"{display_qty:.0f} L")
+    c.drawRightString(val_x, row_y, f"{display_qty:d} L")
 
     # Manual fields
     y = h - 165 * mm

@@ -202,7 +202,7 @@ export default function FuelManagementPage() {
                         {r.order_pk && <p className="text-xs text-gray-400">Auftrag #{r.order_pk}</p>}
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell text-sm text-gray-600">{r.fuel_type || "-"}</td>
-                      <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-gray-900">{(r.quantity_liters || 0).toFixed(1)} L</td>
+                      <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-gray-900">{Math.ceil(r.quantity_liters || 0)} L</td>
                       <td className="px-4 py-3 hidden sm:table-cell text-sm text-gray-500">
                         {r.created_at ? new Date(r.created_at).toLocaleDateString("de-DE") : "-"}
                       </td>
@@ -258,7 +258,7 @@ export default function FuelManagementPage() {
               </button>
             </div>
             <div className="text-sm text-gray-600 mb-3">
-              Beleg {bitmapReceipt.beleg_nr || "-"} · {bitmapReceipt.quantity_liters?.toFixed?.(1) || "-"} L · {bitmapReceipt.date || "-"}
+              Beleg {bitmapReceipt.beleg_nr || "-"} · {Math.ceil(bitmapReceipt.quantity_liters || 0)} L · {bitmapReceipt.date || "-"}
             </div>
             {bitmapReceipt.needs_review && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-start gap-2 text-sm text-amber-900">

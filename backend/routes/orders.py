@@ -2660,7 +2660,9 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
         for fr_doc in fuel_receipts:
             qty = fr_doc.get("quantity_liters", 0)
             if fuel_pct:
-                qty = round(qty * (1 + fuel_pct / 100), 1)
+                qty = qty * (1 + fuel_pct / 100)
+            # Aufrunden vor Anzeige - konsistent mit Zusammenstellung-Tabelle.
+            qty = int(math.ceil(qty or 0))
             _draw_receipt_page(c, fr_doc, qty, logo_img)
             c.showPage()
         c.save()

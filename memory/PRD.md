@@ -16,6 +16,19 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix (P0): Tankbeleg-Rundung konsistent ceilen (Beleg-PDF vs. Zusammenstellung)
+- 🐛 **User-Report**: „Beleg 17128 hat in der Zusammenstellung 143 Liter aber im Tankbeleg 142 L. Das kommt immer wieder vor. Die Tankbelege müssen passen und aufgerundet werden."
+- 🎯 **Root Cause**: Backend `_draw_receipt_page` benutzte `f"{display_qty:.0f} L"` → das ist KAUFMÄNNISCHE Rundung (142.3 → 142). Aber die Zusammenstellungs-Tabelle und Listenanzeigen verwenden `math.ceil` (142.3 → 143). Dadurch zeigte das Einzelbeleg-PDF 142 L, die Summen-PDF aber 143 L → Inkonsistenz.
+- ✅ **Backend** (`/app/backend/routes/fuel_receipts.py`):
+  - `_draw_receipt_page()`: `display_qty = int(math.ceil(...))` direkt am Anfang + `f"{display_qty:d} L"`.
+  - `export_all_receipts_pdf()` (Sammel-PDF): qty wird vor `_draw_receipt_page` geceiled.
+  - `export_fuel_receipt_pdf()` (Einzel-PDF): qty wird ebenfalls vor Draw geceiled (auch wenn kein Adjustment aktiv).
+- ✅ **Backend** (`/app/backend/routes/orders.py` ~Z. 2664, Abrechnungs-PDF): Bei Single-Receipt-PDFs vor `_draw_receipt_page` ebenfalls `int(math.ceil(...))`.
+- ✅ **Frontend** (`FuelManagementPage.jsx`): Statt `.toFixed(1)` jetzt direkte Ausgabe (`{totalLiters}`) bzw. `Math.ceil(...)` für Einzelzeilen und Bitmap-Modal-Header.
+- ✅ **Frontend** (`OrderDetailPage.js` Z.3612 GPS-Map-Modal): `Math.ceil(receipt.quantity_liters)` statt `toFixed(0)`.
+- ✅ **Verifiziert via curl + pypdf**: Beleg mit `qty=142.3` → Einzelbeleg-PDF zeigt `143 L`, Sammel-PDF (`/by-order/{pk}/pdf-all`) zeigt ebenfalls `143 L`. Vollständig konsistent.
+
+
 ### Feb 2026 – Feature: Admin-Lösch-Button im Asset-Detail-Modal
 - 🎯 **User-Request**: Im Asset-Detail-Modal (OrderDetailPage) soll der Admin einen Lösch-Button haben, um falsch angelegte/duplizierte Artikel direkt rauswerfen zu können.
 - ✅ **Frontend** (`OrderDetailPage.js` Asset-Detail-Modal): Roter „Artikel loeschen (Admin)"-Button unterhalb von „In Google Maps öffnen", nur sichtbar wenn `isAdmin === true`. Vor dem Aufruf `window.confirm` mit Hinweis auf 409-Reject bei verknüpften Messprotokollen.

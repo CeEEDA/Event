@@ -2826,7 +2826,7 @@ export default function OrderDetailPage() {
                           {r.beleg_nr && <span className="text-xs text-gray-400 font-mono">Beleg #{r.beleg_nr}</span>}
                           <span className="text-xs text-gray-400">{r.date} {r.time}</span>
                         </div>
-                        <p className="text-base font-bold text-gray-900">{r.quantity_liters?.toFixed(1)} Liter</p>
+                        <p className="text-base font-bold text-gray-900">{Math.ceil(r.quantity_liters || 0)} Liter</p>
                         <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
                           {r.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {r.location}</span>}
                           {r.fahrer && <span>Fahrer: {r.fahrer}</span>}
@@ -3609,7 +3609,7 @@ function GpsMapModal({ receipt, onClose }) {
             GPS-Position Tankvorgang
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Beleg #{receipt.beleg_nr || "—"} | {receipt.date} {receipt.time} | {receipt.fuel_type_label} {receipt.quantity_liters?.toFixed(0)} L
+            Beleg #{receipt.beleg_nr || "—"} | {receipt.date} {receipt.time} | {receipt.fuel_type_label} {Math.ceil(receipt.quantity_liters || 0)} L
           </p>
           <p className="text-xs font-mono text-gray-400 mt-0.5">{lat?.toFixed(6)}, {lng?.toFixed(6)}</p>
         </div>
