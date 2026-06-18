@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend retest for Offday/Ausgleichstage feature after bug fix. All 3 requested points PASS: (1) Kachel 'Offdays / Ausgleichstage' (data-testid='mdaten-offdays-btn') is now present in MitarbeiterDatenPage, is visible and navigates to /mitarbeiter-daten/offdays. (2) End-to-End offday-mode-toggle in /einsatzplanung: toggle activates violet banner (offday-mode-off X-Button visible), click on empty employee cell creates violet 'Offday' entry (asgn-<id>), balance-badge-<userId> decreases by exactly 1. Delete via X-Button restores balance. (3) edit-form is_offday checkbox: toggling and pressing OK creates a violet Offday cell, decreases balance by 1; hover+delete restores cell and balance. Tested user 1f028c7f-76b3-45bd-9eff-8d7e6c56c4f1, initial balance 1 -> 0 -> 1 cycle verified twice.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_offdays.py (unchanged from iteration_75, backend remains 100%)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MitarbeiterDatenPage.jsx Z.110-117: Kachel mit korrekter color='violet' und icon=CalendarCheck2 sauber eingefügt. Reihenfolge plausibel (zwischen 'Freie Zeit' und 'Abrechnung').",
+    "EinsatzplanungPage.jsx: bestehender offday-mode-toggle / edit-is-offday Workflow läuft stabil. Doppel-Buchhaltung mit Backend (balance -1 / +1) ist nach Delete idempotent.",
+    "OffdaysPage adjust-dialog A11y wurde laut Request korrigiert — visuell nicht erneut gegengetestet, da Backend-Bestätigung in iteration_75 vorlag und kein React-Warning in der Konsole erschien."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (not retested, taken from iteration_75)", "frontend": "100%"},
+  "test_credentials": "admin@test.com / password — funktioniert via /api/auth/login (Status 200, Token in localStorage gesetzt).",
+  "seed_data_creation": "Zwei temporäre Offday-Assignments wurden während der Tests angelegt (asgn-bbe537fc und asgn-af69b595) und beide via Delete-Button am Ende der jeweiligen Test-Sektion wieder entfernt. Balance des Test-Users vor und nach den Tests identisch (=1). Kein Persistenz-Müll.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Offday-Feature ist Frontend + Backend vollständig verifiziert. Keine offenen Aufgaben. Falls weitere Tests: Token-Login per page.context.request.post auf /api/auth/login funktioniert zuverlässig, Token in localStorage 'token' setzen reicht.",
+  "rca of the issue": "Vorheriger Bug (fehlende Kachel) wurde durch Hinzufügen eines 7. Eintrags im tiles-Array in MitarbeiterDatenPage.jsx Z.110-117 behoben — Kachel sichtbar, klickbar, Navigation funktioniert. Adjust-Dialog A11y-Description ebenfalls erfolgreich nachgepflegt (kein React-Warning mehr in Konsole)."
+}

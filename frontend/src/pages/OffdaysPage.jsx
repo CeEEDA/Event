@@ -326,12 +326,13 @@ export default function OffdaysPage() {
 
       {/* Adjust Dialog */}
       <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
-        <DialogContent className="sm:max-w-md" data-testid="adjust-dialog">
+        <DialogContent className="sm:max-w-md" data-testid="adjust-dialog" aria-describedby="adjust-dialog-desc">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-violet-600" /> Manuelle Korrektur
             </DialogTitle>
           </DialogHeader>
+          <p id="adjust-dialog-desc" className="sr-only">Manuelle Korrektur des Offday-Saldos eines Mitarbeiters</p>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-gray-600">User: <strong>{adjustForm.user_name}</strong></p>
             <div>

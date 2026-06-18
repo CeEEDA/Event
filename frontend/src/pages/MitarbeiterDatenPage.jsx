@@ -108,6 +108,14 @@ export default function MitarbeiterDatenPage() {
       onClick: () => setShowTimeOff(true),
     },
     {
+      key: "offdays",
+      label: "Offdays / Ausgleichstage",
+      description: "Saldo aus Sonntags- und Feiertagsarbeit (RLP) ansehen",
+      icon: CalendarCheck2,
+      color: "violet",
+      onClick: () => navigate("/mitarbeiter-daten/offdays"),
+    },
+    {
       key: "abrechnung",
       label: "Abrechnung",
       description: "Lohnabrechnungen, Belege und Spesen",
