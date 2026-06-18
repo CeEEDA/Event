@@ -3046,8 +3046,8 @@ async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
         sun_str = sunday.isoformat()
         reqs = await db.time_off_requests.find({
             "status": "approved",
-            "date_from": {"$lte": sun_str},
-            "date_to": {"$gte": mon_str},
+            "start_date": {"$lte": sun_str},
+            "end_date": {"$gte": mon_str},
         }, {"_id": 0}).to_list(500)
         absences = reqs
     return {

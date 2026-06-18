@@ -159,7 +159,7 @@ export default function EinsatzplanungPage() {
   const prevWeek = () => { const d = new Date(weekDates[0] + "T12:00:00"); d.setDate(d.getDate() - 7); setWeekKey(getWeekKey(d)); };
   const nextWeek = () => { const d = new Date(weekDates[0] + "T12:00:00"); d.setDate(d.getDate() + 7); setWeekKey(getWeekKey(d)); };
 
-  const getAbsenceForUserDate = (userId, date) => absences.find(a => a.user_id === userId && a.date_from <= date && a.date_to >= date);
+  const getAbsenceForUserDate = (userId, date) => absences.find(a => a.user_id === userId && a.start_date <= date && a.end_date >= date);
   const getAssignmentsForUserDate = (userId, date) => assignments.filter(a => a.user_id === userId && a.date === date);
 
   const getScheduledHours = (userId, dayIndex) => {

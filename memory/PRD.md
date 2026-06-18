@@ -16,6 +16,14 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Genehmigte Abwesenheiten erscheinen jetzt in der Einsatzplanung
+- 🐛 **User-Report**: „Wenn einer sich krank gemeldet hat, es freigegeben wurde, ändert sich auch die Einsatzplanung. Auch genehmigter Urlaub / Freizeit muss in der Planung stehen, dass ich direkt sehe, wer verfügbar ist." (Screenshot zeigte leere Zellen trotz genehmigter Anträge)
+- 🎯 **Root Cause**: `time_off_requests` Collection speichert die Felder als `start_date` / `end_date`, aber der Shift-Plan-Endpoint UND das Frontend filterten / lasen auf den nie gespeicherten Feldnamen `date_from` / `date_to`. → Query matched IMMER 0 Treffer, Frontend rendert keine Absence-Boxen.
+- ✅ **Backend-Fix** (`/app/backend/routes/employee.py` Z.3040-3044): Query auf `start_date` / `end_date` umgestellt.
+- ✅ **Frontend-Fix** (`/app/frontend/src/pages/EinsatzplanungPage.jsx` `getAbsenceForUserDate`): Vergleich auf `a.start_date` / `a.end_date` umgestellt.
+- ✅ **Verifiziert via curl**: Approved Überstundenabbau Max 2026-04-13→23 erscheint jetzt in `/employee/shift-plan?week=2026-W16` als 1 Absence-Eintrag. Frontend rendert dadurch automatisch die farbigen Absence-Badges (Urlaub blau, Krank rot, ÜS-Abbau amber).
+
+
 ### Feb 2026 – Feature: Offdays / Ausgleichstage (Ersatzruhetag)
 - 🎯 **User-Request**: „Es wäre hilfreich, wenn es im Portal eine Kategorie für Offday / Ersatzruhetag / Ausgleichstag geben würde. Vielleicht könnte das System automatisch erkennen, wenn jemand an einem Sonntag oder Feiertag arbeitet, und den entsprechenden Ausgleichstag direkt dem Ausgleichstage-Konto hinzufügen. ... Wenn ich in der Einsatzplanung in der kommenden Woche 4 Offdays zuweise, hat er zum Wochenende noch 2 übrig."
 - 🎯 **Vorgaben**: Trigger = Clock-In an So/Feiertag, Bundesland = RLP, 1 ganzer Tag pro Arbeitstag, Zuweisung durch Admin + Verwaltungs-Modul, Übersicht in Mitarbeiter-Daten.
