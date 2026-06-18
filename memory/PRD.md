@@ -16,6 +16,34 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: Offdays / Ausgleichstage (Ersatzruhetag)
+- 🎯 **User-Request**: „Es wäre hilfreich, wenn es im Portal eine Kategorie für Offday / Ersatzruhetag / Ausgleichstag geben würde. Vielleicht könnte das System automatisch erkennen, wenn jemand an einem Sonntag oder Feiertag arbeitet, und den entsprechenden Ausgleichstag direkt dem Ausgleichstage-Konto hinzufügen. ... Wenn ich in der Einsatzplanung in der kommenden Woche 4 Offdays zuweise, hat er zum Wochenende noch 2 übrig."
+- 🎯 **Vorgaben**: Trigger = Clock-In an So/Feiertag, Bundesland = RLP, 1 ganzer Tag pro Arbeitstag, Zuweisung durch Admin + Verwaltungs-Modul, Übersicht in Mitarbeiter-Daten.
+- ✅ **Backend (neu)** `/app/backend/routes/offdays.py`:
+  - Gauss-Algorithmus für Ostern + 11 gesetzliche Feiertage RLP (inkl. Fronleichnam, Allerheiligen).
+  - `grant_offday_for_work(user_id, name, date)` → +1 Offday wenn Sonntag/RLP-Feiertag (idempotent pro user_id+date).
+  - `consume_offday_for_assignment(user_id, name, date, assignment_id, by)` → -1 (idempotent pro assignment_id).
+  - `release_offday_for_assignment(assignment_id)` → reverse beim Löschen.
+  - Endpoints: `GET /me`, `GET ""` (Admin-Liste + Activity-Feed), `GET /user/{id}`, `POST /adjust`, `POST /recompute`.
+  - Doppelte Buchführung via `offday_ledger`-Collection.
+- ✅ **Backend Hooks** in `routes/employee.py`:
+  - `clock_in`: ruft `grant_offday_for_work` nach Insert (Z.737-746).
+  - `upsert_shift_assignment` + `delete_shift_assignment`: handhabt `is_offday`-Flag, ruft consume/release. Auch Update-Flip (was-Offday → wird-normal) korrekt.
+- ✅ **Backend Registration** (`server.py` Z.2153-2156).
+- ✅ **Frontend** (neu) `/app/frontend/src/pages/OffdaysPage.jsx`:
+  - Saldo-Card (groß), eigene Historie, Admin-Sektion mit allen Usern + Expand zu Detail, Activity-Feed letzte 200 Bewegungen.
+  - Manueller `+/-`-Button öffnet adjust-Dialog (Notiz + Delta).
+  - `Neu berechnen`-Button für Recompute aus historischen time_entries.
+- ✅ **Frontend** `MitarbeiterDatenPage.jsx`: Kachel "Offdays / Ausgleichstage" (color=violet, Icon=CalendarCheck2) → navigiert zu `/mitarbeiter-daten/offdays`.
+- ✅ **Frontend** `EinsatzplanungPage.jsx`:
+  - **Offday-Mode-Toggle** im Header (lila Button) — Klick auf eine Zelle vergibt direkt einen Offday und bucht -1.
+  - **Edit-Form-Checkbox** "Als Offday markieren" — alternative Eingabe.
+  - **Saldo-Badge** neben jedem Mitarbeiternamen (lila bei positiv, rosa bei negativ).
+  - Offday-Cells werden lila gerendert mit CalendarCheck2-Icon, "Kopieren" ist für Offdays deaktiviert.
+- ✅ **Route** `/mitarbeiter-daten/offdays` in `App.js`.
+- ✅ **Testing**: iteration_75 (Backend 100%, 18 pytest cases — incl. Idempotenz, Permissions, Edge-Cases) + iteration_76 (Frontend 100% nach Kachel-Fix).
+
+
 ### Feb 2026 – Bugfix (P0): Tankbeleg-Rundung konsistent ceilen (Beleg-PDF vs. Zusammenstellung)
 - 🐛 **User-Report**: „Beleg 17128 hat in der Zusammenstellung 143 Liter aber im Tankbeleg 142 L. Das kommt immer wieder vor. Die Tankbelege müssen passen und aufgerundet werden."
 - 🎯 **Root Cause**: Backend `_draw_receipt_page` benutzte `f"{display_qty:.0f} L"` → das ist KAUFMÄNNISCHE Rundung (142.3 → 142). Aber die Zusammenstellungs-Tabelle und Listenanzeigen verwenden `math.ceil` (142.3 → 143). Dadurch zeigte das Einzelbeleg-PDF 142 L, die Summen-PDF aber 143 L → Inkonsistenz.
