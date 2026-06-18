@@ -1,0 +1,48 @@
+{
+  "summary": "Offday / Ausgleichstage feature tested end-to-end. Backend: 18/18 pytest cases pass — covers RLP holiday calendar (incl. movable Easter feasts for 2026), permission gating, /me, /list, /user, /adjust validation (0, non-int, 404), shift-plan consume/release/flip idempotency, and recompute idempotency. Frontend: OffdaysPage loads with my-balance, admin-section (11 users), adjust-dialog, recompute-btn all functional; EinsatzplanungPage offday-mode-toggle activates the violet banner correctly. ONE FRONTEND BUG: the 'Offdays / Ausgleichstage' tile is MISSING from MitarbeiterDatenPage (data-testid='mdaten-offdays-btn' nicht vorhanden), so users have no entry point from the Mitarbeiterdaten-Hub even though the route /mitarbeiter-daten/offdays and the violet color class are already implemented.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/employee/shift-plan", "issue": "Field name fuer Update ist 'id' (nicht 'assignment_id') — Frontend benutzt 'id', das ist konsistent, aber das interne Naming in 3088-3220 ist verwirrend (variable heisst assignment_id). Nicht funktional."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "MitarbeiterDatenPage",
+        "issue": "Kachel 'Offdays / Ausgleichstage' fehlt in der tiles-Array. data-testid='mdaten-offdays-btn' nicht vorhanden. User hat dadurch KEINEN Einstieg vom /mitarbeiter-daten-Hub zur OffdaysPage, obwohl Route, violet-color und OffdaysPage.jsx fertig sind.",
+        "selector": "[data-testid='mdaten-offdays-btn']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "OffdaysPage admin-section", "issues": ["DialogContent (adjust-dialog) hat keine Description / aria-describedby — React-Warning in der Konsole. Accessibility-Minor."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_offdays.py",
+    "/app/test_reports/pytest/offdays_results.xml"
+  ],
+  "action_items": [
+    "MitarbeiterDatenPage.jsx: Im tiles-Array eine neue Kachel {key:'offdays', label:'Offdays / Ausgleichstage', icon: CalendarCheck2 (oder Trees), color:'violet', onClick: () => navigate('/mitarbeiter-daten/offdays')} hinzufuegen — color:'violet' ist bereits in colorClasses definiert.",
+    "Optional: aria-describedby an DialogContent von adjust-dialog haengen, um React-A11y-Warning loszuwerden."
+  ],
+  "critical_code_review_comments": [
+    "routes/offdays.py: sauber strukturiert (~360 Z.), gute Doppel-Buchhaltung mit (source, ref_id)-Eindeutigkeit. Idempotenz von grant_offday_for_work und consume_offday_for_assignment wurde verifiziert.",
+    "is_sunday_or_rlp_holiday: korrekt fuer alle 11 RLP-Feiertage 2026 inkl. Gauss-Algorithmus (Ostern 2026 = 5.4.) — Karfreitag, Ostermontag, Christi Himmelfahrt, Pfingstmontag, Fronleichnam korrekt berechnet.",
+    "routes/employee.py: upsert_shift_assignment liest Update-ID aus data.get('id') — Variable heisst aber assignment_id; konsistent mit Frontend (das auch 'id' sendet), Naming koennte aber klarer sein.",
+    "Recompute loescht ALLE source=clock_in vor Neuanlage — manuelle und shift-Buchungen bleiben sicher erhalten (verifiziert per Idempotenz-Test).",
+    "OffdaysPage.jsx (~354 Z.): in Ordnung, MY_ENTRIES tbody wird konditional erst bei entries.length>0 gerendert — Test mit balance=0 sieht das daher nicht als Element."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_offdays.py (NEU, 18 pytest cases, mit try/finally Cleanup)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "85%"},
+  "test_credentials": "admin@test.com/password verifiziert; ma1@test.com/Anna2026! hat verwaltung=true → adjust-Endpoint nicht-403",
+  "seed_data_creation": "Test-Daten wurden mit Prefix TEST_ angelegt und im finally-Block per DELETE /shift-plan und Adjust-Revert wieder geloescht. Zusaetzlich Cleanup via Mongo direkt fuer Reste aus dem ersten fehlgeschlagenen Lauf (2030-01-08 entries). Tankbelege wurden NICHT angefasst.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend ist solide — keine Wiederholung noetig. Bei Re-Test fokussieren auf: (1) neue MitarbeiterDatenPage-Kachel klickbar + navigiert nach /mitarbeiter-daten/offdays. (2) End-to-End Klick auf Zelle in /einsatzplanung mit aktivem offday-mode-toggle erzeugt lila Offday-Cell (data-testid='asgn-<id>') und Saldo geht -1 (sichtbar in balance-badge-<userId>). (3) edit-form Checkbox edit-is-offday: Speichern -> Cell wird violet. Backend-Test-File ist wiederverwendbar.",
+  "rca of the issue": "Missing tile in MitarbeiterDatenPage: das tiles-Array in MitarbeiterDatenPage.jsx (Z.93-142) enthaelt nur 6 Eintraege (arbeitszeit, time-off, abrechnung, reisekosten, dokumente, verbandsbuch). Die violet-color-Klasse wurde zwar in colorClasses (Z.151) hinzugefuegt, aber der entsprechende Tile-Eintrag wurde vergessen. Fix: 7. Eintrag im Array ergaenzen — Datei-Aenderung von ~5 Zeilen, kein Backend betroffen."
+}

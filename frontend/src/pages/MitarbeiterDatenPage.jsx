@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import { Button } from "../components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronRight, Clock, CalendarOff, Receipt, User as UserIcon, Heart, FileText, Plane } from "lucide-react";
+import { ArrowLeft, ChevronRight, Clock, CalendarOff, Receipt, User as UserIcon, Heart, FileText, Plane, CalendarCheck2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "../components/ui/dialog";
@@ -148,6 +148,7 @@ export default function MitarbeiterDatenPage() {
     cyan: { bg: "bg-cyan-100", text: "text-cyan-600", hoverBorder: "hover:border-cyan-400", hoverIcon: "group-hover:bg-cyan-600" },
     red: { bg: "bg-red-100", text: "text-red-600", hoverBorder: "hover:border-red-400", hoverIcon: "group-hover:bg-red-600" },
     fuchsia: { bg: "bg-fuchsia-100", text: "text-fuchsia-600", hoverBorder: "hover:border-fuchsia-400", hoverIcon: "group-hover:bg-fuchsia-600" },
+    violet: { bg: "bg-violet-100", text: "text-violet-600", hoverBorder: "hover:border-violet-400", hoverIcon: "group-hover:bg-violet-600" },
   };
 
   return (

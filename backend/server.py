@@ -2150,6 +2150,10 @@ import routes.employee as employee_module
 employee_module.db = db
 app.include_router(employee_router)
 
+from routes.offdays import router as offdays_router, init_offday_routes
+init_offday_routes(db)
+app.include_router(offdays_router)
+
 from routes.mailbridge import router as mailbridge_router
 app.include_router(mailbridge_router)
 

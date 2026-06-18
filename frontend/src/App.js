@@ -57,6 +57,7 @@ import AdminZeitDetailPage from "./pages/AdminZeitDetailPage";
 import MitarbeiterNotizenPage from "./pages/MitarbeiterNotizenPage";
 import AbrechnungPage from "./pages/AbrechnungPage";
 import MitarbeiterDatenPage from "./pages/MitarbeiterDatenPage";
+import OffdaysPage from "./pages/OffdaysPage";
 import MitarbeiterDokumentePage from "./pages/MitarbeiterDokumentePage";
 import TravelExpensesPage from "./pages/TravelExpensesPage";
 import AdrPage from "./pages/AdrPage";
@@ -568,6 +569,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <TravelExpensesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mitarbeiter-daten/offdays"
+        element={
+          <ProtectedRoute>
+            <OffdaysPage />
           </ProtectedRoute>
         }
       />

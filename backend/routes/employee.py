@@ -731,6 +731,13 @@ async def clock_in(token: str = Query(...), body: dict | None = None):
         "date": now.strftime("%Y-%m-%d"),
     }
     await db.time_entries.insert_one(entry)
+    # Offday-Konto: Sonntag oder RLP-Feiertag automatisch +1 (idempotent
+    # pro user_id + date, siehe routes/offdays.py).
+    try:
+        from routes.offdays import grant_offday_for_work
+        await grant_offday_for_work(user["id"], user.get("name", ""), entry["date"])
+    except Exception as _e:
+        logger.warning(f"Offday-Accrual fehlgeschlagen fuer {user.get('email')}: {_e}")
     created = await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
     return created
 
@@ -3100,16 +3107,31 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                     "note": data.get("note", ""),
                     "start_time": data.get("start_time", ""),
                     "end_time": data.get("end_time", ""),
+                    "is_offday": bool(data.get("is_offday")),
                     "week_key": week_key,
                     "created_by": caller["id"],
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
                 created_ids.append(new_id)
+                # Offday-Konto belasten falls Mehrtages-Offday
+                if data.get("is_offday"):
+                    try:
+                        from routes.offdays import consume_offday_for_assignment
+                        target = await db.users.find_one({"id": user_id}, {"_id": 0, "name": 1})
+                        await consume_offday_for_assignment(
+                            user_id, (target or {}).get("name", ""), cur_iso, new_id,
+                            caller.get("name") or caller.get("email") or "admin",
+                        )
+                    except Exception as _e:
+                        logger.warning(f"Offday consume fehlgeschlagen: {_e}")
             cur = cur + _td(days=1)
         return {"ok": True, "created": len(created_ids), "skipped_existing": len(existing_dates), "ids": created_ids}
 
     if assignment_id:
+        # Bei Update: vorhandenen Eintrag holen, um is_offday Flip
+        # (war-Offday -> wird-normal oder umgekehrt) korrekt zu behandeln.
+        prev = await db.shift_assignments.find_one({"id": assignment_id}, {"_id": 0})
         await db.shift_assignments.update_one({"id": assignment_id}, {"$set": {
             "user_id": data.get("user_id"),
             "date": data.get("date"),
@@ -3119,9 +3141,26 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             "note": data.get("note", ""),
             "start_time": data.get("start_time", ""),
             "end_time": data.get("end_time", ""),
+            "is_offday": bool(data.get("is_offday")),
             "week_key": data.get("week_key"),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
+        # Offday-Konto-Update bei Statuswechsel
+        try:
+            from routes.offdays import consume_offday_for_assignment, release_offday_for_assignment
+            was_off = bool((prev or {}).get("is_offday"))
+            now_off = bool(data.get("is_offday"))
+            if was_off and not now_off:
+                await release_offday_for_assignment(assignment_id)
+            elif now_off and not was_off:
+                target = await db.users.find_one({"id": data.get("user_id")}, {"_id": 0, "name": 1})
+                await consume_offday_for_assignment(
+                    data.get("user_id"), (target or {}).get("name", ""),
+                    data.get("date"), assignment_id,
+                    caller.get("name") or caller.get("email") or "admin",
+                )
+        except Exception as _e:
+            logger.warning(f"Offday-Update fehlgeschlagen: {_e}")
     else:
         assignment_id = str(uuid.uuid4())
         await db.shift_assignments.insert_one({
@@ -3134,21 +3173,44 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             "note": data.get("note", ""),
             "start_time": data.get("start_time", ""),
             "end_time": data.get("end_time", ""),
+            "is_offday": bool(data.get("is_offday")),
             "week_key": data.get("week_key"),
             "created_by": caller["id"],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
+        # Offday-Konto belasten
+        if data.get("is_offday"):
+            try:
+                from routes.offdays import consume_offday_for_assignment
+                target = await db.users.find_one({"id": data.get("user_id")}, {"_id": 0, "name": 1})
+                await consume_offday_for_assignment(
+                    data.get("user_id"), (target or {}).get("name", ""),
+                    data.get("date"), assignment_id,
+                    caller.get("name") or caller.get("email") or "admin",
+                )
+            except Exception as _e:
+                logger.warning(f"Offday consume fehlgeschlagen: {_e}")
     return {"ok": True, "id": assignment_id}
 
 
 @router.delete("/shift-plan/{assignment_id}")
 async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
-    """Admin: Delete a shift assignment."""
+    """Admin: Delete a shift assignment.
+    Wenn das Assignment ein Offday war, wird der Tag automatisch wieder
+    auf das Offday-Konto zurueckgebucht (release)."""
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
+    # Vor dem Loeschen: Eintrag laden, um Offday-Status zu erkennen
+    prev = await db.shift_assignments.find_one({"id": assignment_id}, {"_id": 0})
     await db.shift_assignments.delete_one({"id": assignment_id})
+    if prev and prev.get("is_offday"):
+        try:
+            from routes.offdays import release_offday_for_assignment
+            await release_offday_for_assignment(assignment_id)
+        except Exception as _e:
+            logger.warning(f"Offday release fehlgeschlagen: {_e}")
     return {"ok": True}
 
 

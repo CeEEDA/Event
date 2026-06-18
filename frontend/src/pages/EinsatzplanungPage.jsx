@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, Users, Plus, X, Trash2,
   Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus, ExternalLink, Copy,
+  CalendarCheck2, Trees,
 } from "lucide-react";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -59,7 +60,7 @@ export default function EinsatzplanungPage() {
   const [orders, setOrders] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [editCell, setEditCell] = useState(null);
-  const [editForm, setEditForm] = useState({ order_pk: "", order_name: "", role: "", note: "", start_time: "", end_time: "" });
+  const [editForm, setEditForm] = useState({ order_pk: "", order_name: "", role: "", note: "", start_time: "", end_time: "", is_offday: false });
   const [schedules, setSchedules] = useState({});
   const [jobReqs, setJobReqs] = useState({});
   const [editingReq, setEditingReq] = useState(null);
@@ -67,6 +68,9 @@ export default function EinsatzplanungPage() {
   const [crewData, setCrewData] = useState({});
   const [crewLoading, setCrewLoading] = useState(false);
   const [copySource, setCopySource] = useState(null);
+  const [spanWholeJob, setSpanWholeJob] = useState(false);
+  const [offdayMode, setOffdayMode] = useState(false);
+  const [offdayBalances, setOffdayBalances] = useState({});  // { user_id: balance }
 
   const weekDates = getWeekDates(weekKey);
 
@@ -136,8 +140,19 @@ export default function EinsatzplanungPage() {
     setCrewLoading(false);
   }, [token, orders]);
 
+  const loadOffdayBalances = useCallback(async () => {
+    try {
+      const r = await api.get(`/employee/offdays?token=${token}`);
+      const map = {};
+      (r.data?.balances || []).forEach(b => { map[b.user_id] = b.balance; });
+      setOffdayBalances(map);
+    } catch {
+      // Falls keine Verwaltung-Berechtigung: still ohne Saldo anzeigen
+    }
+  }, [token]);
+
   useEffect(() => { loadUsers(); }, [loadUsers]);
-  useEffect(() => { loadPlan(); loadOrders(); loadJobReqs(); }, [loadPlan, loadOrders, loadJobReqs]);
+  useEffect(() => { loadPlan(); loadOrders(); loadJobReqs(); loadOffdayBalances(); }, [loadPlan, loadOrders, loadJobReqs, loadOffdayBalances]);
   useEffect(() => { if (users.length > 0) loadSchedules(); }, [users, loadSchedules]);
   useEffect(() => { if (orders.length > 0) loadCrewData(); }, [orders, loadCrewData]);
 
@@ -193,6 +208,24 @@ export default function EinsatzplanungPage() {
   };
 
   const handleCellClick = async (userId, date) => {
+    // Offday-Mode: belastet Konto direkt
+    if (offdayMode) {
+      const currBal = offdayBalances[userId] ?? 0;
+      if (currBal <= 0) {
+        if (!window.confirm(`Saldo ist ${currBal}. Trotzdem Offday zuweisen? Konto geht ins Minus.`)) return;
+      }
+      try {
+        await api.post(`/employee/shift-plan?token=${token}`, {
+          user_id: userId, date, week_key: weekKey,
+          order_pk: null, order_name: "Offday", role: "", note: "",
+          start_time: "", end_time: "", is_offday: true,
+        });
+        loadPlan();
+        loadOffdayBalances();
+        toast.success("Offday zugewiesen");
+      } catch { toast.error("Fehler"); }
+      return;
+    }
     // Copy mode: paste the copied assignment to this cell
     if (copySource) {
       try {
@@ -239,7 +272,7 @@ export default function EinsatzplanungPage() {
       } catch { toast.error("Fehler"); }
     } else {
       setEditCell({ userId, date });
-      setEditForm({ order_pk: "", order_name: "", role: "", note: "", start_time: "", end_time: "" });
+      setEditForm({ order_pk: "", order_name: "", role: "", note: "", start_time: "", end_time: "", is_offday: false });
     }
   };
 
@@ -250,16 +283,22 @@ export default function EinsatzplanungPage() {
       order_pk: editForm.order_pk ? parseInt(editForm.order_pk) : null,
       order_name: editForm.order_name, role: editForm.role, note: editForm.note,
       start_time: editForm.start_time, end_time: editForm.end_time,
+      is_offday: !!editForm.is_offday,
     };
     try {
       await api.post(`/employee/shift-plan?token=${token}`, payload);
       setEditCell(null);
       loadPlan();
+      if (payload.is_offday) loadOffdayBalances();
     } catch { toast.error("Fehler beim Speichern"); }
   };
 
   const deleteAssignment = async (id) => {
-    try { await api.delete(`/employee/shift-plan/${id}?token=${token}`); loadPlan(); } catch { toast.error("Fehler"); }
+    try {
+      await api.delete(`/employee/shift-plan/${id}?token=${token}`);
+      loadPlan();
+      loadOffdayBalances();
+    } catch { toast.error("Fehler"); }
   };
 
   const releasePlan = async () => {
@@ -328,11 +367,28 @@ export default function EinsatzplanungPage() {
               </div>
             )}
             {released && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Freigegeben</span>}
+            <Button
+              onClick={() => { setOffdayMode(v => !v); setSelectedJob(null); setCopySource(null); }}
+              size="sm"
+              variant={offdayMode ? "default" : "outline"}
+              className={offdayMode ? "bg-violet-600 hover:bg-violet-700" : "border-violet-300 text-violet-700 hover:bg-violet-50"}
+              data-testid="offday-mode-toggle"
+              title="Offday-Modus: Klick auf Zelle vergibt einen Ausgleichstag und zieht ihn vom Saldo ab"
+            >
+              <CalendarCheck2 className="w-3.5 h-3.5 mr-1.5" /> Offday {offdayMode ? "AN" : ""}
+            </Button>
             <Button onClick={releasePlan} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="release-plan-btn">
               <Send className="w-3.5 h-3.5 mr-1.5" /> Freigeben
             </Button>
           </div>
         </div>
+        {offdayMode && (
+          <div className="bg-violet-50 border-t border-violet-200 px-4 py-2 text-xs text-violet-800 flex items-center gap-2">
+            <CalendarCheck2 className="w-3.5 h-3.5" />
+            <span><strong>Offday-Modus aktiv:</strong> Klicke auf eine Zelle, um dem Mitarbeiter einen Ausgleichstag zu vergeben. Der Tag wird vom Offday-Saldo abgezogen.</span>
+            <button onClick={() => setOffdayMode(false)} className="ml-auto text-violet-500 hover:text-violet-700" data-testid="offday-mode-off"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
       </header>
 
       {/* Jobs with personnel requirements */}
@@ -475,7 +531,18 @@ export default function EinsatzplanungPage() {
               {users.map(user => (
                 <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50/50" data-testid={`row-${user.id}`}>
                   <td className="px-3 py-1.5 sticky left-0 bg-white z-10 border-r border-gray-100">
-                    <p className="font-medium text-gray-900 truncate text-xs">{user.name}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-gray-900 truncate text-xs">{user.name}</p>
+                      {offdayBalances[user.id] !== undefined && (
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${
+                          offdayBalances[user.id] > 0 ? "bg-violet-100 text-violet-700" :
+                          offdayBalances[user.id] < 0 ? "bg-rose-100 text-rose-700" :
+                          "bg-gray-100 text-gray-400"
+                        }`} title="Offday-Saldo" data-testid={`balance-badge-${user.id}`}>
+                          <Trees className="w-2.5 h-2.5" />{offdayBalances[user.id]}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   {weekDates.map((date, dayIdx) => {
                     const absence = getAbsenceForUserDate(user.id, date);
@@ -491,7 +558,7 @@ export default function EinsatzplanungPage() {
                         className={`px-1 py-1 align-top relative group cursor-pointer ${
                           isToday ? "bg-indigo-50/50" : ""} ${isSun ? "bg-red-50/30" : ""} ${
                           selectedJob || copySource ? "hover:bg-indigo-100/50 hover:ring-1 hover:ring-indigo-300 hover:ring-inset" : ""
-                        }`}
+                        } ${offdayMode ? "hover:bg-violet-100/50 hover:ring-1 hover:ring-violet-300 hover:ring-inset" : ""}`}
                         onClick={() => !absence && !isEditing && handleCellClick(user.id, date)}
                       >
                         {absence && (() => {
@@ -502,20 +569,30 @@ export default function EinsatzplanungPage() {
 
                         {cellAssignments.map(asgn => (
                           <div key={asgn.id} className={`border rounded-md px-1.5 py-1 mb-1 relative group/item ${
-                            copySource?.id === asgn.id ? "bg-amber-50 border-amber-300 ring-1 ring-amber-200" : "bg-indigo-50 border-indigo-200"
+                            asgn.is_offday ? "bg-violet-50 border-violet-300" :
+                            copySource?.id === asgn.id ? "bg-amber-50 border-amber-300 ring-1 ring-amber-200" :
+                            "bg-indigo-50 border-indigo-200"
                           }`} data-testid={`asgn-${asgn.id}`}>
-                            {asgn.order_name && <p className="text-[10px] font-semibold text-indigo-800 truncate">{asgn.order_name}</p>}
-                            {asgn.role && <p className="text-[10px] text-indigo-600">{asgn.role}</p>}
-                            {(asgn.start_time || asgn.end_time) && (
-                              <p className="text-[10px] text-gray-500 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {asgn.start_time || "?"} – {asgn.end_time || "?"}</p>
+                            {asgn.is_offday ? (
+                              <p className="text-[10px] font-semibold text-violet-800 flex items-center gap-1"><CalendarCheck2 className="w-3 h-3" /> Offday</p>
+                            ) : (
+                              <>
+                                {asgn.order_name && <p className="text-[10px] font-semibold text-indigo-800 truncate">{asgn.order_name}</p>}
+                                {asgn.role && <p className="text-[10px] text-indigo-600">{asgn.role}</p>}
+                                {(asgn.start_time || asgn.end_time) && (
+                                  <p className="text-[10px] text-gray-500 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {asgn.start_time || "?"} – {asgn.end_time || "?"}</p>
+                                )}
+                                {asgn.note && <p className="text-[10px] text-gray-500 italic truncate">{asgn.note}</p>}
+                              </>
                             )}
-                            {asgn.note && <p className="text-[10px] text-gray-500 italic truncate">{asgn.note}</p>}
                             <div className="absolute -top-1 -right-1 flex gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                              <button onClick={(e) => { e.stopPropagation(); setCopySource(asgn); setSelectedJob(null); }}
-                                className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center" title="Kopieren"
-                                data-testid={`copy-${asgn.id}`}>
-                                <Copy className="w-2.5 h-2.5" />
-                              </button>
+                              {!asgn.is_offday && (
+                                <button onClick={(e) => { e.stopPropagation(); setCopySource(asgn); setSelectedJob(null); }}
+                                  className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center" title="Kopieren"
+                                  data-testid={`copy-${asgn.id}`}>
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              )}
                               <button onClick={(e) => { e.stopPropagation(); deleteAssignment(asgn.id); }}
                                 className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center" title="Löschen">
                                 <X className="w-2.5 h-2.5" />
@@ -542,7 +619,13 @@ export default function EinsatzplanungPage() {
                         {/* Edit form */}
                         {isEditing && (
                           <div className="bg-white border-2 border-indigo-400 rounded-lg p-2 shadow-xl z-30 absolute top-0 left-0 w-[240px]" onClick={e => e.stopPropagation()} data-testid="edit-form">
-                            <select value={editForm.order_pk} onChange={e => {
+                            <label className="flex items-center gap-1.5 text-[11px] text-violet-700 mb-1.5 cursor-pointer select-none">
+                              <input type="checkbox" checked={!!editForm.is_offday} onChange={e => setEditForm(f => ({ ...f, is_offday: e.target.checked }))} className="w-3 h-3 accent-violet-600" data-testid="edit-is-offday" />
+                              <CalendarCheck2 className="w-3 h-3 text-violet-600" /> Als Offday markieren (-1)
+                            </label>
+                            {!editForm.is_offday && (
+                              <>
+                                <select value={editForm.order_pk} onChange={e => {
                               const o = orders.find(o => String(o.primary_key) === e.target.value);
                               setEditForm(f => ({ ...f, order_pk: e.target.value, order_name: o ? (o.event || o.order_no) : f.order_name }));
                             }} className="w-full text-xs border rounded px-2 py-1 mb-1">
@@ -557,6 +640,8 @@ export default function EinsatzplanungPage() {
                               <Input type="time" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))} className="h-7 text-xs flex-1" />
                             </div>
                             <Input value={editForm.note} onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))} placeholder="Notiz" className="h-7 text-xs mb-1" />
+                              </>
+                            )}
                             <div className="flex gap-1">
                               <Button size="sm" onClick={() => saveAssignment()} className="h-6 text-[10px] bg-indigo-600 flex-1"><Check className="w-3 h-3 mr-0.5" /> OK</Button>
                               <Button size="sm" variant="ghost" onClick={() => setEditCell(null)} className="h-6 text-[10px]"><X className="w-3 h-3" /></Button>
