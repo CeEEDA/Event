@@ -424,10 +424,15 @@ export default function EinsatzplanungPage() {
               { key: "confirmed", label: "Alle bestätigten" },
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
+              // "Bestätigt" = nicht-storniert + nicht-archiviert + aktuelle Version
+              // (EpiRent's `is_confirmed`-Flag ist zu strikt - das heisst nur
+              // 'formal als Mietvertrag bestaetigt'. Echte aktive Auftraege mit
+              // Material und Liefertermin haben oft is_confirmed=false in EpiRent.)
+              const isActive = (o) => !o.is_canceled && !o.is_archived && o.is_current_version !== false;
               const count = opt.key === "crew"
-                ? orders.filter(o => o.is_confirmed).length
+                ? orders.filter(o => isActive(o) && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
                 : opt.key === "confirmed"
-                  ? orders.filter(o => o.is_confirmed).length
+                  ? orders.filter(isActive).length
                   : orders.length;
               return (
                 <button key={opt.key} onClick={() => setOrderFilter(opt.key)}
@@ -443,11 +448,14 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            // "crew" und "confirmed" verhalten sich beide wie das alte Default-
-            // Verhalten: alle bestätigten Aufträge - auch solche ohne definierte
-            // Personal-Anforderungen (sonst gehen Jobs unter, fuer die noch
-            // 'Personal definieren' aussteht).
-            return !!o.is_confirmed;
+            // "Bestätigt" = aktive Auftraege (nicht storniert/archiviert,
+            // aktuelle Version). Diese Heuristik kommt naeher an die
+            // user-Definition als EpiRent's strikte is_confirmed-Flag.
+            const isActive = !o.is_canceled && !o.is_archived && o.is_current_version !== false;
+            if (orderFilter === "confirmed") return isActive;
+            // "Nur Personal" = aktiv + hat Crew-Bedarf oder bereits Crew
+            if (!isActive) return false;
+            return getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0;
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
@@ -458,7 +466,8 @@ export default function EinsatzplanungPage() {
             const isFull = needed > 0 && assigned >= needed;
             const hasReqs = needed > 0;
             const isSelected = selectedJob?.primary_key === pk;
-            const isUnconfirmed = !o.is_confirmed;
+            // Visuelle Auszeichnung nur fuer wirklich inaktive (storniert/archiviert)
+            const isUnconfirmed = !!o.is_canceled || !!o.is_archived || o.is_current_version === false;
             const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
@@ -491,8 +500,8 @@ export default function EinsatzplanungPage() {
                 <div className="flex items-center justify-between gap-1">
                   <p className="text-[10px] font-mono text-indigo-600 font-semibold">{o.order_no}</p>
                   {isUnconfirmed && (
-                    <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium" title="Auftrag in EpiRent noch nicht bestaetigt - z.B. Liefer-/Service-Job ohne Mietdauer">
-                      unbestätigt
+                    <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium" title="Auftrag storniert oder archiviert">
+                      inaktiv
                     </span>
                   )}
                 </div>
