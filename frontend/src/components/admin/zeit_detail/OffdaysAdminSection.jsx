@@ -25,7 +25,7 @@ export default function OffdaysAdminSection({ userId, token, userName }) {
   const [data, setData] = useState({ balance: 0, entries: [] });
   const [loading, setLoading] = useState(true);
   const [adjustOpen, setAdjustOpen] = useState(false);
-  const [adjustForm, setAdjustForm] = useState({ delta: 1, note: "" });
+  const [adjustForm, setAdjustForm] = useState({ delta: 1, note: "", ref_date: new Date().toISOString().slice(0,10) });
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -44,17 +44,18 @@ export default function OffdaysAdminSection({ userId, token, userName }) {
   useEffect(() => { load(); }, [load]);
 
   const openAdjust = (sign) => {
-    setAdjustForm({ delta: sign, note: "" });
+    setAdjustForm({ delta: sign, note: "", ref_date: new Date().toISOString().slice(0,10) });
     setAdjustOpen(true);
   };
 
   const submitAdjust = async () => {
     const d = parseInt(adjustForm.delta);
     if (!d || isNaN(d)) { toast.error("Bitte gültige Zahl eingeben (z.B. +1, -2)"); return; }
+    if (!adjustForm.ref_date) { toast.error("Bitte Datum wählen"); return; }
     setSubmitting(true);
     try {
       const r = await api.post(`/employee/offdays/adjust?token=${token}`, {
-        user_id: userId, delta: d, note: adjustForm.note,
+        user_id: userId, delta: d, note: adjustForm.note, ref_date: adjustForm.ref_date,
       });
       toast.success(`Saldo: ${r.data?.new_balance ?? "?"}`);
       setAdjustOpen(false);
@@ -141,6 +142,11 @@ export default function OffdaysAdminSection({ userId, token, userName }) {
           <p id="offday-adjust-desc" className="sr-only">Offday-Saldo des Mitarbeiters anpassen</p>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-gray-600">Mitarbeiter: <strong>{userName || "—"}</strong></p>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Für welchen Tag?</label>
+              <Input type="date" value={adjustForm.ref_date} onChange={e => setAdjustForm(f => ({ ...f, ref_date: e.target.value }))} data-testid="offday-adjust-date" />
+              <p className="text-[10px] text-gray-400 mt-1">Datum, für das der Offday gutgeschrieben oder abgezogen werden soll (z.B. der gearbeitete Sonntag).</p>
+            </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Anzahl (positiv = gutschreiben, negativ = abziehen)</label>
               <Input type="number" value={adjustForm.delta} onChange={e => setAdjustForm(f => ({ ...f, delta: e.target.value }))} data-testid="offday-adjust-delta" />

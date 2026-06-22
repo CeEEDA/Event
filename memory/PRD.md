@@ -16,6 +16,13 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: Datum für manuelle Offday-Korrektur
+- 🎯 **User-Request**: „hier muss ich ein Datum eintragen können für welchen Tag ein offday gutgeschrieben wurde."
+- ✅ **Backend** (`/app/backend/routes/offdays.py` `manual_adjust`): akzeptiert optionales Body-Feld `ref_date` (Format `YYYY-MM-DD`). Default = heute (wie bisher). ISO-Validierung gibt 400 bei falschem Format.
+- ✅ **Frontend** (`OffdaysAdminSection.jsx`): neues Datumsfeld „Für welchen Tag?" oberhalb der Anzahl, defaultet auf heute. Hint-Text: „Datum, für das der Offday gutgeschrieben oder abgezogen werden soll (z.B. der gearbeitete Sonntag)."
+- ✅ **Verifiziert via curl**: custom ref_date 2026-03-15 wird gespeichert; ohne Feld → heute; ungültiges Format 15.03.2026 → 400.
+
+
 ### Feb 2026 – Refactor: Offday-Sichtbarkeit aufgetrennt (Mitarbeiter vs. Verwaltung)
 - 🎯 **User-Request**: „Der Mitarbeiter darf nur seine Offdays sehen. Ich als Admin kann die dann in Verwaltung / Mitarbeiter / und dann in offdays sehen, Anlegen und bearbeiten."
 - ✅ **Mitarbeiter-Page** `/mitarbeiter-daten/offdays` (`OffdaysPage.jsx`): nur Eigener Saldo + Eigene Buchungs-Historie. Liste „Alle Mitarbeiter", Activity-Feed und Adjust-Buttons komplett entfernt. Auch Admins sehen hier jetzt nur ihre eigenen Daten.

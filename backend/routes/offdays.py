@@ -282,7 +282,8 @@ async def get_offdays_for_user(user_id: str, token: str = Query(...)):
 async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
     """Verwaltung: Manuelles Plus/Minus auf das Konto eines Users.
 
-    Body: { user_id, delta (int), note }
+    Body: { user_id, delta (int), note, ref_date (optional, "YYYY-MM-DD") }
+    Wenn `ref_date` nicht gesetzt: heute.
     """
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
@@ -290,6 +291,12 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
     user_id = data.get("user_id")
     delta = data.get("delta")
     note = (data.get("note") or "").strip()
+    ref_date = (data.get("ref_date") or "").strip() or _date.today().isoformat()
+    # Validierung ISO-Datum
+    try:
+        _date.fromisoformat(ref_date)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ref_date muss im Format YYYY-MM-DD sein")
     if not user_id:
         raise HTTPException(status_code=400, detail="user_id fehlt")
     try:
@@ -312,7 +319,7 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
         "source": "manual",
         "source_label": "Manuelle Korrektur",
         "reason": "admin_adjust",
-        "ref_date": _date.today().isoformat(),
+        "ref_date": ref_date,
         "ref_id": None,
         "note": note,
         "created_at": datetime.now(timezone.utc).isoformat(),
