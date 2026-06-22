@@ -5,10 +5,12 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import {
   ArrowLeft, User, Save, Palmtree, TrendingUp,
   Plus, Trash2, CalendarDays, ThermometerSun, ChevronDown, ChevronUp, CalendarOff, Archive,
-  Download, StickyNote, Eye, FileText, Heart, FileDown,
+  Download, StickyNote, Eye, FileText, Heart, FileDown, Coffee, Clock, X,
   History,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
@@ -95,13 +97,13 @@ export default function AdminZeitDetailPage() {
   const [addRow, setAddRow] = useState({});
   const [addingRow, setAddingRow] = useState(null);
   const [editEntryId, setEditEntryId] = useState(null);
-  const [editDraft, setEditDraft] = useState({ date: "", start: "", end: "" });
+  const [editDraft, setEditDraft] = useState({ date: "", start: "", end: "", break_min: 0, note: "" });
 
   // iOS-Fix: Ref auf den aktuellen addRow-State, damit submitAddRow nach blur den
   // letzten Wert sieht (iOS commit-on-blur des Date/Time-Pickers).
   const addRowRef = useRef({});
   addRowRef.current = addRow;
-  const editDraftRef = useRef({ date: "", start: "", end: "" });
+  const editDraftRef = useRef({ date: "", start: "", end: "", break_min: 0, note: "" });
   editDraftRef.current = editDraft;
 
   // Year data
@@ -491,8 +493,11 @@ export default function AdminZeitDetailPage() {
     .reduce((s, r) => s + (r.days || 0), 0);
 
   const fmtH = (mins) => { const h = Math.floor(mins / 60); const m = Math.round(mins % 60); return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : ""; };
-  const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  const isoToHHMM = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+  // WICHTIG: Alle Zeiten IMMER in Europe/Berlin anzeigen, unabhaengig von der
+  // Browser-Timezone. Sonst driftet die Anzeige um +/-1-2h (Server in UTC,
+  // Browser in CEST). Backend speichert echtes UTC, hier nur formatieren.
+  const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+  const isoToHHMM = (iso) => iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Europe/Berlin" }) : "";
 
   const reloadEntries = async () => {
     try {
@@ -507,6 +512,8 @@ export default function AdminZeitDetailPage() {
       date: e.date || (e.clock_in || "").slice(0, 10),
       start: isoToHHMM(e.clock_in),
       end: isoToHHMM(e.clock_out),
+      break_min: Number(e.break_min || 0),
+      note: e.manual_note || "",
     });
   };
 
@@ -523,6 +530,8 @@ export default function AdminZeitDetailPage() {
         date: draft.date,
         clock_in_time: draft.start,
         clock_out_time: draft.end || null,
+        break_min: Number(draft.break_min) || 0,
+        note: draft.note || "",
       });
       toast.success("Eintrag aktualisiert");
       setEditEntryId(null);
@@ -1009,6 +1018,79 @@ export default function AdminZeitDetailPage() {
           loadAuditLog={loadAuditLog}
         />
       </div>
+
+      {/* Arbeitszeit-Korrektur Dialog */}
+      <Dialog open={!!editEntryId} onOpenChange={(o) => { if (!o) setEditEntryId(null); }}>
+        <DialogContent className="sm:max-w-lg" data-testid="edit-time-dialog" aria-describedby="edit-time-desc">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-gray-900">
+              <Clock className="w-5 h-5 text-amber-600" /> Arbeitszeit korrigieren
+            </DialogTitle>
+          </DialogHeader>
+          <p id="edit-time-desc" className="sr-only">Datum, Arbeitsbeginn, Arbeitsende und Pausenzeit korrigieren. Zeiten in Europe/Berlin.</p>
+
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block font-medium">Datum</label>
+                <Input type="date" value={editDraft.date} onChange={e => setEditDraft(d => ({ ...d, date: e.target.value }))} className="text-sm" data-testid="edit-date" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block font-medium flex items-center gap-1">
+                  <Coffee className="w-3 h-3 text-sky-500" /> Pause (Min.)
+                </label>
+                <Input type="number" min="0" max="480" step="5" value={editDraft.break_min} onChange={e => setEditDraft(d => ({ ...d, break_min: e.target.value }))} className="text-sm" data-testid="edit-break-min" placeholder="z.B. 30" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-emerald-600 mb-1 block font-medium">Arbeitsbeginn</label>
+                <Input type="time" value={editDraft.start} onChange={e => setEditDraft(d => ({ ...d, start: e.target.value }))} className="text-sm" data-testid="edit-start" />
+              </div>
+              <div>
+                <label className="text-xs text-rose-600 mb-1 block font-medium">Arbeitsende</label>
+                <Input type="time" value={editDraft.end} onChange={e => setEditDraft(d => ({ ...d, end: e.target.value }))} className="text-sm" data-testid="edit-end" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block font-medium">Notiz / Begründung</label>
+              <Textarea rows={2} value={editDraft.note} onChange={e => setEditDraft(d => ({ ...d, note: e.target.value }))} placeholder="z.B. Vergessen einzustempeln, manuell nachgetragen..." className="text-sm" data-testid="edit-note" />
+            </div>
+
+            {(() => {
+              const start = editDraft.start; const end = editDraft.end;
+              if (!start || !end) return null;
+              const [sh, sm] = start.split(":").map(Number);
+              const [eh, em] = end.split(":").map(Number);
+              const raw = (eh * 60 + em) - (sh * 60 + sm);
+              if (raw <= 0) return <p className="text-xs text-rose-600">Endzeit muss nach Startzeit liegen.</p>;
+              const legal = raw > 540 ? 45 : raw > 360 ? 30 : 0;
+              const brk = Math.max(Number(editDraft.break_min) || 0, legal);
+              const net = raw - (brk < raw ? brk : 0);
+              return (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 flex items-center gap-3 flex-wrap" data-testid="edit-preview">
+                  <span>Anwesenheit: <strong>{fmtH(raw)}</strong></span>
+                  <span className="text-gray-300">·</span>
+                  <span>Pause: <strong>{brk} min</strong>{legal > 0 && brk === legal && Number(editDraft.break_min) < legal && <span className="text-amber-600"> (gesetzl. Min.)</span>}</span>
+                  <span className="text-gray-300">·</span>
+                  <span>Arbeitszeit: <strong className="text-emerald-700">{fmtH(net)}</strong></span>
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-2 pt-2">
+              <Button onClick={() => saveEditEntry(editEntryId)} className="flex-1 bg-emerald-600 hover:bg-emerald-700" data-testid="edit-save">
+                <Save className="w-4 h-4 mr-2" /> Speichern
+              </Button>
+              <Button variant="outline" onClick={() => setEditEntryId(null)} data-testid="edit-cancel">
+                <X className="w-4 h-4 mr-2" /> Abbrechen
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

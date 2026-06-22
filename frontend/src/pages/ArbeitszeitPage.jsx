@@ -77,7 +77,7 @@ export default function ArbeitszeitPage() {
     .filter(r => r.type === "krank" && r.status === "approved" && r.start_date?.startsWith(String(year)))
     .reduce((s, r) => s + (r.days || 0), 0);
 
-  const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
   const formatDur = (mins) => { if (!mins) return "—"; const h = Math.floor(mins / 60); const m = Math.round(mins % 60); return `${h}h ${m}m`; };
   const fmtH = (mins) => { const h = Math.floor(mins / 60); const m = Math.round(mins % 60); return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : ""; };
 

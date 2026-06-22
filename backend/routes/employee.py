@@ -1311,15 +1311,28 @@ async def get_time_overview(token: str = Query(...)):
 
 
 def _parse_local_time_to_utc(date_str: str, time_str: str) -> datetime:
-    """Parse a local German date+time string ('YYYY-MM-DD' + 'HH:MM') as UTC ISO.
-    We store everything in UTC; assume the input is already wall-clock and treat it as UTC for now
-    (the rest of the time-tracking does the same – clock_in via datetime.now(timezone.utc).isoformat())."""
+    """Parse a German local wall-clock (Europe/Berlin) date+time string into
+    a TRUE UTC datetime. Eingaben wie '2026-02-15' + '10:00' (= 10 Uhr MEZ)
+    werden korrekt zu 09:00 UTC, im Sommer (MESZ) zu 08:00 UTC.
+
+    Frueher wurde die Zeit nur 'als UTC etikettiert' (replace(tzinfo=utc))
+    was zu einem 1-/2-Stunden-Drift fuehrte, da der Live-Stempel (UTC) und
+    die manuelle Korrektur (UTC-etikettiert) verschiedene Zeitsemantik
+    hatten. Mit dieser Funktion ist die Speicherung einheitlich.
+    """
     if not date_str or not time_str:
         raise HTTPException(status_code=400, detail="Datum und Uhrzeit erforderlich")
     try:
-        # Combine date + time into ISO; assume it represents local clock time stored as UTC tz
-        dt = datetime.fromisoformat(f"{date_str}T{time_str}:00").replace(tzinfo=timezone.utc)
-        return dt
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:  # pragma: no cover
+            from backports.zoneinfo import ZoneInfo  # type: ignore
+        local = datetime.fromisoformat(f"{date_str}T{time_str}:00").replace(
+            tzinfo=ZoneInfo("Europe/Berlin")
+        )
+        return local.astimezone(timezone.utc)
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=400, detail=f"Ungueltiges Datum/Uhrzeit: {date_str} {time_str}")
 
@@ -1349,8 +1362,17 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
     # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
     raw_duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
     if raw_duration is not None:
-        break_min = await _get_break_min_for_date(target_user_id, date_str)
-        break_min = _enforce_legal_break_minimum(raw_duration, break_min)
+        # Pausen-Override aus Body, sonst aus Wochenplan
+        if body.get("break_min") is not None:
+            try:
+                override_break = max(0, int(body.get("break_min") or 0))
+            except (TypeError, ValueError):
+                override_break = 0
+            legal_min = _legal_minimum_break(raw_duration)
+            break_min = max(override_break, legal_min)
+        else:
+            break_min = await _get_break_min_for_date(target_user_id, date_str)
+            break_min = _enforce_legal_break_minimum(raw_duration, break_min)
         duration = round(_apply_break_deduction(raw_duration, break_min), 1)
     else:
         break_min = 0
@@ -1418,8 +1440,19 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
     raw_duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None
     # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
     if raw_duration is not None:
-        break_min = await _get_break_min_for_date(entry.get("user_id"), date_str)
-        break_min = _enforce_legal_break_minimum(raw_duration, break_min)
+        # Pausen-Override aus Body, sonst aus Wochenplan
+        if body.get("break_min") is not None:
+            try:
+                override_break = max(0, int(body.get("break_min") or 0))
+            except (TypeError, ValueError):
+                override_break = 0
+            # Override: gesetzliche Mindestpause nur ALS UNTERGRENZE bei >6h
+            # erzwingen, sonst genau das nehmen was der Admin eingibt.
+            legal_min = _legal_minimum_break(raw_duration)
+            break_min = max(override_break, legal_min)
+        else:
+            break_min = await _get_break_min_for_date(entry.get("user_id"), date_str)
+            break_min = _enforce_legal_break_minimum(raw_duration, break_min)
         duration = round(_apply_break_deduction(raw_duration, break_min), 1)
     else:
         break_min = 0

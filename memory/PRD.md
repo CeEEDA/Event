@@ -16,6 +16,19 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix + Feature: Arbeitszeit-Korrektur mit korrekter Berlin-TZ & neuem Dialog
+- 🐛 **User-Report**: „es gibt immer noch Probleme bei der Korrektur der Arbeitszeiten; das Portal zieht 2 Stunden ab. Wenn ich 10:00–16:00 eingebe, wird dies als 08:00–14:00 erfasst. Baue hier ein separates Fenster ein. So das ich eindeutig die Arbeits und Pausenzeit eintragen kann."
+- 🎯 **Root Cause TZ-Drift**: `_parse_local_time_to_utc` hat naive Eingaben einfach mit `.replace(tzinfo=timezone.utc)` als UTC etikettiert (keine echte Konvertierung). Live-Stempel (`datetime.now(timezone.utc)`) und manuelle Korrekturen hatten dadurch unterschiedliche Zeit-Semantik → +/- 1-2h Drift je nach Browser/Server-TZ.
+- ✅ **Backend-Fix** (`/app/backend/routes/employee.py` `_parse_local_time_to_utc`): echte Konvertierung via `ZoneInfo("Europe/Berlin")` → `.astimezone(timezone.utc)`. Eingabe "10:00" am 15.02 wird zu `09:00 UTC` (MEZ), am 15.07 zu `08:00 UTC` (MESZ).
+- ✅ **Backend** (PUT `/time/entries/{id}` + POST `/time/manual`): akzeptiert optional `break_min` Override (Admin-Eingabe gewinnt; gesetzliche Mindestpause §4 ArbZG wird als Untergrenze >6h erzwungen).
+- ✅ **Frontend** (`AdminZeitDetailPage.jsx`, `MonthlyBreakdownSection.jsx`, `ArbeitszeitPage.jsx`): Alle `toLocaleTimeString`/`toLocaleDateString` mit `timeZone: "Europe/Berlin"` → zeigt korrekte Berliner Wand-Uhr unabhängig vom Browser.
+- ✅ **Neues Dialog-Fenster** in `AdminZeitDetailPage.jsx` (Modal): klare Felder für **Datum / Arbeitsbeginn / Arbeitsende / Pause (Min.) / Notiz**. Live-Vorschau zeigt Anwesenheit, Pause (mit gesetzlichem-Min.-Hinweis) und Netto-Arbeitszeit vor dem Speichern. Inline-Edit in der Zeile entfernt.
+- ✅ **Verifiziert via curl** (Winter + Sommer DST):
+  - Input 10:00-16:00 am 15.02 → `T09:00:00+00:00` / `T15:00:00+00:00` UTC ✅
+  - Input 10:00-16:00 am 15.07 → `T08:00:00+00:00` / `T14:00:00+00:00` UTC ✅
+  - Update 09:30-17:00 + break=45 → 405 min Arbeit (7.5h - 45min) ✅
+
+
 ### Feb 2026 – Bugfix: Genehmigte Abwesenheiten erscheinen jetzt in der Einsatzplanung
 - 🐛 **User-Report**: „Wenn einer sich krank gemeldet hat, es freigegeben wurde, ändert sich auch die Einsatzplanung. Auch genehmigter Urlaub / Freizeit muss in der Planung stehen, dass ich direkt sehe, wer verfügbar ist." (Screenshot zeigte leere Zellen trotz genehmigter Anträge)
 - 🎯 **Root Cause**: `time_off_requests` Collection speichert die Felder als `start_date` / `end_date`, aber der Shift-Plan-Endpoint UND das Frontend filterten / lasen auf den nie gespeicherten Feldnamen `date_from` / `date_to`. → Query matched IMMER 0 Treffer, Frontend rendert keine Absence-Boxen.

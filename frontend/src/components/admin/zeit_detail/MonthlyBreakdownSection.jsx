@@ -9,7 +9,7 @@
 import { CalendarDays, Clock, Palmtree, ThermometerSun, ChevronDown, ChevronUp, Plus, TrendingUp, Save, Pencil, X, Trash2, MapPin } from "lucide-react";
 import { Button } from "../../ui/button";
 
-const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
 
 export default function MonthlyBreakdownSection({
   months,
@@ -113,26 +113,10 @@ export default function MonthlyBreakdownSection({
                     <span className="text-xs text-amber-600">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}</span>
                   </div>
                 ))}
-                {stats.entries.map(e => editEntryId === e.id ? (
-                  <div key={e.id} className="px-4 py-2 flex items-center gap-2 text-xs bg-amber-50/60 flex-wrap" data-testid={`edit-row-${e.id}`}>
-                    <Pencil className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                    <input type="date" value={editDraft.date} onChange={ev => setEditDraft(d => ({ ...d, date: ev.target.value }))} className="border border-amber-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                    <input type="time" value={editDraft.start} onChange={ev => setEditDraft(d => ({ ...d, start: ev.target.value }))} className="border border-amber-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                    <span className="text-gray-400">—</span>
-                    <input type="time" value={editDraft.end} onChange={ev => setEditDraft(d => ({ ...d, end: ev.target.value }))} className="border border-amber-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                    <div className="ml-auto flex gap-1">
-                      <Button onClick={() => saveEditEntry(e.id)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-7 text-xs px-2" data-testid={`save-edit-${e.id}`}>
-                        <Save className="w-3 h-3 mr-1" /> Speichern
-                      </Button>
-                      <Button onClick={() => setEditEntryId(null)} size="sm" variant="ghost" className="h-7 text-xs px-2" data-testid={`cancel-edit-${e.id}`}>
-                        <X className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
+                {stats.entries.map(e => (
                   <div key={e.id} className="px-4 py-2.5 flex items-center gap-3 text-xs group hover:bg-gray-50/70" data-testid={`time-row-${e.id}`}>
                     <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                    <span className="font-medium text-gray-700 w-24 flex-shrink-0">{new Date(e.clock_in).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+                    <span className="font-medium text-gray-700 w-24 flex-shrink-0">{new Date(e.clock_in).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" })}</span>
                     <span className="text-green-600 font-medium">{formatTime(e.clock_in)}</span>
                     <span className="text-gray-300">—</span>
                     <span className={`font-medium ${e.clock_out ? "text-red-500" : "text-amber-500"}`}>{e.clock_out ? formatTime(e.clock_out) : "Aktiv"}</span>
