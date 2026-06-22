@@ -16,6 +16,13 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Refactor: Offday-Sichtbarkeit aufgetrennt (Mitarbeiter vs. Verwaltung)
+- 🎯 **User-Request**: „Der Mitarbeiter darf nur seine Offdays sehen. Ich als Admin kann die dann in Verwaltung / Mitarbeiter / und dann in offdays sehen, Anlegen und bearbeiten."
+- ✅ **Mitarbeiter-Page** `/mitarbeiter-daten/offdays` (`OffdaysPage.jsx`): nur Eigener Saldo + Eigene Buchungs-Historie. Liste „Alle Mitarbeiter", Activity-Feed und Adjust-Buttons komplett entfernt. Auch Admins sehen hier jetzt nur ihre eigenen Daten.
+- ✅ **Verwaltung** `/verwaltung/zeiterfassung/<userId>` (`AdminZeitDetailPage.jsx`): neue Sektion `OffdaysAdminSection` zeigt den **ausgewählten** Mitarbeiter mit Saldo, kompletter Historie, +/- Korrektur-Buttons und Begründungs-Dialog. Verwendet die bestehenden Endpoints `/employee/offdays/user/{id}` (Detail) und `/offdays/adjust` (manuelle Korrektur).
+- ✅ **Backend**: keine Änderungen nötig — die Endpoints prüfen bereits per `_has_verwaltung`, ob der Caller fremde User abfragen darf.
+
+
 ### Feb 2026 – Feature: Stundengenauer Überstundenabbau in der Admin-Maske
 - 🎯 **User-Request**: „ich kann beim Mitarbeiter nur ganze Tage als Überstundenabbau eintragen. Der Mitarbeiter kann zwischen Tagen und Stunden wählen. Das brauche ich als Admin in der Maske auch"
 - ✅ **Backend** (`/app/backend/routes/employee.py` `admin_create_time_off`):

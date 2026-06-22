@@ -19,6 +19,7 @@ import PayrollSection from "../components/admin/zeit_detail/PayrollSection";
 import TravelExpensesSection from "../components/admin/zeit_detail/TravelExpensesSection";
 import MonthlyBreakdownSection from "../components/admin/zeit_detail/MonthlyBreakdownSection";
 import AuditLogSection from "../components/admin/zeit_detail/AuditLogSection";
+import OffdaysAdminSection from "../components/admin/zeit_detail/OffdaysAdminSection";
 
 export default function AdminZeitDetailPage() {
   const { user } = useAuth();
@@ -1056,6 +1057,9 @@ export default function AdminZeitDetailPage() {
           auditLoading={auditLoading}
           loadAuditLog={loadAuditLog}
         />
+
+        {/* Offday-Konto (Sonntag/Feiertag-Ausgleichstage) */}
+        <OffdaysAdminSection userId={userId} token={token} userName={userName} />
       </div>
 
       {/* Arbeitszeit-Korrektur Dialog */}
