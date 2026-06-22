@@ -4,6 +4,9 @@ Ersetzt die frueheren Aufrufe an emergentintegrations.llm.chat (GPT-4o / Gemini)
 
 Nutzt Vision-faehige Modelle wie gemma3:4b, die Bilder direkt lesen koennen.
 PDFs werden seitenweise in Bilder konvertiert (via PyMuPDF).
+
+Konfiguration kommt aus der DB-Collection 'ollama_config' (per Admin-UI gepflegt).
+Falls dort kein Eintrag vorliegt, fallen wir auf .env-Defaults zurueck.
 """
 import os
 import base64
@@ -18,15 +21,52 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:1b")
-# Text-Only Modell - deutlich schneller auf CPU, da keine Vision-Pipeline.
-# Wird verwendet, sobald Text aus dem PDF extrahiert werden konnte.
-OLLAMA_TEXT_MODEL = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:2b")
+# ──────────────────────────────────────────────────────────
+# Defaults aus Environment (Fallback wenn DB-Config fehlt)
+# ──────────────────────────────────────────────────────────
+DEFAULT_OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:1b")
+DEFAULT_OLLAMA_TEXT_MODEL = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:2b")
 OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "600"))
 OLLAMA_MAX_PDF_PAGES = int(os.environ.get("OLLAMA_MAX_PDF_PAGES", "3"))
 OLLAMA_MAX_TEXT_CHARS = int(os.environ.get("OLLAMA_MAX_TEXT_CHARS", "12000"))
 OLLAMA_IMAGE_MAX_DIM = int(os.environ.get("OLLAMA_IMAGE_MAX_DIM", "1400"))
+
+# DB-Handle wird aus server.py via set_db() injiziert (vermeidet Import-Zyklus).
+_db = None
+
+
+def set_db(db):
+    """Wird von server.py beim Start aufgerufen. Bindet den Mongo-DB-Handle ein."""
+    global _db
+    _db = db
+
+
+async def get_ollama_config() -> dict:
+    """Liest die Live-Konfiguration aus der DB-Collection ollama_config.
+    Fallback: Environment-Defaults. Niemals None - immer ein vollstaendiges dict."""
+    cfg = {}
+    if _db is not None:
+        try:
+            doc = await _db.ollama_config.find_one({"key": "ollama"}, {"_id": 0})
+            if doc:
+                cfg = doc
+        except Exception as e:
+            logger.warning(f"[ollama] DB-Config-Lookup fehlgeschlagen, nutze Env-Defaults: {e}")
+    return {
+        "url": (cfg.get("url") or DEFAULT_OLLAMA_URL).rstrip("/"),
+        "api_key": cfg.get("api_key") or "",
+        "model": cfg.get("model") or DEFAULT_OLLAMA_MODEL,
+        "text_model": cfg.get("text_model") or DEFAULT_OLLAMA_TEXT_MODEL,
+    }
+
+
+def _auth_headers(api_key: str) -> dict:
+    """Optionaler Bearer-Header fuer abgesicherte Ollama-Instanzen (Reverse-Proxy)."""
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
+
 
 # Semaphore: Nur EINE Analyse zur Zeit laufen lassen, damit bei vielen parallelen
 # Uploads nicht der ganze Rechner hängt. Ollama selbst kann zwar parallel, aber auf
@@ -113,7 +153,8 @@ async def ollama_chat_vision(
 
     Gibt den reinen Antworttext zurueck (ohne JSON-Parsing).
     Bei Fehlern wird eine Exception geworfen."""
-    mdl = model or OLLAMA_MODEL
+    cfg = await get_ollama_config()
+    mdl = model or cfg["model"]
     images = []
     if file_path:
         try:
@@ -142,7 +183,8 @@ async def ollama_chat_vision(
     async with sem:
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             try:
-                r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+                r = await client.post(f"{cfg['url']}/api/chat", json=payload,
+                                       headers=_auth_headers(cfg["api_key"]))
             except Exception as e:
                 logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
                 raise
@@ -185,12 +227,29 @@ def parse_json_response(text: str) -> dict:
 
 async def ollama_is_reachable() -> bool:
     """Prueft ob Ollama erreichbar ist."""
+    cfg = await get_ollama_config()
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"{OLLAMA_URL}/api/tags")
+            r = await client.get(f"{cfg['url']}/api/tags",
+                                 headers=_auth_headers(cfg["api_key"]))
             return r.status_code == 200
     except Exception:
         return False
+
+
+async def ollama_list_models() -> list:
+    """Liefert die installierten Modelle der konfigurierten Ollama-Instanz."""
+    cfg = await get_ollama_config()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{cfg['url']}/api/tags",
+                                 headers=_auth_headers(cfg["api_key"]))
+            if r.status_code != 200:
+                return []
+            data = r.json() or {}
+            return [m.get("name") for m in (data.get("models") or []) if m.get("name")]
+    except Exception:
+        return []
 
 
 async def analyze_document_smart(
@@ -205,13 +264,14 @@ async def analyze_document_smart(
 
     Gibt (response_text, mode) zurueck, wobei mode 'text' oder 'vision' ist."""
     mt = (mime_type or "").lower()
+    cfg = await get_ollama_config()
     # 1) Versuche Text-Extraktion fuer PDFs
     if mt == "application/pdf" or file_path.lower().endswith(".pdf"):
         extracted = _extract_text_from_pdf(file_path, max_pages=OLLAMA_MAX_PDF_PAGES)
         # Mind. 80 Zeichen = "echter" Text, nicht nur Metadaten
         if extracted and len(extracted.strip()) >= 80:
             trimmed = extracted[:OLLAMA_MAX_TEXT_CHARS]
-            logger.info(f"[ollama] Text-first: {len(trimmed)} Zeichen aus PDF extrahiert, Modell={OLLAMA_TEXT_MODEL}")
+            logger.info(f"[ollama] Text-first: {len(trimmed)} Zeichen aus PDF extrahiert, Modell={cfg['text_model']}")
             text_prompt = (
                 "Hier ist der Text eines Dokuments (direkt aus dem PDF extrahiert):\n\n"
                 f"----- DOKUMENT ANFANG -----\n{trimmed}\n----- DOKUMENT ENDE -----\n\n"
@@ -222,19 +282,19 @@ async def analyze_document_smart(
                 user_text=text_prompt,
                 file_path=None,      # Kein Bild-Anhang - wir haben Text
                 mime_type=None,
-                model=OLLAMA_TEXT_MODEL,
+                model=cfg["text_model"],
                 want_json=want_json,
             )
             return resp, "text"
 
     # 2) Fallback auf Vision-Modell (Scans, Bilder, text-lose PDFs)
-    logger.info(f"[ollama] Vision-Fallback: {file_path}, Modell={OLLAMA_MODEL}")
+    logger.info(f"[ollama] Vision-Fallback: {file_path}, Modell={cfg['model']}")
     resp = await ollama_chat_vision(
         system_prompt=system_prompt,
         user_text=user_text_vision,
         file_path=file_path,
         mime_type=mime_type,
-        model=OLLAMA_MODEL,
+        model=cfg["model"],
         want_json=want_json,
     )
     return resp, "vision"

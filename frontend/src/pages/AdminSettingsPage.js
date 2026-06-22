@@ -52,6 +52,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
+import OllamaConfigSection from "../components/OllamaConfigSection";
 
 /* ───── System Status Dashboard ───── */
 function SystemStatusDashboard() {
@@ -2504,6 +2505,9 @@ export default function AdminSettingsPage() {
 
           {/* Mosquitto MQTT Broker */}
           <MosquittoSetupSection />
+
+          {/* Ollama / KI-Dokumentanalyse */}
+          <OllamaConfigSection />
 
           {/* Schnittstellen */}
           <div>

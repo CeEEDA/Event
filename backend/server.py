@@ -2118,6 +2118,13 @@ app.include_router(payments_router)
 from routes.ota_updates import router as ota_router
 app.include_router(ota_router)
 
+# Ollama-Config (Admin) - URL/Modell/API-Key per UI pflegbar
+from services import ollama_client as _ollama_client
+_ollama_client.set_db(db)
+from routes.ollama_admin import router as ollama_admin_router, init_ollama_admin_routes
+init_ollama_admin_routes(db, decode_jwt_token)
+app.include_router(ollama_admin_router)
+
 from routes.software_downloads import router as software_downloads_router
 app.include_router(software_downloads_router)
 
