@@ -132,11 +132,9 @@ export default function EinsatzplanungPage() {
     if (orders.length === 0) return;
     setCrewLoading(true);
     try {
-      // Crew-Daten fuer alle als 'bestaetigt' geltenden Auftraege laden
-      // (= is_confirmed=true ODER sum_transport>0). Damit erscheint Crew
-      // z.B. auch bei 260166-01 (transport=1490 aber EpiRent-Flag noch false).
+      // Nur fuer bestaetigte Auftraege (is_confirmed=true) Crew-Daten laden.
       const pks = orders
-        .filter(o => o.is_confirmed || (Number(o.sum_transport) || 0) > 0)
+        .filter(o => o.is_confirmed)
         .slice(0, 40)
         .map(o => o.primary_key);
       if (pks.length === 0) { setCrewData({}); setCrewLoading(false); return; }
@@ -431,17 +429,10 @@ export default function EinsatzplanungPage() {
               { key: "confirmed", label: "Alle bestätigten" },
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
-              // "Nur Personal" = is_confirmed=true (exakt wie heute morgen).
-              // "Alle bestaetigten" = is_confirmed=true ODER sum_transport > 0
-              //   -> Auftraege mit kalkulierter Lieferung gelten als bestaetigt,
-              //   selbst wenn EpiRent das is_confirmed-Flag noch nicht gesetzt
-              //   hat (z.B. 260166-01 'Ruhr-in-Love' hat transport=1490, aber
-              //   is_confirmed=false in EpiRent).
-              const isConfirmedExtended = (o) => !!o.is_confirmed || (Number(o.sum_transport) || 0) > 0;
               const count = opt.key === "crew"
                 ? orders.filter(o => o.is_confirmed).length
                 : opt.key === "confirmed"
-                  ? orders.filter(isConfirmedExtended).length
+                  ? orders.filter(o => o.is_confirmed).length
                   : orders.length;
               return (
                 <button key={opt.key} onClick={() => setOrderFilter(opt.key)}
@@ -457,11 +448,9 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            // "Alle bestaetigten" = is_confirmed=true ODER sum_transport>0 (= Lieferung kalkuliert)
-            if (orderFilter === "confirmed") {
-              return !!o.is_confirmed || (Number(o.sum_transport) || 0) > 0;
-            }
-            // "Nur Personal" = nur is_confirmed=true (alter Stand, mit/ohne Crew sichtbar)
+            // Strikt: "Nur Personal" und "Alle bestaetigten" zeigen nur Auftraege
+            // mit EpiRent's is_confirmed=true. Unbestaetigte (Angebote, Liefer-
+            // Jobs ohne Vertrag) gehoeren ausschliesslich in "Alle Jobs".
             return !!o.is_confirmed;
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
@@ -473,10 +462,9 @@ export default function EinsatzplanungPage() {
             const isFull = needed > 0 && assigned >= needed;
             const hasReqs = needed > 0;
             const isSelected = selectedJob?.primary_key === pk;
-            // Badge "unbestaetigt" erscheint nur bei Auftraegen die WEDER
-            // is_confirmed=true sind NOCH Transport-Kalkulation haben
-            // (= reine Angebote ohne Liefer-Vorbereitung).
-            const isUnconfirmed = !o.is_confirmed && (Number(o.sum_transport) || 0) === 0;
+            // Unbestaetigt = EpiRent-is_confirmed=false. Diese erscheinen
+            // nur in 'Alle Jobs' (Filter blockt sie aus den anderen beiden).
+            const isUnconfirmed = !o.is_confirmed;
             const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
