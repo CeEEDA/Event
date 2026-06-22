@@ -16,6 +16,16 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: 3-Stufen-Filter für Auftrags-Anzeige in Einsatzplanung
+- 🎯 **User-Wunsch**: „Lass die alte Maske und mach lieber einen Filter, wo ich alles anzeigen lassen kann und auch auslieferungen verknüpfen kann."
+- ✅ **Frontend** (`EinsatzplanungPage.jsx`): Filter-Toggle im Auftrags-Header mit 3 Optionen + Count-Badges:
+  - **„Nur Personal" (Default)**: bestätigt + hat Crew-Bedarf (job_reqs > 0 ODER EpiRent-Crew). = altes Verhalten.
+  - **„Alle bestätigten"**: alle Aufträge mit `is_confirmed=true` (auch ohne Crew-Bedarf).
+  - **„Alle Jobs"**: alle Aufträge mit gültiger dispo_start/end - inkl. Liefer-/Service-Jobs (Baustrom, Festspiele, Bundeswehr).
+- ✅ **Visuelle Unterscheidung** unbestätigter Aufträge (gestrichelter Rahmen + „unbestätigt"-Badge) bleibt erhalten — relevant für die „Alle Jobs"-Ansicht.
+- ✅ **Verifiziert via curl** für KW26: Nur-Personal hängt von job_reqs/crewData ab, Alle-Bestätigten = 7, Alle-Jobs = 31.
+
+
 ### Feb 2026 – Bugfix: Unbestätigte (Liefer-/Service-) Aufträge in der Einsatzplanung sichtbar
 - 🐛 **User-Report**: „hier kann ich nur jobs sehen, wo Personal drin ist. Da wir aber auch Liefern müssen, wäre es wichtig, dass ich alle Jobs hier sehen kann. Sonst gehen die unter."
 - 🎯 **Root Cause**: `loadOrders` in `EinsatzplanungPage.jsx` filterte `o.is_confirmed` heraus. In EpiRent sind viele Liefer-/Service-Jobs (Baustrom, Kirmes-Events, Toilettenwagen-Vermietung, Bundeswehr-Stromaggregate) noch nicht als „Mietvertrag bestätigt" markiert → wurden komplett ausgeblendet.

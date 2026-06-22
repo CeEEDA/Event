@@ -71,6 +71,7 @@ export default function EinsatzplanungPage() {
   const [spanWholeJob, setSpanWholeJob] = useState(false);
   const [offdayMode, setOffdayMode] = useState(false);
   const [offdayBalances, setOffdayBalances] = useState({});  // { user_id: balance }
+  const [orderFilter, setOrderFilter] = useState("crew"); // "crew" | "confirmed" | "all"
 
   const weekDates = getWeekDates(weekKey);
 
@@ -412,17 +413,41 @@ export default function EinsatzplanungPage() {
 
       {/* Jobs with personnel requirements */}
       <div className="max-w-[1600px] mx-auto px-4 pt-4">
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
-          Aufträge diese Woche ({orders.length})
-          {orders.some(o => !o.is_confirmed) && (
-            <span className="ml-2 text-gray-500 normal-case">
-              · davon {orders.filter(o => !o.is_confirmed).length} unbestätigt (Liefer-/Service-Jobs, gestrichelt)
-            </span>
-          )}
-          {selectedJob && <span className="ml-2 text-indigo-600 normal-case">— Klicke auf eine Zelle zum Zuweisen</span>}
-        </p>
+        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            Aufträge diese Woche
+            {selectedJob && <span className="ml-2 text-indigo-600 normal-case">— Klicke auf eine Zelle zum Zuweisen</span>}
+          </p>
+          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-[11px]" data-testid="order-filter">
+            {[
+              { key: "crew", label: "Nur Personal" },
+              { key: "confirmed", label: "Alle bestätigten" },
+              { key: "all", label: "Alle Jobs" },
+            ].map(opt => {
+              const count = opt.key === "crew"
+                ? orders.filter(o => o.is_confirmed && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
+                : opt.key === "confirmed"
+                  ? orders.filter(o => o.is_confirmed).length
+                  : orders.length;
+              return (
+                <button key={opt.key} onClick={() => setOrderFilter(opt.key)}
+                  className={`px-3 py-1.5 transition ${orderFilter === opt.key ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-indigo-50"}`}
+                  data-testid={`order-filter-${opt.key}`}
+                >
+                  {opt.label} <span className={`ml-1 text-[10px] ${orderFilter === opt.key ? "text-indigo-200" : "text-gray-400"}`}>({count})</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {orders.slice(0, 40).map(o => {
+          {orders.filter(o => {
+            if (orderFilter === "all") return true;
+            if (orderFilter === "confirmed") return o.is_confirmed;
+            // "crew": bestätigt UND mit Crew-Bedarf (Job-Reqs ODER EpiRent-Crew)
+            if (!o.is_confirmed) return false;
+            return getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0;
+          }).slice(0, 40).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
             const crew = crewData[pk];
