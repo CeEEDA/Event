@@ -425,7 +425,7 @@ export default function EinsatzplanungPage() {
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
               const count = opt.key === "crew"
-                ? orders.filter(o => o.is_confirmed && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
+                ? orders.filter(o => o.is_confirmed).length
                 : opt.key === "confirmed"
                   ? orders.filter(o => o.is_confirmed).length
                   : orders.length;
@@ -443,10 +443,11 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            if (orderFilter === "confirmed") return o.is_confirmed;
-            // "crew": bestätigt UND mit Crew-Bedarf (Job-Reqs ODER EpiRent-Crew)
-            if (!o.is_confirmed) return false;
-            return getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0;
+            // "crew" und "confirmed" verhalten sich beide wie das alte Default-
+            // Verhalten: alle bestätigten Aufträge - auch solche ohne definierte
+            // Personal-Anforderungen (sonst gehen Jobs unter, fuer die noch
+            // 'Personal definieren' aussteht).
+            return !!o.is_confirmed;
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
