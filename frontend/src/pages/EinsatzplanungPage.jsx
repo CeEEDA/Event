@@ -429,8 +429,18 @@ export default function EinsatzplanungPage() {
               { key: "confirmed", label: "Alle bestätigten" },
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
+              // "Nur Personal" = bestaetigt UND hat Personal (EpiRent-Crew oder manueller Bedarf).
+              // "Alle bestaetigten" = bestaetigt (auch ohne Personal-Definition).
+              // "Alle Jobs" = alles (inkl. unbestaetigt/Angebote).
+              const hasPersonnel = (o) => {
+                const pk = o.primary_key;
+                const crew = crewData[pk];
+                if (crew && crew.length > 0) return true;
+                const req = jobReqs[pk];
+                return !!(req && (req.count || 0) > 0);
+              };
               const count = opt.key === "crew"
-                ? orders.filter(o => o.is_confirmed).length
+                ? orders.filter(o => o.is_confirmed && hasPersonnel(o)).length
                 : opt.key === "confirmed"
                   ? orders.filter(o => o.is_confirmed).length
                   : orders.length;
@@ -448,10 +458,14 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            // Strikt: "Nur Personal" und "Alle bestaetigten" zeigen nur Auftraege
-            // mit EpiRent's is_confirmed=true. Unbestaetigte (Angebote, Liefer-
-            // Jobs ohne Vertrag) gehoeren ausschliesslich in "Alle Jobs".
-            return !!o.is_confirmed;
+            if (!o.is_confirmed) return false;
+            if (orderFilter === "confirmed") return true;
+            // "crew" = bestaetigt + Personal (EpiRent-Crew oder manueller Bedarf)
+            const pk = o.primary_key;
+            const crew = crewData[pk];
+            if (crew && crew.length > 0) return true;
+            const req = jobReqs[pk];
+            return !!(req && (req.count || 0) > 0);
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
