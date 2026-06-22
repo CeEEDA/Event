@@ -889,6 +889,7 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     # 2) Urlaub/Krank/Abbau-Tage aus time_off_requests
     off_days: set = set()
     abbau_days: set = set()
+    offday_days: set = set()  # Ausgleichstage aus shift_assignments (is_offday)
     off_cursor = db.time_off_requests.find({
         "user_id": user_id, "status": "approved",
         "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
@@ -905,6 +906,18 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             if cur.year == year:
                 target.add(cur.isoformat())
             cur += timedelta(days=1)
+
+    # 2b) Offdays aus der Einsatzplanung (shift_assignments mit is_offday=True).
+    # Ein Offday ist ein bezahlter Ersatzruhetag - der MA arbeitet nicht,
+    # aber das Soll fuer diesen Tag entfaellt komplett (genauso wie Urlaub).
+    off_cur2 = db.shift_assignments.find({
+        "user_id": user_id, "is_offday": True,
+        "date": {"$regex": f"^{year}-"},
+    }, {"_id": 0, "date": 1})
+    async for r in off_cur2:
+        d = r.get("date")
+        if d:
+            offday_days.add(d)
 
     # 3) time_entries aggregiert pro Tag (Echtarbeit, keine Urlaub-Pseudo-Eintraege)
     #    + Erkennung von Nachtschicht-Folgetagen (Schicht über Mitternacht).
@@ -964,6 +977,9 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
             reason = "Urlaub/Krank"
         elif date_str in abbau_days:
             reason = "Überstundenabbau"
+        elif date_str in offday_days:
+            # Ersatzruhetag (Offday) - bezahlter freier Tag, KEIN Soll abziehen.
+            reason = "Offday (Ausgleichstag)"
         elif date_str in night_followup_days and ist == 0:
             # Tag X+1 nach einer Nachtschicht (Vortag 22:30 -> 08:10 heute).
             # Die Arbeitszeit wurde bereits auf den Schicht-Start-Tag gebucht.
@@ -3348,6 +3364,12 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                 )
             except Exception as _e:
                 logger.warning(f"Offday consume fehlgeschlagen: {_e}")
+            # Stundenkonto neu rechnen, da Offday den Soll-Abzug aufhebt.
+            try:
+                y = int(str(data.get("date") or "")[:4])
+                await _recompute_overtime_for_year(data.get("user_id"), y)
+            except Exception as _e:
+                logger.warning(f"Overtime-Recompute nach Offday fehlgeschlagen: {_e}")
     return {"ok": True, "id": assignment_id}
 
 
@@ -3355,7 +3377,8 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
 async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
     """Admin: Delete a shift assignment.
     Wenn das Assignment ein Offday war, wird der Tag automatisch wieder
-    auf das Offday-Konto zurueckgebucht (release)."""
+    auf das Offday-Konto zurueckgebucht (release) UND das Stundenkonto neu
+    berechnet (weil Offday-Status wegfaellt -> Soll wird wieder abgezogen)."""
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
@@ -3368,6 +3391,11 @@ async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
             await release_offday_for_assignment(assignment_id)
         except Exception as _e:
             logger.warning(f"Offday release fehlgeschlagen: {_e}")
+        try:
+            y = int(str(prev.get("date") or "")[:4])
+            await _recompute_overtime_for_year(prev.get("user_id"), y)
+        except Exception as _e:
+            logger.warning(f"Overtime-Recompute nach Offday-Delete fehlgeschlagen: {_e}")
     return {"ok": True}
 
 

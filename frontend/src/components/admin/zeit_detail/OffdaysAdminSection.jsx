@@ -21,6 +21,20 @@ import { CalendarCheck2, Trees, PlusCircle, MinusCircle, Sun, Calendar, Pencil, 
 const SOURCE_ICONS = { clock_in: Sun, shift_assignment: Calendar, manual: Pencil };
 const SOURCE_LABELS = { clock_in: "Stempelzeit", shift_assignment: "Einsatzplanung", manual: "Manuell" };
 
+// Formatiert "2026-06-29" als "So 29.06.2026" - so erkennt der Admin sofort
+// ob es ein Sonntag/Feiertag war (passt zum Auto-Akkrual?).
+function fmtRefDate(iso) {
+  if (!iso) return "-";
+  try {
+    const d = new Date(iso + "T00:00:00");
+    const weekday = d.toLocaleDateString("de-DE", { weekday: "short", timeZone: "Europe/Berlin" });
+    const date = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
+    return `${weekday} ${date}`;
+  } catch {
+    return iso;
+  }
+}
+
 export default function OffdaysAdminSection({ userId, token, userName }) {
   const [data, setData] = useState({ balance: 0, entries: [] });
   const [loading, setLoading] = useState(true);
@@ -99,7 +113,7 @@ export default function OffdaysAdminSection({ userId, token, userName }) {
           <table className="w-full text-xs">
             <thead className="text-gray-500 border-b border-gray-100">
               <tr>
-                <th className="text-left font-medium py-1.5 pr-2">Datum</th>
+                <th className="text-left font-medium py-1.5 pr-2">Für Tag</th>
                 <th className="text-left font-medium py-1.5 pr-2">Quelle</th>
                 <th className="text-right font-medium py-1.5 pr-2">Δ</th>
                 <th className="text-left font-medium py-1.5 pr-2 hidden md:table-cell">Notiz</th>
@@ -110,9 +124,14 @@ export default function OffdaysAdminSection({ userId, token, userName }) {
               {data.entries.map(e => {
                 const Icon = SOURCE_ICONS[e.source] || Sparkles;
                 const isPlus = (e.delta || 0) > 0;
+                // Sonntag (Mi 6) oder Feiertag-Hint visualisieren
+                const d = e.ref_date ? new Date(e.ref_date + "T00:00:00") : null;
+                const isSun = d && d.getDay() === 0;
                 return (
                   <tr key={e.id} className="border-b border-gray-50 last:border-0">
-                    <td className="py-1.5 pr-2 font-mono text-gray-600">{e.ref_date || "-"}</td>
+                    <td className={`py-1.5 pr-2 font-mono ${isSun ? "text-rose-600 font-semibold" : "text-gray-700"}`} title={e.ref_date}>
+                      {fmtRefDate(e.ref_date)}
+                    </td>
                     <td className="py-1.5 pr-2">
                       <span className="inline-flex items-center gap-1 text-gray-700">
                         <Icon className="w-3 h-3 text-gray-400" />

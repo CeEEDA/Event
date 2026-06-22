@@ -16,6 +16,17 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Offday-Tage werden jetzt korrekt im Stundenkonto behandelt
+- 🐛 **User-Frage**: „wenn der mitarbeiter einen Offday hat, werden an dem Tag die sollstunden vom stundenkonto abgezogen. Ist das so gemacht?"
+- 🎯 **Vorheriger Zustand BUGGY**: `_recompute_overtime_for_year` kannte nur Feiertag/Urlaub/Krank/ÜS-Abbau — Offdays wurden als „normaler Arbeitstag ohne Stempelung" gewertet → Soll-Stunden (z.B. 8.25h Montag) wurden vom Stundenkonto abgezogen, obwohl der MA einen bezahlten Ersatzruhetag hat (§11 Abs. 3 ArbZG).
+- ✅ **Backend-Fix** (`/app/backend/routes/employee.py` `_recompute_overtime_for_year`):
+  - Neue `offday_days`-Set wird aus `shift_assignments` mit `is_offday=True` gefüllt.
+  - In der Tag-für-Tag-Bilanz wird Offday vor `has_schedule`-Branch geprüft → Soll = 0, Reason „Offday (Ausgleichstag)". Keine Minuten werden abgezogen.
+- ✅ **Backend-Trigger**: `upsert_shift_assignment` (neu + update) und `delete_shift_assignment` triggern jetzt `_recompute_overtime_for_year` bei is_offday-Änderung, damit der Saldo sofort stimmt.
+- ✅ **Verifiziert via curl**: Offday am Mo 09.02. anlegen → Stundenkonto +8.25h hoch (Soll nicht abgezogen). Offday löschen → exakt -8.25h zurück. ✅
+- ℹ️ **Lohn-Zuschläge sind unverändert korrekt**: Sonntag 50%, Feiertag 125%, Spezial-Feiertag 150%, Nacht 25% (additiv) — pro User in `work_schedule.surcharges` konfigurierbar. Falls beim MA andere %-Werte nötig sind, kann das in der Stammdaten-Maske angepasst werden.
+
+
 ### Feb 2026 – Feature: Offday-Tag exklusiv blocken (1 Offday/Tag, kein Mix mit Einsatz)
 - 🎯 **User-Report**: „ich darf an einem Tag nur einen Offday zugewiesen werden. Außerdem darf man an dem Tag, sobald der Offday zugewiesen ist, keine weitere Tätigkeit zuweisen können." (Screenshot: Christian Ecker hatte 2x Offday am 29.06.)
 - ✅ **Backend** (`/app/backend/routes/employee.py` `upsert_shift_assignment`): Neuer Helper `_check_day_conflict(user_id, date, is_offday, exclude_id)`:
