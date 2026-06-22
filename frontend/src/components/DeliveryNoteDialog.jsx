@@ -132,6 +132,7 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
             unit: String(it.unit || ""),
             remark: String(it.remark || ""),
             product_no: String(it.product_no || ""),
+            weight_net: Number(it.weight_net) || 0,
             is_heading: !!it.is_heading,
           })),
         })),

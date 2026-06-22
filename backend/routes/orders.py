@@ -1000,6 +1000,29 @@ def _generate_delivery_note_pdf(
     elems.append(tbl)
     elems.append(Spacer(1, 4*mm))
 
+    # ===== GEWICHTS-SUMME =====
+    total_weight = 0.0
+    article_count = 0
+    for p in positions:
+        if p.get("is_chapter") or p.get("is_heading"):
+            continue
+        try:
+            amount = float(p.get("amount") or 0)
+            w_net = float(p.get("weight_net") or 0)
+        except (TypeError, ValueError):
+            continue
+        if amount > 0 and w_net > 0:
+            total_weight += amount * w_net
+            article_count += 1
+    if total_weight > 0:
+        weight_str = f"{total_weight:.1f}".replace(".", ",")
+        elems.append(Paragraph(
+            f"<b>Gesamtgewicht:</b> {weight_str} kg "
+            f"<font color='#888'>(Netto, EpiRent-Stammdaten, {article_count} gewichtete Artikel)</font>",
+            s_value,
+        ))
+        elems.append(Spacer(1, 3*mm))
+
     # ===== HINWEIS =====
     notes = notes_override if notes_override is not None else (raw_order.get("notes") or "")
     if notes:
@@ -1312,6 +1335,7 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "amount": amt,
                 "unit": unit,
                 "warehouse": sub.get("warehouse_str", "") or "",
+                "weight_net": float(sub.get("weight_net") or 0),
                 "remark": "",
             })
         groups.append({
@@ -1336,6 +1360,7 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "amount": sub["amount"],
                 "unit": sub["unit"],
                 "remark": sub["remark"],
+                "weight_net": sub.get("weight_net", 0),
                 "is_chapter": False,
                 "is_heading": sub.get("is_heading", False),
             })
@@ -1431,6 +1456,7 @@ async def create_delivery_note(order_pk: int, body: dict, user: dict = Depends(_
                     "unit": it.get("unit") or "",
                     "remark": it.get("remark") or "",
                     "product_no": it.get("product_no") or "",
+                    "weight_net": float(it.get("weight_net") or 0),
                     "is_chapter": False,
                     "is_heading": bool(it.get("is_heading", False)),
                 })
