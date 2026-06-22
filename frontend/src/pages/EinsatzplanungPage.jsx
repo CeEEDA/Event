@@ -424,17 +424,12 @@ export default function EinsatzplanungPage() {
               { key: "confirmed", label: "Alle bestätigten" },
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
-              // "Bestaetigt"-Heuristik: EpiRent's is_confirmed allein ist zu strikt
-              // (sehr selten true). Stattdessen: is_confirmed === true ODER
-              // sum_transport > 0 (= Lieferung schon kalkuliert = echter Auftrag).
-              // Beispiel: 260166-01 'Ruhr-in-Love' hat is_confirmed=false, aber
-              // sum_transport=1490 -> ist bestaetigt. 260152-01 hat sum_transport=0
-              // und is_confirmed=false -> nur Angebot -> nur in "Alle".
-              const isConfirmed = (o) => !o.is_canceled && !o.is_archived && o.is_current_version !== false && (!!o.is_confirmed || (Number(o.sum_transport) || 0) > 0);
+              // Verhalten wie urspruenglich (vor 23.06.) wiederhergestellt:
+              // 'bestaetigt' = EpiRent's is_confirmed Flag direkt - nichts weiter.
               const count = opt.key === "crew"
-                ? orders.filter(o => isConfirmed(o) && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
+                ? orders.filter(o => o.is_confirmed && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
                 : opt.key === "confirmed"
-                  ? orders.filter(isConfirmed).length
+                  ? orders.filter(o => o.is_confirmed).length
                   : orders.length;
               return (
                 <button key={opt.key} onClick={() => setOrderFilter(opt.key)}
@@ -450,10 +445,9 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            const isConfirmed = !o.is_canceled && !o.is_archived && o.is_current_version !== false && (!!o.is_confirmed || (Number(o.sum_transport) || 0) > 0);
-            if (orderFilter === "confirmed") return isConfirmed;
-            // "Nur Personal" = bestaetigt + hat Crew-Bedarf oder bereits Crew
-            if (!isConfirmed) return false;
+            if (orderFilter === "confirmed") return !!o.is_confirmed;
+            // "Nur Personal" = bestaetigt + hat Crew-Bedarf (= alte Default-Logik)
+            if (!o.is_confirmed) return false;
             return getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0;
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
@@ -465,9 +459,9 @@ export default function EinsatzplanungPage() {
             const isFull = needed > 0 && assigned >= needed;
             const hasReqs = needed > 0;
             const isSelected = selectedJob?.primary_key === pk;
-            // Badge "unbestaetigt" zeigen, wenn weder is_confirmed noch
-            // sum_transport gesetzt = reines Angebot ohne Liefer-Kalkulation.
-            const isUnconfirmed = !o.is_confirmed && (Number(o.sum_transport) || 0) === 0 && !o.is_canceled && !o.is_archived;
+            // Unbestaetigt = EpiRent-is_confirmed=false (egal warum) - erscheint
+            // nur in 'Alle Jobs' und wird visuell abgesetzt.
+            const isUnconfirmed = !o.is_confirmed;
             const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
