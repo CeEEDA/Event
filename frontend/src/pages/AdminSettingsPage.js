@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { openExternal } from "../lib/openExternal";
 import OllamaConfigSection from "../components/OllamaConfigSection";
+import StorageHealthSection from "../components/StorageHealthSection";
 
 /* ───── System Status Dashboard ───── */
 function SystemStatusDashboard() {
@@ -2508,6 +2509,9 @@ export default function AdminSettingsPage() {
 
           {/* Ollama / KI-Dokumentanalyse */}
           <OllamaConfigSection />
+
+          {/* Dokumentenablage Storage-Health */}
+          <StorageHealthSection />
 
           {/* Schnittstellen */}
           <div>

@@ -2125,6 +2125,11 @@ from routes.ollama_admin import router as ollama_admin_router, init_ollama_admin
 init_ollama_admin_routes(db, decode_jwt_token)
 app.include_router(ollama_admin_router)
 
+# Storage-Health-Check fuer Live-Deployment (E:\Eventenergie\Dokumentenablage)
+from routes.storage_admin import router as storage_admin_router, init_storage_admin_routes
+init_storage_admin_routes(db, decode_jwt_token)
+app.include_router(storage_admin_router)
+
 from routes.software_downloads import router as software_downloads_router
 app.include_router(software_downloads_router)
 
