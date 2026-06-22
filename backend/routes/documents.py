@@ -1014,12 +1014,16 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         # eine ANDERE Firma als die jetzt erkannte? Dann das Dokument umziehen,
         # auch wenn der User es manuell in eine bestimmte Firma gelegt hatte
         # (Rechnungen muessen zwingend in der richtigen Firma landen, da DATEV-
-        # Versand davon abhaengt).
+        # Versand davon abhaengt). Greift auch wenn der User in den bare-Root
+        # 'rechnungseingang' / 'rechnungsausgang' (ohne Firma) hochlaedt.
         if (
             suggested_folder
             and suggested_folder in all_valid_ids
             and (suggested_folder.startswith("rechnungseingang_") or suggested_folder.startswith("rechnungsausgang_"))
-            and (folder_id or "").startswith(("rechnungseingang_", "rechnungsausgang_"))
+            and (
+                (folder_id or "") in ("rechnungseingang", "rechnungsausgang")
+                or (folder_id or "").startswith(("rechnungseingang_", "rechnungsausgang_"))
+            )
         ):
             # Vergleiche Base-Ordner (ohne Jahr/Monat-Suffix)
             def _strip_year_month(fid: str) -> str:
@@ -1039,7 +1043,7 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
                 folder_id = suggested_folder        # damit untenstehender Year/Month-Block korrekt arbeitet
                 final_folder = suggested_folder
 
-        if folder_id in ("sonstiges", "unbekannt"):
+        if folder_id in ("sonstiges", "unbekannt", "rechnungseingang", "rechnungsausgang"):
             if uncertain:
                 # AI war unsicher ODER hat year/month-Suffix drangehaengt - versuche Base-Folder
                 # zu extrahieren. WICHTIG: sortiere nach Laenge DESC, damit
