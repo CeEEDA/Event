@@ -468,8 +468,11 @@ async def get_epirent_orders(
     if date_from or date_to:
         filtered = []
         for o in result:
-            es = o.get("event_start") or o.get("dispo_start") or ""
-            ee = o.get("event_end") or o.get("dispo_end") or ""
+            # Fuer die Einsatzplanung ist der DISPO-Zeitraum entscheidend
+            # (Lieferung, Abbau, Personal) - nicht das reine Event-Datum.
+            # Beispiel: Ruhr-in-Love hat event=04.07., aber dispo 22.06.-11.07.
+            es = o.get("dispo_start") or o.get("event_start") or ""
+            ee = o.get("dispo_end") or o.get("event_end") or ""
             if es == "0000-00-00":
                 es = ""
             if ee == "0000-00-00":
