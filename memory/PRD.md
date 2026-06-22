@@ -16,6 +16,17 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Unbestätigte (Liefer-/Service-) Aufträge in der Einsatzplanung sichtbar
+- 🐛 **User-Report**: „hier kann ich nur jobs sehen, wo Personal drin ist. Da wir aber auch Liefern müssen, wäre es wichtig, dass ich alle Jobs hier sehen kann. Sonst gehen die unter."
+- 🎯 **Root Cause**: `loadOrders` in `EinsatzplanungPage.jsx` filterte `o.is_confirmed` heraus. In EpiRent sind viele Liefer-/Service-Jobs (Baustrom, Kirmes-Events, Toilettenwagen-Vermietung, Bundeswehr-Stromaggregate) noch nicht als „Mietvertrag bestätigt" markiert → wurden komplett ausgeblendet.
+- ✅ **Frontend-Fix** (`/app/frontend/src/pages/EinsatzplanungPage.jsx`):
+  - `is_confirmed`-Filter entfernt → alle Aufträge mit gültigem dispo_start/end im Zeitraum werden geladen.
+  - Slice von 20 auf 40 erhöht (mehr Platz für Liefer-Listen).
+  - Unbestätigte Aufträge werden visuell abgesetzt: **gestrichelter Rahmen**, leicht gedimmt, Badge „unbestätigt" mit Tooltip („z.B. Liefer-/Service-Job ohne Mietdauer").
+  - Header-Counter zeigt jetzt „N Aufträge · davon X unbestätigt".
+- ✅ **Verifiziert via curl**: KW26 → vorher 7 sichtbar, jetzt **31 sichtbar** (24 davon unbestätigt). Auftrag „Kirmes Irlich 2026", „Rommersdorf Festspiele 2026", „SIPGO - Bundeswehr" usw. tauchen nun in der Planung auf.
+
+
 ### Feb 2026 – Bugfix: Offday-Tage werden jetzt in der Lohnabrechnung vergütet
 - 🐛 **User-Korrektur**: „Wenn der Mitarbeiter sonntags 8 stunden macht, werden diese an einem Offday entsprechend dem Sollarbeitszeit abgerechnet. Ansonsten würde er für den Tag ja keine Bezahlung bekommen." (Korrektur zu meinem vorherigen Fix der nur das Stundenkonto, nicht aber die Lohnabrechnung berücksichtigt hatte.)
 - ✅ **Backend-Fix** (`/app/backend/routes/employee.py` `get_payroll`):

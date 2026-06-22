@@ -93,16 +93,19 @@ export default function EinsatzplanungPage() {
   const loadOrders = useCallback(async () => {
     try {
       const r = await api.get(`/orders/epirent?date_from=${weekDates[0]}&date_to=${weekDates[6]}`, { headers: { Authorization: `Bearer ${token}` } });
+      // Alle Auftraege anzeigen, die in der Woche aktiv sind - auch unbestaetigte
+      // (Liefer-Jobs ohne Personal-Anforderung), damit sie nicht 'untergehen'.
+      // Unbestaetigte werden im UI visuell abgesetzt (gestrichelter Rahmen).
       const all = (r.data?.orders || []).filter(o => {
-        if (!(o.event || o.order_no) || !o.is_confirmed) return false;
+        if (!(o.event || o.order_no)) return false;
         const ds = o.dispo_start;
         const de = o.dispo_end;
         if (!ds || !de || ds === "0000-00-00" || de === "0000-00-00") return false;
         return ds <= weekDates[6] && de >= weekDates[0];
       });
       setOrders(all);
-    } catch {}
-  }, [token, weekDates[0], weekDates[6]]);
+    } catch {/* silent */}
+  }, [token, weekDates]);
 
   const loadSchedules = useCallback(async () => {
     const map = {};
@@ -410,10 +413,16 @@ export default function EinsatzplanungPage() {
       {/* Jobs with personnel requirements */}
       <div className="max-w-[1600px] mx-auto px-4 pt-4">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
-          Aufträge diese Woche ({orders.length}) {selectedJob && <span className="text-indigo-600 normal-case">— Klicke auf eine Zelle zum Zuweisen</span>}
+          Aufträge diese Woche ({orders.length})
+          {orders.some(o => !o.is_confirmed) && (
+            <span className="ml-2 text-gray-500 normal-case">
+              · davon {orders.filter(o => !o.is_confirmed).length} unbestätigt (Liefer-/Service-Jobs, gestrichelt)
+            </span>
+          )}
+          {selectedJob && <span className="ml-2 text-indigo-600 normal-case">— Klicke auf eine Zelle zum Zuweisen</span>}
         </p>
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {orders.slice(0, 20).map(o => {
+          {orders.slice(0, 40).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
             const crew = crewData[pk];
@@ -423,6 +432,7 @@ export default function EinsatzplanungPage() {
             const isFull = needed > 0 && assigned >= needed;
             const hasReqs = needed > 0;
             const isSelected = selectedJob?.primary_key === pk;
+            const isUnconfirmed = !o.is_confirmed;
             const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
@@ -430,6 +440,7 @@ export default function EinsatzplanungPage() {
                   isSelected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200" :
                   isFull ? "border-green-400 bg-green-50 hover:border-green-500 shadow-sm shadow-green-100" :
                   hasReqs ? "border-orange-200 bg-white hover:border-orange-300" :
+                  isUnconfirmed ? "border-dashed border-gray-300 bg-gray-50/60 hover:border-gray-400 opacity-80" :
                   "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30"
                 }`}
                 onClick={() => setSelectedJob(isSelected ? null : o)}
@@ -437,7 +448,9 @@ export default function EinsatzplanungPage() {
               >
                 <div className="flex items-start justify-between gap-1">
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-gray-900 truncate">{o.event || o.order_no}</p>
+                    <p className={`font-semibold truncate ${isUnconfirmed ? "text-gray-600" : "text-gray-900"}`}>
+                      {o.event || o.order_no}
+                    </p>
                     <p className="text-gray-400 truncate">{o.contact_name}</p>
                   </div>
                   <button
@@ -449,7 +462,14 @@ export default function EinsatzplanungPage() {
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <p className="text-[10px] font-mono text-indigo-600 font-semibold">{o.order_no}</p>
+                <div className="flex items-center justify-between gap-1">
+                  <p className="text-[10px] font-mono text-indigo-600 font-semibold">{o.order_no}</p>
+                  {isUnconfirmed && (
+                    <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium" title="Auftrag in EpiRent noch nicht bestaetigt - z.B. Liefer-/Service-Job ohne Mietdauer">
+                      unbestätigt
+                    </span>
+                  )}
+                </div>
                 <p className="text-gray-400">{o.dispo_start || o.event_start || "—"} – {o.dispo_end || o.event_end || ""}</p>
 
                 <div className="mt-1.5 pt-1.5 border-t border-gray-100">
