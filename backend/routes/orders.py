@@ -108,6 +108,8 @@ async def _run_epirent_sync():
                     "editor_short": o.get("editor_short", ""),
                     "sum_net": o.get("sum_net", 0),
                     "sum_gro": o.get("sum_gro", 0),
+                    "sum_transport": o.get("sum_transport", 0),
+                    "sum_rent": o.get("sum_rent", 0),
                 })
 
             # Fetch delivery addresses (parallel, max 15 concurrent)

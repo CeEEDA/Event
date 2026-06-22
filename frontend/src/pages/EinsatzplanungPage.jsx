@@ -424,15 +424,17 @@ export default function EinsatzplanungPage() {
               { key: "confirmed", label: "Alle bestätigten" },
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
-              // "Bestätigt" = nicht-storniert + nicht-archiviert + aktuelle Version
-              // (EpiRent's `is_confirmed`-Flag ist zu strikt - das heisst nur
-              // 'formal als Mietvertrag bestaetigt'. Echte aktive Auftraege mit
-              // Material und Liefertermin haben oft is_confirmed=false in EpiRent.)
-              const isActive = (o) => !o.is_canceled && !o.is_archived && o.is_current_version !== false;
+              // "Bestaetigt"-Heuristik: EpiRent's is_confirmed allein ist zu strikt
+              // (sehr selten true). Stattdessen: is_confirmed === true ODER
+              // sum_transport > 0 (= Lieferung schon kalkuliert = echter Auftrag).
+              // Beispiel: 260166-01 'Ruhr-in-Love' hat is_confirmed=false, aber
+              // sum_transport=1490 -> ist bestaetigt. 260152-01 hat sum_transport=0
+              // und is_confirmed=false -> nur Angebot -> nur in "Alle".
+              const isConfirmed = (o) => !o.is_canceled && !o.is_archived && o.is_current_version !== false && (!!o.is_confirmed || (Number(o.sum_transport) || 0) > 0);
               const count = opt.key === "crew"
-                ? orders.filter(o => isActive(o) && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
+                ? orders.filter(o => isConfirmed(o) && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
                 : opt.key === "confirmed"
-                  ? orders.filter(isActive).length
+                  ? orders.filter(isConfirmed).length
                   : orders.length;
               return (
                 <button key={opt.key} onClick={() => setOrderFilter(opt.key)}
@@ -448,13 +450,10 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            // "Bestätigt" = aktive Auftraege (nicht storniert/archiviert,
-            // aktuelle Version). Diese Heuristik kommt naeher an die
-            // user-Definition als EpiRent's strikte is_confirmed-Flag.
-            const isActive = !o.is_canceled && !o.is_archived && o.is_current_version !== false;
-            if (orderFilter === "confirmed") return isActive;
-            // "Nur Personal" = aktiv + hat Crew-Bedarf oder bereits Crew
-            if (!isActive) return false;
+            const isConfirmed = !o.is_canceled && !o.is_archived && o.is_current_version !== false && (!!o.is_confirmed || (Number(o.sum_transport) || 0) > 0);
+            if (orderFilter === "confirmed") return isConfirmed;
+            // "Nur Personal" = bestaetigt + hat Crew-Bedarf oder bereits Crew
+            if (!isConfirmed) return false;
             return getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0;
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
@@ -466,8 +465,9 @@ export default function EinsatzplanungPage() {
             const isFull = needed > 0 && assigned >= needed;
             const hasReqs = needed > 0;
             const isSelected = selectedJob?.primary_key === pk;
-            // Visuelle Auszeichnung nur fuer wirklich inaktive (storniert/archiviert)
-            const isUnconfirmed = !!o.is_canceled || !!o.is_archived || o.is_current_version === false;
+            // Badge "unbestaetigt" zeigen, wenn weder is_confirmed noch
+            // sum_transport gesetzt = reines Angebot ohne Liefer-Kalkulation.
+            const isUnconfirmed = !o.is_confirmed && (Number(o.sum_transport) || 0) === 0 && !o.is_canceled && !o.is_archived;
             const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
@@ -500,8 +500,8 @@ export default function EinsatzplanungPage() {
                 <div className="flex items-center justify-between gap-1">
                   <p className="text-[10px] font-mono text-indigo-600 font-semibold">{o.order_no}</p>
                   {isUnconfirmed && (
-                    <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium" title="Auftrag storniert oder archiviert">
-                      inaktiv
+                    <span className="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium" title="Angebot ohne Liefer-Kalkulation (sum_transport=0) - erscheint nur unter 'Alle Jobs'">
+                      unbestätigt
                     </span>
                   )}
                 </div>
