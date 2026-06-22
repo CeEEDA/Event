@@ -941,26 +941,67 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
 
+        # ─── DETERMINISTISCHER FIRMEN-OVERRIDE ──────────────────────────────
+        # Bei JEDER Rechnungs-Klassifizierung schauen wir nochmal explizit auf
+        # Empfaenger (Eingang) bzw. Absender (Ausgang). Wenn dort eine der
+        # beiden Firmen eindeutig identifizierbar ist, ueberschreiben wir die
+        # AI-Empfehlung. Das ist robuster als der AI-System-Prompt, weil das
+        # Sprachmodell sich gerne mit dem "Hauptkunden" verwirrt.
+        doctype = (ai_result.get("document_type") or "").lower()
+        recipient_text = " ".join([
+            str(ai_result.get("recipient") or ""),
+            str(ai_result.get("empfaenger") or ""),
+        ]).lower()
+        sender_text = " ".join([
+            str(ai_result.get("sender") or ""),
+            str(ai_result.get("absender") or ""),
+        ]).lower()
+
+        def _detect_company(haystack: str) -> str:
+            if any(k in haystack for k in ["es besitz", "esbv", "es-besitz", "besitz und verwalt", "besitz- und verwalt"]):
+                return "es_besitz_verwaltung"
+            if any(k in haystack for k in ["eventenergie deutschland", "eventenergie gmbh", "eed gmbh", " eed ", "eed,"]):
+                return "eventenergie_deutschland"
+            if "eventenergie" in haystack:
+                return "eventenergie_deutschland"
+            return ""
+
+        if doctype == "rechnung" and (
+            (suggested_folder or "").startswith("rechnungseingang")
+            or (suggested_folder or "").startswith("rechnungsausgang")
+        ):
+            # Eingangsrechnung: Firmen-Hinweis im EMPFAENGER, Ausgang im ABSENDER
+            is_eingang = (suggested_folder or "").startswith("rechnungseingang")
+            primary = recipient_text if is_eingang else sender_text
+            fallback = sender_text if is_eingang else recipient_text
+            company = _detect_company(primary) or _detect_company(fallback)
+            if company:
+                direction = "rechnungseingang" if is_eingang else "rechnungsausgang"
+                new_folder = f"{direction}_{company}"
+                if new_folder != suggested_folder:
+                    logger.info(
+                        f"Firmen-Override: {suggested_folder} -> {new_folder} "
+                        f"(recipient='{recipient_text[:60]}', sender='{sender_text[:60]}')"
+                    )
+                    suggested_folder = new_folder
+
         # Safety: Wenn KI den Rechnungs-Root ohne Firma zurueckgibt, versuchen wir
         # die Firma anhand des AI-Metadaten-Empfaengers/Senders zu ermitteln
         RECHNUNGS_ROOTS_WITHOUT_COMPANY = {"rechnungseingang", "rechnungsausgang"}
         if suggested_folder in RECHNUNGS_ROOTS_WITHOUT_COMPANY:
             direction = "rechnungseingang" if suggested_folder == "rechnungseingang" else "rechnungsausgang"
-            meta = ai_result.get("metadata") or {}
-            # Bei Eingangsrechnung -> Empfaenger pruefen, bei Ausgang -> Absender
+            # ai_result ist FLACH (kein nested 'metadata'-key) - Felder direkt lesen
             candidate_text = " ".join([
-                str(meta.get("recipient") or ""),
-                str(meta.get("empfaenger") or ""),
-                str(meta.get("sender") or ""),
-                str(meta.get("absender") or ""),
-                str(meta.get("firma") or ""),
+                str(ai_result.get("recipient") or ""),
+                str(ai_result.get("empfaenger") or ""),
+                str(ai_result.get("sender") or ""),
+                str(ai_result.get("absender") or ""),
+                str(ai_result.get("firma") or ""),
             ]).lower()
-            if any(k in candidate_text for k in ["es besitz", "esbv", "besitz und verwalt"]):
-                suggested_folder = f"{direction}_es_besitz_verwaltung"
-                logger.info(f"KI gab {direction} zurueck, Metadaten deuten auf ES Besitz -> {suggested_folder}")
-            elif any(k in candidate_text for k in ["eventenergie", "eed"]):
-                suggested_folder = f"{direction}_eventenergie_deutschland"
-                logger.info(f"KI gab {direction} zurueck, Metadaten deuten auf EED -> {suggested_folder}")
+            company = _detect_company(candidate_text)
+            if company:
+                suggested_folder = f"{direction}_{company}"
+                logger.info(f"KI gab {direction} zurueck, Metadaten deuten auf {company} -> {suggested_folder}")
             else:
                 logger.info(f"KI gab {direction} ohne erkennbare Firma zurueck -> 'unbekannt'")
                 suggested_folder = "unbekannt"
@@ -968,6 +1009,36 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         # Bestimme finale Ablage: Wenn KI sicher ist -> vorgeschlagener Ordner, sonst 'unbekannt'
         final_folder = folder_id
         uncertain = suggested_folder in (None, "", "sonstiges", "unbekannt") or suggested_folder not in all_valid_ids
+
+        # Hat der Firmen-Override oben eingegriffen UND ist die Upload-Ablage
+        # eine ANDERE Firma als die jetzt erkannte? Dann das Dokument umziehen,
+        # auch wenn der User es manuell in eine bestimmte Firma gelegt hatte
+        # (Rechnungen muessen zwingend in der richtigen Firma landen, da DATEV-
+        # Versand davon abhaengt).
+        if (
+            suggested_folder
+            and suggested_folder in all_valid_ids
+            and (suggested_folder.startswith("rechnungseingang_") or suggested_folder.startswith("rechnungsausgang_"))
+            and (folder_id or "").startswith(("rechnungseingang_", "rechnungsausgang_"))
+        ):
+            # Vergleiche Base-Ordner (ohne Jahr/Monat-Suffix)
+            def _strip_year_month(fid: str) -> str:
+                # rechnungseingang_eventenergie_deutschland_2026_04 -> rechnungseingang_eventenergie_deutschland
+                parts = fid.split("_")
+                # entferne hinten anhaengende _YYYY[_MM] Suffixe
+                while parts and len(parts[-1]) <= 4 and parts[-1].isdigit():
+                    parts.pop()
+                return "_".join(parts)
+            current_base = _strip_year_month(folder_id or "")
+            suggested_base = suggested_folder
+            if current_base and suggested_base and current_base != suggested_base:
+                logger.info(
+                    f"Move: Upload-Ordner '{folder_id}' (base={current_base}) ≠ "
+                    f"erkannte Firma '{suggested_base}' - Dokument wird verschoben"
+                )
+                folder_id = suggested_folder        # damit untenstehender Year/Month-Block korrekt arbeitet
+                final_folder = suggested_folder
+
         if folder_id in ("sonstiges", "unbekannt"):
             if uncertain:
                 # AI war unsicher ODER hat year/month-Suffix drangehaengt - versuche Base-Folder
@@ -997,16 +1068,39 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         }})
 
         # Jahr/Monat-Unterordner fuer ALLE Kategorien (ausser 'unbekannt' & Co.)
-        # Wichtig: Nur anlegen, wenn final_folder SELBST noch kein Jahr/Monat-
-        # Unterordner ist, sonst entstehen bei Reanalyze verschachtelte Ordner
-        # wie "...-eed_2026_04_2026_04".
+        # Wichtig: Wenn final_folder bereits ein Year/Month-Subfolder ist und das
+        # AI-erkannte Rechnungsdatum NICHT zu diesem Monat passt, korrigieren wir
+        # auf den richtigen Monat (Rechnungsdatum hat Vorrang vor Upload-Ordner).
         already_in_subfolder = False
         existing_folder = await db.document_folders.find_one(
             {"id": final_folder, "parent_id": {"$exists": True, "$ne": None}},
-            {"_id": 0, "parent_id": 1},
+            {"_id": 0, "parent_id": 1, "name": 1},
         )
         if existing_folder:
             already_in_subfolder = True
+
+        if already_in_subfolder and final_folder not in SKIP_YEAR_MONTH_FOLDERS:
+            # Berechne Base-Folder (z.B. rechnungseingang_eventenergie_deutschland)
+            ai_date = (ai_result.get("date") or "").strip()
+            if ai_date and len(ai_date) >= 7:
+                ai_year = ai_date[:4]
+                ai_month = ai_date[5:7]
+                # Aktueller Subfolder-Suffix: rechnungseingang_eventenergie_deutschland_2026_04
+                #                              -> base = rechnungseingang_eventenergie_deutschland
+                def _strip_year_month_2(fid: str) -> str:
+                    parts = fid.split("_")
+                    while parts and len(parts[-1]) <= 4 and parts[-1].isdigit():
+                        parts.pop()
+                    return "_".join(parts)
+                base = _strip_year_month_2(final_folder)
+                expected_subfolder = f"{base}_{ai_year}_{ai_month}"
+                if expected_subfolder != final_folder:
+                    logger.info(
+                        f"Year/Month-Override: AI-Datum {ai_date} passt nicht zu Ordner {final_folder} "
+                        f"-> verschiebe nach {expected_subfolder}"
+                    )
+                    final_folder = base
+                    already_in_subfolder = False
 
         if final_folder not in SKIP_YEAR_MONTH_FOLDERS and not already_in_subfolder:
             doc_date = ai_result.get("date", "")
