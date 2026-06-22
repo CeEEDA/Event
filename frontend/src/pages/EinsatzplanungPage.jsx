@@ -132,10 +132,13 @@ export default function EinsatzplanungPage() {
     if (orders.length === 0) return;
     setCrewLoading(true);
     try {
-      // Nur fuer bestaetigte Auftraege Crew-Daten abrufen (sonst werden bei
-      // grossen 'Alle Jobs'-Listen die ersten 20 unbestaetigten geladen und
-      // die crew-relevanten gehen unter).
-      const pks = orders.filter(o => o.is_confirmed).slice(0, 40).map(o => o.primary_key);
+      // Crew-Daten fuer alle als 'bestaetigt' geltenden Auftraege laden
+      // (= is_confirmed=true ODER sum_transport>0). Damit erscheint Crew
+      // z.B. auch bei 260166-01 (transport=1490 aber EpiRent-Flag noch false).
+      const pks = orders
+        .filter(o => o.is_confirmed || (Number(o.sum_transport) || 0) > 0)
+        .slice(0, 40)
+        .map(o => o.primary_key);
       if (pks.length === 0) { setCrewData({}); setCrewLoading(false); return; }
       const r = await api.post("/orders/epirent/crew/batch",
         { order_pks: pks },
