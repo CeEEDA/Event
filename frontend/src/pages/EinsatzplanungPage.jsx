@@ -424,10 +424,14 @@ export default function EinsatzplanungPage() {
               { key: "confirmed", label: "Alle bestätigten" },
               { key: "all", label: "Alle Jobs" },
             ].map(opt => {
-              // Verhalten wie urspruenglich (vor 23.06.) wiederhergestellt:
-              // 'bestaetigt' = EpiRent's is_confirmed Flag direkt - nichts weiter.
+              // Alle 3 Filter nutzen EpiRent's is_confirmed direkt.
+              // "Nur Personal" und "Alle bestaetigten" zeigen identisch alle
+              // bestaetigten Auftraege - exakt wie das urspruengliche
+              // Verhalten vor dem Filter-Refactor (auch Karten ohne Crew
+              // werden gezeigt, damit der Admin "Personal definieren" klicken
+              // kann). "Alle Jobs" zeigt zusaetzlich is_confirmed=false.
               const count = opt.key === "crew"
-                ? orders.filter(o => o.is_confirmed && (getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0)).length
+                ? orders.filter(o => o.is_confirmed).length
                 : opt.key === "confirmed"
                   ? orders.filter(o => o.is_confirmed).length
                   : orders.length;
@@ -445,10 +449,10 @@ export default function EinsatzplanungPage() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {orders.filter(o => {
             if (orderFilter === "all") return true;
-            if (orderFilter === "confirmed") return !!o.is_confirmed;
-            // "Nur Personal" = bestaetigt + hat Crew-Bedarf (= alte Default-Logik)
-            if (!o.is_confirmed) return false;
-            return getJobNeeded(o.primary_key) > 0 || (crewData[o.primary_key]?.length || 0) > 0;
+            // Sowohl "crew" als auch "confirmed" zeigen alle is_confirmed-Auftraege
+            // (= altes Default-Verhalten). Karten ohne Crew-Bedarf bleiben sichtbar,
+            // damit der Admin auf "+ Personal definieren" klicken kann.
+            return !!o.is_confirmed;
           }).slice(0, 40).map(o => {
             const pk = o.primary_key;
             const req = jobReqs[pk];
