@@ -154,7 +154,11 @@ async def ollama_chat_vision(
     model: Optional[str] = None,
     want_json: bool = True,
 ) -> str:
-    """Sendet eine Chat-Anfrage an Ollama mit optionalem Datei-Bild-Anhang.
+    """Sendet eine Anfrage an Ollama mit optionalem Datei-Bild-Anhang.
+
+    Nutzt /api/generate (nicht /api/chat), da manche Reverse-Proxys vor
+    Ollama nur /api/generate freischalten. System- und User-Prompt werden
+    daher in einen einzigen Prompt zusammengefuehrt.
 
     Gibt den reinen Antworttext zurueck (ohne JSON-Parsing).
     Bei Fehlern wird eine Exception geworfen."""
@@ -168,19 +172,18 @@ async def ollama_chat_vision(
             logger.warning(f"[ollama] Datei konnte nicht in Bilder konvertiert werden: {e}")
             images = []
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_text, **({"images": images} if images else {})},
-    ]
+    combined_prompt = f"{system_prompt}\n\n{user_text}" if system_prompt else user_text
     payload = {
         "model": mdl,
-        "messages": messages,
+        "prompt": combined_prompt,
         "stream": False,
         "options": {
             "temperature": 0.2,
             "num_ctx": 8192,
         },
     }
+    if images:
+        payload["images"] = images
     if want_json:
         payload["format"] = "json"
 
@@ -188,7 +191,7 @@ async def ollama_chat_vision(
     async with sem:
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             try:
-                r = await client.post(f"{cfg['url']}/api/chat", json=payload,
+                r = await client.post(f"{cfg['url']}/api/generate", json=payload,
                                        headers=_auth_headers(cfg["api_key"]))
             except Exception as e:
                 logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
@@ -198,10 +201,11 @@ async def ollama_chat_vision(
                 r.raise_for_status()
             try:
                 data = r.json()
-            except Exception as e:
+            except Exception:
                 logger.error(f"[ollama] Antwort kein JSON: {r.text[:500]}")
                 raise
-    return (data.get("message") or {}).get("content", "")
+    # /api/generate liefert {"response": "..."} statt {"message": {"content": "..."}}
+    return data.get("response", "")
 
 
 def parse_json_response(text: str) -> dict:
