@@ -210,6 +210,16 @@ export default function EinsatzplanungPage() {
   const handleCellClick = async (userId, date) => {
     // Offday-Mode: belastet Konto direkt
     if (offdayMode) {
+      // Vorab-Check: existiert bereits ein Eintrag fuer diesen Tag?
+      const existing = (assignments || []).filter(a => a.user_id === userId && a.date === date);
+      if (existing.some(a => a.is_offday)) {
+        toast.error("An diesem Tag ist bereits ein Offday vergeben.");
+        return;
+      }
+      if (existing.length > 0) {
+        toast.error("Tag hat schon Einsätze - bitte erst löschen, dann Offday vergeben.");
+        return;
+      }
       const currBal = offdayBalances[userId] ?? 0;
       if (currBal <= 0) {
         if (!window.confirm(`Saldo ist ${currBal}. Trotzdem Offday zuweisen? Konto geht ins Minus.`)) return;
@@ -223,11 +233,17 @@ export default function EinsatzplanungPage() {
         loadPlan();
         loadOffdayBalances();
         toast.success("Offday zugewiesen");
-      } catch { toast.error("Fehler"); }
+      } catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
       return;
     }
     // Copy mode: paste the copied assignment to this cell
     if (copySource) {
+      // Vorab-Check: kein Einsatz auf Offday-Tag erlauben
+      const offdayHere = (assignments || []).find(a => a.user_id === userId && a.date === date && a.is_offday);
+      if (offdayHere) {
+        toast.error("Tag ist als Offday geblockt - bitte erst Offday loeschen.");
+        return;
+      }
       try {
         await api.post(`/employee/shift-plan?token=${token}`, {
           user_id: userId, date, week_key: weekKey,
@@ -238,7 +254,7 @@ export default function EinsatzplanungPage() {
         });
         loadPlan();
         toast.success(`${copySource.order_name || "Aufgabe"} kopiert`);
-      } catch { toast.error("Fehler"); }
+      } catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
       return;
     }
     if (selectedJob) {
@@ -290,7 +306,7 @@ export default function EinsatzplanungPage() {
       setEditCell(null);
       loadPlan();
       if (payload.is_offday) loadOffdayBalances();
-    } catch { toast.error("Fehler beim Speichern"); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Fehler beim Speichern"); }
   };
 
   const deleteAssignment = async (id) => {

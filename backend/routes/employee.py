@@ -3187,11 +3187,35 @@ async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
 async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...)):
     """Verwaltung: Create or update a shift assignment.
     Bei 'date_range' (date_from + date_to) werden mehrere Assignments in einem
-    Rutsch angelegt (z.B. 7 Tage fuer ein ADAC 24h-Rennen)."""
+    Rutsch angelegt (z.B. 7 Tage fuer ein ADAC 24h-Rennen).
+
+    Regeln Offday:
+    - Pro (user_id, date) ist maximal 1 Offday erlaubt (Doppel-Block).
+    - Wenn an einem Tag ein Offday existiert, sind KEINE weiteren Eintraege
+      (Einsatz/Offday) erlaubt - der Tag ist exklusiv geblockt.
+    """
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
     assignment_id = data.get("id")
+
+    async def _check_day_conflict(user_id: str, date_iso: str, is_offday: bool, exclude_id: str | None = None):
+        """Wirft 409 wenn Tag bereits durch Offday/Einsatz blockiert ist."""
+        if not user_id or not date_iso:
+            return
+        q = {"user_id": user_id, "date": date_iso}
+        if exclude_id:
+            q["id"] = {"$ne": exclude_id}
+        existing = await db.shift_assignments.find(q, {"_id": 0, "is_offday": 1}).to_list(50)
+        if not existing:
+            return
+        has_offday = any(e.get("is_offday") for e in existing)
+        if has_offday:
+            raise HTTPException(status_code=409,
+                detail=f"Am {date_iso} ist bereits ein Offday eingetragen. Bitte den Offday zuerst loeschen, bevor weitere Eintraege moeglich sind.")
+        if is_offday:
+            raise HTTPException(status_code=409,
+                detail=f"Am {date_iso} sind bereits {len(existing)} Eintrag(e) vorhanden. Bitte erst alle Einsaetze loeschen, bevor ein Offday vergeben wird.")
 
     # ── Mehrtages-Modus: date_range statt einzelnem date ──
     date_from = data.get("date_from")
@@ -3220,6 +3244,8 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
         while cur <= d1:
             cur_iso = cur.isoformat()
             if cur_iso not in existing_dates:
+                # Offday/Mix-Konflikt-Pruefung pro Tag
+                await _check_day_conflict(user_id, cur_iso, bool(data.get("is_offday")))
                 new_id = str(uuid.uuid4())
                 week_key = _iso_week_key(cur)
                 await db.shift_assignments.insert_one({
@@ -3257,6 +3283,9 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
         # Bei Update: vorhandenen Eintrag holen, um is_offday Flip
         # (war-Offday -> wird-normal oder umgekehrt) korrekt zu behandeln.
         prev = await db.shift_assignments.find_one({"id": assignment_id}, {"_id": 0})
+        # Konflikt-Pruefung beim Update auch (z.B. wenn Datum geaendert wird)
+        await _check_day_conflict(data.get("user_id"), data.get("date"),
+                                  bool(data.get("is_offday")), exclude_id=assignment_id)
         await db.shift_assignments.update_one({"id": assignment_id}, {"$set": {
             "user_id": data.get("user_id"),
             "date": data.get("date"),
@@ -3287,6 +3316,9 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
         except Exception as _e:
             logger.warning(f"Offday-Update fehlgeschlagen: {_e}")
     else:
+        # Neuer Einzel-Eintrag - Konflikt-Pruefung
+        await _check_day_conflict(data.get("user_id"), data.get("date"),
+                                  bool(data.get("is_offday")))
         assignment_id = str(uuid.uuid4())
         await db.shift_assignments.insert_one({
             "id": assignment_id,

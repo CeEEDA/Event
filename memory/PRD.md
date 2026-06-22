@@ -16,6 +16,20 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: Offday-Tag exklusiv blocken (1 Offday/Tag, kein Mix mit Einsatz)
+- 🎯 **User-Report**: „ich darf an einem Tag nur einen Offday zugewiesen werden. Außerdem darf man an dem Tag, sobald der Offday zugewiesen ist, keine weitere Tätigkeit zuweisen können." (Screenshot: Christian Ecker hatte 2x Offday am 29.06.)
+- ✅ **Backend** (`/app/backend/routes/employee.py` `upsert_shift_assignment`): Neuer Helper `_check_day_conflict(user_id, date, is_offday, exclude_id)`:
+  - Tag hat schon Offday → 409 mit Hinweis „Offday zuerst loeschen, bevor weitere Eintraege moeglich sind"
+  - is_offday=true UND Tag hat schon Einsaetze → 409 „erst alle Einsaetze loeschen, bevor ein Offday vergeben wird"
+  - Wird in allen 3 Pfaden gerufen: Mehrtages-Range, Update (mit exclude_id), Neueintrag.
+- ✅ **Frontend** (`EinsatzplanungPage.jsx`):
+  - Offday-Mode-Klick: Vorab-Check zeigt Toast „bereits Offday vergeben" oder „Tag hat schon Einsaetze".
+  - Copy-Mode-Klick: Vorab-Check blockt Paste auf Offday-Tag.
+  - Edit-Form Save: leitet Backend-409-Toast korrekt durch (zeigt jetzt `error.response.data.detail`).
+- ✅ **Verifiziert via curl** (4 Cases):
+  - 1. Offday anlegen ✅, 2. Doppelter Offday → 409, 3. Einsatz auf Offday-Tag → 409, 4. Offday auf Einsatz-Tag → 409.
+
+
 ### Feb 2026 – Feature: Datum für manuelle Offday-Korrektur
 - 🎯 **User-Request**: „hier muss ich ein Datum eintragen können für welchen Tag ein offday gutgeschrieben wurde."
 - ✅ **Backend** (`/app/backend/routes/offdays.py` `manual_adjust`): akzeptiert optionales Body-Feld `ref_date` (Format `YYYY-MM-DD`). Default = heute (wie bisher). ISO-Validierung gibt 400 bei falschem Format.
