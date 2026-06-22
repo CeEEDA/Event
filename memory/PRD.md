@@ -16,6 +16,41 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: Sonn-/Feiertagszuschläge entfernt, Nachtzuschlag bleibt (Lohnabrechnung)
+- 🎯 **User-Wunsch**: „Wir haben eben Zuschläge fest gelegt. Das ist rechtlich aber falsch. Es gibt für Nachtzuschläge aufschläge. Für Sonn und Feiertage aber nicht. Lösche die wieder raus."
+- ✅ **Backend** (`backend/routes/employee.py`):
+  - `sunday_pct`, `holiday_pct`, `special_pct` hart auf 0.0 gesetzt (Z. 2537–2548). Nachtzuschlag bleibt aus `surcharges.night` (Default 25%).
+  - `update_work_schedule` filtert eingehende `surcharges` auf nur noch `{"night": <float>}`.
+  - CSV-Export: Zusammenfassungs-Zeilen für Sonntags-/Feiertags-/Sonderfeiertagszuschlag entfernt; nur noch Nachtzuschlag bleibt.
+  - Nachtfenster (`_calc_night_minutes`): 20:00–06:00 Berlin-Zeit, minutengenau – unverändert.
+- ✅ **Frontend**:
+  - `WeeklyScheduleSection.jsx`: 3 Input-Felder (Sonntag/Feiertag/Bes. Feiertag) entfernt. Grid jetzt 2 Spalten (Stundenlohn + Nachtzuschlag).
+  - `AdminZeitDetailPage.jsx`: Default-State `{ night: 25 }`.
+  - `PayrollSection.jsx` + `AbrechnungPage.jsx`: Summary-Karte „Zuschläge" → „Nachtzuschlag", zeigt nur noch `night_wage`.
+  - Hinweistext: „Sonn-/Feiertagsarbeit wird über das Offday-System (Ersatzruhetag) ausgeglichen, nicht über Zuschläge."
+- ✅ **Verifiziert via curl**: `/api/employee/payroll/{user_id}` liefert `surcharges={sunday:0, holiday:0, special_holiday:0, night:25}`, alle Zuschlags-Wage-Werte = 0.
+- ✅ **Verifiziert via Screenshot**: Admin-Zeit-Detail UI zeigt nur noch 2 Input-Felder (Stundenlohn + Nachtzuschlag %).
+- Hintergrund: Ausgleich für Sonn-/Feiertagsarbeit erfolgt weiterhin durch automatische Offday-Buchung (Ersatzruhetag) – nicht über Lohn-Zuschläge.
+
+
+### Feb 2026 – Bugfix: „Nur Personal" vs. „Alle bestätigten" Filter – semantisch korrekt getrennt
+- 🐛 **User-Report**: „In dem Projekt ist kein Personal hinterlegt. Also muss das in allen projekten drin sein. Mit Personal soll nur alles rein, wo auch personal mit im Angebot ist."
+- 🔍 **Root Cause**: Beide Filter (`crew` und `confirmed`) nutzten dieselbe Filter-Logik `o.is_confirmed`. → identische Anzahl, kein Unterschied.
+- ✅ **Fix** (`EinsatzplanungPage.jsx`):
+  - **„Nur Personal"** = `is_confirmed=true` UND (EpiRent-Crew vorhanden ODER manueller `jobReqs.count > 0`).
+  - **„Alle bestätigten"** = `is_confirmed=true` (auch ohne Personal-Definition).
+  - **„Alle Jobs"** = alle Aufträge inkl. unbestätigt/Angebote.
+- ✅ **Verifiziert via Playwright** (W26): Nur Personal = 3, Alle bestätigten = 8, Alle Jobs = 38.
+
+
+### Feb 2026 – Bugfix: EpiRent-Sync-Cache holte stale Daten für 260166-01
+- 🐛 **User-Report**: Auftrag 260166-01 „Ruhr-in-Love" fehlte in „Alle bestätigten", obwohl er in EpiRent bestätigt war.
+- 🔍 **Diagnose**: EpiRent's `/v1/order/filter` UND `/v1/order/{pk}` lieferten `is_confirmed=true` für 260166-01 (pk=202). Unser lokaler `orders_cache` hatte aber `is_confirmed=false`, weil der letzte Sync vor dem EpiRent-Status-Update lief.
+- ✅ **Lösung**: Manueller Sync-Trigger via `_run_epirent_sync()` aktualisierte den Cache → 260166-01 erscheint korrekt in W26/W27/W28.
+- ⚠ **Hinweis**: Sync-Intervall ist 30 Min. Für „Echtzeit"-Aktualisierung gibt es Vorschlag-Optionen (Auto-Refresh / Sync-Button), Implementierung vom User für später zurückgestellt.
+
+
+
 ### Feb 2026 – Feature: 3-Stufen-Filter für Auftrags-Anzeige in Einsatzplanung
 - 🎯 **User-Wunsch**: „Lass die alte Maske und mach lieber einen Filter, wo ich alles anzeigen lassen kann und auch auslieferungen verknüpfen kann."
 - ✅ **Frontend** (`EinsatzplanungPage.jsx`): Filter-Toggle im Auftrags-Header mit 3 Optionen + Count-Badges:
