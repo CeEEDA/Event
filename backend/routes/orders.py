@@ -871,6 +871,22 @@ def _generate_delivery_note_pdf(
         except Exception:
             return d
 
+    # ===== GEWICHTS-SUMME (für Meta-Box) =====
+    total_weight = 0.0
+    article_count = 0
+    if positions:
+        for _p in positions:
+            if _p.get("is_chapter") or _p.get("is_heading"):
+                continue
+            try:
+                _amt = float(_p.get("amount") or 0)
+                _wn = float(_p.get("weight_net") or 0)
+            except (TypeError, ValueError):
+                continue
+            if _amt > 0 and _wn > 0:
+                total_weight += _amt * _wn
+                article_count += 1
+
     meta_data = [
         [Paragraph("Lieferschein-Nr.", s_meta_lbl), Paragraph(delivery_note_no, s_meta_val)],
         [Paragraph("Auftrags-Nr.", s_meta_lbl), Paragraph(order_no_fmt, s_meta_val)],
@@ -881,6 +897,9 @@ def _generate_delivery_note_pdf(
         meta_data.append([Paragraph("Event", s_meta_lbl), Paragraph(f"{_fmt_de(event_start)} – {_fmt_de(event_end)}", s_meta_val)])
     if dispo_start or dispo_end:
         meta_data.append([Paragraph("Dispo", s_meta_lbl), Paragraph(f"{_fmt_de(dispo_start)} – {_fmt_de(dispo_end)}", s_meta_val)])
+    if total_weight > 0:
+        weight_str = f"{total_weight:.1f}".replace(".", ",")
+        meta_data.append([Paragraph("Gesamtgewicht", s_meta_lbl), Paragraph(f"{weight_str} kg", s_meta_val)])
 
     meta_t = Table(meta_data, colWidths=[28*mm, 47*mm])
     meta_t.setStyle(TableStyle([
@@ -999,29 +1018,6 @@ def _generate_delivery_note_pdf(
     tbl.setStyle(TableStyle(tbl_style))
     elems.append(tbl)
     elems.append(Spacer(1, 4*mm))
-
-    # ===== GEWICHTS-SUMME =====
-    total_weight = 0.0
-    article_count = 0
-    for p in positions:
-        if p.get("is_chapter") or p.get("is_heading"):
-            continue
-        try:
-            amount = float(p.get("amount") or 0)
-            w_net = float(p.get("weight_net") or 0)
-        except (TypeError, ValueError):
-            continue
-        if amount > 0 and w_net > 0:
-            total_weight += amount * w_net
-            article_count += 1
-    if total_weight > 0:
-        weight_str = f"{total_weight:.1f}".replace(".", ",")
-        elems.append(Paragraph(
-            f"<b>Gesamtgewicht:</b> {weight_str} kg "
-            f"<font color='#888'>(Netto, EpiRent-Stammdaten, {article_count} gewichtete Artikel)</font>",
-            s_value,
-        ))
-        elems.append(Spacer(1, 3*mm))
 
     # ===== HINWEIS =====
     notes = notes_override if notes_override is not None else (raw_order.get("notes") or "")
