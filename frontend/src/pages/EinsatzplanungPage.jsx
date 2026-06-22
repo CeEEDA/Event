@@ -132,7 +132,11 @@ export default function EinsatzplanungPage() {
     if (orders.length === 0) return;
     setCrewLoading(true);
     try {
-      const pks = orders.slice(0, 20).map(o => o.primary_key);
+      // Nur fuer bestaetigte Auftraege Crew-Daten abrufen (sonst werden bei
+      // grossen 'Alle Jobs'-Listen die ersten 20 unbestaetigten geladen und
+      // die crew-relevanten gehen unter).
+      const pks = orders.filter(o => o.is_confirmed).slice(0, 40).map(o => o.primary_key);
+      if (pks.length === 0) { setCrewData({}); setCrewLoading(false); return; }
       const r = await api.post("/orders/epirent/crew/batch",
         { order_pks: pks },
         { headers: { Authorization: `Bearer ${token}` } }
