@@ -153,9 +153,9 @@ export default function AbrechnungPage() {
                             <p className="text-base font-bold text-gray-800">{p.totals?.regular_wage?.toFixed(2)}€</p>
                           </div>
                           <div className="bg-amber-50 rounded-lg p-2.5 text-center">
-                            <p className="text-[10px] text-orange-500 uppercase font-medium">Zuschläge</p>
+                            <p className="text-[10px] text-orange-500 uppercase font-medium">Nachtzuschlag</p>
                             <p className="text-base font-bold text-orange-700">
-                              {((p.totals?.sunday_wage || 0) + (p.totals?.holiday_wage || 0) + (p.totals?.special_wage || 0) + (p.totals?.night_wage || 0)).toFixed(2)}€
+                              {(p.totals?.night_wage || 0).toFixed(2)}€
                             </p>
                           </div>
                           <div className="bg-green-50 rounded-lg p-2.5 text-center">

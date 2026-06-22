@@ -123,7 +123,7 @@ export default function AdminZeitDetailPage() {
   const [schedule, setSchedule] = useState({});
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [hourlyWage, setHourlyWage] = useState("");
-  const [surcharges, setSurcharges] = useState({ sunday: 50, holiday: 125, special_holiday: 150, night: 25 });
+  const [surcharges, setSurcharges] = useState({ night: 25 });
   const [payroll, setPayroll] = useState(null);
   const [payrollMonth, setPayrollMonth] = useState(() => {
     const now = new Date();

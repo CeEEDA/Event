@@ -2392,8 +2392,12 @@ async def update_work_schedule(user_id: str, token: str = Query(...), data: dict
         old_w = before.get("hourly_wage", "?")
         changed_parts.append(f"Stundenlohn {old_w} → {data['hourly_wage']} €")
     if "surcharges" in data:
-        update_fields["surcharges"] = data["surcharges"]
-        changed_parts.append("Zuschläge")
+        # Sonn-/Feiertags-/Sonderfeiertagszuschläge werden nicht mehr gezahlt
+        # (siehe Lohnabrechnungs-Logik). Nur 'night' wird persistiert.
+        incoming = data["surcharges"] or {}
+        cleaned = {"night": float(incoming.get("night", 25))}
+        update_fields["surcharges"] = cleaned
+        changed_parts.append("Nachtzuschlag")
     await db.work_schedules.update_one(
         {"user_id": user_id},
         {"$set": update_fields},
@@ -2534,9 +2538,14 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
     ws = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
     hourly_wage = (ws or {}).get("hourly_wage", 0)
     surcharges = (ws or {}).get("surcharges", {})
-    sunday_pct = float(surcharges.get("sunday", 50))
-    holiday_pct = float(surcharges.get("holiday", 125))
-    special_pct = float(surcharges.get("special_holiday", 150))
+    # Rechtlich nicht zwingend: Sonn-/Feiertags-/Sonderfeiertagszuschläge werden
+    # NICHT gezahlt (per Entscheidung Geschäftsleitung). Nur Nachtzuschlag bleibt.
+    # Sonntag/Feiertag/Sonderfeiertag werden weiterhin als Typ angezeigt, ohne
+    # Aufschlag. Ausgleich für Sonn-/Feiertagsarbeit erfolgt über das
+    # Offday-System (Ersatzruhetag).
+    sunday_pct = 0.0
+    holiday_pct = 0.0
+    special_pct = 0.0
     night_pct = float(surcharges.get("night", 25))
 
     holidays = _get_holidays(year_num)
@@ -2754,9 +2763,6 @@ async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Qu
     t = payroll["totals"]
     writer.writerow(["Zusammenfassung"])
     writer.writerow(["Grundlohn gesamt", f"{t['regular_wage']:.2f} EUR"])
-    writer.writerow(["Sonntagszuschlag", f"{t.get('sunday_wage', 0):.2f} EUR"])
-    writer.writerow(["Feiertagszuschlag", f"{t.get('holiday_wage', 0):.2f} EUR"])
-    writer.writerow(["Sonderfeiertag", f"{t.get('special_wage', 0):.2f} EUR"])
     writer.writerow(["Nachtzuschlag", f"{t.get('night_wage', 0):.2f} EUR"])
     writer.writerow(["BRUTTO GESAMT", f"{payroll['total_gross']:.2f} EUR"])
     if payroll.get("deductions"):

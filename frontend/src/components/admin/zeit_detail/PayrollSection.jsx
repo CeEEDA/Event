@@ -89,9 +89,9 @@ export default function PayrollSection({
               <p className="text-lg font-bold text-gray-800">{payroll.totals.regular_wage?.toFixed(2)}€</p>
             </div>
             <div className="bg-orange-50 rounded-lg p-2.5 text-center">
-              <p className="text-[10px] text-orange-500 uppercase font-semibold">Zuschläge</p>
+              <p className="text-[10px] text-orange-500 uppercase font-semibold">Nachtzuschlag</p>
               <p className="text-lg font-bold text-orange-700">
-                {((payroll.totals.sunday_wage || 0) + (payroll.totals.holiday_wage || 0) + (payroll.totals.special_wage || 0) + (payroll.totals.night_wage || 0)).toFixed(2)}€
+                {(payroll.totals.night_wage || 0).toFixed(2)}€
               </p>
             </div>
             <div className="bg-emerald-50 rounded-lg p-2.5 text-center">
