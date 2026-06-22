@@ -2548,8 +2548,47 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
     ).sort("clock_in", 1).to_list(500)
 
     rows = []
-    totals = {"regular_min": 0, "sunday_min": 0, "holiday_min": 0, "special_min": 0, "night_min": 0,
-              "regular_wage": 0, "sunday_wage": 0, "holiday_wage": 0, "special_wage": 0, "night_wage": 0}
+    totals = {"regular_min": 0, "sunday_min": 0, "holiday_min": 0, "special_min": 0, "night_min": 0, "offday_min": 0,
+              "regular_wage": 0, "sunday_wage": 0, "holiday_wage": 0, "special_wage": 0, "night_wage": 0, "offday_wage": 0}
+
+    # Offdays im Monat: bezahlte Ersatzruhetage (kein Stempel, aber Sollstunden
+    # werden zum normalen Stundenlohn verguetet - ohne Zuschlag).
+    offday_assignments = await db.shift_assignments.find(
+        {"user_id": user_id, "is_offday": True, "date": {"$gte": date_from, "$lte": date_to}},
+        {"_id": 0, "date": 1}
+    ).to_list(200)
+    for off in offday_assignments:
+        d_str = off.get("date")
+        if not d_str:
+            continue
+        try:
+            d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        soll_min = _soll_minutes_from_schedule(ws or {}, d_obj.weekday())
+        if soll_min <= 0:
+            # Kein Soll im Wochenplan -> Default 8h ansetzen (sonst keine Verguetung).
+            soll_min = 8 * 60
+        hours = soll_min / 60
+        base_wage = round(hours * hourly_wage, 2)
+        rows.append({
+            "date": d_str,
+            "weekday": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d_obj.weekday()],
+            "clock_in": "",
+            "clock_out": "",
+            "total_min": soll_min,
+            "total_hours": round(hours, 2),
+            "surcharge_type": "offday",
+            "surcharge_pct": 0,
+            "night_min": 0,
+            "base_wage": base_wage,
+            "surcharge_wage": 0,
+            "night_wage": 0,
+            "total_wage": base_wage,
+            "holiday_name": "Offday (Ersatzruhetag)",
+        })
+        totals["offday_min"] += soll_min
+        totals["offday_wage"] += base_wage
 
     for e in entries:
         ci = datetime.fromisoformat(e["clock_in"])
@@ -2625,7 +2664,7 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
     total_deductions = round(sum(float(d.get("amount", 0)) for d in deductions), 2)
 
     totals = {k: round(v, 2) for k, v in totals.items()}
-    total_gross = round(totals["regular_wage"] + totals["sunday_wage"] + totals["holiday_wage"] + totals["special_wage"] + totals["night_wage"], 2)
+    total_gross = round(totals["regular_wage"] + totals["sunday_wage"] + totals["holiday_wage"] + totals["special_wage"] + totals["night_wage"] + totals["offday_wage"], 2)
     total_net = round(total_gross - total_deductions, 2)
 
     # Reisekosten (Verpflegungsmehraufwand + KM + Übernachtung) für den Monat aggregieren.

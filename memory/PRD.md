@@ -16,6 +16,16 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Offday-Tage werden jetzt in der Lohnabrechnung vergütet
+- 🐛 **User-Korrektur**: „Wenn der Mitarbeiter sonntags 8 stunden macht, werden diese an einem Offday entsprechend dem Sollarbeitszeit abgerechnet. Ansonsten würde er für den Tag ja keine Bezahlung bekommen." (Korrektur zu meinem vorherigen Fix der nur das Stundenkonto, nicht aber die Lohnabrechnung berücksichtigt hatte.)
+- ✅ **Backend-Fix** (`/app/backend/routes/employee.py` `get_payroll`):
+  - Vor Verarbeitung der time_entries werden alle `shift_assignments` mit `is_offday=True` im Monat geladen.
+  - Pro Offday-Tag wird eine **Pseudo-Zeile** erzeugt: Stunden = Soll-Stunden des Wochentags aus `work_schedule` (Fallback 8h, falls kein Schedule), Lohn = Stunden × `hourly_wage`, **kein Zuschlag**, surcharge_type="offday", Label "Offday (Ersatzruhetag)".
+  - Neue Total-Felder: `offday_min` / `offday_wage`. Fließt in `total_gross` ein.
+- ✅ **Verifiziert via curl**: User mit Soll 8.25h/Mo + Offday am 09.02.2026 → Payroll-Row mit 8.25h × 18.55€ = **153,04€** Brutto.
+- ℹ️ Zusammen mit dem vorherigen Stundenkonto-Fix bedeutet das jetzt: Sonntags arbeiten → +1 Offday + 50% Lohnzuschlag (Sonntag, sofort abgerechnet). Offday einlösen → bezahlter freier Tag mit Soll-Stunden zum normalen Stundenlohn. Korrekt nach §11 Abs. 3 ArbZG.
+
+
 ### Feb 2026 – Bugfix: Offday-Tage werden jetzt korrekt im Stundenkonto behandelt
 - 🐛 **User-Frage**: „wenn der mitarbeiter einen Offday hat, werden an dem Tag die sollstunden vom stundenkonto abgezogen. Ist das so gemacht?"
 - 🎯 **Vorheriger Zustand BUGGY**: `_recompute_overtime_for_year` kannte nur Feiertag/Urlaub/Krank/ÜS-Abbau — Offdays wurden als „normaler Arbeitstag ohne Stempelung" gewertet → Soll-Stunden (z.B. 8.25h Montag) wurden vom Stundenkonto abgezogen, obwohl der MA einen bezahlten Ersatzruhetag hat (§11 Abs. 3 ArbZG).
