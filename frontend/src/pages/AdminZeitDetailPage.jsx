@@ -86,12 +86,16 @@ export default function AdminZeitDetailPage() {
   const [vacStart, setVacStart] = useState("");
   const [vacEnd, setVacEnd] = useState("");
   const [vacType, setVacType] = useState("urlaub"); // "urlaub" | "ueberstundenabbau" | "krank"
+  const [vacMode, setVacMode] = useState("days"); // bei ueberstundenabbau: "days" | "hours"
+  const [vacHours, setVacHours] = useState("");
   const [addingVac, setAddingVac] = useState(false);
   // iOS-Fix: refs auf vacStart/vacEnd, damit addVacation nach blur den letzten Wert sieht
   const vacStartRef = useRef("");
   const vacEndRef = useRef("");
+  const vacHoursRef = useRef("");
   vacStartRef.current = vacStart;
   vacEndRef.current = vacEnd;
+  vacHoursRef.current = vacHours;
 
   // Manual time entry editing (must be declared before any early return — rules-of-hooks)
   const [addRow, setAddRow] = useState({});
@@ -417,8 +421,14 @@ export default function AdminZeitDetailPage() {
     await new Promise(r => setTimeout(r, 60));
     const vStart = vacStartRef.current;
     const vEnd = vacEndRef.current;
-    if (!vStart || !vEnd) { toast.error("Bitte Start- und Enddatum wählen"); return; }
-    if (vEnd < vStart) { toast.error("Enddatum muss nach Startdatum liegen"); return; }
+    const isHoursMode = vacType === "ueberstundenabbau" && vacMode === "hours";
+    if (!vStart) { toast.error("Bitte Startdatum wählen"); return; }
+    if (!isHoursMode && !vEnd) { toast.error("Bitte Enddatum wählen"); return; }
+    if (!isHoursMode && vEnd < vStart) { toast.error("Enddatum muss nach Startdatum liegen"); return; }
+    if (isHoursMode) {
+      const h = parseFloat(vacHoursRef.current);
+      if (!h || h <= 0) { toast.error("Bitte gültige Stunden-Zahl eingeben (z.B. 3.5)"); return; }
+    }
     setAddingVac(true);
     try {
       if (vacType === "urlaub") {
@@ -426,16 +436,20 @@ export default function AdminZeitDetailPage() {
         toast.success("Urlaub eingetragen");
         loadVacationEntries();
       } else {
-        await api.post(`/employee/time-off/admin-create?token=${token}`, {
+        const payload = {
           user_id: userId,
           type: vacType,
           start_date: vStart,
-          end_date: vEnd,
-        });
-        toast.success(vacType === "ueberstundenabbau" ? "Überstundenabbau eingetragen" : "Krankheit eingetragen");
+          end_date: isHoursMode ? vStart : vEnd,
+        };
+        if (isHoursMode) payload.hours = parseFloat(vacHoursRef.current);
+        await api.post(`/employee/time-off/admin-create?token=${token}`, payload);
+        toast.success(vacType === "ueberstundenabbau"
+          ? (isHoursMode ? `Überstundenabbau eingetragen (${payload.hours}h)` : "Überstundenabbau eingetragen")
+          : "Krankheit eingetragen");
         reloadTimeOff();
       }
-      setVacStart(""); setVacEnd("");
+      setVacStart(""); setVacEnd(""); setVacHours("");
       loadHrData();
     } catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
     setAddingVac(false);
@@ -833,7 +847,7 @@ export default function AdminZeitDetailPage() {
               <label className="text-xs text-gray-500 mb-1 block">Typ</label>
               <select
                 value={vacType}
-                onChange={e => setVacType(e.target.value)}
+                onChange={e => { setVacType(e.target.value); if (e.target.value !== "ueberstundenabbau") setVacMode("days"); }}
                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-400"
                 data-testid="vac-type"
               >
@@ -842,14 +856,31 @@ export default function AdminZeitDetailPage() {
                 <option value="krank">Krank</option>
               </select>
             </div>
+            {vacType === "ueberstundenabbau" && (
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Modus</label>
+                <div className="flex border border-gray-200 rounded-lg overflow-hidden" data-testid="vac-mode">
+                  <button type="button" onClick={() => setVacMode("days")} className={`px-3 py-1.5 text-sm transition ${vacMode === "days" ? "bg-amber-500 text-white" : "bg-white text-gray-600 hover:bg-amber-50"}`} data-testid="vac-mode-days">Tage</button>
+                  <button type="button" onClick={() => setVacMode("hours")} className={`px-3 py-1.5 text-sm transition ${vacMode === "hours" ? "bg-amber-500 text-white" : "bg-white text-gray-600 hover:bg-amber-50"}`} data-testid="vac-mode-hours">Stunden</button>
+                </div>
+              </div>
+            )}
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Von</label>
+              <label className="text-xs text-gray-500 mb-1 block">{vacType === "ueberstundenabbau" && vacMode === "hours" ? "Datum" : "Von"}</label>
               <input type="date" value={vacStart} onChange={e => setVacStart(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" data-testid="vac-start" />
             </div>
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">Bis</label>
-              <input type="date" value={vacEnd} onChange={e => setVacEnd(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" data-testid="vac-end" />
-            </div>
+            {!(vacType === "ueberstundenabbau" && vacMode === "hours") && (
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Bis</label>
+                <input type="date" value={vacEnd} onChange={e => setVacEnd(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" data-testid="vac-end" />
+              </div>
+            )}
+            {vacType === "ueberstundenabbau" && vacMode === "hours" && (
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Stunden</label>
+                <input type="number" min="0.25" max="24" step="0.25" value={vacHours} onChange={e => setVacHours(e.target.value)} placeholder="z.B. 3.5" className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-amber-400" data-testid="vac-hours" />
+              </div>
+            )}
             <Button
               onClick={addVacation}
               disabled={addingVac}
@@ -874,19 +905,27 @@ export default function AdminZeitDetailPage() {
             return (
               <div className="space-y-1.5">
                 {merged.map(v => {
+                  // Bei Stundenmodus-Ueberstundenabbau: hours_deducted ueberschreibt days*8.
+                  const isHoursOnly = v._kind === "ueberstundenabbau" && v.hours_deducted != null;
+                  const ovHours = isHoursOnly ? Number(v.hours_deducted) : (v.days || 0) * 8;
                   const cfg = v._kind === "ueberstundenabbau"
-                    ? { bg: "bg-amber-50", icon: <TrendingUp className="w-4 h-4 text-amber-500 flex-shrink-0" />, badge: "bg-amber-200 text-amber-800", label: "Üb-Abbau", text: "text-amber-700", suffix: ` · ${(v.days * 8).toFixed(0)}h` }
+                    ? { bg: "bg-amber-50", icon: <TrendingUp className="w-4 h-4 text-amber-500 flex-shrink-0" />, badge: "bg-amber-200 text-amber-800", label: "Üb-Abbau", text: "text-amber-700", suffix: ` · ${ovHours}h` }
                     : v._kind === "krank"
                       ? { bg: "bg-red-50", icon: <ThermometerSun className="w-4 h-4 text-red-500 flex-shrink-0" />, badge: "bg-red-200 text-red-800", label: "Krank", text: "text-red-700", suffix: "" }
                       : { bg: "bg-sky-50", icon: <CalendarDays className="w-4 h-4 text-sky-500 flex-shrink-0" />, badge: "bg-sky-200 text-sky-800", label: "Urlaub", text: "text-sky-700", suffix: "" };
+                  const isSingleDay = v.start_date === v.end_date;
                   return (
                     <div key={`${v._kind}-${v.id}`} className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${cfg.bg}`} data-testid={`absence-${v._kind}-${v.id}`}>
                       {cfg.icon}
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
                       <span className="text-gray-700 font-medium">{new Date(v.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
-                      <span className="text-gray-400">—</span>
-                      <span className="text-gray-700 font-medium">{new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
-                      <span className={`font-bold ml-auto ${cfg.text}`}>{v.days} Tag{v.days === 1 ? "" : "e"}{cfg.suffix}</span>
+                      {!(isHoursOnly && isSingleDay) && (
+                        <>
+                          <span className="text-gray-400">—</span>
+                          <span className="text-gray-700 font-medium">{new Date(v.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                        </>
+                      )}
+                      <span className={`font-bold ml-auto ${cfg.text}`}>{isHoursOnly ? `${ovHours}h` : `${v.days} Tag${v.days === 1 ? "" : "e"}${cfg.suffix}`}</span>
                       <button
                         onClick={() => v._kind === "urlaub" ? deleteVacation(v.id) : deleteTimeOff(v.id, v._kind)}
                         className="text-gray-400 hover:text-red-500"

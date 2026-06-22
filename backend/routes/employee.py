@@ -2032,17 +2032,34 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
     req_type = data.get("type", "ueberstundenabbau")
     start_date = data.get("start_date")
     end_date = data.get("end_date") or start_date
+    # Optional: Stundengenauer Ueberstundenabbau (Admin kann zwischen Tagen
+    # und Stunden waehlen). Wenn `hours` gesetzt, wird das Konto exakt um
+    # diese Stundenzahl belastet (kein days*8 mehr).
+    hours_input = data.get("hours")
+    try:
+        hours = float(hours_input) if hours_input not in (None, "") else None
+    except (TypeError, ValueError):
+        hours = None
 
     if not target_user_id or not start_date:
         raise HTTPException(status_code=400, detail="user_id und start_date erforderlich")
     if req_type not in ("ueberstundenabbau", "urlaub", "krank"):
         raise HTTPException(status_code=400, detail="Ungueltiger Typ")
+    if hours is not None and req_type != "ueberstundenabbau":
+        raise HTTPException(status_code=400, detail="Stunden-Eingabe nur fuer Ueberstundenabbau erlaubt")
+    if hours is not None and hours <= 0:
+        raise HTTPException(status_code=400, detail="Stunden muss > 0 sein")
 
     target = await db.users.find_one({"id": target_user_id}, {"_id": 0, "id": 1, "name": 1, "email": 1})
     if not target:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
-    days = _count_weekdays(start_date, end_date)
+    # Wenn Stundenmodus: only 1 Tag, days=0; sonst: weekday-count.
+    if hours is not None:
+        days = 0
+        end_date = start_date  # Stundenabbau immer auf 1 Tag
+    else:
+        days = _count_weekdays(start_date, end_date)
     type_labels = {"krank": "Krankmeldung", "urlaub": "Urlaubsantrag", "ueberstundenabbau": "Überstundenabbau"}
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -2054,10 +2071,11 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
         "type_label": type_labels.get(req_type, req_type),
         "start_date": start_date,
         "end_date": end_date,
-        "all_day": True,
+        "all_day": hours is None,
         "start_time": None,
         "end_time": None,
         "days": days,
+        "hours_deducted": hours,  # None oder konkrete Stundenzahl
         "status": "approved",
         "created_at": now_iso,
         "resolved_at": now_iso,
@@ -2067,23 +2085,30 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
     }
     await db.time_off_requests.insert_one(entry)
 
-    # If 'ueberstundenabbau': deduct 8h per weekday from overtime account
-    if req_type == "ueberstundenabbau" and days > 0:
-        hours_to_deduct = days * 8.0
-        hr = await db.hr_data.find_one({"user_id": target_user_id}, {"_id": 0})
-        current = float(hr.get("overtime_hours", 0)) if hr else 0.0
-        new_val = round(current - hours_to_deduct, 2)
-        await db.hr_data.update_one(
-            {"user_id": target_user_id},
-            {"$set": {"overtime_hours": new_val, "updated_at": now_iso}},
-            upsert=True,
-        )
+    # Ueberstundenabbau: Konto belasten - exakte Stunden oder days*8.
+    if req_type == "ueberstundenabbau":
+        if hours is not None:
+            hours_to_deduct = hours
+        elif days > 0:
+            hours_to_deduct = days * 8.0
+        else:
+            hours_to_deduct = 0
+        if hours_to_deduct > 0:
+            hr = await db.hr_data.find_one({"user_id": target_user_id}, {"_id": 0})
+            current = float(hr.get("overtime_hours", 0)) if hr else 0.0
+            new_val = round(current - hours_to_deduct, 2)
+            await db.hr_data.update_one(
+                {"user_id": target_user_id},
+                {"$set": {"overtime_hours": new_val, "updated_at": now_iso}},
+                upsert=True,
+            )
 
     _typ_lbl_c = {"krank": "Krankmeldung", "urlaub": "Urlaub", "ueberstundenabbau": "Überstundenabbau"}.get(req_type, req_type)
+    _detail = f"({hours}h)" if hours is not None else f"({days} Tage)"
     await _log_audit(
         target_user_id, "time_off_admin_create", caller,
-        after={"type": req_type, "start_date": start_date, "end_date": end_date, "days": days},
-        summary=f"{_typ_lbl_c} {start_date} – {end_date} eingetragen ({days} Tage)"
+        after={"type": req_type, "start_date": start_date, "end_date": end_date, "days": days, "hours": hours},
+        summary=f"{_typ_lbl_c} {start_date} – {end_date} eingetragen {_detail}"
     )
     return {k: v for k, v in entry.items() if k != "_id"}
 
@@ -2100,9 +2125,17 @@ async def admin_delete_time_off(request_id: str, token: str = Query(...)):
 
     # Refund overtime if it was an approved Überstundenabbau
     if req.get("status") == "approved" and req.get("type") == "ueberstundenabbau":
-        days = req.get("days", 0) or 0
-        if days > 0:
+        # Exakte Stunden ueberschreiben days*8 (Stunden-Modus, siehe
+        # admin_create_time_off).
+        hours_to_refund = req.get("hours_deducted")
+        if hours_to_refund is None:
+            days = req.get("days", 0) or 0
             hours_to_refund = days * 8.0
+        try:
+            hours_to_refund = float(hours_to_refund or 0)
+        except (TypeError, ValueError):
+            hours_to_refund = 0
+        if hours_to_refund > 0:
             hr = await db.hr_data.find_one({"user_id": req["user_id"]}, {"_id": 0})
             current = float(hr.get("overtime_hours", 0)) if hr else 0.0
             new_val = round(current + hours_to_refund, 2)
@@ -2262,17 +2295,34 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
         await db.vacation_entries.insert_one(vac_entry)
         await _recalc_vacation_used(req["user_id"], year)
 
-    # If approved and type is ueberstundenabbau, deduct from overtime account (8h per day)
+    # If approved and type is ueberstundenabbau, deduct from overtime account.
+    # Wenn Admin-Eintrag den Stundenmodus genutzt hat (hours_deducted gesetzt)
+    # ODER der Antrag nicht ganztaegig war (Uhrzeit-Spanne): exakte Stunden
+    # belasten. Sonst days*8 (ganztaegig).
     if status == "approved" and req.get("type") == "ueberstundenabbau":
-        days = req.get("days", 0)
-        hours_to_deduct = days * 8 if days > 0 else 8
+        if req.get("hours_deducted") is not None:
+            try:
+                hours_to_deduct = float(req.get("hours_deducted") or 0)
+            except (TypeError, ValueError):
+                hours_to_deduct = 0
+        elif not req.get("all_day") and req.get("start_time") and req.get("end_time"):
+            # Halbtags-Antrag: Uhrzeit-Spanne als Stundenzahl interpretieren.
+            try:
+                sh, sm = [int(x) for x in str(req["start_time"]).split(":")[:2]]
+                eh, em = [int(x) for x in str(req["end_time"]).split(":")[:2]]
+                hours_to_deduct = max(0, ((eh * 60 + em) - (sh * 60 + sm)) / 60.0)
+            except (TypeError, ValueError):
+                hours_to_deduct = 0
+        else:
+            days = req.get("days", 0) or 0
+            hours_to_deduct = days * 8 if days > 0 else 8
         year = int(req["start_date"][:4])
         hr = await db.hr_data.find_one({"user_id": req["user_id"], "year": year})
-        current_overtime = hr.get("overtime_hours", 0) if hr else 0
-        new_overtime = current_overtime - hours_to_deduct
+        current_overtime = float(hr.get("overtime_hours", 0)) if hr else 0
+        new_overtime = round(current_overtime - hours_to_deduct, 2)
         await db.hr_data.update_one(
             {"user_id": req["user_id"], "year": year},
-            {"$set": {"overtime_hours": new_overtime}},
+            {"$set": {"overtime_hours": new_overtime, "hours_deducted_last": hours_to_deduct}},
             upsert=True
         )
 

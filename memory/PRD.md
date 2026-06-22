@@ -16,6 +16,22 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Feature: Stundengenauer Überstundenabbau in der Admin-Maske
+- 🎯 **User-Request**: „ich kann beim Mitarbeiter nur ganze Tage als Überstundenabbau eintragen. Der Mitarbeiter kann zwischen Tagen und Stunden wählen. Das brauche ich als Admin in der Maske auch"
+- ✅ **Backend** (`/app/backend/routes/employee.py` `admin_create_time_off`):
+  - Neues Body-Feld `hours` (float, optional). Nur erlaubt für `ueberstundenabbau`.
+  - Wenn gesetzt: `all_day=False`, `days=0`, `hours_deducted=N`, end_date=start_date. Konto wird um genau `N` Stunden belastet (nicht days*8).
+  - Validation: `hours > 0`, `hours nur fuer ueberstundenabbau`.
+- ✅ **Backend** (`admin_delete_time_off`): Refund nutzt `hours_deducted` falls vorhanden, sonst Fallback days*8.
+- ✅ **Backend** (`resolve_time_off_request`): Bei Approve eines `ueberstundenabbau`-Antrags wird jetzt auch Halbtags-Anträge (`all_day=False` mit `start_time`/`end_time`) korrekt verbucht (Spanne in Stunden) statt pauschal 8h.
+- ✅ **Frontend** (`AdminZeitDetailPage.jsx` „Genehmigte Abwesenheit"):
+  - Wenn Typ = Überstundenabbau: zusätzlicher **Modus-Toggle** „Tage / Stunden" (data-testid='vac-mode-days' / 'vac-mode-hours').
+  - Stundenmodus: einzelnes Datum-Feld + Stunden-Input (0.25h-Schritte, Min. 0.25, Max. 24).
+  - Tagesmodus: unverändert Von/Bis-Datum.
+  - Listen-Anzeige zeigt jetzt `Xh` statt `0 Tage · 0h` bei Stundeneinträgen (Single-Day-Datum + Stundenzahl).
+- ✅ **Verifiziert via curl**: 3.5h zieht -3.5h, 2 Tage zieht -16h, 0.5h funktioniert, Delete-Refund stellt korrekt wieder her, Validierungen 400 bei falschem Typ / negativem Wert.
+
+
 ### Feb 2026 – Bugfix: Urlaub + Krank + ÜS-Abbau in Einsatzplanung (2 Root Causes)
 - 🐛 **User-Report**: „bau in die Urlaubsplanung auch die Info von Urlaub und Krank mit ein. Der Mitarbeiter hat ja Urlaub drin, aber es ist nicht in der Einsatzplanung." (Screenshot: Urlaubseintrag 29.06.-03.07.2026 / KW27 fehlt in Einsatzplanung-Wochenansicht)
 - 🎯 **Root Cause #1**: Backend `get_shift_plan` queriert nur `time_off_requests` Collection. Direkt vom Admin angelegter Urlaub landet aber in der separaten Collection `vacation_entries` (kein `status`-Field, kein Request). → Urlaube vom Admin-Workflow waren komplett unsichtbar.
