@@ -16,6 +16,18 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Urlaub + Krank + ÜS-Abbau in Einsatzplanung (2 Root Causes)
+- 🐛 **User-Report**: „bau in die Urlaubsplanung auch die Info von Urlaub und Krank mit ein. Der Mitarbeiter hat ja Urlaub drin, aber es ist nicht in der Einsatzplanung." (Screenshot: Urlaubseintrag 29.06.-03.07.2026 / KW27 fehlt in Einsatzplanung-Wochenansicht)
+- 🎯 **Root Cause #1**: Backend `get_shift_plan` queriert nur `time_off_requests` Collection. Direkt vom Admin angelegter Urlaub landet aber in der separaten Collection `vacation_entries` (kein `status`-Field, kein Request). → Urlaube vom Admin-Workflow waren komplett unsichtbar.
+- 🎯 **Root Cause #2**: Backend nutzte `strptime("%Y-W%W-%w")` zur Berechnung des Wochen-Montag, das ist KEIN ISO-Wochenformat. Frontend (JavaScript) nutzt ISO-Wochen. → 1-Wochen-Offset: KW27 = 06.07.-12.07. statt 29.06.-05.07. Selbst time_off_requests waren bei vielen Wochen unsichtbar weil falsche Date-Range gequeried wurde.
+- ✅ **Backend-Fix #1** (`/app/backend/routes/employee.py` `get_shift_plan`):
+  - Zusätzliche Query auf `vacation_entries` mit gleicher overlap-Logik, plus Lookup der `user_name` aus `users`-Collection.
+  - Normalisierung in das gleiche Format wie `time_off_requests` (`type=urlaub`, `status=approved`, `source=vacation_entry`).
+  - Duplikat-Erkennung via `from_request`-Field: wenn ein vacation_entry aus einem approved time_off_request entstanden ist, wird der vacation_entry übersprungen.
+- ✅ **Backend-Fix #2** (gleiche Funktion): `_date.fromisocalendar(year, wk, 1)` statt `strptime("%W")` → korrekter ISO-Wochen-Montag.
+- ✅ **Verifiziert via curl**: KW27 zeigt jetzt Philipp Bertram's Urlaub 29.06.-03.07.; KW16 zeigt Max's ÜS-Abbau und Urlaube. Frontend rendert dadurch automatisch die farbigen Absence-Badges.
+
+
 ### Feb 2026 – Bugfix + Feature: Arbeitszeit-Korrektur mit korrekter Berlin-TZ & neuem Dialog
 - 🐛 **User-Report**: „es gibt immer noch Probleme bei der Korrektur der Arbeitszeiten; das Portal zieht 2 Stunden ab. Wenn ich 10:00–16:00 eingebe, wird dies als 08:00–14:00 erfasst. Baue hier ein separates Fenster ein. So das ich eindeutig die Arbeits und Pausenzeit eintragen kann."
 - 🎯 **Root Cause TZ-Drift**: `_parse_local_time_to_utc` hat naive Eingaben einfach mit `.replace(tzinfo=timezone.utc)` als UTC etikettiert (keine echte Konvertierung). Live-Stempel (`datetime.now(timezone.utc)`) und manuelle Korrekturen hatten dadurch unterschiedliche Zeit-Semantik → +/- 1-2h Drift je nach Browser/Server-TZ.

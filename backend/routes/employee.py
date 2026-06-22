@@ -3072,17 +3072,59 @@ async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
     absences = []
     if m:
         year, wk = int(m.group(1)), int(m.group(2))
-        from datetime import timedelta
-        monday = datetime.strptime(f"{year}-W{wk:02d}-1", "%Y-W%W-%w").date()
+        from datetime import timedelta, date as _date
+        # WICHTIG: ISO-Woche verwenden (Frontend nutzt ISO).
+        # strptime mit %W ergibt einen 1-Wochen-Offset!
+        try:
+            monday = _date.fromisocalendar(year, wk, 1)
+        except Exception:
+            monday = datetime.strptime(f"{year}-W{wk:02d}-1", "%Y-W%W-%w").date()
         sunday = monday + timedelta(days=6)
         mon_str = monday.isoformat()
         sun_str = sunday.isoformat()
+        # 1) Genehmigte Antraege (Urlaub/Krank/Ueberstundenabbau)
         reqs = await db.time_off_requests.find({
             "status": "approved",
             "start_date": {"$lte": sun_str},
             "end_date": {"$gte": mon_str},
         }, {"_id": 0}).to_list(500)
-        absences = reqs
+        absences = list(reqs)
+
+        # 2) Direkt vom Admin eingetragene Urlaube (vacation_entries) -
+        # diese haben keinen status, gelten implizit als 'approved'. Wir
+        # normalisieren sie hier in das gleiche Format wie time_off_requests,
+        # damit das Frontend sie ueber den bestehenden Render-Pfad
+        # (absenceLabel('urlaub')) anzeigen kann.
+        vac_cursor = db.vacation_entries.find({
+            "start_date": {"$lte": sun_str},
+            "end_date": {"$gte": mon_str},
+        }, {"_id": 0})
+        # User-Namen aus DB laden (vacation_entries enthaelt nur user_id)
+        vac_docs = await vac_cursor.to_list(500)
+        if vac_docs:
+            user_ids = list({v["user_id"] for v in vac_docs if v.get("user_id")})
+            users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
+            name_by_id = {u["id"]: u.get("name", "") for u in users}
+            # Duplikat-Erkennung: time_off_request -> vacation_entry Verkettung
+            # ueber 'from_request' Feld (siehe update_time_off_status).
+            existing_req_ids = {r.get("id") for r in absences}
+            for v in vac_docs:
+                # Wenn der vacation_entry aus einem approved time_off_request
+                # entstanden ist, ueberspringen (sonst doppelte Anzeige).
+                if v.get("from_request") and v["from_request"] in existing_req_ids:
+                    continue
+                absences.append({
+                    "id": v.get("id"),
+                    "user_id": v.get("user_id"),
+                    "user_name": name_by_id.get(v.get("user_id"), ""),
+                    "type": "urlaub",
+                    "type_label": "Urlaub",
+                    "start_date": v.get("start_date"),
+                    "end_date": v.get("end_date"),
+                    "days": v.get("days"),
+                    "status": "approved",
+                    "source": "vacation_entry",  # Hinweis fuer Frontend (read-only)
+                })
     return {
         "assignments": assignments,
         "released": bool(release),
