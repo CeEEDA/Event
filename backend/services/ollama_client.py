@@ -62,10 +62,15 @@ async def get_ollama_config() -> dict:
 
 
 def _auth_headers(api_key: str) -> dict:
-    """Optionaler Bearer-Header fuer abgesicherte Ollama-Instanzen (Reverse-Proxy)."""
-    if api_key:
-        return {"Authorization": f"Bearer {api_key}"}
-    return {}
+    """Auth-Header für vorgeschaltete Reverse-Proxys (z.B. Nginx vor Ollama).
+    Sendet sowohl X-Api-Key als auch Authorization: Bearer - der Proxy
+    nimmt sich das, was er versteht."""
+    if not api_key:
+        return {}
+    return {
+        "X-Api-Key": api_key,
+        "Authorization": f"Bearer {api_key}",
+    }
 
 
 # Semaphore: Nur EINE Analyse zur Zeit laufen lassen, damit bei vielen parallelen
