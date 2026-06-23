@@ -44,7 +44,11 @@ def set_db(db):
 
 async def get_ollama_config() -> dict:
     """Liest die Live-Konfiguration aus der DB-Collection ollama_config.
-    Fallback: Environment-Defaults. Niemals None - immer ein vollstaendiges dict."""
+    Fallback: Environment-Defaults. Niemals None - immer ein vollstaendiges dict.
+
+    Wichtig: text_model faellt auf 'model' zurueck, wenn nichts konfiguriert
+    ist. Damit funktioniert das System auch wenn Admin nur EIN Modell pflegt
+    (z.B. weil auf dem Ollama-Server nur ein Modell installiert ist)."""
     cfg = {}
     if _db is not None:
         try:
@@ -53,11 +57,17 @@ async def get_ollama_config() -> dict:
                 cfg = doc
         except Exception as e:
             logger.warning(f"[ollama] DB-Config-Lookup fehlgeschlagen, nutze Env-Defaults: {e}")
+    url = (cfg.get("url") or DEFAULT_OLLAMA_URL).rstrip("/")
+    api_key = cfg.get("api_key") or ""
+    model = cfg.get("model") or DEFAULT_OLLAMA_MODEL
+    # text_model: priorisiere DB-Wert, dann Env, dann 'model' selbst.
+    # Wenn weder DB noch Env gesetzt sind, fallen wir auf 'model' zurueck.
+    text_model = cfg.get("text_model") or os.environ.get("OLLAMA_TEXT_MODEL") or model
     return {
-        "url": (cfg.get("url") or DEFAULT_OLLAMA_URL).rstrip("/"),
-        "api_key": cfg.get("api_key") or "",
-        "model": cfg.get("model") or DEFAULT_OLLAMA_MODEL,
-        "text_model": cfg.get("text_model") or DEFAULT_OLLAMA_TEXT_MODEL,
+        "url": url,
+        "api_key": api_key,
+        "model": model,
+        "text_model": text_model,
     }
 
 
@@ -286,15 +296,34 @@ async def analyze_document_smart(
                 f"----- DOKUMENT ANFANG -----\n{trimmed}\n----- DOKUMENT ENDE -----\n\n"
                 "Analysiere das Dokument und gib ein JSON zurueck (keine weiteren Erklaerungen)."
             )
-            resp = await ollama_chat_vision(
-                system_prompt=system_prompt,
-                user_text=text_prompt,
-                file_path=None,      # Kein Bild-Anhang - wir haben Text
-                mime_type=None,
-                model=cfg["text_model"],
-                want_json=want_json,
-            )
-            return resp, "text"
+            try:
+                resp = await ollama_chat_vision(
+                    system_prompt=system_prompt,
+                    user_text=text_prompt,
+                    file_path=None,      # Kein Bild-Anhang - wir haben Text
+                    mime_type=None,
+                    model=cfg["text_model"],
+                    want_json=want_json,
+                )
+                return resp, "text"
+            except httpx.HTTPStatusError as e:
+                # Wenn Text-Modell nicht installiert ist (404 model not found),
+                # versuchen wir es mit dem Vision-Modell, das immer da sein muss.
+                if e.response.status_code == 404 and cfg["text_model"] != cfg["model"]:
+                    logger.warning(
+                        f"[ollama] Text-Modell '{cfg['text_model']}' nicht verfuegbar - "
+                        f"Fallback auf '{cfg['model']}'"
+                    )
+                    resp = await ollama_chat_vision(
+                        system_prompt=system_prompt,
+                        user_text=text_prompt,
+                        file_path=None,
+                        mime_type=None,
+                        model=cfg["model"],
+                        want_json=want_json,
+                    )
+                    return resp, "text-fallback"
+                raise
 
     # 2) Fallback auf Vision-Modell (Scans, Bilder, text-lose PDFs)
     logger.info(f"[ollama] Vision-Fallback: {file_path}, Modell={cfg['model']}")
