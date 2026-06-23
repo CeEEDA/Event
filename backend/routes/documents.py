@@ -533,6 +533,12 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
         logger.error(f"AI response not valid JSON: {e}, response: {response_text[:500]}", exc_info=True)
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
     except Exception as e:
+        # OllamaUnavailable (Timeout/ConnectError) durchpropagieren, damit der
+        # Outer-Handler in _run_ai_analysis das Dokument als 'failed' markiert
+        # statt mit leeren Default-Metadaten 'completed' zu faken.
+        from services.ollama_client import OllamaUnavailable
+        if isinstance(e, OllamaUnavailable):
+            raise
         logger.error(f"AI analysis failed: {type(e).__name__}: {e}", exc_info=True)
         return {"document_type": "sonstiges", "suggested_folder": "sonstiges", "full_text": "", "keywords": []}
 
@@ -933,6 +939,17 @@ Antworte NUR mit JSON:
 async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
     """Background task to run AI analysis on an uploaded document."""
     try:
+        # Warmup-Ping (max OLLAMA_WARMUP_TIMEOUT) - failed schnell wenn Ollama
+        # ueberhaupt nicht antwortet. Verhindert dass wir 10min auf einen toten
+        # Server warten und das Dokument stillschweigend "completed-mit-leer" wird.
+        from services.ollama_client import ollama_warmup_ping, OllamaUnavailable
+        ok, msg, elapsed = await ollama_warmup_ping()
+        if not ok:
+            logger.error(f"[ollama] Warmup-Ping fehlgeschlagen ({elapsed:.1f}s): {msg}")
+            raise OllamaUnavailable(f"Warmup-Ping fehlgeschlagen: {msg}")
+        if elapsed > 8:
+            logger.warning(f"[ollama] Warmup-Ping langsam ({elapsed:.1f}s) - Modell war evtl. evictet, ist jetzt aber wieder warm")
+
         custom_folders = []
         async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
             custom_folders.append(cf)
@@ -1143,11 +1160,20 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             await _assign_payroll_to_employee(doc_id, ai_result, temp_path, content_type)
     except Exception as e:
         import traceback
+        from services.ollama_client import OllamaUnavailable
         tb = traceback.format_exc()
         logger.error(f"AI analysis error for doc {doc_id}: {e}\n{tb}")
+        # Kategorisierter Fehler im UI: bei Ollama-Unreachable klare Meldung,
+        # damit der User weiss dass er einfach "Erneut analysieren" klicken kann
+        # sobald Ollama wieder antwortet (Modell-Reload, Netz-Glitch, etc).
+        if isinstance(e, OllamaUnavailable):
+            error_msg = f"KI-Server nicht erreichbar: {str(e)[:300]}. Bitte spaeter erneut analysieren."
+        else:
+            error_msg = str(e)[:500]
         await db.documents.update_one({"id": doc_id}, {"$set": {
             "ai_status": "failed",
-            "ai_error": str(e)[:500],
+            "ai_error": error_msg,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
     finally:
         try:

@@ -27,10 +27,18 @@ logger = logging.getLogger(__name__)
 DEFAULT_OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:1b")
 DEFAULT_OLLAMA_TEXT_MODEL = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:2b")
-OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "600"))
+OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "120"))
+OLLAMA_WARMUP_TIMEOUT = float(os.environ.get("OLLAMA_WARMUP_TIMEOUT", "20"))
 OLLAMA_MAX_PDF_PAGES = int(os.environ.get("OLLAMA_MAX_PDF_PAGES", "3"))
 OLLAMA_MAX_TEXT_CHARS = int(os.environ.get("OLLAMA_MAX_TEXT_CHARS", "12000"))
 OLLAMA_IMAGE_MAX_DIM = int(os.environ.get("OLLAMA_IMAGE_MAX_DIM", "1400"))
+
+
+class OllamaUnavailable(Exception):
+    """Wird geworfen, wenn der Ollama-Server nicht erreichbar ist oder die
+    Modellanfrage in einen Timeout laeuft. Faengt der Outer-Handler ab, um
+    `ai_status='failed'` (statt fake 'completed') zu setzen."""
+    pass
 
 # DB-Handle wird aus server.py via set_db() injiziert (vermeidet Import-Zyklus).
 _db = None
@@ -209,6 +217,12 @@ async def ollama_chat_vision(
             try:
                 r = await client.post(f"{cfg['url']}/api/generate", json=payload,
                                        headers=_auth_headers(cfg["api_key"]))
+            except httpx.ReadTimeout as e:
+                logger.error(f"[ollama] ReadTimeout nach {OLLAMA_TIMEOUT}s - Modell/Proxy antwortet nicht")
+                raise OllamaUnavailable(f"Ollama ReadTimeout nach {OLLAMA_TIMEOUT}s") from e
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                logger.error(f"[ollama] Verbindung fehlgeschlagen: {type(e).__name__}: {e}")
+                raise OllamaUnavailable(f"Ollama nicht erreichbar: {e}") from e
             except Exception as e:
                 logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
                 raise
@@ -260,6 +274,44 @@ async def ollama_is_reachable() -> bool:
             return r.status_code == 200
     except Exception:
         return False
+
+
+async def ollama_warmup_ping() -> tuple:
+    """Schneller Smoke-Test gegen /api/generate mit einem Mini-Prompt.
+
+    Stellt sicher, dass:
+    - Der Server lebt (Tags-Check)
+    - /api/generate gerade durchgeht (kein gestauter Worker, kein Nginx-Hang)
+    - Das Modell warm ist (oder dieser Ping triggert das Warm-Up)
+
+    Gibt (ok: bool, message: str, elapsed_s: float) zurueck. Wirft NICHT,
+    damit der Caller einfach abfragen kann ob die Pipeline gesund ist."""
+    import time
+    cfg = await get_ollama_config()
+    start = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=OLLAMA_WARMUP_TIMEOUT) as client:
+            r = await client.post(
+                f"{cfg['url']}/api/generate",
+                json={
+                    "model": cfg["text_model"],
+                    "prompt": "OK",
+                    "stream": False,
+                    "keep_alive": "24h",
+                    "options": {"num_ctx": 128, "num_predict": 4},
+                },
+                headers=_auth_headers(cfg["api_key"]),
+            )
+            elapsed = time.time() - start
+            if r.status_code != 200:
+                return False, f"HTTP {r.status_code}: {r.text[:200]}", elapsed
+            return True, "warm", elapsed
+    except httpx.ReadTimeout:
+        return False, f"Warmup-Timeout nach {OLLAMA_WARMUP_TIMEOUT}s - Ollama antwortet nicht auf /api/generate", time.time() - start
+    except httpx.ConnectError as e:
+        return False, f"Verbindung zum Ollama-Server fehlgeschlagen: {e}", time.time() - start
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}", time.time() - start
 
 
 async def ollama_list_models() -> list:

@@ -8,7 +8,7 @@ import {
   Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
   FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2, HelpCircle,
-  Mail, AlertCircle, Sparkles
+  Mail, AlertCircle, AlertTriangle, Sparkles
 } from "lucide-react";
 import axios from "axios";
 
@@ -656,6 +656,15 @@ export default function DocumentManagementPage() {
                               <Loader2 className="w-3 h-3 animate-spin" /> Analyse...
                             </span>
                           )}
+                          {doc.ai_status === "failed" && (
+                            <span
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-medium flex-shrink-0 cursor-help"
+                              title={doc.ai_error || "KI-Analyse fehlgeschlagen"}
+                              data-testid={`ai-failed-badge-${doc.id}`}
+                            >
+                              <AlertTriangle className="w-3 h-3" /> KI-Fehler
+                            </span>
+                          )}
                           {doc.datev_forwarded && (
                             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-medium flex-shrink-0">
                               <Send className="w-3 h-3" /> DATEV
@@ -754,6 +763,20 @@ export default function DocumentManagementPage() {
                 <p className="text-[11px] text-gray-400 mb-0.5">Dateiname</p>
                 <p className="text-sm text-gray-900 font-medium">{selectedDoc.original_filename}</p>
               </div>
+
+              {/* AI Failed Banner */}
+              {selectedDoc.ai_status === "failed" && (
+                <div className="bg-rose-50 border border-rose-200 rounded-lg p-3" data-testid="ai-failed-banner">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-rose-700">KI-Analyse fehlgeschlagen</p>
+                      <p className="text-xs text-rose-600 mt-0.5 break-words">{selectedDoc.ai_error || "Unbekannter Fehler bei der Analyse."}</p>
+                      <p className="text-[11px] text-rose-500 mt-1.5">Klicke unten auf &quot;KI neu analysieren&quot;, sobald der KI-Server wieder antwortet.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* AI Metadata */}
               {selectedDoc.ai_status === "completed" && selectedDoc.ai_metadata && (

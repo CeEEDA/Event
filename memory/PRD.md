@@ -16,6 +16,25 @@ User language: **German** (Agent must respond in German).
 - Messprotokoll PDF Generator (ReportLab)
 
 
+### Feb 2026 – Bugfix: Ollama-Soft-Fail (kein stilles "fake-completed" mehr)
+- 🐛 **Befund**: Wenn der lokale Ollama-Server (95.88.138.67) auf `/api/generate` nicht antwortete (Cold-Start, Nginx-Hang), hat der Code 600s gewartet und das Dokument dann als `ai_status=completed` mit leeren Defaults gespeichert. User sah keinerlei Fehler, aber Metadaten/Folder waren leer.
+- ✅ **Backend** (`backend/services/ollama_client.py` + `backend/routes/documents.py`):
+  - Neue Exception-Klasse `OllamaUnavailable` für Timeout/Connection-Errors.
+  - `ollama_chat_vision` wandelt `httpx.ReadTimeout`/`ConnectError` in `OllamaUnavailable` um (statt diese im Outer-Handler stillschweigend zu leeren Default-Dicts zu machen).
+  - Neuer Helper `ollama_warmup_ping()`: 20s-Smoke-Test gegen `/api/generate` mit Mini-Prompt VOR jeder Analyse. Wenn Ollama nicht antwortet → sofort `failed`, statt 10 Min zu warten.
+  - `OLLAMA_TIMEOUT` von 600s auf **120s** reduziert (Default; per `.env` überschreibbar). Bei Timeout: `ai_status=failed` + klare `ai_error`-Nachricht im UI.
+  - `_run_ai_analysis` erkennt `OllamaUnavailable` explizit und schreibt user-freundliche Fehlermeldung („KI-Server nicht erreichbar … Bitte später erneut analysieren.").
+- ✅ **Frontend** (`DocumentManagementPage.jsx`):
+  - Neuer roter „KI-Fehler"-Badge bei `ai_status=failed` mit Hover-Tooltip (zeigt `ai_error`).
+  - Detail-Panel zeigt rosa Banner mit AlertTriangle + Fehlertext + Hinweis auf den „KI neu analysieren"-Button.
+- ✅ **End-to-End verifiziert**: Würth-Test-PDF gezielt re-analysiert → Backend wechselte nach 120s sauber auf `ai_status=failed` mit Message `"KI-Server nicht erreichbar: Ollama ReadTimeout nach 120.0s. Bitte spaeter erneut analysieren."`
+- 🔧 **Diagnose Live-Server (User-Output)**:
+  - Nginx-Proxy `proxy_read_timeout 600s` korrekt gesetzt.
+  - `ollama ps` zeigt `gemma3:4b-it-qat` warm im RAM (24h-TTL).
+  - Erste Live-Anfrage um 17:30 lief in 4.72s durch. Spätere Anfragen wegen Modell-Reload zwischendurch (`cpu_linux.go`-Warnung + erneutes "loading model") langsamer.
+  - **Empfehlung**: GPU ans Stromnetz bringen → erwartete Inferenz von 60s auf <10s.
+
+
 ### Feb 2026 – Feature: Sonn-/Feiertagszuschläge entfernt, Nachtzuschlag bleibt (Lohnabrechnung)
 - 🎯 **User-Wunsch**: „Wir haben eben Zuschläge fest gelegt. Das ist rechtlich aber falsch. Es gibt für Nachtzuschläge aufschläge. Für Sonn und Feiertage aber nicht. Lösche die wieder raus."
 - ✅ **Backend** (`backend/routes/employee.py`):
