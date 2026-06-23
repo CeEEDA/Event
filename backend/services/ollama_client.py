@@ -170,14 +170,20 @@ async def ollama_chat_vision(
     Ollama nur /api/generate freischalten. System- und User-Prompt werden
     daher in einen einzigen Prompt zusammengefuehrt.
 
+    WICHTIG: CPU-intensive PDF/Bild-Konvertierungen werden in einen
+    ThreadPool ausgelagert (asyncio.to_thread), damit der asyncio-Event-Loop
+    nicht blockiert wird. Sonst friert das gesamte Backend ein.
+
     Gibt den reinen Antworttext zurueck (ohne JSON-Parsing).
     Bei Fehlern wird eine Exception geworfen."""
+    import asyncio
     cfg = await get_ollama_config()
     mdl = model or cfg["model"]
     images = []
     if file_path:
         try:
-            images = _file_to_image_b64_list(file_path, mime_type or "")
+            # CPU-bound PDF->Image-Konvertierung in Thread auslagern
+            images = await asyncio.to_thread(_file_to_image_b64_list, file_path, mime_type or "")
         except Exception as e:
             logger.warning(f"[ollama] Datei konnte nicht in Bilder konvertiert werden: {e}")
             images = []
@@ -282,11 +288,12 @@ async def analyze_document_smart(
     faellt bei reinen Bildern/Scans auf Vision-Modell zurueck (langsam, 30-180s).
 
     Gibt (response_text, mode) zurueck, wobei mode 'text' oder 'vision' ist."""
+    import asyncio
     mt = (mime_type or "").lower()
     cfg = await get_ollama_config()
-    # 1) Versuche Text-Extraktion fuer PDFs
+    # 1) Versuche Text-Extraktion fuer PDFs (CPU-bound -> in Thread)
     if mt == "application/pdf" or file_path.lower().endswith(".pdf"):
-        extracted = _extract_text_from_pdf(file_path, max_pages=OLLAMA_MAX_PDF_PAGES)
+        extracted = await asyncio.to_thread(_extract_text_from_pdf, file_path, OLLAMA_MAX_PDF_PAGES)
         # Mind. 80 Zeichen = "echter" Text, nicht nur Metadaten
         if extracted and len(extracted.strip()) >= 80:
             trimmed = extracted[:OLLAMA_MAX_TEXT_CHARS]
