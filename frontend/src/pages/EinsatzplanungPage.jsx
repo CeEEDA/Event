@@ -93,7 +93,8 @@ export default function EinsatzplanungPage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      const r = await api.get(`/orders/epirent?date_from=${weekDates[0]}&date_to=${weekDates[6]}`, { headers: { Authorization: `Bearer ${token}` } });
+      const dates = getWeekDates(weekKey);
+      const r = await api.get(`/orders/epirent?date_from=${dates[0]}&date_to=${dates[6]}`, { headers: { Authorization: `Bearer ${token}` } });
       // Alle Auftraege anzeigen, die in der Woche aktiv sind - auch unbestaetigte
       // (Liefer-Jobs ohne Personal-Anforderung), damit sie nicht 'untergehen'.
       // Unbestaetigte werden im UI visuell abgesetzt (gestrichelter Rahmen).
@@ -102,11 +103,11 @@ export default function EinsatzplanungPage() {
         const ds = o.dispo_start;
         const de = o.dispo_end;
         if (!ds || !de || ds === "0000-00-00" || de === "0000-00-00") return false;
-        return ds <= weekDates[6] && de >= weekDates[0];
+        return ds <= dates[6] && de >= dates[0];
       });
       setOrders(all);
     } catch {/* silent */}
-  }, [token, weekDates]);
+  }, [token, weekKey]);
 
   const loadSchedules = useCallback(async () => {
     const map = {};
