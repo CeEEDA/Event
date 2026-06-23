@@ -28,6 +28,32 @@ import {
 } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+
+/**
+ * Custom-Tooltip fuer das Leistungs-Chart - zeigt zusaetzlich zur
+ * einzelnen Phasen-Leistung die Summe L1+L2+L3 (= Gesamt-Wirkleistung).
+ * Praktisch um auf einen Blick zu sehen, wieviel kW gerade insgesamt anliegen.
+ */
+function PowerSumTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  const fmt = (v) => (typeof v === "number" ? v.toFixed(2) : v);
+  const sum = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
+  return (
+    <div className="bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2 text-xs" data-testid="power-tooltip">
+      <div className="font-semibold text-gray-700 mb-1.5">{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: p.color }} className="flex items-center justify-between gap-3">
+          <span>{p.name}</span>
+          <span className="font-mono tabular-nums">{fmt(p.value)} kW</span>
+        </div>
+      ))}
+      <div className="mt-1.5 pt-1.5 border-t border-gray-200 flex items-center justify-between gap-3 font-semibold text-gray-900">
+        <span>Σ Gesamt</span>
+        <span className="font-mono tabular-nums">{fmt(sum)} kW</span>
+      </div>
+    </div>
+  );
+}
 import { MapContainer, Marker, Popup } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
 import L from "leaflet";
@@ -456,7 +482,7 @@ export default function EnergyMonitoringDetailPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={{ fontSize: 12 }} />
+                  <Tooltip content={<PowerSumTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Area type="monotone" dataKey="P_L1" name="L1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                   <Area type="monotone" dataKey="P_L2" name="L2" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
