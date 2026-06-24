@@ -644,8 +644,8 @@ export default function EinsatzplanungPage() {
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full text-xs" data-testid="shift-grid">
             <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left px-3 py-2 sticky left-0 bg-white z-10 min-w-[140px]">
+              <tr className="border-b-2 border-gray-300">
+                <th className="text-left px-3 py-2 sticky left-0 bg-white z-10 min-w-[140px] border-r-2 border-gray-200">
                   <div className="flex items-center gap-1.5 text-[10px] text-gray-400 uppercase font-semibold">
                     <Users className="w-3.5 h-3.5" /> Mitarbeiter
                   </div>
@@ -654,7 +654,7 @@ export default function EinsatzplanungPage() {
                   const isToday = d === new Date().toISOString().split("T")[0];
                   const isSun = i === 6;
                   return (
-                    <th key={d} className={`text-center px-1 py-2 min-w-[140px] ${isToday ? "bg-indigo-50" : ""} ${isSun ? "bg-red-50/50" : ""}`}>
+                    <th key={d} className={`text-center px-1 py-2 min-w-[140px] border-r border-gray-200 last:border-r-0 ${isToday ? "bg-indigo-50" : ""} ${isSun ? "bg-red-50/50" : ""}`}>
                       <p className={`text-[10px] uppercase font-semibold ${isToday ? "text-indigo-600" : isSun ? "text-red-500" : "text-gray-400"}`}>{WEEKDAYS[i]}</p>
                       <p className={`text-sm font-bold ${isToday ? "text-indigo-700" : "text-gray-700"}`}>{formatDateShort(d)}</p>
                     </th>
@@ -664,8 +664,8 @@ export default function EinsatzplanungPage() {
             </thead>
             <tbody>
               {users.map(user => (
-                <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50/50" data-testid={`row-${user.id}`}>
-                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10 border-r border-gray-100">
+                <tr key={user.id} className="border-b-2 border-gray-200 hover:bg-gray-50/50" data-testid={`row-${user.id}`}>
+                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10 border-r-2 border-gray-200">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-gray-900 truncate text-xs">{user.name}</p>
                       {offdayBalances[user.id] !== undefined && (
@@ -690,7 +690,7 @@ export default function EinsatzplanungPage() {
                     const hasWork = cellAssignments.length > 0;
                     return (
                       <td key={date}
-                        className={`px-1 py-1 align-top relative group cursor-pointer ${
+                        className={`px-1 py-1 align-top relative group cursor-pointer border-r border-gray-200 last:border-r-0 ${
                           isToday ? "bg-indigo-50/50" : ""} ${isSun ? "bg-red-50/30" : ""} ${
                           selectedJob || copySource ? "hover:bg-indigo-100/50 hover:ring-1 hover:ring-indigo-300 hover:ring-inset" : ""
                         } ${offdayMode ? "hover:bg-violet-100/50 hover:ring-1 hover:ring-violet-300 hover:ring-inset" : ""}`}
