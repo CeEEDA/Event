@@ -1364,11 +1364,40 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "weight_net": float(sub.get("weight_net") or 0),
                 "remark": "",
             })
+        # Bereits vollstaendig gelieferte Items rausfiltern - sie sollen im
+        # neuen LS nicht mehr erscheinen. Headings nur dann behalten, wenn
+        # mindestens 1 nicht-vollstaendig-gelieferter Artikel darunter folgt
+        # (sonst wirken Headings ohne Inhalt verloren).
+        filtered_items = []
+        for it in items:
+            if it.get("is_heading"):
+                filtered_items.append(it)
+                continue
+            total = float(it.get("amount_total") or 0)
+            delivered = float(it.get("amount_delivered") or 0)
+            # Items komplett raus, wenn Soll > 0 und alles geliefert wurde.
+            if total > 0 and delivered >= total:
+                continue
+            filtered_items.append(it)
+        # Trailing-Headings ohne nachfolgenden Artikel entfernen (Saeuberung).
+        cleaned_items = []
+        for idx, it in enumerate(filtered_items):
+            if it.get("is_heading"):
+                has_following_article = any(
+                    not nxt.get("is_heading") for nxt in filtered_items[idx + 1:]
+                )
+                if not has_following_article:
+                    continue
+            cleaned_items.append(it)
+        # Gruppe komplett ueberspringen, wenn nichts mehr drin ist
+        non_heading_left = [i for i in cleaned_items if not i.get("is_heading")]
+        if not non_heading_left:
+            continue
         groups.append({
             "chapter_pk": chapter_pk,
             "chapter_pos": chapter_pos,
             "chapter_title": chapter_title,
-            "items": items,
+            "items": cleaned_items,
         })
         # Backward-compat: flatten in legacy "positions" array (chapter as header row)
         positions.append({
@@ -1379,7 +1408,7 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
             "remark": "",
             "is_chapter": True,
         })
-        for sub in items:
+        for sub in cleaned_items:
             positions.append({
                 "pos": sub["pos"],
                 "title": sub["title"],
