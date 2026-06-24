@@ -335,7 +335,12 @@ export default function EinsatzplanungPage() {
 
   const saveAssignment = async (id = null) => {
     if (!editCell && !id) return;
-    const payload = id ? { id, ...editForm, week_key: weekKey } : {
+    const payload = id ? {
+      id,
+      ...editForm,
+      order_pk: editForm.order_pk ? parseInt(editForm.order_pk) : null,
+      week_key: weekKey,
+    } : {
       user_id: editCell.userId, date: editCell.date, week_key: weekKey,
       order_pk: editForm.order_pk ? parseInt(editForm.order_pk) : null,
       order_name: editForm.order_name, role: editForm.role, note: editForm.note,
@@ -717,11 +722,32 @@ export default function EinsatzplanungPage() {
                             )}
                             <div className="absolute -top-1 -right-1 flex gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity">
                               {!asgn.is_offday && (
-                                <button onClick={(e) => { e.stopPropagation(); setCopySource(asgn); setSelectedJob(null); }}
-                                  className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center" title="Kopieren"
-                                  data-testid={`copy-${asgn.id}`}>
-                                  <Copy className="w-2.5 h-2.5" />
-                                </button>
+                                <>
+                                  <button onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedJob(null);
+                                    setCopySource(null);
+                                    setEditForm({
+                                      order_pk: asgn.order_pk != null ? String(asgn.order_pk) : "",
+                                      order_name: asgn.order_name || "",
+                                      role: asgn.role || "",
+                                      note: asgn.note || "",
+                                      start_time: asgn.start_time || "",
+                                      end_time: asgn.end_time || "",
+                                      is_offday: false,
+                                    });
+                                    setEditCell({ userId: user.id, date, asgnId: asgn.id });
+                                  }}
+                                    className="w-4 h-4 rounded-full bg-indigo-500 text-white flex items-center justify-center hover:bg-indigo-600" title="Bearbeiten"
+                                    data-testid={`edit-${asgn.id}`}>
+                                    <Edit2 className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); setCopySource(asgn); setSelectedJob(null); }}
+                                    className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center" title="Kopieren"
+                                    data-testid={`copy-${asgn.id}`}>
+                                    <Copy className="w-2.5 h-2.5" />
+                                  </button>
+                                </>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); deleteAssignment(asgn.id); }}
                                 className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center" title="Löschen">
@@ -773,7 +799,7 @@ export default function EinsatzplanungPage() {
                               </>
                             )}
                             <div className="flex gap-1">
-                              <Button size="sm" onClick={() => saveAssignment()} className="h-6 text-[10px] bg-indigo-600 flex-1"><Check className="w-3 h-3 mr-0.5" /> OK</Button>
+                              <Button size="sm" onClick={() => saveAssignment(editCell?.asgnId || null)} className="h-6 text-[10px] bg-indigo-600 flex-1"><Check className="w-3 h-3 mr-0.5" /> OK</Button>
                               <Button size="sm" variant="ghost" onClick={() => setEditCell(null)} className="h-6 text-[10px]"><X className="w-3 h-3" /></Button>
                             </div>
                           </div>
