@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { Loader2, Plus, Trash2, FileText, MapPin } from "lucide-react";
+import { Loader2, Plus, Trash2, FileText, MapPin, Truck, Wand2, RotateCcw } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "sonner";
 
@@ -21,6 +21,8 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
   const [groups, setGroups] = useState([]);
   const [notes, setNotes] = useState("");
   const [signedLocation, setSignedLocation] = useState("");
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [maxWeightKg, setMaxWeightKg] = useState(24000);  // typischer 40t-Sattel = 24-26t Nutzlast
   const sigSenderRef = useRef(null);
   const sigReceiverRef = useRef(null);
 
@@ -97,6 +99,86 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
     setGroups(gs => gs.filter((_, gi) => gi !== gIdx));
   };
 
+  // --- LKW-Teilen Helpers --------------------------------------------------
+  const _remainingFor = (it) => {
+    // Restmenge = (Soll aus EpiRent) - (bereits geliefert). Fallback auf
+    // aktuell vorgeschlagene Menge wenn keine EpiRent-Bezugswerte vorhanden
+    // (manuell hinzugefuegte Zeilen).
+    if (it.amount_total == null) return Number(it.amount) || 0;
+    const total = Number(it.amount_total) || 0;
+    const delivered = Number(it.amount_delivered) || 0;
+    return Math.max(0, total - delivered);
+  };
+  const _applyAmounts = (transform) => {
+    setGroups(gs => gs.map(g => ({
+      ...g,
+      items: g.items.map(it => it.is_heading ? it : ({ ...it, amount: transform(it) })),
+    })));
+  };
+  const setAllRemaining = () => {
+    _applyAmounts(_remainingFor);
+    toast.success("Alle Restmengen uebernommen");
+  };
+  const setAllZero = () => {
+    _applyAmounts(() => 0);
+    toast.info("Alle Mengen auf 0 gesetzt");
+  };
+  const autoFillByWeight = () => {
+    const cap = Number(maxWeightKg) || 0;
+    if (cap <= 0) {
+      toast.error("Bitte ein gueltiges Max-Gewicht angeben");
+      return;
+    }
+    // Greedy: schwerste Artikel zuerst voll machen (damit die LKW-Achse passt),
+    // danach leichtere bis das Budget aufgebraucht ist.
+    const allItems = [];
+    groups.forEach((g, gIdx) => g.items.forEach((it, iIdx) => {
+      if (it.is_heading) return;
+      const w = Number(it.weight_net) || 0;
+      const remain = _remainingFor(it);
+      if (remain <= 0) return;
+      allItems.push({ gIdx, iIdx, weight: w, remain });
+    }));
+    allItems.sort((a, b) => b.weight - a.weight);
+    const assignments = new Map();  // "gIdx-iIdx" -> amount
+    let budget = cap;
+    for (const ai of allItems) {
+      if (ai.weight <= 0) {
+        // Gewichtsloser Posten: voll uebernehmen, kostet 0kg
+        assignments.set(`${ai.gIdx}-${ai.iIdx}`, ai.remain);
+        continue;
+      }
+      const maxByWeight = Math.floor(budget / ai.weight);
+      const take = Math.min(ai.remain, maxByWeight);
+      if (take > 0) {
+        assignments.set(`${ai.gIdx}-${ai.iIdx}`, take);
+        budget -= take * ai.weight;
+      } else {
+        assignments.set(`${ai.gIdx}-${ai.iIdx}`, 0);
+      }
+    }
+    setGroups(gs => gs.map((g, gIdx) => ({
+      ...g,
+      items: g.items.map((it, iIdx) => {
+        if (it.is_heading) return it;
+        const key = `${gIdx}-${iIdx}`;
+        if (assignments.has(key)) return { ...it, amount: assignments.get(key) };
+        return { ...it, amount: 0 };
+      }),
+    })));
+    const used = cap - budget;
+    toast.success(`Auto-Fill: ${used.toFixed(0)} kg von ${cap} kg verplant`);
+  };
+
+  const setItemAmount = (gIdx, iIdx, amount) => updateItem(gIdx, iIdx, "amount", amount);
+
+  // Gesamtgewicht der aktuell ausgewaehlten Mengen
+  const currentTotalWeight = groups.reduce((sum, g) =>
+    sum + g.items.reduce((s, it) =>
+      s + (it.is_heading ? 0 : (Number(it.weight_net) || 0) * (Number(it.amount) || 0))
+    , 0)
+  , 0);
+
   const handleSubmit = async () => {
     const totalItems = groups.reduce((sum, g) => sum + g.items.length, 0);
     if (totalItems === 0) {
@@ -133,6 +215,7 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
             remark: String(it.remark || ""),
             product_no: String(it.product_no || ""),
             weight_net: Number(it.weight_net) || 0,
+            primary_key: it.primary_key ?? null,
             is_heading: !!it.is_heading,
           })),
         })),
@@ -161,6 +244,20 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
             <FileText className="w-4 h-4 text-violet-600" />
             Lieferschein anlegen
             {prefill && <span className="text-xs text-gray-400 font-mono">Nr. {prefill.suggested_delivery_note_no}</span>}
+            <div className="flex-1" />
+            <Button
+              type="button"
+              size="sm"
+              variant={splitOpen ? "default" : "outline"}
+              onClick={() => setSplitOpen(v => !v)}
+              className={splitOpen
+                ? "bg-orange-500 hover:bg-orange-600 text-white"
+                : "border-orange-300 text-orange-700 hover:bg-orange-50"}
+              data-testid="split-truck-btn"
+              title="LKW-Teilung: Mengen pro Fahrt aufteilen"
+            >
+              <Truck className="w-3.5 h-3.5 mr-1.5" /> LKW teilen
+            </Button>
           </DialogTitle>
         </DialogHeader>
 
@@ -188,6 +285,55 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
                   </div>
                 </div>
               </div>
+
+              {/* LKW-Teilen Panel */}
+              {splitOpen && (
+                <div className="bg-orange-50/70 border border-orange-200 rounded-lg p-3 space-y-2.5" data-testid="split-panel">
+                  <div className="flex items-start gap-2">
+                    <Truck className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-orange-900">LKW-Teilung</p>
+                      <p className="text-[11px] text-orange-700/90">
+                        Vorgeschlagene Mengen sind die <b>noch offenen</b> Restmengen. Mengen pro Position frei anpassen, oder per Gewichts-Budget automatisch verteilen.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={setAllRemaining} className="h-7 text-xs border-orange-300 text-orange-700 hover:bg-orange-100" data-testid="split-all-remaining">
+                      <RotateCcw className="w-3 h-3 mr-1" /> Alle Restmengen
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={setAllZero} className="h-7 text-xs border-gray-300 text-gray-600 hover:bg-gray-100" data-testid="split-all-zero">
+                      Alle auf 0
+                    </Button>
+                    <span className="text-gray-300 mx-1">|</span>
+                    <Label className="text-xs text-orange-900 flex items-center gap-1.5">
+                      Max-Gewicht:
+                      <Input
+                        type="number"
+                        min="0"
+                        step="500"
+                        value={maxWeightKg}
+                        onChange={e => setMaxWeightKg(e.target.value)}
+                        className="h-7 w-24 text-xs"
+                        data-testid="max-weight-input"
+                      />
+                      kg
+                    </Label>
+                    <Button size="sm" onClick={autoFillByWeight} className="h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white" data-testid="split-auto-weight">
+                      <Wand2 className="w-3 h-3 mr-1" /> Nach Gewicht autofüllen
+                    </Button>
+                    <span className="text-gray-300 mx-1">|</span>
+                    <span className="text-xs font-mono text-orange-900" data-testid="current-weight-display">
+                      Aktuell: <b>{currentTotalWeight.toFixed(0)} kg</b>
+                      {Number(maxWeightKg) > 0 && (
+                        <span className={`ml-1 ${currentTotalWeight > Number(maxWeightKg) ? "text-red-600" : "text-orange-600/70"}`}>
+                          ({((currentTotalWeight / Number(maxWeightKg)) * 100).toFixed(0)}% von {maxWeightKg} kg)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Gruppen + Artikel */}
               <div className="space-y-3">
@@ -263,7 +409,31 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
                                   <Input value={it.title} onChange={e => updateItem(gIdx, iIdx, "title", e.target.value)} className="h-8 text-xs font-medium" data-testid={`item-title-${gIdx}-${iIdx}`} />
                                 </td>
                                 <td className="px-3 py-1">
-                                  <Input type="number" min="0" step="0.5" value={it.amount} onChange={e => updateItem(gIdx, iIdx, "amount", e.target.value)} className="h-8 text-xs text-right font-semibold" data-testid={`item-amount-${gIdx}-${iIdx}`} />
+                                  <div className="flex items-center gap-1">
+                                    <Input type="number" min="0" step="0.5" value={it.amount} onChange={e => updateItem(gIdx, iIdx, "amount", e.target.value)} className="h-8 text-xs text-right font-semibold" data-testid={`item-amount-${gIdx}-${iIdx}`} />
+                                    {it.amount_total != null && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setItemAmount(gIdx, iIdx, _remainingFor(it))}
+                                        className="text-[10px] text-orange-600 hover:text-orange-800 underline-offset-2 hover:underline whitespace-nowrap"
+                                        title={`Restmenge ${_remainingFor(it)} ${it.unit || ""} uebernehmen`}
+                                        data-testid={`item-take-all-${gIdx}-${iIdx}`}
+                                      >
+                                        Alles
+                                      </button>
+                                    )}
+                                  </div>
+                                  {it.amount_total != null && (
+                                    <div className="text-[10px] text-gray-500 mt-0.5 text-right" data-testid={`item-quantity-info-${gIdx}-${iIdx}`}>
+                                      von {Number(it.amount_total) || 0}
+                                      {(Number(it.amount_delivered) || 0) > 0 && (
+                                        <span className="text-amber-600"> · bereits {Number(it.amount_delivered)} geliefert</span>
+                                      )}
+                                      {(Number(it.weight_net) || 0) > 0 && (
+                                        <span className="text-gray-400"> · {(Number(it.weight_net) * (Number(it.amount) || 0)).toFixed(0)} kg</span>
+                                      )}
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-3 py-1">
                                   <Input value={it.unit} onChange={e => updateItem(gIdx, iIdx, "unit", e.target.value)} className="h-8 text-xs" placeholder="Stk." data-testid={`item-unit-${gIdx}-${iIdx}`} />

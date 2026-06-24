@@ -1306,6 +1306,22 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
 
     positions = []
     groups = []
+    # Bereits gelieferte Mengen aus vorherigen LS aggregieren (pro primary_key)
+    # damit der neue LS automatisch nur noch die Restmenge vorschlaegt.
+    delivered_by_pk = {}
+    async for ls_doc in _db.delivery_notes.find(
+        {"order_pk": order_pk},
+        {"_id": 0, "positions": 1},
+    ):
+        for p in (ls_doc.get("positions") or []):
+            pk = p.get("primary_key")
+            if pk is None:
+                continue
+            try:
+                delivered_by_pk[pk] = delivered_by_pk.get(pk, 0) + float(p.get("amount") or 0)
+            except (ValueError, TypeError):
+                pass
+
     for i, it in enumerate(raw.get("order_items") or []):
         chapter_pk = it.get("primary_key")
         chapter_title = it.get("title") or ""
@@ -1321,14 +1337,19 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
             # Einheit: EpiRent liefert sie oft leer -> Default "Stk." fuer normale Artikel
             unit_raw = (sub.get("unit_product") or "").strip()
             unit = "" if is_heading else (unit_raw or "Stk.")
+            sub_pk = sub.get("primary_key")
+            already_delivered = 0 if is_heading else float(delivered_by_pk.get(sub_pk, 0) or 0)
+            remaining = 0 if is_heading else max(0, float(amt or 0) - already_delivered)
             items.append({
-                "primary_key": sub.get("primary_key"),
+                "primary_key": sub_pk,
                 "is_heading": is_heading,
                 "pos": sub.get("position_no_str") or "",
                 "title": sub.get("title") or "",
                 "product_no": str(sub.get("product_no", "")) if sub.get("product_no") and not is_heading else "",
                 "inventory_no": sub.get("inventory_no", "") or "",
-                "amount": amt,
+                "amount_total": float(amt or 0),
+                "amount_delivered": already_delivered,
+                "amount": remaining,  # Vorschlag = Restmenge
                 "unit": unit,
                 "warehouse": sub.get("warehouse_str", "") or "",
                 "weight_net": float(sub.get("weight_net") or 0),
@@ -1453,6 +1474,7 @@ async def create_delivery_note(order_pk: int, body: dict, user: dict = Depends(_
                     "remark": it.get("remark") or "",
                     "product_no": it.get("product_no") or "",
                     "weight_net": float(it.get("weight_net") or 0),
+                    "primary_key": it.get("primary_key"),
                     "is_chapter": False,
                     "is_heading": bool(it.get("is_heading", False)),
                 })
