@@ -1349,7 +1349,10 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "inventory_no": sub.get("inventory_no", "") or "",
                 "amount_total": float(amt or 0),
                 "amount_delivered": already_delivered,
-                "amount": remaining,  # Vorschlag = Restmenge
+                "amount_remaining": remaining,
+                # Default-Vorschlag: VOLLE Soll-Menge (User Wunsch).
+                # Restmenge nur ueber LKW-teilen-Panel oder pro-Zeile "Rest"-Button.
+                "amount": float(amt or 0),
                 "unit": unit,
                 "warehouse": sub.get("warehouse_str", "") or "",
                 "weight_net": float(sub.get("weight_net") or 0),

@@ -240,7 +240,7 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0" data-testid="delivery-note-dialog">
         <DialogHeader className="px-5 pt-5 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-2 text-base">
+          <DialogTitle className="flex items-center gap-2 text-base pr-10">
             <FileText className="w-4 h-4 text-violet-600" />
             Lieferschein anlegen
             {prefill && <span className="text-xs text-gray-400 font-mono">Nr. {prefill.suggested_delivery_note_no}</span>}
@@ -410,7 +410,7 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
                                 </td>
                                 <td className="px-3 py-1">
                                   <div className="flex items-center gap-1">
-                                    <Input type="number" min="0" step="0.5" value={it.amount} onChange={e => updateItem(gIdx, iIdx, "amount", e.target.value)} className="h-8 text-xs text-right font-semibold" data-testid={`item-amount-${gIdx}-${iIdx}`} />
+                                    <Input type="number" min="0" step="0.5" value={it.amount} onChange={e => updateItem(gIdx, iIdx, "amount", e.target.value)} className="h-8 text-xs text-right font-semibold min-w-[60px]" data-testid={`item-amount-${gIdx}-${iIdx}`} />
                                     {it.amount_total != null && (
                                       <button
                                         type="button"
@@ -419,7 +419,7 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
                                         title={`Restmenge ${_remainingFor(it)} ${it.unit || ""} uebernehmen`}
                                         data-testid={`item-take-all-${gIdx}-${iIdx}`}
                                       >
-                                        Alles
+                                        Rest
                                       </button>
                                     )}
                                   </div>

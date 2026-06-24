@@ -1,0 +1,37 @@
+{
+  "summary": "Verified the 3 Lieferschein-Anlegen dialog bug fixes (LKW-teilen overlap, Menge input width, default = amount_total). Backend prefill endpoint /api/orders/epirent/{pk}/delivery-notes/prefill returns the corrected payload (6/6 pytest tests pass against localhost). Frontend BUG 1 verified live via Playwright: 32.36 px gap between data-testid=split-truck-btn and the Shadcn close X — NO overlap. BUG 2 verified via code review (min-w-[60px] is in DeliveryNoteDialog.jsx L413) — full live verification not possible because the preview ingress times out before EpiRent's ~107 s response. BUG 3 verified at the backend layer: for every non-heading item, response 'amount' == 'amount_total' (separate amount_delivered / amount_remaining / weight_net / primary_key fields all present).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Open Lieferschein dialog via preview URL (https://fuel-truck-deploy.preview.emergentagent.com/orders/12)",
+        "issue": "Prefill takes ~107 s on the EpiRent side, but the preview ingress drops the connection before then (waited 150 s, loader still spinning / no groups rendered). Locally via http://localhost:8001 the same endpoint returns 200 OK in ~108 s. UX impact in preview is severe — users cannot reach the item list. The same risk applies to production ingress if its timeout < ~120 s.",
+        "affected_selectors": ["[data-testid=delivery-note-dialog]", "[data-testid^=group-]", "[data-testid^=item-amount-]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_delivery_note_prefill.py",
+    "/app/test_reports/pytest/delivery_note_prefill.xml"
+  ],
+  "action_items": [
+    "Consider lengthening the preview/production ingress proxy timeout (>= 150 s) OR refactor the prefill flow to be async (return job_id and poll) OR cache EpiRent order data so subsequent dialog opens are fast.",
+    "Order 12 (Rock am Ring 2025) only returns 2 non-heading articles from EpiRent across 153 chapters (the rest of _ref_chapter_items calls come back empty). Worth confirming with the customer whether that is correct or whether _fetch_chapter_items is missing data."
+  ],
+  "critical_code_review_comments": [
+    "DeliveryNoteDialog.jsx L243 — DialogTitle now uses pr-10; combined with the absolute-positioned Shadcn close X (top-4 right-4) this leaves ~32 px gap — confirmed by bounding-box math.",
+    "DeliveryNoteDialog.jsx L413 — Input has min-w-[60px]; together with h-8 text-xs text-right this is sufficient for 1- to 3-digit quantities.",
+    "backend/routes/orders.py L1336/L1355 — 'amount' is set to amt (= amount_total / amount_base / amount_external fallback, default 1). Default quantity is now FULL Soll-Menge as requested. amount_remaining is correctly derived from max(0, amount_total - already_delivered). All 6 required fields (primary_key, amount, amount_total, amount_delivered, amount_remaining, weight_net) are present per item.",
+    "DeliveryNoteDialog.jsx L422 — per-row quick link correctly renamed from 'Alles' to 'Rest'; clicking calls setItemAmount(gIdx, iIdx, _remainingFor(it))."
+  ],
+  "updated_files": ["/app/backend/tests/test_delivery_note_prefill.py"],
+  "success_rate": { "backend": "100% (6/6)", "frontend": "BUG1 verified live (no overlap, gap=32.36 px); BUG2 + BUG3 verified by static code + backend tests because preview ingress times out before EpiRent answers" },
+  "test_credentials": "admin@test.com / password — works against http://localhost:8001/api/auth/login (status 200).",
+  "seed_data_creation": "None — no Lieferscheine were created. Tests are pure GET / open-dialog flows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Always test the prefill endpoint against http://localhost:8001 — the preview/external ingress drops the connection well before EpiRent's ~107 s answer time. The integration backend admin token is obtained via POST /api/auth/login with admin@test.com / password. Order_pk 12 returns only 2 non-heading articles across 153 chapters; order_pk 128 returns 7 chapters but 0 non-heading articles in this preview EpiRent dataset. For richer UI assertions (e.g. clicking split-all-zero / split-all-remaining) you will need to either run against an env with longer ingress timeout, mock the prefill response, or test against a fresh order with many concrete items.",
+  "rca of the issue": "All three reported UX bugs were correctly addressed: (BUG 1) DialogTitle gained pr-10 padding-right reserve so the Shadcn close X (top-4 right-4) no longer overlaps with the orange 'LKW teilen' button — verified live with a 32.36 px gap. (BUG 2) Menge input gained min-w-[60px] so 1-2 digit numeric values are visible — verified by code. (BUG 3) Backend prefill endpoint now returns amount = amount_total instead of amount_remaining; the UI binds Input value={it.amount} so the input shows the full order quantity by default. The user can still get the previous behaviour either via the per-row 'Rest' link (which calls setItemAmount(_remainingFor(it))) or via the 'Alle Restmengen' button inside the LKW-teilen panel. The only remaining concern is operational: the preview ingress times out before EpiRent answers — that is an infra/UX issue separate from the bug fixes themselves and is flagged in action_items."
+}
