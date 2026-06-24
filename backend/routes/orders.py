@@ -1272,12 +1272,19 @@ async def get_customer_emails(order_pk: int, user: dict = Depends(_auth_user)):
 
 
 @router.get("/epirent/{order_pk}/delivery-notes/prefill")
-async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user)):
+async def prefill_delivery_note(
+    order_pk: int,
+    include_delivered: bool = False,
+    user: dict = Depends(_auth_user),
+):
     """Liefert die Vorbefuellung fuer eine neue Lieferschein-Maske:
     - Empfaenger-Adresse (aus EpiRent address_delivery oder Kontakt)
     - Positionen aus order_items (mit position_no, title, amount, unit)
     - Vorgeschlagene LS-Nr. (naechste Sequenz)
     - Event/Dispo Zeitraum, Hinweise
+
+    Wenn include_delivered=True, werden auch komplett ausgelieferte Items
+    zurueckgegeben (fuer die Artikelliste-Uebersicht).
     """
     if user.get("role") == "freelancer":
         raise HTTPException(status_code=403, detail="Lieferscheine sind fuer Freelancer nicht verfuegbar")
@@ -1368,30 +1375,36 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
         # neuen LS nicht mehr erscheinen. Headings nur dann behalten, wenn
         # mindestens 1 nicht-vollstaendig-gelieferter Artikel darunter folgt
         # (sonst wirken Headings ohne Inhalt verloren).
-        filtered_items = []
-        for it in items:
-            if it.get("is_heading"):
-                filtered_items.append(it)
-                continue
-            total = float(it.get("amount_total") or 0)
-            delivered = float(it.get("amount_delivered") or 0)
-            # Items komplett raus, wenn Soll > 0 und alles geliefert wurde.
-            if total > 0 and delivered >= total:
-                continue
-            filtered_items.append(it)
-        # Trailing-Headings ohne nachfolgenden Artikel entfernen (Saeuberung).
-        cleaned_items = []
-        for idx, it in enumerate(filtered_items):
-            if it.get("is_heading"):
-                has_following_article = any(
-                    not nxt.get("is_heading") for nxt in filtered_items[idx + 1:]
-                )
-                if not has_following_article:
+        #
+        # Wenn include_delivered=True (Artikelliste-Uebersicht), wird NICHT
+        # gefiltert - alle Items inkl. komplett ausgelieferte sind sichtbar.
+        if include_delivered:
+            cleaned_items = items
+        else:
+            filtered_items = []
+            for it in items:
+                if it.get("is_heading"):
+                    filtered_items.append(it)
                     continue
-            cleaned_items.append(it)
-        # Gruppe komplett ueberspringen, wenn nichts mehr drin ist
+                total = float(it.get("amount_total") or 0)
+                delivered = float(it.get("amount_delivered") or 0)
+                # Items komplett raus, wenn Soll > 0 und alles geliefert wurde.
+                if total > 0 and delivered >= total:
+                    continue
+                filtered_items.append(it)
+            # Trailing-Headings ohne nachfolgenden Artikel entfernen (Saeuberung).
+            cleaned_items = []
+            for idx, it in enumerate(filtered_items):
+                if it.get("is_heading"):
+                    has_following_article = any(
+                        not nxt.get("is_heading") for nxt in filtered_items[idx + 1:]
+                    )
+                    if not has_following_article:
+                        continue
+                cleaned_items.append(it)
+        # Gruppe komplett ueberspringen, wenn nichts mehr drin ist (nur ohne include_delivered)
         non_heading_left = [i for i in cleaned_items if not i.get("is_heading")]
-        if not non_heading_left:
+        if not non_heading_left and not include_delivered:
             continue
         groups.append({
             "chapter_pk": chapter_pk,

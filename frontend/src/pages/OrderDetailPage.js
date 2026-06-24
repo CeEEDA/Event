@@ -57,6 +57,7 @@ import {
   CheckSquare,
   Square,
   FileText,
+  Package,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
@@ -76,6 +77,7 @@ import { OpenLocationCode } from "open-location-code";
 import { openExternal } from "../lib/openExternal";
 import MessprotokollDialog from "../components/MessprotokollDialog";
 import DeliveryNoteDialog from "../components/DeliveryNoteDialog";
+import ArticleListDialog from "../components/ArticleListDialog";
 import DeliveryNoteEmailDialog from "../components/DeliveryNoteEmailDialog";
 import BulkDismantleMapDialog from "../components/BulkDismantleMapDialog";
 import FuelReceiptModal from "../components/FuelReceiptModal";
@@ -326,6 +328,7 @@ export default function OrderDetailPage() {
   const [deliveryNotes, setDeliveryNotes] = useState([]);
   const [deliveryNotesLoading, setDeliveryNotesLoading] = useState(false);
   const [showDeliveryNoteDialog, setShowDeliveryNoteDialog] = useState(false);
+  const [showArticleListDialog, setShowArticleListDialog] = useState(false);
   const [emailLs, setEmailLs] = useState(null);  // currently emailed Lieferschein
 
   // Messprotokolle
@@ -1428,6 +1431,7 @@ export default function OrderDetailPage() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {[
                   { key: "articles", label: "Artikel-Positionierung", desc: "Stromerzeuger, Lichtmasten & mehr", icon: MapPin, color: "orange", count: assets?.length || 0 },
+                  { key: "article-list", label: "Artikelliste", desc: "Komplette Auftrags-Übersicht", icon: Package, color: "teal", count: 0, hideForFreelancer: true },
                   { key: "documents-link", label: "Dokumente", desc: "Lageplan, Fotos & Unterlagen", icon: FolderOpen, color: "fuchsia", count: docCount },
                   { key: "reports", label: "Projektberichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
                   { key: "fuel", label: "Tankbelege", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
@@ -1443,6 +1447,7 @@ export default function OrderDetailPage() {
                     amber: "bg-amber-50 text-amber-600 group-hover:bg-amber-100",
                     purple: "bg-purple-50 text-purple-600 group-hover:bg-purple-100",
                     slate: "bg-slate-50 text-slate-500 group-hover:bg-slate-100",
+                    teal: "bg-teal-50 text-teal-600 group-hover:bg-teal-100",
                   };
                   const Icon = t.icon;
                   return (
@@ -1459,6 +1464,10 @@ export default function OrderDetailPage() {
                         }
                         if (t.key === "tankstatus") {
                           navigate(`/orders/${pk}/tankstatus`);
+                          return;
+                        }
+                        if (t.key === "article-list") {
+                          setShowArticleListDialog(true);
                           return;
                         }
                         setActiveTab(t.key);
@@ -3450,6 +3459,13 @@ export default function OrderDetailPage() {
             onOpenChange={setShowDeliveryNoteDialog}
             orderPk={pk}
             onCreated={() => { fetchDeliveryNotes(); }}
+          />
+
+          {/* Artikelliste-Uebersicht (read-only) */}
+          <ArticleListDialog
+            open={showArticleListDialog}
+            onOpenChange={setShowArticleListDialog}
+            orderPk={pk}
           />
 
           {/* Lieferschein per E-Mail versenden Dialog */}
