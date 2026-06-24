@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, Users, Plus, X, Trash2,
   Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus, ExternalLink, Copy,
-  CalendarCheck2, Trees,
+  CalendarCheck2, Trees, RefreshCw,
 } from "lucide-react";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -72,6 +72,8 @@ export default function EinsatzplanungPage() {
   const [offdayMode, setOffdayMode] = useState(false);
   const [offdayBalances, setOffdayBalances] = useState({});  // { user_id: balance }
   const [orderFilter, setOrderFilter] = useState("crew"); // "crew" | "confirmed" | "all"
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
 
   const weekDates = getWeekDates(weekKey);
 
@@ -161,6 +163,35 @@ export default function EinsatzplanungPage() {
     }
   }, [token]);
 
+  const fetchSyncStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get("/orders/sync/status");
+      setLastSynced(data.last_synced);
+    } catch {}
+  }, []);
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await api.post("/orders/sync/trigger");
+      if (data.status === "ok") {
+        toast.success(`${data.count} Auftraege synchronisiert`);
+      } else if (data.status === "already_running") {
+        toast.info("Synchronisierung laeuft bereits");
+      } else {
+        toast.error(data.message || "Sync fehlgeschlagen");
+      }
+      await loadOrders();
+      await loadJobReqs();
+      await fetchSyncStatus();
+    } catch (err) {
+      toast.error("Sync fehlgeschlagen");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  useEffect(() => { fetchSyncStatus(); }, [fetchSyncStatus]);
   useEffect(() => { loadUsers(); }, [loadUsers]);
   useEffect(() => { loadPlan(); loadOrders(); loadJobReqs(); loadOffdayBalances(); }, [loadPlan, loadOrders, loadJobReqs, loadOffdayBalances]);
   useEffect(() => { if (users.length > 0) loadSchedules(); }, [users, loadSchedules]);
@@ -393,6 +424,22 @@ export default function EinsatzplanungPage() {
               </div>
             )}
             {released && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Freigegeben</span>}
+            {lastSynced && (
+              <span className="text-[11px] text-gray-400 hidden md:inline" title={`Zuletzt synchronisiert: ${new Date(lastSynced).toLocaleString("de-DE")}`}>
+                Sync: {new Date(lastSynced).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+            <Button
+              onClick={triggerSync}
+              disabled={syncing}
+              size="sm"
+              variant="outline"
+              data-testid="einsatzplanung-sync-btn"
+              title="EpiRent-Aufträge & Personalbedarfe aktualisieren"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Synchronisiere..." : "Aktualisieren"}
+            </Button>
             <Button
               onClick={() => { setOffdayMode(v => !v); setSelectedJob(null); setCopySource(null); }}
               size="sm"
