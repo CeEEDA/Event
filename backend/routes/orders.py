@@ -1340,6 +1340,14 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
             sub_pk = sub.get("primary_key")
             already_delivered = 0 if is_heading else float(delivered_by_pk.get(sub_pk, 0) or 0)
             remaining = 0 if is_heading else max(0, float(amt or 0) - already_delivered)
+            # Default-Vorschlag:
+            #  - Wenn noch NICHTS geliefert wurde -> volle Soll-Menge (User entscheidet
+            #    ob er teilen will).
+            #  - Wenn schon etwas auf vorherigen LS war -> nur noch die Restmenge,
+            #    damit der naechste LS nicht aus Versehen Doppellieferungen erzeugt.
+            default_amount = 0 if is_heading else (
+                float(amt or 0) if already_delivered <= 0 else remaining
+            )
             items.append({
                 "primary_key": sub_pk,
                 "is_heading": is_heading,
@@ -1350,9 +1358,7 @@ async def prefill_delivery_note(order_pk: int, user: dict = Depends(_auth_user))
                 "amount_total": float(amt or 0),
                 "amount_delivered": already_delivered,
                 "amount_remaining": remaining,
-                # Default-Vorschlag: VOLLE Soll-Menge (User Wunsch).
-                # Restmenge nur ueber LKW-teilen-Panel oder pro-Zeile "Rest"-Button.
-                "amount": float(amt or 0),
+                "amount": default_amount,
                 "unit": unit,
                 "warehouse": sub.get("warehouse_str", "") or "",
                 "weight_net": float(sub.get("weight_net") or 0),
