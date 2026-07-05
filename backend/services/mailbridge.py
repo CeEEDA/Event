@@ -171,6 +171,48 @@ def _is_teba_factoring_attachment(filename: str) -> bool:
     return filename.startswith(_TEBA_CUSTOMER_PREFIX) or filename.startswith("0" + _TEBA_CUSTOMER_PREFIX)
 
 
+def _is_teba_gebuehren(filename: str) -> bool:
+    """True fuer TEBA-Gebuehren-Rechnungen (eigenstaendige Rechnung mit eigener Nr.)."""
+    low = filename.lower()
+    return _is_teba_factoring_attachment(filename) and ("gebuehren" in low or "gebühren" in low)
+
+
+def _teba_group_key(filename: str) -> str | None:
+    """Liefert die Abrechnungs-Nummer aus dem Dateinamen als Gruppierungs-Key.
+    Beispiel: '02626000_Abrechnungsliste_mit Legende_1429[1].pdf' -> '1429'
+    Fuer Gebuehren-Rechnungen: liefert None (werden separat behandelt).
+    """
+    if _is_teba_gebuehren(filename):
+        return None
+    # macOS haengt oft '[1]' o.a. an - entfernen
+    clean = re.sub(r"\[\d+\]", "", filename)
+    m = _TEBA_FILENAME_RE.match(clean)
+    if m:
+        return m.group(1)
+    return None
+
+
+def group_teba_attachments(
+    attachments: list[tuple[str, bytes, str]],
+) -> tuple[dict[str, list], list[tuple[str, bytes, str]]]:
+    """Gruppiert TEBA-Anhaenge nach Abrechnungs-Nr.
+    Rueckgabe: (groups_by_invoice_nr, gebuehren_list)
+      - groups_by_invoice_nr: {'1429': [attachments...], '1430': [...]}
+      - gebuehren_list: einzelne Gebuehren-Rechnungen (separate Rechnungen)
+    """
+    groups: dict[str, list] = {}
+    gebuehren: list = []
+    for att in attachments:
+        fname = att[0]
+        if _is_teba_gebuehren(fname):
+            gebuehren.append(att)
+            continue
+        key = _teba_group_key(fname)
+        if key:
+            groups.setdefault(key, []).append(att)
+    return groups, gebuehren
+
+
 def _extract_teba_invoice_number(filenames: list[str]) -> str:
     """Zieht die Abrechnungs-Nr. (z.B. '1428') aus den Anhaengen.
     Die Nr. steht bei allen Files am Ende des Dateinamens vor .pdf.
@@ -207,8 +249,10 @@ def _teba_sort_key(filename: str) -> tuple:
       3. Gesamtabrechnung
       4. Buchungsjournal
       5. OP-Liste
-      6. Rechnung_Gebuehren
-      7. Alles andere alphabetisch
+      6. Zahlungseingangsliste
+      7. Gutschriftenliste
+      8. Rechnung_Gebuehren
+      9. Alles andere alphabetisch
     """
     low = filename.lower()
     if "abrechnungsliste_mit legende" in low or "abrechnungsliste_mit_legende" in low:
@@ -221,27 +265,32 @@ def _teba_sort_key(filename: str) -> tuple:
         return (3, filename)
     if "op-liste" in low or "op_liste" in low:
         return (4, filename)
-    if "gebuehren" in low or "gebühren" in low:
+    if "zahlungseingang" in low:
         return (5, filename)
+    if "gutschriftenliste" in low:
+        return (6, filename)
+    if "gebuehren" in low or "gebühren" in low:
+        return (7, filename)
     return (9, filename)
 
 
 def _merge_teba_factoring_pdfs(
     attachments: list[tuple[str, bytes, str]],
     mail_date: datetime | None = None,
+    invoice_nr_override: str | None = None,
 ) -> tuple[bytes, str, str]:
     """Merged alle TEBA-PDFs zu einer Sammel-PDF.
     Rueckgabe: (pdf_bytes, dateiname, invoice_nr)
-    Der Dateiname verwendet das Mail-Datum (Jahr-Monat).
+    invoice_nr_override erlaubt es, die Abrechnungs-Nr. explizit zu setzen
+    (wichtig wenn mehrere Abrechnungen in einer Mail sind).
     """
     import io
     from pypdf import PdfWriter, PdfReader
 
-    # Sortieren
     sorted_atts = sorted(attachments, key=lambda a: _teba_sort_key(a[0]))
     filenames = [a[0] for a in sorted_atts]
 
-    invoice_nr = _extract_teba_invoice_number(filenames)
+    invoice_nr = invoice_nr_override or _extract_teba_invoice_number(filenames)
 
     writer = PdfWriter()
     for fname, payload, _ct in sorted_atts:
@@ -256,7 +305,6 @@ def _merge_teba_factoring_pdfs(
     writer.write(buf)
     merged_bytes = buf.getvalue()
 
-    # Zieldateiname: Jahr-Monat aus Mail-Datum
     ref_date = mail_date or datetime.now(timezone.utc)
     ym = ref_date.strftime("%Y-%m")
     merged_name = f"TEBA_Abrechnung_{invoice_nr}_{ym}.pdf"
@@ -378,33 +426,58 @@ async def _process_once() -> dict:
                     logger.info(f"Mailbridge: Mail ohne unterstuetzte Anhaenge - '{subject}' von {sender_email}")
                 else:
                     # ─── TEBA Factoring-Erkennung ──────────────────────────
-                    # Alle Anhaenge deren Dateiname mit TEBA-Kundennummer beginnt
-                    # werden zu EINER PDF gemerged und als eine Rechnung abgelegt.
                     teba_atts = [a for a in attachments if _is_teba_factoring_attachment(a[0])]
-                    if teba_atts and len(teba_atts) >= 2:
-                        try:
-                            mail_dt = _parse_mail_date(msg.get("Date"))
-                            merged_bytes, merged_name, invoice_nr = _merge_teba_factoring_pdfs(teba_atts, mail_date=mail_dt)
-                            from routes.documents import create_teba_factoring_document
-                            await create_teba_factoring_document(
-                                merged_bytes, merged_name, invoice_nr,
-                                mail_date=mail_dt,
-                                sender_email=sender_email,
-                            )
-                            stats["attachments_uploaded"] += 1
-                            stats.setdefault("teba_merged", 0)
-                            stats["teba_merged"] += 1
-                            logger.info(
-                                f"Mailbridge/TEBA: {len(teba_atts)} Anhaenge zu '{merged_name}' "
-                                f"(Nr. {invoice_nr}) gemerged aus Mail '{subject}'"
-                            )
-                            # Nicht-TEBA-Anhaenge dieser Mail trotzdem normal verarbeiten
-                            attachments = [a for a in attachments if not _is_teba_factoring_attachment(a[0])]
-                        except Exception as e:
-                            logger.error(f"Mailbridge/TEBA: Merge fehlgeschlagen ({e}) - Fallback: Einzeln importieren")
-                            stats["errors"] += 1
+                    handled_teba = set()
+                    if teba_atts:
+                        groups, gebuehren = group_teba_attachments(teba_atts)
+                        mail_dt = _parse_mail_date(msg.get("Date"))
+                        from routes.documents import create_teba_factoring_document
 
+                        # Pro Abrechnungsnummer eine Sammel-PDF
+                        for inv_nr, group in groups.items():
+                            if len(group) < 2:
+                                continue  # Einzeln → normal einordnen
+                            try:
+                                merged_bytes, merged_name, extracted_nr = _merge_teba_factoring_pdfs(
+                                    group, mail_date=mail_dt, invoice_nr_override=inv_nr,
+                                )
+                                await create_teba_factoring_document(
+                                    merged_bytes, merged_name, extracted_nr,
+                                    mail_date=mail_dt, sender_email=sender_email,
+                                )
+                                stats["attachments_uploaded"] += 1
+                                stats.setdefault("teba_merged", 0)
+                                stats["teba_merged"] += 1
+                                for fn, _p, _c in group:
+                                    handled_teba.add(fn)
+                                logger.info(f"Mailbridge/TEBA: {len(group)} Anhaenge zu '{merged_name}' (Abr. {extracted_nr}) gemerged")
+                            except Exception as e:
+                                logger.error(f"Mailbridge/TEBA: Merge Abr. {inv_nr} fehlgeschlagen: {e}")
+                                stats["errors"] += 1
+
+                        # Gebuehren-Rechnungen einzeln als eigene TEBA-Rechnung ablegen
+                        for fn, data, ct in gebuehren:
+                            try:
+                                clean_fn = re.sub(r"\[\d+\]", "", fn)
+                                mnr = re.search(r"(\d{4,})\.pdf$", clean_fn, re.IGNORECASE)
+                                geb_nr = mnr.group(1) if mnr else "unbekannt"
+                                target_name = f"TEBA_Gebuehren_{geb_nr}.pdf"
+                                await create_teba_factoring_document(
+                                    data, target_name, geb_nr,
+                                    mail_date=mail_dt, sender_email=sender_email,
+                                    doc_kind="gebuehren",
+                                )
+                                stats["attachments_uploaded"] += 1
+                                handled_teba.add(fn)
+                                logger.info(f"Mailbridge/TEBA: Gebuehren-Rechnung {geb_nr} importiert")
+                            except Exception as e:
+                                logger.error(f"Mailbridge/TEBA: Gebuehren-Rechnung '{fn}' fehlgeschlagen: {e}")
+                                stats["errors"] += 1
+
+                    # Nicht-TEBA Anhaenge + einzelne TEBA-PDFs die keiner Gruppe zugeordnet
                     for fname, payload, ctype in attachments:
+                        if fname in handled_teba:
+                            continue
                         try:
                             await create_document_from_bytes(
                                 payload, fname, ctype, folder_id="unbekannt", source="mailbridge"

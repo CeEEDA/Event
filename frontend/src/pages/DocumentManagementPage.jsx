@@ -398,15 +398,19 @@ export default function DocumentManagementPage() {
           timeout: 180000,
         });
         if (isZip) {
-          const merged = r.data.teba_merged;
+          const batches = r.data.teba_merged_batches || [];
+          const gebuehren = r.data.teba_gebuehren || [];
           const single = r.data.individually_uploaded || [];
-          if (merged) {
-            toast.success(`ZIP entpackt: TEBA Nr. ${merged.invoice_number} als Sammel-PDF (${merged.source_files.length} Seiten) → ${merged.folder_id} 📦`);
+          batches.forEach(b => {
+            toast.success(`TEBA Abrechnung ${b.invoice_number} zusammengefügt (${b.source_files.length} PDFs) → ${b.folder_id} 📦`);
+          });
+          if (gebuehren.length) {
+            toast.success(`+ ${gebuehren.length} TEBA-Gebühren-Rechnung${gebuehren.length > 1 ? "en" : ""} einzeln abgelegt`);
           }
           if (single.length) {
             toast.success(`+ ${single.length} weitere PDF${single.length > 1 ? "s" : ""} einzeln importiert`);
           }
-          if (!merged && !single.length) {
+          if (!batches.length && !gebuehren.length && !single.length) {
             toast.info("ZIP enthielt keine verwertbaren PDFs");
           }
         } else if (r.data.ai_status === "completed") {

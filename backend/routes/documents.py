@@ -1263,6 +1263,64 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("u
     return await create_document_from_bytes(file_data, file.filename, file.content_type, folder_id)
 
 
+@router.post("/backfill-full-text")
+async def backfill_full_text(only_teba: bool = False, dry_run: bool = False):
+    """Extrahiert nachtraeglich Volltext aus PDFs bei Dokumenten wo
+    full_text leer ist. Nutzt PyMuPDF (fitz) - kein Ollama noetig.
+    Query-Parameter:
+      only_teba: nur TEBA-Docs (source='mailbridge_teba') behandeln
+      dry_run: nichts speichern, nur zeigen was passieren wuerde
+    """
+    import fitz
+    query = {
+        "is_deleted": False,
+        "content_type": "application/pdf",
+        "$or": [{"full_text": ""}, {"full_text": None}],
+    }
+    if only_teba:
+        query["$and"] = [{"$or": [
+            {"source": "mailbridge_teba"},
+            {"source": "upload-zip"},
+            {"folder_id": {"$regex": "^teba"}},
+        ]}]
+
+    processed, updated, failed = 0, 0, 0
+    async for doc in db.documents.find(query, {"_id": 0, "id": 1, "storage_path": 1, "original_filename": 1}):
+        processed += 1
+        try:
+            file_data, _ = await _get_file_data_fallback(
+                doc["storage_path"], doc.get("original_filename", ""), "",
+            )
+            if not file_data:
+                failed += 1
+                continue
+            with fitz.open(stream=file_data, filetype="pdf") as pdf:
+                full_text = "\n".join((p.get_text("text") or "") for p in pdf).strip()
+            if not full_text:
+                failed += 1
+                continue
+            if not dry_run:
+                # Zusatz-Keywords extrahieren
+                import re as _re
+                extra = []
+                for m in _re.finditer(r"(\d{1,3}(?:\.\d{3})*(?:,\d{2}))\s*(?:EUR|€)", full_text):
+                    extra.append(m.group(1))
+                for m in _re.finditer(r"DE\s?(?:\d\s?){20}", full_text):
+                    extra.append(m.group(0).replace(" ", ""))
+                extra = list(dict.fromkeys(extra))[:20]
+                await db.documents.update_one(
+                    {"id": doc["id"]},
+                    {"$set": {"full_text": full_text},
+                     "$addToSet": {"keywords": {"$each": extra}}}
+                )
+            updated += 1
+        except Exception as e:
+            logger.warning(f"[backfill] {doc.get('id')}: {e}")
+            failed += 1
+
+    return {"processed": processed, "updated": updated, "failed": failed, "dry_run": dry_run}
+
+
 @router.post("/upload-zip")
 async def upload_zip_archive(file: UploadFile = File(...)):
     """Nimmt eine ZIP-Datei entgegen, entpackt sie und legt die PDFs im
@@ -1306,9 +1364,9 @@ async def upload_zip_archive(file: UploadFile = File(...)):
     if not pdfs:
         raise HTTPException(status_code=400, detail="Kein PDF im ZIP gefunden.")
 
-    # TEBA-Erkennung wie in der Mailbridge
+    # TEBA-Erkennung: gruppieren nach Abrechnungs-Nr + Gebuehren separat
     from services.mailbridge import (
-        _is_teba_factoring_attachment, _merge_teba_factoring_pdfs,
+        _is_teba_factoring_attachment, _merge_teba_factoring_pdfs, group_teba_attachments,
     )
     teba_pdfs = [(fn, data, "application/pdf") for fn, data in pdfs if _is_teba_factoring_attachment(fn)]
 
@@ -1316,42 +1374,76 @@ async def upload_zip_archive(file: UploadFile = File(...)):
         "zip_filename": file.filename,
         "pdfs_found": len(pdfs),
         "other_files_ignored": other_files,
-        "teba_merged": None,
+        "teba_merged_batches": [],
+        "teba_gebuehren": [],
         "individually_uploaded": [],
     }
 
-    # TEBA-Batch → mergen und als eine Rechnung ablegen
-    if teba_pdfs and len(teba_pdfs) >= 2:
-        try:
-            merged_bytes, merged_name, invoice_nr = _merge_teba_factoring_pdfs(
-                teba_pdfs, mail_date=datetime.now(timezone.utc)
-            )
-            teba_doc = await create_teba_factoring_document(
-                merged_bytes, merged_name, invoice_nr,
-                mail_date=datetime.now(timezone.utc),
-                sender_email="",  # Kein Absender bekannt beim manuellen ZIP-Upload
-            )
-            result["teba_merged"] = {
-                "doc_id": teba_doc["id"],
-                "filename": merged_name,
-                "invoice_number": invoice_nr,
-                "folder_id": teba_doc["folder_id"],
-                "source_files": [fn for fn, _, _ in teba_pdfs],
-            }
-        except Exception as e:
-            logger.error(f"[upload-zip] TEBA-Merge fehlgeschlagen: {e}")
-            # Fallback: TEBA-PDFs einzeln importieren
-            for fn, data, ct in teba_pdfs:
-                d = await create_document_from_bytes(data, fn, ct, folder_id="unbekannt", source="upload-zip")
-                result["individually_uploaded"].append({"filename": fn, "doc_id": d["id"]})
+    handled_teba = set()
+    if teba_pdfs:
+        groups, gebuehren = group_teba_attachments(teba_pdfs)
 
-    # Nicht-TEBA-PDFs einzeln uploaden (KI-Klassifikation greift)
-    teba_names = {fn for fn, _ in pdfs if _is_teba_factoring_attachment(fn)}
+        # Pro Abrechnungsnummer eine Sammel-PDF
+        for inv_nr, group in groups.items():
+            if len(group) < 2:
+                continue  # Nur eine Datei zu dieser Nr → normal einordnen
+            try:
+                merged_bytes, merged_name, extracted_nr = _merge_teba_factoring_pdfs(
+                    group, mail_date=datetime.now(timezone.utc), invoice_nr_override=inv_nr,
+                )
+                teba_doc = await create_teba_factoring_document(
+                    merged_bytes, merged_name, extracted_nr,
+                    mail_date=datetime.now(timezone.utc), sender_email="",
+                )
+                result["teba_merged_batches"].append({
+                    "doc_id": teba_doc["id"],
+                    "filename": merged_name,
+                    "invoice_number": extracted_nr,
+                    "folder_id": teba_doc["folder_id"],
+                    "source_files": [fn for fn, _, _ in group],
+                    "page_count": None,
+                })
+                for fn, _p, _c in group:
+                    handled_teba.add(fn)
+            except Exception as e:
+                logger.error(f"[upload-zip] TEBA-Merge Abr. {inv_nr}: {e}")
+
+        # Gebuehren-Rechnungen einzeln importieren
+        for fn, data, ct in gebuehren:
+            try:
+                import re as _re
+                clean_fn = _re.sub(r"\[\d+\]", "", fn)
+                mnr = _re.search(r"(\d{4,})\.pdf$", clean_fn, _re.IGNORECASE)
+                geb_nr = mnr.group(1) if mnr else "unbekannt"
+                target_name = f"TEBA_Gebuehren_{geb_nr}.pdf"
+                geb_doc = await create_teba_factoring_document(
+                    data, target_name, geb_nr,
+                    mail_date=datetime.now(timezone.utc),
+                    sender_email="", doc_kind="gebuehren",
+                )
+                result["teba_gebuehren"].append({
+                    "doc_id": geb_doc["id"],
+                    "filename": target_name,
+                    "invoice_number": geb_nr,
+                    "folder_id": geb_doc["folder_id"],
+                    "source_file": fn,
+                })
+                handled_teba.add(fn)
+            except Exception as e:
+                logger.error(f"[upload-zip] Gebuehren '{fn}': {e}")
+
+    # Nicht-TEBA-PDFs / uebrige TEBA-Einzeldateien einzeln uploaden
     for fn, data in pdfs:
-        if fn in teba_names and result["teba_merged"]:
-            continue  # schon im Merger
+        if fn in handled_teba:
+            continue
         d = await create_document_from_bytes(data, fn, "application/pdf", folder_id="unbekannt", source="upload-zip")
         result["individually_uploaded"].append({"filename": fn, "doc_id": d["id"]})
+
+    # Rueckwaerts-Kompat: teba_merged (erste Batch) fuer alten Frontend-Toast
+    if result["teba_merged_batches"]:
+        result["teba_merged"] = result["teba_merged_batches"][0]
+    else:
+        result["teba_merged"] = None
 
     return result
 
@@ -1410,10 +1502,12 @@ async def create_teba_factoring_document(
     invoice_number: str,
     mail_date: Optional[datetime] = None,
     sender_email: str = "",
+    doc_kind: str = "abrechnung",
 ) -> dict:
-    """Speichert eine bereits gemergte TEBA-Factoring-Sammel-PDF direkt im
-    'teba/JAHR/MONAT' Ordner mit korrekten Metadaten (ohne Ollama-Analyse)
-    und triggert DATEV-Weiterleitung.
+    """Speichert eine TEBA-PDF direkt im 'teba/JAHR/MONAT' Ordner mit korrekten
+    Metadaten (ohne Ollama-Analyse) und triggert DATEV-Weiterleitung.
+    doc_kind='abrechnung' fuer Sammel-Abrechnungslisten,
+    doc_kind='gebuehren' fuer die separaten TEBA-Gebuehren-Rechnungen.
     """
     ext = "pdf"
     storage_path = f"{APP_NAME}/uploads/{uuid.uuid4()}.{ext}"
@@ -1466,9 +1560,13 @@ async def create_teba_factoring_document(
         "invoice_number": invoice_number,
         "date": doc_date_iso,
         "document_date": doc_date_iso,
-        "subject": f"TEBA Factoring-Abrechnung Nr. {invoice_number}",
+        "subject": (
+            f"TEBA Gebuehren-Rechnung Nr. {invoice_number}" if doc_kind == "gebuehren"
+            else f"TEBA Factoring-Abrechnung Nr. {invoice_number}"
+        ),
         "suggested_folder": "teba",
         "auto_categorized_by": "teba_factoring_handler",
+        "teba_kind": doc_kind,
     }
 
     doc_id = str(uuid.uuid4())
@@ -1482,7 +1580,7 @@ async def create_teba_factoring_document(
         "ai_status": "done",
         "ai_metadata": ai_metadata,
         "full_text": full_text,
-        "keywords": ["teba", "factoring", "abrechnung", invoice_number, *keywords_extra],
+        "keywords": ["teba", "factoring", doc_kind, invoice_number, *keywords_extra],
         "is_deleted": False,
         "source": "mailbridge_teba",
         "created_at": datetime.now(timezone.utc).isoformat(),
