@@ -1583,24 +1583,48 @@ async def list_documents(folder_id: str = None, include_children: bool = True, p
 
 @router.get("/search")
 async def search_documents(q: str = Query(..., min_length=1)):
-    """Full-text search across all documents."""
+    """Full-text Suche mit Multi-Term Support.
+
+    Beispiele:
+      q="Teba"           → Docs die 'Teba' enthalten
+      q="Teba 1428"      → Docs die 'Teba' UND '1428' enthalten (Reihenfolge egal)
+      q="Teba, 1428"     → wie oben (Komma/Semikolon = Trenner)
+      q="TEBA Kreditbank Andernach" → alle 3 Woerter muessen vorkommen
+
+    Gesucht wird immer in: full_text, keywords, original_filename,
+    sender, subject, invoice_number, reference, iban.
+    """
+    import re as _re
+    # Trenner: Leerzeichen, Komma, Semikolon
+    terms = [t.strip() for t in _re.split(r"[\s,;]+", q) if t.strip()]
+    if not terms:
+        return {"documents": [], "query": q}
+
+    def _term_clause(term: str) -> dict:
+        # Regex-Sonderzeichen im Term escapen, damit z.B. "R-2026-0011" sauber sucht
+        esc = _re.escape(term)
+        return {"$or": [
+            {"full_text": {"$regex": esc, "$options": "i"}},
+            {"keywords": {"$regex": esc, "$options": "i"}},
+            {"original_filename": {"$regex": esc, "$options": "i"}},
+            {"ai_metadata.sender": {"$regex": esc, "$options": "i"}},
+            {"ai_metadata.sender_name": {"$regex": esc, "$options": "i"}},
+            {"ai_metadata.subject": {"$regex": esc, "$options": "i"}},
+            {"ai_metadata.invoice_number": {"$regex": esc, "$options": "i"}},
+            {"ai_metadata.reference": {"$regex": esc, "$options": "i"}},
+            {"ai_metadata.iban": {"$regex": esc, "$options": "i"}},
+        ]}
+
+    if len(terms) == 1:
+        query = {"is_deleted": False, **_term_clause(terms[0])}
+    else:
+        # UND-Verknuepfung: alle Terme muessen (irgendwo) vorkommen
+        query = {"is_deleted": False, "$and": [_term_clause(t) for t in terms]}
+
     docs = []
-    query = {
-        "is_deleted": False,
-        "$or": [
-            {"full_text": {"$regex": q, "$options": "i"}},
-            {"keywords": {"$regex": q, "$options": "i"}},
-            {"original_filename": {"$regex": q, "$options": "i"}},
-            {"ai_metadata.sender": {"$regex": q, "$options": "i"}},
-            {"ai_metadata.subject": {"$regex": q, "$options": "i"}},
-            {"ai_metadata.invoice_number": {"$regex": q, "$options": "i"}},
-            {"ai_metadata.reference": {"$regex": q, "$options": "i"}},
-            {"ai_metadata.iban": {"$regex": q, "$options": "i"}},
-        ]
-    }
     async for doc in db.documents.find(query, {"_id": 0, "full_text": 0}).sort("created_at", -1).limit(50):
         docs.append(doc)
-    return {"documents": docs, "query": q}
+    return {"documents": docs, "query": q, "terms": terms}
 
 
 @router.get("/spam-blacklist")
