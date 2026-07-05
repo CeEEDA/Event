@@ -1340,6 +1340,30 @@ async def create_teba_factoring_document(
     # Ziel-Ordner: teba/YEAR/MONTH (Sub-Folder werden idempotent erstellt)
     target_folder_id = await _ensure_year_month_subfolder("teba", doc_date_iso)
 
+    # Volltext aus der PDF extrahieren fuer die Suche (kein Ollama noetig - fitz)
+    full_text = ""
+    keywords_extra: list[str] = []
+    try:
+        import fitz  # PyMuPDF
+        import io as _io
+        with fitz.open(stream=file_data, filetype="pdf") as pdf:
+            parts = []
+            for page in pdf:
+                parts.append(page.get_text("text") or "")
+            full_text = "\n".join(parts).strip()
+        # Ein paar Kern-Werte extra als Keywords (fuer schnelle Filter)
+        import re as _re
+        # Alle EUR-Betraege
+        for m in _re.finditer(r"(\d{1,3}(?:\.\d{3})*(?:,\d{2}))\s*(?:EUR|€)", full_text):
+            keywords_extra.append(m.group(1))
+        # IBANs
+        for m in _re.finditer(r"DE\s?(?:\d\s?){20}", full_text):
+            keywords_extra.append(m.group(0).replace(" ", ""))
+        keywords_extra = list(dict.fromkeys(keywords_extra))[:20]  # dedupe + cap
+        logger.info(f"[TEBA] Volltext extrahiert: {len(full_text)} Zeichen, {len(keywords_extra)} Zusatz-Keywords")
+    except Exception as e:
+        logger.warning(f"[TEBA] Volltext-Extraktion fehlgeschlagen: {e}")
+
     ai_metadata = {
         "document_type": "rechnung",
         "sender_name": "TEBA Kreditbank GmbH & Co. KG",
@@ -1364,8 +1388,8 @@ async def create_teba_factoring_document(
         "folder_id": target_folder_id,
         "ai_status": "done",
         "ai_metadata": ai_metadata,
-        "full_text": "",
-        "keywords": ["teba", "factoring", "abrechnung", invoice_number],
+        "full_text": full_text,
+        "keywords": ["teba", "factoring", "abrechnung", invoice_number, *keywords_extra],
         "is_deleted": False,
         "source": "mailbridge_teba",
         "created_at": datetime.now(timezone.utc).isoformat(),
