@@ -52,6 +52,28 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
   const childrenOf = (parentId) => folders.filter(f => f.parent_id === parentId);
   const hasChildren = (folderId) => folders.some(f => f.parent_id === folderId);
 
+  // Monatsname -> Nummer fuer chronologische Sortierung (Umlaut- und ASCII-Variante)
+  const MONTH_ORDER = {
+    "januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5,
+    "juni": 6, "juli": 7, "august": 8, "september": 9, "oktober": 10,
+    "november": 11, "dezember": 12,
+  };
+  const sortChildren = (arr) => {
+    const monthItems = [];
+    const yearItems = [];
+    const otherItems = [];
+    for (const f of arr) {
+      const monthIdx = MONTH_ORDER[(f.name || "").trim().toLowerCase()];
+      if (monthIdx) monthItems.push({ f, idx: monthIdx });
+      else if (/^\d{4}$/.test((f.name || "").trim())) yearItems.push({ f, idx: parseInt(f.name, 10) });
+      else otherItems.push(f);
+    }
+    monthItems.sort((a, b) => a.idx - b.idx);
+    yearItems.sort((a, b) => b.idx - a.idx);   // neueste Jahre oben
+    otherItems.sort((a, b) => (a.name || "").localeCompare(b.name || "", "de"));
+    return [...yearItems.map(x => x.f), ...monthItems.map(x => x.f), ...otherItems];
+  };
+
   const renderFolder = (f, depth = 0) => {
     const Icon = FOLDER_ICONS[f.icon] || Folder;
     const c = FOLDER_COLORS[f.color] || FOLDER_COLORS.gray;
@@ -131,7 +153,7 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
           </div>
         )}
         {/* Children */}
-        {expanded && children.map(child => renderFolder(child, depth + 1))}
+        {expanded && sortChildren(children).map(child => renderFolder(child, depth + 1))}
       </div>
     );
   };
