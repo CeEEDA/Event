@@ -74,12 +74,12 @@ PREDEFINED_FOLDERS = [
     {"id": "banken", "name": "Banken", "icon": "landmark", "color": "emerald"},
     {"id": "datev", "name": "DATEV", "icon": "receipt", "color": "emerald"},
     {"id": "finanzierungen", "name": "Finanzierungen", "icon": "receipt", "color": "emerald"},
-    {"id": "gescannte_fibu_fuer_stb", "name": "gescannte Fibu für StB", "icon": "receipt", "color": "emerald"},
+    {"id": "gescannte_fibu_fuer_stb", "name": "gescannte Fibu fuer StB", "icon": "receipt", "color": "emerald"},
     {"id": "kreditkartenabrechnungen", "name": "Kreditkartenabrechnungen", "icon": "receipt", "color": "emerald"},
     {"id": "steuer_bescheide", "name": "Steuer-bescheide", "icon": "receipt", "color": "emerald"},
     {"id": "steuerberater", "name": "Steuerberater", "icon": "receipt", "color": "emerald"},
     {"id": "zahlen_bwa_und_ja", "name": "Zahlen - BWA und JA", "icon": "receipt", "color": "emerald"},
-    {"id": "anlagevermoegen", "name": "Anlagevermögen", "icon": "receipt", "color": "emerald"},
+    {"id": "anlagevermoegen", "name": "Anlagevermoegen", "icon": "receipt", "color": "emerald"},
     {"id": "stille_reserven", "name": "Stille Reserven", "icon": "receipt", "color": "emerald"},
     {"id": "lohnabrechnung", "name": "Lohnabrechnung", "icon": "receipt", "color": "emerald"},
     # Versicherungen
@@ -89,17 +89,17 @@ PREDEFINED_FOLDERS = [
     {"id": "berufsgenossenschaft_bg_etem", "name": "Berufsgenossenschaft - BG ETEM", "icon": "shield", "color": "blue"},
     {"id": "krankenkassen", "name": "Krankenkassen", "icon": "shield", "color": "blue"},
     # Verträge & Recht
-    {"id": "vertraege", "name": "Verträge", "icon": "file-text", "color": "fuchsia"},
-    {"id": "vertraege_auftraege_mit_dritten", "name": "Verträge, Aufträge mit Dritten", "icon": "file-text", "color": "fuchsia"},
-    {"id": "rahmenvertraege", "name": "Rahmenverträge", "icon": "file-text", "color": "fuchsia"},
-    {"id": "mehrjahresvertraege", "name": "Mehrjahresverträge", "icon": "file-text", "color": "fuchsia"},
-    {"id": "mobilfunkvertraege", "name": "Mobilfunkverträge", "icon": "file-text", "color": "fuchsia"},
+    {"id": "vertraege", "name": "Vertraege", "icon": "file-text", "color": "fuchsia"},
+    {"id": "vertraege_auftraege_mit_dritten", "name": "Vertraege, Auftraege mit Dritten", "icon": "file-text", "color": "fuchsia"},
+    {"id": "rahmenvertraege", "name": "Rahmenvertraege", "icon": "file-text", "color": "fuchsia"},
+    {"id": "mehrjahresvertraege", "name": "Mehrjahresvertraege", "icon": "file-text", "color": "fuchsia"},
+    {"id": "mobilfunkvertraege", "name": "Mobilfunkvertraege", "icon": "file-text", "color": "fuchsia"},
     {"id": "werksvertrag_hb_energy", "name": "Werksvertrag HB Energy", "icon": "file-text", "color": "fuchsia"},
     {"id": "recht_anwalt", "name": "Recht - Anwalt", "icon": "landmark", "color": "purple"},
     {"id": "klagen_rechtsstreit", "name": "Klagen - Rechtsstreit", "icon": "landmark", "color": "purple"},
     {"id": "marken_patent_markenamt", "name": "Marken - eingetragene Marken - Patent-Markenamt", "icon": "landmark", "color": "purple"},
     # Behörden & Institutionen
-    {"id": "behoerden", "name": "Behörden", "icon": "landmark", "color": "purple"},
+    {"id": "behoerden", "name": "Behoerden", "icon": "landmark", "color": "purple"},
     {"id": "hwk_handwerkskammer", "name": "HWK - Handwerkskammer", "icon": "landmark", "color": "purple"},
     {"id": "konzessionsausweis_swn", "name": "Konzessionsausweis SWN", "icon": "landmark", "color": "purple"},
     {"id": "unbedenklichkeitsbescheinigungen", "name": "Unbedenklichkeitsbescheinigungen", "icon": "landmark", "color": "purple"},
@@ -109,7 +109,7 @@ PREDEFINED_FOLDERS = [
     # Lieferanten & Partner
     {"id": "lieferscheine_eingehend", "name": "Lieferscheine eingehend", "icon": "truck", "color": "orange"},
     {"id": "lieferscheine_ausgehend", "name": "Lieferscheine ausgehend", "icon": "truck", "color": "orange"},
-    {"id": "oel_lieferanten", "name": "Öl-Lieferanten", "icon": "truck", "color": "orange"},
+    {"id": "oel_lieferanten", "name": "Oel-Lieferanten", "icon": "truck", "color": "orange"},
     {"id": "spedition_normann", "name": "Spedition Normann", "icon": "truck", "color": "orange"},
     {"id": "walther_werke", "name": "Walther Werke 10-2025", "icon": "truck", "color": "orange"},
     {"id": "teba", "name": "TEBA", "icon": "truck", "color": "orange"},
@@ -118,7 +118,7 @@ PREDEFINED_FOLDERS = [
     # Personal & HR
     {"id": "mitarbeiter", "name": "Mitarbeiter", "icon": "file-text", "color": "amber"},
     {"id": "hr_unterlagen_notarunterlagen", "name": "HR-Unterlagen - Notarunterlagen", "icon": "file-text", "color": "amber"},
-    {"id": "unittime_arbeitsueberlassung", "name": "uniTTime - Arbeitsüberlassung", "icon": "file-text", "color": "amber"},
+    {"id": "unittime_arbeitsueberlassung", "name": "uniTTime - Arbeitsueberlassung", "icon": "file-text", "color": "amber"},
     {"id": "vertriebler_holzem_thomas", "name": "Vertriebler - Holzem, Thomas", "icon": "file-text", "color": "amber"},
     # Projekte & Anfragen
     {"id": "anfragen_projekte", "name": "Anfragen - Projekte", "icon": "file-text", "color": "fuchsia"},
@@ -130,11 +130,11 @@ PREDEFINED_FOLDERS = [
     {"id": "it", "name": "IT", "icon": "file-text", "color": "gray"},
     {"id": "funk_betriebsfunk_frequenzen", "name": "Funk - Betriebsfunk - Frequenzen", "icon": "file-text", "color": "gray"},
     {"id": "sicherheit", "name": "Sicherheit", "icon": "shield", "color": "amber"},
-    {"id": "pruefberichte", "name": "Prüfberichte", "icon": "file-text", "color": "amber"},
+    {"id": "pruefberichte", "name": "Pruefberichte", "icon": "file-text", "color": "amber"},
     # Standorte & Unternehmen
     {"id": "halle_andernach", "name": "Halle Andernach", "icon": "landmark", "color": "gray"},
-    {"id": "nbr_buero", "name": "NBR - Büro", "icon": "landmark", "color": "gray"},
-    {"id": "nbr_flaeche_welcherath", "name": "NBR - Fläche Welcherath", "icon": "landmark", "color": "gray"},
+    {"id": "nbr_buero", "name": "NBR - Buero", "icon": "landmark", "color": "gray"},
+    {"id": "nbr_flaeche_welcherath", "name": "NBR - Flaeche Welcherath", "icon": "landmark", "color": "gray"},
     {"id": "nbr_gmbh", "name": "NBR GmbH", "icon": "landmark", "color": "gray"},
     {"id": "eed_holding", "name": "EED Holding", "icon": "landmark", "color": "gray"},
     # Marketing & Unternehmensdarstellung
@@ -145,7 +145,7 @@ PREDEFINED_FOLDERS = [
     {"id": "veranstaltungen_infos", "name": "Veranstaltungen - Info's", "icon": "file-text", "color": "orange"},
     {"id": "betriebsversammlung_meetingprotokolle", "name": "Betriebsversammlung - Meetingprotokolle", "icon": "file-text", "color": "gray"},
     {"id": "ablage_allgemein", "name": "Ablage - allgemein", "icon": "folder", "color": "gray"},
-    {"id": "temporaerer_ordner", "name": "temporärer Ordner", "icon": "folder", "color": "gray"},
+    {"id": "temporaerer_ordner", "name": "temporaerer Ordner", "icon": "folder", "color": "gray"},
     {"id": "sonstiges", "name": "Sonstiges", "icon": "folder", "color": "gray"},
 ]
 
@@ -546,7 +546,7 @@ async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folder
 
 
 MONTH_NAMES = {
-    1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
+    1: "Januar", 2: "Februar", 3: "Maerz", 4: "April", 5: "Mai", 6: "Juni",
     7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember"
 }
 AUTO_YEAR_MONTH_FOLDERS = "*"  # "*" = alle Kategorien bekommen Jahr/Monat-Unterordner (ausser 'unbekannt')
