@@ -92,8 +92,11 @@ def _auth_headers(api_key: str) -> dict:
 
 
 # Semaphore: Nur EINE Analyse zur Zeit laufen lassen, damit bei vielen parallelen
-# Uploads nicht der ganze Rechner hängt. Ollama selbst kann zwar parallel, aber auf
-# CPU-only Systemen ist das kontraproduktiv.
+# Uploads (z.B. 6 Mails mit je 2 Anhaengen = 12 gleichzeitige Requests) nicht
+# der Nginx-Proxy vor Ollama mit 504 Gateway Timeout abbricht. Ollama's Default
+# ist OLLAMA_NUM_PARALLEL=1, alle weiteren Requests landen in der Warteschlange
+# und ueberschreiten die Nginx proxy_read_timeout.
+# Erhoehen auf 2-3 nur wenn Ollama-Nginx-Timeout >= 300s ist.
 _OLLAMA_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "1"))
 _ollama_semaphore = None
 
@@ -339,7 +342,29 @@ async def analyze_document_smart(
     """Hybrid-Analyse: versucht zuerst Text-Extraktion (schnell, 5-10s),
     faellt bei reinen Bildern/Scans auf Vision-Modell zurueck (langsam, 30-180s).
 
-    Gibt (response_text, mode) zurueck, wobei mode 'text' oder 'vision' ist."""
+    Gibt (response_text, mode) zurueck, wobei mode 'text' oder 'vision' ist.
+
+    WICHTIG: Alle Aufrufe werden ueber einen globalen Semaphore serialisiert
+    (siehe _get_semaphore / OLLAMA_CONCURRENCY). Damit vermeiden wir, dass bei
+    parallelen Uploads oder Mail-Anhaengen 10+ Requests gleichzeitig gegen den
+    Ollama-Nginx-Proxy laufen und dieser mit 504 abbricht.
+    """
+    import asyncio
+    sem = _get_semaphore()
+    async with sem:
+        return await _analyze_document_smart_locked(
+            system_prompt, file_path, mime_type, user_text_vision, want_json,
+        )
+
+
+async def _analyze_document_smart_locked(
+    system_prompt: str,
+    file_path: str,
+    mime_type: str,
+    user_text_vision: str,
+    want_json: bool,
+) -> tuple:
+    """Innere Logik von analyze_document_smart, laeuft nur mit Semaphore-Hold."""
     import asyncio
     mt = (mime_type or "").lower()
     cfg = await get_ollama_config()
