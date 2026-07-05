@@ -12,6 +12,7 @@ import re
 import asyncio
 import logging
 import email
+import email.message
 import imaplib
 import mimetypes
 from email.header import decode_header
@@ -153,6 +154,125 @@ def _imap_connect():
     return mail
 
 
+# ─── TEBA Factoring Handling ────────────────────────────────────────
+# TEBA sendet 6-15 einzelne PDFs pro Abrechnungslauf.
+# Beispiel: 02626000_Abrechnungsliste_mit Legende_1428.pdf
+#           02626000_Buchungsjournal_1428.pdf
+#           02626000_Rechnung_Gebuehren_728762.pdf ...
+# Erkennung ueber die TEBA-Kundennummer als Prefix (02626000 = EED bei TEBA).
+_TEBA_CUSTOMER_PREFIX = "02626000"
+_TEBA_FILENAME_RE = re.compile(r"^0?2626000_.*_(\d+)\.pdf$", re.IGNORECASE)
+
+
+def _is_teba_factoring_attachment(filename: str) -> bool:
+    """True wenn Dateiname dem TEBA-Factoring-Muster entspricht."""
+    if not filename or not filename.lower().endswith(".pdf"):
+        return False
+    return filename.startswith(_TEBA_CUSTOMER_PREFIX) or filename.startswith("0" + _TEBA_CUSTOMER_PREFIX)
+
+
+def _extract_teba_invoice_number(filenames: list[str]) -> str:
+    """Zieht die Abrechnungs-Nr. (z.B. '1428') aus den Anhaengen.
+    Die Nr. steht bei allen Files am Ende des Dateinamens vor .pdf.
+    Wir bevorzugen die Nr. aus 'Abrechnungsliste' (die Haupt-Nummer),
+    ignorieren 'Rechnung_Gebuehren' (das ist eine separate Rechnungsnr).
+    """
+    # 1) Aus Abrechnungsliste / Gesamtabrechnung
+    for fn in filenames:
+        low = fn.lower()
+        if "abrechnungsliste" in low or "gesamtabrechnung" in low:
+            m = _TEBA_FILENAME_RE.match(fn)
+            if m:
+                return m.group(1)
+    # 2) Fallback: Buchungsjournal oder OP-Liste (haben dieselbe Nr.)
+    for fn in filenames:
+        low = fn.lower()
+        if ("buchungsjournal" in low or "op-liste" in low or "op_liste" in low) and "gebuehren" not in low:
+            m = _TEBA_FILENAME_RE.match(fn)
+            if m:
+                return m.group(1)
+    # 3) Letzter Fallback: irgendein passender Match
+    for fn in filenames:
+        m = _TEBA_FILENAME_RE.match(fn)
+        if m and "gebuehren" not in fn.lower():
+            return m.group(1)
+    return "unbekannt"
+
+
+def _teba_sort_key(filename: str) -> tuple:
+    """Sortier-Schluessel fuer TEBA-PDF-Merger.
+    Reihenfolge (User-Wunsch):
+      1. Abrechnungsliste_mit_Legende  (Deckblatt)
+      2. Abrechnungsliste (ohne Legende)
+      3. Gesamtabrechnung
+      4. Buchungsjournal
+      5. OP-Liste
+      6. Rechnung_Gebuehren
+      7. Alles andere alphabetisch
+    """
+    low = filename.lower()
+    if "abrechnungsliste_mit legende" in low or "abrechnungsliste_mit_legende" in low:
+        return (0, filename)
+    if "abrechnungsliste" in low:
+        return (1, filename)
+    if "gesamtabrechnung" in low:
+        return (2, filename)
+    if "buchungsjournal" in low:
+        return (3, filename)
+    if "op-liste" in low or "op_liste" in low:
+        return (4, filename)
+    if "gebuehren" in low or "gebühren" in low:
+        return (5, filename)
+    return (9, filename)
+
+
+def _merge_teba_factoring_pdfs(
+    attachments: list[tuple[str, bytes, str]],
+    mail_date: datetime | None = None,
+) -> tuple[bytes, str, str]:
+    """Merged alle TEBA-PDFs zu einer Sammel-PDF.
+    Rueckgabe: (pdf_bytes, dateiname, invoice_nr)
+    Der Dateiname verwendet das Mail-Datum (Jahr-Monat).
+    """
+    import io
+    from pypdf import PdfWriter, PdfReader
+
+    # Sortieren
+    sorted_atts = sorted(attachments, key=lambda a: _teba_sort_key(a[0]))
+    filenames = [a[0] for a in sorted_atts]
+
+    invoice_nr = _extract_teba_invoice_number(filenames)
+
+    writer = PdfWriter()
+    for fname, payload, _ct in sorted_atts:
+        try:
+            reader = PdfReader(io.BytesIO(payload))
+            for page in reader.pages:
+                writer.add_page(page)
+        except Exception as e:
+            logger.warning(f"Mailbridge/TEBA: PDF '{fname}' konnte nicht gemerged werden: {e}")
+
+    buf = io.BytesIO()
+    writer.write(buf)
+    merged_bytes = buf.getvalue()
+
+    # Zieldateiname: Jahr-Monat aus Mail-Datum
+    ref_date = mail_date or datetime.now(timezone.utc)
+    ym = ref_date.strftime("%Y-%m")
+    merged_name = f"TEBA_Abrechnung_{invoice_nr}_{ym}.pdf"
+    return merged_bytes, merged_name, invoice_nr
+
+
+def _parse_mail_date(date_header: str | None) -> datetime | None:
+    """Parst den 'Date:' Header einer E-Mail zu einem datetime-Objekt."""
+    if not date_header:
+        return None
+    try:
+        return parsedate_to_datetime(date_header)
+    except Exception:
+        return None
+
+
 async def _log_spam(subject: str, sender_email: str, reason: str) -> None:
     """Loggt gefilterte Mails in die 'spam_log' Collection.
     Damit kann der Admin nachschauen was rausgefiltert wurde und ggf. eingreifen."""
@@ -257,6 +377,33 @@ async def _process_once() -> dict:
                 if not attachments:
                     logger.info(f"Mailbridge: Mail ohne unterstuetzte Anhaenge - '{subject}' von {sender_email}")
                 else:
+                    # ─── TEBA Factoring-Erkennung ──────────────────────────
+                    # Alle Anhaenge deren Dateiname mit TEBA-Kundennummer beginnt
+                    # werden zu EINER PDF gemerged und als eine Rechnung abgelegt.
+                    teba_atts = [a for a in attachments if _is_teba_factoring_attachment(a[0])]
+                    if teba_atts and len(teba_atts) >= 2:
+                        try:
+                            mail_dt = _parse_mail_date(msg.get("Date"))
+                            merged_bytes, merged_name, invoice_nr = _merge_teba_factoring_pdfs(teba_atts, mail_date=mail_dt)
+                            from routes.documents import create_teba_factoring_document
+                            await create_teba_factoring_document(
+                                merged_bytes, merged_name, invoice_nr,
+                                mail_date=mail_dt,
+                                sender_email=sender_email,
+                            )
+                            stats["attachments_uploaded"] += 1
+                            stats.setdefault("teba_merged", 0)
+                            stats["teba_merged"] += 1
+                            logger.info(
+                                f"Mailbridge/TEBA: {len(teba_atts)} Anhaenge zu '{merged_name}' "
+                                f"(Nr. {invoice_nr}) gemerged aus Mail '{subject}'"
+                            )
+                            # Nicht-TEBA-Anhaenge dieser Mail trotzdem normal verarbeiten
+                            attachments = [a for a in attachments if not _is_teba_factoring_attachment(a[0])]
+                        except Exception as e:
+                            logger.error(f"Mailbridge/TEBA: Merge fehlgeschlagen ({e}) - Fallback: Einzeln importieren")
+                            stats["errors"] += 1
+
                     for fname, payload, ctype in attachments:
                         try:
                             await create_document_from_bytes(

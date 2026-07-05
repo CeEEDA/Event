@@ -83,6 +83,7 @@ PREDEFINED_FOLDERS = [
     {"id": "anlagevermoegen", "name": "Anlagevermoegen", "icon": "receipt", "color": "emerald"},
     {"id": "stille_reserven", "name": "Stille Reserven", "icon": "receipt", "color": "emerald"},
     {"id": "lohnabrechnung", "name": "Lohnabrechnung", "icon": "receipt", "color": "emerald"},
+    {"id": "teba", "name": "TEBA - Factoring", "icon": "landmark", "color": "emerald"},
     # Versicherungen
     {"id": "versicherungen", "name": "Versicherungen", "icon": "shield", "color": "blue"},
     {"id": "kfz_versicherung", "name": "KFZ Versicherung", "icon": "car", "color": "blue"},
@@ -113,7 +114,6 @@ PREDEFINED_FOLDERS = [
     {"id": "oel_lieferanten", "name": "Oel-Lieferanten", "icon": "truck", "color": "orange"},
     {"id": "spedition_normann", "name": "Spedition Normann", "icon": "truck", "color": "orange"},
     {"id": "walther_werke", "name": "Walther Werke 10-2025", "icon": "truck", "color": "orange"},
-    {"id": "teba", "name": "TEBA", "icon": "truck", "color": "orange"},
     {"id": "kreditreform", "name": "Kreditreform", "icon": "file-text", "color": "orange"},
     {"id": "freelancer", "name": "Freelancer", "icon": "file-text", "color": "orange"},
     # Personal & HR
@@ -822,6 +822,8 @@ DATEV_ROUTING = {
     "rechnungsausgang_eventenergie_deutschland": (DATEV_EMAIL_RECH_AUS_EED, "Ausgangsrechnung", "Eventenergie Deutschland"),
     "rechnungseingang_es_besitz_verwaltung": (DATEV_EMAIL_RECH_EIN_ESBV, "Eingangsrechnung", "ES Besitz und Verwaltung"),
     "rechnungsausgang_es_besitz_verwaltung": (DATEV_EMAIL_RECH_AUS_ESBV, "Ausgangsrechnung", "ES Besitz und Verwaltung"),
+    # TEBA Factoring-Abrechnungen -> Eingangsrechnung EED (Buchungssicht)
+    "teba": (DATEV_EMAIL_RECH_EIN_EED, "TEBA-Factoring-Abrechnung", "Eventenergie Deutschland"),
 }
 
 
@@ -1305,6 +1307,81 @@ async def create_document_from_bytes(file_data: bytes, filename: str, content_ty
 
     asyncio.create_task(_run_ai_analysis(doc_id, temp_path, content_type, folder_id))
 
+    clean = {k: v for k, v in doc.items() if k != "_id"}
+    return clean
+
+
+async def create_teba_factoring_document(
+    file_data: bytes,
+    filename: str,
+    invoice_number: str,
+    mail_date: Optional[datetime] = None,
+    sender_email: str = "",
+) -> dict:
+    """Speichert eine bereits gemergte TEBA-Factoring-Sammel-PDF direkt im
+    'teba/JAHR/MONAT' Ordner mit korrekten Metadaten (ohne Ollama-Analyse)
+    und triggert DATEV-Weiterleitung.
+    """
+    ext = "pdf"
+    storage_path = f"{APP_NAME}/uploads/{uuid.uuid4()}.{ext}"
+
+    cloud_storage_path = None
+    try:
+        result = put_object(storage_path, file_data, "application/pdf")
+        cloud_storage_path = result["path"]
+    except Exception as e:
+        logger.warning(f"[TEBA] Cloud storage upload failed: {e}")
+    final_storage_path = cloud_storage_path or f"local://{storage_path}"
+
+    # Referenzdatum: Mail-Datum bevorzugt, sonst heute
+    doc_date = (mail_date or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    doc_date_iso = doc_date.strftime("%Y-%m-%d")
+
+    # Ziel-Ordner: teba/YEAR/MONTH (Sub-Folder werden idempotent erstellt)
+    target_folder_id = await _ensure_year_month_subfolder("teba", doc_date_iso)
+
+    ai_metadata = {
+        "document_type": "rechnung",
+        "sender_name": "TEBA Kreditbank GmbH & Co. KG",
+        "sender": "TEBA Kreditbank GmbH & Co. KG",
+        "sender_email": sender_email,
+        "recipient": "Eventenergie Deutschland GmbH & Co. KG",
+        "invoice_number": invoice_number,
+        "date": doc_date_iso,
+        "document_date": doc_date_iso,
+        "subject": f"TEBA Factoring-Abrechnung Nr. {invoice_number}",
+        "suggested_folder": "teba",
+        "auto_categorized_by": "teba_factoring_handler",
+    }
+
+    doc_id = str(uuid.uuid4())
+    doc = {
+        "id": doc_id,
+        "storage_path": final_storage_path,
+        "original_filename": filename,
+        "content_type": "application/pdf",
+        "size": len(file_data),
+        "folder_id": target_folder_id,
+        "ai_status": "done",
+        "ai_metadata": ai_metadata,
+        "full_text": "",
+        "keywords": ["teba", "factoring", "abrechnung", invoice_number],
+        "is_deleted": False,
+        "source": "mailbridge_teba",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.documents.insert_one(doc)
+
+    # Lokal ablegen (Teba/JAHR/MONAT)
+    await _save_to_local_storage(file_data, filename, target_folder_id)
+
+    # DATEV-Weiterleitung anstossen (routet ueber 'teba' -> Eingangsrechnung EED)
+    asyncio.create_task(_forward_to_datev(
+        doc_id, final_storage_path, filename, "application/pdf", ai_metadata, target_folder_id,
+    ))
+
+    logger.info(f"[TEBA] Sammel-PDF gespeichert: {filename} -> Ordner {target_folder_id}, doc_id={doc_id}")
     clean = {k: v for k, v in doc.items() if k != "_id"}
     return clean
 
