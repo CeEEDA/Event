@@ -1,0 +1,36 @@
+{
+  "summary": "ZUGFeRD/Factur-X Fix vollstaendig verifiziert. 8/8 pytest-Tests gruen (5 Unit + 1 Reanalyze-E2E + 1 Search + 1 Regression). Frontend-Suche findet '263015.pdf' via 'Normann' und Detail-Panel zeigt alle ZUGFeRD-Kernfelder korrekt (Absender=Mathias Normann GmbH & Co KG Spedition, IBAN=DE71 5705 0120 0002 0007 92, Betrag=1496.12 EUR, MwSt=238.88, Rechnungsnr=263015, Datum=23.06.2026, Faelligkeit=03.07.2026). STEINIGKE-Regression bleibt intakt (kein ZUGFeRD-XML → LLM-Ergebnis unveraendert). folder_id landet exakt auf 'rechnungseingang_eventenergie_deutschland_2026_06'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "DocumentManagementPage Sidebar-Ordnerbaum", "issues": ["Nested Ordnerknoten fuer 'rechnungseingang_eventenergie_deutschland_2026_06' waren via data-testid='folder-<id>' im DOM nicht auffindbar bevor die kompletten Elternknoten aufgeklappt wurden. Vermutlich lazy-render der Kinder. Nicht kritisch - Doc ist ueber 'Alle Dokumente' + Suche und via API-folder_id auffindbar. Nur Bonus-Check der Frontend-Anforderung war nicht 1:1 durchfuehrbar."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_zugferd_iteration79.py",
+    "/app/test_reports/pytest/iteration79_zugferd.xml"
+  ],
+  "action_items": [
+    "Kein Fix noetig - Fix ist vollstaendig live und funktioniert.",
+    "OPTIONAL: fuer bessere Testbarkeit koennte die Sidebar-Ordner-Hierarchie beim Mounten alle Ebenen initial rendern (nur data-testid), so dass Playwright nicht durch alle Parent-Clicks navigieren muss. Kein User-Impact."
+  ],
+  "critical_code_review_comments": [
+    "zugferd_parser.py: Sauber - deterministischer XML-Parser, lokale Namespace-Map, defensive _text()/_find()-Helpers, keine externen LLM-Calls. Fehlerpfade loggen und geben leeres dict zurueck (kein Crash-Risiko).",
+    "documents.py Zeile 966-974: try_zugferd_parse() ist in async-Route via asyncio.to_thread korrekt off-loaded (PyMuPDF ist sync). Exception-Handling loggt Warning und macht weiter mit LLM-Ergebnis - guter Fallback.",
+    "merge_zugferd_into_ai_result: Uberschreiben nur wenn zugferd_data.get(field) is not None - respektiert vorhandene LLM-Werte wenn ZUGFeRD kein Feld hat. full_text-Anreicherung stellt Volltextsuche fuer Absendername sicher.",
+    "IBAN-Formatierung mit DIN-4er-Blockung ist konsistent mit UI-Erwartungen (DE71 5705 0120 0002 0007 92).",
+    "MINOR: keywords wird in merge_zugferd_into_ai_result mit list-Fallback erzeugt, aber im Live-Doc ist ai_metadata.keywords=None sichtbar (siehe Reanalyze-Response). Ursache: ai_metadata != ai_result Struktur bzw. das Feld wird beim DB-Save woanders abgelegt. Kein Impact auf Suchfunktion (die geht ueber full_text)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_zugferd_iteration79.py"
+  ],
+  "success_rate": {"backend": "100% (8/8 tests)", "frontend": "100% Pflichtanforderungen (Login, Suche, Detail-Panel)"},
+  "test_credentials": "christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram (Preview-URL, verifiziert)",
+  "seed_data_creation": "Keine neuen Test-Daten. Vorhandene Docs verwendet: 25b74df5-6384-4eff-bbd4-7858fa7f449c (ZUGFeRD Normann), 4e4870b2-3f49-43f2-88ac-e3e8d1ea42fa (STEINIGKE Regression).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "ZUGFeRD-Parser (/app/backend/services/zugferd_parser.py) ist live und liefert authoritative Rechnungsdaten aus factur-x.xml. In documents.py Zeile 966-974 wird er nach analyze_document_with_ai() aufgerufen und ueberschreibt die LLM-Werte bei sender/recipient/date/amount/iban/invoice_number/currency/due_date/tax_amount/document_type/reference. full_text wird um einen [ZUGFeRD]-Block angereichert - deshalb funktioniert die Volltextsuche nach Absendernamen jetzt. Reanalyze-Dauer 56 s. Test-PDF /tmp/zugferd_test.pdf ist die Referenz-Datei fuer 263015.",
+  "rca of the issue": "Vor dem Fix hat das Ollama-LLM den visuellen PDF-Text der ZUGFeRD-Rechnung 263015.pdf gelesen und dort 'von: Eventenergie / nach: Max Morlock Stadion' als Transportstrecke gefunden, was es faelschlich als Sender/Recipient-Beziehung interpretiert hat. Der wahre Rechnungsabsender 'Mathias Normann GmbH & Co KG Spedition' war nur in der eingebetteten factur-x.xml (PDF/A-3 Attachment). Fix: Neues Modul zugferd_parser.py extrahiert das Attachment via PyMuPDF (embfile_names/embfile_get), parst die UN/CEFACT-XML mit lokaler Namespace-Map und liefert flaches dict. merge_zugferd_into_ai_result() ueberschreibt die LLM-Kernfelder und reichert full_text an. Verifiziert: Live-Doc 25b74df5 zeigt jetzt Sender='Mathias Normann...', IBAN='DE71 5705 0120 0002 0007 92', /api/documents/search?q=Normann findet die Datei (vorher 0 Treffer). Regression: STEINIGKE-PDF (kein ZUGFeRD) wird vom Parser ignoriert (leeres dict), LLM-Ergebnis bleibt intakt."
+}

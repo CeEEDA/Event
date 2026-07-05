@@ -958,6 +958,68 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
 
+        # ─── ZUGFeRD / Factur-X XML PRIORITAET ─────────────────────────────
+        # Wenn das PDF eine eingebettete ZUGFeRD-XML enthaelt, sind diese
+        # strukturierten Rechnungsdaten authoritativ. Ollama kann optisch
+        # verwirrende Layouts falsch lesen (siehe "von/nach Transport" Bug
+        # bei Speditions-Rechnungen). Die XML enthaelt eindeutige Felder.
+        if (content_type or "").lower() == "application/pdf":
+            try:
+                from services.zugferd_parser import try_zugferd_parse, merge_zugferd_into_ai_result
+                zugferd_data = await asyncio.to_thread(try_zugferd_parse, temp_path)
+                if zugferd_data:
+                    logger.info(f"[zugferd] Erkannt - Absender aus XML: {zugferd_data.get('sender')!r}")
+                    ai_result = merge_zugferd_into_ai_result(ai_result, zugferd_data)
+            except Exception as e:
+                logger.warning(f"[zugferd] Parser-Fehler (ueberspringt XML-Merge): {e}")
+
+        # ─── REGEX-FALLBACK fuer Datum und IBAN ────────────────────────────
+        # Das LLM ist bei diesen beiden Feldern nicht deterministisch (Sampling)
+        # und uebersieht IBANs im Absender-Header wenn Zahlung per PayPal
+        # gemacht wurde. Wenn Ollama diese Felder null laesst, versuchen wir
+        # eine regex-basierte Extraktion aus dem full_text.
+        _full_text = ai_result.get("full_text") or ""
+        if _full_text:
+            import re as _re
+            # -- Datum-Fallback ------------------------------------------------
+            _current_date = ai_result.get("date") or ai_result.get("document_date")
+            if not _current_date:
+                # Bevorzugt Datum in Naehe eines Rechnungs-Keywords
+                candidates = []
+                for m in _re.finditer(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})", _full_text):
+                    day, month, year = m.groups()
+                    y = int(year)
+                    if y < 100:
+                        y = 2000 + y
+                    if 1 <= int(day) <= 31 and 1 <= int(month) <= 12 and 2000 <= y <= 2099:
+                        # Score: naeher am Wort "Rechnung"/"Datum" ist besser
+                        start = max(0, m.start() - 40)
+                        context = _full_text[start:m.start()].lower()
+                        score = 0
+                        if "rechnungs" in context or "datum" in context:
+                            score += 10
+                        if "lieferdatum" in context:
+                            score += 5
+                        if "bestellung vom" in context:
+                            score += 3
+                        candidates.append((score, m.start(), f"{y:04d}-{int(month):02d}-{int(day):02d}"))
+                if candidates:
+                    candidates.sort(key=lambda x: (-x[0], x[1]))
+                    ai_result["date"] = candidates[0][2]
+                    ai_result["document_date"] = candidates[0][2]
+                    logger.info(f"[regex-fallback] Datum={ai_result['date']} extrahiert (score={candidates[0][0]})")
+            # -- IBAN-Fallback -------------------------------------------------
+            _current_iban = ai_result.get("iban")
+            if not _current_iban:
+                # DE-IBAN: DE gefolgt von 20 Ziffern, ggf. mit Leerzeichen zerlegt
+                iban_matches = _re.findall(r"DE\s?(?:\d\s?){20}", _full_text)
+                if iban_matches:
+                    first = iban_matches[0].replace(" ", "")
+                    # Zurueck ins DIN-Format mit Leerzeichen alle 4 Zeichen (Standard)
+                    formatted = " ".join(first[i:i+4] for i in range(0, len(first), 4))
+                    ai_result["iban"] = formatted
+                    logger.info(f"[regex-fallback] IBAN={formatted} extrahiert (aus {len(iban_matches)} Kandidaten)")
+
         # ─── DETERMINISTISCHER FIRMEN-OVERRIDE ──────────────────────────────
         # Bei JEDER Rechnungs-Klassifizierung schauen wir nochmal explizit auf
         # Empfaenger (Eingang) bzw. Absender (Ausgang). Wenn dort eine der
