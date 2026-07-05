@@ -147,6 +147,89 @@ function FolderTree({ folders, activeFolder, isSearching, expandedFolders, toggl
 }
 
 
+/**
+ * Inline-editierbares AI-Metadatenfeld.
+ * Klick auf den Stift oeffnet ein Input-Feld; Save schickt PATCH /api/documents/{id}/metadata.
+ */
+function EditableMetaField({ docId, fieldKey, label, value, type = "text", format, valueClass = "", capitalize = false, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    let raw = value ?? "";
+    if (type === "date" && typeof raw === "string" && raw.length > 10) raw = raw.slice(0, 10);
+    setDraft(String(raw));
+    setEditing(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      let outVal = draft;
+      if (type === "number") {
+        const n = parseFloat(String(draft).replace(",", "."));
+        outVal = isNaN(n) ? null : n;
+      }
+      const { data } = await api.patch(`/documents/${docId}/metadata`, { [fieldKey]: outVal });
+      onSaved && onSaved(data.ai_metadata);
+      toast.success(`${label} aktualisiert`);
+      setEditing(false);
+    } catch (e) {
+      toast.error(`Speichern fehlgeschlagen: ${e?.response?.data?.detail || e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancel = () => { setEditing(false); setDraft(""); };
+
+  if (editing) {
+    return (
+      <div data-testid={`edit-field-${fieldKey}`}>
+        <p className="text-[11px] text-gray-400 mb-0.5">{label}</p>
+        <div className="flex items-center gap-1">
+          <input
+            type={type === "date" ? "date" : type === "number" ? "number" : "text"}
+            value={draft}
+            step={type === "number" ? "0.01" : undefined}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+            autoFocus
+            className="flex-1 h-7 text-sm border border-gray-300 rounded px-2 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+            data-testid={`edit-input-${fieldKey}`}
+          />
+          <button onClick={save} disabled={saving} className="h-7 w-7 rounded bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 disabled:opacity-50" title="Speichern" data-testid={`save-${fieldKey}`}>
+            <Check className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={cancel} className="h-7 w-7 rounded bg-gray-200 text-gray-700 flex items-center justify-center hover:bg-gray-300" title="Abbrechen">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const displayValue = format ? format(value) : String(value ?? "");
+  return (
+    <div className="group" data-testid={`field-${fieldKey}`}>
+      <p className="text-[11px] text-gray-400 mb-0.5">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className={`text-sm text-gray-900 flex-1 ${capitalize ? "capitalize" : ""} ${valueClass}`}>{displayValue}</p>
+        <button
+          onClick={startEdit}
+          className="p-1 rounded text-gray-300 hover:text-emerald-600 hover:bg-emerald-50 opacity-0 group-hover:opacity-100 transition-opacity"
+          title={`${label} bearbeiten`}
+          data-testid={`edit-btn-${fieldKey}`}
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 export default function DocumentManagementPage() {
   const navigate = useNavigate();
   const fileInput = useRef(null);
@@ -783,6 +866,9 @@ export default function DocumentManagementPage() {
                 <>
                   <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-medium">
                     <Brain className="w-3.5 h-3.5" /> KI-Analyse abgeschlossen
+                    {selectedDoc.ai_metadata.manually_edited && (
+                      <span className="ml-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full" data-testid="manually-edited-badge">manuell korrigiert</span>
+                    )}
                   </div>
                   {selectedDoc.datev_forwarded && (
                     <div className="flex items-center gap-1.5 text-blue-600 text-xs font-medium">
@@ -790,36 +876,39 @@ export default function DocumentManagementPage() {
                       {selectedDoc.datev_forwarded_at && <span className="text-gray-400 ml-1">({formatDate(selectedDoc.datev_forwarded_at)})</span>}
                     </div>
                   )}
-                  {selectedDoc.ai_metadata.subject && !["Analyse fehlgeschlagen", "Nicht erkannt"].includes(selectedDoc.ai_metadata.subject) && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Betreff</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.subject}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.document_type && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Dokumententyp</p><p className="text-sm text-gray-900 capitalize">{selectedDoc.ai_metadata.document_type}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.sender && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Absender</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.sender}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.date && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Dokumentdatum</p><p className="text-sm text-gray-900">{formatDate(selectedDoc.ai_metadata.date)}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.amount != null && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Betrag</p><p className="text-sm text-gray-900 font-semibold">{selectedDoc.ai_metadata.amount.toFixed(2)} {selectedDoc.ai_metadata.currency || "EUR"}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.tax_amount != null && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">MwSt</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.tax_amount.toFixed(2)} EUR</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.invoice_number && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Rechnungsnummer</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.invoice_number}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.reference && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Referenz / Verwendungszweck</p><p className="text-sm text-gray-900">{selectedDoc.ai_metadata.reference}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.iban && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">IBAN</p><p className="text-sm text-gray-900 font-mono text-xs">{selectedDoc.ai_metadata.iban}</p></div>
-                  )}
-                  {selectedDoc.ai_metadata.due_date && (
-                    <div><p className="text-[11px] text-gray-400 mb-0.5">Fälligkeitsdatum</p><p className="text-sm text-gray-900">{formatDate(selectedDoc.ai_metadata.due_date)}</p></div>
-                  )}
+                  {[
+                    { key: "subject", label: "Betreff", type: "text",
+                      skip: (v) => ["Analyse fehlgeschlagen", "Nicht erkannt"].includes(v) },
+                    { key: "document_type", label: "Dokumententyp", type: "text", capitalize: true },
+                    { key: "sender", label: "Absender", type: "text" },
+                    { key: "recipient", label: "Empfänger", type: "text" },
+                    { key: "date", label: "Dokumentdatum", type: "date", format: formatDate },
+                    { key: "amount", label: "Betrag", type: "number",
+                      format: (v) => `${Number(v).toFixed(2)} ${selectedDoc.ai_metadata.currency || "EUR"}`, valueClass: "font-semibold" },
+                    { key: "tax_amount", label: "MwSt", type: "number", format: (v) => `${Number(v).toFixed(2)} EUR` },
+                    { key: "invoice_number", label: "Rechnungsnummer", type: "text" },
+                    { key: "reference", label: "Referenz / Verwendungszweck", type: "text" },
+                    { key: "iban", label: "IBAN", type: "text", valueClass: "font-mono text-xs" },
+                    { key: "due_date", label: "Fälligkeitsdatum", type: "date", format: formatDate },
+                  ].map((f) => {
+                    const val = selectedDoc.ai_metadata[f.key];
+                    if (val == null || val === "") return null;
+                    if (f.skip && f.skip(val)) return null;
+                    return (
+                      <EditableMetaField
+                        key={f.key}
+                        docId={selectedDoc.id}
+                        fieldKey={f.key}
+                        label={f.label}
+                        value={val}
+                        type={f.type}
+                        format={f.format}
+                        valueClass={f.valueClass || ""}
+                        capitalize={f.capitalize}
+                        onSaved={(newMeta) => setSelectedDoc((d) => d ? { ...d, ai_metadata: newMeta } : d)}
+                      />
+                    );
+                  })}
                   {selectedDoc.keywords?.length > 0 && (
                     <div>
                       <p className="text-[11px] text-gray-400 mb-1">Stichwörter</p>

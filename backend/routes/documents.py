@@ -5,10 +5,12 @@ import logging
 import asyncio
 import tempfile
 import requests
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1573,6 +1575,66 @@ async def delete_document(doc_id: str):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
     return {"status": "deleted"}
+
+
+class DocumentMetadataUpdate(BaseModel):
+    """Payload fuer PATCH /{doc_id}/metadata - erlaubt manuelle Korrektur
+    einzelner AI-erkannter Felder."""
+    sender: Optional[str] = None
+    recipient: Optional[str] = None
+    date: Optional[str] = None
+    document_date: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    invoice_number: Optional[str] = None
+    iban: Optional[str] = None
+    bic: Optional[str] = None
+    subject: Optional[str] = None
+    reference: Optional[str] = None
+    due_date: Optional[str] = None
+    tax_amount: Optional[float] = None
+    document_type: Optional[str] = None
+    sender_address: Optional[str] = None
+    sender_vat: Optional[str] = None
+
+
+@router.patch("/{doc_id}/metadata")
+async def update_document_metadata(doc_id: str, payload: DocumentMetadataUpdate):
+    """Manuelles Korrigieren einzelner AI-Metadaten (z.B. Bezeichnung, Sender,
+    Betrag). Nur die tatsaechlich gesetzten Felder werden ueberschrieben; andere
+    bleiben unveraendert. Setzt zusaetzlich manually_edited=True als Marker."""
+    doc = await db.documents.find_one({"id": doc_id, "is_deleted": False}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        return {"status": "no_changes", "ai_metadata": doc.get("ai_metadata", {})}
+
+    # date und document_date synchron halten
+    if "date" in updates and "document_date" not in updates:
+        updates["document_date"] = updates["date"]
+    elif "document_date" in updates and "date" not in updates:
+        updates["date"] = updates["document_date"]
+
+    ai_metadata = dict(doc.get("ai_metadata") or {})
+    for key, value in updates.items():
+        # Leere Strings/None -> Feld entfernen, damit UI klaren Zustand hat
+        if value in (None, ""):
+            ai_metadata.pop(key, None)
+        else:
+            ai_metadata[key] = value
+
+    ai_metadata["manually_edited"] = True
+
+    await db.documents.update_one(
+        {"id": doc_id, "is_deleted": False},
+        {"$set": {
+            "ai_metadata": ai_metadata,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"status": "updated", "ai_metadata": ai_metadata, "changed_fields": list(updates.keys())}
 
 
 @router.get("/{doc_id}/file")

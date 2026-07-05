@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 80: PATCH /api/documents/{doc_id}/metadata + Frontend Inline-Edit fully validated. 8/8 backend pytest tests pass. Frontend UI: pencil-hover-icon, save button, Enter key, Escape cancel, manually-edited badge - all work end-to-end. Verified sender, subject and amount (number) edit flows. All target docs (ZUGFerd 25b74df5..., STEINIGKE 4e4870b2...) restored to original values after tests.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_document_metadata_patch_iteration80.py",
+    "/app/test_reports/pytest/iteration_80_metadata_patch.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DocumentManagementPage.jsx (993 lines) already large; EditableMetaField is well-scoped inside the file but consider extracting to its own component file if further metadata inline-edit patterns are added.",
+    "PATCH endpoint has NO auth dependency in server code (routes/documents.py:1601). Anyone with knowledge of a doc_id can currently overwrite metadata via /api/documents/{doc_id}/metadata. Should be gated by an auth dependency (get_current_user / require_role) consistent with other document mutations.",
+    "Consider adding an audit trail (who/when edited which field) alongside manually_edited=True — the current boolean loses information about which fields were touched and when.",
+    "Empty-string-removes-field convention: works, but not documented in the endpoint docstring; frontend send '' when clearing a field, so behavior is intentional. Good, but consider a JSON schema note."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram (admin, live)",
+  "seed_data_creation": "None. Tests use existing docs ZUGFerd (25b74df5-6384-4eff-bbd4-7858fa7f449c) and STEINIGKE (4e4870b2-3f49-43f2-88ac-e3e8d1ea42fa) and restore all mutated fields after each assertion.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Route to Dokumentenverwaltung is /verwaltung/dokumente (NOT /dokumente as briefed). Search input has placeholder 'Suchen (Verwendungszweck, Firma, IBAN...)'. Detail sidebar opens on click of doc card row; testids present: field-{key}, edit-btn-{key}, edit-input-{key}, save-{key}, manually-edited-badge, close-detail. Pencil icon uses opacity-0 group-hover:opacity-100 — playwright must .hover() the field then click(force=True) on edit-btn.",
+  "rca of the issue": "N/A — feature works end-to-end. Backend PATCH tested for: single-field update + manually_edited flag, empty-string removes field, date/document_date sync (both directions), regression on second doc, 404 on unknown id, empty payload no-op, unknown fields ignored (pydantic). Frontend tested: pencil visible on hover, save button click, Enter key save, Escape cancel, subject/sender/amount edited successfully, toast 'aktualisiert' shown, manually-edited-badge visible."
+}
