@@ -1764,6 +1764,10 @@ async def save_doc_as_training_sample(doc_id: str, error_description: str = Form
     if not doc:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
 
+    ai_metadata = doc.get("ai_metadata") or {}
+    if not ai_metadata.get("manually_edited"):
+        raise HTTPException(status_code=400, detail="Dokument wurde nicht manuell korrigiert - kein Trainings-Sample noetig")
+
     # File-Content aus lokalem Storage lesen (Cloud-Storage optional laden)
     file_bytes = b""
     local_path = _local_path_for(doc.get("storage_path", ""))
@@ -1782,10 +1786,6 @@ async def save_doc_as_training_sample(doc_id: str, error_description: str = Form
 
     if not file_bytes:
         raise HTTPException(status_code=500, detail="Datei konnte nicht geladen werden")
-
-    ai_metadata = doc.get("ai_metadata") or {}
-    if not ai_metadata.get("manually_edited"):
-        raise HTTPException(status_code=400, detail="Dokument wurde nicht manuell korrigiert - kein Trainings-Sample noetig")
 
     corrections = {k: v for k, v in ai_metadata.items() if k != "manually_edited"}
     error_desc = error_description.strip() or (
