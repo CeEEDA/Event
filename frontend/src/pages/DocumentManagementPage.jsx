@@ -386,16 +386,30 @@ export default function DocumentManagementPage() {
     let successCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      setUploadProgress(`${i + 1}/${files.length}: ${file.name}`);
+      const isZip = /\.zip$/i.test(file.name) || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+      setUploadProgress(`${i + 1}/${files.length}: ${file.name}${isZip ? " (ZIP wird entpackt…)" : ""}`);
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("folder_id", activeFolder || "unbekannt");
+      if (!isZip) formData.append("folder_id", activeFolder || "unbekannt");
       try {
-        const r = await api.post("/documents/upload", formData, {
+        const endpoint = isZip ? "/documents/upload-zip" : "/documents/upload";
+        const r = await api.post(endpoint, formData, {
           headers: { "Content-Type": "multipart/form-data" },
-          timeout: 120000,
+          timeout: 180000,
         });
-        if (r.data.ai_status === "completed") {
+        if (isZip) {
+          const merged = r.data.teba_merged;
+          const single = r.data.individually_uploaded || [];
+          if (merged) {
+            toast.success(`ZIP entpackt: TEBA Nr. ${merged.invoice_number} als Sammel-PDF (${merged.source_files.length} Seiten) → ${merged.folder_id} 📦`);
+          }
+          if (single.length) {
+            toast.success(`+ ${single.length} weitere PDF${single.length > 1 ? "s" : ""} einzeln importiert`);
+          }
+          if (!merged && !single.length) {
+            toast.info("ZIP enthielt keine verwertbaren PDFs");
+          }
+        } else if (r.data.ai_status === "completed") {
           const meta = r.data.ai_metadata || {};
           toast.success(`"${file.name}" erkannt: ${meta.subject || r.data.folder_id}`);
         } else {
@@ -625,7 +639,7 @@ export default function DocumentManagementPage() {
               )}
             </div>
           )}
-          <input ref={fileInput} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff" className="hidden" onChange={e => handleUpload(Array.from(e.target.files))} />
+          <input ref={fileInput} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff,.zip" className="hidden" onChange={e => handleUpload(Array.from(e.target.files))} />
         </div>
       </header>
 
@@ -718,7 +732,7 @@ export default function DocumentManagementPage() {
               <div className="flex items-center justify-center gap-3">
                 <Upload className={`w-5 h-5 ${dragOver ? "text-fuchsia-500" : "text-gray-400"}`} />
                 <span className={`text-sm ${dragOver ? "text-fuchsia-600 font-medium" : "text-gray-500"}`}>
-                  {dragOver ? "Dateien hier ablegen" : "Dateien hierher ziehen oder klicken zum Hochladen"}
+                  {dragOver ? "Dateien hier ablegen" : "PDF · Bilder · ZIP hierher ziehen oder klicken zum Hochladen"}
                 </span>
                 <span className="text-xs text-gray-400">PDF, JPEG, PNG, WebP, TIFF</span>
               </div>
@@ -727,7 +741,7 @@ export default function DocumentManagementPage() {
           {isSearching && (
             <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
               <Search className="w-4 h-4" />
-              <span>Suchergebnisse für "<strong>{searchQuery}</strong>" — {documents.length} Treffer</span>
+              <span>Suchergebnisse für „<strong>{searchQuery}</strong>&ldquo; — {documents.length} Treffer</span>
             </div>
           )}
 

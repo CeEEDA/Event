@@ -1263,6 +1263,99 @@ async def upload_document(file: UploadFile = File(...), folder_id: str = Form("u
     return await create_document_from_bytes(file_data, file.filename, file.content_type, folder_id)
 
 
+@router.post("/upload-zip")
+async def upload_zip_archive(file: UploadFile = File(...)):
+    """Nimmt eine ZIP-Datei entgegen, entpackt sie und legt die PDFs im
+    Dokumentenmanagement ab. Wenn die enthaltenen PDFs dem TEBA-Factoring-
+    Muster entsprechen, werden sie automatisch zu einer Sammel-PDF gemerged
+    und im TEBA/JAHR/MONAT-Ordner abgelegt (inkl. DATEV-Weiterleitung).
+    Andere PDFs werden einzeln importiert (KI klassifiziert wie ueblich).
+    """
+    import zipfile
+    import io as _io
+
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Nur .zip-Dateien werden akzeptiert.")
+
+    zip_bytes = await file.read()
+    if len(zip_bytes) > 200 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="ZIP zu groß (max. 200 MB)")
+
+    try:
+        zf = zipfile.ZipFile(_io.BytesIO(zip_bytes), "r")
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Ungueltige ZIP-Datei")
+
+    # PDFs extrahieren (macOS __MACOSX/ und Hidden-Files uebergehen)
+    pdfs: list[tuple[str, bytes]] = []
+    other_files: list[str] = []
+    for name in zf.namelist():
+        if name.endswith("/") or "__MACOSX" in name or "/." in name or name.startswith("."):
+            continue
+        base = os.path.basename(name)
+        if not base:
+            continue
+        if base.lower().endswith(".pdf"):
+            try:
+                pdfs.append((base, zf.read(name)))
+            except Exception as e:
+                logger.warning(f"[upload-zip] Datei '{name}' nicht lesbar: {e}")
+        else:
+            other_files.append(base)
+
+    if not pdfs:
+        raise HTTPException(status_code=400, detail="Kein PDF im ZIP gefunden.")
+
+    # TEBA-Erkennung wie in der Mailbridge
+    from services.mailbridge import (
+        _is_teba_factoring_attachment, _merge_teba_factoring_pdfs,
+    )
+    teba_pdfs = [(fn, data, "application/pdf") for fn, data in pdfs if _is_teba_factoring_attachment(fn)]
+
+    result = {
+        "zip_filename": file.filename,
+        "pdfs_found": len(pdfs),
+        "other_files_ignored": other_files,
+        "teba_merged": None,
+        "individually_uploaded": [],
+    }
+
+    # TEBA-Batch → mergen und als eine Rechnung ablegen
+    if teba_pdfs and len(teba_pdfs) >= 2:
+        try:
+            merged_bytes, merged_name, invoice_nr = _merge_teba_factoring_pdfs(
+                teba_pdfs, mail_date=datetime.now(timezone.utc)
+            )
+            teba_doc = await create_teba_factoring_document(
+                merged_bytes, merged_name, invoice_nr,
+                mail_date=datetime.now(timezone.utc),
+                sender_email="",  # Kein Absender bekannt beim manuellen ZIP-Upload
+            )
+            result["teba_merged"] = {
+                "doc_id": teba_doc["id"],
+                "filename": merged_name,
+                "invoice_number": invoice_nr,
+                "folder_id": teba_doc["folder_id"],
+                "source_files": [fn for fn, _, _ in teba_pdfs],
+            }
+        except Exception as e:
+            logger.error(f"[upload-zip] TEBA-Merge fehlgeschlagen: {e}")
+            # Fallback: TEBA-PDFs einzeln importieren
+            for fn, data, ct in teba_pdfs:
+                d = await create_document_from_bytes(data, fn, ct, folder_id="unbekannt", source="upload-zip")
+                result["individually_uploaded"].append({"filename": fn, "doc_id": d["id"]})
+
+    # Nicht-TEBA-PDFs einzeln uploaden (KI-Klassifikation greift)
+    teba_names = {fn for fn, _ in pdfs if _is_teba_factoring_attachment(fn)}
+    for fn, data in pdfs:
+        if fn in teba_names and result["teba_merged"]:
+            continue  # schon im Merger
+        d = await create_document_from_bytes(data, fn, "application/pdf", folder_id="unbekannt", source="upload-zip")
+        result["individually_uploaded"].append({"filename": fn, "doc_id": d["id"]})
+
+    return result
+
+
 async def create_document_from_bytes(file_data: bytes, filename: str, content_type: str, folder_id: str = "unbekannt", source: str = "upload"):
     """Internal helper: persist a document from raw bytes and kick off AI analysis.
     Used by the REST upload endpoint AND the Mailbridge service for IMAP attachments."""
