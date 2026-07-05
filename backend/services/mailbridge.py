@@ -8,13 +8,14 @@ Messages older than IMAP_RETENTION_DAYS are permanently deleted.
 Runs as a background asyncio task, started from FastAPI's startup event.
 """
 import os
+import re
 import asyncio
 import logging
 import email
 import imaplib
 import mimetypes
 from email.header import decode_header
-from email.utils import parsedate_to_datetime
+from email.utils import parsedate_to_datetime, parseaddr
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,34 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp",
     "image/tiff",
 }
+
+# Subject-Keyword-Blacklist (case-insensitive, Wort-Grenzen).
+# Bewusst konservativ: Woerter die in echten Rechnungen NIE vorkommen.
+# "Angebot" NICHT dabei, weil das ein Kostenvoranschlag sein koennte.
+SPAM_SUBJECT_KEYWORDS = [
+    r"\bnewsletter\b",
+    r"\bwerbung\b",
+    r"\bprospekt\b",
+    r"\bkatalog\b",
+    r"\bsonderaktion\b",
+    r"\bsonderpreis(e)?\b",
+    r"\bgewinnspiel\b",
+    r"\bumfrage\b",
+    r"\bblack\s*friday\b",
+    r"\bcyber\s*monday\b",
+    r"\bdeal\s*of\s*the\s*day\b",
+    r"\bnur\s+heute\b",
+    r"\bexklusiv(e|es)?\s*angebot\b",
+    r"\bsale\b",
+    r"\brabatt(aktion)?\b",
+    r"%\s*rabatt",
+    r"\bfrohes?\s+(fest|weihnachten)\b",
+    r"\bfrohe\s+ostern\b",
+    r"\bwochen\s*newsletter\b",
+    r"\bnews\s*letter\b",
+    r"\bunsubscribe\b",
+]
+_SPAM_SUBJECT_RE = re.compile("|".join(SPAM_SUBJECT_KEYWORDS), re.IGNORECASE)
 
 _mailbridge_task: asyncio.Task | None = None
 _last_run_at: datetime | None = None
@@ -124,6 +153,21 @@ def _imap_connect():
     return mail
 
 
+async def _log_spam(subject: str, sender_email: str, reason: str) -> None:
+    """Loggt gefilterte Mails in die 'spam_log' Collection.
+    Damit kann der Admin nachschauen was rausgefiltert wurde und ggf. eingreifen."""
+    try:
+        from server import db as _db_ref
+        await _db_ref.spam_log.insert_one({
+            "subject": subject or "(kein Betreff)",
+            "sender_email": sender_email,
+            "reason": reason,
+            "filtered_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.debug(f"spam_log insert failed: {e}")
+
+
 async def _process_once() -> dict:
     """Single poll cycle: fetch UNSEEN messages, upload attachments, mark as read.
     Also purge messages older than IMAP_RETENTION_DAYS."""
@@ -148,6 +192,16 @@ async def _process_once() -> dict:
 
         from routes.documents import create_document_from_bytes
 
+        # Load learned spam senders/domains (from user "Als Spam markieren" clicks).
+        # Lazy import to avoid circular dependency at module load.
+        try:
+            from server import db as _db_ref
+            spam_entries = [d async for d in _db_ref.spam_blacklist.find({}, {"_id": 0})]
+        except Exception:
+            spam_entries = []
+        blocked_domains = {e.get("sender_domain", "").lower() for e in spam_entries if e.get("sender_domain")}
+        blocked_emails = {e.get("sender_email", "").lower() for e in spam_entries if e.get("sender_email")}
+
         for uid in uids:
             try:
                 typ, msg_data = await asyncio.to_thread(mail.fetch, uid, "(RFC822)")
@@ -157,11 +211,51 @@ async def _process_once() -> dict:
                 raw_email = msg_data[0][1]
                 msg = email.message_from_bytes(raw_email)
                 subject = _decode_mime_header(msg.get("Subject"))
-                sender = _decode_mime_header(msg.get("From"))
+                sender_raw = _decode_mime_header(msg.get("From"))
+                _, sender_email = parseaddr(sender_raw)
+                sender_email = (sender_email or "").lower()
+                sender_domain = sender_email.split("@")[-1] if "@" in sender_email else ""
                 stats["fetched"] += 1
+
+                # ─── SPAM-FILTER ────────────────────────────────────────
+                # Layer 1: List-Unsubscribe Header (Newsletter/Marketing MUSS diesen setzen)
+                if msg.get("List-Unsubscribe") or msg.get("List-Unsubscribe-Post"):
+                    logger.info(f"Mailbridge: Newsletter erkannt (List-Unsubscribe) - '{subject}' von {sender_email} - uebersprungen")
+                    await _log_spam(subject, sender_email, "list_unsubscribe")
+                    stats.setdefault("spam_filtered", 0)
+                    stats["spam_filtered"] += 1
+                    await asyncio.to_thread(mail.store, uid, "+FLAGS", "\\Seen")
+                    continue
+
+                # Layer 3: Subject-Keyword-Blacklist
+                if subject and _SPAM_SUBJECT_RE.search(subject):
+                    matched = _SPAM_SUBJECT_RE.search(subject).group(0)
+                    logger.info(f"Mailbridge: Spam-Keyword '{matched}' im Betreff - '{subject}' von {sender_email} - uebersprungen")
+                    await _log_spam(subject, sender_email, f"keyword:{matched}")
+                    stats.setdefault("spam_filtered", 0)
+                    stats["spam_filtered"] += 1
+                    await asyncio.to_thread(mail.store, uid, "+FLAGS", "\\Seen")
+                    continue
+
+                # Gelernte Spam-Absender (durch "Als Spam markieren"-Button trainiert)
+                if sender_email and sender_email in blocked_emails:
+                    logger.info(f"Mailbridge: Absender {sender_email} auf Blacklist - '{subject}' uebersprungen")
+                    await _log_spam(subject, sender_email, "learned_email")
+                    stats.setdefault("spam_filtered", 0)
+                    stats["spam_filtered"] += 1
+                    await asyncio.to_thread(mail.store, uid, "+FLAGS", "\\Seen")
+                    continue
+                if sender_domain and sender_domain in blocked_domains:
+                    logger.info(f"Mailbridge: Domain {sender_domain} auf Blacklist - '{subject}' uebersprungen")
+                    await _log_spam(subject, sender_email, "learned_domain")
+                    stats.setdefault("spam_filtered", 0)
+                    stats["spam_filtered"] += 1
+                    await asyncio.to_thread(mail.store, uid, "+FLAGS", "\\Seen")
+                    continue
+
                 attachments = _extract_attachments(msg)
                 if not attachments:
-                    logger.info(f"Mailbridge: Mail ohne unterstuetzte Anhaenge - '{subject}' von {sender}")
+                    logger.info(f"Mailbridge: Mail ohne unterstuetzte Anhaenge - '{subject}' von {sender_email}")
                 else:
                     for fname, payload, ctype in attachments:
                         try:

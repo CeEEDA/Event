@@ -5,7 +5,7 @@ import { Input } from "../components/ui/input";
 import { toast } from "sonner";
 import {
   ArrowLeft, Search, Upload, FolderOpen, FileText, Receipt, Car, Shield,
-  Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight,
+  Truck, Landmark, Folder, X, ChevronRight, Eye, Trash2, MoveRight, Ban,
   Loader2, Brain, Calendar, Euro, Hash, Building2, Tag, Clock,
   FolderPlus, Pencil, Check, Send, ChevronDown, Plus, Maximize2, HelpCircle,
   Mail, AlertCircle, AlertTriangle, Sparkles
@@ -440,6 +440,22 @@ export default function DocumentManagementPage() {
     } catch { toast.error("Fehler beim Löschen"); }
   };
 
+  const handleMarkAsSpam = async (docId) => {
+    if (!window.confirm("Dieses Dokument als Spam markieren?\n\nDer Absender wird auf die Blacklist gesetzt und künftige Mails automatisch gefiltert. Das Dokument wird endgültig gelöscht.")) return;
+    try {
+      const r = await api.post(`/documents/${docId}/mark-as-spam`);
+      if (r.data.blacklisted) {
+        const target = r.data.sender_email || r.data.sender_domain;
+        toast.success(`Als Spam markiert – "${target}" geblockt 🛡️`);
+      } else {
+        toast.success("Als Spam markiert (kein Absender erkannt – nur gelöscht)");
+      }
+      loadFolders();
+      loadDocuments(activeFolder);
+      if (selectedDoc?.id === docId) setSelectedDoc(null);
+    } catch { toast.error("Fehler beim Spam-Markieren"); }
+  };
+
   const handleMove = async (docId, folderId) => {
     try {
       const r = await api.put(`/documents/${docId}/move?folder_id=${folderId}`);
@@ -800,6 +816,9 @@ export default function DocumentManagementPage() {
                         <button onClick={() => setMoveTarget(doc)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600" title="Verschieben" data-testid={`move-${doc.id}`}>
                           <MoveRight className="w-4 h-4" />
                         </button>
+                        <button onClick={() => handleMarkAsSpam(doc.id)} className="p-1.5 rounded-md hover:bg-orange-50 text-gray-400 hover:text-orange-600" title="Als Spam markieren (Absender blocken)" data-testid={`spam-${doc.id}`}>
+                          <Ban className="w-4 h-4" />
+                        </button>
                         <button onClick={() => handleDelete(doc.id)} className="p-1.5 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600" title="Löschen" data-testid={`delete-${doc.id}`}>
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -981,6 +1000,9 @@ export default function DocumentManagementPage() {
                 </a>
                 <Button variant="outline" size="sm" className="w-full text-violet-600 hover:text-violet-700 hover:bg-violet-50" onClick={() => handleReanalyze(selectedDoc.id)} data-testid="detail-reanalyze-btn">
                   <Sparkles className="w-4 h-4 mr-1" /> KI neu analysieren
+                </Button>
+                <Button variant="outline" size="sm" className="w-full text-orange-600 hover:text-orange-700 hover:bg-orange-50" onClick={() => handleMarkAsSpam(selectedDoc.id)} data-testid="detail-spam-btn">
+                  <Ban className="w-4 h-4 mr-1" /> Als Spam markieren
                 </Button>
                 <Button variant="outline" size="sm" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(selectedDoc.id)} data-testid="detail-delete-btn">
                   <Trash2 className="w-4 h-4 mr-1" /> Löschen

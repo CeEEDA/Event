@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import json
 import logging
@@ -1501,6 +1502,25 @@ async def search_documents(q: str = Query(..., min_length=1)):
     return {"documents": docs, "query": q}
 
 
+@router.get("/spam-blacklist")
+async def get_spam_blacklist():
+    """Liste aller gelernten Spam-Absender / Domains fuer die Admin-UI."""
+    items = []
+    async for e in db.spam_blacklist.find({}, {"_id": 0}).sort("learned_at", -1):
+        items.append(e)
+    return {"items": items, "count": len(items)}
+
+
+@router.delete("/spam-blacklist/{entry_id}")
+async def delete_spam_blacklist_entry(entry_id: str):
+    """Entfernt einen Absender von der Blacklist (falls False-Positive)."""
+    r = await db.spam_blacklist.delete_one({"$or": [
+        {"sender_email": entry_id},
+        {"sender_domain": entry_id},
+    ]})
+    return {"deleted": r.deleted_count}
+
+
 @router.get("/{doc_id}")
 async def get_document(doc_id: str):
     """Get a single document with all metadata."""
@@ -1575,6 +1595,76 @@ async def delete_document(doc_id: str):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
     return {"status": "deleted"}
+
+
+@router.post("/{doc_id}/mark-as-spam")
+async def mark_document_as_spam(doc_id: str):
+    """Markiert das Dokument als Spam:
+    1. Extrahiert Absender-Email / Domain aus den KI-Metadaten oder dem
+       original_filename und speichert diese in der 'spam_blacklist' Collection.
+       Kuenftige Mails von dieser Adresse/Domain werden von der Mailbridge automatisch verworfen.
+    2. Loescht das Dokument endgueltig (hard delete).
+    Effekt: Die KI 'lernt' dazu, indem der Absender geblockt wird.
+    """
+    doc = await db.documents.find_one({"id": doc_id, "is_deleted": False}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    # Absenderinfo extrahieren
+    meta = doc.get("ai_metadata") or {}
+    sender_email = ""
+    for key in ("sender_email", "email", "from_email"):
+        v = meta.get(key)
+        if v and isinstance(v, str) and "@" in v:
+            sender_email = v.strip().lower()
+            break
+    # Fallback: nach E-Mail im full_text suchen
+    if not sender_email:
+        text = (doc.get("full_text") or "")
+        m = re.search(r"[\w\.\-\+]+@[\w\-]+\.[\w\.\-]+", text)
+        if m:
+            sender_email = m.group(0).lower()
+
+    sender_domain = sender_email.split("@")[-1] if "@" in sender_email else ""
+    sender_name = (meta.get("sender_name") or meta.get("sender") or "").strip()
+
+    # Blacklist-Eintrag (idempotent - upsert nach sender_email ODER sender_domain)
+    if sender_email or sender_domain:
+        entry = {
+            "sender_email": sender_email,
+            "sender_domain": sender_domain,
+            "sender_name": sender_name,
+            "learned_from_doc_id": doc_id,
+            "learned_at": datetime.now(timezone.utc).isoformat(),
+            "hits": 0,
+        }
+        # Nach Email deduplizieren (wenn vorhanden), sonst nach Domain
+        query = {"sender_email": sender_email} if sender_email else {"sender_domain": sender_domain}
+        await db.spam_blacklist.update_one(query, {"$setOnInsert": entry}, upsert=True)
+
+    # Dokument endgueltig loeschen (kein soft-delete - Spam braucht keine Historie)
+    await db.documents.delete_one({"id": doc_id})
+
+    # Datei aus lokaler Ablage / Cloud entfernen (best-effort)
+    try:
+        storage_path = doc.get("storage_path", "")
+        if storage_path.startswith("local://"):
+            local = storage_path.replace("local://", "", 1)
+            if os.path.exists(local):
+                os.remove(local)
+    except Exception as e:
+        logger.debug(f"[mark-as-spam] local file cleanup failed: {e}")
+
+    logger.info(
+        f"[mark-as-spam] doc {doc_id} als Spam markiert - "
+        f"Blacklist: email={sender_email or '-'} domain={sender_domain or '-'}"
+    )
+    return {
+        "status": "spam_marked",
+        "sender_email": sender_email,
+        "sender_domain": sender_domain,
+        "blacklisted": bool(sender_email or sender_domain),
+    }
 
 
 class DocumentMetadataUpdate(BaseModel):
