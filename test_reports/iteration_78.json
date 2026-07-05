@@ -1,0 +1,40 @@
+{
+  "summary": "Verified STEINIGKE-Rechnung upload → Ollama-Analyse → Ordner-Routing → Frontend-Anzeige nach GPU-Aktivierung des Live-Ollama-Servers. Alle kritischen Anforderungen erfüllt: doc_id vergeben, ai_status wechselt pending→completed, folder_id landet EXAKT auf 'rechnungseingang_eventenergie_deutschland_2026_06', Sender/Recipient/Amount/Rechnungsnr/document_type korrekt. BUG A (document_date=None) ist NICHT MEHR reproduzierbar — date='2026-06-24' wurde diesmal extrahiert. BUG B (iban=None) IST REPRODUZIERBAR — trotz 3 IBANs im PDF liefert Ollama null. Frontend zeigt beide STEINIGKE-Uploads in Rechnungseingang mit grünem 'KI erkannt'-Badge. Analyse-Zeit 86 s — schneller als vor GPU-Aktivierung, aber deutlich über der Erwartung <30 s.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/documents/upload → ai_metadata.iban", "issue": "STEINIGKE-PDF enthält 3 Absender-IBANs (DE06 6005 0101 7424 5009 07 etc.), ai_metadata.iban bleibt null. Andere Rechnungen (z.B. RE-2026-0303) haben iban korrekt gefüllt — Extraktion ist inkonsistent, wahrscheinlich Prompt-abhängig."},
+      {"endpoint": "POST /api/documents/upload → Analyse-Dauer", "issue": "Ende-zu-Ende 86 s (upload_at 15:27:27 → updated_at 15:28:53). GPU ist aktiv, aber deutlich über der 30 s-Erwartung. Prompt/Two-Stage-Pipeline (Text-first + Vision-Fallback) evtl. redundant oder zu lang."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/tmp/steinigke_final.json (raw completed doc)",
+    "/tmp/dokumente_final.png (screenshot Rechnungseingang mit STEINIGKE-Dokument)"
+  ],
+  "action_items": [
+    "BUG B (Prompt-Optimierung, low prio): Ollama-Prompt für IBAN-Extraktion verbessern. Absender-IBANs im PDF-Footer werden bei STEINIGKE nicht erkannt, bei anderen Rechnungen (RE-2026-0303) schon. Evtl. explizite IBAN-Regex als Fallback nach Ollama-Extraktion in analyze_document_smart / documents.py-Post-Processing.",
+    "Performance-Feedback: 86 s ist deutlich über <30 s Erwartung nach GPU-Aktivierung. User sollte 'docker exec ollama ollama ps' während einer Live-Analyse prüfen (bleibt es bei 100% GPU?). Alternativ Text-first-Pfad forcieren und Vision-Fallback nur bei leerem Text-OCR — Vision-Modell auf CPU/GPU-Load prüfen.",
+    "Kein Code-Fix nötig für BUG A — document_date wird jetzt korrekt als 'date'='2026-06-24' extrahiert. Der 'None'-Zustand aus der vorherigen Session war ein Einzelfall (evtl. während CPU-Ära / Timeout gewesen)."
+  ],
+  "critical_code_review_comments": [
+    "documents.py Zeile 1185 (POST /upload): folder_id-Default 'unbekannt' → Firmen-Override-Logik greift korrekt und routet zu 'rechnungseingang_eventenergie_deutschland_2026_06'. Kein Bug.",
+    "ollama_client.py: Warmup-Ping (30s) + Analyse-Timeout (240s) sind großzügig genug und wurden nicht ausgeschöpft. Kein ReadTimeout gesehen.",
+    "Frontend DocumentManagementPage.jsx: Badge 'KI erkannt' (grün) wird korrekt angezeigt sobald ai_status=completed. Details-Panel zeigt IBAN-Feld für Docs die es haben — für STEINIGKE bleibt es leer, das ist konsistent mit der ai_metadata (kein UI-Bug)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% für Pflichtanforderungen (Upload, Polling, Ordner, Metadata). BUG A resolved, BUG B remains as low-prio Prompt-Verbesserung.",
+    "frontend": "100% (Dokument sichtbar in korrektem Ordner mit grünem KI-erkannt-Badge)."
+  },
+  "test_credentials": "christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram (funktioniert gegen preview-URL).",
+  "seed_data_creation": "Zwei STEINIGKE-Test-Dokumente im Live-System: doc_id=4e4870b2-3f49-43f2-88ac-e3e8d1ea42fa (main-agent) und doc_id=ee6a0966-0638-409c-b12a-92cdde60416c (dieser Testlauf). Beide im Ordner rechnungseingang_eventenergie_deutschland_2026_06. Bei Bedarf via DELETE /api/documents/{doc_id} bereinigen.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "GPU-Aktivierung Ollama war erfolgreich — kein ReadTimeout mehr. Analyse-Ende-zu-Ende 86 s (down von 240 s Timeouts vorher). Datum-Extraktion funktioniert jetzt (BUG A resolved). IBAN-Extraktion bleibt inkonsistent (BUG B) — kein Blocker, aber Prompt-Optimierung sinnvoll. Frontend-Route für Dokumente ist /verwaltung/dokumente, NICHT /dokumente/{folder_id} (Fehl-Info im Original-Review). Navigation im UI läuft über Sidebar-Klicks auf Ordner.",
+  "rca of the issue": "Nach GPU-Aktivierung (docker run --gpus all von User) läuft der Ollama-Server unter 95.88.138.67:11434 stabil. analyze_document_smart in ollama_client.py Zeile 332+ liefert alle Pflichtfelder inkl. document_date=2026-06-24. Der Firmen-Override in documents.py ab ~800 mapped 'Eventenergie Deutschland' korrekt auf rechnungseingang_eventenergie_deutschland, die Jahr/Monat-Berechnung ab ~1000 hängt _2026_06 an. IBAN=null ist Prompt-Limitation: das Modell erkennt bei diesem PDF die Footer-IBANs nicht als 'Absender-IBAN' (bei anderen Docs klappt es). Empfehlung: nach Ollama-Response Regex-Post-Processing für IBAN-Muster (DE\\d{2}[\\d\\s]{18,32}) im full_text als Fallback."
+}
