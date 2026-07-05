@@ -867,7 +867,25 @@ export default function DocumentManagementPage() {
                   <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-medium">
                     <Brain className="w-3.5 h-3.5" /> KI-Analyse abgeschlossen
                     {selectedDoc.ai_metadata.manually_edited && (
-                      <span className="ml-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full" data-testid="manually-edited-badge">manuell korrigiert</span>
+                      <>
+                        <span className="ml-1 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full" data-testid="manually-edited-badge">manuell korrigiert</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const { data } = await api.post(`/documents/${selectedDoc.id}/save-as-training-sample`);
+                              toast.success(`Als Trainings-Beispiel gespeichert (ID ${data.id.slice(0, 8)}...)`);
+                            } catch (e) {
+                              toast.error(`Fehlgeschlagen: ${e?.response?.data?.detail || e.message}`);
+                            }
+                          }}
+                          className="ml-1 text-[10px] text-violet-600 bg-violet-50 hover:bg-violet-100 px-1.5 py-0.5 rounded-full flex items-center gap-1 transition-colors"
+                          title="Diese Korrektur als KI-Trainingsbeispiel speichern - hilft dem Modell aehnliche Faelle kuenftig richtig zu erkennen"
+                          data-testid="save-training-sample-btn"
+                        >
+                          <Sparkles className="w-3 h-3" /> Als Beispiel lernen
+                        </button>
+                      </>
                     )}
                   </div>
                   {selectedDoc.datev_forwarded && (

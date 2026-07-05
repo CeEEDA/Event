@@ -1750,3 +1750,61 @@ async def delete_training_sample(sample_id: str):
     if result.deleted_count == 0:
         raise HTTPException(404, "Trainingsbeispiel nicht gefunden")
     return {"deleted": True}
+
+
+@router.post("/{doc_id}/save-as-training-sample")
+async def save_doc_as_training_sample(doc_id: str, error_description: str = Form("")):
+    """Erzeugt aus einem bereits manuell korrigierten Dokument ein
+    Trainings-Sample. Die aktuellen (korrigierten) ai_metadata werden als
+    'correction' hinterlegt, das Original-File wird beigelegt, damit
+    kuenftig Prompt-Tuning bzw. Few-Shot-Beispiele damit gefuettert werden
+    koennen."""
+    import base64
+    doc = await db.documents.find_one({"id": doc_id, "is_deleted": False}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
+
+    # File-Content aus lokalem Storage lesen (Cloud-Storage optional laden)
+    file_bytes = b""
+    local_path = _local_path_for(doc.get("storage_path", ""))
+    if local_path and os.path.exists(local_path):
+        try:
+            with open(local_path, "rb") as fh:
+                file_bytes = fh.read()
+        except Exception as e:
+            logger.warning(f"[training-sample] local read failed: {e}")
+    # Falls kein lokaler Bytes gefunden, Cloud-Storage versuchen
+    if not file_bytes and doc.get("storage_path"):
+        try:
+            file_bytes, _ct = await asyncio.to_thread(get_object, doc["storage_path"])
+        except Exception as e:
+            logger.warning(f"[training-sample] cloud read failed: {e}")
+
+    if not file_bytes:
+        raise HTTPException(status_code=500, detail="Datei konnte nicht geladen werden")
+
+    ai_metadata = doc.get("ai_metadata") or {}
+    if not ai_metadata.get("manually_edited"):
+        raise HTTPException(status_code=400, detail="Dokument wurde nicht manuell korrigiert - kein Trainings-Sample noetig")
+
+    corrections = {k: v for k, v in ai_metadata.items() if k != "manually_edited"}
+    error_desc = error_description.strip() or (
+        f"Manuelle Korrektur: {doc.get('original_filename','')} - "
+        f"Zielordner {doc.get('folder_id','')}"
+    )
+
+    sample_id = str(uuid.uuid4())
+    sample = {
+        "id": sample_id,
+        "filename": doc.get("original_filename", "document.pdf"),
+        "content_type": doc.get("content_type", "application/pdf"),
+        "file_data": base64.b64encode(file_bytes).decode("utf-8"),
+        "file_size": len(file_bytes),
+        "error_description": error_desc,
+        "correction": json.dumps(corrections, ensure_ascii=False, indent=2),
+        "source_doc_id": doc_id,
+        "target_folder_id": doc.get("folder_id"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.ai_training_samples.insert_one(sample)
+    return {"id": sample_id, "filename": sample["filename"], "status": "created"}

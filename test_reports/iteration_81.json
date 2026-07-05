@@ -1,0 +1,45 @@
+{
+  "summary": "Full e2e testing of 'Als Beispiel lernen' feature. Backend POST /api/documents/{doc_id}/save-as-training-sample: 3/3 pytest cases pass (positive create + verify all fields incl. source_doc_id, target_folder_id, file_size=5.78MB, correction JSON without manually_edited; 400 for non-manual; 404 for unknown). Frontend E2E: login as admin, search 'Normann' → 1 hit (263015.pdf) → detail panel opens showing amber 'manuell korrigiert'-Badge + violet 'Als Beispiel lernen'-Button; click yields toast 'Als Trainings-Beispiel gespeichert (ID fa96cce6...)'. Regression: RE-2026-0310 (no manually_edited) shows neither Badge nor Button. Cleanup: all created training samples removed from db.ai_training_samples (count=0).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/documents/{doc_id}/save-as-training-sample",
+        "issue": "Check order: file loading happens BEFORE manually_edited-check. Result: für ein Doc OHNE lokale Datei UND OHNE manually_edited-Flag kommt 500 'Datei konnte nicht geladen werden' statt 400 'nicht manuell korrigiert'. Fix: die ai_metadata-Pruefung (Zeile 1786-1788) VOR das File-Loading (Zeile 1768-1784) verschieben. Aktuell nur ein Randfall, aber saubere Trennung wuenschenswert."
+      },
+      {
+        "endpoint": "GET /api/documents/ai-training-samples",
+        "issue": "PRE-EXISTING (nicht Teil des aktuellen Features): Route ist durch @router.get('/{doc_id}') (line 1504) verschattet — /ai-training-samples wird als doc_id interpretiert → 404 'Dokument nicht gefunden'. Erforderlich waere Reihenfolge zu tauschen ODER unter '/samples/list' o.ae. registrieren. Betrifft weder Feature-Funktion noch UI-Flow."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_training_sample.py",
+    "/app/test_reports/pytest/training_sample.xml"
+  ],
+  "action_items": [
+    "OPTIONAL/MINOR: In routes/documents.py save_doc_as_training_sample: manually_edited-Check (1786-1788) VOR das File-Loading (1768-1784) verschieben, damit ein 400 vor einem potentiellen 500 kommt.",
+    "INFO: STEINIGKE-Doc 4e4870b2-3f49-43f2-88ac-e3e8d1ea42fa hatte in der aktuellen DB manually_edited=true (Widerspruch zur ursprünglichen Test-Annahme im Review-Request). Fuer den 400-Negative-Test wurde daher afbdd21a-9420-416f-8c38-8cca3344921e (Rechnung_RE-2026-0310.pdf, no manually_edited, lokaler File-Path vorhanden) genutzt.",
+    "OPTIONAL: GET /api/documents/ai-training-samples ist wegen Route-Ordering unerreichbar (siehe minor issue)."
+  ],
+  "critical_code_review_comments": [
+    "documents.py: File-Länge 1811 Zeilen — waechst über die 700-Line-Empfehlung deutlich hinaus, sollte in mehrere Module (folders, upload, ai-samples, crud, files) aufgeteilt werden.",
+    "save-as-training-sample: prüft manually_edited NACH teurem File-Load (Bytes + optional Cloud-Call). Best-practice: billige Validation zuerst.",
+    "Route ordering: /{doc_id} vor spezifischen Sub-Pfaden wie /ai-training-samples ist ein wiederkehrendes Pattern in dieser Datei — sollte generell abstrakt geprüft werden."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_training_sample.py (neu erstellt)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "christian.ecker@eventenergie-deutschland.de / qivbeb-Wodha1-sewram (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Keine dauerhaften Seed-Daten. Testweise wurden 2 ai_training_samples angelegt (1x pytest, 1x FE-Klick) — beide via API/DB nach Test-Ende geloescht. db.ai_training_samples ist wieder leer.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend-Test-File /app/backend/tests/test_training_sample.py verwendet PyMongo (sync) fuer DB-Verifikation (weil GET /ai-training-samples wegen Route-Ordering 404 liefert). Alle 3 Testfaelle self-cleanup via module-scoped fixture. Frontend-Data-Testid ist 'doc-{id}' (nicht 'doc-card-{id}' wie im Review-Request angenommen).",
+  "rca of the issue": "Kein blockierendes Issue. Ein minor Order-Bug bei der Save-Endpoint-Validierung + ein pre-existing Route-Ordering-Problem beim List-Endpoint. Beides beeintraechtigt den User-Flow nicht."
+}
