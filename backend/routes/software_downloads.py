@@ -148,6 +148,19 @@ async def download_build_mobile_mac():
     )
 
 
+@router.get("/fints-handover")
+async def download_fints_handover():
+    """FinTS/HBCI Integrations-Handover-ZIP (Code + Docs für andere Agenten)."""
+    filepath = DESKTOP_DIR / "fints_integration_handover.zip"
+    if not filepath.exists():
+        raise HTTPException(404, "FinTS Handover-ZIP nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="fints_integration_handover.zip",
+        media_type="application/zip",
+    )
+
+
 @router.get("/info")
 async def get_download_info():
     files = []
