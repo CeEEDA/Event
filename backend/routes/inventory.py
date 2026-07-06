@@ -85,9 +85,10 @@ class ItemCreate(BaseModel):
     anlagevermoegensnummer: Optional[str] = ""
     besitzer: str = "ES Besitz und Verwaltung GmbH & Co. KG"
     einkaufspreis: Optional[float] = 0.0
-    anschaffung_monat: Optional[int] = None  # 1-12
+    anschaffung_monat: Optional[int] = None
     anschaffung_jahr: Optional[int] = None
     aktueller_bilanzwert: Optional[float] = 0.0
+    marktschaetzwert: Optional[float] = 0.0
     stueckzahl: Optional[int] = 1
     notiz: Optional[str] = ""
     group_id: str
@@ -101,6 +102,7 @@ class ItemUpdate(BaseModel):
     anschaffung_monat: Optional[int] = None
     anschaffung_jahr: Optional[int] = None
     aktueller_bilanzwert: Optional[float] = None
+    marktschaetzwert: Optional[float] = None
     stueckzahl: Optional[int] = None
     notiz: Optional[str] = None
     group_id: Optional[str] = None
@@ -200,6 +202,11 @@ async def create_item(payload: ItemCreate):
     """Neue Inventar-Position anlegen."""
     if not payload.bezeichnung.strip():
         raise HTTPException(400, "Bezeichnung darf nicht leer sein")
+    # Mindestens Bilanzwert ODER Marktschaetzwert muss angegeben sein
+    bilanz = float(payload.aktueller_bilanzwert or 0)
+    markt = float(payload.marktschaetzwert or 0)
+    if bilanz <= 0 and markt <= 0:
+        raise HTTPException(400, "Bitte einen Bilanzwert ODER einen Marktschaetzwert eintragen (mindestens einer > 0).")
     # Gruppe pruefen
     grp = await db.inventory_groups.find_one({"id": payload.group_id})
     if not grp:
@@ -213,7 +220,8 @@ async def create_item(payload: ItemCreate):
         "einkaufspreis": float(payload.einkaufspreis or 0),
         "anschaffung_monat": payload.anschaffung_monat,
         "anschaffung_jahr": payload.anschaffung_jahr,
-        "aktueller_bilanzwert": float(payload.aktueller_bilanzwert or 0),
+        "aktueller_bilanzwert": bilanz,
+        "marktschaetzwert": markt,
         "stueckzahl": int(payload.stueckzahl or 1),
         "notiz": (payload.notiz or "").strip(),
         "group_id": payload.group_id,
@@ -243,6 +251,14 @@ async def update_item(item_id: str, payload: ItemUpdate):
         grp = await db.inventory_groups.find_one({"id": updates["group_id"]})
         if not grp:
             raise HTTPException(400, f"Gruppe '{updates['group_id']}' existiert nicht")
+    # Wenn beide Werte-Felder betroffen: mind. einer muss > 0 sein (bezogen auf Zielzustand)
+    if "aktueller_bilanzwert" in updates or "marktschaetzwert" in updates:
+        current = await db.inventory_items.find_one({"id": item_id}, {"aktueller_bilanzwert": 1, "marktschaetzwert": 1})
+        if current:
+            bilanz = float(updates.get("aktueller_bilanzwert", current.get("aktueller_bilanzwert", 0)) or 0)
+            markt = float(updates.get("marktschaetzwert", current.get("marktschaetzwert", 0)) or 0)
+            if bilanz <= 0 and markt <= 0:
+                raise HTTPException(400, "Bitte einen Bilanzwert ODER einen Marktschaetzwert eintragen.")
     if not updates:
         return {"status": "noop"}
     updates["updated_at"] = _now_iso()
@@ -460,6 +476,7 @@ async def stats():
             "count": {"$sum": 1},
             "total_einkauf": {"$sum": {"$multiply": ["$einkaufspreis", "$stueckzahl"]}},
             "total_bilanz": {"$sum": {"$multiply": ["$aktueller_bilanzwert", "$stueckzahl"]}},
+            "total_markt": {"$sum": {"$multiply": [{"$ifNull": ["$marktschaetzwert", 0]}, "$stueckzahl"]}},
         }},
     ]
     per_group = []
@@ -469,12 +486,58 @@ async def stats():
             "count": row["count"],
             "total_einkauf": round(row["total_einkauf"] or 0, 2),
             "total_bilanz": round(row["total_bilanz"] or 0, 2),
+            "total_markt": round(row["total_markt"] or 0, 2),
         })
     total_einkauf = sum(r["total_einkauf"] for r in per_group)
     total_bilanz = sum(r["total_bilanz"] for r in per_group)
+    total_markt = sum(r["total_markt"] for r in per_group)
     return {
         "total_items": total_items,
         "total_einkauf": round(total_einkauf, 2),
         "total_bilanz": round(total_bilanz, 2),
+        "total_markt": round(total_markt, 2),
         "per_group": per_group,
     }
+
+
+# ─── Exports (XLSX + PDF) ─────────────────────────────────────────
+async def _load_items_and_groups() -> tuple[list, dict]:
+    items = [d async for d in db.inventory_items.find({"is_deleted": {"$ne": True}}, {"_id": 0})]
+    groups_by_id = {}
+    async for g in db.inventory_groups.find({}, {"_id": 0}):
+        groups_by_id[g["id"]] = g
+    return items, groups_by_id
+
+
+@router.get("/export/xlsx")
+async def export_xlsx():
+    """Excel-Export mit Deckblatt + je 1 Sheet pro Gruppe."""
+    from routes.inventory_exports import build_xlsx
+    items, groups_by_id = await _load_items_and_groups()
+    data = build_xlsx(items, groups_by_id)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    fname = f"Inventar_{ts}.xlsx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/export/pdf")
+async def export_pdf(mode: str = Query("smart", pattern="^(smart|mittel|gross)$")):
+    """PDF-Export mit 3 Detaillierungsstufen.
+    - smart: Deckblatt + einfache Liste
+    - mittel: + je Gruppe Deckblatt + je Item eine Seite mit Bild
+    - gross: wie mittel + Referenzen der angehaengten Dokumente
+    """
+    from routes.inventory_exports import build_pdf
+    items, groups_by_id = await _load_items_and_groups()
+    data = build_pdf(items, groups_by_id, mode=mode, get_object_fn=get_object)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    fname = f"Inventar_{mode}_{ts}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
