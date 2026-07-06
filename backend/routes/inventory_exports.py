@@ -25,6 +25,7 @@ from reportlab.pdfgen import canvas as pdfcanvas
 logger = logging.getLogger(__name__)
 
 FIRMA_NAME = "Eventenergie Deutschland GmbH & Co. KG"
+LOGO_PATH = "/app/backend/static/logo.png"
 FUCHSIA = colors.HexColor("#c026d3")
 FUCHSIA_LIGHT = colors.HexColor("#fce7f3")
 GRAY_DARK = colors.HexColor("#374151")
@@ -218,7 +219,23 @@ def _pdf_footer(canv, doc):
 
 def _deckblatt(items, groups_by_id, styles) -> list:
     """Deckblatt-Elemente fuer alle 3 Detail-Modi."""
+    import os as _os
     story = []
+
+    # ─── Logo oben zentriert ───────────────────────────────────
+    if _os.path.exists(LOGO_PATH):
+        try:
+            logo = RLImage(LOGO_PATH)
+            # Original 460x107 -> Zielbreite 8 cm, Hoehe proportional
+            target_w = 8 * cm
+            ratio = 107 / 460
+            logo.drawWidth = target_w
+            logo.drawHeight = target_w * ratio
+            logo.hAlign = "CENTER"
+            story.append(logo)
+            story.append(Spacer(1, 14))
+        except Exception as e:
+            logger.warning(f"[pdf] Logo konnte nicht eingebettet werden: {e}")
 
     title_style = ParagraphStyle(
         "Title", parent=styles["Title"], fontSize=22, textColor=FUCHSIA,
@@ -403,8 +420,21 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
 
         for gid, group_items in sorted(by_group.items(), key=lambda kv: groups_by_id.get(kv[0], {}).get("name", kv[0])):
             gname = groups_by_id.get(gid, {}).get("name", gid) or "Sonstiges"
-            # Gruppen-Deckblatt
+            # Gruppen-Deckblatt mit Logo
             story.append(PageBreak())
+            import os as _os
+            if _os.path.exists(LOGO_PATH):
+                try:
+                    logo = RLImage(LOGO_PATH)
+                    target_w = 5 * cm
+                    ratio = 107 / 460
+                    logo.drawWidth = target_w
+                    logo.drawHeight = target_w * ratio
+                    logo.hAlign = "CENTER"
+                    story.append(logo)
+                    story.append(Spacer(1, 8))
+                except Exception:
+                    pass
             story.append(Paragraph(f"Gruppe: {gname}", ParagraphStyle("GT", parent=styles["Title"], fontSize=20, textColor=FUCHSIA, spaceAfter=16)))
 
             g_stk = sum(int(i.get("stueckzahl") or 1) for i in group_items)
