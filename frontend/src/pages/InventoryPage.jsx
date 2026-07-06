@@ -148,10 +148,11 @@ export default function InventoryPage() {
       <main className="max-w-5xl mx-auto px-3 py-4 space-y-3">
         {/* Stats */}
         {stats && !q && (
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <StatCard label="Positionen" value={stats.total_items} />
             <StatCard label="Einkauf gesamt" value={fmtEUR(stats.total_einkauf)} />
             <StatCard label="Bilanzwert" value={fmtEUR(stats.total_bilanz)} highlight />
+            <StatCard label="Marktwert" value={fmtEUR(stats.total_markt)} accent />
           </div>
         )}
 
@@ -217,11 +218,21 @@ export default function InventoryPage() {
 }
 
 
-function StatCard({ label, value, highlight }) {
+function StatCard({ label, value, highlight, accent }) {
+  const cls = highlight
+    ? "bg-fuchsia-50 border-fuchsia-200"
+    : accent
+      ? "bg-emerald-50 border-emerald-200"
+      : "bg-white border-gray-200";
+  const txt = highlight
+    ? "text-fuchsia-700"
+    : accent
+      ? "text-emerald-700"
+      : "text-gray-900";
   return (
-    <div className={`rounded-lg border p-2 sm:p-3 ${highlight ? "bg-fuchsia-50 border-fuchsia-200" : "bg-white border-gray-200"}`}>
+    <div className={`rounded-lg border p-2 sm:p-3 ${cls}`} data-testid={`inv-stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
       <div className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wide">{label}</div>
-      <div className={`text-sm sm:text-lg font-bold tabular-nums ${highlight ? "text-fuchsia-700" : "text-gray-900"}`}>{value}</div>
+      <div className={`text-sm sm:text-lg font-bold tabular-nums ${txt}`}>{value}</div>
     </div>
   );
 }
@@ -437,7 +448,8 @@ function ItemRow({ item, onEdit, onDelete }) {
           {item.anlagevermoegensnummer && <span className="font-mono">Nr. {item.anlagevermoegensnummer}</span>}
           {item.stueckzahl > 1 && <span>· {item.stueckzahl} Stk.</span>}
           {anschaffung && <span>· {anschaffung}</span>}
-          {item.aktueller_bilanzwert > 0 && <span className="text-fuchsia-600 font-medium">· {fmtEUR(item.aktueller_bilanzwert)}</span>}
+          {item.aktueller_bilanzwert > 0 && <span className="text-fuchsia-600 font-medium">· Bilanz {fmtEUR(item.aktueller_bilanzwert)}</span>}
+          {item.marktschaetzwert > 0 && <span className="text-emerald-600 font-medium">· Markt {fmtEUR(item.marktschaetzwert)}</span>}
         </div>
       </div>
       <div className="flex items-center gap-0.5 flex-shrink-0">
