@@ -110,17 +110,18 @@ export default function KirmesZaehlerPage() {
   const minDate = event?.dispo_start || event?.start_date || null;
   const maxDate = event?.dispo_end || event?.end_date || null;
   useEffect(() => {
+    // NUR bei Event-Load laufen (minDate/maxDate-Change), NICHT bei selectedDate-Change.
+    // Funktionales Update: wenn der State passt, wird dieselbe Referenz zurueckgegeben
+    // -> kein Re-Render, kein Loop.
     if (!maxDate) return;
     const today = toLocalDateStr(new Date());
-    // Wenn aktueller Tag NACH Event-Ende: auf Event-Ende clampen
-    if (today > maxDate) {
-      setSelectedDate(prev => prev > maxDate ? maxDate : prev);
-    }
-    // Falls der User per URL vor den Aufbau navigiert: auf Aufbau clampen
-    if (minDate && selectedDate < minDate) {
-      setSelectedDate(minDate);
-    }
-  }, [maxDate, minDate, selectedDate]);
+    setSelectedDate(prev => {
+      if (today > maxDate && prev > maxDate) return maxDate;
+      if (minDate && prev < minDate) return minDate;
+      return prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxDate, minDate]);
 
   // Auto-refresh every 30s
   useEffect(() => {
@@ -142,7 +143,13 @@ export default function KirmesZaehlerPage() {
   const isAtEffectiveToday = selectedDate === effectiveToday;
   const canGoNext = !maxDate || selectedDate < maxDate;
   const canGoPrev = !minDate || selectedDate > minDate;
-  const displayDate = new Date(selectedDate).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+  const displayDate = (() => {
+    try {
+      const d = new Date(selectedDate);
+      if (Number.isNaN(d.getTime())) return selectedDate || "-";
+      return d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+    } catch { return selectedDate || "-"; }
+  })();
 
   const handleExportCSV = async () => {
     setExporting(true);
