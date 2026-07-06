@@ -138,9 +138,22 @@ export function SignupForm({ selectedEvent, signupForm, setSignupForm, additiona
         {/* Zahlungsmittel */}
         <div>
           <Label className="text-gray-700 text-sm">Zahlungsmittel</Label>
-          <select value={signupForm.payment_method} onChange={e => setSignupForm(f => ({ ...f, payment_method: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="signup-payment">
-            {PAYMENT_METHODS.filter(m => m.value !== "rechnung" || schausteller?.kauf_auf_rechnung).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+          {schausteller?.kauf_auf_rechnung ? (
+            <div
+              className="mt-1 px-3 py-2 border border-emerald-300 bg-emerald-50 rounded-lg text-sm text-emerald-800 flex items-center gap-2"
+              data-testid="signup-payment-locked-rechnung"
+            >
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">✓</span>
+              <div className="flex-1">
+                <div className="font-semibold">Zahlung auf Rechnung</div>
+                <div className="text-[11px] text-emerald-700">Für Sie freigeschaltet – keine Kaution nötig, Sie erhalten eine Rechnung nach der Veranstaltung.</div>
+              </div>
+            </div>
+          ) : (
+            <select value={signupForm.payment_method} onChange={e => setSignupForm(f => ({ ...f, payment_method: e.target.value }))} className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white" data-testid="signup-payment">
+              {PAYMENT_METHODS.filter(m => m.value !== "rechnung").map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          )}
         </div>
 
         {/* Buchungsübersicht */}

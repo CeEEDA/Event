@@ -1024,6 +1024,13 @@ async def signup_for_event(data: EventSignup):
     if event_rechnung:
         data.payment_method = "rechnung"
 
+    # If the schausteller is flagged "kauf_auf_rechnung" in the user management,
+    # they must NEVER be pushed into a Stripe / PayPal / Kaution flow – even if
+    # the event itself accepts card payments. Auto-switch to Rechnung so the
+    # signup completes without deposit blocker.
+    if sch_rechnung:
+        data.payment_method = "rechnung"
+
     # Find price for this connection type
     # Wohnwagen signups use wohnwagen_prices, regular signups use regular prices
     price = 0.0

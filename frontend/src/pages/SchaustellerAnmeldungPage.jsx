@@ -62,6 +62,15 @@ export default function SchaustellerAnmeldungPage() {
   const [paidAmount, setPaidAmount] = useState(null);
   const [pendingSessionId, setPendingSessionId] = useState(null);
 
+  // Wenn der Schausteller in der Benutzerverwaltung "Kauf auf Rechnung" hat,
+  // erzwingen wir "rechnung" als Zahlungsart. Damit umgeht der Anmeldeflow den
+  // Stripe/PayPal-Kaution-Schritt komplett und kommt sonst nirgendwo mehr fest.
+  useEffect(() => {
+    if (schausteller?.kauf_auf_rechnung) {
+      setSignupForm(f => f.payment_method === "rechnung" ? f : { ...f, payment_method: "rechnung" });
+    }
+  }, [schausteller?.kauf_auf_rechnung]);
+
   const loadBookings = useCallback(async (schId) => {
     try { const r = await api.get(`/kirmes/public/my-bookings?schausteller_id=${schId}`); setMyBookings(r.data); } catch (e) { console.debug("loadBookings failed", e); }
   }, []);
@@ -419,7 +428,7 @@ export default function SchaustellerAnmeldungPage() {
     setStep("auth");
   };
 
-  const resetSignupForm = () => { setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: "kreditkarte" }); setAdditionalSignups([]); setCompletedBookings([]); };
+  const resetSignupForm = () => { setSignupForm({ platznummer: "", fahrgeschaeft: "", connection_type: "", payment_method: schausteller?.kauf_auf_rechnung ? "rechnung" : "kreditkarte" }); setAdditionalSignups([]); setCompletedBookings([]); };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="schausteller-anmeldung">
