@@ -39,6 +39,18 @@ header.sticky.top-0 {
     div.sticky.top-0 {
         padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
     }
+    /* Nicht-sticky Page-Header: <header class="bg-white border-b ..."> die typischerweise
+       ganz oben stehen (z.B. OrdersPage, OrderDetailPage, KirmesPage).
+       Wir triggern ueber die Kombination bg-white + border-b, das ist unser Standard-Muster. */
+    header.bg-white.border-b {
+        padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+    }
+    /* Und div-Container die als Header verwendet werden (aeltere Seiten) */
+    body > div > header,
+    #root > div > header,
+    #root > div > div > header {
+        padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+    }
 }
 
 @layer base {

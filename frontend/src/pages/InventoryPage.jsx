@@ -9,7 +9,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Plus, Search, Camera, ImageIcon, Trash2, Edit3, X, Package,
-  FileBarChart, ChevronDown, ChevronRight,
+  FileBarChart, ChevronDown, ChevronRight, FileText, Paperclip, Download,
 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -20,7 +20,10 @@ api.interceptors.request.use(cfg => {
   return cfg;
 });
 
-const BESITZER_OPTIONS = ["ES Besitz und Verwaltung GmbH & Co. KG"];
+const BESITZER_OPTIONS = [
+  "ES Besitz und Verwaltung GmbH & Co. KG",
+  "Eventenergie Deutschland GmbH & Co. KG",
+];
 const MONATE = [
   { v: 1, n: "Januar" }, { v: 2, n: "Februar" }, { v: 3, n: "Maerz" },
   { v: 4, n: "April" }, { v: 5, n: "Mai" }, { v: 6, n: "Juni" },
@@ -280,9 +283,13 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
   const [images, setImages] = useState(item?.images || []);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [createdItemId, setCreatedItemId] = useState(item?.id || null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [docs, setDocs] = useState(item?.documents || []);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
+  const docInputRef = useRef(null);
 
   const save = async () => {
     if (!form.bezeichnung.trim()) {
@@ -369,6 +376,43 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
       await api.delete(`/inventory/items/${createdItemId}/images/${img_id}`);
       setImages(imgs => imgs.filter(i => i.id !== img_id));
     } catch { toast.error("Fehler beim Loeschen"); }
+  };
+
+  const uploadDocs = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    if (!createdItemId) {
+      toast.error("Bitte zuerst 'Speichern' klicken");
+      return;
+    }
+    setUploadingDoc(true);
+    for (const f of fileList) {
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const r = await api.post(`/inventory/items/${createdItemId}/documents`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        setDocs(ds => [...ds, r.data]);
+      } catch (e) {
+        toast.error(`Datei ${f.name}: ${e?.response?.data?.detail || "Upload fehlgeschlagen"}`);
+      }
+    }
+    setUploadingDoc(false);
+  };
+
+  const removeDoc = async (doc_id) => {
+    if (!window.confirm("Dokument loeschen?")) return;
+    try {
+      await api.delete(`/inventory/items/${createdItemId}/documents/${doc_id}`);
+      setDocs(ds => ds.filter(d => d.id !== doc_id));
+    } catch { toast.error("Fehler beim Loeschen"); }
+  };
+
+  const fmtBytes = (b) => {
+    if (!b) return "";
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+    return `${(b / 1024 / 1024).toFixed(1)} MB`;
   };
 
   return (
@@ -523,27 +567,19 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
             )}
 
             <div className="grid grid-cols-2 gap-2">
-              {/* Kamera-Aufnahme (iOS/iPad triggert direkt Camera) */}
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={e => uploadImages(e.target.files)}
-              />
+              {/* Kamera-Modal (getUserMedia - robust auf iPhone/iPad, auch Desktop-Modus) */}
               <Button
                 variant="outline"
                 size="sm"
                 type="button"
                 disabled={!createdItemId || uploadingImg}
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => setShowCamera(true)}
                 className="h-11 text-sm"
                 data-testid="inv-camera-btn"
               >
                 <Camera className="w-4 h-4 mr-1" /> Foto aufnehmen
               </Button>
-              {/* Galerie */}
+              {/* Galerie / Datei-Auswahl */}
               <input
                 ref={galleryInputRef}
                 type="file"
@@ -564,9 +600,78 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                 <ImageIcon className="w-4 h-4 mr-1" /> Aus Galerie
               </Button>
             </div>
-            {uploadingImg && <p className="text-xs text-gray-500 mt-1">Bild wird hochgeladen…</p>}
+            {uploadingImg && <p className="text-xs text-gray-500 mt-1">Bild wird hochgeladen...</p>}
+          </div>
+
+          {/* Dokumente */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Dokumente {docs.length > 0 && <span className="text-gray-400">({docs.length})</span>}
+            </label>
+            {docs.length > 0 && (
+              <div className="space-y-1 mb-2">
+                {docs.map(d => (
+                  <div key={d.id} className="flex items-center gap-2 px-2 py-1.5 border border-gray-200 rounded-md bg-gray-50">
+                    <FileText className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-gray-800 truncate">{d.filename}</div>
+                      <div className="text-[10px] text-gray-400">{fmtBytes(d.size)}</div>
+                    </div>
+                    <a
+                      href={`${API}/api/inventory/items/${createdItemId}/documents/${d.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1.5 rounded text-gray-500 hover:bg-blue-50 hover:text-blue-600"
+                      title="Oeffnen / Herunterladen"
+                      data-testid={`inv-doc-open-${d.id}`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      onClick={() => removeDoc(d.id)}
+                      className="p-1.5 rounded text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      title="Loeschen"
+                      data-testid={`inv-doc-remove-${d.id}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={docInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              multiple
+              className="hidden"
+              onChange={e => uploadDocs(e.target.files)}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              disabled={!createdItemId || uploadingDoc}
+              onClick={() => docInputRef.current?.click()}
+              className="h-11 text-sm w-full"
+              data-testid="inv-doc-upload-btn"
+            >
+              <Paperclip className="w-4 h-4 mr-1" /> Dokument hinzufuegen (PDF, Word, Excel...)
+            </Button>
+            {uploadingDoc && <p className="text-xs text-gray-500 mt-1">Datei wird hochgeladen...</p>}
           </div>
         </div>
+
+        {showCamera && (
+          <CameraCapture
+            onClose={() => setShowCamera(false)}
+            onCapture={async (blob) => {
+              setShowCamera(false);
+              const f = new File([blob], `foto_${Date.now()}.jpg`, { type: "image/jpeg" });
+              await uploadImages([f]);
+            }}
+          />
+        )}
 
         <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-2">
           <Button variant="outline" onClick={onClose} className="flex-1" data-testid="inv-form-cancel">
@@ -602,6 +707,112 @@ function Field({ label, value, onChange, type = "text", placeholder, step, min, 
         inputMode={type === "number" ? "decimal" : undefined}
         data-testid={testid}
       />
+    </div>
+  );
+}
+
+
+/* CameraCapture: getUserMedia-basierte Kamera als Modal.
+ * Funktioniert zuverlaessig auf iPhone/iPad (auch im Desktop-Modus) und Chrome/Firefox.
+ * Rueckkamera bevorzugt via facingMode='environment'. Fallback auf beliebige Kamera. */
+function CameraCapture({ onClose, onCapture }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const start = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Kamera-API vom Browser nicht unterstuetzt (HTTPS erforderlich)");
+        }
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            audio: false,
+          });
+        } catch {
+          // Fallback: beliebige Kamera (Front oder unbekannt)
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute("playsinline", "true");
+          await videoRef.current.play().catch(() => {});
+          setReady(true);
+        }
+      } catch (e) {
+        setError(e.message || "Kamera konnte nicht gestartet werden");
+      }
+    };
+    start();
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
+
+  const snap = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !ready) return;
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, w, h);
+    canvas.toBlob(
+      (blob) => { if (blob) onCapture(blob); },
+      "image/jpeg",
+      0.85,
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black" data-testid="inv-camera-modal">
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 text-white bg-black/70">
+        <button onClick={onClose} className="p-2 rounded hover:bg-white/10" data-testid="inv-cam-close">
+          <X className="w-6 h-6" />
+        </button>
+        <span className="text-sm font-medium">Foto aufnehmen</span>
+        <div className="w-10" />
+      </div>
+
+      <div className="flex-1 flex items-center justify-center relative overflow-hidden bg-black">
+        {error ? (
+          <div className="text-center px-6 text-white">
+            <p className="text-sm text-red-300 mb-2">Kamera-Fehler</p>
+            <p className="text-xs text-white/70 mb-4">{error}</p>
+            <Button variant="outline" onClick={onClose} className="text-white bg-transparent border-white/40">
+              Schliessen
+            </Button>
+          </div>
+        ) : (
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
+        )}
+        <canvas ref={canvasRef} className="hidden" />
+      </div>
+
+      <div className="flex-shrink-0 flex items-center justify-center py-6 bg-black/70">
+        <button
+          onClick={snap}
+          disabled={!ready || !!error}
+          className="w-16 h-16 rounded-full border-4 border-white bg-white/20 hover:bg-white/40 active:bg-white/60 disabled:opacity-40 transition"
+          data-testid="inv-cam-snap"
+          aria-label="Aufnehmen"
+        >
+          <div className="w-full h-full rounded-full bg-white" />
+        </button>
+      </div>
     </div>
   );
 }

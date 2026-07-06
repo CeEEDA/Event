@@ -34,6 +34,17 @@ APP_NAME = "eventenergie-inventory"
 from routes.documents import put_object, get_object
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+ALLOWED_DOC_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # docx
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # xlsx
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # pptx
+    "text/plain",
+    "text/csv",
+}
 
 
 def _now_iso() -> str:
@@ -207,6 +218,7 @@ async def create_item(payload: ItemCreate):
         "notiz": (payload.notiz or "").strip(),
         "group_id": payload.group_id,
         "images": [],
+        "documents": [],
         "is_deleted": False,
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
@@ -333,6 +345,102 @@ async def delete_image(item_id: str, img_id: str):
     r = await db.inventory_items.update_one(
         {"id": item_id},
         {"$pull": {"images": {"id": img_id}}, "$set": {"updated_at": _now_iso()}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(404, "Inventar-Position nicht gefunden")
+    return {"deleted": True}
+
+
+# ─── Dokumente-Endpoints (PDF/Word/Excel/CSV) ─────────────────────
+@router.post("/items/{item_id}/documents")
+async def add_document(item_id: str, file: UploadFile = File(...)):
+    """Datei (PDF/Word/Excel etc.) an eine Inventar-Position anhaengen."""
+    ct = file.content_type or ""
+    if ct not in ALLOWED_DOC_TYPES:
+        raise HTTPException(400, f"Dateityp {ct} nicht unterstuetzt. Erlaubt: PDF, DOC(X), XLS(X), PPT(X), TXT, CSV")
+
+    file_data = await file.read()
+    if len(file_data) > 50 * 1024 * 1024:
+        raise HTTPException(400, "Datei zu gross (max. 50 MB)")
+
+    doc = await db.inventory_items.find_one({"id": item_id, "is_deleted": {"$ne": True}}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Inventar-Position nicht gefunden")
+
+    ext = (file.filename or "file.pdf").rsplit(".", 1)[-1].lower()
+    if len(ext) > 5 or not ext.isalnum():
+        ext = "bin"
+    doc_id = str(uuid.uuid4())
+    storage_path = f"{APP_NAME}/{item_id}/docs/{doc_id}.{ext}"
+
+    cloud_path = None
+    try:
+        result = put_object(storage_path, file_data, ct)
+        cloud_path = result["path"]
+    except Exception as e:
+        logger.warning(f"[inventory] Cloud doc upload failed, local fallback: {e}")
+        local_dir = f"/app/data/inventory/{item_id}/docs"
+        os.makedirs(local_dir, exist_ok=True)
+        with open(f"{local_dir}/{doc_id}.{ext}", "wb") as f:
+            f.write(file_data)
+
+    doc_entry = {
+        "id": doc_id,
+        "filename": file.filename or f"{doc_id}.{ext}",
+        "content_type": ct,
+        "size": len(file_data),
+        "storage_path": cloud_path or f"local://{APP_NAME}/{item_id}/docs/{doc_id}.{ext}",
+        "uploaded_at": _now_iso(),
+    }
+    await db.inventory_items.update_one(
+        {"id": item_id},
+        {"$push": {"documents": doc_entry}, "$set": {"updated_at": _now_iso()}},
+    )
+    return doc_entry
+
+
+@router.get("/items/{item_id}/documents/{doc_id}")
+async def get_document(item_id: str, doc_id: str):
+    """Dokument ausliefern (Download / Anzeigen)."""
+    doc = await db.inventory_items.find_one({"id": item_id}, {"_id": 0, "documents": 1})
+    if not doc:
+        raise HTTPException(404, "Inventar-Position nicht gefunden")
+    entry = next((d for d in doc.get("documents", []) if d.get("id") == doc_id), None)
+    if not entry:
+        raise HTTPException(404, "Dokument nicht gefunden")
+    storage_path = entry.get("storage_path", "")
+    filename = entry.get("filename", f"{doc_id}.bin")
+    try:
+        if storage_path.startswith("local://"):
+            local_rel = storage_path.replace("local://", "", 1).rsplit("/", 1)[-1]
+            local_path = f"/app/data/inventory/{item_id}/docs/{local_rel}"
+            if not os.path.exists(local_path):
+                raise HTTPException(404, "Datei nicht auf Server")
+            with open(local_path, "rb") as f:
+                data = f.read()
+            return Response(
+                content=data,
+                media_type=entry.get("content_type") or "application/octet-stream",
+                headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            )
+        data, ct = get_object(storage_path)
+        return Response(
+            content=data,
+            media_type=ct or entry.get("content_type") or "application/octet-stream",
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[inventory] Dokument-Abruf fehlgeschlagen: {e}")
+        raise HTTPException(500, "Dokument konnte nicht geladen werden")
+
+
+@router.delete("/items/{item_id}/documents/{doc_id}")
+async def delete_document_entry(item_id: str, doc_id: str):
+    r = await db.inventory_items.update_one(
+        {"id": item_id},
+        {"$pull": {"documents": {"id": doc_id}}, "$set": {"updated_at": _now_iso()}},
     )
     if r.matched_count == 0:
         raise HTTPException(404, "Inventar-Position nicht gefunden")
