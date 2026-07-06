@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
-import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Zap, FileText } from "lucide-react";
+import { ArrowLeft, ChevronRight, Receipt, FolderOpen, BarChart3, Clock, Zap, FileText, Package } from "lucide-react";
 
 export default function VerwaltungPage() {
   const navigate = useNavigate();
@@ -58,6 +58,14 @@ export default function VerwaltungPage() {
       color: "fuchsia",
       path: "/ki-training",
       adminOnly: true,
+    },
+    {
+      key: "inventar",
+      label: "Inventar",
+      description: "Anlagevermoegen mit Bildern verwalten (iPad/iPhone)",
+      icon: Package,
+      color: "fuchsia",
+      path: "/verwaltung/inventar",
     },
   ];
 

@@ -2152,6 +2152,9 @@ app.include_router(project_reports_router)
 from routes.documents import router as documents_router
 app.include_router(documents_router)
 
+from routes.inventory import router as inventory_router
+app.include_router(inventory_router)
+
 from routes.chat import router as chat_router, init_chat_routes
 init_chat_routes(db, decode_jwt_token)
 app.include_router(chat_router)

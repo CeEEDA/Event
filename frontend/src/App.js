@@ -24,6 +24,7 @@ import EnergyMonitoringDetailPage from "./pages/EnergyMonitoringDetailPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminGpsDiagnosePage from "./pages/AdminGpsDiagnosePage";
 import KiTrainingPage from "./pages/KiTrainingPage";
+import InventoryPage from "./pages/InventoryPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import KirmesPage from "./pages/KirmesPage";
@@ -239,6 +240,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="admin">
             <KiTrainingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verwaltung/inventar"
+        element={
+          <ProtectedRoute>
+            <InventoryPage />
           </ProtectedRoute>
         }
       />
