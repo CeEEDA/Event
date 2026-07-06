@@ -141,6 +141,11 @@ async def create_group(payload: GroupCreate):
         "seed": False,
     }
     await db.inventory_groups.insert_one(doc)
+    # Motor mutates ``doc`` in-place and adds ``_id`` (ObjectId) which is NOT
+    # JSON serializable. Strip it before returning – otherwise the FIRST call
+    # would fail with HTTP 500 while the second call (matching the collision
+    # check above) would suddenly work.
+    doc.pop("_id", None)
     return {"group": doc, "created": True}
 
 

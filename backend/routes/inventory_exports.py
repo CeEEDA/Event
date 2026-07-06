@@ -32,6 +32,21 @@ GRAY_DARK = colors.HexColor("#374151")
 GRAY_LIGHT = colors.HexColor("#f3f4f6")
 
 
+def _esc(v) -> str:
+    """Escape user-provided text for ReportLab ``Paragraph`` – which interprets
+    its content as XML. Without this, a literal ``&`` (e.g. in
+    ``Eventenergie Deutschland GmbH & Co. KG``) or a ``<`` in a note causes
+    the entire PDF build to raise HTTP 500."""
+    if v is None:
+        return "-"
+    s = str(v)
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+    )
+
+
 def _fmt_eur(v) -> str:
     try:
         return f"{float(v or 0):,.2f} EUR".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -247,7 +262,7 @@ def _deckblatt(items, groups_by_id, styles) -> list:
         "Sub", parent=styles["Normal"], fontSize=13, textColor=GRAY_DARK,
         alignment=TA_CENTER, spaceAfter=6, fontName="Helvetica",
     )
-    story.append(Paragraph(FIRMA_NAME, sub_style))
+    story.append(Paragraph(_esc(FIRMA_NAME), sub_style))
     story.append(Paragraph(
         f"Stand: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
         ParagraphStyle("Date", parent=styles["Normal"], fontSize=10, textColor=GRAY_DARK, alignment=TA_CENTER, spaceAfter=24),
@@ -435,7 +450,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                     story.append(Spacer(1, 8))
                 except Exception:
                     pass
-            story.append(Paragraph(f"Gruppe: {gname}", ParagraphStyle("GT", parent=styles["Title"], fontSize=20, textColor=FUCHSIA, spaceAfter=16)))
+            story.append(Paragraph(f"Gruppe: {_esc(gname)}", ParagraphStyle("GT", parent=styles["Title"], fontSize=20, textColor=FUCHSIA, spaceAfter=16)))
 
             g_stk = sum(int(i.get("stueckzahl") or 1) for i in group_items)
             g_ein = sum(float(i.get("einkaufspreis") or 0) * int(i.get("stueckzahl") or 1) for i in group_items)
@@ -468,14 +483,14 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
             # Je Item eine Seite (nur wenn genug fuer eigene Seite)
             for it in sorted(group_items, key=lambda x: x.get("bezeichnung", "")):
                 story.append(PageBreak())
-                story.append(Paragraph(it.get("bezeichnung", "-"), ParagraphStyle("IT", parent=styles["Title"], fontSize=16, textColor=FUCHSIA, spaceAfter=12)))
+                story.append(Paragraph(_esc(it.get("bezeichnung", "-")), ParagraphStyle("IT", parent=styles["Title"], fontSize=16, textColor=FUCHSIA, spaceAfter=12)))
 
                 if it.get("anlagevermoegensnummer"):
-                    story.append(Paragraph(f"<b>Anlagevermoegensnummer:</b> {it['anlagevermoegensnummer']}", styles["Normal"]))
-                story.append(Paragraph(f"<b>Gruppe:</b> {gname}", styles["Normal"]))
-                story.append(Paragraph(f"<b>Besitzer:</b> {it.get('besitzer','-')}", styles["Normal"]))
-                story.append(Paragraph(f"<b>Anschaffung:</b> {_fmt_monat_jahr(it.get('anschaffung_monat'), it.get('anschaffung_jahr'))}", styles["Normal"]))
-                story.append(Paragraph(f"<b>Stueckzahl:</b> {it.get('stueckzahl') or 1}", styles["Normal"]))
+                    story.append(Paragraph(f"<b>Anlagevermoegensnummer:</b> {_esc(it['anlagevermoegensnummer'])}", styles["Normal"]))
+                story.append(Paragraph(f"<b>Gruppe:</b> {_esc(gname)}", styles["Normal"]))
+                story.append(Paragraph(f"<b>Besitzer:</b> {_esc(it.get('besitzer','-'))}", styles["Normal"]))
+                story.append(Paragraph(f"<b>Anschaffung:</b> {_esc(_fmt_monat_jahr(it.get('anschaffung_monat'), it.get('anschaffung_jahr')))}", styles["Normal"]))
+                story.append(Paragraph(f"<b>Stueckzahl:</b> {_esc(it.get('stueckzahl') or 1)}", styles["Normal"]))
                 story.append(Spacer(1, 8))
 
                 stk = int(it.get("stueckzahl") or 1)
@@ -507,7 +522,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                         story.append(Spacer(1, 6))
 
                 if it.get("notiz"):
-                    story.append(Paragraph(f"<b>Notiz:</b> {it['notiz']}", styles["Normal"]))
+                    story.append(Paragraph(f"<b>Notiz:</b> {_esc(it['notiz'])}", styles["Normal"]))
 
                 # GROSS: Dokumente-Liste anhaengen
                 if mode == "gross":
@@ -518,7 +533,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                         for d in docs:
                             size_kb = int((d.get("size", 0) or 0) / 1024)
                             story.append(Paragraph(
-                                f"&#8226; {d.get('filename','?')} ({d.get('content_type','-')}, {size_kb} KB)",
+                                f"&#8226; {_esc(d.get('filename','?'))} ({_esc(d.get('content_type','-'))}, {size_kb} KB)",
                                 ParagraphStyle("Doc", parent=styles["Normal"], leftIndent=12, textColor=GRAY_DARK),
                             ))
 
