@@ -550,9 +550,18 @@ async def export_pdf(
 ):
     """PDF-Export mit 3 Detaillierungsstufen und optionalem Gruppen-Filter."""
     from routes.inventory_exports import build_pdf
+    import traceback
     group_ids = _parse_group_ids(groups)
     items, groups_by_id = await _load_items_and_groups(group_ids)
-    data = build_pdf(items, groups_by_id, mode=mode, get_object_fn=get_object)
+    try:
+        data = build_pdf(items, groups_by_id, mode=mode, get_object_fn=get_object)
+    except Exception as e:
+        # Full traceback in the backend log so we can see EXACTLY what field /
+        # what image / what value crashes on the live data.
+        tb = traceback.format_exc()
+        logger.error("[inventory] PDF-Build failed mode=%s groups=%s items=%d: %s\n%s",
+                     mode, groups, len(items), e, tb)
+        raise HTTPException(status_code=500, detail=f"PDF-Build fehlgeschlagen: {type(e).__name__}: {e}")
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     suffix = f"_{len(group_ids)}Gruppen" if group_ids else ""
     fname = f"Inventar_{mode}{suffix}_{ts}.pdf"
