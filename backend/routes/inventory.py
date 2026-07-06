@@ -501,22 +501,36 @@ async def stats():
 
 
 # ─── Exports (XLSX + PDF) ─────────────────────────────────────────
-async def _load_items_and_groups() -> tuple[list, dict]:
-    items = [d async for d in db.inventory_items.find({"is_deleted": {"$ne": True}}, {"_id": 0})]
+async def _load_items_and_groups(group_ids: Optional[list] = None) -> tuple[list, dict]:
+    q = {"is_deleted": {"$ne": True}}
+    if group_ids:
+        q["group_id"] = {"$in": group_ids}
+    items = [d async for d in db.inventory_items.find(q, {"_id": 0})]
     groups_by_id = {}
     async for g in db.inventory_groups.find({}, {"_id": 0}):
         groups_by_id[g["id"]] = g
     return items, groups_by_id
 
 
+def _parse_group_ids(raw: Optional[str]) -> Optional[list]:
+    if not raw:
+        return None
+    ids = [g.strip() for g in raw.split(",") if g.strip()]
+    return ids or None
+
+
 @router.get("/export/xlsx")
-async def export_xlsx():
-    """Excel-Export mit Deckblatt + je 1 Sheet pro Gruppe."""
+async def export_xlsx(groups: Optional[str] = Query(None, description="Komma-separierte Gruppen-IDs, leer = alle")):
+    """Excel-Export mit Deckblatt + je 1 Sheet pro Gruppe.
+    Wenn 'groups' gesetzt: nur diese Gruppen werden exportiert.
+    """
     from routes.inventory_exports import build_xlsx
-    items, groups_by_id = await _load_items_and_groups()
+    group_ids = _parse_group_ids(groups)
+    items, groups_by_id = await _load_items_and_groups(group_ids)
     data = build_xlsx(items, groups_by_id)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    fname = f"Inventar_{ts}.xlsx"
+    suffix = f"_{len(group_ids)}Gruppen" if group_ids else ""
+    fname = f"Inventar{suffix}_{ts}.xlsx"
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -525,17 +539,18 @@ async def export_xlsx():
 
 
 @router.get("/export/pdf")
-async def export_pdf(mode: str = Query("smart", pattern="^(smart|mittel|gross)$")):
-    """PDF-Export mit 3 Detaillierungsstufen.
-    - smart: Deckblatt + einfache Liste
-    - mittel: + je Gruppe Deckblatt + je Item eine Seite mit Bild
-    - gross: wie mittel + Referenzen der angehaengten Dokumente
-    """
+async def export_pdf(
+    mode: str = Query("smart", pattern="^(smart|mittel|gross)$"),
+    groups: Optional[str] = Query(None, description="Komma-separierte Gruppen-IDs, leer = alle"),
+):
+    """PDF-Export mit 3 Detaillierungsstufen und optionalem Gruppen-Filter."""
     from routes.inventory_exports import build_pdf
-    items, groups_by_id = await _load_items_and_groups()
+    group_ids = _parse_group_ids(groups)
+    items, groups_by_id = await _load_items_and_groups(group_ids)
     data = build_pdf(items, groups_by_id, mode=mode, get_object_fn=get_object)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    fname = f"Inventar_{mode}_{ts}.pdf"
+    suffix = f"_{len(group_ids)}Gruppen" if group_ids else ""
+    fname = f"Inventar_{mode}{suffix}_{ts}.pdf"
     return Response(
         content=data,
         media_type="application/pdf",

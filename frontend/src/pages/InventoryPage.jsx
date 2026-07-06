@@ -210,7 +210,7 @@ export default function InventoryPage() {
       )}
 
       {showReport && (
-        <ReportDialog stats={stats} onClose={() => setShowReport(false)} />
+        <ReportDialog stats={stats} groups={groups} onClose={() => setShowReport(false)} />
       )}
     </div>
   );
@@ -227,27 +227,54 @@ function StatCard({ label, value, highlight }) {
 }
 
 
-function ReportDialog({ stats, onClose }) {
+function ReportDialog({ stats, groups, onClose }) {
   const [downloading, setDownloading] = useState(null);
   const [pdfMode, setPdfMode] = useState("smart");
+  // Alle Gruppen initial aktiv (leeres Set = alle)
+  const [selectedGroups, setSelectedGroups] = useState(new Set(groups.map(g => g.id)));
 
-  const download = async (endpoint, filename) => {
-    setDownloading(endpoint);
+  const toggleGroup = (gid) => {
+    setSelectedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(gid)) next.delete(gid);
+      else next.add(gid);
+      return next;
+    });
+  };
+
+  const setAll = (all) => {
+    setSelectedGroups(all ? new Set(groups.map(g => g.id)) : new Set());
+  };
+
+  const allSelected = selectedGroups.size === groups.length;
+  const noneSelected = selectedGroups.size === 0;
+
+  const download = async (path, filename) => {
+    if (noneSelected) {
+      toast.error("Bitte mindestens eine Gruppe auswaehlen");
+      return;
+    }
+    setDownloading(path);
     try {
       const token = localStorage.getItem("token");
-      const r = await fetch(`${API}/api${endpoint}`, {
+      // Wenn alle -> kein filter, sonst comma-separiert
+      const url = new URL(`${API}/api${path}`);
+      if (!allSelected) {
+        url.searchParams.set("groups", Array.from(selectedGroups).join(","));
+      }
+      const r = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
+      const dlUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = dlUrl;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(dlUrl);
       toast.success(`${filename} heruntergeladen`);
     } catch (e) {
       toast.error("Download fehlgeschlagen: " + e.message);
@@ -256,10 +283,11 @@ function ReportDialog({ stats, onClose }) {
   };
 
   const today = new Date().toISOString().slice(0, 10);
+  const gSuffix = allSelected ? "" : `_${selectedGroups.size}Gruppen`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" data-testid="inv-report-dialog">
-      <div className="bg-white w-full sm:max-w-md sm:rounded-lg rounded-t-xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-white w-full sm:max-w-md sm:rounded-lg rounded-t-xl max-h-[92vh] overflow-y-auto shadow-2xl">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
             <FileBarChart className="w-4 h-4 text-fuchsia-500" /> Auswertung
@@ -272,20 +300,68 @@ function ReportDialog({ stats, onClose }) {
         <div className="p-4 space-y-5">
           {stats && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs space-y-1">
-              <div className="flex justify-between"><span className="text-gray-500">Positionen:</span><span className="font-mono font-medium">{stats.total_items}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Einkauf gesamt:</span><span className="font-mono">{fmtEUR(stats.total_einkauf)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Positionen (gesamt):</span><span className="font-mono font-medium">{stats.total_items}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Einkauf:</span><span className="font-mono">{fmtEUR(stats.total_einkauf)}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Bilanzwert:</span><span className="font-mono">{fmtEUR(stats.total_bilanz)}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Marktschaetzwert:</span><span className="font-mono">{fmtEUR(stats.total_markt)}</span></div>
             </div>
           )}
 
+          {/* Gruppen-Auswahl */}
+          <div className="border border-gray-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-semibold text-gray-900">Gruppen fuer Auswertung</div>
+              <div className="flex gap-1 text-[11px]">
+                <button
+                  onClick={() => setAll(true)}
+                  className="px-2 py-0.5 rounded border border-gray-300 hover:border-fuchsia-500 hover:text-fuchsia-600"
+                  data-testid="inv-report-select-all"
+                >
+                  Alle
+                </button>
+                <button
+                  onClick={() => setAll(false)}
+                  className="px-2 py-0.5 rounded border border-gray-300 hover:border-gray-500"
+                  data-testid="inv-report-select-none"
+                >
+                  Keine
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto">
+              {groups.map(g => {
+                const checked = selectedGroups.has(g.id);
+                return (
+                  <label
+                    key={g.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer transition ${checked ? "border-fuchsia-500 bg-fuchsia-50" : "border-gray-200 hover:border-gray-300"}`}
+                    data-testid={`inv-report-group-${g.id}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleGroup(g.id)}
+                      className="w-4 h-4 accent-fuchsia-600"
+                    />
+                    <div className={`w-2 h-2 rounded-full bg-${g.color}-500`} />
+                    <span className="text-sm text-gray-800 flex-1">{g.name}</span>
+                    <span className="text-[11px] text-gray-400">{g.item_count || 0}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {noneSelected && (
+              <p className="text-[11px] text-red-500 mt-2">Bitte mindestens eine Gruppe waehlen.</p>
+            )}
+          </div>
+
           {/* Excel */}
           <div className="border border-gray-200 rounded-lg p-3">
             <div className="text-sm font-semibold text-gray-900 mb-1">Excel (XLSX)</div>
-            <p className="text-xs text-gray-500 mb-3">Deckblatt mit Summen + je Gruppe ein eigenes Tabellenblatt.</p>
+            <p className="text-xs text-gray-500 mb-3">Deckblatt mit Summen + je gewaehlter Gruppe ein eigenes Tabellenblatt.</p>
             <Button
-              disabled={downloading === "/inventory/export/xlsx"}
-              onClick={() => download("/inventory/export/xlsx", `Inventar_${today}.xlsx`)}
+              disabled={downloading === "/inventory/export/xlsx" || noneSelected}
+              onClick={() => download("/inventory/export/xlsx", `Inventar${gSuffix}_${today}.xlsx`)}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-10"
               data-testid="inv-report-xlsx"
             >
@@ -297,13 +373,13 @@ function ReportDialog({ stats, onClose }) {
           <div className="border border-gray-200 rounded-lg p-3">
             <div className="text-sm font-semibold text-gray-900 mb-2">PDF Auswertung</div>
             <div className="space-y-2 mb-3">
-              <ModeRadio value="smart" current={pdfMode} setCurrent={setPdfMode} label="Smart" desc="Einfache Struktur: Deckblatt + kompakte Tabelle aller Positionen." />
+              <ModeRadio value="smart" current={pdfMode} setCurrent={setPdfMode} label="Smart" desc="Deckblatt + kompakte Tabelle aller Positionen." />
               <ModeRadio value="mittel" current={pdfMode} setCurrent={setPdfMode} label="Mittel" desc="+ je Gruppe ein Deckblatt und je Position eine Seite mit Bild." />
-              <ModeRadio value="gross" current={pdfMode} setCurrent={setPdfMode} label="Gross" desc="Wie Mittel + Referenzen der angehaengten Dokumente je Position." />
+              <ModeRadio value="gross" current={pdfMode} setCurrent={setPdfMode} label="Gross" desc="Wie Mittel + Referenzen der angehaengten Dokumente." />
             </div>
             <Button
-              disabled={downloading === `/inventory/export/pdf?mode=${pdfMode}`}
-              onClick={() => download(`/inventory/export/pdf?mode=${pdfMode}`, `Inventar_${pdfMode}_${today}.pdf`)}
+              disabled={(downloading?.startsWith("/inventory/export/pdf")) || noneSelected}
+              onClick={() => download(`/inventory/export/pdf?mode=${pdfMode}`, `Inventar_${pdfMode}${gSuffix}_${today}.pdf`)}
               className="w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white h-10"
               data-testid="inv-report-pdf"
             >
