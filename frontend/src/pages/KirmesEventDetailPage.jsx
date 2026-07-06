@@ -718,18 +718,6 @@ export default function KirmesEventDetailPage() {
             )}
             {["freigegeben", "aktiv"].includes(event.status) && (
               <>
-                {isAdmin && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openSignupEditor(null)}
-                    className="text-emerald-600 border-emerald-200 px-2 sm:px-3"
-                    data-testid="admin-create-signup-btn"
-                    title="Netzanschluss anlegen (Admin)"
-                  >
-                    <Zap className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Anlegen</span>
-                  </Button>
-                )}
                 <Button size="sm" variant="outline" onClick={openInviteModal} className="text-amber-600 border-amber-200 px-2 sm:px-3" data-testid="invite-btn" title="Einladen">
                   <Mail className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Einladen</span>
                 </Button>
@@ -854,30 +842,43 @@ export default function KirmesEventDetailPage() {
                 </span>
               )}
             </h2>
-            {(event.signups || []).length > 0 && (
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={signupSearch}
-                  onChange={(e) => setSignupSearch(e.target.value)}
-                  placeholder="Suche: Firma, Name, Platz, Geschäft, ..."
-                  className="w-full h-9 pl-8 pr-8 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-400 focus:ring-1 focus:ring-fuchsia-200"
-                  data-testid="signups-search-input"
-                />
-                {signupSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setSignupSearch("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                    aria-label="Suche loeschen"
-                    data-testid="signups-search-clear"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+              {isAdmin && ["freigegeben", "aktiv"].includes(event.status) && (
+                <Button
+                  size="sm"
+                  onClick={() => openSignupEditor(null)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 px-3 whitespace-nowrap"
+                  data-testid="admin-create-signup-btn"
+                  title="Netzanschluss anlegen (Admin)"
+                >
+                  <Zap className="w-3.5 h-3.5 mr-1" /> Anlegen
+                </Button>
+              )}
+              {(event.signups || []).length > 0 && (
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={signupSearch}
+                    onChange={(e) => setSignupSearch(e.target.value)}
+                    placeholder="Suche: Firma, Name, Platz, Geschäft, ..."
+                    className="w-full h-9 pl-8 pr-8 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-400 focus:ring-1 focus:ring-fuchsia-200"
+                    data-testid="signups-search-input"
+                  />
+                  {signupSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSignupSearch("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                      aria-label="Suche loeschen"
+                      data-testid="signups-search-clear"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           {(event.signups || []).length === 0 ? (
             <div className="px-5 py-12 text-center text-gray-400 text-sm">
