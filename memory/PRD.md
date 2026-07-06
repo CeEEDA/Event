@@ -6,12 +6,16 @@ Comprehensive "Kirmes" (Fairground) billing, dispatch and HR management system w
 Language: **German** (agent must reply in German only).
 
 ## Current Status
-Mature React/FastAPI/MongoDB app with EpiRent sync, order tracking, AI Document Management (Ollama + ZUGFeRD + PyMuPDF), FinTS banking, DATEV email routing, IMAP Mailbridge, Kiosk apps, generator telemetry, Tankbeleg ingestion (Sening), full Inventar module with WebRTC camera + XLSX/PDF exports.
+Mature React/FastAPI/MongoDB app with EpiRent sync, order tracking, AI Document Management (Ollama + ZUGFeRD + PyMuPDF), FinTS banking, DATEV email routing, IMAP Mailbridge, Kiosk apps, generator telemetry, Tankbeleg ingestion (Sening), full Inventar module with WebRTC camera + XLSX/PDF exports, and admin-side manual signup creation ("Netzanschluss anlegen").
 
 ## Completed – 2026-02-06 (this session)
-- ✅ Inventar: 4. Kachel "Marktwert gesamt" (grün) in der Stat-Row ergänzt
-- ✅ Inventar: Marktschätzwert wird jetzt zusätzlich in jeder Position-Zeile angezeigt (`Bilanz X € · Markt Y €`)
-- ✅ Grid von grid-cols-3 → grid-cols-2 sm:grid-cols-4 (iOS-freundlich)
+- ✅ Inventar: 4. Kachel "Marktwert gesamt" (grün) in der Stat-Row, Marktwert pro Position
+- ✅ **Netzanschluss anlegen (Admin) + Anschluss korrigieren:**
+  - Neuer Button in Event-Detail-Top-Bar (`admin-create-signup-btn`, nur Admin)
+  - Modal für create + edit (`SignupEditorModal`) mit Schausteller-Suche, Preis-Preview aus Preisliste, optionaler Preis-Override
+  - Neuer Pencil-Zap pro Zeile (`edit-anschluss-*`) für Korrektur (z.B. 16A → 32A vor Ort)
+  - Backend: `POST /api/kirmes/signups`, `PATCH /api/kirmes/signups/{id}` — Kaution (`deposit_amount`) wird bei Korrektur bewusst NICHT angefasst
+  - Preis wird automatisch aus `event.prices` / `event.wohnwagen_prices` gezogen, Override möglich
 
 ## Backlog
 
@@ -20,10 +24,10 @@ Mature React/FastAPI/MongoDB app with EpiRent sync, order tracking, AI Document 
 - EpiRent Lieferscheine (PDF-Generierung, Layout noch offen)
 
 ### P2 (Future)
-- Disk-Watchdog Live-Server: `start-all.bat` prüft C:/E: >10GB frei vor MongoDB-Start
+- Disk-Watchdog Live-Server (`start-all.bat` prüft C:/E: >10GB frei vor MongoDB-Start)
 - Bulk-Move für Fuel Receipts
 - Admin Audit-Page für Asset-Type-Änderungen
-- "Alarm vor Ort geprüft – Sammel-Warning quittieren" auf Generator Diagnose (DSE-Reset Key 35707)
+- Sammel-Alarm quittieren + DSE-Reset (Key 35707) auf Generator Diagnose
 - USB-Resilience / Hardware Health Dashboard pro Pi
 - GPS Support für Kirmeskiste (4-m-Variante)
 - Lastdiagramm Live-Test
@@ -33,11 +37,16 @@ Mature React/FastAPI/MongoDB app with EpiRent sync, order tracking, AI Document 
 - Mail/SMS Notification bei Shift-Plan-Freigabe
 
 ## Refactoring
-- `/app/backend/routes/documents.py` (>2200 LOC) → in `document_processors.py` (ZIP upload, spam routing, TEBA merge) auslagern
+- `/app/backend/routes/documents.py` (>2200 LOC) → in `document_processors.py` auslagern
 
 ## 3rd Party Integrations
-- Stripe (User-Key), EpiRent (User-Key), Ollama, IONOS IMAP, DATEV Email, FinTS, Open-Meteo, Nominatim
+Stripe, EpiRent, Ollama, IONOS IMAP, DATEV Email, FinTS, Open-Meteo, Nominatim
 
 ## Test Credentials
 - Admin: `admin@test.com` / `password`
 - Mitarbeiter: `ma1@test.com` / `password`
+
+## Key API Endpoints
+- `POST /api/kirmes/signups` (Admin, manuell Anmeldung anlegen)
+- `PATCH /api/kirmes/signups/{id}` (Admin, Anschluss/Preis korrigieren – Kaution bleibt)
+- `DELETE /api/kirmes/signups/{id}`

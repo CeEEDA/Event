@@ -1236,6 +1236,153 @@ async def delete_signup(signup_id: str, user: dict = Depends(_require_staff)):
     return {"message": "Anmeldung gelöscht"}
 
 
+class AdminSignupCreate(BaseModel):
+    """Payload used by the admin 'Netzanschluss anlegen' dialog on the event
+    detail page. In contrast to the public flow no email confirmation is sent
+    and the initial payment status is derived from the payment method."""
+    event_id: str
+    schausteller_id: str
+    platznummer: str
+    fahrgeschaeft: str
+    connection_type: str
+    payment_method: Optional[str] = "rechnung"  # rechnung | kreditkarte | paypal
+    price_override: Optional[float] = None       # optional manual price
+
+
+def _lookup_event_price(event: dict, fahrgeschaeft: str, connection_type: str) -> float:
+    """Look up the connection price in the event's price list.
+
+    Wohnwagen have a separate price list; everything else falls back to the
+    regular ``prices`` array. Returns 0.0 when no matching entry exists."""
+    is_wohnwagen = (fahrgeschaeft or "").strip().lower() == "wohnwagen"
+    bucket = event.get("wohnwagen_prices", []) if is_wohnwagen else event.get("prices", [])
+    for p in bucket or []:
+        if p.get("connection_type") == connection_type:
+            return float(p.get("price", 0) or 0)
+    return 0.0
+
+
+@router.post("/signups")
+async def admin_create_signup(data: AdminSignupCreate, user: dict = Depends(_require_staff)):
+    """Admin-only: manually create a signup for an event. Used when a
+    schausteller registers on paper / on-site. Price is auto-derived from the
+    event's price list (respecting Wohnwagen), can be overridden explicitly."""
+    event = await _db.kirmes_events.find_one({"id": data.event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+    if event.get("status") in ("abgerechnet", "abgeschlossen"):
+        raise HTTPException(status_code=400, detail="Veranstaltung ist bereits abgerechnet/abgeschlossen")
+
+    sch = await _db.kirmes_schausteller.find_one(
+        {"id": data.schausteller_id},
+        {"_id": 0, "password_hash": 0, "verification_code": 0},
+    )
+    if not sch:
+        raise HTTPException(status_code=404, detail="Schausteller nicht gefunden")
+
+    all_types = CONNECTION_TYPES + WOHNWAGEN_TYPES
+    if data.connection_type not in all_types:
+        raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {data.connection_type}")
+
+    price = (
+        float(data.price_override)
+        if data.price_override is not None
+        else _lookup_event_price(event, data.fahrgeschaeft, data.connection_type)
+    )
+
+    # Payment status: Rechnung / 0-EUR -> bezahlt/auf_rechnung logic handled in UI via effectivePaymentStatus.
+    if price <= 0:
+        initial_status = "bezahlt"
+    elif data.payment_method == "rechnung":
+        initial_status = "ausstehend"  # will be shown as "auf_rechnung" via effectivePaymentStatus
+    else:
+        initial_status = "pending_payment"
+
+    signup_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    signup_doc = {
+        "id": signup_id,
+        "event_id": data.event_id,
+        "schausteller_id": data.schausteller_id,
+        "platznummer": data.platznummer,
+        "fahrgeschaeft": data.fahrgeschaeft,
+        "connection_type": data.connection_type,
+        "price": price,
+        "payment_method": data.payment_method or "rechnung",
+        "payment_status": initial_status,
+        "deposit_amount": 0.0,
+        "meter_id": None,
+        "meter_start": None,
+        "meter_end": None,
+        "kwh_used": None,
+        "final_amount": None,
+        "created_at": now,
+        "created_by_admin": True,
+    }
+    await _db.kirmes_signups.insert_one(signup_doc)
+    signup_doc.pop("_id", None)
+    signup_doc["schausteller"] = sch
+    return signup_doc
+
+
+class SignupAdminUpdate(BaseModel):
+    """Payload for admin corrections after a signup was created – used e.g.
+    when a customer ordered a 16A connection but on-site actually needs a 32A.
+    The Kaution (deposit_amount / deposit_paid) is intentionally NOT touched
+    here: the deposit remains as it was authorised on the card."""
+    platznummer: Optional[str] = None
+    fahrgeschaeft: Optional[str] = None
+    connection_type: Optional[str] = None
+    price_override: Optional[float] = None
+    payment_method: Optional[str] = None
+    recompute_price: Optional[bool] = True  # if connection_type changes, refetch price
+
+
+@router.patch("/signups/{signup_id}")
+async def admin_update_signup(signup_id: str, data: SignupAdminUpdate, user: dict = Depends(_require_staff)):
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+    event = await _db.kirmes_events.find_one({"id": signup["event_id"]}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+    if signup.get("invoice_number"):
+        raise HTTPException(status_code=400, detail="Anmeldung ist bereits abgerechnet – Änderung nicht mehr möglich")
+
+    update = {}
+    if data.platznummer is not None:
+        update["platznummer"] = data.platznummer
+    if data.fahrgeschaeft is not None:
+        update["fahrgeschaeft"] = data.fahrgeschaeft
+    if data.payment_method is not None:
+        update["payment_method"] = data.payment_method
+
+    new_conn = data.connection_type
+    if new_conn is not None:
+        all_types = CONNECTION_TYPES + WOHNWAGEN_TYPES
+        if new_conn not in all_types:
+            raise HTTPException(status_code=400, detail=f"Ungültiger Anschlusstyp: {new_conn}")
+        update["connection_type"] = new_conn
+
+    # Price handling: explicit override wins, otherwise recompute from price list
+    # whenever the connection_type (or fahrgeschaeft) changed.
+    if data.price_override is not None:
+        update["price"] = float(data.price_override)
+    elif data.recompute_price and (
+        "connection_type" in update or "fahrgeschaeft" in update
+    ):
+        fg = update.get("fahrgeschaeft", signup.get("fahrgeschaeft", ""))
+        ct = update.get("connection_type", signup.get("connection_type", ""))
+        update["price"] = _lookup_event_price(event, fg, ct)
+
+    # Explicitly NEVER touch deposit_amount / deposit_paid / deposit_refund_amount here.
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update["updated_by_admin"] = True
+    await _db.kirmes_signups.update_one({"id": signup_id}, {"$set": update})
+    updated = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    return updated
+
+
 class SignupKwhUpdate(BaseModel):
     kwh_einbau: Optional[float] = None
     kwh_ausbau: Optional[float] = None

@@ -427,6 +427,29 @@ export default function KirmesEventDetailPage() {
     } catch { toast.error("Fehler beim Laden der Schausteller"); }
   };
 
+  // ============= Admin: Netzanschluss anlegen / bearbeiten =============
+  // Ein Modal fuer beide Faelle (neu anlegen oder bestehende Anmeldung
+  // korrigieren, z.B. wenn vor Ort statt 16A ein 32A benoetigt wird).
+  // Die Kaution (deposit_amount) wird beim Editieren bewusst NICHT angefasst.
+  const [signupEditor, setSignupEditor] = useState(null);
+  // { mode: "create"|"edit", signup?: {...}, schausteller: [...] }
+
+  const openSignupEditor = async (existingSignup) => {
+    try {
+      const r = await api.get("/kirmes/schausteller");
+      setSignupEditor({
+        mode: existingSignup ? "edit" : "create",
+        signup: existingSignup,
+        schausteller: r.data,
+      });
+    } catch { toast.error("Fehler beim Laden der Schausteller"); }
+  };
+
+  const handleSignupEditorSaved = () => {
+    setSignupEditor(null);
+    loadEvent();
+  };
+
   const toggleInvite = (schId) => {
     setSelectedInvites(prev => prev.includes(schId) ? prev.filter(id => id !== schId) : [...prev, schId]);
   };
@@ -695,6 +718,18 @@ export default function KirmesEventDetailPage() {
             )}
             {["freigegeben", "aktiv"].includes(event.status) && (
               <>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openSignupEditor(null)}
+                    className="text-emerald-600 border-emerald-200 px-2 sm:px-3"
+                    data-testid="admin-create-signup-btn"
+                    title="Netzanschluss anlegen (Admin)"
+                  >
+                    <Zap className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Anlegen</span>
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={openInviteModal} className="text-amber-600 border-amber-200 px-2 sm:px-3" data-testid="invite-btn" title="Einladen">
                   <Mail className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline"> Einladen</span>
                 </Button>
@@ -1313,6 +1348,11 @@ export default function KirmesEventDetailPage() {
                             </>
                           ) : (
                             <>
+                              {isAdmin && !signup.invoice_number && (
+                                <button onClick={() => openSignupEditor(signup)} className="p-1 text-gray-400 hover:text-emerald-600 transition-colors" title="Netzanschluss ändern (Admin)" data-testid={`edit-anschluss-${signup.id}`}>
+                                  <Zap className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button onClick={() => openKwhEdit(signup)} className="p-1 text-gray-400 hover:text-fuchsia-600 transition-colors" title="Zählerstände bearbeiten" data-testid={`edit-kwh-${signup.id}`}>
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
@@ -1731,6 +1771,313 @@ export default function KirmesEventDetailPage() {
           </div>
         </div>
       )}
+
+      {signupEditor && (
+        <SignupEditorModal
+          eventId={id}
+          event={event}
+          mode={signupEditor.mode}
+          signup={signupEditor.signup}
+          schausteller={signupEditor.schausteller}
+          onClose={() => setSignupEditor(null)}
+          onSaved={handleSignupEditorSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// SignupEditorModal – Admin dialog to create OR correct a signup
+// (e.g. customer booked 16A but on-site needs 32A – Kaution unangetastet).
+// ============================================================
+function SignupEditorModal({ eventId, event, mode, signup, schausteller, onClose, onSaved }) {
+  const isEdit = mode === "edit";
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [schId, setSchId] = useState(signup?.schausteller_id || "");
+  const [fahrgeschaeft, setFahrgeschaeft] = useState(signup?.fahrgeschaeft || "");
+  const [platz, setPlatz] = useState(signup?.platznummer || "");
+  const [connType, setConnType] = useState(signup?.connection_type || "");
+  const [paymentMethod, setPaymentMethod] = useState(signup?.payment_method || "rechnung");
+  const [priceOverride, setPriceOverride] = useState("");
+  const [useOverride, setUseOverride] = useState(false);
+
+  const isWohnwagen = (fahrgeschaeft || "").trim().toLowerCase() === "wohnwagen";
+  const priceList = isWohnwagen
+    ? (event?.wohnwagen_prices || [])
+    : (event?.prices || []);
+
+  // Auto-suggested price from the event's price list
+  const suggestedPrice = useMemo(() => {
+    const hit = (priceList || []).find(p => p.connection_type === connType);
+    return hit ? Number(hit.price || 0) : 0;
+  }, [priceList, connType]);
+
+  const effectivePrice = useOverride && priceOverride !== ""
+    ? Number(priceOverride)
+    : suggestedPrice;
+
+  const filteredSch = useMemo(() => {
+    const q = (search || "").trim().toLowerCase();
+    if (!q) return schausteller.slice(0, 100);
+    return schausteller.filter(s => {
+      const hay = `${s.kundennummer || ""} ${s.firma || ""} ${s.name || ""} ${s.email || ""}`.toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 100);
+  }, [schausteller, search]);
+
+  const selectedSch = useMemo(
+    () => schausteller.find(s => s.id === schId) || null,
+    [schausteller, schId]
+  );
+
+  const canSave = schId && platz.trim() && fahrgeschaeft.trim() && connType;
+
+  const handleSave = async () => {
+    if (!canSave) { toast.error("Bitte alle Felder ausfüllen"); return; }
+    setSaving(true);
+    try {
+      if (isEdit) {
+        const payload = {
+          platznummer: platz.trim(),
+          fahrgeschaeft: fahrgeschaeft.trim(),
+          connection_type: connType,
+          payment_method: paymentMethod,
+          recompute_price: !useOverride,
+        };
+        if (useOverride && priceOverride !== "") {
+          payload.price_override = Number(priceOverride);
+        }
+        await api.patch(`/kirmes/signups/${signup.id}`, payload);
+        toast.success("Netzanschluss aktualisiert (Kaution unverändert)");
+      } else {
+        const payload = {
+          event_id: eventId,
+          schausteller_id: schId,
+          platznummer: platz.trim(),
+          fahrgeschaeft: fahrgeschaeft.trim(),
+          connection_type: connType,
+          payment_method: paymentMethod,
+        };
+        if (useOverride && priceOverride !== "") {
+          payload.price_override = Number(priceOverride);
+        }
+        await api.post(`/kirmes/signups`, payload);
+        toast.success("Netzanschluss angelegt");
+      }
+      onSaved();
+    } catch (e) {
+      toast.error(getErrorMsg(e) || "Fehler beim Speichern");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" data-testid="signup-editor-modal">
+      <div className="bg-white w-full max-w-lg sm:rounded-xl rounded-t-2xl max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <Zap className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">
+                {isEdit ? "Netzanschluss ändern" : "Netzanschluss anlegen"}
+              </h3>
+              <p className="text-[11px] text-gray-500">
+                {isEdit
+                  ? "Kaution wird nicht angefasst – nur Anschluss & Preis"
+                  : "Preis wird aus der Preisliste der Veranstaltung übernommen"}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100 text-gray-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Schausteller */}
+          {isEdit ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Schausteller</div>
+              <div className="text-sm font-medium text-gray-900">{selectedSch?.firma || "–"}</div>
+              <div className="text-xs text-gray-500">{selectedSch?.name} · {selectedSch?.email}</div>
+            </div>
+          ) : (
+            <div>
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Schausteller</label>
+              <Input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Suchen: Firma, Name, Kundennr..."
+                className="mt-1"
+                data-testid="signup-editor-sch-search"
+              />
+              <div className="mt-2 border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
+                {filteredSch.length === 0 && (
+                  <div className="px-3 py-4 text-center text-xs text-gray-400">Keine Treffer</div>
+                )}
+                {filteredSch.map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSchId(s.id)}
+                    className={`w-full text-left px-3 py-2 hover:bg-emerald-50 transition-colors ${schId === s.id ? "bg-emerald-50" : ""}`}
+                    data-testid={`signup-editor-sch-${s.id}`}
+                  >
+                    <div className="text-xs font-medium text-gray-900 truncate">{s.firma || s.name || "–"}</div>
+                    <div className="text-[10px] text-gray-500 truncate">{s.kundennummer} · {s.name} · {s.email}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fahrgeschäft & Platznummer */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Fahrgeschäft</label>
+              <Input
+                type="text"
+                value={fahrgeschaeft}
+                onChange={e => setFahrgeschaeft(e.target.value)}
+                placeholder="z.B. Autoscooter Blitz"
+                className="mt-1"
+                data-testid="signup-editor-fahrgeschaeft"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Platz</label>
+              <Input
+                type="text"
+                value={platz}
+                onChange={e => setPlatz(e.target.value)}
+                placeholder="z.B. B5"
+                className="mt-1"
+                data-testid="signup-editor-platz"
+              />
+            </div>
+          </div>
+
+          {/* Anschlusstyp */}
+          <div>
+            <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">
+              Anschlusstyp {isWohnwagen && <span className="text-fuchsia-600">(Wohnwagen-Preisliste)</span>}
+            </label>
+            <div className="mt-1 grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {(priceList || []).map(p => (
+                <button
+                  key={p.connection_type}
+                  type="button"
+                  onClick={() => setConnType(p.connection_type)}
+                  className={`rounded-lg border px-2 py-2 text-xs transition-colors ${
+                    connType === p.connection_type
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-700 font-semibold"
+                      : "border-gray-200 hover:border-gray-300 text-gray-700"
+                  }`}
+                  data-testid={`signup-editor-conn-${p.connection_type}`}
+                >
+                  <div className="flex items-center justify-center gap-1">
+                    <Zap className="w-3 h-3" /> {p.connection_type}
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">{Number(p.price || 0).toFixed(2)} €</div>
+                </button>
+              ))}
+              {(priceList || []).length === 0 && (
+                <div className="col-span-full text-xs text-gray-400 py-3 text-center border border-dashed border-gray-200 rounded-lg">
+                  Keine Preisliste hinterlegt – bitte Event-Preise pflegen
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Preis */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">Anschlusspreis</div>
+                <div className="text-lg font-bold text-emerald-900 tabular-nums">
+                  {effectivePrice.toFixed(2)} €
+                </div>
+                {useOverride && (
+                  <div className="text-[10px] text-amber-700">manuell überschrieben (Preisliste: {suggestedPrice.toFixed(2)} €)</div>
+                )}
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useOverride}
+                  onChange={e => setUseOverride(e.target.checked)}
+                  className="rounded"
+                  data-testid="signup-editor-use-override"
+                />
+                Preis manuell
+              </label>
+            </div>
+            {useOverride && (
+              <Input
+                type="number"
+                step="0.01"
+                value={priceOverride}
+                onChange={e => setPriceOverride(e.target.value)}
+                placeholder={suggestedPrice.toFixed(2)}
+                className="mt-2"
+                data-testid="signup-editor-price-override"
+              />
+            )}
+          </div>
+
+          {isEdit && (signup?.deposit_paid || signup?.deposit_amount > 0) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-800">
+              <strong>Hinweis:</strong> Kaution ({Number(signup.deposit_amount || 0).toFixed(2)} €) bleibt unverändert – sie wurde bereits autorisiert und wird durch diese Korrektur nicht angetastet.
+            </div>
+          )}
+
+          {/* Zahlungsart */}
+          <div>
+            <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Zahlungsart</label>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {[
+                { v: "rechnung", label: "Rechnung" },
+                { v: "kreditkarte", label: "Kreditkarte" },
+                { v: "paypal", label: "PayPal" },
+              ].map(o => (
+                <button
+                  key={o.v}
+                  type="button"
+                  onClick={() => setPaymentMethod(o.v)}
+                  className={`rounded-lg border px-2 py-2 text-xs transition-colors ${
+                    paymentMethod === o.v
+                      ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700 font-semibold"
+                      : "border-gray-200 hover:border-gray-300 text-gray-700"
+                  }`}
+                  data-testid={`signup-editor-pm-${o.v}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 flex items-center justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={saving} data-testid="signup-editor-cancel">
+            Abbrechen
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={!canSave || saving}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-gray-300"
+            data-testid="signup-editor-save"
+          >
+            {saving ? "Speichere..." : (isEdit ? "Speichern" : "Anlegen")}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
