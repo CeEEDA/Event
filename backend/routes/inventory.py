@@ -547,6 +547,7 @@ async def export_xlsx(groups: Optional[str] = Query(None, description="Komma-sep
 async def export_pdf(
     mode: str = Query("smart", pattern="^(smart|mittel|gross)$"),
     groups: Optional[str] = Query(None, description="Komma-separierte Gruppen-IDs, leer = alle"),
+    info: Optional[str] = Query(None, description="Optionaler Info-Text fuer das Deckblatt"),
 ):
     """PDF-Export mit 3 Detaillierungsstufen und optionalem Gruppen-Filter."""
     from routes.inventory_exports import build_pdf
@@ -554,7 +555,7 @@ async def export_pdf(
     group_ids = _parse_group_ids(groups)
     items, groups_by_id = await _load_items_and_groups(group_ids)
     try:
-        data = build_pdf(items, groups_by_id, mode=mode, get_object_fn=get_object)
+        data = build_pdf(items, groups_by_id, mode=mode, get_object_fn=get_object, info_text=info or "")
     except Exception as e:
         # Full traceback in the backend log so we can see EXACTLY what field /
         # what image / what value crashes on the live data.

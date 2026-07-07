@@ -243,6 +243,9 @@ function ReportDialog({ stats, groups, onClose }) {
   const [pdfMode, setPdfMode] = useState("smart");
   // Alle Gruppen initial aktiv (leeres Set = alle)
   const [selectedGroups, setSelectedGroups] = useState(new Set(groups.map(g => g.id)));
+  // Freies Info-Textfeld -> landet auf dem Deckblatt zwischen Summentabelle
+  // und "Werte pro Gruppe" (User-Anforderung).
+  const [infoText, setInfoText] = useState("");
 
   const toggleGroup = (gid) => {
     setSelectedGroups(prev => {
@@ -272,6 +275,10 @@ function ReportDialog({ stats, groups, onClose }) {
       const url = new URL(`${API}/api${path}`);
       if (!allSelected) {
         url.searchParams.set("groups", Array.from(selectedGroups).join(","));
+      }
+      // Info-Text nur fuer PDF sinnvoll (XLSX nimmt ihn schlicht nicht auf).
+      if (path.includes("/pdf") && infoText && infoText.trim()) {
+        url.searchParams.set("info", infoText.trim());
       }
       const r = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${token}` },
@@ -373,6 +380,26 @@ function ReportDialog({ stats, groups, onClose }) {
             {noneSelected && (
               <p className="text-[11px] text-red-500 mt-2">Bitte mindestens eine Gruppe waehlen.</p>
             )}
+          </div>
+
+          {/* Info-Text fuer das PDF-Deckblatt */}
+          <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-sm font-semibold text-gray-900">Info-Text (optional)</div>
+              <span className="text-[10px] text-gray-500 uppercase tracking-wide">nur PDF</span>
+            </div>
+            <p className="text-[11px] text-gray-500 mb-2">
+              Wird auf dem Deckblatt zwischen der Gesamtsumme und &bdquo;Werte pro Gruppe&ldquo; eingefuegt.
+            </p>
+            <textarea
+              value={infoText}
+              onChange={e => setInfoText(e.target.value)}
+              placeholder="z.B. Stichtag der Bewertung, Anlass der Auswertung, Anmerkungen..."
+              rows={4}
+              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 resize-y"
+              data-testid="inv-report-info-text"
+            />
+            <div className="text-[10px] text-gray-400 mt-1 text-right">{infoText.length}/2000</div>
           </div>
 
           {/* Excel */}

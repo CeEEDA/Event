@@ -25,21 +25,41 @@ from reportlab.pdfgen import canvas as pdfcanvas
 logger = logging.getLogger(__name__)
 
 FIRMA_NAME = "Eventenergie Deutschland GmbH & Co. KG"
-LOGO_PATH = "/app/backend/static/logo.png"
+# Logo path resolved relative to THIS file so it works on both Linux (Docker /app)
+# and Windows (C:\Eventenergie\backend). Absolute /app/... breaks on Windows.
+import os as _pdf_os
+_STATIC_DIR = _pdf_os.path.join(_pdf_os.path.dirname(_pdf_os.path.abspath(__file__)), "..", "static")
+LOGO_PATH = _pdf_os.path.normpath(_pdf_os.path.join(_STATIC_DIR, "logo.png"))
 FUCHSIA = colors.HexColor("#c026d3")
 FUCHSIA_LIGHT = colors.HexColor("#fce7f3")
+EMERALD = colors.HexColor("#059669")
+EMERALD_LIGHT = colors.HexColor("#d1fae5")
 GRAY_DARK = colors.HexColor("#374151")
 GRAY_LIGHT = colors.HexColor("#f3f4f6")
 
 
-def _esc(v) -> str:
-    """Escape user-provided text for ReportLab ``Paragraph`` – which interprets
-    its content as XML. Without this, a literal ``&`` (e.g. in
-    ``Eventenergie Deutschland GmbH & Co. KG``) or a ``<`` in a note causes
-    the entire PDF build to raise HTTP 500."""
+# Umlaute wandeln (ae/oe/ue/ss). Der User will keine echten Umlaute im PDF
+# damit auch bei alten Windows-Fonts nichts an Encoding-Problemen scheitert.
+_UMLAUT_MAP = str.maketrans({
+    "ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+    "ß": "ss", "\u00A0": " ",
+})
+
+
+def _no_umlaut(v) -> str:
     if v is None:
         return "-"
-    s = str(v)
+    return str(v).translate(_UMLAUT_MAP)
+
+
+def _esc(v) -> str:
+    """Escape user-provided text for ReportLab ``Paragraph`` – which interprets
+    its content as XML. Ohne diesen Fix crasht ein literales ``&`` (z.B. in
+    ``Eventenergie Deutschland GmbH & Co. KG``) den gesamten PDF-Build.
+    Zusätzlich werden Umlaute nach ae/oe/ue/ss ersetzt."""
+    if v is None:
+        return "-"
+    s = _no_umlaut(v)
     return (
         s.replace("&", "&amp;")
          .replace("<", "&lt;")
@@ -227,13 +247,17 @@ def _pdf_footer(canv, doc):
     canv.saveState()
     canv.setFont("Helvetica", 8)
     canv.setFillColor(colors.grey)
-    canv.drawString(2 * cm, 1 * cm, f"Inventar-Auswertung  ·  {FIRMA_NAME}")
+    canv.drawString(2 * cm, 1 * cm, _no_umlaut(f"Inventar-Auswertung  ·  {FIRMA_NAME}"))
     canv.drawRightString(A4[0] - 2 * cm, 1 * cm, f"Seite {doc.page}")
     canv.restoreState()
 
 
-def _deckblatt(items, groups_by_id, styles) -> list:
-    """Deckblatt-Elemente fuer alle 3 Detail-Modi."""
+def _deckblatt(items, groups_by_id, styles, info_text: str = "") -> list:
+    """Deckblatt-Elemente fuer alle 3 Detail-Modi.
+
+    ``info_text`` optional – wird zwischen Gesamtsumme und "Werte pro Gruppe"
+    eingefuegt (freies Textfeld aus dem Auswertung-Modal).
+    """
     import os as _os
     story = []
 
@@ -300,7 +324,28 @@ def _deckblatt(items, groups_by_id, styles) -> list:
         ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
     ]))
     story.append(t)
-    story.append(Spacer(1, 18))
+    story.append(Spacer(1, 14))
+
+    # ── Optionales Info-Textfeld (zwischen Gesamtsumme und Werte pro Gruppe) ──
+    if info_text and info_text.strip():
+        info_style = ParagraphStyle(
+            "Info", parent=styles["Normal"], fontSize=10, textColor=GRAY_DARK,
+            leftIndent=6, rightIndent=6, spaceBefore=4, spaceAfter=4, leading=14,
+        )
+        info_box = Table(
+            [[Paragraph(_esc(info_text.strip()).replace("\n", "<br/>"), info_style)]],
+            colWidths=[17 * cm],
+        )
+        info_box.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eff6ff")),  # sanftes Blau
+            ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#3b82f6")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(info_box)
+        story.append(Spacer(1, 14))
 
     # Pro Gruppe Uebersicht
     story.append(Paragraph("Werte pro Gruppe", ParagraphStyle("H2", parent=styles["Heading2"], textColor=FUCHSIA, fontSize=13, spaceBefore=6, spaceAfter=8)))
@@ -319,7 +364,7 @@ def _deckblatt(items, groups_by_id, styles) -> list:
     rows = [["Gruppe", "Pos.", "Einkauf", "Bilanz", "Markt", "Aktiv"]]
     for gid, agg in sorted(per_group.items(), key=lambda kv: groups_by_id.get(kv[0], {}).get("name", kv[0])):
         rows.append([
-            groups_by_id.get(gid, {}).get("name", gid),
+            _no_umlaut(groups_by_id.get(gid, {}).get("name", gid)),
             str(agg["count"]),
             _fmt_eur(agg["einkauf"]),
             _fmt_eur(agg["bilanz"]),
@@ -339,6 +384,35 @@ def _deckblatt(items, groups_by_id, styles) -> list:
         ("TOPPADDING", (0, 0), (-1, -1), 6),
     ]))
     story.append(gt)
+
+    # ── Marktwert prominent ganz unten auf dem Deckblatt ─────────────
+    # Der User hat gewuenscht, dass der Marktschaetzwert der "wichtige Wert"
+    # ist und fett hervorgehoben ganz unten auf dem Deckblatt erscheint.
+    story.append(Spacer(1, 22))
+    markt_box = Table(
+        [[
+            Paragraph(
+                "MARKTSCHAETZWERT GESAMT",
+                ParagraphStyle("MktL", parent=styles["Normal"], fontSize=11, textColor=colors.white,
+                               fontName="Helvetica-Bold", alignment=TA_LEFT, leading=14),
+            ),
+            Paragraph(
+                _fmt_eur(total_markt),
+                ParagraphStyle("MktV", parent=styles["Normal"], fontSize=22, textColor=colors.white,
+                               fontName="Helvetica-Bold", alignment=TA_RIGHT, leading=26),
+            ),
+        ]],
+        colWidths=[8 * cm, 9 * cm],
+    )
+    markt_box.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), EMERALD),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+    ]))
+    story.append(markt_box)
     return story
 
 
@@ -374,11 +448,12 @@ def _decode_image_for_pdf(item_id: str, img_meta: dict, get_object_fn, max_size_
         return None
 
 
-def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_fn=None) -> bytes:
+def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_fn=None, info_text: str = "") -> bytes:
     """PDF-Auswertung mit 3 Detaillierungsgraden.
     mode: 'smart' = nur Deckblatt + einfache Tabelle
           'mittel' = zusaetzlich pro Gruppe Deckblatt + je Item eine Seite mit Bild
           'gross' = wie mittel + auch die Dokumente aus der Dokumentenablage referenzieren
+    info_text: optionaler Freitext, wird auf dem Deckblatt eingefuegt.
     """
     if mode not in {"smart", "mittel", "gross"}:
         mode = "smart"
@@ -394,7 +469,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
     story = []
 
     # ── Seite 1: Deckblatt ─────────────────────────────────────
-    story += _deckblatt(items, groups_by_id, styles)
+    story += _deckblatt(items, groups_by_id, styles, info_text=info_text)
 
     # ── SMART: einfache Tabelle aller Positionen ──────────────
     if mode == "smart":
@@ -404,9 +479,9 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
         # sortiert nach Gruppe -> Bezeichnung
         for it in sorted(items, key=lambda x: (groups_by_id.get(x.get("group_id",""), {}).get("name",""), x.get("bezeichnung",""))):
             rows.append([
-                groups_by_id.get(it.get("group_id",""), {}).get("name", "-"),
-                it.get("bezeichnung", "")[:35],
-                it.get("anlagevermoegensnummer", ""),
+                _no_umlaut(groups_by_id.get(it.get("group_id",""), {}).get("name", "-")),
+                _no_umlaut(it.get("bezeichnung", ""))[:35],
+                _no_umlaut(it.get("anlagevermoegensnummer", "")),
                 str(it.get("stueckzahl") or 1),
                 _fmt_eur(it.get("einkaufspreis")),
                 _fmt_eur(it.get("aktueller_bilanzwert")),
