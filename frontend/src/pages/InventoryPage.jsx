@@ -276,7 +276,16 @@ function ReportDialog({ stats, groups, onClose }) {
       const r = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) {
+        // Backend sendet bei 500 einen JSON-Body mit "detail" -> anzeigen,
+        // sodass der Anwender die konkrete Ursache direkt sieht (kein Log-Grepping).
+        let detail = `HTTP ${r.status}`;
+        try {
+          const body = await r.json();
+          if (body?.detail) detail = body.detail;
+        } catch { /* body ist evtl. HTML/binary - dann bleibt HTTP-Code */ }
+        throw new Error(detail);
+      }
       const blob = await r.blob();
       const dlUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
