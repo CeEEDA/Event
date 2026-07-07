@@ -56,10 +56,13 @@ def _esc(v) -> str:
     """Escape user-provided text for ReportLab ``Paragraph`` – which interprets
     its content as XML. Ohne diesen Fix crasht ein literales ``&`` (z.B. in
     ``Eventenergie Deutschland GmbH & Co. KG``) den gesamten PDF-Build.
-    Zusätzlich werden Umlaute nach ae/oe/ue/ss ersetzt."""
+
+    Umlaute bleiben erhalten (Helvetica rendert ae/oe/ue/aeoeue nativ).
+    Nur XML-Sonderzeichen werden ersetzt.
+    """
     if v is None:
         return "-"
-    s = _no_umlaut(v)
+    s = str(v)
     return (
         s.replace("&", "&amp;")
          .replace("<", "&lt;")
@@ -247,7 +250,7 @@ def _pdf_footer(canv, doc):
     canv.saveState()
     canv.setFont("Helvetica", 8)
     canv.setFillColor(colors.grey)
-    canv.drawString(2 * cm, 1 * cm, _no_umlaut(f"Inventar-Auswertung  ·  {FIRMA_NAME}"))
+    canv.drawString(2 * cm, 1 * cm, f"Inventar-Auswertung  ·  {FIRMA_NAME}")
     canv.drawRightString(A4[0] - 2 * cm, 1 * cm, f"Seite {doc.page}")
     canv.restoreState()
 
@@ -302,10 +305,10 @@ def _deckblatt(items, groups_by_id, styles, info_text: str = "") -> list:
 
     summary_data = [
         ["Positionen", str(total_items)],
-        ["Stueck gesamt", str(total_stueck)],
+        ["Stück gesamt", str(total_stueck)],
         ["Einkaufspreis (Anschaffung)", _fmt_eur(total_einkauf)],
         ["Bilanzwert", _fmt_eur(total_bilanz)],
-        ["Marktschaetzwert", _fmt_eur(total_markt)],
+        ["Marktschätzwert", _fmt_eur(total_markt)],
         ["Aktivwert (Bilanz > Markt)", _fmt_eur(total_aktiv)],
     ]
     t = Table(summary_data, colWidths=[7 * cm, 6 * cm])
@@ -319,9 +322,6 @@ def _deckblatt(items, groups_by_id, styles, info_text: str = "") -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING", (0, 0), (-1, -1), 8),
         ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-        ("BACKGROUND", (0, -1), (-1, -1), FUCHSIA),
-        ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
     ]))
     story.append(t)
     story.append(Spacer(1, 14))
@@ -364,7 +364,7 @@ def _deckblatt(items, groups_by_id, styles, info_text: str = "") -> list:
     rows = [["Gruppe", "Pos.", "Einkauf", "Bilanz", "Markt", "Aktiv"]]
     for gid, agg in sorted(per_group.items(), key=lambda kv: groups_by_id.get(kv[0], {}).get("name", kv[0])):
         rows.append([
-            _no_umlaut(groups_by_id.get(gid, {}).get("name", gid)),
+            groups_by_id.get(gid, {}).get("name", gid),
             str(agg["count"]),
             _fmt_eur(agg["einkauf"]),
             _fmt_eur(agg["bilanz"]),
@@ -392,7 +392,7 @@ def _deckblatt(items, groups_by_id, styles, info_text: str = "") -> list:
     markt_box = Table(
         [[
             Paragraph(
-                "MARKTSCHAETZWERT GESAMT",
+                "MARKTSCHÄTZWERT GESAMT",
                 ParagraphStyle("MktL", parent=styles["Normal"], fontSize=11, textColor=colors.white,
                                fontName="Helvetica-Bold", alignment=TA_LEFT, leading=14),
             ),
@@ -479,9 +479,9 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
         # sortiert nach Gruppe -> Bezeichnung
         for it in sorted(items, key=lambda x: (groups_by_id.get(x.get("group_id",""), {}).get("name",""), x.get("bezeichnung",""))):
             rows.append([
-                _no_umlaut(groups_by_id.get(it.get("group_id",""), {}).get("name", "-")),
-                _no_umlaut(it.get("bezeichnung", ""))[:35],
-                _no_umlaut(it.get("anlagevermoegensnummer", "")),
+                groups_by_id.get(it.get("group_id",""), {}).get("name", "-"),
+                (it.get("bezeichnung", "") or "")[:35],
+                it.get("anlagevermoegensnummer", ""),
                 str(it.get("stueckzahl") or 1),
                 _fmt_eur(it.get("einkaufspreis")),
                 _fmt_eur(it.get("aktueller_bilanzwert")),
@@ -535,7 +535,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
 
             s_data = [
                 ["Positionen", str(len(group_items))],
-                ["Stueck gesamt", str(g_stk)],
+                ["Stück gesamt", str(g_stk)],
                 ["Einkauf gesamt", _fmt_eur(g_ein)],
                 ["Bilanz gesamt", _fmt_eur(g_bil)],
                 ["Markt gesamt", _fmt_eur(g_mkt)],
@@ -561,19 +561,19 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                 story.append(Paragraph(_esc(it.get("bezeichnung", "-")), ParagraphStyle("IT", parent=styles["Title"], fontSize=16, textColor=FUCHSIA, spaceAfter=12)))
 
                 if it.get("anlagevermoegensnummer"):
-                    story.append(Paragraph(f"<b>Anlagevermoegensnummer:</b> {_esc(it['anlagevermoegensnummer'])}", styles["Normal"]))
+                    story.append(Paragraph(f"<b>Anlagevermögensnummer:</b> {_esc(it['anlagevermoegensnummer'])}", styles["Normal"]))
                 story.append(Paragraph(f"<b>Gruppe:</b> {_esc(gname)}", styles["Normal"]))
                 story.append(Paragraph(f"<b>Besitzer:</b> {_esc(it.get('besitzer','-'))}", styles["Normal"]))
                 story.append(Paragraph(f"<b>Anschaffung:</b> {_esc(_fmt_monat_jahr(it.get('anschaffung_monat'), it.get('anschaffung_jahr')))}", styles["Normal"]))
-                story.append(Paragraph(f"<b>Stueckzahl:</b> {_esc(it.get('stueckzahl') or 1)}", styles["Normal"]))
+                story.append(Paragraph(f"<b>Stückzahl:</b> {_esc(it.get('stueckzahl') or 1)}", styles["Normal"]))
                 story.append(Spacer(1, 8))
 
                 stk = int(it.get("stueckzahl") or 1)
                 werte = [
-                    ["Wert", "pro Stueck", f"x {stk}"],
+                    ["Wert", "pro Stück", f"x {stk}"],
                     ["Einkaufspreis", _fmt_eur(it.get("einkaufspreis")), _fmt_eur(float(it.get("einkaufspreis") or 0) * stk)],
                     ["Bilanzwert", _fmt_eur(it.get("aktueller_bilanzwert")), _fmt_eur(float(it.get("aktueller_bilanzwert") or 0) * stk)],
-                    ["Marktschaetzwert", _fmt_eur(it.get("marktschaetzwert")), _fmt_eur(float(it.get("marktschaetzwert") or 0) * stk)],
+                    ["Marktschätzwert", _fmt_eur(it.get("marktschaetzwert")), _fmt_eur(float(it.get("marktschaetzwert") or 0) * stk)],
                 ]
                 wt = Table(werte, colWidths=[5.5*cm, 4*cm, 4*cm])
                 wt.setStyle(TableStyle([
@@ -604,7 +604,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                     docs = it.get("documents") or []
                     if docs:
                         story.append(Spacer(1, 8))
-                        story.append(Paragraph("<b>Angehaengte Dokumente:</b>", styles["Normal"]))
+                        story.append(Paragraph("<b>Angehängte Dokumente:</b>", styles["Normal"]))
                         for d in docs:
                             size_kb = int((d.get("size", 0) or 0) / 1024)
                             story.append(Paragraph(
