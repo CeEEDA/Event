@@ -382,10 +382,10 @@ function ReportDialog({ stats, groups, onClose }) {
             )}
           </div>
 
-          {/* Info-Text fuer das PDF-Deckblatt */}
+          {/* Notiz fuer das PDF-Deckblatt */}
           <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-sm font-semibold text-gray-900">Info-Text (optional)</div>
+              <div className="text-sm font-semibold text-gray-900">Notiz (optional)</div>
               <span className="text-[10px] text-gray-500 uppercase tracking-wide">nur PDF</span>
             </div>
             <p className="text-[11px] text-gray-500 mb-2">
