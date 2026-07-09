@@ -345,6 +345,21 @@ function ScaleDialog({ groups, onClose, onSaved }) {
     setResetting(false);
   };
 
+  const deleteGroup = async (g) => {
+    if ((g.item_count || 0) > 0) {
+      toast.error(`Gruppe "${g.name}" enthaelt noch ${g.item_count} Position(en). Erst leeren oder umziehen.`);
+      return;
+    }
+    if (!window.confirm(`Gruppe "${g.name}" wirklich loeschen?`)) return;
+    try {
+      await api.delete(`/inventory/groups/${g.id}`);
+      toast.success(`Gruppe "${g.name}" geloescht`);
+      onSaved();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Fehler beim Loeschen");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" data-testid="inv-scale-dialog">
       <div className="bg-white w-full sm:max-w-2xl sm:rounded-lg rounded-t-xl max-h-[95vh] overflow-y-auto shadow-2xl">
@@ -389,6 +404,7 @@ function ScaleDialog({ groups, onClose, onSaved }) {
             const orig = g.market_value_total_original || 0;
             const skal = orig * (p / 100);
             const changed = p !== (g.market_value_scale_percent ?? 100);
+            const empty = (g.item_count || 0) === 0;
             return (
               <div key={g.id} className={`px-4 py-3 grid grid-cols-12 gap-3 items-center ${changed ? "bg-amber-50/40" : ""}`}>
                 <div className="col-span-4 sm:col-span-3 flex items-center gap-2 min-w-0">
@@ -398,11 +414,11 @@ function ScaleDialog({ groups, onClose, onSaved }) {
                     <div className="text-[10px] text-gray-400">{g.item_count || 0} Pos.</div>
                   </div>
                 </div>
-                <div className="col-span-4 sm:col-span-3 text-right">
+                <div className="col-span-3 sm:col-span-3 text-right">
                   <div className="text-[10px] text-gray-400 uppercase tracking-wide">Original</div>
                   <div className="text-xs font-medium text-gray-700 tabular-nums">{fmt(orig)}</div>
                 </div>
-                <div className="col-span-4 sm:col-span-3">
+                <div className="col-span-3 sm:col-span-2">
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
@@ -417,9 +433,21 @@ function ScaleDialog({ groups, onClose, onSaved }) {
                     <span className="text-xs text-gray-500">%</span>
                   </div>
                 </div>
-                <div className="col-span-12 sm:col-span-3 text-right">
+                <div className="col-span-10 sm:col-span-3 text-right">
                   <div className="text-[10px] text-emerald-700 uppercase tracking-wide">Skaliert</div>
                   <div className={`text-xs font-bold tabular-nums ${changed ? "text-emerald-700" : "text-gray-700"}`}>{fmt(skal)}</div>
+                </div>
+                <div className="col-span-2 sm:col-span-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => deleteGroup(g)}
+                    disabled={!empty}
+                    className={`p-1.5 rounded ${empty ? "text-gray-400 hover:bg-red-50 hover:text-red-600" : "text-gray-200 cursor-not-allowed"}`}
+                    title={empty ? "Gruppe loeschen" : `Enthaelt ${g.item_count} Position(en) - nicht loeschbar`}
+                    data-testid={`inv-scale-delete-${g.id}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
