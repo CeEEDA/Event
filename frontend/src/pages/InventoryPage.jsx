@@ -9,7 +9,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Plus, Search, Camera, ImageIcon, Trash2, Edit3, X, Package,
-  FileBarChart, ChevronDown, ChevronRight, FileText, Paperclip, Download,
+  FileBarChart, ChevronDown, ChevronRight, FileText, Paperclip, Download, Sliders, RotateCcw,
 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -47,6 +47,7 @@ export default function InventoryPage() {
   const [expanded, setExpanded] = useState({});
   const [stats, setStats] = useState(null);
   const [showReport, setShowReport] = useState(false);
+  const [showScale, setShowScale] = useState(false);
 
   // WICHTIG: Wir laden EINMAL alle Items vom Backend (bei 120 Items ~0.15s).
   // Suche + Gruppen-Filter passieren dann client-seitig -> keine 10s-Lag mehr.
@@ -132,6 +133,15 @@ export default function InventoryPage() {
           >
             <FileBarChart className="w-4 h-4 sm:mr-1" />
             <span className="hidden sm:inline">Auswertung</span>
+          </Button>
+          <Button
+            size="sm" variant="outline" className="h-8 px-2 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+            onClick={() => setShowScale(true)}
+            data-testid="inv-scale-btn"
+            title="Marktwert prozentual pro Gruppe skalieren"
+          >
+            <Sliders className="w-4 h-4 sm:mr-1" />
+            <span className="hidden sm:inline">Skalieren</span>
           </Button>
           <Button
             size="sm" className="h-8 px-2 text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
@@ -269,6 +279,180 @@ export default function InventoryPage() {
       {showReport && (
         <ReportDialog stats={stats} groups={groups} onClose={() => setShowReport(false)} />
       )}
+
+      {showScale && (
+        <ScaleDialog
+          groups={groups}
+          onClose={() => setShowScale(false)}
+          onSaved={() => { setShowScale(false); loadGroups(); loadStats(); loadItems(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ─── Skalen-Modal: Marktwert prozentual pro Gruppe ──────────────────
+// Der User will Original-Werte in der DB unangetastet lassen, aber die
+// Ausgabe (Zeile, Stats, PDF) prozentual auf/ab skalieren. Faktor liegt pro
+// Gruppe im DB-Feld `market_value_scale` (1.0 = 100 %).
+function ScaleDialog({ groups, onClose, onSaved }) {
+  const [pct, setPct] = useState(() => {
+    const o = {};
+    groups.forEach(g => { o[g.id] = g.market_value_scale_percent ?? 100; });
+    return o;
+  });
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const set = (gid, v) => setPct(p => ({ ...p, [gid]: v }));
+
+  const fmt = n => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0) + " €";
+
+  const anyChanged = groups.some(g => (pct[g.id] ?? 100) !== (g.market_value_scale_percent ?? 100));
+
+  // Live-Summen
+  const totalOrig = groups.reduce((a, g) => a + (g.market_value_total_original || 0), 0);
+  const totalNew  = groups.reduce((a, g) => a + (g.market_value_total_original || 0) * ((pct[g.id] ?? 100) / 100), 0);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      // Nur geaenderte Gruppen posten
+      await Promise.all(
+        groups
+          .filter(g => (pct[g.id] ?? 100) !== (g.market_value_scale_percent ?? 100))
+          .map(g => api.patch(`/inventory/groups/${g.id}/scale`, { scale_percent: Number(pct[g.id]) || 100 })),
+      );
+      toast.success("Skalierung gespeichert");
+      onSaved();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Fehler beim Speichern");
+    }
+    setSaving(false);
+  };
+
+  const resetAll = async () => {
+    if (!window.confirm("Alle Gruppen auf 100 % zuruecksetzen (Werkseinstellung)?")) return;
+    setResetting(true);
+    try {
+      await api.post("/inventory/groups/scale/reset");
+      toast.success("Alle Gruppen auf 100 % zurueckgesetzt");
+      onSaved();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Fehler beim Zuruecksetzen");
+    }
+    setResetting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" data-testid="inv-scale-dialog">
+      <div className="bg-white w-full sm:max-w-2xl sm:rounded-lg rounded-t-xl max-h-[95vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <Sliders className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Marktwert skalieren</h3>
+              <p className="text-[11px] text-gray-500">Original bleibt unveraendert · Anzeige &amp; Export werden angepasst</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100 text-gray-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Live-Total */}
+        <div className="px-4 py-3 grid grid-cols-2 gap-3 border-b border-gray-100 bg-emerald-50/40">
+          <div>
+            <div className="text-[10px] text-gray-500 uppercase tracking-wide">Marktwert Original</div>
+            <div className="text-base font-bold tabular-nums text-gray-700">{fmt(totalOrig)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-emerald-700 uppercase tracking-wide">Marktwert skaliert</div>
+            <div className="text-base font-bold tabular-nums text-emerald-700">
+              {fmt(totalNew)}
+              {totalOrig > 0 && (
+                <span className="ml-2 text-[11px] font-normal text-gray-500">
+                  ({((totalNew/totalOrig - 1) * 100).toFixed(1)} %)
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Gruppen-Zeilen */}
+        <div className="divide-y divide-gray-100">
+          {groups.map(g => {
+            const p = pct[g.id] ?? 100;
+            const orig = g.market_value_total_original || 0;
+            const skal = orig * (p / 100);
+            const changed = p !== (g.market_value_scale_percent ?? 100);
+            return (
+              <div key={g.id} className={`px-4 py-3 grid grid-cols-12 gap-3 items-center ${changed ? "bg-amber-50/40" : ""}`}>
+                <div className="col-span-4 sm:col-span-3 flex items-center gap-2 min-w-0">
+                  <div className={`w-2 h-2 rounded-full bg-${g.color || "gray"}-500 shrink-0`} />
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-gray-800 truncate">{g.name}</div>
+                    <div className="text-[10px] text-gray-400">{g.item_count || 0} Pos.</div>
+                  </div>
+                </div>
+                <div className="col-span-4 sm:col-span-3 text-right">
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wide">Original</div>
+                  <div className="text-xs font-medium text-gray-700 tabular-nums">{fmt(orig)}</div>
+                </div>
+                <div className="col-span-4 sm:col-span-3">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1000"
+                      step="1"
+                      value={p}
+                      onChange={e => set(g.id, Number(e.target.value))}
+                      className="w-16 h-8 px-2 border border-gray-200 rounded text-sm text-right tabular-nums focus:outline-none focus:border-emerald-400"
+                      data-testid={`inv-scale-pct-${g.id}`}
+                    />
+                    <span className="text-xs text-gray-500">%</span>
+                  </div>
+                </div>
+                <div className="col-span-12 sm:col-span-3 text-right">
+                  <div className="text-[10px] text-emerald-700 uppercase tracking-wide">Skaliert</div>
+                  <div className={`text-xs font-bold tabular-nums ${changed ? "text-emerald-700" : "text-gray-700"}`}>{fmt(skal)}</div>
+                </div>
+              </div>
+            );
+          })}
+          {groups.length === 0 && (
+            <div className="px-4 py-6 text-center text-xs text-gray-400">Keine Gruppen vorhanden</div>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={resetAll}
+            disabled={resetting || saving}
+            className="text-red-600 border-red-200 hover:bg-red-50"
+            data-testid="inv-scale-reset"
+          >
+            <RotateCcw className="w-3.5 h-3.5 mr-1" /> Zuruecksetzen
+          </Button>
+          <div className="flex-1" />
+          <Button variant="outline" onClick={onClose} disabled={saving} data-testid="inv-scale-cancel">
+            Abbrechen
+          </Button>
+          <Button
+            onClick={save}
+            disabled={!anyChanged || saving}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-gray-300"
+            data-testid="inv-scale-save"
+          >
+            {saving ? "Speichere..." : "Uebernehmen"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -549,7 +733,16 @@ function ItemRow({ item, onEdit, onDelete }) {
           {item.stueckzahl > 1 && <span>· {item.stueckzahl} Stk.</span>}
           {anschaffung && <span>· {anschaffung}</span>}
           {item.aktueller_bilanzwert > 0 && <span className="text-fuchsia-600 font-medium">· Bilanz {fmtEUR(item.aktueller_bilanzwert)}</span>}
-          {item.marktschaetzwert > 0 && <span className="text-emerald-600 font-medium">· Markt {fmtEUR(item.marktschaetzwert)}</span>}
+          {item.marktschaetzwert > 0 && (
+            <span className="text-emerald-600 font-medium">
+              · Markt {fmtEUR(item.marktschaetzwert_scaled ?? item.marktschaetzwert)}
+              {item.group_market_scale && item.group_market_scale !== 1 && (
+                <span className="ml-1 text-[10px] text-gray-400 font-normal">
+                  (Orig. {fmtEUR(item.marktschaetzwert)} · {Math.round(item.group_market_scale * 100)} %)
+                </span>
+              )}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-0.5 flex-shrink-0">

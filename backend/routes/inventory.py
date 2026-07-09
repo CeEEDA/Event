@@ -117,6 +117,24 @@ async def list_groups():
     async for g in db.inventory_groups.find({}, {"_id": 0}).sort("name", 1):
         # Anzahl der Items in dieser Gruppe
         g["item_count"] = await db.inventory_items.count_documents({"group_id": g["id"], "is_deleted": {"$ne": True}})
+        # Marktwert-Skala (Default 1.0 = 100 %). Prozent-Anzeige fuer die UI.
+        g.setdefault("market_value_scale", 1.0)
+        g["market_value_scale_percent"] = round(float(g["market_value_scale"]) * 100, 2)
+        # Original + skalierter Marktwert pro Gruppe fuer das Skalen-Modal
+        agg = db.inventory_items.aggregate([
+            {"$match": {"group_id": g["id"], "is_deleted": {"$ne": True}}},
+            {"$group": {
+                "_id": None,
+                "total": {"$sum": {"$multiply": [
+                    {"$ifNull": ["$marktschaetzwert", 0]}, {"$ifNull": ["$stueckzahl", 1]},
+                ]}},
+            }},
+        ])
+        markt_orig = 0.0
+        async for a in agg:
+            markt_orig = float(a.get("total") or 0)
+        g["market_value_total_original"] = round(markt_orig, 2)
+        g["market_value_total_scaled"] = round(markt_orig * float(g["market_value_scale"]), 2)
         groups.append(g)
     return {"groups": groups}
 
@@ -159,6 +177,35 @@ async def delete_group(group_id: str):
     return {"deleted": r.deleted_count}
 
 
+# ─── Marktwert-Skalierung pro Gruppe ─────────────────────────────
+# Der User kann prozentual "auf/ab-skalieren" (z.B. 90 % oder 130 %), OHNE die
+# Original-Werte in der DB zu veraendern. Original bleibt in `marktschaetzwert`,
+# angezeigter/exportierter Wert wird zur Laufzeit multipliziert.
+class GroupScaleUpdate(BaseModel):
+    scale_percent: float  # 100 = unveraendert, 90 = -10 %, 130 = +30 %
+
+
+@router.patch("/groups/{group_id}/scale")
+async def update_group_scale(group_id: str, payload: GroupScaleUpdate):
+    if payload.scale_percent < 0 or payload.scale_percent > 1000:
+        raise HTTPException(400, "Skalen-Faktor muss zwischen 0 und 1000 % liegen")
+    g = await db.inventory_groups.find_one({"id": group_id})
+    if not g:
+        raise HTTPException(404, "Gruppe nicht gefunden")
+    await db.inventory_groups.update_one(
+        {"id": group_id},
+        {"$set": {"market_value_scale": float(payload.scale_percent) / 100.0}},
+    )
+    return {"ok": True, "group_id": group_id, "scale_percent": payload.scale_percent}
+
+
+@router.post("/groups/scale/reset")
+async def reset_group_scale():
+    """Alle Gruppen auf 100 % (Werkseinstellung) zuruecksetzen."""
+    r = await db.inventory_groups.update_many({}, {"$unset": {"market_value_scale": ""}})
+    return {"reset_count": r.modified_count}
+
+
 # ─── Item-Endpoints ───────────────────────────────────────────────
 @router.get("/items")
 async def list_items(
@@ -189,15 +236,22 @@ async def list_items(
         else:
             query["$and"] = clauses
 
-    # Gruppe-Namen fuer die UI mitliefern
+    # Gruppe-Namen + Marktwert-Skalen fuer die UI mitliefern
     groups_by_id = {}
     async for g in db.inventory_groups.find({}, {"_id": 0}):
+        g.setdefault("market_value_scale", 1.0)
         groups_by_id[g["id"]] = g
 
     items = []
     async for it in db.inventory_items.find(query, {"_id": 0}).sort([("bezeichnung", 1)]).limit(limit):
-        it["group_name"] = groups_by_id.get(it.get("group_id", ""), {}).get("name", "-")
-        it["group_color"] = groups_by_id.get(it.get("group_id", ""), {}).get("color", "gray")
+        gid = it.get("group_id", "")
+        g = groups_by_id.get(gid, {})
+        it["group_name"] = g.get("name", "-")
+        it["group_color"] = g.get("color", "gray")
+        # Skalierter Marktwert (Anzeige/Export) – Original bleibt unangetastet.
+        scale = float(g.get("market_value_scale") or 1.0)
+        it["group_market_scale"] = scale
+        it["marktschaetzwert_scaled"] = round(float(it.get("marktschaetzwert") or 0) * scale, 2)
         items.append(it)
     return {"items": items, "total": len(items)}
 
@@ -499,8 +553,14 @@ async def delete_document_entry(item_id: str, doc_id: str):
 # ─── Stats fuer die Uebersicht (spaeter Auswertung) ──────────────
 @router.get("/stats")
 async def stats():
-    """Kurz-Statistik: Gesamtwerte + Gruppierung."""
+    """Kurz-Statistik: Gesamtwerte + Gruppierung. Marktwert wird mit dem
+    Gruppen-Skalen-Faktor multipliziert – `total_markt_original` bleibt als
+    Referenz erhalten."""
     total_items = await db.inventory_items.count_documents({"is_deleted": {"$ne": True}})
+    # Skalen-Faktoren pro Gruppe holen
+    scales = {}
+    async for g in db.inventory_groups.find({}, {"_id": 0, "id": 1, "market_value_scale": 1}):
+        scales[g["id"]] = float(g.get("market_value_scale") or 1.0)
     # Aggregation: Summe pro Gruppe
     pipeline = [
         {"$match": {"is_deleted": {"$ne": True}}},
@@ -514,21 +574,28 @@ async def stats():
     ]
     per_group = []
     async for row in db.inventory_items.aggregate(pipeline):
+        gid = row["_id"]
+        sc = scales.get(gid, 1.0)
+        raw_markt = float(row["total_markt"] or 0)
         per_group.append({
-            "group_id": row["_id"],
+            "group_id": gid,
             "count": row["count"],
             "total_einkauf": round(row["total_einkauf"] or 0, 2),
             "total_bilanz": round(row["total_bilanz"] or 0, 2),
-            "total_markt": round(row["total_markt"] or 0, 2),
+            "total_markt": round(raw_markt * sc, 2),
+            "total_markt_original": round(raw_markt, 2),
+            "market_value_scale_percent": round(sc * 100, 2),
         })
     total_einkauf = sum(r["total_einkauf"] for r in per_group)
     total_bilanz = sum(r["total_bilanz"] for r in per_group)
     total_markt = sum(r["total_markt"] for r in per_group)
+    total_markt_orig = sum(r["total_markt_original"] for r in per_group)
     return {
         "total_items": total_items,
         "total_einkauf": round(total_einkauf, 2),
         "total_bilanz": round(total_bilanz, 2),
         "total_markt": round(total_markt, 2),
+        "total_markt_original": round(total_markt_orig, 2),
         "per_group": per_group,
     }
 
@@ -538,10 +605,19 @@ async def _load_items_and_groups(group_ids: Optional[list] = None) -> tuple[list
     q = {"is_deleted": {"$ne": True}}
     if group_ids:
         q["group_id"] = {"$in": group_ids}
-    items = [d async for d in db.inventory_items.find(q, {"_id": 0})]
     groups_by_id = {}
     async for g in db.inventory_groups.find({}, {"_id": 0}):
+        g.setdefault("market_value_scale", 1.0)
         groups_by_id[g["id"]] = g
+    items = []
+    async for d in db.inventory_items.find(q, {"_id": 0}):
+        # Marktwert mit Gruppen-Skala multiplizieren; Original beibehalten
+        # falls Berichte spaeter beides brauchen.
+        g = groups_by_id.get(d.get("group_id", ""), {})
+        sc = float(g.get("market_value_scale") or 1.0)
+        d["marktschaetzwert_original"] = float(d.get("marktschaetzwert") or 0)
+        d["marktschaetzwert"] = round(d["marktschaetzwert_original"] * sc, 2)
+        items.append(d)
     return items, groups_by_id
 
 
