@@ -334,12 +334,15 @@ async def add_image(item_id: str, file: UploadFile = File(...)):
 
 
 @router.get("/items/{item_id}/images/{img_id}")
-async def get_image(item_id: str, img_id: str):
+async def get_image(item_id: str, img_id: str, thumb: int = 0):
     """Bild-Binary ausliefern (fuer <img src=...>).
 
     ``img_id`` ist eine UUID, das Bild ist damit unveraenderlich -> aggressives
     Browser-Caching (1 Jahr, immutable) verhindert das Neu-Laden aller Thumbnails
     bei jedem Tastendruck in der Suche.
+
+    ``thumb`` (optional): Kantenlaenge in Pixel (z.B. 128). Erzeugt einen
+    verkleinerten JPEG (viel kleiner, ideal fuer Listen-Thumbnails auf iPad).
     """
     doc = await db.inventory_items.find_one({"id": item_id}, {"_id": 0, "images": 1})
     if not doc:
@@ -350,6 +353,7 @@ async def get_image(item_id: str, img_id: str):
     storage_path = img.get("storage_path", "")
     cache_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
     try:
+        # Rohbild laden
         if storage_path.startswith("local://"):
             local_rel = storage_path.replace("local://", "", 1)
             local_path = f"/app/data/inventory/{item_id}/{local_rel.rsplit('/', 1)[-1]}"
@@ -357,9 +361,27 @@ async def get_image(item_id: str, img_id: str):
                 raise HTTPException(404, "Bilddatei nicht auf Server")
             with open(local_path, "rb") as f:
                 data = f.read()
-            return Response(content=data, media_type=img.get("content_type") or "image/jpeg", headers=cache_headers)
-        data, ct = get_object(storage_path)
-        return Response(content=data, media_type=ct or img.get("content_type") or "image/jpeg", headers=cache_headers)
+            ct = img.get("content_type") or "image/jpeg"
+        else:
+            data, ct = get_object(storage_path)
+            ct = ct or img.get("content_type") or "image/jpeg"
+
+        # Thumbnail-Modus: kleine JPEG-Variante fuer schnelle Listen-Anzeige.
+        if thumb and 16 <= int(thumb) <= 1024:
+            try:
+                from PIL import Image as PILImage
+                import io as _io
+                size = int(thumb)
+                pil = PILImage.open(_io.BytesIO(data))
+                pil.thumbnail((size, size))
+                buf = _io.BytesIO()
+                pil.convert("RGB").save(buf, format="JPEG", quality=75, optimize=True)
+                return Response(content=buf.getvalue(), media_type="image/jpeg", headers=cache_headers)
+            except Exception as thumb_err:
+                logger.warning(f"[inventory] Thumbnail-Erzeugung fehlgeschlagen, liefere Original: {thumb_err}")
+                # fall through -> return original
+
+        return Response(content=data, media_type=ct, headers=cache_headers)
     except HTTPException:
         raise
     except Exception as e:

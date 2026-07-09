@@ -521,12 +521,18 @@ function ItemRow({ item, onEdit, onDelete }) {
     ? `${String(item.anschaffung_monat).padStart(2, "0")}/${item.anschaffung_jahr}`
     : null;
   return (
-    <div className="px-3 py-2 flex items-center gap-2 sm:gap-3 hover:bg-gray-50 active:bg-gray-100" data-testid={`inv-item-${item.id}`}>
+    <div
+      className="px-3 py-2 flex items-center gap-2 sm:gap-3 hover:bg-gray-50 active:bg-gray-100"
+      style={{ contentVisibility: "auto", containIntrinsicSize: "56px" }}
+      data-testid={`inv-item-${item.id}`}
+    >
       <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-md bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 border border-gray-200">
         {firstImg ? (
           <img
-            src={`${API}/api/inventory/items/${item.id}/images/${firstImg.id}`}
+            src={`${API}/api/inventory/items/${item.id}/images/${firstImg.id}?thumb=128`}
             alt=""
+            width={48}
+            height={48}
             className="w-full h-full object-cover"
             loading="lazy"
             decoding="async"
