@@ -589,6 +589,10 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
   const [showCamera, setShowCamera] = useState(false);
   const [docs, setDocs] = useState(item?.documents || []);
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  // Warteschlange fuer Bilder/Dokumente, die VOR dem ersten Speichern hinzugefuegt
+  // wurden. Nach dem POST /items wird die Queue automatisch hochgeladen.
+  const [pendingImages, setPendingImages] = useState([]); // [{file, previewUrl}]
+  const [pendingDocs, setPendingDocs] = useState([]);     // [{file}]
 
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
@@ -620,20 +624,50 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
         anschaffung_monat: form.anschaffung_monat ? parseInt(form.anschaffung_monat) : null,
         anschaffung_jahr: form.anschaffung_jahr ? parseInt(form.anschaffung_jahr) : null,
       };
-      let r;
+      let targetId = createdItemId;
       if (isEdit) {
-        r = await api.put(`/inventory/items/${item.id}`, payload);
-      } else {
-        r = await api.post("/inventory/items", payload);
-        setCreatedItemId(r.data.id);
+        await api.put(`/inventory/items/${item.id}`, payload);
+        targetId = item.id;
+      } else if (!targetId) {
+        const r = await api.post("/inventory/items", payload);
+        targetId = r.data.id;
+        setCreatedItemId(targetId);
+      }
+      // Warteschlangen abarbeiten – Bilder + Dokumente, die der Nutzer VOR
+      // dem Speichern schon ausgewaehlt hat, gehen jetzt hoch.
+      if (pendingImages.length > 0 || pendingDocs.length > 0) {
+        toast.info(`Lade ${pendingImages.length} Bild(er) und ${pendingDocs.length} Dokument(e) hoch...`);
+        for (const p of pendingImages) {
+          try {
+            const fd = new FormData();
+            fd.append("file", p.file);
+            const r = await api.post(`/inventory/items/${targetId}/images`, fd, {
+              headers: { "Content-Type": "multipart/form-data" },
+            });
+            setImages(imgs => [...imgs, r.data]);
+          } catch (e) {
+            toast.error(`Bild ${p.file.name}: ${e?.response?.data?.detail || "Upload fehlgeschlagen"}`);
+          }
+        }
+        for (const p of pendingDocs) {
+          try {
+            const fd = new FormData();
+            fd.append("file", p.file);
+            const r = await api.post(`/inventory/items/${targetId}/documents`, fd, {
+              headers: { "Content-Type": "multipart/form-data" },
+            });
+            setDocs(ds => [...ds, r.data]);
+          } catch (e) {
+            toast.error(`Datei ${p.file.name}: ${e?.response?.data?.detail || "Upload fehlgeschlagen"}`);
+          }
+        }
+        // Preview-URLs freigeben (Memory)
+        pendingImages.forEach(p => URL.revokeObjectURL(p.previewUrl));
+        setPendingImages([]);
+        setPendingDocs([]);
       }
       toast.success(isEdit ? "Gespeichert" : "Angelegt");
-      if (isEdit || images.length === 0) {
-        onSaved();
-      } else {
-        // Nach Anlage: Item bleibt offen fuer Bild-Upload
-        toast.info("Bilder koennen jetzt hinzugefuegt werden");
-      }
+      onSaved();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Fehler beim Speichern");
     }
@@ -659,9 +693,10 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
 
   const uploadImages = async (fileList) => {
     if (!fileList || fileList.length === 0) return;
-    const targetId = createdItemId;
-    if (!targetId) {
-      toast.error("Bitte zuerst 'Speichern' klicken, dann Bilder hochladen");
+    // Vor dem ersten Speichern: in die Warteschlange legen (mit Preview-URL).
+    if (!createdItemId) {
+      const arr = Array.from(fileList).map(f => ({ file: f, previewUrl: URL.createObjectURL(f) }));
+      setPendingImages(qs => [...qs, ...arr]);
       return;
     }
     setUploadingImg(true);
@@ -669,7 +704,7 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
       try {
         const fd = new FormData();
         fd.append("file", f);
-        const r = await api.post(`/inventory/items/${targetId}/images`, fd, {
+        const r = await api.post(`/inventory/items/${createdItemId}/images`, fd, {
           headers: { "Content-Type": "multipart/form-data" },
         });
         setImages(imgs => [...imgs, r.data]);
@@ -688,10 +723,19 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
     } catch { toast.error("Fehler beim Loeschen"); }
   };
 
+  const removePending = (idx) => {
+    setPendingImages(qs => {
+      const item = qs[idx];
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return qs.filter((_, i) => i !== idx);
+    });
+  };
+
   const uploadDocs = async (fileList) => {
     if (!fileList || fileList.length === 0) return;
     if (!createdItemId) {
-      toast.error("Bitte zuerst 'Speichern' klicken");
+      const arr = Array.from(fileList).map(f => ({ file: f }));
+      setPendingDocs(qs => [...qs, ...arr]);
       return;
     }
     setUploadingDoc(true);
@@ -708,6 +752,10 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
       }
     }
     setUploadingDoc(false);
+  };
+
+  const removePendingDoc = (idx) => {
+    setPendingDocs(qs => qs.filter((_, i) => i !== idx));
   };
 
   const removeDoc = async (doc_id) => {
@@ -858,14 +906,14 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
           {/* Bilder */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              Bilder {images.length > 0 && <span className="text-gray-400">({images.length})</span>}
+              Bilder {(images.length + pendingImages.length) > 0 && <span className="text-gray-400">({images.length + pendingImages.length})</span>}
             </label>
-            {images.length > 0 && (
+            {(images.length > 0 || pendingImages.length > 0) && (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
                 {images.map(img => (
                   <div key={img.id} className="relative aspect-square rounded-md border border-gray-200 overflow-hidden bg-gray-100">
                     <img
-                      src={`${API}/api/inventory/items/${createdItemId}/images/${img.id}`}
+                      src={`${API}/api/inventory/items/${createdItemId}/images/${img.id}?thumb=256`}
                       alt=""
                       className="w-full h-full object-cover"
                     />
@@ -879,12 +927,32 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                     </button>
                   </div>
                 ))}
+                {pendingImages.map((p, idx) => (
+                  <div key={`pending-${idx}`} className="relative aspect-square rounded-md border-2 border-dashed border-fuchsia-300 overflow-hidden bg-gray-100">
+                    <img
+                      src={p.previewUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-0 inset-x-0 bg-fuchsia-600/90 text-white text-[9px] text-center py-0.5 font-medium tracking-wide">
+                      NEU
+                    </div>
+                    <button
+                      onClick={() => removePending(idx)}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-red-600"
+                      title="Aus Warteschlange entfernen"
+                      data-testid={`inv-img-pending-remove-${idx}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
-            {!createdItemId && (
-              <p className="text-xs text-amber-600 mb-2">
-                Bitte zuerst speichern – danach koennen Bilder hinzugefuegt werden.
+            {!createdItemId && pendingImages.length > 0 && (
+              <p className="text-[11px] text-fuchsia-600 mb-2">
+                {pendingImages.length} Bild(er) werden nach dem Speichern hochgeladen.
               </p>
             )}
 
@@ -894,7 +962,7 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                 variant="outline"
                 size="sm"
                 type="button"
-                disabled={!createdItemId || uploadingImg}
+                disabled={uploadingImg}
                 onClick={() => setShowCamera(true)}
                 className="h-11 text-sm"
                 data-testid="inv-camera-btn"
@@ -914,7 +982,7 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                 variant="outline"
                 size="sm"
                 type="button"
-                disabled={!createdItemId || uploadingImg}
+                disabled={uploadingImg}
                 onClick={() => galleryInputRef.current?.click()}
                 className="h-11 text-sm"
                 data-testid="inv-gallery-btn"
@@ -928,9 +996,9 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
           {/* Dokumente */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              Dokumente {docs.length > 0 && <span className="text-gray-400">({docs.length})</span>}
+              Dokumente {(docs.length + pendingDocs.length) > 0 && <span className="text-gray-400">({docs.length + pendingDocs.length})</span>}
             </label>
-            {docs.length > 0 && (
+            {(docs.length > 0 || pendingDocs.length > 0) && (
               <div className="space-y-1 mb-2">
                 {docs.map(d => (
                   <div key={d.id} className="flex items-center gap-2 px-2 py-1.5 border border-gray-200 rounded-md bg-gray-50">
@@ -959,6 +1027,23 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
                     </button>
                   </div>
                 ))}
+                {pendingDocs.map((p, idx) => (
+                  <div key={`pdoc-${idx}`} className="flex items-center gap-2 px-2 py-1.5 border-2 border-dashed border-fuchsia-300 rounded-md bg-fuchsia-50/40">
+                    <FileText className="w-4 h-4 text-fuchsia-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-gray-800 truncate">{p.file.name}</div>
+                      <div className="text-[10px] text-fuchsia-600">Wird beim Speichern hochgeladen · {fmtBytes(p.file.size)}</div>
+                    </div>
+                    <button
+                      onClick={() => removePendingDoc(idx)}
+                      className="p-1.5 rounded text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      title="Entfernen"
+                      data-testid={`inv-doc-pending-remove-${idx}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             <input
@@ -973,7 +1058,7 @@ function ItemFormPanel({ item, groups, onClose, onSaved }) {
               variant="outline"
               size="sm"
               type="button"
-              disabled={!createdItemId || uploadingDoc}
+              disabled={uploadingDoc}
               onClick={() => docInputRef.current?.click()}
               className="h-11 text-sm w-full"
               data-testid="inv-doc-upload-btn"
