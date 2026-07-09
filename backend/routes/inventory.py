@@ -335,7 +335,12 @@ async def add_image(item_id: str, file: UploadFile = File(...)):
 
 @router.get("/items/{item_id}/images/{img_id}")
 async def get_image(item_id: str, img_id: str):
-    """Bild-Binary ausliefern (fuer <img src=...>)."""
+    """Bild-Binary ausliefern (fuer <img src=...>).
+
+    ``img_id`` ist eine UUID, das Bild ist damit unveraenderlich -> aggressives
+    Browser-Caching (1 Jahr, immutable) verhindert das Neu-Laden aller Thumbnails
+    bei jedem Tastendruck in der Suche.
+    """
     doc = await db.inventory_items.find_one({"id": item_id}, {"_id": 0, "images": 1})
     if not doc:
         raise HTTPException(404, "Inventar-Position nicht gefunden")
@@ -343,6 +348,7 @@ async def get_image(item_id: str, img_id: str):
     if not img:
         raise HTTPException(404, "Bild nicht gefunden")
     storage_path = img.get("storage_path", "")
+    cache_headers = {"Cache-Control": "public, max-age=31536000, immutable"}
     try:
         if storage_path.startswith("local://"):
             local_rel = storage_path.replace("local://", "", 1)
@@ -351,9 +357,9 @@ async def get_image(item_id: str, img_id: str):
                 raise HTTPException(404, "Bilddatei nicht auf Server")
             with open(local_path, "rb") as f:
                 data = f.read()
-            return Response(content=data, media_type=img.get("content_type") or "image/jpeg")
+            return Response(content=data, media_type=img.get("content_type") or "image/jpeg", headers=cache_headers)
         data, ct = get_object(storage_path)
-        return Response(content=data, media_type=ct or img.get("content_type") or "image/jpeg")
+        return Response(content=data, media_type=ct or img.get("content_type") or "image/jpeg", headers=cache_headers)
     except HTTPException:
         raise
     except Exception as e:

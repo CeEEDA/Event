@@ -1,7 +1,7 @@
 /* Inventar-Modul – Mobile-first, iPad/iPhone kompatibel.
  * Kamera-Aufnahme via input[capture="environment"] (nativ auf iOS).
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ export default function InventoryPage() {
   const [items, setItems] = useState([]);
   const [groups, setGroups] = useState([]);
   const [q, setQ] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all"); // 'all' | group-id
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -47,14 +48,16 @@ export default function InventoryPage() {
   const [stats, setStats] = useState(null);
   const [showReport, setShowReport] = useState(false);
 
+  // WICHTIG: Wir laden EINMAL alle Items vom Backend (bei 120 Items ~0.15s).
+  // Suche + Gruppen-Filter passieren dann client-seitig -> keine 10s-Lag mehr.
   const loadItems = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/inventory/items", { params: q ? { q } : {} });
+      const r = await api.get("/inventory/items");
       setItems(r.data.items || []);
     } catch { toast.error("Konnte Inventar nicht laden"); }
     setLoading(false);
-  }, [q]);
+  }, []);
 
   const loadGroups = async () => {
     try {
@@ -70,11 +73,7 @@ export default function InventoryPage() {
     } catch { /* ignore */ }
   };
 
-  useEffect(() => { loadGroups(); loadStats(); }, []);
-  useEffect(() => {
-    const t = setTimeout(loadItems, 300);
-    return () => clearTimeout(t);
-  }, [q, loadItems]);
+  useEffect(() => { loadGroups(); loadStats(); loadItems(); }, [loadItems]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Diese Position wirklich loeschen?")) return;
@@ -85,8 +84,28 @@ export default function InventoryPage() {
     } catch { toast.error("Fehler beim Loeschen"); }
   };
 
-  // Gruppieren fuer die Anzeige
-  const grouped = items.reduce((acc, it) => {
+  // Client-seitige Filterung (schnell, keine Backend-Roundtrip pro Tastendruck)
+  const filteredItems = useMemo(() => {
+    let arr = items;
+    if (groupFilter !== "all") {
+      arr = arr.filter(it => (it.group_id || "sonstiges") === groupFilter);
+    }
+    const query = q.trim().toLowerCase();
+    if (query) {
+      const terms = query.split(/[\s,;]+/).filter(Boolean);
+      arr = arr.filter(it => {
+        const hay = [
+          it.bezeichnung, it.anlagevermoegensnummer, it.besitzer,
+          it.notiz, it.group_name,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return terms.every(t => hay.includes(t));
+      });
+    }
+    return arr;
+  }, [items, q, groupFilter]);
+
+  // Gruppieren fuer die Anzeige (auf gefilterte Items)
+  const grouped = filteredItems.reduce((acc, it) => {
     const key = it.group_id || "sonstiges";
     if (!acc[key]) acc[key] = { name: it.group_name || key, color: it.group_color || "gray", items: [] };
     acc[key].items.push(it);
@@ -124,8 +143,8 @@ export default function InventoryPage() {
           </Button>
         </div>
 
-        {/* Suchleiste */}
-        <div className="max-w-5xl mx-auto px-3 pb-2">
+        {/* Suchleiste + Gruppen-Filter */}
+        <div className="max-w-5xl mx-auto px-3 pb-2 space-y-2">
           <div className="relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
@@ -142,6 +161,43 @@ export default function InventoryPage() {
               </button>
             )}
           </div>
+
+          {/* Gruppen-Filter-Chips (horizontal scrollbar auf Mobile) */}
+          {groups.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 [&::-webkit-scrollbar]:hidden" data-testid="inv-group-filter">
+              <button
+                onClick={() => setGroupFilter("all")}
+                className={`shrink-0 px-3 h-7 rounded-full text-xs font-medium border transition-colors ${
+                  groupFilter === "all"
+                    ? "bg-fuchsia-600 border-fuchsia-600 text-white"
+                    : "bg-white border-gray-200 text-gray-600 hover:border-fuchsia-300"
+                }`}
+                data-testid="inv-group-filter-all"
+              >
+                Alle ({items.length})
+              </button>
+              {groups.map(g => {
+                const count = items.filter(it => (it.group_id || "sonstiges") === g.id).length;
+                if (count === 0) return null;
+                const active = groupFilter === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => setGroupFilter(g.id)}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium border transition-colors ${
+                      active
+                        ? "bg-fuchsia-600 border-fuchsia-600 text-white"
+                        : "bg-white border-gray-200 text-gray-600 hover:border-fuchsia-300"
+                    }`}
+                    data-testid={`inv-group-filter-${g.id}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full bg-${g.color}-500 ${active ? "ring-1 ring-white" : ""}`} />
+                    {g.name} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </header>
 
@@ -472,6 +528,8 @@ function ItemRow({ item, onEdit, onDelete }) {
             src={`${API}/api/inventory/items/${item.id}/images/${firstImg.id}`}
             alt=""
             className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
             onError={e => { e.target.style.display = "none"; }}
           />
         ) : (
