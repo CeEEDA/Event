@@ -28,6 +28,20 @@ async def download_mac_installer():
     )
 
 
+@router.get("/dossier")
+async def download_dossier():
+    """Software-Dossier PDF (Firmen-Uebersicht, Screenshots, Feature-Liste)."""
+    filepath = Path(__file__).parent.parent / "static" / "downloads" / "Eventenergie_Software_Dossier.pdf"
+    if not filepath.exists():
+        raise HTTPException(404, "Dossier nicht gefunden")
+    return FileResponse(
+        path=str(filepath),
+        filename="Eventenergie_Software_Dossier.pdf",
+        media_type="application/pdf",
+    )
+
+
+
 @router.get("/win-bat")
 async def download_win_bat():
     filepath = DESKTOP_DIR / "install-win.bat"
