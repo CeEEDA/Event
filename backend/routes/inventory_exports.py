@@ -587,14 +587,43 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                 story.append(wt)
                 story.append(Spacer(1, 10))
 
-                # Bild
+                # Bilder – ALLE Fotos werden ins PDF eingebettet.
+                # 1 Bild -> gross (90mm), 2-4 -> 2er-Grid (je ~85mm), 5+ -> 3er-Grid (je ~55mm)
                 imgs = it.get("images") or []
                 if imgs and get_object_fn:
-                    first = imgs[0]
-                    rl_img = _decode_image_for_pdf(it["id"], first, get_object_fn, max_size_mm=90)
-                    if rl_img is not None:
-                        story.append(rl_img)
-                        story.append(Spacer(1, 6))
+                    if len(imgs) == 1:
+                        rl_img = _decode_image_for_pdf(it["id"], imgs[0], get_object_fn, max_size_mm=90)
+                        if rl_img is not None:
+                            story.append(rl_img)
+                            story.append(Spacer(1, 6))
+                    else:
+                        cols = 2 if len(imgs) <= 4 else 3
+                        cell_mm = 85 if cols == 2 else 55
+                        cell_w = cell_mm * mm
+                        rendered = []
+                        for m in imgs:
+                            r = _decode_image_for_pdf(it["id"], m, get_object_fn, max_size_mm=cell_mm)
+                            if r is not None:
+                                rendered.append(r)
+                        # In Zeilen von `cols` gruppieren
+                        rows_grid = []
+                        for i in range(0, len(rendered), cols):
+                            row = rendered[i:i + cols]
+                            # letzte Zeile ggf. mit Leerzellen auffuellen
+                            while len(row) < cols:
+                                row.append("")
+                            rows_grid.append(row)
+                        if rows_grid:
+                            grid = Table(rows_grid, colWidths=[cell_w] * cols)
+                            grid.setStyle(TableStyle([
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                            ]))
+                            story.append(grid)
+                            story.append(Spacer(1, 6))
 
                 if it.get("notiz"):
                     story.append(Paragraph(f"<b>Notiz:</b> {_esc(it['notiz'])}", styles["Normal"]))
