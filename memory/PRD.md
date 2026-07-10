@@ -1,52 +1,55 @@
-# Kirmes/Eventenergie – Full-Stack Business System – PRD
+# Eventenergie / Kirmes Portal – PRD
 
 ## Original Problem Statement
-Comprehensive "Kirmes" (Fairground) billing, dispatch and HR management system with telemetry ingestion, order management, disruption logging, team/HR management, kiosk interfaces, deep hardware integration (DSE 5510, DSE 890, Sening MultiFlow) and AI-driven document management (ZUGFeRD, DATEV routing, spam filtering) plus Delivery Notes (Lieferscheine) and Inventory.
+Comprehensive "Kirmes" (Fairground) billing, dispatch, and HR management system.
+Manage robust telemetry ingestion, order management, disruption logging, team management,
+HR time-tracking/absences, Kiosk interfaces, deep hardware integration (Modbus, DSE, EMU),
+AI-driven Document Management, and a full Inventory (Inventar) module.
 
-Language: **German** (agent must reply in German only).
+## User Language
+German (all UI + agent responses in German only).
 
-## Current Status
-Mature React/FastAPI/MongoDB app with EpiRent sync, order tracking, AI Document Management (Ollama + ZUGFeRD + PyMuPDF), FinTS banking, DATEV email routing, IMAP Mailbridge, Kiosk apps, generator telemetry, Tankbeleg ingestion (Sening), full Inventar module with WebRTC camera + XLSX/PDF exports, and admin-side manual signup creation ("Netzanschluss anlegen").
+## Core Modules
+- **Kirmes**: Events, Signups, Meter linking, Invoices, Reminders, Stripe deposit + refunds
+- **Inventar**: iPad-optimised, groups, scaling, PDF/XLSX exports
+- **HR**: Time tracking, absences, travel expenses, offdays, Verbandsbuch, ADR
+- **Telemetry**: EMU meters (MQTT), DSE generators, Kirmeskiste, Sening Tankbeleg Pi
+- **Documents**: AI-driven inbox, DATEV routing, FinTS banking
+- **EpiRent Integration**: Order sync, Lieferscheine (planned)
+- **OTA**: Update pipeline for Pi devices
 
-## Completed – 2026-02-06 (this session)
-- ✅ Inventar: 4. Kachel "Marktwert gesamt" (grün) in der Stat-Row, Marktwert pro Position
-- ✅ **Netzanschluss anlegen (Admin) + Anschluss korrigieren:**
-  - Neuer Button in Event-Detail-Top-Bar (`admin-create-signup-btn`, nur Admin)
-  - Modal für create + edit (`SignupEditorModal`) mit Schausteller-Suche, Preis-Preview aus Preisliste, optionaler Preis-Override
-  - Neuer Pencil-Zap pro Zeile (`edit-anschluss-*`) für Korrektur (z.B. 16A → 32A vor Ort)
-  - Backend: `POST /api/kirmes/signups`, `PATCH /api/kirmes/signups/{id}` — Kaution (`deposit_amount`) wird bei Korrektur bewusst NICHT angefasst
-  - Preis wird automatisch aus `event.prices` / `event.wohnwagen_prices` gezogen, Override möglich
+## Recently Implemented (Session current)
+### 2026-07-10
+- **SMTP Robustness Fix** (`/app/backend/email_service.py`): Timeout 15s→60s, 3 retries with backoff, connection reuse for BCC copies. Fixes IONOS SSL handshake timeouts on large PDF attachments.
+- **Invoice "Jetzt bezahlen" Button** (`/app/backend/routes/kirmes.py`): New helper `_create_kirmes_invoice_payment_link` generates a Stripe Checkout session for open balances. Configurable via `STRIPE_INVOICE_PAYMENT_METHODS` env (default `card`), auto-fallback to card on rejection, error surfaced via `payment_link_error` on invoice. Stripe webhook auto-marks invoice as `bezahlt`.
+- **Public Payment Landing Pages** (`/app/frontend/src/pages/RechnungPaymentResultPage.jsx`): `/rechnung/bezahlt` (polls Stripe status) + `/rechnung/abgebrochen`.
+- **Meter Auto-Freeze on Event End** (`/app/backend/routes/kirmes.py`): Scheduler runs every 30 min, freezes final `E_imp_kWh` as `kwh_ausbau/meter_end`, computes `kwh_used`, unlinks `emu_device_id/emu_meter_id/emu_meter_name`, marks event `meters_frozen_at`. Manual trigger endpoint `POST /api/kirmes/events/{id}/freeze-meters`. UI banner + button on KirmesEventDetailPage.
 
-## Backlog
+## Backlog (P1)
+- OTA-Update-Mechanik für Tankbeleg Pi (client-side polling + systemd restart)
+- EpiRent "Lieferscheine" (Delivery Notes) PDF Generation
+- Refactor `kirmes.py` (>4400 lines) into submodules (events / signups / invoices / meters / scheduler)
 
-### P1 (Upcoming)
-- OTA-Update-Mechanik für Tankbeleg Pi (`tankbeleg_pi.py` Self-Update inkl. Hash-Verify + systemd restart)
-- EpiRent Lieferscheine (PDF-Generierung, Layout noch offen)
-
-### P2 (Future)
-- Disk-Watchdog Live-Server (`start-all.bat` prüft C:/E: >10GB frei vor MongoDB-Start)
-- Bulk-Move für Fuel Receipts
+## Backlog (P2)
+- Sync-Lag-Anzeige pro Zähler
+- `kwh_offset` auf Ingest anwenden (E_imp_kWh)
+- Disk-Watchdog Live-Server (start-all.bat)
+- Bulk-Move für Tankbelege
 - Admin Audit-Page für Asset-Type-Änderungen
-- Sammel-Alarm quittieren + DSE-Reset (Key 35707) auf Generator Diagnose
-- USB-Resilience / Hardware Health Dashboard pro Pi
-- GPS Support für Kirmeskiste (4-m-Variante)
-- Lastdiagramm Live-Test
+- "Alarm vor Ort geprüft – Sammel-Warning quittieren" (DSE Key 35707)
+- USB-Resilience / Hardware-Health-Dashboard pro Pi
 - Camera-Foto Upload mit EXIF GPS in Dokumentenablage
-- Tank-Alarm-Threshold Notifications für Generatoren
+- Tank-Alarm-Threshold Notifications
+- Add GPS Support to Kirmeskiste (Legacy 4-meter variant)
+- Lastdiagramm Live-Test
 - Offday-Verfallsregel §11 Abs. 3 ArbZG (8-Wochen-Frist)
-- Mail/SMS Notification bei Shift-Plan-Freigabe
-
-## Refactoring
-- `/app/backend/routes/documents.py` (>2200 LOC) → in `document_processors.py` auslagern
+- Mail/SMS Notification bei Schichtplan-Release
 
 ## 3rd Party Integrations
-Stripe, EpiRent, Ollama, IONOS IMAP, DATEV Email, FinTS, Open-Meteo, Nominatim
-
-## Test Credentials
-- Admin: `admin@test.com` / `password`
-- Mitarbeiter: `ma1@test.com` / `password`
-
-## Key API Endpoints
-- `POST /api/kirmes/signups` (Admin, manuell Anmeldung anlegen)
-- `PATCH /api/kirmes/signups/{id}` (Admin, Anschluss/Preis korrigieren – Kaution bleibt)
-- `DELETE /api/kirmes/signups/{id}`
+- Stripe (Payments) — user API key
+- EpiRent (Event software)
+- Ollama (Local AI)
+- IONOS IMAP / SMTP
+- DATEV (Email routing)
+- FinTS (Banking)
+- Open-Meteo, Nominatim (weather / geocoding)
