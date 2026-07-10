@@ -1,5 +1,8 @@
 import smtplib
 import os
+import ssl
+import time
+import socket
 import logging
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -7,6 +10,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 
 logger = logging.getLogger(__name__)
+
+SMTP_TIMEOUT = int(os.environ.get("SMTP_TIMEOUT", "60"))
+SMTP_MAX_RETRIES = int(os.environ.get("SMTP_MAX_RETRIES", "3"))
 
 
 def _get_smtp_config():
@@ -17,6 +23,23 @@ def _get_smtp_config():
         "password": os.environ.get("SMTP_PASSWORD"),
         "sender_name": os.environ.get("SMTP_SENDER_NAME", "Eventenergie Portal"),
     }
+
+
+def _open_smtp_connection(cfg):
+    """Open an SMTP_SSL connection with a longer timeout and retry on transient failures."""
+    last_err = None
+    ctx = ssl.create_default_context()
+    for attempt in range(1, SMTP_MAX_RETRIES + 1):
+        try:
+            server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=SMTP_TIMEOUT, context=ctx)
+            server.login(cfg["user"], cfg["password"])
+            return server
+        except (socket.timeout, ssl.SSLError, smtplib.SMTPServerDisconnected, ConnectionError, OSError) as e:
+            last_err = e
+            logger.warning(f"SMTP connect attempt {attempt}/{SMTP_MAX_RETRIES} failed: {e}")
+            if attempt < SMTP_MAX_RETRIES:
+                time.sleep(2 * attempt)  # 2s, 4s backoff
+    raise last_err  # re-raise after retries exhausted
 
 
 def send_email(to_email: str, subject: str, html_body: str) -> bool:
@@ -32,9 +55,14 @@ def send_email(to_email: str, subject: str, html_body: str) -> bool:
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
-        with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
-            server.login(cfg["user"], cfg["password"])
+        server = _open_smtp_connection(cfg)
+        try:
             server.sendmail(cfg["user"], to_email, msg.as_string())
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                pass
         logger.info(f"Email sent to {to_email}")
         return True
     except Exception as e:
@@ -58,34 +86,48 @@ def send_email_with_attachment(to_email: str, subject: str, html_body: str, atta
     att.add_header("Content-Disposition", f'attachment; filename="{attachment_filename}"')
     msg.attach(att)
 
+    # Open connection ONCE and reuse for main mail + BCC copies
+    server = _open_smtp_connection(cfg)
     try:
-        with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
-            server.login(cfg["user"], cfg["password"])
+        try:
             server.sendmail(cfg["user"], [to_email], msg.as_string())
-        logger.info(f"Email with attachment sent to {to_email}")
-    except Exception as e:
-        logger.error(f"Email send with attachment failed: {e}")
-        raise
+            logger.info(f"Email with attachment sent to {to_email}")
+        except Exception as e:
+            logger.error(f"Email send with attachment failed: {e}")
+            raise
 
-    # BCC als separate E-Mail senden (zuverlaessiger als SMTP-BCC)
-    if bcc:
-        for bcc_addr in bcc:
-            try:
-                bcc_msg = MIMEMultipart("mixed")
-                bcc_msg["Subject"] = f"[Kopie] {subject}"
-                bcc_msg["From"] = f"{cfg['sender_name']} <{cfg['user']}>"
-                bcc_msg["To"] = bcc_addr
-                bcc_msg.attach(MIMEText(html_body, "html", "utf-8"))
-                bcc_att = MIMEApplication(attachment_bytes, _subtype="pdf", Name=attachment_filename)
-                bcc_att.add_header("Content-Disposition", f'attachment; filename="{attachment_filename}"')
-                bcc_msg.attach(bcc_att)
+        # BCC als separate E-Mail senden (zuverlaessiger als SMTP-BCC), reuse connection
+        if bcc:
+            for bcc_addr in bcc:
+                try:
+                    bcc_msg = MIMEMultipart("mixed")
+                    bcc_msg["Subject"] = f"[Kopie] {subject}"
+                    bcc_msg["From"] = f"{cfg['sender_name']} <{cfg['user']}>"
+                    bcc_msg["To"] = bcc_addr
+                    bcc_msg.attach(MIMEText(html_body, "html", "utf-8"))
+                    bcc_att = MIMEApplication(attachment_bytes, _subtype="pdf", Name=attachment_filename)
+                    bcc_att.add_header("Content-Disposition", f'attachment; filename="{attachment_filename}"')
+                    bcc_msg.attach(bcc_att)
 
-                with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
-                    server.login(cfg["user"], cfg["password"])
                     server.sendmail(cfg["user"], [bcc_addr], bcc_msg.as_string())
-                logger.info(f"BCC copy sent to {bcc_addr}")
-            except Exception as e:
-                logger.error(f"BCC copy to {bcc_addr} failed: {e}")
+                    logger.info(f"BCC copy sent to {bcc_addr}")
+                except Exception as e:
+                    logger.error(f"BCC copy to {bcc_addr} failed: {e}")
+                    # Connection may be dead; try to reopen for next BCC
+                    try:
+                        server.quit()
+                    except Exception:
+                        pass
+                    try:
+                        server = _open_smtp_connection(cfg)
+                    except Exception as reopen_err:
+                        logger.error(f"Could not reopen SMTP for further BCCs: {reopen_err}")
+                        break
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
 
     return True
 
