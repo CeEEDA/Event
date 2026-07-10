@@ -125,6 +125,116 @@ def make_pdf():
         "auf Buerodaten beschraenken, liest diese Software Zaehler ueber Modbus TCP, EMU Professional II, DSE-Steuerungen "
         "und Sening MultiFlow direkt aus - und wandelt sie in verkaufsfaehige Abrechnungen um.", body))
 
+    # ─── Marktbewertung & Vorteile (User-Anforderung: ganz vorn) ──────
+    story.append(PageBreak())
+    story.append(_P("Marktbewertung & Vorteile", h1))
+    story.append(_P(
+        "Auf Basis dieses Dossiers laesst sich eine realistische Marktbewertung vornehmen. Dabei muss zwischen "
+        "dem technischen Wiederbeschaffungswert, dem Marktwert als Softwareprodukt und dem Unternehmenswert "
+        "unterschieden werden.", body))
+    story.append(_P(
+        "Aus dem Dossier ergeben sich folgende Eckdaten: rund 130.000 Zeilen Python- und React-Code, "
+        "559 API-Endpunkte, 62 Frontend-Seiten, 26 Hardware-Integrationen (u.a. Modbus, DSE, MQTT, Sening), "
+        "eine moderne FastAPI-/React-Architektur sowie eine sehr tiefe Integration von ERP-, IoT-, Finanz- "
+        "und Eventprozessen.", body))
+
+    story.append(_P("1. Technischer Wiederbeschaffungswert", h2))
+    story.append(_P("Eine vergleichbare Individualsoftware wuerde heute von einem professionellen Softwarehaus "
+                    "ungefaehr folgenden Aufwand verursachen:", body))
+    wbw = [
+        [_u("Bereich"), _u("Aufwand")],
+        [_u("Backend"), _u("3.500 - 5.000 Stunden")],
+        [_u("Frontend"), _u("1.800 - 2.500 Stunden")],
+        [_u("Hardware- / IoT-Integration"), _u("1.200 - 2.000 Stunden")],
+        [_u("Architektur, Testing, DevOps"), _u("1.000 - 1.500 Stunden")],
+        [_u("Projektmanagement"), _u("800 - 1.200 Stunden")],
+        [_u("Gesamt"), _u("8.300 - 12.200 Entwicklungsstunden")],
+    ]
+    t = Table(wbw, colWidths=[8 * cm, 8 * cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), FUCHSIA),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#d1fae5")),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f9fafb")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 8))
+    story.append(_P(
+        "Bei marktueblichen Stundensaetzen von 110 - 160 EUR ergibt sich ein Wiederbeschaffungswert von "
+        "ungefaehr <b>900.000 EUR bis 1.900.000 EUR</b>. Dieser Wert beschreibt, was ein Kaeufer investieren "
+        "muesste, um die Software heute neu entwickeln zu lassen.", body))
+
+    story.append(_P("2. Marktwert der bestehenden Software", h2))
+    story.append(_P("Software wird in der Praxis nicht zum Neupreis verkauft. Bewertet werden zusaetzlich:", body))
+    for b in ["Wartbarkeit", "Dokumentation", "Installierte Kunden", "Umsatz", "Wettbewerb",
+              "Alleinstellungsmerkmale", "Abhaengigkeit vom Entwickler"]:
+        story.append(_P(f"- {_u(b)}", bullet))
+    story.append(Spacer(1, 6))
+    story.append(_P("Die Software besitzt mehrere starke Alleinstellungsmerkmale:", body))
+    for b in ["Vollstaendige ERP-Loesung", "Eventmanagement", "Personalverwaltung",
+              "IoT- / Telemetrie", "Generatorsteuerung", "Tankmanagement",
+              "DATEV", "Stripe", "FinTS", "KI-Dokumentenmanagement", "Mobile Apps",
+              "Speziallösung fuer Schausteller und mobile Energieversorgung"]:
+        story.append(_P(f"- {_u(b)}", bullet))
+    story.append(Spacer(1, 4))
+    story.append(_P("Das reduziert das Marktrisiko erheblich, weil es kaum direkte Wettbewerber mit "
+                    "vergleichbarem Funktionsumfang gibt.", body))
+
+    story.append(PageBreak())
+    story.append(_P("3. Realistische Bewertung nach Szenario", h2))
+    szen = [
+        [_u("Szenario"), _u("Marktwert")],
+        [_u("Asset-Deal (Quellcode ohne Kunden)"), _u("350.000 - 700.000 EUR")],
+        [_u("Produkt mit Dokumentation und Support"), _u("700.000 - 1.200.000 EUR")],
+        [_u("Etablierte SaaS mit zahlenden Kunden"), _u("1,2 - 3 Mio. EUR")],
+        [_u("Marktfuehrer mit starkem Wachstum"), _u("3 - 8 Mio. EUR")],
+    ]
+    t = Table(szen, colWidths=[9 * cm, 7 * cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), EMERALD),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 12))
+
+    story.append(_P("4. Vergleichbare Software", h2))
+    story.append(_P("Der Funktionsumfang aehnelt einer Kombination aus:", body))
+    for b in ["ERP (ueber API von EpiRent)", "Workforce Management", "Eventsoftware",
+              "Asset Management", "IoT-Plattform", "Energie-Monitoring"]:
+        story.append(_P(f"- {_u(b)}", bullet))
+    story.append(Spacer(1, 4))
+    story.append(_P("Solche Systeme kosten haeufig zwischen 50.000 EUR und ueber 500.000 EUR als "
+                    "Individualentwicklung pro Kunde. Eine komplette Suite mit diesem Umfang liegt "
+                    "ueblicherweise im siebenstelligen Entwicklungsbereich.", body))
+
+    story.append(_P("5. Staerken, die den Wert erhoehen", h2))
+    for b in ["Moderne Architektur (FastAPI, React 19)",
+              "559 API-Endpunkte",
+              "Hardwareintegration (Modbus, DSE, MQTT, Sening)",
+              "Echtzeit-Telemetrie",
+              "KI-Dokumentenmanagement (auf privatem Ollama-Server)",
+              "DATEV-E-Mail-Anbindung",
+              "FinTS-Banking-Integration",
+              "Stripe-Payments (Kaution + Rechnung)",
+              "Mobile Anwendungen (WebRTC-Kamera, iPad-optimiert)",
+              "Vollstaendige Prozesskette vom Auftrag bis zur Buchhaltung",
+              "Sehr spezialisierte Branchenloesung (Schausteller, mobile Energieversorgung)"]:
+        story.append(_P(f"- {_u(b)}", bullet))
+
     story.append(_P("Kernkomponenten im Ueberblick", h2))
     modules = [
         "Kirmes / Event-Management - Anmeldungen, Platz-Zuweisung, Zaehlerabrechnung, Kaution",
