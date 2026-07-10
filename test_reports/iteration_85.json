@@ -1,0 +1,34 @@
+{
+  "summary": "Retest of Stripe payment_methods fix in /app/backend/routes/kirmes.py::_create_kirmes_invoice_payment_link. ALL 3 TESTS PASS in /app/backend/tests/test_meter_freeze_iteration84.py::TestInvoicePaymentLink. Feature 2 (invoice payment link) is now FULLY WORKING end-to-end: POST /api/kirmes/invoices/{id}/send returns 200, persists payment_link_url + session_id + amount + created_at on the invoice, and inserts a payment_transactions row with status='pending' BEFORE the SMTP step. Fix confirmed: STRIPE_INVOICE_PAYMENT_METHODS env (default 'card') + card-only retry fallback works against preview Stripe test key. payment_link_error is NOT set on success.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meter_freeze_iteration84.py",
+    "/app/test_reports/pytest/iteration_85_invoice_payment_link.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is clean: STRIPE_INVOICE_PAYMENT_METHODS env var (default 'card') + automatic retry with card-only on rejection is a robust pattern that works on both preview and live Stripe accounts.",
+    "payment_link_error field is now persisted on failure with a truncated (300 chars) message and timestamp - admins can now diagnose broken buttons.",
+    "logger.error (was warning) upgrade is appropriate for a payment failure.",
+    "Reminder from previous iteration still applies: kirmes.py is 4422 lines - consider splitting into kirmes_events/kirmes_signups/kirmes_invoices/kirmes_meters modules for maintainability.",
+    "If PayPal should be enabled in production later, just set STRIPE_INVOICE_PAYMENT_METHODS='card,paypal' in backend/.env after activating PayPal in the Stripe dashboard - no code change required."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_meter_freeze_iteration84.py (added assertions for payment_link_amount, payment_link_created_at, payment_link_error negative check)"
+  ],
+  "success_rate": {"backend": "100% (3/3 TestInvoicePaymentLink)", "frontend": "N/A - backend-only per request"},
+  "test_credentials": "admin@test.com / password (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "No new seed data. Test used the existing open-balance invoice R26-K-0002 (Herbstkirmes Musterstadt 2026, brutto=119.00 EUR, no deposit_applied). Test now cleans/resets payment_link fields before each run so it's idempotent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The Stripe payment_methods fix is verified working on the preview environment. If PayPal is later activated in Stripe live dashboard, set STRIPE_INVOICE_PAYMENT_METHODS='card,paypal' in backend/.env. The card-only retry fallback in _create_kirmes_invoice_payment_link (kirmes.py L2790-2799) means even if the env is misconfigured with a payment method that isn't activated, the code will still create a working card-only checkout session and log a warning.",
+  "rca of the issue": "Original issue (iteration_84): payment_methods=['card','paypal'] hard-coded, paypal not activated on preview Stripe key -> Stripe rejects, exception swallowed silently, no payment link on invoice. Fix (verified in this iteration): (1) payment_methods now read from STRIPE_INVOICE_PAYMENT_METHODS env with default 'card' - preview environment defaults to card-only. (2) Automatic fallback to ['card'] if the configured list is rejected and contains card. (3) On unrecoverable failure, payment_link_error + payment_link_error_at are persisted on the invoice for admin visibility. Verified DB state after /send: invoice R26-K-0002 now has payment_link_url=https://checkout.stripe.com/c/pay/cs_test_a1V1FX..., payment_link_session_id=cs_test_a1V1FX..., payment_link_amount=119.0, payment_link_created_at set, payment_link_error absent. payment_transactions row created with type='invoice', payment_status='pending', session_id matching, amount=119.0 EUR."
+}

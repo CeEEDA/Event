@@ -275,9 +275,20 @@ class TestInvoicePaymentLink:
         time.sleep(1)
 
         updated = db.kirmes_invoices.find_one({"id": inv["id"]}, {"_id": 0})
-        assert updated.get("payment_link_url"), f"payment_link_url NOT saved after /send call (status={r.status_code}): {updated.get('payment_link_url')}"
+        assert updated.get("payment_link_url"), f"payment_link_url NOT saved after /send call (status={r.status_code}): {updated.get('payment_link_url')} | payment_link_error={updated.get('payment_link_error')}"
         assert updated.get("payment_link_session_id"), "payment_link_session_id missing"
         assert updated["payment_link_url"].startswith("https://"), f"unexpected url: {updated['payment_link_url']}"
+        # payment_link_created_at must be set
+        assert updated.get("payment_link_created_at"), "payment_link_created_at missing"
+        # payment_link_amount should match the open balance
+        expected_amount = round(float(inv["brutto"]) - float(inv.get("deposit_applied") or 0), 2)
+        assert updated.get("payment_link_amount") == expected_amount, (
+            f"payment_link_amount={updated.get('payment_link_amount')} != expected {expected_amount}"
+        )
+        # payment_link_error must NOT be set on success
+        assert not updated.get("payment_link_error"), (
+            f"payment_link_error should be absent on success, got: {updated.get('payment_link_error')}"
+        )
 
         # Verify payment_transactions row created with correct fields
         tx = db.payment_transactions.find_one({"invoice_id": inv["id"], "type": "invoice"}, {"_id": 0})
@@ -285,7 +296,7 @@ class TestInvoicePaymentLink:
         assert tx.get("payment_status") == "pending"
         assert tx.get("session_id") == updated["payment_link_session_id"]
         assert tx.get("type") == "invoice"
-        assert tx.get("amount") == round(float(inv["brutto"]) - float(inv.get("deposit_applied") or 0), 2)
+        assert tx.get("amount") == expected_amount
 
 
 # ---------------- 3. Public frontend routes (light check via HTTP) ----------------

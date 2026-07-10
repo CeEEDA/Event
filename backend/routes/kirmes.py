@@ -2772,6 +2772,10 @@ async def _create_kirmes_invoice_payment_link(inv: dict, amount: float, origin_u
             "invoice_number": inv.get("invoice_number", ""),
             "event_name": inv.get("event_name", ""),
         }
+        # Zahlungsmethoden aus ENV konfigurierbar. Default 'card' allein - PayPal muss im Stripe-Dashboard
+        # aktiviert sein, sonst schlaegt die Checkout-Erstellung fehl.
+        pm_env = os.environ.get("STRIPE_INVOICE_PAYMENT_METHODS", "card")
+        payment_methods = [m.strip() for m in pm_env.split(",") if m.strip()]
         stripe = StripeCheckout(api_key=stripe_key, webhook_url=webhook_url)
         checkout_req = CheckoutSessionRequest(
             amount=round(float(amount), 2),
@@ -2779,9 +2783,20 @@ async def _create_kirmes_invoice_payment_link(inv: dict, amount: float, origin_u
             success_url=success_url,
             cancel_url=cancel_url,
             metadata=metadata,
-            payment_methods=["card", "paypal"],
+            payment_methods=payment_methods,
         )
-        session = await stripe.create_checkout_session(checkout_req)
+        try:
+            session = await stripe.create_checkout_session(checkout_req)
+        except Exception as first_err:
+            # Fallback: wenn eine Payment-Methode nicht aktiviert ist, versuche noch einmal nur mit 'card'
+            if "card" not in payment_methods or len(payment_methods) == 1:
+                raise
+            logger.warning(
+                f"[kirmes] Stripe rejected payment_methods={payment_methods} for invoice "
+                f"{inv.get('invoice_number')} ({first_err}). Retrying with card-only."
+            )
+            checkout_req.payment_methods = ["card"]
+            session = await stripe.create_checkout_session(checkout_req)
 
         # Persist a payment_transactions row so the webhook can auto-close the invoice
         await _db.payment_transactions.insert_one({
@@ -2808,7 +2823,18 @@ async def _create_kirmes_invoice_payment_link(inv: dict, amount: float, origin_u
         )
         return session.url
     except Exception as e:
-        logger.warning(f"[kirmes] Could not create Stripe payment link for invoice {inv.get('invoice_number')}: {e}")
+        logger.error(f"[kirmes] Could not create Stripe payment link for invoice {inv.get('invoice_number')}: {e}")
+        # Persist the failure so admins can see WHY the button is missing
+        try:
+            await _db.kirmes_invoices.update_one(
+                {"id": inv["id"]},
+                {"$set": {
+                    "payment_link_error": str(e)[:300],
+                    "payment_link_error_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+        except Exception:
+            pass
         return None
 
 
