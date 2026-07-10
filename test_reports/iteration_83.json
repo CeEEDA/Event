@@ -1,0 +1,32 @@
+{
+  "summary": "Backend-only test of the umlaut-free Software-Dossier PDF endpoint. All 4 pytest checks PASSED: endpoint delivers a valid PDF (200 / application/pdf, ~1233 KB, 33 pages), and the PDF text layer contains ZERO German umlauts (ä ö ü Ä Ö Ü ß) across all 33 pages. Optional OCR scan (pytesseract, lang=deu) over rasterised pages reports only 1 spurious umlaut hit on page 1 - well below the tolerance of 5 (typical OCR mis-recognition).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dossier_umlaut_free.py",
+    "/app/test_reports/pytest/dossier_umlaut_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "build_dossier.py enforces umlaut removal via central _u()/_P() helpers - clean approach; all Paragraph/Table cells route through _u(). Verified no direct Paragraph(...) leak of raw German text: text-layer scan across 33 pages is completely umlaut-free.",
+    "One residual raw umlaut source string exists at line 184 ('Speziallösung...') - it goes through _u() so it becomes 'Spezialloesung' at build time, but keeping raw umlauts in source is a foot-gun. Suggest replacing source strings with ae/oe/ue/ss consistently.",
+    "software_downloads.py /dossier endpoint is unauthenticated (as intended per request). Static file served via FileResponse - simple and correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dossier_umlaut_free.py (NEW)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "none required - endpoint is public",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Umlaut regression test lives at /app/backend/tests/test_dossier_umlaut_free.py - run it whenever build_dossier.py or the /api/system/downloads/dossier endpoint is touched. It checks (a) endpoint 200 + pdf mime + >800KB, (b) 0 umlauts in text layer of all pages via PyMuPDF, (c) OCR umlaut tolerance <=5. Current run: 4/4 PASSED, OCR total_hits=1 (page 1 only).",
+  "rca of the issue": "Original complaint: umlauts still visible in generated PDF. Root cause of the earlier bug (previous iterations) was direct Paragraph() calls that bypassed the umlaut translator. Current fix routes ALL user-facing strings through _u()/_P() and translates all table cells too. Verification via `sum(any(ch in page.get_text() for ch in umlauts) for page in doc)` = 0 across all 33 pages. Bug fix VERIFIED."
+}
