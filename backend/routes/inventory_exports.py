@@ -448,6 +448,73 @@ def _decode_image_for_pdf(item_id: str, img_meta: dict, get_object_fn, max_size_
         return None
 
 
+def _load_document_bytes(item_id: str, doc_meta: dict, get_object_fn):
+    """Laedt ein Dokument aus der Inventar-Ablage. Liefert (bytes, content_type) oder (None, None)."""
+    try:
+        storage_path = doc_meta.get("storage_path", "") or ""
+        content_type = (doc_meta.get("content_type") or "").lower()
+        if storage_path.startswith("local://"):
+            import os
+            local_rel = storage_path.replace("local://", "", 1).rsplit("/", 1)[-1]
+            local_path = f"/app/data/inventory/{item_id}/{local_rel}"
+            if not os.path.exists(local_path):
+                return None, None
+            with open(local_path, "rb") as fh:
+                return fh.read(), content_type
+        if not get_object_fn:
+            return None, None
+        data, ct = get_object_fn(storage_path)
+        return data, (content_type or (ct or "").lower())
+    except Exception as e:
+        logger.warning(f"[pdf] Doc-Load fehlgeschlagen fuer item={item_id}: {e}")
+        return None, None
+
+
+def _build_image_attachment_page(bezeichnung: str, filename: str, img_bytes: bytes, styles) -> bytes:
+    """Baut eine kleine Ein-Seiten-PDF, die ein Bild-Dokument als vollformatige Seite darstellt."""
+    from PIL import Image as PILImage
+    buf = io.BytesIO()
+    d = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=2 * cm, bottomMargin=2 * cm)
+    story = [
+        Paragraph(f"Anhang: {_esc(filename)}", ParagraphStyle("AT", parent=styles["Title"], fontSize=13, textColor=FUCHSIA, spaceAfter=8)),
+        Paragraph(f"zu: {_esc(bezeichnung)}", ParagraphStyle("AS", parent=styles["Normal"], fontSize=10, textColor=GRAY_DARK, spaceAfter=12)),
+    ]
+    try:
+        pil = PILImage.open(io.BytesIO(img_bytes))
+        pil.thumbnail((1800, 1800))
+        img_buf = io.BytesIO()
+        pil.convert("RGB").save(img_buf, format="JPEG", quality=85)
+        img_buf.seek(0)
+        rli = RLImage(img_buf)
+        # Auf max ~16cm Breite skalieren, Aspektverhaeltnis erhalten
+        max_w_mm = 160
+        ratio = pil.height / max(1, pil.width)
+        rli.drawWidth = max_w_mm * mm
+        rli.drawHeight = max_w_mm * mm * ratio
+        rli.hAlign = "CENTER"
+        story.append(rli)
+    except Exception as e:
+        logger.warning(f"[pdf] Anhang-Bild konnte nicht dargestellt werden: {e}")
+        story.append(Paragraph(f"(Bild konnte nicht dargestellt werden: {_esc(str(e))})", styles["Normal"]))
+    d.build(story)
+    return buf.getvalue()
+
+
+def _build_separator_page(bezeichnung: str, filename: str, styles, note: str = "") -> bytes:
+    """Baut eine Trenner-Seite die ankuendigt, dass jetzt ein PDF-Anhang folgt."""
+    buf = io.BytesIO()
+    d = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=6 * cm, bottomMargin=2 * cm)
+    story = [
+        Paragraph("Anhang", ParagraphStyle("AH1", parent=styles["Title"], fontSize=24, textColor=FUCHSIA, alignment=TA_CENTER, spaceAfter=20)),
+        Paragraph(_esc(bezeichnung), ParagraphStyle("AH2", parent=styles["Normal"], fontSize=14, textColor=GRAY_DARK, alignment=TA_CENTER, spaceAfter=10)),
+        Paragraph(_esc(filename), ParagraphStyle("AH3", parent=styles["Normal"], fontSize=12, textColor=GRAY_DARK, alignment=TA_CENTER, spaceAfter=20)),
+    ]
+    if note:
+        story.append(Paragraph(_esc(note), ParagraphStyle("ANot", parent=styles["Normal"], fontSize=10, textColor=GRAY_DARK, alignment=TA_CENTER)))
+    d.build(story)
+    return buf.getvalue()
+
+
 def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_fn=None, info_text: str = "") -> bytes:
     """PDF-Auswertung mit 3 Detaillierungsgraden.
     mode: 'smart' = nur Deckblatt + einfache Tabelle
@@ -467,6 +534,7 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
     )
     styles = getSampleStyleSheet()
     story = []
+    attachments_pending = []  # [(item, docs)] - fuer Merge nach doc.build im gross-Modus
 
     # ── Seite 1: Deckblatt ─────────────────────────────────────
     story += _deckblatt(items, groups_by_id, styles, info_text=info_text)
@@ -628,18 +696,87 @@ def build_pdf(items: list, groups_by_id: dict, mode: str = "smart", get_object_f
                 if it.get("notiz"):
                     story.append(Paragraph(f"<b>Notiz:</b> {_esc(it['notiz'])}", styles["Normal"]))
 
-                # GROSS: Dokumente-Liste anhaengen
+                # GROSS: Dokumente-Liste anhaengen (die Dateien selbst werden nach dem Build gemerged)
                 if mode == "gross":
                     docs = it.get("documents") or []
                     if docs:
                         story.append(Spacer(1, 8))
-                        story.append(Paragraph("<b>Angehängte Dokumente:</b>", styles["Normal"]))
+                        story.append(Paragraph("<b>Angehängte Dokumente (siehe Anhang):</b>", styles["Normal"]))
                         for d in docs:
                             size_kb = int((d.get("size", 0) or 0) / 1024)
                             story.append(Paragraph(
                                 f"&#8226; {_esc(d.get('filename','?'))} ({_esc(d.get('content_type','-'))}, {size_kb} KB)",
                                 ParagraphStyle("Doc", parent=styles["Normal"], leftIndent=12, textColor=GRAY_DARK),
                             ))
+                        # Merker fuer den Merge-Schritt: Item mit Dokumenten
+                        attachments_pending.append((it, docs))
 
     doc.build(story, onFirstPage=_pdf_footer, onLaterPages=_pdf_footer)
-    return buf.getvalue()
+    main_pdf_bytes = buf.getvalue()
+
+    # ── Anhaenge einbetten (nur GROSS) ─────────────────────────────
+    if mode == "gross" and attachments_pending:
+        try:
+            from pypdf import PdfWriter, PdfReader
+            writer = PdfWriter()
+            # Haupt-PDF laden
+            writer.append(fileobj=io.BytesIO(main_pdf_bytes))
+
+            for it, docs in attachments_pending:
+                bezeichnung = _no_umlaut(it.get("bezeichnung", "-"))
+                for d in docs:
+                    filename = _no_umlaut(d.get("filename", "Dokument"))
+                    ctype = (d.get("content_type") or "").lower()
+                    data, effective_ct = _load_document_bytes(it["id"], d, get_object_fn)
+                    if not data:
+                        logger.warning(f"[pdf] Anhang '{filename}' konnte nicht geladen werden (item={it.get('id')})")
+                        continue
+                    used_ct = (effective_ct or ctype or "").lower()
+
+                    # PDF direkt anhaengen
+                    if used_ct == "application/pdf" or filename.lower().endswith(".pdf"):
+                        try:
+                            # Trenner-Seite vor jedem PDF
+                            sep = _build_separator_page(bezeichnung, filename, styles)
+                            writer.append(fileobj=io.BytesIO(sep))
+                            reader = PdfReader(io.BytesIO(data))
+                            writer.append(fileobj=io.BytesIO(data))
+                            _ = reader.pages  # noqa: F841 - sanity read
+                        except Exception as e:
+                            logger.warning(f"[pdf] PDF-Anhang '{filename}' konnte nicht gemerged werden: {e}")
+                            # Fallback: nur die Trenner-Seite als Hinweis
+                            try:
+                                sep = _build_separator_page(bezeichnung, filename, styles, note="(Datei konnte nicht eingebettet werden)")
+                                writer.append(fileobj=io.BytesIO(sep))
+                            except Exception:
+                                pass
+                    # Bild-Dokument: als Seite darstellen
+                    elif used_ct.startswith("image/") or any(filename.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+                        try:
+                            img_page = _build_image_attachment_page(bezeichnung, filename, data, styles)
+                            writer.append(fileobj=io.BytesIO(img_page))
+                        except Exception as e:
+                            logger.warning(f"[pdf] Bild-Anhang '{filename}' konnte nicht gerendert werden: {e}")
+                    else:
+                        # Sonstige Formate (docx, xlsx, txt...) koennen wir nicht direkt einbetten.
+                        # Wir fuegen eine Trenner-Seite mit Hinweis ein.
+                        try:
+                            sep = _build_separator_page(
+                                bezeichnung,
+                                filename,
+                                styles,
+                                note=f"(Dieses Dateiformat kann nicht direkt eingebettet werden: {used_ct or 'unbekannt'})",
+                            )
+                            writer.append(fileobj=io.BytesIO(sep))
+                        except Exception:
+                            pass
+
+            out = io.BytesIO()
+            writer.write(out)
+            writer.close()
+            return out.getvalue()
+        except Exception as e:
+            logger.error(f"[pdf] Anhang-Merge fehlgeschlagen, gebe Haupt-PDF ohne Anhaenge zurueck: {e}")
+            return main_pdf_bytes
+
+    return main_pdf_bytes
