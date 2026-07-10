@@ -67,6 +67,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Zusaetzlicher File-Handler: schreibt alle ERROR+ Meldungen aus dem gesamten
+# Backend nach /app/Error.txt (mit Rotation, damit die Datei nicht ins Unermessliche waechst).
+try:
+    from logging.handlers import RotatingFileHandler
+    _error_log_path = os.environ.get("BACKEND_ERROR_LOG", "/app/Error.txt")
+    _error_file_handler = RotatingFileHandler(
+        _error_log_path,
+        maxBytes=5 * 1024 * 1024,  # 5 MB
+        backupCount=3,             # Error.txt, Error.txt.1, Error.txt.2, Error.txt.3
+        encoding="utf-8",
+    )
+    _error_file_handler.setLevel(logging.ERROR)
+    _error_file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+    logging.getLogger().addHandler(_error_file_handler)
+    logger.info(f"Error-Log aktiv -> {_error_log_path}")
+except Exception as _err_log_setup_exc:
+    logger.warning(f"Konnte Error-Log-File nicht einrichten: {_err_log_setup_exc}")
+
 # ============== Models ==============
 
 class UserRole:

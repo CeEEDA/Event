@@ -1,0 +1,6 @@
+2026-07-10 12:20:38,355 [ERROR] routes.kirmes: Test-Error von kirmes.py
+2026-07-10 12:20:38,355 [ERROR] email_service: Test-Error von email_service
+2026-07-10 12:20:38,355 [ERROR] routes.payments: Simulierte Stripe-Ausnahme
+Traceback (most recent call last):
+  File "<string>", line 20, in <module>
+ZeroDivisionError: division by zero
