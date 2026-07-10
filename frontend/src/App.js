@@ -65,6 +65,7 @@ import AdrPage from "./pages/AdrPage";
 import VerbandsbuchPage from "./pages/VerbandsbuchPage";
 import EinsatzplanungPage from "./pages/EinsatzplanungPage";
 import MaschinenAuswertungPage from "./pages/MaschinenAuswertungPage";
+import { RechnungBezahltPage, RechnungAbgebrochenPage } from "./pages/RechnungPaymentResultPage";
 import "./App.css";
 
 const ProtectedRoute = ({ children, requiredRole, requiredApp, requiredModule, requiresBilling }) => {
@@ -147,6 +148,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/einsatzzentrale" element={<EinsatzzentralePiPage />} />
+      <Route path="/rechnung/bezahlt" element={<RechnungBezahltPage />} />
+      <Route path="/rechnung/abgebrochen" element={<RechnungAbgebrochenPage />} />
       <Route 
         path="/login" 
         element={

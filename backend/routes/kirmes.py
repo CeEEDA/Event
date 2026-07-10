@@ -2604,9 +2604,78 @@ Eventenergie Deutschland GmbH & Co. KG"""
 
 
 
+async def _create_kirmes_invoice_payment_link(inv: dict, amount: float, origin_url: str) -> Optional[str]:
+    """Create a Stripe Checkout session for the open balance of a Kirmes invoice.
+
+    Returns the checkout URL, or None if Stripe is not configured or amount <= 0.
+    Stores a payment_transactions record with type='invoice' so the webhook
+    (see /api/payments/webhook/stripe) can mark the invoice as 'bezahlt' automatically.
+    """
+    stripe_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_key or amount is None or float(amount) < 0.5:
+        return None
+    try:
+        from emergentintegrations.payments.stripe.checkout import (
+            StripeCheckout,
+            CheckoutSessionRequest,
+        )
+        webhook_url = f"{origin_url}/api/payments/webhook/stripe"
+        success_url = f"{origin_url}/rechnung/bezahlt?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{origin_url}/rechnung/abgebrochen"
+        metadata = {
+            "type": "invoice",
+            "invoice_id": inv["id"],
+            "invoice_number": inv.get("invoice_number", ""),
+            "event_name": inv.get("event_name", ""),
+        }
+        stripe = StripeCheckout(api_key=stripe_key, webhook_url=webhook_url)
+        checkout_req = CheckoutSessionRequest(
+            amount=round(float(amount), 2),
+            currency="eur",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata,
+            payment_methods=["card", "paypal"],
+        )
+        session = await stripe.create_checkout_session(checkout_req)
+
+        # Persist a payment_transactions row so the webhook can auto-close the invoice
+        await _db.payment_transactions.insert_one({
+            "id": str(uuid.uuid4()),
+            "session_id": session.session_id,
+            "type": "invoice",
+            "invoice_id": inv["id"],
+            "invoice_number": inv.get("invoice_number", ""),
+            "amount": round(float(amount), 2),
+            "currency": "eur",
+            "payment_status": "pending",
+            "metadata": metadata,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        # Also cache the latest link on the invoice itself so we don't create endless sessions on re-send
+        await _db.kirmes_invoices.update_one(
+            {"id": inv["id"]},
+            {"$set": {
+                "payment_link_url": session.url,
+                "payment_link_session_id": session.session_id,
+                "payment_link_amount": round(float(amount), 2),
+                "payment_link_created_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        return session.url
+    except Exception as e:
+        logger.warning(f"[kirmes] Could not create Stripe payment link for invoice {inv.get('invoice_number')}: {e}")
+        return None
+
+
 @router.post("/invoices/{invoice_id}/send")
-async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staff)):
-    """Send invoice PDF via email to the schausteller."""
+async def send_invoice_email(invoice_id: str, request: Request, user: dict = Depends(_require_staff)):
+    """Send invoice PDF via email to the schausteller.
+
+    If there is an open balance (deposit_open_balance > 0), a Stripe Checkout
+    session is created for that amount and a "Jetzt bezahlen"-button is added
+    to the e-mail so the customer can settle it in one click.
+    """
     from services.invoice_pdf import generate_invoice_pdf
     from email_service import send_email_with_attachment
     inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
@@ -2620,10 +2689,49 @@ async def send_invoice_email(invoice_id: str, user: dict = Depends(_require_staf
 
     filename = f"{inv['invoice_number']}.pdf"
     subject = f"Rechnung {inv['invoice_number']} – {inv.get('event_name', '')}"
+
+    # Compute open balance for the payment link
+    brutto = float(inv.get("brutto", 0) or 0)
+    deposit_applied = float(inv.get("deposit_applied", 0) or 0)
+    open_balance = round(max(0.0, brutto - deposit_applied), 2)
+
+    # Try to create Stripe payment link (only if there is money still owed)
+    payment_link_url = None
+    if open_balance >= 0.5:
+        # Determine origin URL: prefer explicit env, fall back to the caller's origin
+        origin_url = (
+            os.environ.get("PUBLIC_APP_URL")
+            or request.headers.get("origin")
+            or request.headers.get("referer", "").rstrip("/")
+            or str(request.base_url).rstrip("/")
+        )
+        # Strip trailing slash and any path
+        if origin_url:
+            from urllib.parse import urlparse
+            parsed = urlparse(origin_url)
+            if parsed.scheme and parsed.netloc:
+                origin_url = f"{parsed.scheme}://{parsed.netloc}"
+        payment_link_url = await _create_kirmes_invoice_payment_link(inv, open_balance, origin_url)
+
+    # Build the HTML body
+    payment_block = ""
+    if payment_link_url and open_balance >= 0.5:
+        payment_block = f"""
+<p style="margin-top:16px;"><b>Offener Betrag:</b> {open_balance:.2f} EUR</p>
+<div style="margin:24px 0;text-align:center;">
+  <a href="{payment_link_url}" style="display:inline-block;background:#d946ef;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:600;">
+    Jetzt online bezahlen
+  </a>
+</div>
+<p style="color:#888;font-size:12px;">Alternativ können Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto überweisen.</p>
+"""
+    else:
+        payment_block = "<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>"
+
     html = f"""<p>Sehr geehrte Damen und Herren,</p>
 <p>anbei erhalten Sie die Rechnung <b>{inv['invoice_number']}</b> für die Veranstaltung <b>{inv.get('event_name', '')}</b>.</p>
-<p>Rechnungsbetrag: <b>{inv['brutto']:.2f} EUR</b></p>
-<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>
+<p>Rechnungsbetrag: <b>{brutto:.2f} EUR</b></p>
+{payment_block}
 <p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
 
     try:
