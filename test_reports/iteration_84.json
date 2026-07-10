@@ -1,0 +1,49 @@
+{
+  "summary": "Backend-only verification of the meter-freeze feature (kirmes.py), invoice-payment-link generation, and public payment result routes. 8 of 9 pytest checks passed. Meter-Freeze end-to-end is FULLY working: auth guard, 404, happy-path (unlink emu_device_id/emu_meter_id/emu_meter_name, freeze kwh_ausbau/meter_end/kwh_used), event.meters_frozen_at + meters_frozen_count, idempotency (2nd call -> already frozen), and no-telemetry fallback (unlink still occurs but no bogus kwh_ausbau). ONE failure: POST /api/kirmes/invoices/{id}/send returns 200 and delivers the mail, but the Stripe payment link is NEVER created because _create_kirmes_invoice_payment_link requests payment_methods=['card','paypal'] and PayPal is not activated on the preview Stripe test key -> emergentintegrations raises 'The payment method type paypal is invalid'. The exception is swallowed silently, so payment_link_url stays None on the invoice and NO 'Jetzt online bezahlen' button appears in the email. This defeats the whole point of Feature 2.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/kirmes/invoices/{id}/send  (helper: _create_kirmes_invoice_payment_link in /app/backend/routes/kirmes.py line ~2782)",
+        "issue": "Stripe checkout session creation fails because payment_methods=['card','paypal'] is hard-coded but PayPal is not activated on the current (preview) Stripe account. Error from Stripe: 'The payment method type \"paypal\" is invalid. Please ensure the provided type is activated in your dashboard'. The generic try/except in the helper hides the failure, so /send returns 200 but payment_link_url never gets stored and the email is sent WITHOUT the 'Jetzt online bezahlen' button. Feature 2 is silently broken end-to-end.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "_create_kirmes_invoice_payment_link",
+        "issue": "Exception path is `logger.warning + return None`. Consider surfacing the error (or at least storing a payment_link_error on the invoice) so admins notice broken payment links instead of silently sending an email without the button."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meter_freeze_iteration84.py",
+    "/app/test_reports/pytest/iteration_84_meter_freeze.xml"
+  ],
+  "action_items": [
+    "Fix _create_kirmes_invoice_payment_link: either drop 'paypal' from payment_methods (use ['card'] only, or ['card','sepa_debit']), OR only include paypal when the account has it activated. Retry the endpoint on the preview environment and confirm payment_link_url + payment_link_session_id land on the invoice doc and the button appears in the outgoing HTML. Live keys may accept paypal - the code should ideally probe or make the list configurable via env var (STRIPE_PAYMENT_METHODS).",
+    "Consider exposing a payment_link_error field on the invoice when Stripe rejects the request so admins can see why the button is missing.",
+    "Once fixed, re-run: pytest /app/backend/tests/test_meter_freeze_iteration84.py::TestInvoicePaymentLink -v"
+  ],
+  "critical_code_review_comments": [
+    "Meter-Freeze logic is clean & idempotent: uses $set + $unset atomically, checks meters_frozen_at to short-circuit, and handles missing telemetry gracefully (no kwh_ausbau overwrite when no reading).",
+    "Scheduler _meter_freeze_scheduler runs every 30 min AND handles both 'meters_frozen_at is None/False' and 'field missing' (two queries merged, dedup by id) - good defensive coding.",
+    "kirmes.py is 4395 lines - well past the >700 line threshold. Strongly recommend splitting into modules (kirmes_events, kirmes_signups, kirmes_invoices, kirmes_meters, kirmes_scheduler).",
+    "Silent exception swallowing in _create_kirmes_invoice_payment_link masks legitimate integration errors. Log at ERROR level and/or persist the failure reason on the invoice.",
+    "payment_methods=['card','paypal'] is hard-coded twice: once here, likely elsewhere for schausteller portal Stripe checkout. Move to a shared constant or env var so a single flip enables/disables paypal globally."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_meter_freeze_iteration84.py (NEW)"
+  ],
+  "success_rate": {"backend": "89% (8/9)", "frontend": "N/A - backend-only per request"},
+  "test_credentials": "admin@test.com / password (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Ephemeral: 2 kirmes_events + 2 kirmes_signups + 1 emu_data row prefixed TEST_it84_ - created and cleaned up per test in finally blocks. No test data leaks after the run (verified via cleanup script -> 0 residual docs).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The regression test file /app/backend/tests/test_meter_freeze_iteration84.py covers meter-freeze + invoice payment-link + public payment routes. Re-run after the Stripe payment_methods fix. The test picks the first open-balance invoice (payment_status != 'bezahlt', brutto >= 1.0) - currently R26-K-0002 (c-ecker@outlook.de, 119.00 EUR). If SMTP fails on the retest (500 instead of 200), that's OK per the request; the DB assertions on payment_link_url + payment_transactions row still hold.",
+  "rca of the issue": "ROOT CAUSE (Feature 2): In /app/backend/routes/kirmes.py::_create_kirmes_invoice_payment_link the CheckoutSessionRequest sets payment_methods=['card','paypal']. The preview Stripe key (sk_test_emergent) has NOT activated the paypal payment method in its dashboard. Stripe rejects the create-session call with 'The payment method type paypal is invalid'. The helper catches the exception, logs a warning, and returns None -> payment_link_url is never persisted on the invoice, and the branch `if payment_link_url and open_balance >= 0.5` is False, so the fallback 'Bitte überweisen Sie ...' block is used instead of the 'Jetzt online bezahlen' button. Reproduction: POST /api/kirmes/invoices/{id}/send with a valid admin token against invoice R26-K-0002 -> 200 OK, mail sent, but db.kirmes_invoices.findOne({id:...}).payment_link_url === undefined AND no payment_transactions row is created. Mitigation: drop paypal from the payment_methods list (or make it env-configurable) - Stripe checkout with 'card' alone is guaranteed to work on any test account. Backend log excerpt: '2026-07-10 08:07:42,294 stripe INFO error_message=\\'The payment method type \"paypal\" is invalid...\\'' + '2026-07-10 08:07:42,295 routes.kirmes WARNING [kirmes] Could not create Stripe payment link for invoice R26-K-0002: Failed to create checkout session'."
+}

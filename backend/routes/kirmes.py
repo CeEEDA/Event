@@ -2529,6 +2529,150 @@ def start_mahnung_scheduler():
     mahnung_logger.info("Mahnung-Scheduler gestartet (alle 6h)")
 
 
+# ============== Meter Auto-Freeze on Event End ==============
+
+meter_freeze_logger = logging.getLogger("meter_freeze")
+
+
+async def _freeze_meters_for_event(event: dict) -> dict:
+    """Freeze all meter readings for signups of an ended event.
+
+    For each signup that still has a linked EMU meter:
+      - Capture the current E_imp_kWh as kwh_ausbau/meter_end (final reading)
+      - Compute kwh_used = kwh_ausbau - kwh_einbau
+      - Unlink the meter (unset emu_device_id/emu_meter_id/emu_meter_name)
+        so the meter can be reused for the next event and the reading is fixed
+      - Store meter_final_name / meter_frozen_at for audit trail
+
+    Also marks the event with meters_frozen_at so we don't do it twice.
+    Returns: {"frozen": <count>, "already_frozen": bool}
+    """
+    event_id = event["id"]
+    if event.get("meters_frozen_at"):
+        return {"frozen": 0, "already_frozen": True}
+
+    signups = await _db.kirmes_signups.find(
+        {"event_id": event_id, "emu_meter_id": {"$exists": True, "$ne": None}},
+        {"_id": 0},
+    ).to_list(2000)
+
+    frozen_count = 0
+    for signup in signups:
+        emu_device_id = signup.get("emu_device_id")
+        emu_meter_id = signup.get("emu_meter_id")
+        if not emu_device_id or not emu_meter_id:
+            continue
+
+        # Fetch final reading from live telemetry
+        latest = await _db.emu_data.find_one(
+            {"device_id": emu_device_id, "meter_id": emu_meter_id},
+            {"_id": 0, "E_imp_kWh": 1, "ts_utc": 1},
+            sort=[("ts_utc", -1)],
+        )
+        final_reading = None
+        final_ts = None
+        if latest and latest.get("E_imp_kWh") is not None:
+            final_reading = round(float(latest["E_imp_kWh"]), 2)
+            final_ts = latest.get("ts_utc")
+
+        kwh_einbau = signup.get("kwh_einbau", 0) or 0
+        set_fields = {
+            "meter_frozen_at": datetime.now(timezone.utc).isoformat(),
+            "meter_final_device_id": emu_device_id,
+            "meter_final_meter_id": emu_meter_id,
+            "meter_final_name": signup.get("emu_meter_name", ""),
+            "meter_final_reading_ts": final_ts,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if final_reading is not None:
+            kwh_used = round(max(0.0, final_reading - float(kwh_einbau)), 2)
+            set_fields["kwh_ausbau"] = final_reading
+            set_fields["meter_end"] = final_reading
+            set_fields["kwh_used"] = kwh_used
+
+        await _db.kirmes_signups.update_one(
+            {"id": signup["id"]},
+            {
+                "$set": set_fields,
+                "$unset": {"emu_device_id": "", "emu_meter_id": "", "emu_meter_name": ""},
+            },
+        )
+        frozen_count += 1
+        meter_freeze_logger.info(
+            f"Signup {signup['id']} eingefroren: kwh_ausbau={final_reading} (Event {event_id})"
+        )
+
+    await _db.kirmes_events.update_one(
+        {"id": event_id},
+        {"$set": {
+            "meters_frozen_at": datetime.now(timezone.utc).isoformat(),
+            "meters_frozen_count": frozen_count,
+        }},
+    )
+    meter_freeze_logger.info(f"Event {event_id} ({event.get('name', '')}): {frozen_count} Zaehler eingefroren")
+    return {"frozen": frozen_count, "already_frozen": False}
+
+
+async def _meter_freeze_scheduler():
+    """Runs every 30 minutes: finds events whose end_date has passed and freezes their meters."""
+    while True:
+        try:
+            today_iso = datetime.now(timezone.utc).date().isoformat()
+            # end_date is stored as ISO string 'YYYY-MM-DD' - find events that ended yesterday or earlier
+            # and have not been frozen yet.
+            events = await _db.kirmes_events.find(
+                {
+                    "end_date": {"$lt": today_iso},
+                    "meters_frozen_at": {"$in": [None, False]},
+                },
+                {"_id": 0},
+            ).to_list(500)
+            # MongoDB $in with [None, False] does NOT match "field missing", so add a separate query
+            events_missing = await _db.kirmes_events.find(
+                {
+                    "end_date": {"$lt": today_iso},
+                    "meters_frozen_at": {"$exists": False},
+                },
+                {"_id": 0},
+            ).to_list(500)
+            seen_ids = set()
+            all_events = []
+            for e in events + events_missing:
+                if e["id"] not in seen_ids:
+                    seen_ids.add(e["id"])
+                    all_events.append(e)
+
+            for evt in all_events:
+                try:
+                    await _freeze_meters_for_event(evt)
+                except Exception as e:
+                    meter_freeze_logger.error(f"Freeze failed for event {evt.get('id')}: {e}")
+        except Exception as e:
+            meter_freeze_logger.error(f"Meter-Freeze-Scheduler Fehler: {e}")
+        await asyncio.sleep(30 * 60)  # every 30 minutes
+
+
+def start_meter_freeze_scheduler():
+    """Wird beim Server-Start aufgerufen."""
+    asyncio.ensure_future(_meter_freeze_scheduler())
+    meter_freeze_logger.info("Meter-Freeze-Scheduler gestartet (alle 30 min)")
+
+
+@router.post("/events/{event_id}/freeze-meters")
+async def freeze_meters_for_event_endpoint(event_id: str, user: dict = Depends(_require_staff)):
+    """Manually trigger meter freezing for an event (e.g. if the event ended early)."""
+    event = await _db.kirmes_events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
+    result = await _freeze_meters_for_event(event)
+    if result.get("already_frozen"):
+        return {"message": "Zaehler wurden bereits eingefroren.", "frozen": 0}
+    return {
+        "message": f"{result['frozen']} Zaehler wurden eingefroren und entkoppelt.",
+        "frozen": result["frozen"],
+    }
+
+
 @router.post("/invoices/{invoice_id}/send-reminder")
 async def send_payment_reminder(invoice_id: str, user: dict = Depends(_require_staff)):
     """Sends a payment reminder email for an overdue invoice."""

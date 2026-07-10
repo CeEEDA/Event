@@ -633,6 +633,21 @@ export default function KirmesEventDetailPage() {
     }
   };
 
+  const handleFreezeMeters = async () => {
+    const linkedCount = (event?.signups || []).filter(s => s.emu_device_id && s.emu_meter_id).length;
+    const msg = linkedCount > 0
+      ? `Alle ${linkedCount} verknüpften Zähler dieser Veranstaltung werden mit dem aktuellen Zählerstand eingefroren und entkoppelt. Diese Aktion kann nicht rückgängig gemacht werden. Fortfahren?`
+      : "Keine offenen Zähler-Verknüpfungen. Trotzdem als eingefroren markieren?";
+    if (!window.confirm(msg)) return;
+    try {
+      const r = await api.post(`/kirmes/events/${id}/freeze-meters`);
+      toast.success(r.data?.message || "Zähler eingefroren");
+      loadEvent();
+    } catch (err) {
+      toast.error(getErrorMsg(err, "Fehler beim Einfrieren"));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50" data-testid="kirmes-event-detail">
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
@@ -773,6 +788,39 @@ export default function KirmesEventDetailPage() {
             </p>
           </div>
         </div>
+
+        {/* Meter Freeze Banner: shown when event has ended and meters still linked */}
+        {(() => {
+          const eventEnded = event.end_date && new Date(event.end_date) < new Date(new Date().toDateString());
+          const stillLinked = (event.signups || []).some(s => s.emu_device_id && s.emu_meter_id);
+          if (event.meters_frozen_at) {
+            return (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-3 text-sm text-slate-600" data-testid="meters-frozen-info">
+                <Zap className="w-4 h-4 text-slate-400" />
+                <span>Zähler wurden am {new Date(event.meters_frozen_at).toLocaleString("de-DE")} eingefroren ({event.meters_frozen_count ?? 0} Zähler).</span>
+              </div>
+            );
+          }
+          if (!eventEnded && !stillLinked) return null;
+          return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="freeze-meters-banner">
+              <div className="flex-1 text-sm text-amber-800">
+                {eventEnded ? (
+                  <>Diese Veranstaltung ist am <b>{new Date(event.end_date).toLocaleDateString("de-DE")}</b> beendet. Die verknüpften Zähler laufen jedoch weiter, wodurch sich die Endstände verändern.</>
+                ) : (
+                  <>Sie können die Zähler jederzeit einfrieren – der aktuelle Stand wird als Endstand gesetzt und die Verknüpfung aufgehoben.</>
+                )}
+              </div>
+              <button
+                onClick={handleFreezeMeters}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg whitespace-nowrap"
+                data-testid="freeze-meters-btn"
+              >
+                Zähler jetzt einfrieren
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Documents Card */}
         <div

@@ -2106,9 +2106,10 @@ from routes.einsatzzentrale import router as einsatzzentrale_router, init_einsat
 init_einsatzzentrale_routes(db, verify_password, create_jwt_token, decode_jwt_token, get_default_apps)
 app.include_router(einsatzzentrale_router)
 
-from routes.kirmes import router as kirmes_router, init_kirmes_routes, start_mahnung_scheduler
+from routes.kirmes import router as kirmes_router, init_kirmes_routes, start_mahnung_scheduler, start_meter_freeze_scheduler
 init_kirmes_routes(db, decode_jwt_token)
 start_mahnung_scheduler()
+start_meter_freeze_scheduler()
 app.include_router(kirmes_router)
 
 from routes.payments import router as payments_router, init_payments
