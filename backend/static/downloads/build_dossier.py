@@ -246,6 +246,28 @@ def make_pdf():
           "Historische Charts",
           "Ingest via Modbus TCP oder MQTT"]),
 
+        ("Messkoffer im Detail", "messkoffer_detail",
+         "Der Messkoffer ist ein autarker, mobiler Messplatz fuer Baustromnetze und Kirmes-Verteilungen. "
+         "Er misst Wirk- und Blindleistung, Spannungen, Stroeme und Energie in Echtzeit und "
+         "sendet die Daten ueber LTE/WiFi an das Portal. Ideal fuer Nachweise der abgenommenen "
+         "Energiemenge und Erkennung von Ueberlastungen.",
+         ["4-Quadranten Zaehlerchip EMU Professional II (Klasse 0.5S)",
+          "Live-Werte alle 10 Sekunden (Modbus TCP)",
+          "GPS-Position pro Messkoffer",
+          "Batteriegepuffert mit LTE-Uplink",
+          "Offline-Puffer in SQLite (holt Daten nach Verbindungsverlust nach)",
+          "OTA-Update-Faehigkeit ueber das Portal",
+          "Alarme bei Ueberlast, Spannungseinbruch, Verbindungsabbruch"]),
+
+        ("Messkoffer im Serviceplan", "messkoffer_serviceplan",
+         "Alle Messkoffer sind im Serviceplan mit Wartungsstatus, Kalibrierungs-Intervallen und "
+         "letzter Pruefung sichtbar. Filterbar nach Geraeteart mit einem Klick.",
+         ["Filter Messkoffer im Serviceplan-Modul",
+          "Kalibrierungs-Erinnerungen (typ. jaehrlich)",
+          "Wartungshistorie mit Zeitstempel",
+          "Stoermeldung direkt aus dem Portal",
+          "Zuordnung Auftrag <-> Messkoffer"]),
+
         ("Generator-Diagnose", "generators",
          "Direkt-Anbindung an DSE 5510 / DSE 8610 Motorsteuerungen mit Live-Daten und Fernbedienung.",
          ["Motorstunden, Tankstand, Batterie live",
@@ -379,6 +401,114 @@ def make_pdf():
                     "Alle Screenshots stammen aus dem produktiven System.", body))
     story.append(Spacer(1, 20))
     story.append(_P("(c) 2026 Eventenergie Deutschland GmbH & Co. KG - Alle Rechte vorbehalten.", small_style))
+
+    # ── ANHANG: Muster-Analyse Messkoffer ────────────────────────────
+    story.append(PageBreak())
+    story.append(_P("Anhang: Muster-Analyse Messkoffer", h1))
+    story.append(_P(
+        "Beispielhafte Auswertung einer 5-Tage-Baustelle mit Messkoffer_002. Zeigt Verbrauchsverlauf, "
+        "Lastspitzen und Betriebsstunden - typische Datenbasis fuer Nachberechnung und Kunden-Nachweise.", body))
+
+    story.append(_P("Objektdaten", h2))
+    obj = [
+        [_u("Messkoffer"), _u("Messkoffer_002 (SN: MK-2024-002)")],
+        [_u("Einsatz"), _u("Herbstkirmes Musterstadt 2026")],
+        [_u("Zeitraum"), _u("15.09.2026 - 19.09.2026 (5 Tage)")],
+        [_u("Anschlusstyp"), _u("125 A CEE (400 V, 3~)")],
+        [_u("GPS"), _u("50.4419 N, 7.3689 O")],
+    ]
+    t = Table(obj, colWidths=[5 * cm, 11 * cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), FUCHSIA_LIGHT),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#e5e7eb")),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 12))
+
+    story.append(_P("Taegliche Energieaufnahme", h2))
+    tage = [
+        ["Datum", "Betriebsstunden", "Spitze (kW)", "Mittel (kW)", "Energie (kWh)"],
+        ["Mo 15.09.2026", "16:12", "58,4", "22,1", "358,0"],
+        ["Di 16.09.2026", "17:08", "61,7", "23,5", "402,3"],
+        ["Mi 17.09.2026", "17:22", "59,9", "24,0", "417,6"],
+        ["Do 18.09.2026", "17:45", "63,2", "25,3", "451,2"],
+        ["Fr 19.09.2026", "12:36", "51,8", "20,7", "260,8"],
+        ["SUMME", "81:03", "63,2", "23,1", "1.889,9"],
+    ]
+    tab = Table(tage, colWidths=[4 * cm, 3.2 * cm, 2.7 * cm, 2.7 * cm, 3.4 * cm])
+    tab.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), FUCHSIA),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#d1fae5")),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f9fafb")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(tab)
+    story.append(Spacer(1, 12))
+
+    story.append(_P("Verlauf einer typischen Betriebs-Stunde", h2))
+    story.append(_P(
+        "Beispiel Do 18.09.2026, 20:00 - 21:00 Uhr (Peak-Betrieb Fahrgeschaeft + Wohnwagen).", body))
+    stunde = [
+        ["Zeit", "L1 (A)", "L2 (A)", "L3 (A)", "U (V)", "P (kW)"],
+        ["20:00", "78,4", "82,1", "80,3", "398", "56,2"],
+        ["20:10", "84,7", "88,9", "85,5", "397", "60,8"],
+        ["20:20", "89,2", "91,4", "88,7", "396", "63,2"],
+        ["20:30", "85,1", "87,3", "84,2", "397", "60,1"],
+        ["20:40", "80,9", "83,5", "81,7", "398", "57,3"],
+        ["20:50", "77,3", "79,8", "78,1", "399", "55,0"],
+        ["21:00", "72,5", "74,9", "73,2", "400", "52,4"],
+    ]
+    stab = Table(stunde, colWidths=[2.5 * cm] * 6)
+    stab.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), EMERALD),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(stab)
+    story.append(Spacer(1, 12))
+
+    story.append(_P("Kennzahlen und Auffaelligkeiten", h2))
+    kpi = [
+        _u("Peak-Leistung: 63,2 kW (55 % Auslastung des 125-A-Anschlusses)"),
+        _u("Schieflast max: 4,3 % (unbedenklich)"),
+        _u("Spannungsminimum: 391 V bei Peak - innerhalb Toleranz DIN EN 50160"),
+        _u("Verbindungsverluste: 3 x LTE-Reconnect (automatisch nachgeholt)"),
+        _u("Gesamtenergie 1889,9 kWh, davon 12 % nachts (Kuehlaggregate)"),
+        _u("Berechnete CO2-Emission: 812 kg (dt. Strommix 2026)"),
+        _u("Kosten (0,42 EUR/kWh): 793,76 EUR netto"),
+    ]
+    for k in kpi:
+        story.append(_P(f"- {k}", bullet))
+    story.append(Spacer(1, 12))
+    story.append(_P("Empfehlungen aus der Analyse", h2))
+    for k in [
+        "Anschluss auf 63 A downgraden wuerde 40 % der Fixkosten sparen (Peak nur 63 kW)",
+        "Nacht-Grundlast durch effizientere Kuehlung um ca. 15 % reduzierbar",
+        "Peak um 20:30 - Empfehlung: schaltbare Verbraucher zeitversetzt starten",
+    ]:
+        story.append(_P(f"- {_u(k)}", bullet))
+
+    story.append(Spacer(1, 20))
+    story.append(_P("Diese Muster-Analyse ist Bestandteil der Software - jede Baustelle kann auf Knopfdruck "
+                    "aehnliche Auswertungen fuer Kunden, Netzbetreiber oder interne Kalkulation liefern.", body))
 
     doc.build(story)
     with open(OUT, "wb") as f:
