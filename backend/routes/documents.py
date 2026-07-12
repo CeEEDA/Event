@@ -359,7 +359,25 @@ RECHNUNGEN (auch international):
   * Spanisch: "Factura"
   * Niederlaendisch: "Factuur"
 - Auch eine PROFORMA-RECHNUNG (Vorab-Rechnung, meist fuer Anzahlungen/Vorauszahlungen) ist eine Rechnung und gehoert in denselben Rechnungseingang-Ordner. Erkennungsmerkmale: Rechnungsnummer, Betrag, IBAN/Bankverbindung, Zahlungshinweis - auch ohne MwSt-Ausweis (typisch bei Auslands-Proforma).
+- Auch ABSCHLAGSRECHNUNGEN, ANZAHLUNGSRECHNUNGEN, TEILRECHNUNGEN, SCHLUSSRECHNUNGEN sind normale Rechnungen (document_type="rechnung"). Sie werden von uns (Eventenergie) an Kunden gestellt oder von unseren Lieferanten an uns.
 - Bei auslaendischen Absendern (UK, Frankreich, etc.) ist der Empfaenger dennoch typischerweise "Eventenergie Deutschland" oder eine der beiden Firmen - pruefe die Empfaenger-Anschrift sorgfaeltig.
+
+=== KRITISCH: Richtung erkennen (Ausgang vs. Eingang) ===
+Bei deutschen Geschaeftsbriefen ist das Layout fast IMMER:
+  [Absender-Logo/Briefkopf oben - oft die "Wir"-Firma]
+  [Empfaenger-Anschrift links oben im Adressfeld (fuer's Sichtfenster im Briefumschlag)]
+  [Datum, Rechnungsnummer, "Sehr geehrte Damen und Herren, ..."]
+
+WICHTIG: Die ERSTE Firma, die im Text steht (in der Anschrift), ist der EMPFAENGER, NICHT der Absender!
+Der Absender steht meist im Logo/Briefkopf, in der Fusszeile, oder wird durch "Wir" / "unser" / IBAN / Ust-IdNr. erkennbar.
+
+ENTSCHEIDUNGS-CHECKLISTE fuer Ein-/Ausgang:
+1. Ist "Eventenergie" oder "ES Besitz" im FUSS-BEREICH, LOGO, "unsere IBAN...", oder als Aussteller der Rechnung sichtbar? → AUSGANGSrechnung
+2. Ist "Eventenergie" oder "ES Besitz" in der ADRESSZEILE oben (typischerweise mit unserer Adresse Andernach)? → EINGANGSrechnung
+3. Bei Verwechslung von sender/recipient (unsere Firma steht in beiden Feldern): Nutze zusaetzliche Signale:
+   - Abschlagsrechnung / Anzahlungsrechnung / Teilrechnung mit "unsere Bankverbindung" → AUSGANG
+   - "Bitte ueberweisen Sie auf folgendes Konto" mit UNSERER IBAN → AUSGANG
+   - "Wir bitten um Zahlung an folgende IBAN" - schau ob die IBAN unsere ist → wenn ja: AUSGANG
 
 === FIRMEN-ZUORDNUNG (WICHTIG fuer Rechnungen!) ===
 Wir haben ZWEI Firmen mit unterschiedlicher Buchhaltung:
@@ -1049,6 +1067,85 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             if "eventenergie" in haystack:
                 return "eventenergie_deutschland"
             return ""
+
+        # ─── RICHTUNGS-KORREKTUR: Ein/Ausgang neu ableiten ─────────────────
+        # Wenn wir eine unserer Firmen im SENDER erkennen -> Ausgangsrechnung
+        # Wenn wir eine unserer Firmen im RECIPIENT erkennen -> Eingangsrechnung
+        # Wenn in beiden Feldern (z.B. Layout-Verwechslung durch KI): weitere Signale nutzen
+        if doctype == "rechnung":
+            sender_own = _detect_company(sender_text)
+            recipient_own = _detect_company(recipient_text)
+            corrected_direction = None
+            corrected_company = None
+            _ft_raw = ai_result.get("full_text") or ""
+            _ft = _ft_raw.lower()
+            _ft_nospace = _ft.replace(" ", "")
+
+            # Zusatzsignale, die auf AUSGANG (wir sind Absender) hindeuten
+            has_own_email = any(dom in _ft for dom in [
+                "@eventenergie-deutschland.de", "@eventenergie.app", "@eventenergie.de",
+                "@es-besitz.de", "@esbv.de",
+            ])
+            # Signatur am Textende: "Mit freundlichen Gruessen ... Eventenergie"
+            _tail = _ft[-800:]  # letzte 800 Zeichen (Signatur-Bereich)
+            has_own_signature = (
+                _detect_company(_tail) != ""
+                and any(k in _tail for k in ["mit freundlich", "freundlichen gru", "beste gru", "kind regards"])
+            )
+            # Eigene IBANs aus ENV (optional)
+            own_ibans = os.environ.get("OWN_IBANS", "").replace(" ", "").upper()
+            own_iban_list = [i for i in own_ibans.split(",") if i]
+            has_own_iban_in_text = any(iban in _ft_nospace.upper() for iban in own_iban_list)
+            is_anzahlung = any(k in _ft for k in [
+                "anzahlungsrechnung", "abschlagsrechnung", "anzahlung fuer auftrag", "anzahlung für auftrag",
+                "abschlagszahlung",
+            ])
+
+            if sender_own and not recipient_own:
+                corrected_direction = "rechnungsausgang"
+                corrected_company = sender_own
+            elif recipient_own and not sender_own:
+                # KLASSISCHER Ausgangs-Fall: KI hat sender/recipient vertauscht.
+                # Wenn eines der starken Ausgangs-Signale zutrifft -> korrigieren.
+                if has_own_email or has_own_signature or has_own_iban_in_text:
+                    corrected_direction = "rechnungsausgang"
+                    corrected_company = recipient_own  # unsere Firma ist der Absender
+                    logger.info(
+                        f"[direction-correction] KI-Verwechslung erkannt: eigene Firma steht "
+                        f"faelschlich im Recipient (email={has_own_email}, "
+                        f"signature={has_own_signature}, iban={has_own_iban_in_text}) -> Ausgang"
+                    )
+                else:
+                    corrected_direction = "rechnungseingang"
+                    corrected_company = recipient_own
+            elif sender_own and recipient_own:
+                # Beide Seiten enthalten unsere Firma - Layout-Verwechslung
+                if has_own_email or has_own_signature or has_own_iban_in_text or is_anzahlung:
+                    corrected_direction = "rechnungsausgang"
+                    corrected_company = sender_own or recipient_own
+                    logger.info(
+                        f"[direction-correction] Beide Seiten Eventenergie - Signale "
+                        f"(email={has_own_email}, signature={has_own_signature}, "
+                        f"iban={has_own_iban_in_text}, anzahlung={is_anzahlung}) -> Ausgang"
+                    )
+                else:
+                    corrected_direction = "rechnungseingang"
+                    corrected_company = recipient_own
+
+            if corrected_direction and corrected_company:
+                current_dir = (
+                    "rechnungsausgang" if (suggested_folder or "").startswith("rechnungsausgang")
+                    else "rechnungseingang" if (suggested_folder or "").startswith("rechnungseingang")
+                    else None
+                )
+                target_folder = f"{corrected_direction}_{corrected_company}"
+                if suggested_folder != target_folder:
+                    logger.info(
+                        f"[direction-correction] KI sagte {current_dir}/{suggested_folder}, "
+                        f"korrigiert nach {target_folder} "
+                        f"(sender_own={sender_own}, recipient_own={recipient_own})"
+                    )
+                    suggested_folder = target_folder
 
         if doctype == "rechnung" and (
             (suggested_folder or "").startswith("rechnungseingang")

@@ -1035,12 +1035,12 @@ export default function DocumentManagementPage() {
       {/* Move Modal */}
       {moveTarget && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setMoveTarget(null)} data-testid="move-modal">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <h3 className="font-semibold text-gray-900 text-sm">Verschieben nach...</h3>
               <button onClick={() => setMoveTarget(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
-            <div className="p-3 space-y-1">
+            <div className="p-3 space-y-1 overflow-y-auto flex-1" data-testid="move-modal-list">
               {folders.map(f => {
                 const Icon = FOLDER_ICONS[f.icon] || Folder;
                 const c = FOLDER_COLORS[f.color] || FOLDER_COLORS.gray;
@@ -1054,12 +1054,12 @@ export default function DocumentManagementPage() {
                     }`}
                     data-testid={`move-to-${f.id}`}
                   >
-                    <div className={`w-7 h-7 rounded-md ${c.bg} flex items-center justify-center`}>
+                    <div className={`w-7 h-7 rounded-md ${c.bg} flex items-center justify-center flex-shrink-0`}>
                       <Icon className={`w-3.5 h-3.5 ${c.text}`} />
                     </div>
-                    <span className="flex-1 text-left">{f.name}</span>
-                    {f.id === moveTarget.folder_id && <span className="text-xs text-gray-400">aktuell</span>}
-                    {f.id !== moveTarget.folder_id && <ChevronRight className="w-4 h-4 text-gray-300" />}
+                    <span className="flex-1 text-left truncate">{f.name}</span>
+                    {f.id === moveTarget.folder_id && <span className="text-xs text-gray-400 flex-shrink-0">aktuell</span>}
+                    {f.id !== moveTarget.folder_id && <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />}
                   </button>
                 );
               })}
