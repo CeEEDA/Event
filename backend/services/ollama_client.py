@@ -187,6 +187,25 @@ async def ollama_chat_vision(
 
     Gibt den reinen Antworttext zurueck (ohne JSON-Parsing).
     Bei Fehlern wird eine Exception geworfen."""
+    sem = _get_semaphore()
+    async with sem:
+        return await _ollama_chat_vision_nolock(
+            system_prompt, user_text, file_path, mime_type, model, want_json,
+        )
+
+
+async def _ollama_chat_vision_nolock(
+    system_prompt: str,
+    user_text: str,
+    file_path: Optional[str] = None,
+    mime_type: Optional[str] = None,
+    model: Optional[str] = None,
+    want_json: bool = True,
+) -> str:
+    """Interne Variante ohne Semaphore-Hold. NIE direkt aufrufen - nur wenn der
+    Aufrufer selbst bereits die Ollama-Semaphore haelt (z.B. aus
+    _analyze_document_smart_locked). Verhindert rekursive Deadlocks bei
+    Semaphore(1)."""
     import asyncio
     cfg = await get_ollama_config()
     mdl = model or cfg["model"]
@@ -214,29 +233,27 @@ async def ollama_chat_vision(
     if want_json:
         payload["format"] = "json"
 
-    sem = _get_semaphore()
-    async with sem:
-        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-            try:
-                r = await client.post(f"{cfg['url']}/api/generate", json=payload,
-                                       headers=_auth_headers(cfg["api_key"]))
-            except httpx.ReadTimeout as e:
-                logger.error(f"[ollama] ReadTimeout nach {OLLAMA_TIMEOUT}s - Modell/Proxy antwortet nicht")
-                raise OllamaUnavailable(f"Ollama ReadTimeout nach {OLLAMA_TIMEOUT}s") from e
-            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-                logger.error(f"[ollama] Verbindung fehlgeschlagen: {type(e).__name__}: {e}")
-                raise OllamaUnavailable(f"Ollama nicht erreichbar: {e}") from e
-            except Exception as e:
-                logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
-                raise
-            if r.status_code != 200:
-                logger.error(f"[ollama] HTTP {r.status_code}: {r.text[:500]}")
-                r.raise_for_status()
-            try:
-                data = r.json()
-            except Exception:
-                logger.error(f"[ollama] Antwort kein JSON: {r.text[:500]}")
-                raise
+    async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
+        try:
+            r = await client.post(f"{cfg['url']}/api/generate", json=payload,
+                                   headers=_auth_headers(cfg["api_key"]))
+        except httpx.ReadTimeout as e:
+            logger.error(f"[ollama] ReadTimeout nach {OLLAMA_TIMEOUT}s - Modell/Proxy antwortet nicht")
+            raise OllamaUnavailable(f"Ollama ReadTimeout nach {OLLAMA_TIMEOUT}s") from e
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            logger.error(f"[ollama] Verbindung fehlgeschlagen: {type(e).__name__}: {e}")
+            raise OllamaUnavailable(f"Ollama nicht erreichbar: {e}") from e
+        except Exception as e:
+            logger.error(f"[ollama] HTTP-Request fehlgeschlagen: {type(e).__name__}: {e}", exc_info=True)
+            raise
+        if r.status_code != 200:
+            logger.error(f"[ollama] HTTP {r.status_code}: {r.text[:500]}")
+            r.raise_for_status()
+        try:
+            data = r.json()
+        except Exception:
+            logger.error(f"[ollama] Antwort kein JSON: {r.text[:500]}")
+            raise
     # /api/generate liefert {"response": "..."} statt {"message": {"content": "..."}}
     return data.get("response", "")
 
@@ -381,7 +398,7 @@ async def _analyze_document_smart_locked(
                 "Analysiere das Dokument und gib ein JSON zurueck (keine weiteren Erklaerungen)."
             )
             try:
-                resp = await ollama_chat_vision(
+                resp = await _ollama_chat_vision_nolock(
                     system_prompt=system_prompt,
                     user_text=text_prompt,
                     file_path=None,      # Kein Bild-Anhang - wir haben Text
@@ -398,7 +415,7 @@ async def _analyze_document_smart_locked(
                         f"[ollama] Text-Modell '{cfg['text_model']}' nicht verfuegbar - "
                         f"Fallback auf '{cfg['model']}'"
                     )
-                    resp = await ollama_chat_vision(
+                    resp = await _ollama_chat_vision_nolock(
                         system_prompt=system_prompt,
                         user_text=text_prompt,
                         file_path=None,
@@ -411,7 +428,7 @@ async def _analyze_document_smart_locked(
 
     # 2) Fallback auf Vision-Modell (Scans, Bilder, text-lose PDFs)
     logger.info(f"[ollama] Vision-Fallback: {file_path}, Modell={cfg['model']}")
-    resp = await ollama_chat_vision(
+    resp = await _ollama_chat_vision_nolock(
         system_prompt=system_prompt,
         user_text=user_text_vision,
         file_path=file_path,
