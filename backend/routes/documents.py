@@ -125,6 +125,9 @@ PREDEFINED_FOLDERS = [
     {"id": "anfragen_projekte", "name": "Anfragen - Projekte", "icon": "file-text", "color": "fuchsia"},
     {"id": "ibau_ausschreibungsplatform", "name": "ibau - Ausschreibungsplatform", "icon": "file-text", "color": "fuchsia"},
     {"id": "kirmes_nachkalkulation", "name": "Kirmes Nachkalkulation", "icon": "file-text", "color": "fuchsia"},
+    {"id": "projektberichte", "name": "Projektberichte", "icon": "file-text", "color": "fuchsia"},
+    {"id": "projektzusammenfassungen", "name": "Projektzusammenfassungen", "icon": "file-text", "color": "fuchsia"},
+    {"id": "tankbelege", "name": "Tankbelege", "icon": "receipt", "color": "orange"},
     # Betrieb & Technik
     {"id": "fuhrpark", "name": "Fuhrpark", "icon": "car", "color": "blue"},
     {"id": "inventur_maschinenbestand", "name": "Inventur - Maschinenbestand", "icon": "file-text", "color": "gray"},
@@ -311,7 +314,7 @@ Analysiere das hochgeladene Dokument und extrahiere alle relevanten Informatione
 
 Antworte IMMER als valides JSON mit exakt dieser Struktur:
 {
-  "document_type": "rechnung|versicherung|vertrag|lieferschein|behoerdenschreiben|netzantrag|pruefbericht|protokoll|angebot|sonstiges",
+  "document_type": "rechnung|versicherung|vertrag|lieferschein|behoerdenschreiben|netzantrag|pruefbericht|protokoll|angebot|projektbericht|projektzusammenfassung|tankbeleg|sonstiges",
   "suggested_folder": "ORDNER_ID (siehe Branchenregeln unten)",
   "sender": "Name des Absenders/Firma",
   "recipient": "Name des Empfängers (falls erkennbar)",
@@ -411,6 +414,25 @@ VERSICHERUNGEN:
 - Betriebshaftpflicht, Berufshaftpflicht → betriebshaftpflicht
 - Andere Versicherungen (Elektronik, Transport, Ertragsausfall) → versicherungen
 - BG ETEM Bescheide, Beiträge → berufsgenossenschaft_bg_etem
+
+PROJEKTBERICHTE:
+- Erkennungsmerkmale: Ueberschrift "Projektbericht", "Bericht", "Arbeitsbericht", "Baustellenbericht", "Projekt-Report", "Taetigkeitsbericht"
+- Enthalten typischerweise: Kunde/Auftraggeber, Projektnummer, Ausfuehrungsdatum, Arbeitsprotokoll, Personalzeiten, verwendetes Material, Fahrzeuge/Geraete, Unterschriften der Techniker
+- document_type = "projektbericht"
+- Suggested_folder = "projektberichte" (Jahr/Monat-Unterordner wird automatisch angelegt)
+
+PROJEKTZUSAMMENFASSUNGEN:
+- Erkennungsmerkmale: Ueberschriften "Projektzusammenfassung", "Zusammenfassung", "Projekt-Uebersicht", "Auftrags-Zusammenfassung", "Baustellen-Zusammenfassung"
+- Meist mehrseitige Uebersicht ueber ein Projekt: Zusammenfassung von Kosten, Aufwand, Positionen, Material - oft als Anlage zur Rechnung mitgeschickt
+- document_type = "projektzusammenfassung"
+- Suggested_folder = "projektzusammenfassungen"
+
+TANKBELEGE:
+- Erkennungsmerkmale: Tankstellenbeleg, Aral, Shell, Esso, Total, Star, HEM, JET, Agip, Roth, Kaufland/Kaufhaus-Tankstellen, "Diesel", "Super", "AdBlue", "Liter", "kWh" (E-Ladung)
+- Typische Inhalte: Datum + Uhrzeit, Tankstelle, Menge (Liter), Preis pro Liter, Gesamtbetrag, oft Kraftstoffart und Zapfsaeulennummer, ggf. KFZ-Kennzeichen
+- document_type = "tankbeleg"
+- Suggested_folder = "tankbelege"
+- WICHTIG: Auch wenn ein Tankbeleg wie eine kleine Rechnung aussieht - er ist KEINE Rechnung, sondern gehoert IMMER in "tankbelege".
 
 VERTRÄGE:
 - Mietverträge, Kaufverträge, Dienstleistungsverträge → vertraege
@@ -980,6 +1002,15 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
 
         ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
         suggested_folder = ai_result.get("suggested_folder", folder_id)
+
+        # Normalize KI-Ordner-Angabe: manchmal antwortet die KI mit "projektberichte/2026"
+        # oder "rechnungseingang_eventenergie_deutschland/2026/05". Der Base-Ordner (vor
+        # dem ersten Slash) muss in PREDEFINED_FOLDERS existieren; das Jahr/Monat-Suffix
+        # bauen wir spaeter deterministisch mit _ensure_year_month_subfolder(...) an.
+        if isinstance(suggested_folder, str) and "/" in suggested_folder:
+            _norm = suggested_folder.split("/")[0].strip()
+            logger.info(f"[folder-normalize] {suggested_folder!r} -> {_norm!r}")
+            suggested_folder = _norm
 
         # ─── ZUGFeRD / Factur-X XML PRIORITAET ─────────────────────────────
         # Wenn das PDF eine eingebettete ZUGFeRD-XML enthaelt, sind diese
