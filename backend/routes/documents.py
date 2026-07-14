@@ -1031,6 +1031,118 @@ Antworte NUR mit JSON:
         await db.documents.update_one({"id": doc_id}, {"$set": {"payroll_info": {"error": str(e)}}})
 
 
+async def _auto_link_companion_invoice(doc_id: str, ai_result: dict, final_folder: str) -> None:
+    """Sucht ein passendes Companion-Dokument (PDF <-> XML) mit gleicher
+    Rechnungsnummer + Sender und verknuepft die beiden.
+
+    Verknuepfungs-Datenmodell:
+        doc.linked_document_id  = id des Partner-Dokuments
+        doc.linked_document_role = "primary" (das sichtbare) oder "companion" (die Ergaenzung)
+        doc.linked_document_type = "xml" oder "pdf"
+
+    Regel: PDF ist immer 'primary' (visuell), XML immer 'companion' (Maschinen-Daten).
+    Wenn Companion gefunden -> die XML uebernimmt die authoritative Metadata am PDF.
+    """
+    doc_type = (ai_result.get("document_type") or "").lower()
+    if doc_type not in ("rechnung", "gutschrift", "invoice"):
+        return
+    inv_no = (ai_result.get("invoice_number") or "").strip()
+    if not inv_no:
+        return
+    sender = (ai_result.get("sender") or "").strip().lower()
+    if not sender:
+        return
+
+    # Aktuelles Dokument holen um content_type + upload-Zeit zu kennen
+    current = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not current or current.get("linked_document_id"):
+        return  # bereits verlinkt
+
+    current_ct = (current.get("content_type") or "").lower()
+    is_xml_current = current_ct in ("application/xml", "text/xml") or (current.get("original_filename") or "").lower().endswith(".xml")
+
+    # Wir suchen ein Partner-Dokument im gleichen Ordner mit gleicher Rechnungsnr.
+    # Sender-Match ist "starts_with" um kleine Umlaut/Encoding-Unterschiede zu tolerieren.
+    sender_prefix = sender[:20]
+
+    candidates = await db.documents.find({
+        "id": {"$ne": doc_id},
+        "ai_metadata.invoice_number": inv_no,
+        "is_deleted": {"$ne": True},
+        "linked_document_id": {"$exists": False},
+    }, {"_id": 0}).to_list(20)
+
+    partner = None
+    for cand in candidates:
+        cand_sender = (cand.get("ai_metadata", {}).get("sender") or "").strip().lower()
+        if not cand_sender:
+            continue
+        # Sender muss uebereinstimmen (prefix-based)
+        if cand_sender[:20] != sender_prefix and sender_prefix not in cand_sender and cand_sender[:20] not in sender:
+            continue
+        # PDF <-> XML: unterschiedliche Content-Types
+        cand_ct = (cand.get("content_type") or "").lower()
+        cand_is_xml = cand_ct in ("application/xml", "text/xml") or (cand.get("original_filename") or "").lower().endswith(".xml")
+        if cand_is_xml == is_xml_current:
+            continue  # gleiche Sorte - kein Companion
+        partner = cand
+        break
+
+    if not partner:
+        return
+
+    # Rollen zuweisen: PDF = primary, XML = companion
+    if is_xml_current:
+        xml_doc_id, xml_ct = doc_id, current_ct or "application/xml"
+        pdf_doc_id, pdf_ct = partner["id"], partner.get("content_type") or "application/pdf"
+        pdf_folder = partner.get("folder_id", final_folder)
+        xml_metadata = ai_result
+    else:
+        pdf_doc_id, pdf_ct = doc_id, current_ct or "application/pdf"
+        xml_doc_id, xml_ct = partner["id"], partner.get("content_type") or "application/xml"
+        pdf_folder = final_folder
+        xml_metadata = partner.get("ai_metadata", {}) or {}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # PDF ist primary
+    await db.documents.update_one({"id": pdf_doc_id}, {"$set": {
+        "linked_document_id": xml_doc_id,
+        "linked_document_role": "primary",
+        "linked_document_type": "xml",
+        "has_erechnung_xml": True,
+        "updated_at": now_iso,
+    }})
+    # XML ist companion und wird in Listen versteckt
+    await db.documents.update_one({"id": xml_doc_id}, {"$set": {
+        "linked_document_id": pdf_doc_id,
+        "linked_document_role": "companion",
+        "linked_document_type": "pdf",
+        "is_companion": True,      # UI-Filter kann diese ausblenden
+        "folder_id": pdf_folder,   # XML in denselben Ordner wie PDF
+        "updated_at": now_iso,
+    }})
+
+    # XML-Metadata ist authoritativ - kopiere die wichtigen Felder aufs PDF,
+    # wo Ollama-OCR Fehler gemacht haben koennte (Rechnungsnr, IBAN, Betrag, etc.)
+    if xml_metadata:
+        pdf_doc = await db.documents.find_one({"id": pdf_doc_id}, {"_id": 0, "ai_metadata": 1})
+        pdf_ai = (pdf_doc or {}).get("ai_metadata", {}) or {}
+        for field in ("invoice_number", "date", "due_date", "amount", "tax_amount", "iban", "bic", "currency"):
+            xml_val = xml_metadata.get(field)
+            if xml_val is not None and xml_val != "":
+                pdf_ai[field] = xml_val
+        pdf_ai["_authoritative_source"] = "xml_erechnung"
+        await db.documents.update_one({"id": pdf_doc_id}, {"$set": {
+            "ai_metadata": pdf_ai,
+        }})
+
+    logger.info(
+        f"[companion-link] {pdf_doc_id} (PDF) <-> {xml_doc_id} (XML companion) "
+        f"invoice={inv_no!r} folder={pdf_folder!r}"
+    )
+
+
 async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
     """Background task to run AI analysis on an uploaded document."""
     try:
@@ -1383,6 +1495,15 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             final_folder = subfolder_id
 
         logger.info(f"AI analysis completed for doc {doc_id} -> folder: {final_folder}")
+
+        # ─── COMPANION-LINK: PDF + XML gehoeren zusammen? ──────────────────
+        # Bei elektronischen Rechnungen kommen oft PDF (lesbar) UND XML
+        # (maschinenlesbar, UBL/XRechnung/CII) als getrennte Dateien in derselben
+        # Mail. Erkennt das anhand invoice_number + sender und verlinkt sie.
+        try:
+            await _auto_link_companion_invoice(doc_id, ai_result, final_folder)
+        except Exception as e:
+            logger.warning(f"[companion-link] Verknuepfung fehlgeschlagen fuer doc {doc_id}: {e}")
 
         # Save to local filesystem (C:\eventenergie\Dokumentenablage\...)
         doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
@@ -1956,8 +2077,13 @@ async def cleanup_nested_year_month():
 
 @router.get("/list")
 async def list_documents(folder_id: str = None, include_children: bool = True, page: int = 1, limit: int = 50):
-    """List documents, optionally filtered by folder (includes subfolder docs)."""
-    query = {"is_deleted": False}
+    """List documents, optionally filtered by folder (includes subfolder docs).
+
+    Companion-Dokumente (z.B. XRechnungs-XML zu einem PDF) werden standardmaessig
+    ausgeblendet - sie sind nur als 'Anhang' unter dem primary Dokument sichtbar.
+    Verlinkt via ?include_companions=1.
+    """
+    query = {"is_deleted": False, "is_companion": {"$ne": True}}
     if folder_id:
         if include_children:
             # Include docs from this folder and all subfolders (prefix match)
