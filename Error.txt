@@ -4,3 +4,4 @@
 Traceback (most recent call last):
   File "<string>", line 20, in <module>
 ZeroDivisionError: division by zero
+2026-07-14 06:22:32,852 [ERROR] orders_sync: Sync Fehler: 

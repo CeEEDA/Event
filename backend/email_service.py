@@ -28,12 +28,35 @@ def _get_smtp_config():
 def _open_smtp_connection(cfg):
     """Open an SMTP_SSL connection with a longer timeout and retry on transient failures."""
     last_err = None
-    ctx = ssl.create_default_context()
+    # SSL-Context mit certifi CA-Bundle (Mozilla-Root-CAs). Ohne diesen greift
+    # ssl.create_default_context() auf systemabhaengige Trust-Stores zurueck,
+    # was auf Windows-Servern haeufig fehlt und "CERTIFICATE_VERIFY_FAILED"
+    # aufwirft. certifi wird von httpx/requests bereits mit installiert.
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        ctx = ssl.create_default_context()
+    # Optionaler Escape-Hatch: SMTP_INSECURE_SSL=1 in .env deaktiviert die
+    # Zertifikatspruefung komplett. Nur nutzen wenn certifi das Problem
+    # nicht loest (z.B. selbstsigniertes Zertifikat auf dem eigenen MX).
+    if os.environ.get("SMTP_INSECURE_SSL", "").lower() in ("1", "true", "yes"):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        logger.warning("SMTP_INSECURE_SSL aktiv - SSL-Zertifikat wird NICHT geprueft (unsicher)")
     for attempt in range(1, SMTP_MAX_RETRIES + 1):
         try:
             server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=SMTP_TIMEOUT, context=ctx)
             server.login(cfg["user"], cfg["password"])
             return server
+        except ssl.SSLCertVerificationError as e:
+            # Kein Retry - Zertifikatspruefung wird sich nicht magisch aendern
+            logger.error(
+                f"SMTP SSL-Zertifikatspruefung fehlgeschlagen: {e}. "
+                f"Loesungen: 1) 'pip install --upgrade certifi', "
+                f"2) SMTP_INSECURE_SSL=1 in .env setzen (nur als Notloesung)."
+            )
+            raise
         except (socket.timeout, ssl.SSLError, smtplib.SMTPServerDisconnected, ConnectionError, OSError) as e:
             last_err = e
             logger.warning(f"SMTP connect attempt {attempt}/{SMTP_MAX_RETRIES} failed: {e}")
