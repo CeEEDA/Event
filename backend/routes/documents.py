@@ -536,9 +536,58 @@ async def _get_custom_ai_instructions() -> str:
 async def analyze_document_with_ai(file_path: str, mime_type: str, custom_folders: list = None) -> dict:
     """Analysiert ein Dokument mit lokalem Ollama (Text-first, Vision-Fallback).
 
+    - XML-E-Rechnungen (UBL/XRechnung, CII/ZUGFeRD) -> deterministischer Parser (0s)
     - PDFs mit extrahierbarem Text -> Gemma 2:2b (reiner Text, ~5-10s)
     - Reine Bilder/Scans -> Gemma 3:1b/4b Vision (~30-180s)
     Gibt ein dict mit suggested_folder, document_type, metadata, full_text, keywords zurueck."""
+    # ── XML SHORTCUT: bei strukturierten E-Rechnungen ist die Datei bereits
+    # maschinen-lesbar; wir umgehen Ollama komplett und parsen direkt.
+    mt_low = (mime_type or "").lower()
+    if mt_low in ("application/xml", "text/xml") or file_path.lower().endswith(".xml"):
+        try:
+            with open(file_path, "r", encoding="utf-8-sig") as fh:
+                xml_content = fh.read()
+        except UnicodeDecodeError:
+            with open(file_path, "rb") as fh:
+                xml_content = fh.read().decode("utf-8", errors="replace")
+
+        # UBL / XRechnung ?
+        from services.ubl_parser import is_ubl_invoice_xml, is_cii_invoice_xml, parse_ubl_invoice
+        from services.zugferd_parser import parse_zugferd_xml
+        parsed = None
+        if is_ubl_invoice_xml(xml_content):
+            logger.info("[xml-invoice] UBL / XRechnung erkannt - parse ohne Ollama")
+            parsed = parse_ubl_invoice(xml_content)
+        elif is_cii_invoice_xml(xml_content):
+            logger.info("[xml-invoice] CII / ZUGFeRD erkannt - parse ohne Ollama")
+            parsed = parse_zugferd_xml(xml_content)
+
+        if parsed and (parsed.get("invoice_number") or parsed.get("amount") or parsed.get("sender")):
+            # Ergebnis in das erwartete Format bringen
+            return {
+                "document_type": parsed.get("document_type", "rechnung"),
+                "suggested_folder": "rechnungseingang",  # wird spaeter durch Firmen-/Richtungs-Logik korrigiert
+                "sender": parsed.get("sender", ""),
+                "sender_address": parsed.get("sender_address", ""),
+                "recipient": parsed.get("recipient", ""),
+                "invoice_number": parsed.get("invoice_number", ""),
+                "date": parsed.get("date", ""),
+                "due_date": parsed.get("due_date", ""),
+                "amount": parsed.get("amount"),
+                "tax_amount": parsed.get("tax_amount"),
+                "currency": parsed.get("currency", "EUR"),
+                "iban": parsed.get("iban", ""),
+                "bic": parsed.get("bic", ""),
+                "reference": parsed.get("reference", ""),
+                "subject": parsed.get("subject", "Elektronische Rechnung"),
+                "full_text": parsed.get("full_text", ""),
+                "keywords": ["rechnung", "e-rechnung", "xrechnung"],
+                "_source": "xml_parser",
+            }
+        logger.warning(f"[xml-invoice] XML nicht als UBL/CII erkennbar - fallback auf Ollama-Textanalyse: {file_path}")
+        # Fallback: die XML als Klartext an Ollama uebergeben. Der text-Modus
+        # extrahiert schon aus reinem Text, was reicht.
+
     from services.ollama_client import analyze_document_smart, parse_json_response
 
     response_text = ""
@@ -985,16 +1034,23 @@ Antworte NUR mit JSON:
 async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
     """Background task to run AI analysis on an uploaded document."""
     try:
-        # Warmup-Ping (max OLLAMA_WARMUP_TIMEOUT) - failed schnell wenn Ollama
-        # ueberhaupt nicht antwortet. Verhindert dass wir 10min auf einen toten
-        # Server warten und das Dokument stillschweigend "completed-mit-leer" wird.
-        from services.ollama_client import ollama_warmup_ping, OllamaUnavailable
-        ok, msg, elapsed = await ollama_warmup_ping()
-        if not ok:
-            logger.error(f"[ollama] Warmup-Ping fehlgeschlagen ({elapsed:.1f}s): {msg}")
-            raise OllamaUnavailable(f"Warmup-Ping fehlgeschlagen: {msg}")
-        if elapsed > 8:
-            logger.warning(f"[ollama] Warmup-Ping langsam ({elapsed:.1f}s) - Modell war evtl. evictet, ist jetzt aber wieder warm")
+        # XML-E-Rechnungen brauchen kein Ollama - direkt analysieren
+        _skip_ollama = (
+            (content_type or "").lower() in ("application/xml", "text/xml")
+            or temp_path.lower().endswith(".xml")
+        )
+
+        if not _skip_ollama:
+            # Warmup-Ping (max OLLAMA_WARMUP_TIMEOUT) - failed schnell wenn Ollama
+            # ueberhaupt nicht antwortet. Verhindert dass wir 10min auf einen toten
+            # Server warten und das Dokument stillschweigend "completed-mit-leer" wird.
+            from services.ollama_client import ollama_warmup_ping, OllamaUnavailable
+            ok, msg, elapsed = await ollama_warmup_ping()
+            if not ok:
+                logger.error(f"[ollama] Warmup-Ping fehlgeschlagen ({elapsed:.1f}s): {msg}")
+                raise OllamaUnavailable(f"Warmup-Ping fehlgeschlagen: {msg}")
+            if elapsed > 8:
+                logger.warning(f"[ollama] Warmup-Ping langsam ({elapsed:.1f}s) - Modell war evtl. evictet, ist jetzt aber wieder warm")
 
         custom_folders = []
         async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
@@ -1277,6 +1333,7 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         await db.documents.update_one({"id": doc_id}, {"$set": {
             "folder_id": final_folder,
             "ai_status": "completed",
+            "ai_error": None,
             "ai_metadata": {k: v for k, v in ai_result.items() if k not in ("full_text", "keywords")},
             "full_text": ai_result.get("full_text", ""),
             "keywords": ai_result.get("keywords", []),
@@ -1381,15 +1438,24 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...), folder_id: str = Form("unbekannt")):
     """Upload a document, store it, and start AI analysis in background. Default landet in 'unbekannt' bis KI zuordnen konnte."""
-    allowed_types = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/tiff"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail=f"Dateityp {file.content_type} nicht unterstützt. Erlaubt: PDF, JPEG, PNG, WebP, TIFF")
+    allowed_types = [
+        "application/pdf",
+        "image/jpeg", "image/png", "image/webp", "image/tiff",
+        "application/xml", "text/xml",
+    ]
+    ct = (file.content_type or "").lower()
+    filename_lower = (file.filename or "").lower()
+    # Manche Systeme senden "application/octet-stream" fuer .xml - erlauben wenn Endung .xml
+    if ct == "application/octet-stream" and filename_lower.endswith(".xml"):
+        ct = "application/xml"
+    if ct not in allowed_types:
+        raise HTTPException(status_code=400, detail=f"Dateityp {file.content_type} nicht unterst\u00fctzt. Erlaubt: PDF, JPEG, PNG, WebP, TIFF, XML (XRechnung/UBL)")
 
     file_data = await file.read()
     if len(file_data) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Datei zu groß (max. 50 MB)")
+        raise HTTPException(status_code=400, detail="Datei zu gro\u00df (max. 50 MB)")
 
-    return await create_document_from_bytes(file_data, file.filename, file.content_type, folder_id)
+    return await create_document_from_bytes(file_data, file.filename, ct, folder_id)
 
 
 @router.post("/backfill-full-text")

@@ -5,3 +5,11 @@ Traceback (most recent call last):
   File "<string>", line 20, in <module>
 ZeroDivisionError: division by zero
 2026-07-14 06:22:32,852 [ERROR] orders_sync: Sync Fehler: 
+2026-07-14 11:14:38,211 [ERROR] routes.documents: [ollama] Warmup-Ping fehlgeschlagen (30.2s): Warmup-Timeout nach 30.0s - Ollama antwortet nicht auf /api/generate
+2026-07-14 11:14:38,214 [ERROR] routes.documents: AI analysis error for doc 0207b41e-4643-404f-9f81-430dd85ea933: Warmup-Ping fehlgeschlagen: Warmup-Timeout nach 30.0s - Ollama antwortet nicht auf /api/generate
+Traceback (most recent call last):
+  File "/app/backend/routes/documents.py", line 1044, in _run_ai_analysis
+    raise OllamaUnavailable(f"Warmup-Ping fehlgeschlagen: {msg}")
+services.ollama_client.OllamaUnavailable: Warmup-Ping fehlgeschlagen: Warmup-Timeout nach 30.0s - Ollama antwortet nicht auf /api/generate
+
+2026-07-14 11:16:25,597 [ERROR] orders_sync: Sync Fehler: 
