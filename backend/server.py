@@ -1013,7 +1013,7 @@ async def download_file(file_id: str, token: Optional[str] = None, credentials: 
             io.BytesIO(content),
             media_type=file_doc["content_type"],
             headers={
-                "Content-Disposition": f'attachment; filename="{file_doc["original_filename"]}"'
+                "Content-Disposition": content_disposition(file_doc["original_filename"], "attachment")
             }
         )
     except Exception as e:
@@ -1134,7 +1134,7 @@ async def download_folder_as_zip(folder_id: str, token: Optional[str] = None, cr
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'}
+        headers={"Content-Disposition": content_disposition(zip_name, "attachment")}
     )
 
 # ============== File Preview ==============
@@ -1163,7 +1163,7 @@ async def preview_file(file_id: str, user: dict = Depends(require_filesharing)):
         return StreamingResponse(
             io.BytesIO(content),
             media_type=ct,
-            headers={"Content-Disposition": f'inline; filename="{file_doc["original_filename"]}"'}
+            headers={"Content-Disposition": content_disposition(file_doc["original_filename"], "inline")}
         )
     except Exception as e:
         logger.error(f"Preview error: {e}")
@@ -1395,7 +1395,7 @@ async def download_shared_file(token: str, data: ShareAccessRequest = None):
         return StreamingResponse(
             zip_buffer,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{zip_name}"'}
+            headers={"Content-Disposition": content_disposition(zip_name, "attachment")}
         )
     
     file_doc = await db.files.find_one({"id": share.get("file_id")}, {"_id": 0})
@@ -1412,7 +1412,7 @@ async def download_shared_file(token: str, data: ShareAccessRequest = None):
             content=content,
             media_type=file_doc["content_type"],
             headers={
-                "Content-Disposition": f'attachment; filename="{file_doc["original_filename"]}"',
+                "Content-Disposition": content_disposition(file_doc["original_filename"], "attachment"),
                 "Content-Length": str(len(content)),
             }
         )
@@ -2066,7 +2066,7 @@ async def download_update_package(credentials: HTTPAuthorizationCredentials = De
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{zip_name}.zip"'}
+        headers={"Content-Disposition": content_disposition(f"{zip_name}.zip", "attachment")}
     )
 
 
@@ -2127,6 +2127,7 @@ init_einsatzzentrale_routes(db, verify_password, create_jwt_token, decode_jwt_to
 app.include_router(einsatzzentrale_router)
 
 from routes.kirmes import router as kirmes_router, init_kirmes_routes, start_mahnung_scheduler, start_meter_freeze_scheduler
+from utils.http_headers import content_disposition
 init_kirmes_routes(db, decode_jwt_token)
 start_mahnung_scheduler()
 start_meter_freeze_scheduler()

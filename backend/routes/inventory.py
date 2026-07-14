@@ -32,6 +32,7 @@ APP_NAME = "eventenergie-inventory"
 
 # ─── Cloud storage helpers (nutzt die gleichen wie documents.py) ────
 from routes.documents import put_object, get_object
+from utils.http_headers import content_disposition
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
 ALLOWED_DOC_TYPES = {
@@ -524,13 +525,13 @@ async def get_document(item_id: str, doc_id: str):
             return Response(
                 content=data,
                 media_type=entry.get("content_type") or "application/octet-stream",
-                headers={"Content-Disposition": f'inline; filename="{filename}"'},
+                headers={"Content-Disposition": content_disposition(filename, "inline")},
             )
         data, ct = get_object(storage_path)
         return Response(
             content=data,
             media_type=ct or entry.get("content_type") or "application/octet-stream",
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={"Content-Disposition": content_disposition(filename, "inline")},
         )
     except HTTPException:
         raise
@@ -643,7 +644,7 @@ async def export_xlsx(groups: Optional[str] = Query(None, description="Komma-sep
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": content_disposition(fname, "attachment")},
     )
 
 
@@ -673,5 +674,5 @@ async def export_pdf(
     return Response(
         content=data,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": content_disposition(fname, "attachment")},
     )

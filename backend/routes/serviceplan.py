@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import uuid
 import logging
 import io
+from utils.http_headers import content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -550,7 +551,7 @@ async def get_entry_image(image_id: str):
     return StreamingResponse(
         io.BytesIO(content),
         media_type=img.get("content_type", "image/jpeg"),
-        headers={"Content-Disposition": f'inline; filename="{img["filename"]}"'}
+        headers={"Content-Disposition": content_disposition(img["filename"], "inline")}
     )
 
 

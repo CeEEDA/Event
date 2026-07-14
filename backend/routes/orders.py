@@ -7,6 +7,7 @@ import httpx
 import asyncio
 import math
 import re
+from utils.http_headers import content_disposition
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 security = HTTPBearer()
@@ -1603,7 +1604,7 @@ async def get_delivery_note_pdf_by_id(order_pk: int, ls_id: str, user: dict = De
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": content_disposition(fname, "attachment")},
     )
 
 
@@ -2807,7 +2808,7 @@ async def get_billing_pdf(order_pk: int, token: str = Query(None)):
 
     filename = f"Abrechnung_{order_no}_{event_name}.pdf".replace(" ", "_")
     from fastapi.responses import StreamingResponse
-    return StreamingResponse(final_buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return StreamingResponse(final_buf, media_type="application/pdf", headers={"Content-Disposition": content_disposition(filename, "attachment")})
 
 
 # ============== Order Documents (Dokumentenablage) ==============
@@ -2970,7 +2971,7 @@ async def get_order_document_file(order_pk: str, doc_id: str, token: str = None,
     return Response(
         content=data,
         media_type=doc["content_type"],
-        headers={"Content-Disposition": f'inline; filename="{doc["original_name"]}"'},
+        headers={"Content-Disposition": content_disposition(doc.get("original_name", "download"), "inline")},
     )
 
 

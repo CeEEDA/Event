@@ -1431,7 +1431,7 @@ async def public_download_invoice_pdf(invoice_id: str, schausteller_id: str = Qu
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers={"Content-Disposition": content_disposition(filename, "attachment")}
     )
 
 
@@ -2028,7 +2028,7 @@ async def download_invoice_pdf(invoice_id: str, user: dict = Depends(_require_st
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers={"Content-Disposition": content_disposition(filename, "attachment")}
     )
 
 
@@ -3677,6 +3677,7 @@ import os as _os
 import re as _re
 import shutil as _shutil
 from fastapi import UploadFile, File, Form as _Form
+from utils.http_headers import content_disposition
 
 ALLOWED_DOC_TYPES = {
     "application/pdf": ".pdf",
@@ -3810,7 +3811,7 @@ async def get_event_document_file(event_id: str, doc_id: str, token: str = None,
     return Response(
         content=data,
         media_type=doc["content_type"],
-        headers={"Content-Disposition": f'inline; filename="{doc["original_name"]}"'},
+        headers={"Content-Disposition": content_disposition(doc["original_name"], "inline")},
     )
 
 
@@ -4117,7 +4118,7 @@ async def download_lastdiagramm_pdf(order_id: str, schausteller_id: str = Query(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename, "attachment")},
     )
 
 
@@ -4170,7 +4171,7 @@ async def admin_download_lastdiagramm_pdf(signup_id: str, user: dict = Depends(_
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename, "attachment")},
     )
 
 

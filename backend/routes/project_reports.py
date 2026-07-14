@@ -6,6 +6,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 import io
+from utils.http_headers import content_disposition
 
 router = APIRouter(prefix="/api/project-reports", tags=["Project Reports"])
 security = HTTPBearer()
@@ -602,7 +603,7 @@ async def get_report_pdf(report_id: str, token: str = Query(None)):
 
     buf = _generate_report_pdf(report)
     filename = f"Projektbericht_{report.get('projektnummer', report_id[:8])}_{report.get('projekt_datum', '')}.pdf"
-    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": content_disposition(filename, "attachment")})
 
 
 @router.get("/{report_id}")

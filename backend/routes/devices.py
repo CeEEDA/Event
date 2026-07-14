@@ -10,6 +10,7 @@ import string
 import logging
 import qrcode
 import io
+from utils.http_headers import content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -560,7 +561,7 @@ async def download_document(device_id: str, doc_id: str, user: dict = Depends(ge
     content = await grid_out.read()
     content_type = doc.get("content_type", "application/octet-stream")
     filename = doc.get("filename", "dokument")
-    return Response(content=content, media_type=content_type, headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    return Response(content=content, media_type=content_type, headers={"Content-Disposition": content_disposition(filename, "inline")})
 
 
 # ============== Device Image ==============
@@ -619,7 +620,7 @@ async def get_device_image(device_id: str, thumbnail: int = 0, size: int = 200):
     return StreamingResponse(
         io.BytesIO(content),
         media_type=device.get("image_content_type", "image/jpeg"),
-        headers={"Content-Disposition": f'inline; filename="{device.get("image_filename", "device.jpg")}"'}
+        headers={"Content-Disposition": content_disposition(device.get("image_filename", "device.jpg"), "inline")}
     )
 
 

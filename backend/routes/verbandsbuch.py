@@ -24,6 +24,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.enums import TA_LEFT
 
 from email_service import send_email_with_attachment
+from utils.http_headers import content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +289,7 @@ async def download_pdf(entry_id: str, user=Depends(_require_verwaltung)):
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename, "attachment")},
     )
 
 

@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from utils.http_headers import content_disposition
 
 load_dotenv()
 
@@ -2243,7 +2244,7 @@ async def download_file(doc_id: str):
         content=data,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Disposition": content_disposition(filename, "inline"),
             # IMPORTANT: do NOT set Cache-Control no-store here - Chrome's PDF viewer
             # needs to be able to cache the response internally, otherwise the iframe
             # preview fails silently (ERR_ABORTED). Keep private to avoid CDN caching.

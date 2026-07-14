@@ -5,6 +5,7 @@ from typing import Optional
 import uuid
 import logging
 import os
+from utils.http_headers import content_disposition
 
 router = APIRouter(prefix="/api/chat")
 logger = logging.getLogger(__name__)
@@ -276,7 +277,7 @@ async def download_attachment(conv_id: str, attachment_id: str, token: str = Que
                 return Response(content=tdata, media_type="image/jpeg",
                                 headers={"Cache-Control": "public, max-age=86400"})
         return Response(content=data, media_type=att["content_type"],
-                        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
+                        headers={"Content-Disposition": content_disposition(att["filename"], "inline")})
     except Exception as e:
         logger.error(f"Chat file download failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Download fehlgeschlagen: {str(e)}")
@@ -557,7 +558,7 @@ async def download_task_file(task_id: str, token: str = Query(...), thumbnail: i
                 return Response(content=tdata, media_type="image/jpeg",
                                 headers={"Cache-Control": "public, max-age=86400"})
         return Response(content=data, media_type=att["content_type"],
-                        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
+                        headers={"Content-Disposition": content_disposition(att["filename"], "inline")})
     except Exception:
         raise HTTPException(status_code=500, detail="Download fehlgeschlagen")
 
@@ -639,7 +640,7 @@ async def download_comment_file(task_id: str, comment_id: str, token: str = Quer
                 return Response(content=tdata, media_type="image/jpeg",
                                 headers={"Cache-Control": "public, max-age=86400"})
         return Response(content=data, media_type=att["content_type"],
-                        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'})
+                        headers={"Content-Disposition": content_disposition(att["filename"], "inline")})
     except Exception:
         raise HTTPException(status_code=500, detail="Download fehlgeschlagen")
 

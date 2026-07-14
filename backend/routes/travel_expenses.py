@@ -16,6 +16,7 @@ import uuid
 import base64
 import io
 import logging
+from utils.http_headers import content_disposition
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/employee/travel-expenses", tags=["travel-expenses"])
@@ -400,7 +401,7 @@ async def download_receipt(expense_id: str, receipt_id: str, token: str = Query(
             return Response(
                 content=data,
                 media_type=r.get("content_type") or "application/octet-stream",
-                headers={"Content-Disposition": f'attachment; filename="{r.get("filename","beleg")}"'},
+                headers={"Content-Disposition": content_disposition(r.get("filename","beleg"), "attachment")},
             )
     raise HTTPException(status_code=404, detail="Beleg nicht gefunden")
 
@@ -600,7 +601,7 @@ async def export_pdf(expense_id: str, token: str = Query(...)):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": content_disposition(fname, "attachment")},
     )
 
 
@@ -717,5 +718,5 @@ async def export_summary_xlsx(user_id: str, month: str = Query(...), token: str 
     return StreamingResponse(
         out,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": content_disposition(fname, "attachment")},
     )

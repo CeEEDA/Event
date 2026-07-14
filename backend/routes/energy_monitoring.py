@@ -10,6 +10,7 @@ import hmac
 import secrets
 import logging
 import os
+from utils.http_headers import content_disposition
 
 logger = logging.getLogger(__name__)
 
@@ -2037,7 +2038,7 @@ async def get_dse5510_script(variant: str = "rs232"):
         content = f.read()
     return PlainTextResponse(
         content,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": content_disposition(fname, "attachment")},
     )
 
 

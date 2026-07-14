@@ -22,6 +22,7 @@ import io
 import re
 import uuid
 import logging
+from utils.http_headers import content_disposition
 
 router = APIRouter(prefix="/api/orders", tags=["order-diary"])
 security = HTTPBearer()
@@ -390,7 +391,7 @@ async def export_diary_csv(order_pk: str, user: dict = Depends(_auth_user)):
     return StreamingResponse(
         iter([csv_bytes]),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename, "attachment")},
     )
 
 

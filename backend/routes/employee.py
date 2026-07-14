@@ -589,7 +589,7 @@ async def download_document(doc_id: str, token: str = Query(...)):
     return Response(
         content=data,
         media_type=doc.get("content_type", "application/pdf"),
-        headers={"Content-Disposition": f'inline; filename="{doc["filename"]}"'}
+        headers={"Content-Disposition": content_disposition(doc["filename"], "inline")}
     )
 
 
@@ -1914,7 +1914,7 @@ async def download_info_post_attachment(post_id: str, token: str = Query(...), t
     return Response(
         content=data,
         media_type=ct or att.get("content_type", "application/octet-stream"),
-        headers={"Content-Disposition": f'inline; filename="{att["filename"]}"'}
+        headers={"Content-Disposition": content_disposition(att["filename"], "inline")}
     )
 
 
@@ -2418,6 +2418,7 @@ import zoneinfo
 from calendar import monthrange
 import csv
 import io
+from utils.http_headers import content_disposition
 
 BERLIN = zoneinfo.ZoneInfo("Europe/Berlin")
 
@@ -2991,7 +2992,7 @@ async def download_note_file(note_id: str, file_id: str, token: str = Query(...)
         raise HTTPException(status_code=404, detail="Datei nicht im Storage")
     data, ct = result
     return Response(content=data, media_type=ct or file_meta["content_type"],
-                    headers={"Content-Disposition": f"inline; filename=\"{file_meta['filename']}\""})
+                    headers={"Content-Disposition": content_disposition(file_meta['filename'], "inline")})
 
 @router.delete("/notes/files/{note_id}/{file_id}")
 async def delete_note_file(note_id: str, file_id: str, token: str = Query(...)):
