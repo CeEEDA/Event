@@ -192,6 +192,8 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     # Anzahlung/Kaution die per Kreditkarte/Stripe bereits gezahlt wurde
     deposit_applied = float(invoice.get("deposit_applied", 0) or 0)
     deposit_refunded = float(invoice.get("deposit_refunded", 0) or 0)
+    # Volle Anzahlung = angerechneter Teil + zurueckerstatteter Teil
+    deposit_paid_total = round(deposit_applied + deposit_refunded, 2)
     # Restzahlbetrag: bevorzuge gespeicherten Wert, fallback = brutto - deposit_applied
     if invoice.get("deposit_open_balance") is not None:
         open_balance = float(invoice.get("deposit_open_balance") or 0)
@@ -209,10 +211,12 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     # Row-Index der Restzahlbetrag-Zeile (falls vorhanden)
     open_balance_row = None
 
-    if deposit_applied > 0:
-        totals_data.append(["", "abzgl. Anzahlung (Kreditkarte):", f"-{deposit_applied:.2f} \u20ac"])
+    if deposit_paid_total > 0:
+        # Zeige die VOLLE Anzahlung, die der Kunde per Kreditkarte gezahlt hat
+        totals_data.append(["", "abzgl. Anzahlung (Kreditkarte):", f"-{deposit_paid_total:.2f} \u20ac"])
         if deposit_refunded > 0:
-            totals_data.append(["", "Kautions-R\u00fcckerstattung:", f"+{deposit_refunded:.2f} \u20ac"])
+            # Ueberzahlung wurde per Stripe auf die Karte zurueckerstattet
+            totals_data.append(["", "R\u00fcckerstattung auf Kreditkarte:", f"+{deposit_refunded:.2f} \u20ac"])
         open_balance_row = len(totals_data)
         totals_data.append(["", "Restzahlbetrag:", f"{open_balance:.2f} \u20ac"])
 
@@ -237,23 +241,34 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     elements.append(totals_table)
     elements.append(Spacer(1, 2 * mm))
 
-    # Payment info - abhaengig vom Restzahlbetrag
-    if deposit_applied > 0 and open_balance <= 0.005:
+    # Payment info - drei verschiedene Faelle
+    if deposit_paid_total > 0 and deposit_refunded > 0 and open_balance <= 0.005:
+        # FALL 2: Ueberzahlung -> automatischer Refund per Stripe
         elements.append(Paragraph(
-            f"Der Rechnungsbetrag wurde bereits vollstaendig durch Ihre Anzahlung per Kreditkarte "
-            f"in H\u00f6he von <b>{deposit_applied:.2f} \u20ac</b> beglichen. "
+            f"Ihre Anzahlung per Kreditkarte in H\u00f6he von <b>{deposit_paid_total:.2f} \u20ac</b> wurde verrechnet. "
+            f"Die \u00dcberzahlung von <b>{deposit_refunded:.2f} \u20ac</b> wurde bereits automatisch auf Ihre "
+            "Kreditkarte zur\u00fcckerstattet. Es ist keine weitere Zahlung erforderlich.",
+            styles["InvNormal"]
+        ))
+    elif deposit_paid_total > 0 and open_balance <= 0.005:
+        # Anzahlung deckt Rechnungsbetrag genau ab (kein Refund noetig)
+        elements.append(Paragraph(
+            f"Der Rechnungsbetrag wurde bereits vollst\u00e4ndig durch Ihre Anzahlung per Kreditkarte "
+            f"in H\u00f6he von <b>{deposit_paid_total:.2f} \u20ac</b> beglichen. "
             "Es ist keine weitere Zahlung erforderlich.",
             styles["InvNormal"]
         ))
-    elif deposit_applied > 0 and open_balance > 0:
+    elif deposit_paid_total > 0 and open_balance > 0:
+        # FALL 1: Anzahlung deckt Rechnungsbetrag nicht voll ab -> Rest ueberweisen
         elements.append(Paragraph(
-            f"Ihre Anzahlung per Kreditkarte (<b>{deposit_applied:.2f} \u20ac</b>) wurde bereits verrechnet. "
+            f"Ihre Anzahlung per Kreditkarte (<b>{deposit_paid_total:.2f} \u20ac</b>) wurde bereits verrechnet. "
             f"Bitte \u00fcberweisen Sie den <b>Restzahlbetrag von {open_balance:.2f} \u20ac</b> innerhalb von 14 Tagen "
             f"unter Angabe der Rechnungsnummer <b>{invoice.get('invoice_number', '')}</b> auf das im Briefkopf "
             "angegebene Konto.",
             styles["InvNormal"]
         ))
     else:
+        # Klassischer Fall: keine Anzahlung, voller Betrag zu ueberweisen
         elements.append(Paragraph(
             "Bitte \u00fcberweisen Sie den Rechnungsbetrag innerhalb von 14 Tagen unter Angabe "
             f"der Rechnungsnummer <b>{invoice.get('invoice_number', '')}</b> auf das im Briefkopf "
@@ -264,8 +279,8 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
 
     # GiroCode (EPC QR Code) for bank transfer + optional Stripe payment link
     # Nur erzeugen wenn noch ein Restbetrag zu ueberweisen ist
-    girocode_img = _generate_girocode(invoice, amount_override=open_balance if deposit_applied > 0 else None)
-    if open_balance <= 0.005 and deposit_applied > 0:
+    girocode_img = _generate_girocode(invoice, amount_override=open_balance if deposit_paid_total > 0 else None)
+    if open_balance <= 0.005 and deposit_paid_total > 0:
         girocode_img = None  # Voll bezahlt -> kein QR-Code noetig
     stripe_url = invoice.get("stripe_payment_url")
     if girocode_img or stripe_url:
