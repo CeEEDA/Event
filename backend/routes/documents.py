@@ -129,6 +129,7 @@ PREDEFINED_FOLDERS = [
     {"id": "projektberichte", "name": "Projektberichte", "icon": "file-text", "color": "fuchsia"},
     {"id": "projektzusammenfassungen", "name": "Projektzusammenfassungen", "icon": "file-text", "color": "fuchsia"},
     {"id": "tankbelege", "name": "Tankbelege", "icon": "receipt", "color": "orange"},
+    {"id": "bestellungen_kunde", "name": "Bestellungen von Kunden", "icon": "file-text", "color": "fuchsia"},
     # Betrieb & Technik
     {"id": "fuhrpark", "name": "Fuhrpark", "icon": "car", "color": "blue"},
     {"id": "inventur_maschinenbestand", "name": "Inventur - Maschinenbestand", "icon": "file-text", "color": "gray"},
@@ -315,7 +316,10 @@ Analysiere das hochgeladene Dokument und extrahiere alle relevanten Informatione
 
 Antworte IMMER als valides JSON mit exakt dieser Struktur:
 {
-  "document_type": "rechnung|versicherung|vertrag|lieferschein|behoerdenschreiben|netzantrag|pruefbericht|protokoll|angebot|projektbericht|projektzusammenfassung|tankbeleg|sonstiges",
+  "document_type": "rechnung|versicherung|vertrag|lieferschein|behoerdenschreiben|netzantrag|pruefbericht|protokoll|angebot|projektbericht|projektzusammenfassung|tankbeleg|bestellung|auftragsbestaetigung|sonstiges",
+  "invoice_number": "wenn Rechnung: die Rechnungsnummer, sonst ''",
+  "order_number": "Bestellnummer/Auftragsnummer wenn im Dokument angegeben (z.B. '10074095' oder '26001701'), sonst ''",
+  "project_name": "Projektname/Event-Name/Baustellenbezeichnung wenn erkennbar (z.B. '24h Rennen - Ortsclubs', 'Pfingstkirmes Neuwied'), sonst ''",
   "suggested_folder": "ORDNER_ID (siehe Branchenregeln unten)",
   "sender": "Name des Absenders/Firma",
   "recipient": "Name des Empfängers (falls erkennbar)",
@@ -1031,115 +1035,217 @@ Antworte NUR mit JSON:
         await db.documents.update_one({"id": doc_id}, {"$set": {"payroll_info": {"error": str(e)}}})
 
 
+def _fuzzy_project_match(a: str, b: str) -> bool:
+    """Robuster Match zweier Projekt-Namen. Tolerant gegen kleine Unterschiede
+    wie '24h Rennen - Ortsclubs' vs '24h-Rennen 2026 - Ortsclubs'."""
+    if not a or not b:
+        return False
+    # Normalisieren: klein, keine Sonderzeichen, keine Jahres-Zahlen 4-stellig
+    import re as _re
+    def _norm(s: str) -> str:
+        s = s.lower()
+        s = _re.sub(r"\b(19|20)\d{2}\b", "", s)  # Jahres-Zahl raus
+        s = _re.sub(r"[^a-z0-9]+", " ", s)
+        s = " ".join(s.split())
+        return s.strip()
+    na, nb = _norm(a), _norm(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    # Token-Overlap: >= 60% der kuerzeren Token-Menge muessen matchen
+    ta = set(na.split())
+    tb = set(nb.split())
+    if not ta or not tb:
+        return False
+    common = ta & tb
+    small = min(len(ta), len(tb))
+    return (len(common) / small) >= 0.6
+
+
 async def _auto_link_companion_invoice(doc_id: str, ai_result: dict, final_folder: str) -> None:
-    """Sucht ein passendes Companion-Dokument (PDF <-> XML) mit gleicher
-    Rechnungsnummer + Sender und verknuepft die beiden.
+    """Sucht Companion-Dokumente und verknuepft sie zu einer Gruppe.
+
+    Zwei Fälle werden erkannt:
+
+    1) **E-Rechnungs-Paar** (PDF + XML): identische invoice_number + sender
+       -> PDF ist 'primary', XML ist 'companion' (in Liste ausgeblendet).
+
+    2) **Ausgangsrechnungs-Vorgang** (mehrere PDFs derselben Mail):
+       Rechnung + Abrechnung + Bestellung + Projektbericht/Zusammenfassung mit
+       gleichem Kunden UND aehnlichem Projekt-Namen. Alle in den letzten 90 Minuten
+       hochgeladen. -> Rechnung ist 'primary', Rest sind 'companions'.
 
     Verknuepfungs-Datenmodell:
-        doc.linked_document_id  = id des Partner-Dokuments
-        doc.linked_document_role = "primary" (das sichtbare) oder "companion" (die Ergaenzung)
-        doc.linked_document_type = "xml" oder "pdf"
-
-    Regel: PDF ist immer 'primary' (visuell), XML immer 'companion' (Maschinen-Daten).
-    Wenn Companion gefunden -> die XML uebernimmt die authoritative Metadata am PDF.
+        doc.linked_document_id      = id des Partner-Dokuments (Rechnung/PDF)
+        doc.linked_document_ids     = Liste aller Companions am primary
+        doc.linked_document_role    = 'primary' | 'companion'
+        doc.linked_document_type    = 'xml' | 'pdf' | 'group'
+        doc.is_companion            = True -> in Ordner-Liste ausblenden
     """
     doc_type = (ai_result.get("document_type") or "").lower()
-    if doc_type not in ("rechnung", "gutschrift", "invoice"):
-        return
     inv_no = (ai_result.get("invoice_number") or "").strip()
-    if not inv_no:
-        return
-    sender = (ai_result.get("sender") or "").strip().lower()
-    if not sender:
-        return
+    sender = (ai_result.get("sender") or "").strip()
+    recipient = (ai_result.get("recipient") or "").strip()
+    project_name = (ai_result.get("project_name") or "").strip()
 
-    # Aktuelles Dokument holen um content_type + upload-Zeit zu kennen
+    # Aktuelles Dokument holen
     current = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not current or current.get("linked_document_id"):
-        return  # bereits verlinkt
-
+        return
     current_ct = (current.get("content_type") or "").lower()
     is_xml_current = current_ct in ("application/xml", "text/xml") or (current.get("original_filename") or "").lower().endswith(".xml")
 
-    # Wir suchen ein Partner-Dokument im gleichen Ordner mit gleicher Rechnungsnr.
-    # Sender-Match ist "starts_with" um kleine Umlaut/Encoding-Unterschiede zu tolerieren.
-    sender_prefix = sender[:20]
+    # ── FALL 1: E-Rechnungs-Paar (PDF + XML) ──────────────────────────────
+    if doc_type in ("rechnung", "gutschrift", "invoice") and inv_no and sender:
+        sender_lc = sender.lower()
+        sender_prefix = sender_lc[:20]
+        cands = await db.documents.find({
+            "id": {"$ne": doc_id},
+            "ai_metadata.invoice_number": inv_no,
+            "is_deleted": {"$ne": True},
+            "linked_document_id": {"$exists": False},
+        }, {"_id": 0}).to_list(20)
+        for cand in cands:
+            cs = (cand.get("ai_metadata", {}).get("sender") or "").lower()
+            if not cs:
+                continue
+            if cs[:20] != sender_prefix and sender_prefix not in cs and cs[:20] not in sender_lc:
+                continue
+            cand_ct = (cand.get("content_type") or "").lower()
+            cand_is_xml = cand_ct in ("application/xml", "text/xml") or (cand.get("original_filename") or "").lower().endswith(".xml")
+            if cand_is_xml == is_xml_current:
+                continue
+            # Match! PDF = primary, XML = companion
+            if is_xml_current:
+                pdf_id, xml_id = cand["id"], doc_id
+                xml_meta = ai_result
+            else:
+                pdf_id, xml_id = doc_id, cand["id"]
+                xml_meta = cand.get("ai_metadata", {}) or {}
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await db.documents.update_one({"id": pdf_id}, {"$set": {
+                "linked_document_id": xml_id,
+                "linked_document_role": "primary",
+                "linked_document_type": "xml",
+                "has_erechnung_xml": True,
+                "updated_at": now_iso,
+            }})
+            await db.documents.update_one({"id": xml_id}, {"$set": {
+                "linked_document_id": pdf_id,
+                "linked_document_role": "companion",
+                "linked_document_type": "pdf",
+                "is_companion": True,
+                "folder_id": (await db.documents.find_one({"id": pdf_id}, {"folder_id": 1}) or {}).get("folder_id", final_folder),
+                "updated_at": now_iso,
+            }})
+            if xml_meta:
+                pdf_doc = await db.documents.find_one({"id": pdf_id}, {"_id": 0, "ai_metadata": 1})
+                pdf_ai = (pdf_doc or {}).get("ai_metadata", {}) or {}
+                for field in ("invoice_number", "date", "due_date", "amount", "tax_amount", "iban", "bic", "currency"):
+                    if xml_meta.get(field):
+                        pdf_ai[field] = xml_meta[field]
+                pdf_ai["_authoritative_source"] = "xml_erechnung"
+                await db.documents.update_one({"id": pdf_id}, {"$set": {"ai_metadata": pdf_ai}})
+            logger.info(f"[companion-link] E-Rechnungs-Paar: {pdf_id} (PDF) <-> {xml_id} (XML) invoice={inv_no!r}")
+            return  # E-Rechnungs-Paar verlinkt, nicht weiter suchen
 
-    candidates = await db.documents.find({
-        "id": {"$ne": doc_id},
-        "ai_metadata.invoice_number": inv_no,
-        "is_deleted": {"$ne": True},
-        "linked_document_id": {"$exists": False},
-    }, {"_id": 0}).to_list(20)
-
-    partner = None
-    for cand in candidates:
-        cand_sender = (cand.get("ai_metadata", {}).get("sender") or "").strip().lower()
-        if not cand_sender:
-            continue
-        # Sender muss uebereinstimmen (prefix-based)
-        if cand_sender[:20] != sender_prefix and sender_prefix not in cand_sender and cand_sender[:20] not in sender:
-            continue
-        # PDF <-> XML: unterschiedliche Content-Types
-        cand_ct = (cand.get("content_type") or "").lower()
-        cand_is_xml = cand_ct in ("application/xml", "text/xml") or (cand.get("original_filename") or "").lower().endswith(".xml")
-        if cand_is_xml == is_xml_current:
-            continue  # gleiche Sorte - kein Companion
-        partner = cand
-        break
-
-    if not partner:
+    # ── FALL 2: Mail-Paket mehrerer Dokumente ─────────────────────────────
+    # Alle Dokumente derselben Mail sollen als Gruppe gebuendelt werden.
+    # Match-Kriterium: gleicher Kunde (recipient bei Ausgang, sender bei Eingang)
+    # UND aehnlicher Projekt-Name UND Upload innerhalb der letzten 90 Minuten.
+    # Nur greifen wenn es einen echten Anker gibt - sonst zu viele False-Matches.
+    if not project_name and not (ai_result.get("order_number") or "").strip():
         return
 
-    # Rollen zuweisen: PDF = primary, XML = companion
-    if is_xml_current:
-        xml_doc_id, xml_ct = doc_id, current_ct or "application/xml"
-        pdf_doc_id, pdf_ct = partner["id"], partner.get("content_type") or "application/pdf"
-        pdf_folder = partner.get("folder_id", final_folder)
-        xml_metadata = ai_result
-    else:
-        pdf_doc_id, pdf_ct = doc_id, current_ct or "application/pdf"
-        xml_doc_id, xml_ct = partner["id"], partner.get("content_type") or "application/xml"
-        pdf_folder = final_folder
-        xml_metadata = partner.get("ai_metadata", {}) or {}
+    # Ist es ein Ausgangs-Kontext (unsere Firma ist sender)?
+    def _is_own(name: str) -> bool:
+        n = (name or "").lower()
+        return "eventenergie" in n or "es besitz" in n or "esbv" in n
+    outbound = _is_own(sender)
+    # "Kunde" = die andere Seite
+    counterparty = recipient if outbound else sender
+    if not counterparty:
+        return
+    counterparty_prefix = counterparty.lower()[:15]
 
-    now_iso = datetime.now(timezone.utc).isoformat()
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    time_window = (now - timedelta(minutes=90)).isoformat()
 
-    # PDF ist primary
-    await db.documents.update_one({"id": pdf_doc_id}, {"$set": {
-        "linked_document_id": xml_doc_id,
+    order_number = (ai_result.get("order_number") or "").strip()
+
+    # Kandidaten: Docs derselben Firmen-Konstellation im Zeitfenster
+    cands = await db.documents.find({
+        "id": {"$ne": doc_id},
+        "is_deleted": {"$ne": True},
+        "created_at": {"$gte": time_window},
+        "is_companion": {"$ne": True},
+    }, {"_id": 0}).to_list(50)
+
+    group_matches = []
+    for cand in cands:
+        cm = cand.get("ai_metadata", {}) or {}
+        c_sender = (cm.get("sender") or "").lower()
+        c_recipient = (cm.get("recipient") or "").lower()
+        c_outbound = _is_own(c_sender)
+        c_counterparty = c_recipient if c_outbound else c_sender
+        if counterparty_prefix not in c_counterparty and c_counterparty[:15] not in counterparty.lower():
+            continue
+        # Match nur wenn Projekt-Name oder Auftrags-Nr uebereinstimmt
+        c_project = cm.get("project_name") or ""
+        c_order = (cm.get("order_number") or "").strip()
+        if _fuzzy_project_match(project_name, c_project):
+            group_matches.append(cand)
+        elif order_number and c_order and (order_number == c_order or order_number[:6] == c_order[:6]):
+            group_matches.append(cand)
+
+    if not group_matches:
+        return
+
+    # Bestimme das primary Dokument der Gruppe.
+    # Prioritaet: Rechnung > Gutschrift > Auftragsbestätigung > Bestellung > Projektzusammenfassung > Rest
+    # Bei Gleichstand (z.B. mehrere Docs als 'rechnung' klassifiziert):
+    # 1) bevorzuge das mit invoice_number (das ist die echte Rechnung)
+    # 2) danach das mit hoechstem Betrag
+    priority = {
+        "rechnung": 100, "gutschrift": 90, "auftragsbestaetigung": 70,
+        "bestellung": 60, "projektzusammenfassung": 50, "projektbericht": 40,
+        "lieferschein": 30, "sonstiges": 10,
+    }
+    def _rank(d):
+        m = d.get("ai_metadata", {}) or {}
+        p = priority.get((m.get("document_type") or "sonstiges"), 0)
+        has_inv = 1 if (m.get("invoice_number") or "").strip() else 0
+        amount = float(m.get("amount") or 0)
+        return (p, has_inv, amount)
+
+    all_docs = [current] + group_matches
+    best = max(all_docs, key=_rank)
+    primary_id = best["id"]
+    primary_folder = best.get("folder_id", final_folder)
+    companion_ids = [d["id"] for d in all_docs if d["id"] != primary_id]
+
+    now_iso = now.isoformat()
+    await db.documents.update_one({"id": primary_id}, {"$set": {
+        "linked_document_ids": companion_ids,
         "linked_document_role": "primary",
-        "linked_document_type": "xml",
-        "has_erechnung_xml": True,
+        "linked_document_type": "group",
+        "has_companion_documents": True,
         "updated_at": now_iso,
     }})
-    # XML ist companion und wird in Listen versteckt
-    await db.documents.update_one({"id": xml_doc_id}, {"$set": {
-        "linked_document_id": pdf_doc_id,
-        "linked_document_role": "companion",
-        "linked_document_type": "pdf",
-        "is_companion": True,      # UI-Filter kann diese ausblenden
-        "folder_id": pdf_folder,   # XML in denselben Ordner wie PDF
-        "updated_at": now_iso,
-    }})
-
-    # XML-Metadata ist authoritativ - kopiere die wichtigen Felder aufs PDF,
-    # wo Ollama-OCR Fehler gemacht haben koennte (Rechnungsnr, IBAN, Betrag, etc.)
-    if xml_metadata:
-        pdf_doc = await db.documents.find_one({"id": pdf_doc_id}, {"_id": 0, "ai_metadata": 1})
-        pdf_ai = (pdf_doc or {}).get("ai_metadata", {}) or {}
-        for field in ("invoice_number", "date", "due_date", "amount", "tax_amount", "iban", "bic", "currency"):
-            xml_val = xml_metadata.get(field)
-            if xml_val is not None and xml_val != "":
-                pdf_ai[field] = xml_val
-        pdf_ai["_authoritative_source"] = "xml_erechnung"
-        await db.documents.update_one({"id": pdf_doc_id}, {"$set": {
-            "ai_metadata": pdf_ai,
+    for cid in companion_ids:
+        await db.documents.update_one({"id": cid}, {"$set": {
+            "linked_document_id": primary_id,
+            "linked_document_role": "companion",
+            "linked_document_type": "group",
+            "is_companion": True,
+            "folder_id": primary_folder,   # alle im selben Ordner wie das Primary
+            "updated_at": now_iso,
         }})
-
     logger.info(
-        f"[companion-link] {pdf_doc_id} (PDF) <-> {xml_doc_id} (XML companion) "
-        f"invoice={inv_no!r} folder={pdf_folder!r}"
+        f"[companion-link] Mail-Gruppe: primary={primary_id} ({(best.get('ai_metadata') or {}).get('document_type','?')}) "
+        f"+ {len(companion_ids)} companions counterparty={counterparty!r} project={project_name!r}"
     )
 
 
