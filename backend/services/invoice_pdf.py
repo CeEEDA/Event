@@ -189,39 +189,84 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     mwst_amount = invoice.get("mwst_amount", 0)
     brutto = invoice.get("brutto", 0)
 
+    # Anzahlung/Kaution die per Kreditkarte/Stripe bereits gezahlt wurde
+    deposit_applied = float(invoice.get("deposit_applied", 0) or 0)
+    deposit_refunded = float(invoice.get("deposit_refunded", 0) or 0)
+    # Restzahlbetrag: bevorzuge gespeicherten Wert, fallback = brutto - deposit_applied
+    if invoice.get("deposit_open_balance") is not None:
+        open_balance = float(invoice.get("deposit_open_balance") or 0)
+    else:
+        open_balance = round(max(0.0, float(brutto) - deposit_applied), 2)
+
     totals_data = [
         ["", "Nettobetrag:", f"{netto:.2f} \u20ac"],
         ["", f"zzgl. {mwst_rate}% MwSt:", f"{mwst_amount:.2f} \u20ac"],
         ["", "Rechnungsbetrag:", f"{brutto:.2f} \u20ac"],
     ]
-    totals_table = Table(totals_data, colWidths=[100 * mm, 35 * mm, 25 * mm])
-    totals_table.setStyle(TableStyle([
+
+    # Bold-Row-Index fuer die Rechnungsbetrag-Zeile (immer Index 2)
+    invoice_total_row = 2
+    # Row-Index der Restzahlbetrag-Zeile (falls vorhanden)
+    open_balance_row = None
+
+    if deposit_applied > 0:
+        totals_data.append(["", "abzgl. Anzahlung (Kreditkarte):", f"-{deposit_applied:.2f} \u20ac"])
+        if deposit_refunded > 0:
+            totals_data.append(["", "Kautions-R\u00fcckerstattung:", f"+{deposit_refunded:.2f} \u20ac"])
+        open_balance_row = len(totals_data)
+        totals_data.append(["", "Restzahlbetrag:", f"{open_balance:.2f} \u20ac"])
+
+    totals_table = Table(totals_data, colWidths=[100 * mm, 45 * mm, 25 * mm])
+    style_rows = [
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
         ("ALIGN", (2, 0), (2, -1), "RIGHT"),
-        ("FONTNAME", (0, 0), (-1, 1), "Helvetica"),
-        ("FONTNAME", (0, 2), (-1, 2), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
         ("FONTSIZE", (0, 0), (-1, -1), 8.5),
         ("TEXTCOLOR", (0, 0), (-1, -1), DARK),
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LINEABOVE", (1, 2), (2, 2), 0.7, DARK),
+        ("LINEABOVE", (1, invoice_total_row), (2, invoice_total_row), 0.7, DARK),
+        ("FONTNAME", (0, invoice_total_row), (-1, invoice_total_row), "Helvetica-Bold"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-    ]))
+    ]
+    if open_balance_row is not None:
+        style_rows.append(("LINEABOVE", (1, open_balance_row), (2, open_balance_row), 0.7, DARK))
+        style_rows.append(("FONTNAME", (0, open_balance_row), (-1, open_balance_row), "Helvetica-Bold"))
+    totals_table.setStyle(TableStyle(style_rows))
     elements.append(totals_table)
     elements.append(Spacer(1, 2 * mm))
 
-    # Payment info
-    elements.append(Paragraph(
-        "Bitte überweisen Sie den Rechnungsbetrag innerhalb von 14 Tagen unter Angabe "
-        f"der Rechnungsnummer <b>{invoice.get('invoice_number', '')}</b> auf das im Briefkopf "
-        "angegebene Konto.",
-        styles["InvNormal"]
-    ))
+    # Payment info - abhaengig vom Restzahlbetrag
+    if deposit_applied > 0 and open_balance <= 0.005:
+        elements.append(Paragraph(
+            f"Der Rechnungsbetrag wurde bereits vollstaendig durch Ihre Anzahlung per Kreditkarte "
+            f"in H\u00f6he von <b>{deposit_applied:.2f} \u20ac</b> beglichen. "
+            "Es ist keine weitere Zahlung erforderlich.",
+            styles["InvNormal"]
+        ))
+    elif deposit_applied > 0 and open_balance > 0:
+        elements.append(Paragraph(
+            f"Ihre Anzahlung per Kreditkarte (<b>{deposit_applied:.2f} \u20ac</b>) wurde bereits verrechnet. "
+            f"Bitte \u00fcberweisen Sie den <b>Restzahlbetrag von {open_balance:.2f} \u20ac</b> innerhalb von 14 Tagen "
+            f"unter Angabe der Rechnungsnummer <b>{invoice.get('invoice_number', '')}</b> auf das im Briefkopf "
+            "angegebene Konto.",
+            styles["InvNormal"]
+        ))
+    else:
+        elements.append(Paragraph(
+            "Bitte \u00fcberweisen Sie den Rechnungsbetrag innerhalb von 14 Tagen unter Angabe "
+            f"der Rechnungsnummer <b>{invoice.get('invoice_number', '')}</b> auf das im Briefkopf "
+            "angegebene Konto.",
+            styles["InvNormal"]
+        ))
     elements.append(Spacer(1, 3 * mm))
 
     # GiroCode (EPC QR Code) for bank transfer + optional Stripe payment link
-    girocode_img = _generate_girocode(invoice)
+    # Nur erzeugen wenn noch ein Restbetrag zu ueberweisen ist
+    girocode_img = _generate_girocode(invoice, amount_override=open_balance if deposit_applied > 0 else None)
+    if open_balance <= 0.005 and deposit_applied > 0:
+        girocode_img = None  # Voll bezahlt -> kein QR-Code noetig
     stripe_url = invoice.get("stripe_payment_url")
     if girocode_img or stripe_url:
         qr_row = []
@@ -465,9 +510,14 @@ def _build_zugferd_xml(invoice: dict) -> bytes:
     return xml.encode("utf-8")
 
 
-def _generate_girocode(invoice: dict):
+def _generate_girocode(invoice: dict, amount_override: float | None = None):
     """Generate an EPC QR code (GiroCode) for SEPA bank transfer.
     
+    Args:
+        invoice: The invoice dict.
+        amount_override: If set, use this amount instead of the invoice brutto.
+                         Used to encode the Restzahlbetrag (open balance) when
+                         a deposit has already been applied.
     Returns BytesIO with PNG image, or None if IBAN not configured.
     """
     import qrcode
@@ -480,8 +530,15 @@ def _generate_girocode(invoice: dict):
     if not iban:
         return None
     
-    amount = float(invoice.get("brutto", invoice.get("total_gross", invoice.get("total_amount", 0))))
+    if amount_override is not None:
+        amount = float(amount_override)
+    else:
+        amount = float(invoice.get("brutto", invoice.get("total_gross", invoice.get("total_amount", 0))))
     reference = invoice.get("invoice_number", "")
+    
+    # Bei 0-EUR Betrag keinen QR-Code erzeugen (waere sinnlos)
+    if amount < 0.01:
+        return None
     
     # EPC QR Code format (GiroCode v002)
     # See: https://www.europeanpaymentscouncil.eu/sites/default/files/KB/files/EPC069-12%20v2.1%20Quick%20Response%20Code%20-%20Guidelines%20to%20Enable%20the%20Data%20Capture%20for%20the%20Initiation%20of%20a%20SCT.pdf
