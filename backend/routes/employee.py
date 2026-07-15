@@ -883,6 +883,25 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     year_end = _date(year, 12, 31)
     end_day = min(today, year_end)
 
+    # Wenn Admin die Ueberstunden manuell gesetzt hat, ist alles VOR diesem
+    # Datum bereits in der baseline enthalten. Der Recompute darf ausschliesslich
+    # Tage AB diesem Datum ein weiteres Mal in die diff-Berechnung einbeziehen -
+    # sonst werden bereits gebuchte Stunden ein zweites Mal aufaddiert.
+    range_start = year_start
+    reason = (hr.get("overtime_baseline_reason") or "").lower()
+    if reason.startswith("admin-manuell") and hr.get("overtime_baseline_set_at"):
+        try:
+            _bset = datetime.fromisoformat(hr["overtime_baseline_set_at"])
+            if _bset.tzinfo is None:
+                _bset = _bset.replace(tzinfo=timezone.utc)
+            # Ab Folge-Tag rechnen - der Tag der Baseline-Setzung ist mit
+            # inbegriffen, damit die manuelle Korrektur bis Ende dieses Tages gilt
+            _bset_date = _bset.astimezone(timezone.utc).date()
+            if _bset_date > year_start:
+                range_start = _bset_date + timedelta(days=1)
+        except (ValueError, TypeError):
+            pass
+
     # 1) Feiertage (RLP)
     holidays = set(_get_holidays(year).keys())
 
@@ -965,7 +984,7 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     plus_minutes = 0.0
     minus_minutes = 0.0
     new_detail_logs: list = []  # NEU zu loggende Tage
-    cur = year_start
+    cur = range_start
     while cur <= end_day:
         date_str = cur.isoformat()
         ist = ist_by_day.get(date_str, 0.0)
@@ -1004,14 +1023,21 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     diff_hours = round(total_diff_minutes / 60.0, 2)
 
     # 6) Genehmigte ueberstundenabbau-Antraege (alt: aus absences-Collection)
-    abs_cursor = db.absences.find(
-        {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
-         "date": {"$regex": f"^{year}-"}},
-        {"_id": 0, "hours_deducted": 1}
-    )
+    # WICHTIG: ab range_start filtern - alles davor ist bereits in der baseline
+    _abs_query = {
+        "user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
+        "date": {"$regex": f"^{year}-"},
+    }
+    if range_start > _date(year, 1, 1):
+        _abs_query["date"] = {"$gte": range_start.isoformat(), "$regex": f"^{year}-"}
+    abs_cursor = db.absences.find(_abs_query, {"_id": 0, "hours_deducted": 1, "date": 1})
     deduction = 0.0
     async for a in abs_cursor:
+        # Doppelter Sicherheitsfilter falls Regex+gte kombiniert nicht wirkt
         try:
+            d = a.get("date")
+            if d and _date.fromisoformat(d) < range_start:
+                continue
             deduction += float(a.get("hours_deducted") or 0)
         except (TypeError, ValueError):
             continue
@@ -1619,86 +1645,13 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     if "overtime_hours" in data:
         new_value = float(data["overtime_hours"])
         update["overtime_hours"] = new_value
-        # WICHTIG: Diff mit der GLEICHEN Tag-fuer-Tag-Logik wie im Recompute berechnen,
-        # sonst stimmt die Baseline-Rueckrechnung nicht mit dem naechsten Recompute ueberein.
-        from datetime import date as _date, timedelta
-        today = datetime.now(timezone.utc).date()
-        year_start = _date(year, 1, 1)
-        year_end = _date(year, 12, 31)
-        end_day = min(today, year_end)
-        holidays = set(_get_holidays(year).keys())
-        off_days = set(); abbau_days = set()
-        async for r in db.time_off_requests.find({
-            "user_id": user_id, "status": "approved",
-            "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
-        }, {"_id": 0, "type": 1, "start_date": 1, "end_date": 1}):
-            try:
-                s = _date.fromisoformat(r["start_date"]); e2 = _date.fromisoformat(r["end_date"])
-            except (KeyError, ValueError, TypeError):
-                continue
-            target = abbau_days if (r.get("type") or "").lower() == "ueberstundenabbau" else off_days
-            cur2 = s
-            while cur2 <= e2:
-                if cur2.year == year: target.add(cur2.isoformat())
-                cur2 += timedelta(days=1)
-        ist_by_day = {}
-        night_followup_days = set()
-        import zoneinfo as _zi
-        _berlin = _zi.ZoneInfo("Europe/Berlin")
-        async for e in db.time_entries.find(
-            {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
-            {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1, "clock_in": 1, "clock_out": 1}
-        ):
-            if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
-                continue
-            d = e.get("date")
-            if d: ist_by_day[d] = ist_by_day.get(d, 0.0) + float(e.get("duration_minutes") or 0)
-            ci_str, co_str = e.get("clock_in"), e.get("clock_out")
-            if ci_str and co_str:
-                try:
-                    ci_dt = datetime.fromisoformat(ci_str); co_dt = datetime.fromisoformat(co_str)
-                    if ci_dt.tzinfo is None: ci_dt = ci_dt.replace(tzinfo=timezone.utc)
-                    if co_dt.tzinfo is None: co_dt = co_dt.replace(tzinfo=timezone.utc)
-                    ci_date = ci_dt.astimezone(_berlin).date()
-                    co_date = co_dt.astimezone(_berlin).date()
-                    if ci_date < co_date:
-                        cd = ci_date + timedelta(days=1)
-                        while cd <= co_date:
-                            if cd.year == year: night_followup_days.add(cd.isoformat())
-                            cd += timedelta(days=1)
-                except (ValueError, TypeError):
-                    pass
-        schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
-        has_schedule = bool(schedule and (schedule.get("days") or {}))
-        diff_min = 0.0
-        cur = year_start
-        while cur <= end_day:
-            date_str = cur.isoformat()
-            ist = ist_by_day.get(date_str, 0.0)
-            soll = 0
-            if date_str in holidays or date_str in off_days or date_str in abbau_days:
-                soll = 0
-            elif date_str in night_followup_days and ist == 0:
-                soll = 0  # Nachtschicht-Folgetag
-            elif has_schedule:
-                soll = _soll_minutes_from_schedule(schedule, cur.weekday())
-            diff_min += (ist - soll)
-            cur += timedelta(days=1)
-        diff_h = round(diff_min / 60.0, 2)
-        abs_cursor = db.absences.find(
-            {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
-             "date": {"$regex": f"^{year}-"}},
-            {"_id": 0, "hours_deducted": 1}
-        )
-        deduction = 0.0
-        async for a in abs_cursor:
-            try:
-                deduction += float(a.get("hours_deducted") or 0)
-            except (TypeError, ValueError):
-                continue
-        update["overtime_baseline"] = round(new_value - diff_h + deduction, 2)
+        # Bei manuellem Admin-Set ist der neue Wert die neue "Wahrheit" fuer
+        # heute. Der Recompute wird ab morgen wieder Tag-fuer-Tag rechnen -
+        # deshalb speichern wir baseline = new_value und markieren den Zeitpunkt.
+        update["overtime_baseline"] = new_value
         update["overtime_baseline_set_at"] = datetime.now(timezone.utc).isoformat()
         update["overtime_baseline_reason"] = "admin-manuell gesetzt"
+        update["overtime_baseline_v2_migrated"] = True  # keine erneute V2-Migration ausloesen
     if "vacation_days_total" in data:
         update["vacation_days_total"] = int(data["vacation_days_total"])
     if "vacation_days_used" in data:
