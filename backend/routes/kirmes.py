@@ -941,8 +941,10 @@ async def get_my_bookings(schausteller_id: str = Query(...)):
     for s in signups:
         s["event"] = evt_map.get(s.get("event_id"), {})
 
+    # Nur versendete/bezahlte/ueberfaellige/gemahnte Rechnungen zeigen -
+    # 'erstellt' ist Draft-Status und darf im Schausteller-Portal nicht auftauchen.
     invoices = await _db.kirmes_invoices.find(
-        {"schausteller_id": schausteller_id},
+        {"schausteller_id": schausteller_id, "status": {"$ne": "erstellt"}},
         {"_id": 0, "id": 1, "invoice_number": 1, "event_name": 1, "invoice_date": 1, "brutto": 1, "status": 1, "payment_status": 1}
     ).sort("created_at", -1).to_list(100)
 
@@ -1425,6 +1427,9 @@ async def public_download_invoice_pdf(invoice_id: str, schausteller_id: str = Qu
     from services.invoice_pdf import generate_invoice_pdf
     inv = await _db.kirmes_invoices.find_one({"id": invoice_id, "schausteller_id": schausteller_id}, {"_id": 0})
     if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    # Draft-Rechnungen sind noch nicht offiziell freigegeben - dem Schausteller nicht anzeigen
+    if inv.get("status") == "erstellt":
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
     pdf_bytes = generate_invoice_pdf(inv)
     filename = f"{inv['invoice_number']}.pdf"
