@@ -2427,6 +2427,41 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"DATEV-Scheduler start failed: {e}")
 
+    # Startup-Sweep + periodischer Sweeper: Dokumente die laenger als 15 Minuten
+    # in ai_status='pending' haengen (Backend-Neustart mitten in der Analyse
+    # oder Ollama-Hang) auf 'failed' markieren, damit der User sie ueber
+    # "Neu analysieren" wieder anwerfen kann.
+    async def _sweep_stuck_ai_analyses():
+        from datetime import timedelta as _td
+        while True:
+            try:
+                cutoff = (datetime.now(timezone.utc) - _td(minutes=15)).isoformat()
+                result = await db.documents.update_many(
+                    {
+                        "ai_status": "pending",
+                        "is_deleted": False,
+                        "$or": [
+                            {"updated_at": {"$lt": cutoff}},
+                            {"updated_at": {"$exists": False}, "created_at": {"$lt": cutoff}},
+                        ],
+                    },
+                    {"$set": {
+                        "ai_status": "failed",
+                        "ai_error": "KI-Analyse haengen geblieben (Timeout > 15 Min). Bitte 'Neu analysieren' klicken.",
+                        "ai_stuck_sweep_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                if result.modified_count:
+                    logger.info(f"[ai-sweeper] {result.modified_count} haengende Dokumente auf 'failed' gesetzt")
+            except Exception as e:
+                logger.warning(f"[ai-sweeper] Fehler: {e}")
+            await asyncio.sleep(300)  # alle 5 Minuten
+    try:
+        asyncio.create_task(_sweep_stuck_ai_analyses())
+        logger.info("AI-Analyse Stuck-Sweeper aktiv (Timeout 15 Min, Intervall 5 Min)")
+    except Exception as e:
+        logger.warning(f"AI-Analyse Sweeper start failed: {e}")
+
     # Start Deployment-Cleanup-Scheduler (täglich: entfernt Generator-
     # Zuordnungen für abgelaufene Aufträge)
     try:
