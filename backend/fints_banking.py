@@ -351,8 +351,20 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
 
         if found_nr and found_nr in inv_by_number:
             inv = inv_by_number[found_nr]
-            brutto = inv.get("brutto", 0)
-            amount_diff = abs(amount - brutto)
+            brutto = float(inv.get("brutto", 0) or 0)
+            deposit_applied = float(inv.get("deposit_applied", 0) or 0)
+            # Der Kunde ueberweist typisch den RESTBETRAG (brutto - bereits
+            # verrechnete Kaution/Anzahlung). Manche Kunden zahlen aber auch
+            # den vollen Brutto-Betrag. Beides gilt als vollstaendige Zahlung.
+            open_amount = round(max(0.0, brutto - deposit_applied), 2)
+            diff_open = abs(amount - open_amount)
+            diff_brutto = abs(amount - brutto)
+            amount_diff = min(diff_open, diff_brutto)
+            match_target = "restbetrag" if diff_open <= diff_brutto else "brutto"
+            expected_str = (
+                f"Restbetrag {open_amount:.2f} EUR (Brutto {brutto:.2f} - Kaution {deposit_applied:.2f})"
+                if deposit_applied > 0 else f"Brutto {brutto:.2f} EUR"
+            )
 
             if amount_diff <= 0.05:
                 # Rechnungsnr. + Betrag stimmt → automatisch bezahlt
@@ -362,9 +374,12 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
                     "transaction": tx,
                     "confidence": confidence,
                     "match_type": match_type,
-                    "match_reason": f"Rechnungsnr. {found_nr} ({match_type}) + Betrag {amount:.2f} EUR stimmt",
+                    "match_reason": f"Rechnungsnr. {found_nr} ({match_type}) + Betrag {amount:.2f} EUR = {match_target}",
                     "action": "auto_paid",
                     "brutto": brutto,
+                    "open_amount": open_amount,
+                    "deposit_applied": deposit_applied,
+                    "matched_against": match_target,
                 })
             else:
                 # Rechnungsnr. gefunden aber Betrag weicht ab → Admin-Aufgabe
@@ -374,17 +389,26 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
                     "transaction": tx,
                     "confidence": confidence,
                     "match_type": match_type,
-                    "match_reason": f"Rechnungsnr. {found_nr} gefunden, aber Betrag weicht ab: erwartet {brutto:.2f} EUR, erhalten {amount:.2f} EUR (Differenz: {amount - brutto:+.2f} EUR)",
+                    "match_reason": (
+                        f"Rechnungsnr. {found_nr} gefunden, aber Betrag weicht ab: "
+                        f"erwartet {expected_str}, erhalten {amount:.2f} EUR "
+                        f"(Differenz zu Restbetrag: {amount - open_amount:+.2f} EUR)"
+                    ),
                     "action": "admin_task",
                     "brutto": brutto,
-                    "amount_diff": amount - brutto,
+                    "open_amount": open_amount,
+                    "deposit_applied": deposit_applied,
+                    "amount_diff": amount - open_amount,
                 })
             continue  # Naechste Transaktion
 
         # Schritt 2: Kein Rechnungsnummer-Match → Betrag + Firmenname als Fallback
         for inv in invoices:
-            brutto = inv.get("brutto", 0)
-            if abs(amount - brutto) > 0.05:
+            brutto = float(inv.get("brutto", 0) or 0)
+            deposit_applied = float(inv.get("deposit_applied", 0) or 0)
+            open_amount = round(max(0.0, brutto - deposit_applied), 2)
+            # Erlaubt sowohl Zahlung des Restbetrags als auch des Vollbetrags
+            if abs(amount - brutto) > 0.05 and abs(amount - open_amount) > 0.05:
                 continue
 
             firma = (inv.get("schausteller_firma") or "").lower()
