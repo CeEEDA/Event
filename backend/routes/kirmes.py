@@ -1863,11 +1863,23 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
             if sch_email:
                 filename = f"{inv_number}.pdf"
                 subject = f"Rechnung {inv_number} – {event.get('name', '')}"
-                html = f"""<p>Sehr geehrte Damen und Herren,</p>
-<p>anbei erhalten Sie die Rechnung <b>{inv_number}</b> für die Veranstaltung <b>{event.get('name', '')}</b>.</p>
-<p>Rechnungsbetrag: <b>{calc['brutto']:.2f} EUR</b></p>
-<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>
-<p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
+                # Offenen Betrag berechnen (falls Kaution die Rechnung nicht deckt)
+                _brutto_a = float(invoice_doc.get("brutto", calc.get("brutto", 0)) or 0)
+                _dep_a = float(invoice_doc.get("deposit_applied", 0) or 0)
+                _open_a = round(max(0.0, _brutto_a - _dep_a), 2)
+                if _open_a >= 0.5:
+                    _pay_block = (
+                        f'<p><b>Offener Betrag:</b> {_open_a:.2f} EUR</p>'
+                        f'<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>'
+                    )
+                else:
+                    _pay_block = ""
+                html = (
+                    f"<p>Sehr geehrte Damen und Herren,</p>"
+                    f"<p>im Anhang die Abrechnung für die Kirmes <b>{event.get('name', '')}</b>.</p>"
+                    f"{_pay_block}"
+                    f"<p>Vielen Dank!<br/><br/>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"
+                )
                 datev_bcc = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_EED", "").strip()
                 bcc_list = [datev_bcc] if datev_bcc else None
                 send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename, bcc=bcc_list)
@@ -2900,25 +2912,24 @@ async def send_invoice_email(invoice_id: str, request: Request, user: dict = Dep
         payment_link_url = await _create_kirmes_invoice_payment_link(inv, open_balance, origin_url)
 
     # Build the HTML body
-    payment_block = ""
+    event_name_html = inv.get("event_name", "") or ""
     if payment_link_url and open_balance >= 0.5:
-        payment_block = f"""
-<p style="margin-top:16px;"><b>Offener Betrag:</b> {open_balance:.2f} EUR</p>
+        # Es gibt noch einen offenen Betrag - zeige Rechnungssumme + Zahl-Button.
+        html = f"""<p>Sehr geehrte Damen und Herren,</p>
+<p>im Anhang die Abrechnung für die Kirmes <b>{event_name_html}</b>.</p>
+<p><b>Offener Betrag:</b> {open_balance:.2f} EUR</p>
 <div style="margin:24px 0;text-align:center;">
   <a href="{payment_link_url}" style="display:inline-block;background:#d946ef;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:600;">
     Jetzt online bezahlen
   </a>
 </div>
 <p style="color:#888;font-size:12px;">Alternativ können Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto überweisen.</p>
-"""
+<p>Vielen Dank!<br/><br/>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
     else:
-        payment_block = "<p>Bitte überweisen Sie den Betrag innerhalb von 14 Tagen auf das in der Rechnung angegebene Konto.</p>"
-
-    html = f"""<p>Sehr geehrte Damen und Herren,</p>
-<p>anbei erhalten Sie die Rechnung <b>{inv['invoice_number']}</b> für die Veranstaltung <b>{inv.get('event_name', '')}</b>.</p>
-<p>Rechnungsbetrag: <b>{brutto:.2f} EUR</b></p>
-{payment_block}
-<p>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
+        # Kaution deckt Rechnung komplett (oder Betrag = 0) - keine Zahlungsaufforderung.
+        html = f"""<p>Sehr geehrte Damen und Herren,</p>
+<p>im Anhang die Abrechnung für die Kirmes <b>{event_name_html}</b>.</p>
+<p>Vielen Dank!<br/><br/>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
 
     try:
         datev_bcc = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_EED", "").strip()
