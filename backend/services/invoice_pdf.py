@@ -83,13 +83,9 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     event = invoice.get("event", {})
 
     # ── Empfaenger-Block (LINKS) + Rechnungs-Metadaten (RECHTS) in zwei Spalten
-    # Absender-Kurzzeile ueber Kundenadresse (fuer Fenster-Umschlag)
-    sender_short = Paragraph(
-        "<u>Eventenergie Deutschland GmbH &amp; Co. KG &middot; "
-        "Kirchstr. 12 &middot; 56626 Andernach</u>",
-        styles["InvSmallUnderline"]
-    )
-    addr_bits = [sender_short, Spacer(1, 3 * mm), Paragraph(sch.get("firma", ""), styles["InvBold"])]
+    # Die Kundenadresse startet direkt (kein zusaetzlicher Absender-Header davor -
+    # das Firmenlogo ist bereits im Seiten-Header via _pdf_footer/onPage sichtbar).
+    addr_bits = [Paragraph(sch.get("firma", ""), styles["InvBold"])]
     if sch.get("name"):
         addr_bits.append(Paragraph(sch["name"], styles["InvNormal"]))
     if sch.get("strasse"):
@@ -230,8 +226,11 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         if deposit_refunded > 0:
             # Ueberzahlung wurde per Stripe auf die Karte zurueckerstattet
             totals_data.append(["", "R\u00fcckerstattung:", f"+{deposit_refunded:.2f} \u20ac"])
-        open_balance_row = len(totals_data)
-        totals_data.append(["", "Restzahlbetrag:", f"{open_balance:.2f} \u20ac"])
+        # Restzahlbetrag-Zeile nur zeigen wenn tatsaechlich noch etwas offen ist
+        # (Bei 0,00 EUR ist die Zeile redundant - der Payment-Text darunter erklaert die Situation)
+        if open_balance > 0.005:
+            open_balance_row = len(totals_data)
+            totals_data.append(["", "Restzahlbetrag:", f"{open_balance:.2f} \u20ac"])
 
     totals_table = Table(totals_data, colWidths=[75 * mm, 55 * mm, 30 * mm])
     style_rows = [
