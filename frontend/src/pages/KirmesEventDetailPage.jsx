@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, MapPin, CalendarDays, Zap, Trash2, Copy, Check, Send, FileDown,
   Receipt, Clock, Pencil, Mail, UserPlus, X, Download, SendHorizonal, FileText,
   Activity, Link2, Unlink, Gauge, Wifi, WifiOff, FolderOpen, CreditCard, ChevronDown,
-  Menu, Search,
+  Menu, Search, AlertTriangle, Loader2,
 } from "lucide-react";
 
 import { Input } from "../components/ui/input";
@@ -303,6 +303,27 @@ export default function KirmesEventDetailPage() {
       toast.success("Anmeldung gelöscht");
       loadEvent();
     } catch { toast.error("Fehler"); }
+  };
+
+  const [refundRetryLoading, setRefundRetryLoading] = useState(null);
+  const handleRefundRetry = async (signup) => {
+    if (refundRetryLoading) return;
+    const amt = (signup.deposit_refund_requested_amount || 0).toFixed(2);
+    if (!window.confirm(
+      `Fehlgeschlagene Kaution-Rückerstattung erneut an Stripe schicken?\n\n` +
+      `Betrag: ${amt} €\n` +
+      `Letzter Fehler: ${signup.deposit_refund_error || "unbekannt"}`
+    )) return;
+    setRefundRetryLoading(signup.id);
+    try {
+      const r = await api.post(`/payments/refund/retry/${signup.id}`);
+      toast.success(`Refund erfolgreich: ${(r.data?.amount || 0).toFixed(2)} € (${r.data?.refund_id || ""})`);
+      await loadEvent();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || getErrorMsg(err) || "Refund-Retry fehlgeschlagen");
+    } finally {
+      setRefundRetryLoading(null);
+    }
   };
 
   const copyLink = () => {
@@ -1013,6 +1034,23 @@ export default function KirmesEventDetailPage() {
                                 Refund {(signup.deposit_refund_amount || 0).toFixed(2)}€
                               </span>
                             )}
+                            {signup.deposit_refund_failed && !signup.deposit_refund_amount && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleRefundRetry(signup); }}
+                                disabled={refundRetryLoading === signup.id}
+                                title={`Auto-Refund fehlgeschlagen: ${signup.deposit_refund_error || "unbekannt"}\nBetrag: ${(signup.deposit_refund_requested_amount || 0).toFixed(2)} €\nKlick für Retry`}
+                                className="inline-flex items-center gap-0.5 text-[9px] bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-full whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                                data-testid={`refund-retry-${signup.id}`}
+                              >
+                                {refundRetryLoading === signup.id ? (
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                ) : (
+                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                )}
+                                Refund fehlgeschlagen · {(signup.deposit_refund_requested_amount || 0).toFixed(2)}€
+                              </button>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 mt-0.5 truncate">
                             {sch?.firma ? `${sch.name} · ` : ""}{signup.fahrgeschaeft || "–"} · Platz <strong>{signup.platznummer}</strong>
@@ -1381,6 +1419,23 @@ export default function KirmesEventDetailPage() {
                             <span className="text-[9px] text-blue-700" title={`Refund am ${signup.deposit_refund_at || ""}`}>
                               Refund {(signup.deposit_refund_amount || 0).toFixed(2)}€
                             </span>
+                          )}
+                          {signup.deposit_refund_failed && !signup.deposit_refund_amount && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleRefundRetry(signup); }}
+                              disabled={refundRetryLoading === signup.id}
+                              title={`Auto-Refund fehlgeschlagen: ${signup.deposit_refund_error || "unbekannt"}\nBetrag: ${(signup.deposit_refund_requested_amount || 0).toFixed(2)} €\nKlick für Retry`}
+                              className="inline-flex items-center gap-0.5 text-[9px] bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-full whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                              data-testid={`refund-retry-row-${signup.id}`}
+                            >
+                              {refundRetryLoading === signup.id ? (
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                              ) : (
+                                <AlertTriangle className="w-2.5 h-2.5" />
+                              )}
+                              Refund fehlgeschlagen
+                            </button>
                           )}
                         </div>
                       </td>

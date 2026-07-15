@@ -59,3 +59,57 @@ Traceback (most recent call last):
   File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 351, in handle_error_response
     raise err
 stripe._error.InvalidRequestError: Request req_qh7LrBKI1OYbND: No such payment_intent: 'pi_test_manual_20d24f317abc48a4'
+2026-07-15 07:57:05,752 [ERROR] payments: [payments] Refund creation failed signup=eb8798cf-7f76-4b68-86a2-9a9495600c0c: Invalid API Key provided: sk_test_****gent
+Traceback (most recent call last):
+  File "/app/backend/routes/payments.py", line 133, in refund_deposit_difference
+    refund = _stripe_sdk.Refund.create(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_refund.py", line 606, in create
+    cls._static_request(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_resource.py", line 172, in _static_request
+    return _APIRequestor._global_instance().request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 210, in request
+    resp = requestor._interpret_response(rbody, rcode, rheaders, api_mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 868, in _interpret_response
+    self.handle_error_response(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 351, in handle_error_response
+    raise err
+stripe._error.AuthenticationError: Invalid API Key provided: sk_test_****gent
+2026-07-15 07:57:33,842 [ERROR] payments: [payments] Refund creation failed signup=eb8798cf-7f76-4b68-86a2-9a9495600c0c: Invalid API Key provided: sk_test_****gent
+Traceback (most recent call last):
+  File "/app/backend/routes/payments.py", line 133, in refund_deposit_difference
+    refund = _stripe_sdk.Refund.create(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_refund.py", line 606, in create
+    cls._static_request(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_resource.py", line 172, in _static_request
+    return _APIRequestor._global_instance().request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 210, in request
+    resp = requestor._interpret_response(rbody, rcode, rheaders, api_mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 868, in _interpret_response
+    self.handle_error_response(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 351, in handle_error_response
+    raise err
+stripe._error.AuthenticationError: Invalid API Key provided: sk_test_****gent
+2026-07-15 07:58:10,753 [ERROR] payments: [payments] Refund creation failed signup=eb8798cf-7f76-4b68-86a2-9a9495600c0c: Invalid API Key provided: sk_test_****gent
+Traceback (most recent call last):
+  File "/app/backend/routes/payments.py", line 133, in refund_deposit_difference
+    refund = _stripe_sdk.Refund.create(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_refund.py", line 606, in create
+    cls._static_request(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_resource.py", line 172, in _static_request
+    return _APIRequestor._global_instance().request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 210, in request
+    resp = requestor._interpret_response(rbody, rcode, rheaders, api_mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 868, in _interpret_response
+    self.handle_error_response(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 351, in handle_error_response
+    raise err
+stripe._error.AuthenticationError: Invalid API Key provided: sk_test_****gent

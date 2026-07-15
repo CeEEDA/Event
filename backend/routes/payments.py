@@ -160,16 +160,31 @@ async def refund_deposit_difference(signup_id: str, invoice_brutto: float, invoi
                 "deposit_refund_amount": refundable,
                 "deposit_refund_status": refund.status,
                 "deposit_refund_at": datetime.now(timezone.utc).isoformat(),
+                "deposit_refund_failed": False,
+                "deposit_refund_error": None,
             }},
         )
         return {"ok": True, "refunded": True, "amount": refundable, "refund_id": refund.id, "status": refund.status}
     except Exception as e:
         logger.exception(f"[payments] Refund creation failed signup={signup_id}: {e}")
+        err_str = str(e)[:200]
         await _db.payment_transactions.update_one(
             {"session_id": tx["session_id"]},
-            {"$set": {"refund_error": str(e)[:200], "refund_attempted_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"refund_error": err_str, "refund_attempted_at": datetime.now(timezone.utc).isoformat()}},
         )
-        return {"ok": False, "reason": "stripe_error", "error": str(e)[:200]}
+        # Signup mit Fehler-Flag markieren, damit UI einen Warnhinweis + Retry-Button zeigen kann.
+        await _db.kirmes_signups.update_one(
+            {"id": signup_id},
+            {"$set": {
+                "deposit_refund_failed": True,
+                "deposit_refund_error": err_str,
+                "deposit_refund_attempted_at": datetime.now(timezone.utc).isoformat(),
+                "deposit_refund_requested_amount": refundable,
+                "deposit_refund_invoice_id": invoice_id,
+                "deposit_refund_invoice_number": invoice_number,
+            }},
+        )
+        return {"ok": False, "reason": "stripe_error", "error": err_str, "requested_amount": refundable}
 
 
 async def _confirm_deposit_and_send_email(signup_id, amount, session_id=None):
@@ -735,6 +750,61 @@ async def refund_status(signup_id: str, user: dict = Depends(_require_admin)):
         sort=[("created_at", -1)],
     )
     return {"signup": signup, "transaction": tx}
+
+
+@router.post("/refund/retry/{signup_id}")
+async def refund_retry(signup_id: str, user: dict = Depends(_require_admin)):
+    """Wiederholt einen zuvor fehlgeschlagenen Auto-Refund fuer die Kaution einer
+    bereits abgerechneten Anmeldung. Verwendet die im Signup gespeicherten Werte
+    (invoice_id, requested_amount) und ruft die zentrale Refund-Funktion neu auf."""
+    signup = await _db.kirmes_signups.find_one({"id": signup_id}, {"_id": 0})
+    if not signup:
+        raise HTTPException(status_code=404, detail="Anmeldung nicht gefunden")
+    if not signup.get("deposit_paid"):
+        raise HTTPException(status_code=400, detail="Keine bezahlte Kaution vorhanden")
+    if signup.get("deposit_refund_id"):
+        return {"ok": True, "already_refunded": True, "refund_id": signup["deposit_refund_id"], "amount": signup.get("deposit_refund_amount", 0)}
+
+    inv_id = signup.get("deposit_refund_invoice_id") or signup.get("deposit_applied_to_invoice") or signup.get("invoice_id")
+    inv_number = signup.get("deposit_refund_invoice_number") or signup.get("invoice_number") or ""
+    if not inv_id:
+        raise HTTPException(status_code=400, detail="Keine zugeordnete Rechnung gefunden")
+
+    # Ermittle Share (Anteil der Rechnung, den diese Anmeldung tragen soll)
+    inv = await _db.kirmes_invoices.find_one({"id": inv_id}, {"_id": 0, "brutto": 1, "signup_ids": 1, "signup_id": 1})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    total_invoice = float(inv.get("brutto", 0) or 0)
+    sig_ids = inv.get("signup_ids") or [inv.get("signup_id")]
+    paid_signups = await _db.kirmes_signups.find(
+        {"id": {"$in": sig_ids}, "deposit_paid": True},
+        {"_id": 0, "id": 1, "deposit_amount": 1},
+    ).to_list(100)
+    total_deposits = sum(float(s.get("deposit_amount", 0) or 0) for s in paid_signups)
+    dep = float(signup.get("deposit_amount", 0) or 0)
+    share = (dep / total_deposits) * total_invoice if total_deposits > 0 else 0.0
+
+    res = await refund_deposit_difference(signup_id, share, inv_id, inv_number)
+    if not res.get("refunded"):
+        # 400 (nicht 502), damit Cloudflare den JSON-Body nicht mit einer HTML-Error-Seite ersetzt
+        raise HTTPException(status_code=400, detail=res.get("error") or res.get("reason") or "Refund fehlgeschlagen")
+
+    # Invoice-Aggregate aktualisieren
+    all_signups = await _db.kirmes_signups.find(
+        {"id": {"$in": sig_ids}},
+        {"_id": 0, "deposit_refund_amount": 1, "deposit_amount": 1}
+    ).to_list(100)
+    total_refunded = sum(float(s.get("deposit_refund_amount", 0) or 0) for s in all_signups)
+    total_deposits_all = sum(float(s.get("deposit_amount", 0) or 0) for s in all_signups)
+    open_balance = round(max(0.0, total_invoice - total_deposits_all), 2)
+    await _db.kirmes_invoices.update_one(
+        {"id": inv_id},
+        {"$set": {
+            "deposit_refunded": round(total_refunded, 2),
+            "deposit_open_balance": open_balance,
+        }},
+    )
+    return {"ok": True, "refunded": True, "refund_id": res.get("refund_id"), "amount": res.get("amount"), "status": res.get("status")}
 
 
 @router.post("/refund/sync-payment-intent/{session_id}")
