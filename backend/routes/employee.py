@@ -1714,6 +1714,83 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     return doc
 
 
+@router.get("/reports/yearly-evaluation/pdf")
+async def yearly_evaluation_pdf(token: str = Query(...), year: Optional[int] = None):
+    """Erzeugt eine einseitige PDF-Uebersicht aller aktiven Mitarbeiter fuer
+    das laufende Kalenderjahr: Name, UEberstunden-Saldo, Urlaub genommen,
+    Resturlaub und Krankheitstage."""
+    from utils.http_headers import content_disposition
+    from services.hr_evaluation_pdf import generate_yearly_evaluation_pdf
+    from datetime import date as _date, timedelta as _td
+
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    now = datetime.now(timezone.utc)
+    yr = int(year) if year else now.year
+    year_start = f"{yr}-01-01"
+    year_end = f"{yr}-12-31"
+
+    # Nur aktive Mitarbeiter + Admins (mit Rolle im HR-System)
+    users = await db.users.find(
+        {"is_active": {"$ne": False}, "role": {"$in": ["admin", "mitarbeiter"]}},
+        {"_id": 0, "id": 1, "name": 1},
+    ).to_list(1000)
+
+    rows: list[dict] = []
+    for u in users:
+        uid = u["id"]
+        # HR-Daten fuer das Jahr (Ueberstunden, Urlaub)
+        hr = await db.hr_data.find_one(
+            {"user_id": uid, "year": yr},
+            {"_id": 0, "overtime_hours": 1, "vacation_days_total": 1, "vacation_days_used": 1},
+        ) or {}
+        overtime = float(hr.get("overtime_hours") or 0)
+        vac_total = float(hr.get("vacation_days_total") or 0)
+        vac_used = float(hr.get("vacation_days_used") or 0)
+        vac_remaining = vac_total - vac_used
+
+        # Krankheitstage: approved time_off_requests type=krank im Jahr, Werktage zaehlen
+        sick_days = 0
+        sick_cur = db.time_off_requests.find(
+            {"user_id": uid, "status": "approved", "type": "krank"},
+            {"_id": 0, "start_date": 1, "end_date": 1},
+        )
+        async for r in sick_cur:
+            try:
+                s = _date.fromisoformat(r["start_date"])
+                e = _date.fromisoformat(r["end_date"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            # Auf Jahr begrenzen
+            js = max(s, _date(yr, 1, 1))
+            je = min(e, _date(yr, 12, 31))
+            if js > je:
+                continue
+            cur = js
+            while cur <= je:
+                if cur.weekday() < 5:  # Mo-Fr
+                    sick_days += 1
+                cur += _td(days=1)
+
+        rows.append({
+            "name": u.get("name") or "",
+            "overtime_hours": round(overtime, 2),
+            "vacation_days_used": vac_used,
+            "vacation_days_remaining": vac_remaining,
+            "sick_days": sick_days,
+        })
+
+    pdf_bytes = generate_yearly_evaluation_pdf(rows, yr)
+    filename = f"Mitarbeiter-Auswertung-{yr}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition(filename, "inline")},
+    )
+
+
 @router.get("/birthdays/today")
 async def get_birthdays_today(token: str = Query(...)):
     """Liste aller Mitarbeiter, die heute Geburtstag haben."""

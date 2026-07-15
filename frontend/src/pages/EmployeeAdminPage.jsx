@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, User, Search, Phone, Mail, MapPin, FileText,
   AlertTriangle, Check, ChevronDown, ChevronUp, Eye, Shield, Calendar,
+  BarChart3,
 } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -95,7 +96,20 @@ export default function EmployeeAdminPage() {
           </button>
           <Shield className="w-5 h-5 text-fuchsia-600" />
           <h1 className="text-lg font-semibold text-gray-900">Mitarbeiterverwaltung</h1>
-          <span className="text-xs text-gray-400 ml-auto">{employees.length} Mitarbeiter</span>
+          <div className="ml-auto flex items-center gap-3">
+            <a
+              href={`${API}/api/employee/reports/yearly-evaluation/pdf?token=${token}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-xs font-medium transition-colors"
+              data-testid="yearly-evaluation-pdf-btn"
+              title={`Jahresauswertung ${new Date().getFullYear()} als PDF`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Auswertung
+            </a>
+            <span className="text-xs text-gray-400">{employees.length} Mitarbeiter</span>
+          </div>
         </div>
       </header>
 
