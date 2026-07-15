@@ -337,6 +337,129 @@ async def get_event(event_id: str, user: dict = Depends(_require_staff)):
     return event
 
 
+@router.get("/events/{event_id}/finance-summary")
+async def event_finance_summary(event_id: str, user: dict = Depends(_require_staff)):
+    """Finanzuebersicht fuer EINE Veranstaltung: Stripe-Eingang, Refunds,
+    ausstehende Rechnungsbetraege, Kautionen-Status.
+
+    Response:
+    - stripe_paid_deposits: Summe eingegangener Kautionen ueber Stripe
+    - stripe_paid_invoices: Summe eingegangener Rechnungszahlungen ueber Stripe
+    - stripe_refunds_total: Summe erfolgter Rueckerstattungen
+    - stripe_income_net: Netto-Eingang (Deposits + Invoices - Refunds)
+    - invoices_total_brutto: Summe aller erstellten Rechnungen (brutto)
+    - invoices_paid_amount: Summe bezahlt gekennzeichneter Rechnungen
+    - invoices_open_amount: Summe noch offener Rechnungen (brutto)
+    - invoices_open_after_deposit: Noch tatsaechlich zu zahlen (nach Kautionen)
+    - signups_total / signups_billed / signups_paid / signups_open
+    """
+    # Signups fuer dieses Event holen
+    signup_ids = [s["id"] async for s in _db.kirmes_signups.find({"event_id": event_id}, {"_id": 0, "id": 1})]
+
+    # 1) Stripe Deposits fuer diese Signups
+    stripe_paid_deposits = 0.0
+    stripe_refunds = 0.0
+    if signup_ids:
+        cur = _db.payment_transactions.find(
+            {"signup_id": {"$in": signup_ids}, "type": "deposit", "payment_status": "paid"},
+            {"_id": 0, "amount": 1, "refund_amount": 1, "refund_status": 1},
+        )
+        async for tx in cur:
+            stripe_paid_deposits += float(tx.get("amount") or 0)
+            r_amt = float(tx.get("refund_amount") or 0)
+            r_stat = (tx.get("refund_status") or "").lower()
+            if r_amt > 0 and r_stat in ("succeeded", "pending"):
+                stripe_refunds += r_amt
+
+    # 2) Rechnungen dieses Events
+    invs = await _db.kirmes_invoices.find(
+        {"event_id": event_id},
+        {"_id": 0, "id": 1, "brutto": 1, "payment_status": 1, "invoice_date": 1, "deposit_applied": 1, "sent_at": 1, "paid_amount": 1},
+    ).to_list(1000)
+
+    invoices_total_brutto = 0.0
+    invoices_paid_amount = 0.0
+    invoices_open_amount = 0.0
+    invoices_open_after_deposit = 0.0
+    invoice_ids = []
+    now_dt = datetime.now(timezone.utc)
+    for inv in invs:
+        invoice_ids.append(inv["id"])
+        br = float(inv.get("brutto") or 0)
+        dep = float(inv.get("deposit_applied") or 0)
+        invoices_total_brutto += br
+        ps = inv.get("payment_status") or "erstellt"
+        # Ableitung bei fehlendem Status
+        if ps != "bezahlt" and inv.get("sent_at"):
+            try:
+                inv_date = datetime.strptime(inv.get("invoice_date", ""), "%d.%m.%Y").replace(tzinfo=timezone.utc)
+                days_since = (now_dt - inv_date).days
+                if days_since > 17:
+                    ps = "ueberfaellig"
+                elif days_since > 14:
+                    ps = "faellig"
+                else:
+                    ps = "offen"
+            except (ValueError, TypeError):
+                ps = "offen"
+        if ps == "bezahlt":
+            invoices_paid_amount += float(inv.get("paid_amount") or br)
+        else:
+            invoices_open_amount += br
+            invoices_open_after_deposit += max(0.0, br - dep)
+
+    # 3) Direkte Stripe-Zahlungen ausserhalb Kautionen (invoice-Type)
+    stripe_paid_invoices = 0.0
+    if invoice_ids:
+        cur2 = _db.payment_transactions.find(
+            {"invoice_id": {"$in": invoice_ids}, "type": "invoice", "payment_status": "paid"},
+            {"_id": 0, "amount": 1, "refund_amount": 1, "refund_status": 1},
+        )
+        async for tx in cur2:
+            stripe_paid_invoices += float(tx.get("amount") or 0)
+            r_amt = float(tx.get("refund_amount") or 0)
+            r_stat = (tx.get("refund_status") or "").lower()
+            if r_amt > 0 and r_stat in ("succeeded", "pending"):
+                stripe_refunds += r_amt
+
+    # 4) Signup-Zaehler (informativ)
+    signups_total = len(signup_ids)
+    signups_billed = 0
+    signups_paid = 0
+    signups_open = 0
+    if signup_ids:
+        counts = _db.kirmes_signups.find(
+            {"id": {"$in": signup_ids}},
+            {"_id": 0, "invoice_id": 1, "payment_status": 1, "deposit_paid": 1},
+        )
+        async for s in counts:
+            if s.get("invoice_id") or s.get("payment_status") == "abgerechnet":
+                signups_billed += 1
+            if s.get("deposit_paid"):
+                signups_paid += 1
+        signups_open = signups_total - signups_billed
+
+    stripe_gross = stripe_paid_deposits + stripe_paid_invoices
+    stripe_net = stripe_gross - stripe_refunds
+
+    return {
+        "event_id": event_id,
+        "stripe_paid_deposits": round(stripe_paid_deposits, 2),
+        "stripe_paid_invoices": round(stripe_paid_invoices, 2),
+        "stripe_gross": round(stripe_gross, 2),
+        "stripe_refunds_total": round(stripe_refunds, 2),
+        "stripe_income_net": round(stripe_net, 2),
+        "invoices_total_brutto": round(invoices_total_brutto, 2),
+        "invoices_paid_amount": round(invoices_paid_amount, 2),
+        "invoices_open_amount": round(invoices_open_amount, 2),
+        "invoices_open_after_deposit": round(invoices_open_after_deposit, 2),
+        "signups_total": signups_total,
+        "signups_billed": signups_billed,
+        "signups_paid_deposit": signups_paid,
+        "signups_unbilled": signups_open,
+    }
+
+
 class EventPaymentMode(BaseModel):
     kauf_auf_rechnung: bool
 

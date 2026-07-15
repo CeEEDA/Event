@@ -220,7 +220,15 @@ export default function KirmesEventDetailPage() {
     } catch { /* ignore */ }
   }, [id]);
 
-  useEffect(() => { loadEvent(); loadInvoices(); loadDocCount(); loadPaymentStats(); }, [loadEvent, loadInvoices, loadDocCount, loadPaymentStats]);
+  const [eventFinance, setEventFinance] = useState(null);
+  const loadEventFinance = useCallback(async () => {
+    try {
+      const r = await api.get(`/kirmes/events/${id}/finance-summary`);
+      setEventFinance(r.data);
+    } catch { /* ignore */ }
+  }, [id]);
+
+  useEffect(() => { loadEvent(); loadInvoices(); loadDocCount(); loadPaymentStats(); loadEventFinance(); }, [loadEvent, loadInvoices, loadDocCount, loadPaymentStats, loadEventFinance]);
 
   // Load available EMU meters
   useEffect(() => {
@@ -868,6 +876,69 @@ export default function KirmesEventDetailPage() {
           </div>
         </div>
 
+
+        {/* Event-Finanz-Uebersicht: Stripe-Eingang & offene Betraege */}
+        {eventFinance && (eventFinance.stripe_gross > 0 || eventFinance.invoices_total_brutto > 0) && (
+          <div className="bg-gradient-to-br from-emerald-50 via-white to-amber-50 border border-emerald-100 rounded-xl p-5" data-testid="event-finance-panel">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-emerald-600" /> Finanzen dieser Veranstaltung
+              </h2>
+              <span className="text-[11px] text-gray-500">
+                {eventFinance.signups_billed} / {eventFinance.signups_total} abgerechnet
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white/80 border border-emerald-100 rounded-lg p-3" data-testid="event-stripe-income">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Stripe-Eingang (netto)</div>
+                <p className="text-xl font-bold text-emerald-700 font-mono">
+                  {eventFinance.stripe_income_net.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                <div className="text-[10px] text-gray-500 mt-1 space-y-0.5">
+                  <div>Kautionen: {eventFinance.stripe_paid_deposits.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</div>
+                  {eventFinance.stripe_paid_invoices > 0 && (
+                    <div>Rechnungen: {eventFinance.stripe_paid_invoices.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</div>
+                  )}
+                  {eventFinance.stripe_refunds_total > 0 && (
+                    <div className="text-rose-600">Refunds: −{eventFinance.stripe_refunds_total.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white/80 border border-amber-100 rounded-lg p-3" data-testid="event-open-invoice">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Noch zu bezahlen</div>
+                <p className="text-xl font-bold text-amber-700 font-mono">
+                  {eventFinance.invoices_open_after_deposit.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Offene Rechn.: {eventFinance.invoices_open_amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                  <br/>
+                  (nach Verrechnung Kautionen)
+                </div>
+              </div>
+
+              <div className="bg-white/80 border border-gray-200 rounded-lg p-3" data-testid="event-total-invoice">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Rechnungssumme gesamt</div>
+                <p className="text-xl font-bold text-gray-800 font-mono">
+                  {eventFinance.invoices_total_brutto.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Bezahlt: {eventFinance.invoices_paid_amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </div>
+              </div>
+
+              <div className="bg-white/80 border border-blue-100 rounded-lg p-3" data-testid="event-signup-stats">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Kautionen bezahlt</div>
+                <p className="text-xl font-bold text-blue-700 font-mono">
+                  {eventFinance.signups_paid_deposit}<span className="text-sm text-gray-400"> / {eventFinance.signups_total}</span>
+                </p>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Anmeldungen mit Kaution
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Payment Summary */}
         {paymentStats && (paymentStats.deposits?.total > 0 || paymentStats.invoices?.total > 0) && (
