@@ -161,6 +161,9 @@ async def get_all_employees(token: str = Query(...)):
     users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).to_list(500)
     result = []
     for u in users:
+        # Freelancer gehoeren nicht in die Mitarbeiter-Liste (eigene Vertragsart).
+        if (u.get("role") or "").lower() == "freelancer":
+            continue
         profile = await db.employee_profiles.find_one({"user_id": u["id"]}, {"_id": 0})
         docs = await db.employee_documents.find(
             {"user_id": u["id"], "status": "active"}, {"_id": 0, "doc_type": 1, "expiry_date": 1}
