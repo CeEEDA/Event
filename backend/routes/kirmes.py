@@ -1716,7 +1716,11 @@ async def generate_invoice_for_signup(signup_id: str, user: dict = Depends(_requ
             "full_text": f"Rechnung {inv_number} {sch.get('firma', '')} {event.get('name', '')} {calc.get('brutto', 0):.2f} EUR",
             "keywords": [inv_number, sch.get("firma", ""), event.get("name", ""), "Ausgangsrechnung"],
             "is_deleted": False,
+            # Einzel-Generierung sendet KEINE E-Mail. Rechnung wird abends per
+            # DATEV-Batch weitergeleitet, wenn User nicht vorher manuell "Senden" klickt.
             "datev_forwarded": False,
+            "datev_pending": True,
+            "datev_pending_since": datetime.now(timezone.utc).isoformat(),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -1850,6 +1854,7 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
             _l.getLogger(__name__).warning(f"Auto-refund (bulk) failed for invoice {inv_number}: {e}")
 
         # Auto-send invoice via email
+        _datev_bcc_sent = False
         try:
             from services.invoice_pdf import generate_invoice_pdf
             from email_service import send_email_with_attachment
@@ -1866,6 +1871,8 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
                 datev_bcc = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_EED", "").strip()
                 bcc_list = [datev_bcc] if datev_bcc else None
                 send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename, bcc=bcc_list)
+                if bcc_list:
+                    _datev_bcc_sent = True
                 await _db.kirmes_invoices.update_one(
                     {"id": invoice_doc["id"]},
                     {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
@@ -1913,7 +1920,11 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
                 "full_text": f"Rechnung {inv_number} {sch.get('firma', '')} {event.get('name', '')} {calc.get('brutto', 0):.2f} EUR",
                 "keywords": [inv_number, sch.get("firma", ""), event.get("name", ""), "Ausgangsrechnung"],
                 "is_deleted": False,
-                "datev_forwarded": True,
+                # Wenn DATEV-BCC beim Versand erfolgreich verschickt wurde, ist die
+                # Rechnung schon dort. Sonst muss sie in den Abend-Batch (datev_pending).
+                "datev_forwarded": bool(_datev_bcc_sent),
+                "datev_pending": (not _datev_bcc_sent),
+                "datev_pending_since": (datetime.now(timezone.utc).isoformat() if not _datev_bcc_sent else None),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
