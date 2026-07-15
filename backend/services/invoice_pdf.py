@@ -74,6 +74,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     styles.add(ParagraphStyle("InvNormal", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=DARK))
     styles.add(ParagraphStyle("InvBold", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8.5, leading=11, textColor=DARK))
     styles.add(ParagraphStyle("InvSmall", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=10, textColor=GRAY))
+    styles.add(ParagraphStyle("InvSmallUnderline", parent=styles["Normal"], fontName="Helvetica", fontSize=7, leading=9, textColor=GRAY))
     styles.add(ParagraphStyle("InvTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=DARK))
     styles.add(ParagraphStyle("InvRight", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=DARK, alignment=TA_RIGHT))
 
@@ -81,17 +82,22 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     sch = invoice.get("schausteller", {})
     event = invoice.get("event", {})
 
-    # Recipient address block
-    elements.append(Paragraph(sch.get("firma", ""), styles["InvBold"]))
+    # ── Empfaenger-Block (LINKS) + Rechnungs-Metadaten (RECHTS) in zwei Spalten
+    # Absender-Kurzzeile ueber Kundenadresse (fuer Fenster-Umschlag)
+    sender_short = Paragraph(
+        "<u>Eventenergie Deutschland GmbH &amp; Co. KG &middot; "
+        "Kirchstr. 12 &middot; 56626 Andernach</u>",
+        styles["InvSmallUnderline"]
+    )
+    addr_bits = [sender_short, Spacer(1, 3 * mm), Paragraph(sch.get("firma", ""), styles["InvBold"])]
     if sch.get("name"):
-        elements.append(Paragraph(sch["name"], styles["InvNormal"]))
+        addr_bits.append(Paragraph(sch["name"], styles["InvNormal"]))
     if sch.get("strasse"):
-        elements.append(Paragraph(sch["strasse"], styles["InvNormal"]))
+        addr_bits.append(Paragraph(sch["strasse"], styles["InvNormal"]))
     if sch.get("plz") or sch.get("ort"):
-        elements.append(Paragraph(f"{sch.get('plz', '')} {sch.get('ort', '')}", styles["InvNormal"]))
-    elements.append(Spacer(1, 5 * mm))
+        addr_bits.append(Paragraph(f"{sch.get('plz', '')} {sch.get('ort', '')}", styles["InvNormal"]))
 
-    # Invoice metadata (right-aligned table)
+    # Invoice metadata (rechtsbündig an rechte Blattkante)
     inv_date = invoice.get("invoice_date", datetime.now().strftime("%d.%m.%Y"))
     meta_data = [
         ["Rechnungsnummer:", invoice.get("invoice_number", "")],
@@ -102,10 +108,10 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     if sch.get("steuernummer"):
         meta_data.append(["Steuernummer Kunde:", sch["steuernummer"]])
 
-    meta_table = Table(meta_data, colWidths=[38 * mm, 52 * mm])
+    meta_table = Table(meta_data, colWidths=[35 * mm, 45 * mm])
     meta_table.setStyle(TableStyle([
         ("ALIGN", (0, 0), (0, -1), "RIGHT"),
-        ("ALIGN", (1, 0), (1, -1), "LEFT"),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
         ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
@@ -113,19 +119,26 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         ("TOPPADDING", (0, 0), (-1, -1), 1.5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
+
     usable_w = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT
-    table_w = 90 * mm
-    spacer_w = usable_w - table_w
-    meta_wrapper = Table([["", meta_table]], colWidths=[spacer_w, table_w])
-    meta_wrapper.setStyle(TableStyle([
+    addr_col_w = 85 * mm
+    meta_col_w = 80 * mm
+    spacer_w = usable_w - addr_col_w - meta_col_w
+    header_row = Table(
+        [[addr_bits, "", meta_table]],
+        colWidths=[addr_col_w, spacer_w, meta_col_w],
+    )
+    header_row.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    elements.append(meta_wrapper)
-    elements.append(Spacer(1, 3 * mm))
+    elements.append(header_row)
+    elements.append(Spacer(1, 8 * mm))
 
     # Title
     elements.append(Paragraph("Rechnung", styles["InvTitle"]))
@@ -212,15 +225,15 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     open_balance_row = None
 
     if deposit_paid_total > 0:
-        # Zeige die VOLLE Anzahlung, die der Kunde per Kreditkarte gezahlt hat
-        totals_data.append(["", "abzgl. Anzahlung (Kreditkarte):", f"-{deposit_paid_total:.2f} \u20ac"])
+        # Zeige die VOLLE Anzahlung, die der Kunde bereits gezahlt hat
+        totals_data.append(["", "abzgl. Anzahlung:", f"-{deposit_paid_total:.2f} \u20ac"])
         if deposit_refunded > 0:
             # Ueberzahlung wurde per Stripe auf die Karte zurueckerstattet
-            totals_data.append(["", "R\u00fcckerstattung auf Kreditkarte:", f"+{deposit_refunded:.2f} \u20ac"])
+            totals_data.append(["", "R\u00fcckerstattung:", f"+{deposit_refunded:.2f} \u20ac"])
         open_balance_row = len(totals_data)
         totals_data.append(["", "Restzahlbetrag:", f"{open_balance:.2f} \u20ac"])
 
-    totals_table = Table(totals_data, colWidths=[100 * mm, 45 * mm, 25 * mm])
+    totals_table = Table(totals_data, colWidths=[75 * mm, 55 * mm, 30 * mm])
     style_rows = [
         ("ALIGN", (1, 0), (1, -1), "RIGHT"),
         ("ALIGN", (2, 0), (2, -1), "RIGHT"),
@@ -245,16 +258,16 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     if deposit_paid_total > 0 and deposit_refunded > 0 and open_balance <= 0.005:
         # FALL 2: Ueberzahlung -> automatischer Refund per Stripe
         elements.append(Paragraph(
-            f"Ihre Anzahlung per Kreditkarte in H\u00f6he von <b>{deposit_paid_total:.2f} \u20ac</b> wurde verrechnet. "
+            f"Ihre Anzahlung in H\u00f6he von <b>{deposit_paid_total:.2f} \u20ac</b> wurde verrechnet. "
             f"Die \u00dcberzahlung in H\u00f6he von <b>{deposit_refunded:.2f} \u20ac</b> wird in den n\u00e4chsten "
-            f"5\u201310 Werktagen \u00fcber unseren Zahlungsabwickler auf Ihre Kreditkarte "
+            f"5\u201310 Werktagen \u00fcber unseren Zahlungsabwickler auf Ihr Zahlungsmittel "
             "zur\u00fcckgebucht. Es ist keine weitere Zahlung erforderlich.",
             styles["InvNormal"]
         ))
     elif deposit_paid_total > 0 and open_balance <= 0.005:
         # Anzahlung deckt Rechnungsbetrag genau ab (kein Refund noetig)
         elements.append(Paragraph(
-            f"Der Rechnungsbetrag wurde bereits vollst\u00e4ndig durch Ihre Anzahlung per Kreditkarte "
+            f"Der Rechnungsbetrag wurde bereits vollst\u00e4ndig durch Ihre Anzahlung "
             f"in H\u00f6he von <b>{deposit_paid_total:.2f} \u20ac</b> beglichen. "
             "Es ist keine weitere Zahlung erforderlich.",
             styles["InvNormal"]
@@ -262,7 +275,7 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     elif deposit_paid_total > 0 and open_balance > 0:
         # FALL 1: Anzahlung deckt Rechnungsbetrag nicht voll ab -> Rest ueberweisen
         elements.append(Paragraph(
-            f"Ihre Anzahlung per Kreditkarte (<b>{deposit_paid_total:.2f} \u20ac</b>) wurde bereits verrechnet. "
+            f"Ihre Anzahlung (<b>{deposit_paid_total:.2f} \u20ac</b>) wurde bereits verrechnet. "
             f"Bitte \u00fcberweisen Sie den <b>Restzahlbetrag von {open_balance:.2f} \u20ac</b> innerhalb von 14 Tagen "
             f"unter Angabe der Rechnungsnummer <b>{invoice.get('invoice_number', '')}</b> auf das im Briefkopf "
             "angegebene Konto.",
