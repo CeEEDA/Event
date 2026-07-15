@@ -4,8 +4,11 @@ import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import {
   ArrowLeft, Clock, User, ChevronRight, Search, Palmtree, ThermometerSun,
+  BarChart3,
 } from "lucide-react";
 import { Input } from "../components/ui/input";
+
+const API = process.env.REACT_APP_BACKEND_URL;
 
 export default function AdminZeiterfassungPage() {
   const { user } = useAuth();
@@ -80,7 +83,11 @@ export default function AdminZeiterfassungPage() {
     });
   }, [token, allEmployees]);
 
+  // Set der erlaubten User-IDs (nur Mitarbeiter + Admin, keine Freelancer)
+  const allowedIds = new Set(allEmployees.map(e => e.id));
   const filtered = timeReport.filter(emp => {
+    // Solange allEmployees nicht geladen ist (leer), keine harte Filterung.
+    if (allEmployees.length > 0 && !allowedIds.has(emp.user_id)) return false;
     if (!search.trim()) return true;
     return emp.user_name?.toLowerCase().includes(search.toLowerCase());
   });
@@ -112,6 +119,19 @@ export default function AdminZeiterfassungPage() {
           </button>
           <Clock className="w-5 h-5 text-green-600" />
           <h1 className="text-lg font-semibold text-gray-900">Mitarbeiterverwaltung</h1>
+          <div className="ml-auto flex items-center gap-2">
+            <a
+              href={`${API}/api/employee/reports/yearly-evaluation/pdf?token=${token}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors"
+              data-testid="yearly-evaluation-pdf-btn"
+              title={`Jahresauswertung ${new Date().getFullYear()} als PDF (Name, Überstunden, Urlaub, Krankheit)`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Auswertung
+            </a>
+          </div>
         </div>
       </header>
 

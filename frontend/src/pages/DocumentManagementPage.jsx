@@ -948,11 +948,11 @@ export default function DocumentManagementPage() {
                           )}
                           {doc.ai_status === "completed" && doc.ai_fallback_used && (
                             <span
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-medium flex-shrink-0 cursor-help"
-                              title={doc.ai_fallback_reason || "Ollama war nicht erreichbar - regelbasierte Analyse. Klicke Sparkles für KI-Reanalyse."}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-medium flex-shrink-0 cursor-help"
+                              title={doc.ai_fallback_reason || "Regelbasiert klassifiziert (PyMuPDF + Firmen-Signatur). Klicke Sparkles für optionale KI-Reanalyse."}
                               data-testid={`ai-fallback-badge-${doc.id}`}
                             >
-                              <AlertTriangle className="w-3 h-3" /> Heuristik (ohne KI)
+                              <Brain className="w-3 h-3" /> Regelbasiert
                             </span>
                           )}
                           {doc.ai_status === "pending" && (

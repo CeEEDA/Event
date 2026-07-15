@@ -1250,7 +1250,13 @@ async def _auto_link_companion_invoice(doc_id: str, ai_result: dict, final_folde
 
 
 async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folder_id: str):
-    """Background task to run AI analysis on an uploaded document."""
+    """Background task to run AI analysis on an uploaded document.
+
+    PRIMARY-Pfad seit Option-A-Umbau: Heuristik (PyMuPDF + Regex + Firmen-
+    Signatur) laeuft ZUERST und liefert in ~200ms ein Ergebnis fuer digitale
+    PDFs. Nur wenn die Heuristik unsicher ist (unbekannter Absender / keine
+    Klassifikation moeglich) faellt die Analyse auf Ollama zurueck.
+    """
     try:
         # XML-E-Rechnungen brauchen kein Ollama - direkt analysieren
         _skip_ollama = (
@@ -1258,24 +1264,60 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             or temp_path.lower().endswith(".xml")
         )
 
-        if not _skip_ollama:
-            # Warmup-Ping (max OLLAMA_WARMUP_TIMEOUT) - failed schnell wenn Ollama
-            # ueberhaupt nicht antwortet. Verhindert dass wir 10min auf einen toten
-            # Server warten und das Dokument stillschweigend "completed-mit-leer" wird.
-            from services.ollama_client import ollama_warmup_ping, OllamaUnavailable
-            ok, msg, elapsed = await ollama_warmup_ping()
-            if not ok:
-                logger.error(f"[ollama] Warmup-Ping fehlgeschlagen ({elapsed:.1f}s): {msg}")
-                raise OllamaUnavailable(f"Warmup-Ping fehlgeschlagen: {msg}")
-            if elapsed > 8:
-                logger.warning(f"[ollama] Warmup-Ping langsam ({elapsed:.1f}s) - Modell war evtl. evictet, ist jetzt aber wieder warm")
-
         custom_folders = []
         async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0}):
             custom_folders.append(cf)
         all_valid_ids = [f["id"] for f in PREDEFINED_FOLDERS] + [cf["id"] for cf in custom_folders]
 
-        ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
+        # ─── HEURISTIK ZUERST (schnell + deterministisch) ────────────────────
+        # Fuer digitale PDFs versuchen wir eine regelbasierte Analyse. Wenn sie
+        # eine sichere Klassifikation liefert (bekannter Absender/Empfaenger,
+        # Rechnungsnummer erkannt), koennen wir Ollama komplett ueberspringen.
+        heuristic_result = None
+        heuristic_confident = False
+        if (content_type or "").lower() == "application/pdf" and not _skip_ollama:
+            try:
+                from services.heuristic_analyzer import analyze_document_fallback
+                with open(temp_path, "rb") as _fh:
+                    _pdf_bytes = _fh.read()
+                doc_for_name = await db.documents.find_one({"id": doc_id}, {"_id": 0, "original_filename": 1})
+                _fname = (doc_for_name or {}).get("original_filename") or ""
+                heuristic_result = await asyncio.to_thread(analyze_document_fallback, _pdf_bytes, _fname)
+                # "Confident" = klare Richtung + Kern-Metadaten vorhanden
+                _sf = heuristic_result.get("suggested_folder", "")
+                heuristic_confident = (
+                    _sf and _sf != "unbekannt" and _sf != "unbekannt_no_text"
+                    and bool(heuristic_result.get("invoice_number") or heuristic_result.get("date"))
+                    and bool(heuristic_result.get("sender") or heuristic_result.get("recipient"))
+                )
+                if heuristic_confident:
+                    logger.info(f"[heuristic-primary] Doc {doc_id} sicher klassifiziert -> {_sf} (Ollama uebersprungen)")
+            except Exception as e:
+                logger.warning(f"[heuristic-primary] Fehler (falle auf Ollama): {e}")
+                heuristic_result = None
+
+        # ─── OLLAMA nur wenn Heuristik unsicher / nicht anwendbar ────────────
+        if heuristic_confident and heuristic_result:
+            ai_result = heuristic_result
+            # Mark als heuristisch (nicht KI) klassifiziert
+            ai_result["_authoritative_source"] = "heuristic_primary"
+            ai_result["_analyzer"] = "heuristic"
+        else:
+            if not _skip_ollama:
+                # Warmup-Ping (max OLLAMA_WARMUP_TIMEOUT) - failed schnell wenn Ollama
+                # ueberhaupt nicht antwortet. Verhindert dass wir 10min auf einen toten
+                # Server warten und das Dokument stillschweigend "completed-mit-leer" wird.
+                from services.ollama_client import ollama_warmup_ping, OllamaUnavailable
+                ok, msg, elapsed = await ollama_warmup_ping()
+                if not ok:
+                    logger.error(f"[ollama] Warmup-Ping fehlgeschlagen ({elapsed:.1f}s): {msg}")
+                    raise OllamaUnavailable(f"Warmup-Ping fehlgeschlagen: {msg}")
+                if elapsed > 8:
+                    logger.warning(f"[ollama] Warmup-Ping langsam ({elapsed:.1f}s) - Modell war evtl. evictet, ist jetzt aber wieder warm")
+
+            ai_result = await analyze_document_with_ai(temp_path, content_type, custom_folders)
+            ai_result["_analyzer"] = "ollama"
+
         suggested_folder = ai_result.get("suggested_folder", folder_id)
 
         # Normalize KI-Ordner-Angabe: manchmal antwortet die KI mit "projektberichte/2026"
@@ -1556,6 +1598,8 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
             "full_text": ai_result.get("full_text", ""),
             "keywords": ai_result.get("keywords", []),
             "ai_suggested_folder": suggested_folder,  # fuer spaeteres Training behalten
+            "ai_fallback_used": (ai_result.get("_analyzer") == "heuristic"),
+            "ai_fallback_reason": ai_result.get("_fallback_reason") if ai_result.get("_analyzer") == "heuristic" else None,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
 
