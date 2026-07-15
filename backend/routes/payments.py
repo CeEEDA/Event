@@ -666,6 +666,140 @@ async def repair_stripe_paid_invoices(user: dict = Depends(_require_admin)):
     }
 
 
+@router.get("/finance-summary")
+async def finance_summary(user: dict = Depends(_require_admin)):
+    """Finanz-Uebersicht: Was ist bei Stripe eingegangen und was ist an
+    offenen Rechnungssummen noch draussen?
+
+    Response:
+    - stripe_income_gross: Summe aller erfolgreichen Stripe-Zahlungen (Kautionen + Rechnungen)
+    - stripe_refunds_total: Summe aller erfolgten Rueckerstattungen
+    - stripe_income_net: gross - refunds
+    - by_type: {deposit: {count, amount}, invoice: {count, amount}}
+    - open_invoices_amount: Summe brutto aller offenen/faelligen/ueberfaelligen Rechnungen
+    - open_invoices_count: Anzahl
+    - overdue_amount / overdue_count: Rechnungen mit Status ueberfaellig
+    - failed_refunds_amount / failed_refunds_count: Rueckerstattungen, die bei Stripe abgelehnt wurden
+    - by_month: Liste der letzten 12 Monate mit Stripe-Eingang + neuen Rechnungen
+    """
+    from collections import defaultdict
+
+    # 1) Stripe-Eingaenge (payment_transactions mit payment_status=paid)
+    paid_cur = _db.payment_transactions.find(
+        {"payment_status": "paid"},
+        {"_id": 0, "type": 1, "amount": 1, "refund_amount": 1, "refund_status": 1, "created_at": 1, "updated_at": 1},
+    )
+    gross = 0.0
+    refunds = 0.0
+    by_type_amount = defaultdict(float)
+    by_type_count = defaultdict(int)
+    by_month = defaultdict(lambda: {"income": 0.0, "refunds": 0.0, "count": 0})
+
+    async for tx in paid_cur:
+        amt = float(tx.get("amount") or 0)
+        typ = (tx.get("type") or "unknown").lower()
+        gross += amt
+        by_type_amount[typ] += amt
+        by_type_count[typ] += 1
+        # Refunds nur mitzaehlen wenn Status positiv (succeeded/pending)
+        r_amt = float(tx.get("refund_amount") or 0)
+        r_stat = (tx.get("refund_status") or "").lower()
+        if r_amt > 0 and r_stat in ("succeeded", "pending"):
+            refunds += r_amt
+        # Nach Monat gruppieren (updated_at wenn vorhanden, sonst created_at)
+        ts = tx.get("updated_at") or tx.get("created_at") or ""
+        month_key = ts[:7] if len(ts) >= 7 else "unknown"
+        by_month[month_key]["income"] += amt
+        by_month[month_key]["count"] += 1
+        if r_amt > 0 and r_stat in ("succeeded", "pending"):
+            by_month[month_key]["refunds"] += r_amt
+
+    # 2) Offene Rechnungen (nur aus kirmes_invoices - Portal-Ausgangsrechnungen)
+    # Achtung: payment_status wird dynamisch aus invoice_date abgeleitet (siehe
+    # /invoices Endpoint) und ist bei alten Docs oft gar nicht persistent. Wir
+    # muessen die gleiche Logik hier anwenden.
+    open_amount = 0.0
+    open_count = 0
+    overdue_amount = 0.0
+    overdue_count = 0
+    open_net_of_deposit = 0.0
+    now_dt = datetime.now(timezone.utc)
+    all_cur = _db.kirmes_invoices.find(
+        {},
+        {"_id": 0, "brutto": 1, "payment_status": 1, "invoice_date": 1, "deposit_applied": 1, "sent_at": 1},
+    )
+    async for inv in all_cur:
+        ps = inv.get("payment_status") or "erstellt"
+        if ps == "bezahlt":
+            continue
+        # Ableitung wie in GET /invoices
+        derived = ps
+        if inv.get("sent_at"):
+            try:
+                inv_date = datetime.strptime(inv.get("invoice_date", ""), "%d.%m.%Y").replace(tzinfo=timezone.utc)
+                days_since = (now_dt - inv_date).days
+                if days_since > 17:
+                    derived = "ueberfaellig"
+                elif days_since > 14:
+                    derived = "faellig"
+                elif derived not in ("offen", "faellig", "ueberfaellig"):
+                    derived = "offen"
+            except (ValueError, TypeError):
+                if derived == "erstellt":
+                    derived = "offen"
+        # Zaehle alle nicht-bezahlten als offen
+        br = float(inv.get("brutto") or 0)
+        dep = float(inv.get("deposit_applied") or 0)
+        open_amount += br
+        open_count += 1
+        open_net_of_deposit += max(0.0, br - dep)
+        if derived == "ueberfaellig":
+            overdue_amount += br
+            overdue_count += 1
+
+    # 3) Fehlgeschlagene Refunds (Handlungsbedarf)
+    failed_cur = _db.kirmes_signups.find(
+        {"deposit_refund_failed": True},
+        {"_id": 0, "deposit_refund_requested_amount": 1},
+    )
+    failed_amount = 0.0
+    failed_count = 0
+    async for s in failed_cur:
+        failed_amount += float(s.get("deposit_refund_requested_amount") or 0)
+        failed_count += 1
+
+    # By-month sortiert (letzte 12 Monate)
+    months_sorted = sorted(by_month.keys(), reverse=True)[:12]
+    by_month_list = [
+        {
+            "month": m,
+            "income": round(by_month[m]["income"], 2),
+            "refunds": round(by_month[m]["refunds"], 2),
+            "net": round(by_month[m]["income"] - by_month[m]["refunds"], 2),
+            "count": by_month[m]["count"],
+        }
+        for m in months_sorted
+    ]
+
+    return {
+        "stripe_income_gross": round(gross, 2),
+        "stripe_refunds_total": round(refunds, 2),
+        "stripe_income_net": round(gross - refunds, 2),
+        "by_type": {
+            t: {"count": by_type_count[t], "amount": round(by_type_amount[t], 2)}
+            for t in by_type_amount
+        },
+        "open_invoices_amount": round(open_amount, 2),
+        "open_invoices_count": open_count,
+        "open_after_deposit": round(open_net_of_deposit, 2),
+        "overdue_amount": round(overdue_amount, 2),
+        "overdue_count": overdue_count,
+        "failed_refunds_amount": round(failed_amount, 2),
+        "failed_refunds_count": failed_count,
+        "by_month": by_month_list,
+    }
+
+
 @router.post("/refund/manual")
 async def manual_refund(req: ManualRefundRequest, user: dict = Depends(_require_admin)):
     """Manually trigger a refund for a signup's paid deposit. If amount omitted, refunds full remaining deposit."""

@@ -9,6 +9,7 @@ import {
   ArrowLeft, Search, Download, FileText, Send, ChevronRight,
   TrendingUp, Receipt, CheckCircle, Clock, AlertTriangle,
   CircleDollarSign, Ban, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw,
+  CreditCard, Wallet, TrendingDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +35,19 @@ export default function FinancePage() {
 
   const canAccess = isAdmin || user?.permissions?.can_billing;
 
+  const [finance, setFinance] = useState(null);
+  const loadFinance = useCallback(async () => {
+    try {
+      const r = await api.get("/payments/finance-summary");
+      setFinance(r.data);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    if (!canAccess) return;
+    loadFinance();
+  }, [canAccess, loadFinance]);
+
   const repairStripePaid = async () => {
     if (!window.confirm("Stripe-Zahlungen mit der Rechnungsliste abgleichen?\nFindet Rechnungen, die bei Stripe bezahlt wurden, hier aber noch als 'Fällig' stehen.")) return;
     setRepairing(true);
@@ -47,6 +61,7 @@ export default function FinancePage() {
         const numbers = all.map(r => r.invoice_number).filter(Boolean).join(", ");
         toast.success(`${total} Rechnung(en) als bezahlt markiert: ${numbers}`);
         loadInvoices();
+        loadFinance();
       }
       if ((data.skipped || []).length > 0) {
         console.warn("[Stripe-Repair] Skipped:", data.skipped);
@@ -210,6 +225,126 @@ export default function FinancePage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6 w-full space-y-6">
+        {/* Stripe-Finanzuebersicht */}
+        {finance && (
+          <div className="bg-gradient-to-br from-fuchsia-50 via-white to-emerald-50 border border-fuchsia-100 rounded-xl p-5" data-testid="stripe-finance-panel">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-fuchsia-600" />
+                <h2 className="text-sm font-semibold text-gray-900">Stripe & Offene Posten</h2>
+              </div>
+              <button
+                onClick={loadFinance}
+                className="text-[11px] text-gray-500 hover:text-fuchsia-600 flex items-center gap-1"
+                title="Aktualisieren"
+                data-testid="finance-refresh-btn"
+              >
+                <RefreshCw className="w-3 h-3" /> Aktualisieren
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-white/70 backdrop-blur-sm border border-emerald-100 rounded-lg p-3" data-testid="stripe-income-card">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wide">Stripe-Eingang</span>
+                </div>
+                <p className="text-xl font-bold text-emerald-700 font-mono">
+                  {finance.stripe_income_net.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                {finance.stripe_refunds_total > 0 && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    Brutto {finance.stripe_income_gross.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro; · <span className="text-rose-600">-{finance.stripe_refunds_total.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro; Refunds</span>
+                  </p>
+                )}
+                <div className="flex gap-2 mt-1.5 text-[10px] text-gray-500 flex-wrap">
+                  {finance.by_type?.deposit && (
+                    <span title="Kautionen"><b>{finance.by_type.deposit.count}</b> Kaut. {finance.by_type.deposit.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}&euro;</span>
+                  )}
+                  {finance.by_type?.invoice && (
+                    <span title="Rechnungen"><b>{finance.by_type.invoice.count}</b> Rechn. {finance.by_type.invoice.amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })}&euro;</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white/70 backdrop-blur-sm border border-amber-100 rounded-lg p-3" data-testid="open-invoices-card">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wide">Offen (Rechnungen)</span>
+                </div>
+                <p className="text-xl font-bold text-amber-700 font-mono">
+                  {finance.open_invoices_amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  {finance.open_invoices_count} Rechnung(en)
+                </p>
+                {finance.open_after_deposit !== finance.open_invoices_amount && (
+                  <p className="text-[10px] text-amber-600 mt-1" title="Rechnungsbetrag abzueglich bereits gezahlter Kautionen">
+                    nach Kaution: <b>{finance.open_after_deposit.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;</b>
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-white/70 backdrop-blur-sm border border-red-100 rounded-lg p-3" data-testid="overdue-card">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wide">Überfällig</span>
+                </div>
+                <p className="text-xl font-bold text-red-700 font-mono">
+                  {finance.overdue_amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  {finance.overdue_count} Mahnung(en)
+                </p>
+              </div>
+
+              <div className={`bg-white/70 backdrop-blur-sm border rounded-lg p-3 ${finance.failed_refunds_count > 0 ? "border-rose-200" : "border-gray-200"}`} data-testid="failed-refunds-card">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <TrendingDown className={`w-3.5 h-3.5 ${finance.failed_refunds_count > 0 ? "text-rose-600" : "text-gray-400"}`} />
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wide">Refund-Fehler</span>
+                </div>
+                <p className={`text-xl font-bold font-mono ${finance.failed_refunds_count > 0 ? "text-rose-700" : "text-gray-400"}`}>
+                  {finance.failed_refunds_amount.toLocaleString("de-DE", { minimumFractionDigits: 2 })} &euro;
+                </p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  {finance.failed_refunds_count} hängend
+                </p>
+              </div>
+            </div>
+
+            {finance.by_month && finance.by_month.length > 1 && (
+              <details className="mt-4 group">
+                <summary className="text-[11px] text-gray-500 cursor-pointer hover:text-fuchsia-600 select-none">
+                  Verlauf (letzte {finance.by_month.length} Monate) ▾
+                </summary>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="text-gray-500 uppercase">
+                      <tr>
+                        <th className="text-left py-1 pr-3">Monat</th>
+                        <th className="text-right py-1 pr-3">Eingang</th>
+                        <th className="text-right py-1 pr-3">Refunds</th>
+                        <th className="text-right py-1 pr-3">Netto</th>
+                        <th className="text-right py-1"># TX</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {finance.by_month.map(m => (
+                        <tr key={m.month}>
+                          <td className="py-1 pr-3 font-mono text-gray-700">{m.month}</td>
+                          <td className="py-1 pr-3 text-right font-mono text-emerald-700">{m.income.toLocaleString("de-DE", { minimumFractionDigits: 2 })}</td>
+                          <td className="py-1 pr-3 text-right font-mono text-rose-600">{m.refunds > 0 ? `-${m.refunds.toLocaleString("de-DE", { minimumFractionDigits: 2 })}` : "-"}</td>
+                          <td className="py-1 pr-3 text-right font-mono font-semibold text-gray-900">{m.net.toLocaleString("de-DE", { minimumFractionDigits: 2 })}</td>
+                          <td className="py-1 text-right text-gray-500">{m.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <button onClick={() => setFilter("alle")} className={`bg-white border rounded-lg p-4 text-left transition ${filter === "alle" ? "border-fuchsia-400 ring-1 ring-fuchsia-200" : "border-gray-200 hover:border-gray-300"}`} data-testid="stat-total">
