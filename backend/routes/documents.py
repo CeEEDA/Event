@@ -1647,6 +1647,62 @@ async def _run_ai_analysis(doc_id: str, temp_path: str, content_type: str, folde
         # damit der User weiss dass er einfach "Erneut analysieren" klicken kann
         # sobald Ollama wieder antwortet (Modell-Reload, Netz-Glitch, etc).
         if isinstance(e, OllamaUnavailable):
+            # ─── HEURISTIK-FALLBACK: Ollama down, aber Doc muss trotzdem
+            # zugeordnet werden. Text-basierte Regel-Analyse rettet den Tag.
+            try:
+                from services.heuristic_analyzer import analyze_document_fallback
+                doc = await db.documents.find_one({"id": doc_id}, {"_id": 0, "original_filename": 1, "storage_path": 1})
+                fname = (doc or {}).get("original_filename") or ""
+                # PDF-Bytes: temp_path ist noch da (finally kommt erst nach diesem block)
+                pdf_bytes = b""
+                try:
+                    with open(temp_path, "rb") as _fh:
+                        pdf_bytes = _fh.read()
+                except OSError:
+                    pass
+
+                if pdf_bytes and (content_type or "").lower() == "application/pdf":
+                    fb_result = analyze_document_fallback(pdf_bytes, fname)
+                    suggested = fb_result.get("suggested_folder") or "unbekannt"
+                    # Auf validen Ordner mappen (Base-Ordner-Check + Year/Month wenn Rechnung)
+                    valid_bases = [f["id"] for f in PREDEFINED_FOLDERS]
+                    async for cf in db.document_folders.find({"is_deleted": False}, {"_id": 0, "id": 1}):
+                        valid_bases.append(cf["id"])
+                    base = suggested if suggested in valid_bases else "unbekannt"
+                    final_folder = base
+                    doc_date = fb_result.get("date") or ""
+                    if base != "unbekannt" and base.startswith(("rechnungs", "teba")):
+                        try:
+                            final_folder = await _ensure_year_month_subfolder(base, doc_date or datetime.now(timezone.utc).isoformat())
+                        except Exception:
+                            final_folder = base
+
+                    upd = {
+                        "folder_id": final_folder,
+                        "ai_status": "completed",
+                        "ai_result": fb_result,
+                        "ai_metadata": fb_result,
+                        "full_text": fb_result.get("full_text", "")[:20000],
+                        "keywords": fb_result.get("keywords", []),
+                        "ai_suggested_folder": base,
+                        "ai_fallback_used": True,
+                        "ai_fallback_reason": fb_result.get("_fallback_reason", ""),
+                        "ai_error": None,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    await db.documents.update_one({"id": doc_id}, {"$set": upd})
+
+                    # DATEV-Pending fuer Rechnungs-Ordner (wie im Normalfall)
+                    if _resolve_datev_target(final_folder):
+                        await db.documents.update_one({"id": doc_id}, {"$set": {
+                            "datev_pending": True,
+                            "datev_pending_since": datetime.now(timezone.utc).isoformat(),
+                        }})
+                    logger.info(f"[fallback] Doc {doc_id} via Heuristik klassifiziert -> {final_folder}")
+                    return
+            except Exception as fb_err:
+                logger.warning(f"[fallback] Heuristik-Fallback fehlgeschlagen fuer {doc_id}: {fb_err}")
+
             error_msg = f"KI-Server nicht erreichbar: {str(e)[:300]}. Bitte spaeter erneut analysieren."
         else:
             error_msg = str(e)[:500]

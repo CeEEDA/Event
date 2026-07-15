@@ -941,9 +941,18 @@ export default function DocumentManagementPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <h3 className="text-sm font-semibold text-gray-900 truncate">{(meta.subject && !["Analyse fehlgeschlagen", "Nicht erkannt"].includes(meta.subject)) ? meta.subject : doc.original_filename}</h3>
-                          {doc.ai_status === "completed" && (
+                          {doc.ai_status === "completed" && !doc.ai_fallback_used && (
                             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-medium flex-shrink-0">
                               <Brain className="w-3 h-3" /> KI erkannt
+                            </span>
+                          )}
+                          {doc.ai_status === "completed" && doc.ai_fallback_used && (
+                            <span
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-medium flex-shrink-0 cursor-help"
+                              title={doc.ai_fallback_reason || "Ollama war nicht erreichbar - regelbasierte Analyse. Klicke Sparkles für KI-Reanalyse."}
+                              data-testid={`ai-fallback-badge-${doc.id}`}
+                            >
+                              <AlertTriangle className="w-3 h-3" /> Heuristik (ohne KI)
                             </span>
                           )}
                           {doc.ai_status === "pending" && (
