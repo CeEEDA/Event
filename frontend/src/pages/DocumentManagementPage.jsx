@@ -341,6 +341,89 @@ export default function DocumentManagementPage() {
       : d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " Uhr";
   })();
 
+  // ── DATEV: Status + manueller Batch-Versand ─────────────────────────
+  const [datev, setDatev] = useState(null);
+  const [datevLoading, setDatevLoading] = useState(false);
+  const [datevMenuOpen, setDatevMenuOpen] = useState(false);
+  const datevMenuRef = useRef(null);
+
+  const loadDatevStatus = useCallback(async () => {
+    try {
+      const r = await api.get("/datev/status");
+      setDatev(r.data);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { loadDatevStatus(); }, [loadDatevStatus]);
+
+  // Klick außerhalb schließt Dropdown
+  useEffect(() => {
+    if (!datevMenuOpen) return;
+    const onDoc = (e) => {
+      if (datevMenuRef.current && !datevMenuRef.current.contains(e.target)) setDatevMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [datevMenuOpen]);
+
+  const handleDatevRunNow = async () => {
+    if (datevLoading) return;
+    const pending = datev?.pending_count || 0;
+    if (pending === 0) {
+      toast.info("Keine Rechnungen im DATEV-Wartebereich.");
+      return;
+    }
+    if (!window.confirm(`Jetzt ${pending} Rechnung(en) an DATEV verschicken?`)) return;
+    setDatevLoading(true);
+    setDatevMenuOpen(false);
+    try {
+      const r = await api.post("/datev/run-now");
+      const s = r.data?.stats || {};
+      toast.success(`DATEV-Batch fertig: ${s.forwarded || 0} versendet${s.errors ? `, ${s.errors} Fehler` : ""}`);
+      await loadDatevStatus();
+      await loadDocuments(activeFolder);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "DATEV-Versand fehlgeschlagen");
+    } finally {
+      setDatevLoading(false);
+    }
+  };
+
+  const handleDatevBackfill = async () => {
+    if (datevLoading) return;
+    const unmarked = datev?.unmarked_count || 0;
+    if (unmarked === 0) {
+      toast.info("Keine ungetaggten Rechnungen gefunden.");
+      return;
+    }
+    const daysStr = window.prompt(
+      `Ungetaggte Rechnungen der letzten X Tage in den DATEV-Wartebereich verschieben.\n\nAktuell ungetaggt: ${unmarked}\n\nZeitraum in Tagen (z.B. 30, 90, 365):`,
+      "90"
+    );
+    if (!daysStr) return;
+    const days = parseInt(daysStr, 10);
+    if (!days || days < 1) { toast.error("Ungültige Anzahl Tage"); return; }
+    setDatevLoading(true);
+    setDatevMenuOpen(false);
+    try {
+      const r = await api.post(`/datev/backfill-pending?days=${days}`);
+      toast.success(r.data?.message || `${r.data?.marked} Rechnungen markiert`);
+      await loadDatevStatus();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Backfill fehlgeschlagen");
+    } finally {
+      setDatevLoading(false);
+    }
+  };
+
+  const datevPending = datev?.pending_count ?? 0;
+  const datevUnmarked = datev?.unmarked_count ?? 0;
+  const datevLastRunText = (() => {
+    if (!datev?.last_run_at) return null;
+    const d = new Date(datev.last_run_at);
+    return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  })();
+
   // ── PDF/Image Preview als Blob laden (umgeht Cloudflare iframe-Block) ──
   const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
 
@@ -644,6 +727,79 @@ export default function DocumentManagementPage() {
             </div>
           )}
           <input ref={fileInput} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff,.zip" className="hidden" onChange={e => handleUpload(Array.from(e.target.files))} />
+          {/* DATEV-Batch: pending Rechnungen manuell abschicken */}
+          <div className="relative flex items-center pl-2 ml-1 border-l border-gray-200" ref={datevMenuRef} data-testid="datev-section">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { setDatevMenuOpen(v => !v); loadDatevStatus(); }}
+              disabled={datevLoading}
+              className={`text-xs relative ${datevPending > 0 ? "text-emerald-700 border-emerald-300 hover:bg-emerald-50" : "text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+              title={`DATEV-Batch: ${datevPending} pending, ${datevUnmarked} ungetaggt`}
+              data-testid="datev-btn"
+            >
+              {datevLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
+              DATEV
+              {datevPending > 0 && (
+                <span
+                  className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold"
+                  data-testid="datev-pending-badge"
+                >
+                  {datevPending}
+                </span>
+              )}
+            </Button>
+            {datevMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-30 p-2"
+                data-testid="datev-menu"
+              >
+                <div className="px-3 py-2 border-b border-gray-100">
+                  <div className="text-xs font-semibold text-gray-700">DATEV Abend-Batch</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    Versand um {datev?.send_time || "20:00"} {datev?.timezone || "Europe/Berlin"}
+                  </div>
+                  {datevLastRunText && (
+                    <div className="text-[11px] text-gray-400 mt-0.5">Letzter Lauf: {datevLastRunText}</div>
+                  )}
+                </div>
+                <div className="px-3 py-2 grid grid-cols-2 gap-2 border-b border-gray-100">
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-emerald-600">{datevPending}</div>
+                    <div className="text-[10px] text-gray-500 uppercase">Wartend</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`text-lg font-semibold ${datevUnmarked > 0 ? "text-amber-600" : "text-gray-400"}`}>{datevUnmarked}</div>
+                    <div className="text-[10px] text-gray-500 uppercase">Ungetaggt</div>
+                  </div>
+                </div>
+                <button
+                  onClick={handleDatevRunNow}
+                  disabled={datevLoading || datevPending === 0}
+                  className="w-full text-left px-3 py-2 rounded-md hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed text-sm flex items-center gap-2 text-emerald-700"
+                  data-testid="datev-run-now-btn"
+                >
+                  <Send className="w-4 h-4" />
+                  <div>
+                    <div className="font-medium">Jetzt an DATEV senden</div>
+                    <div className="text-[11px] text-gray-500">{datevPending} Rechnung(en) sofort verschicken</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleDatevBackfill}
+                  disabled={datevLoading || datevUnmarked === 0}
+                  className="w-full text-left px-3 py-2 rounded-md hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed text-sm flex items-center gap-2 text-amber-700"
+                  data-testid="datev-backfill-btn"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <div>
+                    <div className="font-medium">Alte nachtragen</div>
+                    <div className="text-[11px] text-gray-500">{datevUnmarked} ungetaggte Rechnung(en) auf Wartebereich setzen</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
