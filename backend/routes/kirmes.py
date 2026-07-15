@@ -1854,7 +1854,6 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
             _l.getLogger(__name__).warning(f"Auto-refund (bulk) failed for invoice {inv_number}: {e}")
 
         # Auto-send invoice via email
-        _datev_bcc_sent = False
         try:
             from services.invoice_pdf import generate_invoice_pdf
             from email_service import send_email_with_attachment
@@ -1880,11 +1879,10 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
                     f"{_pay_block}"
                     f"<p>Vielen Dank!<br/><br/>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"
                 )
-                datev_bcc = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_EED", "").strip()
-                bcc_list = [datev_bcc] if datev_bcc else None
-                send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename, bcc=bcc_list)
-                if bcc_list:
-                    _datev_bcc_sent = True
+                # KEIN DATEV-BCC mehr - DATEV wird zentral ueber die
+                # Dokumentenverwaltung (Abend-Batch oder "Jetzt an DATEV senden"-
+                # Button) verschickt, um Duplikate zu vermeiden.
+                send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename)
                 await _db.kirmes_invoices.update_one(
                     {"id": invoice_doc["id"]},
                     {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
@@ -1932,11 +1930,11 @@ async def generate_all_invoices(event_id: str, user: dict = Depends(_require_bil
                 "full_text": f"Rechnung {inv_number} {sch.get('firma', '')} {event.get('name', '')} {calc.get('brutto', 0):.2f} EUR",
                 "keywords": [inv_number, sch.get("firma", ""), event.get("name", ""), "Ausgangsrechnung"],
                 "is_deleted": False,
-                # Wenn DATEV-BCC beim Versand erfolgreich verschickt wurde, ist die
-                # Rechnung schon dort. Sonst muss sie in den Abend-Batch (datev_pending).
-                "datev_forwarded": bool(_datev_bcc_sent),
-                "datev_pending": (not _datev_bcc_sent),
-                "datev_pending_since": (datetime.now(timezone.utc).isoformat() if not _datev_bcc_sent else None),
+                # Alle Rechnungen laufen jetzt ueber den zentralen DATEV-Batch
+                # in der Dokumentenverwaltung. Kein direktes BCC mehr.
+                "datev_forwarded": False,
+                "datev_pending": True,
+                "datev_pending_since": datetime.now(timezone.utc).isoformat(),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -2932,9 +2930,10 @@ async def send_invoice_email(invoice_id: str, request: Request, user: dict = Dep
 <p>Vielen Dank!<br/><br/>Mit freundlichen Grüßen<br/><b>Eventenergie Deutschland GmbH &amp; Co. KG</b></p>"""
 
     try:
-        datev_bcc = os.environ.get("DATEV_EMAIL_RECHNUNGSAUSGANG_EED", "").strip()
-        accounting_bcc = [datev_bcc] if datev_bcc else None
-        send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename, bcc=accounting_bcc)
+        # KEIN DATEV-BCC mehr - DATEV wird zentral ueber die
+        # Dokumentenverwaltung (Abend-Batch oder "Jetzt an DATEV senden"-Button)
+        # verschickt, um Duplikate zu vermeiden.
+        send_email_with_attachment(sch_email, subject, html, pdf_bytes, filename)
         await _db.kirmes_invoices.update_one(
             {"id": invoice_id},
             {"$set": {"status": "versendet", "sent_at": datetime.now(timezone.utc).isoformat(), "sent_to": sch_email}}
@@ -2988,7 +2987,11 @@ async def send_invoice_email(invoice_id: str, request: Request, user: dict = Dep
                 "full_text": f"Rechnung {inv_number} {sch_data.get('firma', '')} {inv.get('event_name', '')} {inv.get('brutto', 0):.2f} EUR",
                 "keywords": [inv_number, sch_data.get("firma", ""), inv.get("event_name", ""), "Ausgangsrechnung"],
                 "is_deleted": False,
-                "datev_forwarded": True,
+                # Rechnung geht ueber den zentralen DATEV-Batch aus der
+                # Dokumentenverwaltung raus - nicht mehr per BCC beim Versand.
+                "datev_forwarded": False,
+                "datev_pending": True,
+                "datev_pending_since": datetime.now(timezone.utc).isoformat(),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -3000,7 +3003,7 @@ async def send_invoice_email(invoice_id: str, request: Request, user: dict = Dep
         import logging as _log
         _log.getLogger(__name__).warning(f"Document storage for invoice {inv.get('invoice_number', '')} on send failed: {doc_err}")
 
-    return {"message": f"Rechnung an {sch_email} versendet (DATEV + Dokumentenablage)."}
+    return {"message": f"Rechnung an {sch_email} versendet. DATEV-Versand folgt automatisch via Dokumentenverwaltung."}
 
 
 
