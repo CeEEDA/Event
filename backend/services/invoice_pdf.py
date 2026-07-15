@@ -246,8 +246,9 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
         # FALL 2: Ueberzahlung -> automatischer Refund per Stripe
         elements.append(Paragraph(
             f"Ihre Anzahlung per Kreditkarte in H\u00f6he von <b>{deposit_paid_total:.2f} \u20ac</b> wurde verrechnet. "
-            f"Die \u00dcberzahlung von <b>{deposit_refunded:.2f} \u20ac</b> wurde bereits automatisch auf Ihre "
-            "Kreditkarte zur\u00fcckerstattet. Es ist keine weitere Zahlung erforderlich.",
+            f"Die \u00dcberzahlung in H\u00f6he von <b>{deposit_refunded:.2f} \u20ac</b> wird in den n\u00e4chsten "
+            f"5\u201310 Werktagen \u00fcber unseren Zahlungsabwickler auf Ihre Kreditkarte "
+            "zur\u00fcckgebucht. Es ist keine weitere Zahlung erforderlich.",
             styles["InvNormal"]
         ))
     elif deposit_paid_total > 0 and open_balance <= 0.005:

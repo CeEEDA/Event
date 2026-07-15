@@ -41,3 +41,21 @@ Traceback (most recent call last):
   File "/root/.venv/lib/python3.11/site-packages/emergentintegrations/payments/stripe/checkout.py", line 173, in create_checkout_session
     raise CheckoutError(f"Failed to create checkout session: {str(e)}")
 emergentintegrations.payments.stripe.checkout.CheckoutError: Failed to create checkout session: Request req_ZuzjLhgLL84YB0: The payment method type "paypal" is invalid. Please ensure the provided type is activated in your dashboard (https://dashboard.stripe.com/account/payments/settings) and your account is enabled for any preview features that you are trying to use.
+2026-07-15 06:13:58,586 [ERROR] payments: [payments] Refund creation failed signup=eb8798cf-7f76-4b68-86a2-9a9495600c0c: Request req_qh7LrBKI1OYbND: No such payment_intent: 'pi_test_manual_20d24f317abc48a4'
+Traceback (most recent call last):
+  File "/app/backend/routes/payments.py", line 133, in refund_deposit_difference
+    refund = _stripe_sdk.Refund.create(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_refund.py", line 606, in create
+    cls._static_request(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_resource.py", line 172, in _static_request
+    return _APIRequestor._global_instance().request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 210, in request
+    resp = requestor._interpret_response(rbody, rcode, rheaders, api_mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 868, in _interpret_response
+    self.handle_error_response(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 351, in handle_error_response
+    raise err
+stripe._error.InvalidRequestError: Request req_qh7LrBKI1OYbND: No such payment_intent: 'pi_test_manual_20d24f317abc48a4'
