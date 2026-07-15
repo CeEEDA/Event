@@ -1163,9 +1163,23 @@ async def clock_out(token: str = Query(...), body: dict | None = None):
     raw_duration = (now - clock_in_time).total_seconds() / 60.0
 
     # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
+    # Aber nur BEIM ERSTEN Einsatz des Tages - fuer weitere Einsaetze am gleichen
+    # Tag (z.B. Abendeinsatz nach normaler Schicht) laeuft die Zeit ohne
+    # zusaetzliche Pause weiter, es sei denn der neue Einsatz alleine schon
+    # die 6h-Grenze reisst (dann greift die gesetzliche Mindestpause auf ihn).
     entry_date = entry.get("date") or now.strftime("%Y-%m-%d")
-    break_min = await _get_break_min_for_date(user["id"], entry_date)
-    break_min = _enforce_legal_break_minimum(raw_duration, break_min)
+    previous_break_today = 0.0
+    async for prev in db.time_entries.find(
+        {"user_id": user["id"], "date": entry_date, "id": {"$ne": entry["id"]},
+         "clock_out": {"$ne": None}},
+        {"_id": 0, "break_min": 1}
+    ):
+        previous_break_today += float(prev.get("break_min") or 0)
+    scheduled_break = await _get_break_min_for_date(user["id"], entry_date)
+    remaining_scheduled = max(0.0, scheduled_break - previous_break_today)
+    # Fuer diesen Entry: Pflichtpause aus Wochenplan (soweit noch nicht am Tag
+    # bereits abgezogen) ODER gesetzliche Mindestpause fuer DIESEN Entry allein
+    break_min = _enforce_legal_break_minimum(raw_duration, remaining_scheduled)
     duration = _apply_break_deduction(raw_duration, break_min)
 
     await db.time_entries.update_one(
