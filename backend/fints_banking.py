@@ -621,6 +621,7 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
     invoices = await db.kirmes_invoices.find(
         {"payment_status": {"$ne": "bezahlt"}},
         {"_id": 0, "id": 1, "invoice_number": 1, "brutto": 1,
+         "deposit_applied": 1,  # WICHTIG fuer Restbetrag-Match (Brutto - Kaution)
          "schausteller_firma": 1, "schausteller_kundennummer": 1, "schausteller_name": 1}
     ).to_list(5000)
     matches = match_transactions_to_invoices(transactions, invoices)
