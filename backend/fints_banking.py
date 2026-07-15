@@ -469,38 +469,67 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _close_mahnung_tasks(db, invoice_id, reason):
-    """Schliesst offene Mahnungs-Tasks fuer eine Rechnung."""
-    return await db.tasks.update_many(
+    """Schliesst offene Tasks fuer eine Rechnung (Mahnungen + FinTS-Betrag-
+    Mismatch-Tasks). Wird aufgerufen wenn eine Rechnung bezahlt wurde."""
+    # Zwei Task-Typen koennen fuer eine Rechnung offen sein:
+    # 1. payment_reminder (Mahnung) - verknuepft ueber payment_reminder_invoice_id
+    # 2. fints_amount_mismatch - verknuepft ueber fints_invoice_id (Betrag stimmte
+    #    nicht, Task fordert manuelle Pruefung an - wenn spaeter doch bezahlt
+    #    wurde, muss diese Task auch geschlossen werden)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    result_mahnung = await db.tasks.update_many(
         {"payment_reminder_invoice_id": invoice_id,
          "completed": False, "is_deleted": {"$ne": True}},
         {"$set": {
             "completed": True,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": now_iso,
             "completed_by_name": reason,
         }}
     )
+    result_mismatch = await db.tasks.update_many(
+        {"fints_invoice_id": invoice_id,
+         "task_type": "fints_amount_mismatch",
+         "completed": False, "is_deleted": {"$ne": True}},
+        {"$set": {
+            "completed": True,
+            "completed_at": now_iso,
+            "completed_by_name": reason,
+        }}
+    )
+    # Kombiniertes ModifiedCount-Objekt fuer Backwards-Compat mit Callern
+    class _CombinedResult:
+        def __init__(self, a, b):
+            self.modified_count = (a or 0) + (b or 0)
+    return _CombinedResult(result_mahnung.modified_count, result_mismatch.modified_count)
 
 
 async def _sweep_paid_invoices(db) -> int:
-    """Sweep: Offene Mahnungs-Tasks fuer Rechnungen, die bereits als 'bezahlt'
-    markiert sind, automatisch schliessen (Aufraeumen falls Tasks vor dem
-    Bezahlt-Status erstellt wurden). Returns: Anzahl geschlossener Tasks."""
-    paid_with_open_tasks = await db.tasks.distinct(
+    """Sweep: Offene Tasks (Mahnung + Betrag-Mismatch) fuer Rechnungen, die
+    bereits als 'bezahlt' markiert sind, automatisch schliessen (Aufraeumen
+    falls Tasks vor dem Bezahlt-Status erstellt wurden).
+    Returns: Anzahl geschlossener Tasks."""
+    # Sammle alle Rechnungs-IDs aus offenen Tasks (beide Task-Typen)
+    ids_mahnung = await db.tasks.distinct(
         "payment_reminder_invoice_id",
         {"task_type": "payment_reminder", "completed": False, "is_deleted": {"$ne": True}}
     )
-    swept_closed = 0
-    if not paid_with_open_tasks:
+    ids_mismatch = await db.tasks.distinct(
+        "fints_invoice_id",
+        {"task_type": "fints_amount_mismatch", "completed": False, "is_deleted": {"$ne": True}}
+    )
+    invoice_ids = list({*(ids_mahnung or []), *(ids_mismatch or [])})
+    if not invoice_ids:
         return 0
     paid_invoices = await db.kirmes_invoices.find(
-        {"id": {"$in": paid_with_open_tasks}, "payment_status": "bezahlt"},
+        {"id": {"$in": invoice_ids}, "payment_status": "bezahlt"},
         {"_id": 0, "id": 1}
     ).to_list(5000)
+    swept_closed = 0
     for pinv in paid_invoices:
         tc = await _close_mahnung_tasks(db, pinv["id"], "Auto-Cleanup (Rechnung bereits bezahlt)")
         swept_closed += tc.modified_count or 0
     if swept_closed:
-        logger.info(f"FinTS Sweep: {swept_closed} offene Mahnungs-Task(s) fuer bereits bezahlte Rechnungen geschlossen")
+        logger.info(f"FinTS Sweep: {swept_closed} offene Task(s) fuer bereits bezahlte Rechnungen geschlossen")
     return swept_closed
 
 
