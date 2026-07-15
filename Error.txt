@@ -13,3 +13,31 @@ Traceback (most recent call last):
 services.ollama_client.OllamaUnavailable: Warmup-Ping fehlgeschlagen: Warmup-Timeout nach 30.0s - Ollama antwortet nicht auf /api/generate
 
 2026-07-14 11:16:25,597 [ERROR] orders_sync: Sync Fehler: 
+2026-07-15 06:09:03,749 [ERROR] payments: [payments] Stripe checkout creation failed (pm=kreditkarte): Failed to create checkout session: Request req_ZuzjLhgLL84YB0: The payment method type "paypal" is invalid. Please ensure the provided type is activated in your dashboard (https://dashboard.stripe.com/account/payments/settings) and your account is enabled for any preview features that you are trying to use.
+Traceback (most recent call last):
+  File "/root/.venv/lib/python3.11/site-packages/emergentintegrations/payments/stripe/checkout.py", line 158, in create_checkout_session
+    session = stripe.checkout.Session.create(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/checkout/_session.py", line 2471, in create
+    cls._static_request(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_resource.py", line 172, in _static_request
+    return _APIRequestor._global_instance().request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 210, in request
+    resp = requestor._interpret_response(rbody, rcode, rheaders, api_mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 868, in _interpret_response
+    self.handle_error_response(
+  File "/root/.venv/lib/python3.11/site-packages/stripe/_api_requestor.py", line 351, in handle_error_response
+    raise err
+stripe._error.InvalidRequestError: Request req_ZuzjLhgLL84YB0: The payment method type "paypal" is invalid. Please ensure the provided type is activated in your dashboard (https://dashboard.stripe.com/account/payments/settings) and your account is enabled for any preview features that you are trying to use.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/backend/routes/payments.py", line 41, in _create_stripe_session_with_error_handling
+    return await stripe_client.create_checkout_session(checkout_req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/.venv/lib/python3.11/site-packages/emergentintegrations/payments/stripe/checkout.py", line 173, in create_checkout_session
+    raise CheckoutError(f"Failed to create checkout session: {str(e)}")
+emergentintegrations.payments.stripe.checkout.CheckoutError: Failed to create checkout session: Request req_ZuzjLhgLL84YB0: The payment method type "paypal" is invalid. Please ensure the provided type is activated in your dashboard (https://dashboard.stripe.com/account/payments/settings) and your account is enabled for any preview features that you are trying to use.
