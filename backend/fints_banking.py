@@ -248,8 +248,28 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
+def _numeric_suffix(s: str) -> str:
+    """Extrahiert die letzten Zahlenblock-Ziffern (auch fuehrende Nullen).
+    "R26-K-0033" -> "0033",  "K-0014" -> "0014",  "260243" -> "260243"."""
+    m = re.search(r"(\d+)\s*$", s or "")
+    return m.group(1) if m else ""
+
+
+def _digit_variants(num_str: str) -> list:
+    """Liefert die Ziffer-Varianten fuer einen numerischen Suffix:
+    "0033" -> ["0033", "33"],  "0014" -> ["0014", "14"],  "260243" -> ["260243"]."""
+    if not num_str:
+        return []
+    stripped = num_str.lstrip("0") or "0"
+    variants = [num_str]
+    if stripped != num_str:
+        variants.append(stripped)
+    return variants
+
+
 def _find_invoice_number_in_text(text: str, invoice_numbers: list) -> tuple:
-    """Sucht eine Rechnungsnummer im Text - auch mit Tippfehlern.
+    """Sucht eine Rechnungsnummer im Text - auch mit Tippfehlern oder wenn der
+    Kunde nur die Ziffern ohne Praefix schreibt.
     Returns: (invoice_number, confidence, match_type)
     """
     text_clean = _normalize(text)
@@ -257,12 +277,30 @@ def _find_invoice_number_in_text(text: str, invoice_numbers: list) -> tuple:
     for inv_nr in invoice_numbers:
         inv_clean = _normalize(inv_nr)
 
-        # Exakter Treffer (normalisiert)
+        # Exakter Treffer (normalisiert) - "R26-K-0033" in "kundennummer14rechnungsnummer33..."
         if inv_clean in text_clean:
             return inv_nr, 100, "exakt"
 
+    # ─── ZIFFER-SUFFIX-MATCH: Kunde schreibt oft nur "33" statt "R26-K-0033"
+    # Vor der Fuzzy-Suche pruefen wir, ob der numerische Suffix (mit/ohne
+    # fuehrende Nullen) im DIRECTEN Umfeld eines Kontext-Wortes steht
+    # (Rechnungsnummer/Rg-Nr etc.). "Stromabrechnung 33 kWh" darf NICHT
+    # als "R26-K-0033" gematcht werden.
+    # Pattern: "Rechnung(snr|Nr|-Nr):? 0033" ODER "Rg-Nr 33" - mit max 20
+    # Zeichen Abstand zwischen Keyword und Ziffernblock.
+    ctx_pattern = (
+        r"(?:rechnungs?[-\s]?(?:nummer|nr|no|number)|rg[-.\s]?nr|beleg[-\s]?nr|invoice\s*(?:no|number|nr))"
+        r"[:\s.\-#]*(\d{2,10})"
+    )
+    for cm in re.finditer(ctx_pattern, (text or ""), re.IGNORECASE):
+        num_in_text = cm.group(1)
+        for inv_nr in invoice_numbers:
+            suffix = _numeric_suffix(inv_nr)
+            for variant in _digit_variants(suffix):
+                if variant and variant == num_in_text:
+                    return inv_nr, 92, "digit_suffix_with_context"
+
     # Fuzzy-Suche: Zahlendreher, Buchstabendreher
-    # Zerlege den Text in Woerter und pruefe Aehnlichkeit
     words = re.split(r"[\s,;./\-]+", text)
     for inv_nr in invoice_numbers:
         inv_clean = _normalize(inv_nr)
@@ -354,7 +392,24 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
             name_lower = name.lower()
             purpose_lower = purpose.lower()
 
-            if kd_nr and kd_nr in purpose_lower:
+            # Kundennummer sowohl komplett ("k-0014") als auch nur Ziffern ("0014"/"14") pruefen
+            kd_variants = []
+            if kd_nr:
+                kd_variants.append(kd_nr)
+                suffix = _numeric_suffix(kd_nr)
+                kd_variants.extend(v for v in _digit_variants(suffix) if v and len(v) >= 2)
+
+            kd_hit = None
+            if any(v in purpose_lower for v in kd_variants):
+                # Falls nur die Ziffern getroffen wurden, verlangen wir zusaetzlich
+                # das Wort "kunde/kd" im Verwendungszweck, damit z.B. "14 kWh"
+                # nicht faelschlich als Kundennummer erkannt wird.
+                exact_hit = kd_nr and kd_nr in purpose_lower
+                context_hit = any(kw in purpose_lower for kw in ("kunde", "kdnr", "kd-nr", "kd.nr", "kundennummer"))
+                if exact_hit or context_hit:
+                    kd_hit = kd_nr
+
+            if kd_hit:
                 matches.append({
                     "invoice_id": inv["id"],
                     "invoice_number": inv["invoice_number"],
