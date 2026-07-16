@@ -125,17 +125,25 @@ async def test_connection(token: str = Query(...)):
             "hint": "Nach dem Setzen der ENV-Variablen Backend neu starten.",
         }
 
-    # Capture python-fints DEBUG-Trace (analog Sparkasse-Test)
+    # Capture python-fints DEBUG-Trace + HTTP-Layer (requests/urllib3) fuer Bank-Response
     import io
     import logging as _logging
     buf = io.StringIO()
     handler = _logging.StreamHandler(buf)
     handler.setLevel(_logging.DEBUG)
     handler.setFormatter(_logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    fints_logger = _logging.getLogger("fints")
-    fints_logger.addHandler(handler)
-    prev_level = fints_logger.level
-    fints_logger.setLevel(_logging.DEBUG)
+    captured_loggers = []
+    for name in ("fints", "fints.parser", "fints.client", "fints.connection", "urllib3", "requests"):
+        lg = _logging.getLogger(name)
+        lg.addHandler(handler)
+        captured_loggers.append((lg, lg.level))
+        lg.setLevel(_logging.DEBUG)
+    # HTTPConnection auf Debug damit wir raw HBCI-Response sehen
+    try:
+        import http.client as _http_client
+        _http_client.HTTPConnection.debuglevel = 1
+    except Exception:
+        pass
 
     diag = {
         "stage": "init",
@@ -223,15 +231,42 @@ async def test_connection(token: str = Query(...)):
             diag["hint"] = "Bank-URL oder Netzwerk-Problem. Prüfe FINTS_VB_URL."
         else:
             diag["hint"] = "Unbekannter FinTS-Fehler – siehe Log-Trace unten."
-        diag["log_trace"] = buf.getvalue()[-6000:]
-        # Auch ins Backend-Log fuer Docker-Debugging
+        # Kompletten Log-Trace in Datei schreiben (fuer lokales Debugging)
+        full_trace = buf.getvalue()
+        import os as _os
+        trace_dir = "/tmp"
+        trace_file = _os.path.join(trace_dir, f"fints_vr_trace_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        try:
+            with open(trace_file, "w", encoding="utf-8") as f:
+                f.write(full_trace)
+            diag["trace_file"] = trace_file
+        except Exception:
+            pass
+        # Fuer die UI: erste 4000 + letzte 12000 Zeichen (HIRMS/HIRMG steht meist am Ende)
+        if len(full_trace) > 16000:
+            diag["log_trace"] = (
+                full_trace[:4000]
+                + f"\n\n... [{len(full_trace) - 16000} Zeichen ausgeblendet] ...\n\n"
+                + full_trace[-12000:]
+            )
+        else:
+            diag["log_trace"] = full_trace
+        # Auch ins Backend-Log fuer Docker-Debugging (letzte 8000 Zeichen)
         import logging
         _log = logging.getLogger("fints_vr_test")
-        _log.warning(f"[VR-FinTS-Test FAIL stage={diag.get('stage')}] Error: {diag.get('error')}\nLog-Trace (letzte 4000 Zeichen):\n{diag['log_trace'][-4000:]}")
+        _log.warning(f"[VR-FinTS-Test FAIL stage={diag.get('stage')}] Error: {diag.get('error')}")
+        _log.warning(f"Trace-Datei: {trace_file}")
+        _log.warning(f"Trace-Ende (letzte 8000 Zeichen):\n{full_trace[-8000:]}")
         return diag
     finally:
-        fints_logger.removeHandler(handler)
-        fints_logger.setLevel(prev_level)
+        for lg, prev in captured_loggers:
+            lg.removeHandler(handler)
+            lg.setLevel(prev)
+        try:
+            import http.client as _http_client
+            _http_client.HTTPConnection.debuglevel = 0
+        except Exception:
+            pass
 
 
 @router.get("/transactions")
