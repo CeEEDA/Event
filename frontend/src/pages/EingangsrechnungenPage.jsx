@@ -89,13 +89,12 @@ export default function EingangsrechnungenPage() {
       return isFinite(t) && (now - t) < twoDaysMs;
     };
     return rows.filter(r => {
-      // "aktiv" = overdue + open + (paid < 2 Tage alt)
-      // "archiv" = paid, aelter als 2 Tage
+      // "aktiv" = overdue + open + (paid < 2 Tage alt, damit User sofortige Bestätigung sieht)
+      // "archiv" = ALLE bezahlten Rechnungen (egal wie alt)
       if (filter === "aktiv") {
         if (r.status === "paid" && !recentlyPaid(r)) return false;
       } else if (filter === "archiv") {
         if (r.status !== "paid") return false;
-        if (recentlyPaid(r)) return false;
       } else if (["overdue", "open", "paid"].includes(filter) && r.status !== filter) {
         return false;
       }
