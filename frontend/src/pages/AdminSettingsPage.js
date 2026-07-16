@@ -2022,6 +2022,260 @@ FINTS_IBAN=DE28576500100098066756`}
 
 
 /* ───── Backup-System Einstellungen ───── */
+function FinTSVRBankingSection() {
+  const [status, setStatus] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+  const [transactions, setTransactions] = useState(null);
+  const [enabled, setEnabled] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [stateInfo, setStateInfo] = useState(null);
+  const [resetting, setResetting] = useState(false);
+
+  const withToken = (extra = {}) => ({ params: { token: localStorage.getItem("token"), ...extra } });
+
+  const loadStateInfo = async () => {
+    try { const r = await api.get("/fints/vr/state-info", withToken()); setStateInfo(r.data); }
+    catch { setStateInfo(null); }
+  };
+
+  const resetState = async () => {
+    if (!window.confirm("VR-Bank-Anmeldung zurücksetzen? Beim nächsten Abruf wird eine pushTAN angefordert.")) return;
+    setResetting(true);
+    try { await api.post("/fints/vr/reset-state", null, withToken()); toast.success("VR-Bank-Anmeldung zurückgesetzt"); await loadStateInfo(); }
+    catch { toast.error("Fehler beim Zurücksetzen"); }
+    finally { setResetting(false); }
+  };
+
+  const checkStatus = async () => {
+    try {
+      const res = await api.post("/fints/vr/save-credentials", null, withToken());
+      setStatus(res.data);
+      if (res.data.last_result) setLastResult(res.data.last_result);
+      setEnabled(res.data.enabled !== false);
+    } catch { setStatus({ status: "error", message: "Fehler beim Prüfen" }); }
+  };
+
+  const toggleEnabled = async () => {
+    setToggling(true);
+    try {
+      const res = await api.post("/fints/vr/toggle", { enabled: !enabled }, withToken());
+      setEnabled(res.data.enabled);
+      toast.success(res.data.enabled ? "VR-FinTS aktiviert" : "VR-FinTS deaktiviert");
+    } catch { toast.error("Fehler"); }
+    finally { setToggling(false); }
+  };
+
+  const testConnection = async () => {
+    setTesting(true); setTransactions(null);
+    try {
+      const res = await api.post("/fints/vr/test-connection", null, { ...withToken(), timeout: 180000 });
+      const d = res.data || {};
+      if (d.ok) { toast.success(`Verbindung OK – ${d.accounts_found} Konto(s) gefunden`); setTransactions({ test_ok: true, ...d }); }
+      else { toast.error(`Login fehlgeschlagen (${d.stage})`); setTransactions({ test_ok: false, ...d }); }
+    } catch (e) { toast.error("Verbindung fehlgeschlagen: " + (e.response?.data?.detail || e.message)); }
+    finally { setTesting(false); loadStateInfo(); }
+  };
+
+  const loadTransactions = async () => {
+    setTesting(true);
+    try {
+      const res = await api.get("/fints/vr/transactions", { ...withToken({ days: 7 }), timeout: 180000 });
+      setTransactions(res.data);
+      toast.success(`${res.data.count} Transaktionen geladen`);
+    } catch (e) { toast.error("Abruf fehlgeschlagen: " + (e.response?.data?.detail || e.message)); }
+    finally { setTesting(false); loadStateInfo(); }
+  };
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      const res = await api.post("/fints/vr/check-payments", null, { ...withToken(), timeout: 180000 });
+      setLastResult(res.data);
+      toast.success(`Abgleich: ${res.data.matched} Zuordnungen, ${res.data.auto_marked} auto-bezahlt`);
+    } catch (e) { toast.error("Fehler: " + (e.response?.data?.detail || e.message)); }
+    finally { setChecking(false); loadStateInfo(); }
+  };
+
+  useEffect(() => { checkStatus(); loadStateInfo(); }, []);
+
+  const isConfigured = status?.status === "configured";
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="fints-vr-banking-section">
+      <div className="px-5 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CircleDollarSign className="w-5 h-5 text-purple-500" />
+          <h3 className="text-sm font-semibold text-gray-900">FinTS Banking (Volksbank / VR-Bank)</h3>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isConfigured ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+            {isConfigured ? "Konfiguriert" : "Nicht konfiguriert"}
+          </span>
+          {isConfigured && (
+            <button onClick={toggleEnabled} disabled={toggling}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? "bg-emerald-500" : "bg-gray-300"}`}
+              data-testid="fints-vr-toggle">
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        {stateInfo && (() => {
+          const has = stateInfo.has_state;
+          const ageDays = stateInfo.age_days;
+          const renewIn = stateInfo.sca_renewal_in_days;
+          let bg = "bg-gray-50 border-gray-200"; let dot = "bg-gray-400";
+          let label = "Keine Bank-Anmeldung"; let sub = "Beim ersten Abruf wird eine pushTAN angefordert.";
+          if (has && renewIn !== null && renewIn !== undefined) {
+            if (renewIn > 30) { bg = "bg-emerald-50 border-emerald-200"; dot = "bg-emerald-500 animate-pulse"; label = "Bank-Verbindung aktiv"; sub = `Nächste pushTAN in ${renewIn} Tagen fällig.`; }
+            else if (renewIn > 0) { bg = "bg-amber-50 border-amber-200"; dot = "bg-amber-500 animate-pulse"; label = "Erneuerung bald"; sub = `Nur noch ${renewIn} Tag${renewIn === 1 ? "" : "e"} bis pushTAN.`; }
+            else { bg = "bg-rose-50 border-rose-200"; dot = "bg-rose-500"; label = "pushTAN-Bestätigung fällig"; sub = "90-Tage-Frist abgelaufen."; }
+          }
+          return (
+            <div className={`border rounded-lg p-3 flex items-start justify-between gap-3 ${bg}`} data-testid="fints-vr-state-indicator">
+              <div className="flex items-start gap-3 min-w-0">
+                <span className={`mt-1.5 inline-block w-2.5 h-2.5 rounded-full ${dot} flex-shrink-0`} />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-gray-900">{label}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">{sub}</div>
+                  {has && ageDays !== null && (
+                    <div className="text-[11px] text-gray-400 mt-1">
+                      Anmeldung gespeichert vor {ageDays} Tag{ageDays === 1 ? "" : "en"}
+                      {stateInfo.updated_at && ` (${new Date(stateInfo.updated_at).toLocaleDateString("de-DE")})`}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {has && (
+                <button onClick={resetState} disabled={resetting}
+                  className="text-xs text-gray-500 hover:text-rose-600 underline whitespace-nowrap flex-shrink-0"
+                  data-testid="fints-vr-reset-state-btn">
+                  Zurücksetzen
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+        <div className="text-sm text-gray-600">
+          <p>Zweite Bank für Kontoabgleich mit offenen Eingangsrechnungen.</p>
+          {status?.iban && <p className="text-xs text-gray-400 mt-1">IBAN: {status.iban} · BLZ: {status.blz}</p>}
+          {status?.last_check && (
+            <p className="text-xs text-emerald-600 mt-1">Letzter Abgleich: {new Date(status.last_check).toLocaleString("de-DE")}</p>
+          )}
+        </div>
+
+        {!isConfigured && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+            Bitte auf dem Server in der <code className="bg-amber-100 px-1 rounded">.env</code> Datei eintragen:
+            <pre className="mt-2 text-xs bg-amber-100 p-2 rounded">
+{`FINTS_VB_URL=https://hbci-pintan-vr.fiducia.de/cgi-bin/hbciservlet
+FINTS_VB_BLZ=deine_vr_blz
+FINTS_VB_USER=vr_netkey_oder_alias
+FINTS_VB_PIN=dein_online_banking_pin
+FINTS_VB_IBAN=DE...`}
+            </pre>
+            <p className="text-xs mt-2">Nach dem Speichern Backend neu starten (<code>sudo supervisorctl restart backend</code>).</p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={testConnection} disabled={testing || !isConfigured}
+            className="text-xs" data-testid="fints-vr-test-btn">
+            {testing ? "Teste..." : "Verbindung testen"}
+          </Button>
+          <Button size="sm" onClick={runCheck} disabled={checking || !isConfigured}
+            className="text-xs bg-purple-600 hover:bg-purple-700 text-white" data-testid="fints-vr-check-btn">
+            {checking ? "Prüfe..." : "Jetzt Rechnungen abgleichen"}
+          </Button>
+        </div>
+
+        {lastResult && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1">
+            <p className="font-medium text-gray-900">Letzter Abgleich:</p>
+            <div className="grid grid-cols-2 gap-x-4 text-xs text-gray-600">
+              <span>Transaktionen geprüft:</span><span className="font-mono">{lastResult.checked}</span>
+              <span>Zuordnungen gefunden:</span><span className="font-mono">{lastResult.matched}</span>
+              <span>Automatisch bezahlt:</span><span className="font-mono font-semibold text-emerald-600">{lastResult.auto_marked}</span>
+              <span>Admin-Aufgaben:</span><span className="font-mono">{lastResult.admin_tasks || 0}</span>
+              <span>Mehrdeutig:</span><span className="font-mono">{lastResult.ambiguous || 0}</span>
+            </div>
+          </div>
+        )}
+
+        {transactions && transactions.test_ok === false && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm space-y-2" data-testid="fints-vr-test-error">
+            <div className="flex items-center gap-2 font-semibold text-red-800">
+              <XCircle className="w-4 h-4" /> VR-FinTS-Login fehlgeschlagen
+            </div>
+            <div className="text-xs text-red-700 font-mono whitespace-pre-wrap break-all">{transactions.error}</div>
+            <div className="text-xs text-gray-700 bg-white border border-red-100 rounded p-2">
+              <span className="font-semibold">Hinweis:</span> {transactions.hint}
+            </div>
+            <div className="text-[10px] text-gray-500">
+              BLZ: {transactions.blz} · URL: {transactions.url} · User: {transactions.user_first_chars}
+            </div>
+          </div>
+        )}
+
+        {transactions && transactions.test_ok === true && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm space-y-2" data-testid="fints-vr-test-ok">
+            <div className="flex items-center gap-2 font-semibold text-emerald-800">
+              <Check className="w-4 h-4" /> VR-FinTS-Login erfolgreich
+            </div>
+            {transactions.primary_found ? (
+              <div className="text-xs text-emerald-700">
+                Hauptkonto gefunden:
+                <div className="mt-1 bg-white border border-emerald-200 rounded px-2 py-1 font-mono text-gray-800">
+                  {transactions.primary_iban} ({(transactions.accounts || [])[0]?.bic})
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-amber-700">
+                <strong>Warnung:</strong> Hauptkonto <span className="font-mono">{transactions.primary_iban}</span> nicht gefunden.
+                <div className="mt-1">Verfügbare Konten:</div>
+                <ul className="text-xs text-gray-700 ml-4 list-disc">
+                  {(transactions.accounts || []).map((a, i) => (
+                    <li key={i} className="font-mono">{a.iban} ({a.bic})</li>
+                  ))}
+                </ul>
+                <div className="mt-1 text-gray-600">Bitte <code>FINTS_VB_IBAN</code> in <code>.env</code> anpassen.</div>
+              </div>
+            )}
+            <Button size="sm" variant="outline" onClick={loadTransactions} className="text-xs mt-2" data-testid="fints-vr-load-tx-btn">
+              Transaktionen der letzten 7 Tage laden
+            </Button>
+          </div>
+        )}
+
+        {transactions && transactions.transactions && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <p className="text-sm font-medium text-gray-900 mb-2">Letzte {transactions.count} Transaktionen (7 Tage):</p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {transactions.transactions.slice(0, 15).map((tx, i) => (
+                <div key={i} className="text-xs flex justify-between border-b border-gray-100 py-1">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-gray-500">{tx.date}</span>
+                    <span className="ml-2 text-gray-700 truncate">{tx.applicant_name || tx.posting_text}</span>
+                  </div>
+                  <span className={`font-mono ml-2 ${tx.amount > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {tx.amount > 0 ? "+" : ""}{tx.amount?.toFixed(2)} EUR
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+/* ───── Backup-System Einstellungen ───── */
 function BackupSettingsSection() {
   const [settings, setSettings] = useState({
     db_backup_enabled: true,
@@ -2484,6 +2738,9 @@ export default function AdminSettingsPage() {
 
           {/* FinTS Banking */}
           <FinTSBankingSection />
+
+          {/* FinTS Banking Volksbank (VR) */}
+          <FinTSVRBankingSection />
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />

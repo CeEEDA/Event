@@ -2204,6 +2204,9 @@ app.include_router(travel_expenses_router)
 from routes.incoming_invoices import router as incoming_invoices_router
 app.include_router(incoming_invoices_router)
 
+from routes.fints_vr import router as fints_vr_router
+app.include_router(fints_vr_router)
+
 
 
 
