@@ -200,6 +200,10 @@ async def test_connection(token: str = Query(...)):
         diag["stage"] = "done"
         diag["ok"] = True
         diag["log_trace"] = buf.getvalue()[-6000:]  # Last 6000 chars
+        # Auch ins Backend-Log fuer Docker-Debugging
+        import logging
+        _log = logging.getLogger("fints_vr_test")
+        _log.warning(f"[VR-FinTS-Test OK] Log-Trace (letzte 4000 Zeichen):\n{diag['log_trace'][-4000:]}")
         return diag
     except Exception as e:
         diag["ok"] = False
@@ -220,6 +224,10 @@ async def test_connection(token: str = Query(...)):
         else:
             diag["hint"] = "Unbekannter FinTS-Fehler – siehe Log-Trace unten."
         diag["log_trace"] = buf.getvalue()[-6000:]
+        # Auch ins Backend-Log fuer Docker-Debugging
+        import logging
+        _log = logging.getLogger("fints_vr_test")
+        _log.warning(f"[VR-FinTS-Test FAIL stage={diag.get('stage')}] Error: {diag.get('error')}\nLog-Trace (letzte 4000 Zeichen):\n{diag['log_trace'][-4000:]}")
         return diag
     finally:
         fints_logger.removeHandler(handler)
