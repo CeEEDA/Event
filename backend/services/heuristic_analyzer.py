@@ -124,70 +124,68 @@ def _extract_iban(text: str) -> Optional[str]:
 
 def _detect_direction(text: str, filename: str) -> tuple[str, str, str]:
     """Bestimmt Sender/Empfaenger/Richtung.
-    Returns (direction, sender, recipient) wobei direction in
-    ('rechnungsausgang_eventenergie_deutschland',
-     'rechnungseingang_eventenergie_deutschland', 'unknown').
+    Returns (direction, sender, recipient).
 
-    Deutsche Geschaeftsbriefe haben oben LINKS die Empfaenger-Adresse.
-    Der eigene Firmenname erscheint bei Ausgangsrechnungen im Briefkopf (Header)
-    und Footer/Signatur. Bei Eingangsrechnungen erscheint der eigene Firmenname
-    IM ADRESSBLOCK des Empfaengers (typisch in den ersten ~600 Zeichen).
-
-    Regeln:
-    1. Eigene E-Mail-Domain im Text → sicher Ausgangsrechnung
-    2. Eigener Firmenname AM ANFANG des Textes (Adressblock) → Eingangsrechnung
-    3. Eigener Firmenname NUR im unteren Drittel (Footer) → Ausgangsrechnung
-    4. Ansonsten: Absender-Erkennung aus Briefkopf
+    Kernregel (robust gegen wechselnde deutsche Rechnungs-Layouts):
+    1. Eigene E-Mail-Domain/URL im Text → Ausgangsrechnung (wir sind Absender)
+    2. Eigener Firmenname irgendwo im Text, ABER OHNE eigene Domain → Eingangsrechnung
+       (der Fremdanbieter adressiert uns; er hat nicht unsere E-Mail-Adresse im Header)
+    3. Ohne beide Marker → unknown
     """
     tlow = text.lower()
-    text_len = len(tlow) or 1
-    total_lines = text.splitlines()
-    top_block = "\n".join(total_lines[:25]).lower()  # ca. Adressblock + Briefkopf
 
-    # 1. Eindeutige Self-Marker: E-Mail-Domain / URL (nur EIGENE Absender-Rechnungen)
-    self_email_markers = [
+    # 1. Starke Ausgangs-Indikatoren: eigene E-Mail-Adresse ODER www-URL
+    # (NICHT: reiner Domain-Name als String — der taucht in Produkt-Rechnungen auf,
+    # z.B. wenn wir eine SaaS-Instanz mit Namen "eventenergie.app" kaufen)
+    self_domain_markers = [
         "@eventenergie-deutschland.de",
         "@eventenergie.app",
         "@powerfactor-engineering.de",
         "www.eventenergie-deutschland.de",
+        "www.powerfactor-engineering.de",
     ]
-    if any(m in tlow for m in self_email_markers):
-        # Nur echt Ausgang, wenn der Marker NICHT nur in der Empfaenger-Zeile steht
-        # (z.B. wenn Rechnungsempfaenger seine eigene E-Mail-Adresse angibt).
-        # In 99% der Faelle ist der E-Mail-Marker im Briefkopf/Footer.
-        recipient = _extract_top_address_recipient(text) or ""
-        # Sicherheitscheck: Wenn Eventenergie AM ANFANG steht (Adressblock),
-        # ist es trotzdem Eingang - dann NICHT als Ausgang klassifizieren
-        first_hit = tlow.find("eventenergie")
-        if first_hit == -1 or first_hit > 800:
-            return (
-                "rechnungsausgang_eventenergie_deutschland",
-                "Eventenergie Deutschland GmbH & Co. KG",
-                recipient,
-            )
+    has_own_domain = any(m in tlow for m in self_domain_markers)
 
-    # 2. Position im Text pruefen: eigener Firmenname im TOP-BLOCK = Empfaenger
+    # 2. Eigenen Firmennamen erkennen
     self_name_markers = ("eventenergie deutschland", "eventenergie-deutschland",
                          "power factor engineering", "powerfactor engineering")
-    hit_in_top = any(m in top_block for m in self_name_markers)
-    hit_anywhere = any(m in tlow for m in self_name_markers)
+    has_own_name = any(m in tlow for m in self_name_markers)
 
-    if hit_in_top:
-        # Eigener Name im Adressblock → wir sind der Empfaenger → Eingangsrechnung
-        sender = _extract_sender_from_header(text) or ""
-        return (
-            "rechnungseingang_eventenergie_deutschland",
-            sender,
-            "Eventenergie Deutschland GmbH & Co. KG",
-        )
-
-    if hit_anywhere:
-        # Eigener Name NUR im unteren Bereich (Footer/Signatur) → Ausgangsrechnung
+    if has_own_domain:
+        # Sicherheitsnetz: Wenn zusaetzlich eine FREMDE E-Mail-Adresse im Text steht,
+        # ist unsere E-Mail wahrscheinlich die Bill-To-Adresse (Empfaenger), nicht
+        # der Absender. Beispiel: Emergent Labs schickt uns Rechnung an accounting@..
+        import re as _re
+        all_emails = _re.findall(r"[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", tlow)
+        foreign_emails = [
+            e for e in all_emails
+            if not any(dom in e for dom in
+                       ("eventenergie-deutschland.de", "eventenergie.app",
+                        "powerfactor-engineering.de"))
+        ]
+        if foreign_emails:
+            # Fremde Absender-E-Mail vorhanden → wir sind Empfaenger → Eingangsrechnung
+            sender = _extract_sender_from_header(text) or ""
+            return (
+                "rechnungseingang_eventenergie_deutschland",
+                sender,
+                "Eventenergie Deutschland GmbH & Co. KG",
+            )
+        # Keine fremden E-Mail-Adressen im Text: wir sind Absender → Ausgangsrechnung
         recipient = _extract_top_address_recipient(text) or ""
         return (
             "rechnungsausgang_eventenergie_deutschland",
             "Eventenergie Deutschland GmbH & Co. KG",
             recipient,
+        )
+
+    if has_own_name:
+        # Firmenname da, aber keine eigene Domain → wir sind Empfaenger → Eingangsrechnung
+        sender = _extract_sender_from_header(text) or ""
+        return (
+            "rechnungseingang_eventenergie_deutschland",
+            sender,
+            "Eventenergie Deutschland GmbH & Co. KG",
         )
 
     return ("unknown", _extract_sender_from_header(text) or "", "")
