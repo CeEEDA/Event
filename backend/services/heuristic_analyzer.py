@@ -128,39 +128,66 @@ def _detect_direction(text: str, filename: str) -> tuple[str, str, str]:
     ('rechnungsausgang_eventenergie_deutschland',
      'rechnungseingang_eventenergie_deutschland', 'unknown').
 
-    Deutsche Geschaeftsbriefe haben typisch OBEN LINKS die Empfaenger-Adresse
-    (nicht den Absender). Der Absender steht im Briefkopf-Logo, im Footer, in
-    Fusszeilen und/oder E-Mail-Signatur. Daher pruefen wir zunaechst:
-    1. Enthaelt das Doc irgendwo eine Eventenergie-E-Mail/Domain/Marker?
-       -> WIR sind der Absender -> Ausgangsrechnung
-    2. Kein Marker fuer uns -> Absender = oberste Zeile, Ausgang unknown
+    Deutsche Geschaeftsbriefe haben oben LINKS die Empfaenger-Adresse.
+    Der eigene Firmenname erscheint bei Ausgangsrechnungen im Briefkopf (Header)
+    und Footer/Signatur. Bei Eingangsrechnungen erscheint der eigene Firmenname
+    IM ADRESSBLOCK des Empfaengers (typisch in den ersten ~600 Zeichen).
+
+    Regeln:
+    1. Eigene E-Mail-Domain im Text → sicher Ausgangsrechnung
+    2. Eigener Firmenname AM ANFANG des Textes (Adressblock) → Eingangsrechnung
+    3. Eigener Firmenname NUR im unteren Drittel (Footer) → Ausgangsrechnung
+    4. Ansonsten: Absender-Erkennung aus Briefkopf
     """
     tlow = text.lower()
-    # Starke Marker fuer "wir haben das ausgestellt":
+    text_len = len(tlow) or 1
+    total_lines = text.splitlines()
+    top_block = "\n".join(total_lines[:25]).lower()  # ca. Adressblock + Briefkopf
+
+    # 1. Eindeutige Self-Marker: E-Mail-Domain / URL (nur EIGENE Absender-Rechnungen)
     self_email_markers = [
         "@eventenergie-deutschland.de",
         "@eventenergie.app",
-        "eventenergie deutschland gmbh",
+        "@powerfactor-engineering.de",
+        "www.eventenergie-deutschland.de",
     ]
-    is_self_sender = any(m in tlow for m in self_email_markers)
-
-    if is_self_sender:
-        # Empfaenger = oberste Adressblock-Zeile
+    if any(m in tlow for m in self_email_markers):
+        # Nur echt Ausgang, wenn der Marker NICHT nur in der Empfaenger-Zeile steht
+        # (z.B. wenn Rechnungsempfaenger seine eigene E-Mail-Adresse angibt).
+        # In 99% der Faelle ist der E-Mail-Marker im Briefkopf/Footer.
         recipient = _extract_top_address_recipient(text) or ""
-        return (
-            "rechnungsausgang_eventenergie_deutschland",
-            "Eventenergie Deutschland GmbH & Co. KG",
-            recipient,
-        )
+        # Sicherheitscheck: Wenn Eventenergie AM ANFANG steht (Adressblock),
+        # ist es trotzdem Eingang - dann NICHT als Ausgang klassifizieren
+        first_hit = tlow.find("eventenergie")
+        if first_hit == -1 or first_hit > 800:
+            return (
+                "rechnungsausgang_eventenergie_deutschland",
+                "Eventenergie Deutschland GmbH & Co. KG",
+                recipient,
+            )
 
-    # Kein Self-Marker gefunden -> Eingangsrechnung wenn Eventenergie als Adressat sichtbar
-    self_as_recipient = any(m in tlow for m in ("eventenergie deutschland", "eventenergie-deutschland"))
-    if self_as_recipient:
+    # 2. Position im Text pruefen: eigener Firmenname im TOP-BLOCK = Empfaenger
+    self_name_markers = ("eventenergie deutschland", "eventenergie-deutschland",
+                         "power factor engineering", "powerfactor engineering")
+    hit_in_top = any(m in top_block for m in self_name_markers)
+    hit_anywhere = any(m in tlow for m in self_name_markers)
+
+    if hit_in_top:
+        # Eigener Name im Adressblock → wir sind der Empfaenger → Eingangsrechnung
         sender = _extract_sender_from_header(text) or ""
         return (
             "rechnungseingang_eventenergie_deutschland",
             sender,
             "Eventenergie Deutschland GmbH & Co. KG",
+        )
+
+    if hit_anywhere:
+        # Eigener Name NUR im unteren Bereich (Footer/Signatur) → Ausgangsrechnung
+        recipient = _extract_top_address_recipient(text) or ""
+        return (
+            "rechnungsausgang_eventenergie_deutschland",
+            "Eventenergie Deutschland GmbH & Co. KG",
+            recipient,
         )
 
     return ("unknown", _extract_sender_from_header(text) or "", "")

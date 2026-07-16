@@ -6,14 +6,16 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, FileText, CheckCircle, AlertTriangle, Clock,
-  Receipt, X, Save, Euro, Landmark, Ban,
+  Receipt, X, Save, Euro, Landmark, Ban, CreditCard, Repeat,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_META = {
-  overdue: { label: "Überfällig", cls: "bg-red-50 text-red-700 border-red-200", icon: AlertTriangle, row: "border-l-4 border-l-red-500" },
-  open:    { label: "Offen",      cls: "bg-amber-50 text-amber-700 border-amber-200", icon: Clock, row: "border-l-4 border-l-amber-400" },
-  paid:    { label: "Bezahlt",    cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle, row: "border-l-4 border-l-emerald-500" },
+  overdue:    { label: "Überfällig",       cls: "bg-red-50 text-red-700 border-red-200",         icon: AlertTriangle, row: "border-l-4 border-l-red-500" },
+  open:       { label: "Offen",            cls: "bg-amber-50 text-amber-700 border-amber-200",   icon: Clock,         row: "border-l-4 border-l-amber-400" },
+  paid:       { label: "Bezahlt",          cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle, row: "border-l-4 border-l-emerald-500" },
+  creditcard: { label: "Kreditkarte",      cls: "bg-indigo-50 text-indigo-700 border-indigo-200", icon: CreditCard,    row: "border-l-4 border-l-indigo-400" },
+  sepa:       { label: "SEPA-Lastschrift", cls: "bg-sky-50 text-sky-700 border-sky-200",         icon: Repeat,        row: "border-l-4 border-l-sky-400" },
 };
 
 const fmtEUR = (n) => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(Number(n || 0));
@@ -89,12 +91,19 @@ export default function EingangsrechnungenPage() {
       return isFinite(t) && (now - t) < twoDaysMs;
     };
     return rows.filter(r => {
-      // "aktiv" = overdue + open + (paid < 2 Tage alt, damit User sofortige Bestätigung sieht)
-      // "archiv" = ALLE bezahlten Rechnungen (egal wie alt)
+      // "aktiv" = overdue + open + (paid < 2 Tage; keine CC/SEPA)
+      // "archiv" = ALLE bezahlten Rechnungen
+      // "creditcard" = Kreditkarten-Zahlungen
+      // "sepa" = SEPA-Lastschriften
       if (filter === "aktiv") {
+        if (r.status === "creditcard" || r.status === "sepa") return false;
         if (r.status === "paid" && !recentlyPaid(r)) return false;
       } else if (filter === "archiv") {
         if (r.status !== "paid") return false;
+      } else if (filter === "creditcard") {
+        if (r.status !== "creditcard") return false;
+      } else if (filter === "sepa") {
+        if (r.status !== "sepa") return false;
       } else if (["overdue", "open", "paid"].includes(filter) && r.status !== filter) {
         return false;
       }
@@ -142,6 +151,30 @@ export default function EingangsrechnungenPage() {
       toast.error(e.response?.data?.detail || "Fehler");
     }
   };
+
+  const markPaymentMethod = async (row, kind /* "creditcard" | "sepa" */) => {
+    if (!row) return;
+    const label = kind === "creditcard" ? "Kreditkarte" : "SEPA-Lastschrift";
+    const sender = row.sender || "";
+    const remember = sender
+      ? window.confirm(`Rechnung "${row.invoice_number || row.filename}" als ${label} markieren?\n\nSoll ich mir "${sender}" merken, damit KÜNFTIGE Rechnungen desselben Absenders automatisch ebenfalls als ${label} erkannt werden?\n\nOK = merken (empfohlen)\nAbbrechen = nur diese eine Rechnung`)
+      : false;
+    try {
+      const token = localStorage.getItem("token");
+      const endpoint = kind === "creditcard" ? "mark-creditcard" : "mark-sepa";
+      await api.post(`/incoming-invoices/${row.id}/${endpoint}`, null, {
+        params: { token, remember_sender: remember },
+      });
+      toast.success(remember
+        ? `Als ${label} markiert – "${sender}" wird künftig auto-erkannt`
+        : `Als ${label} markiert`);
+      setSelected(null);
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler");
+    }
+  };
+
 
   const markPaid = async (row) => {
     if (!row) return;
@@ -240,6 +273,8 @@ export default function EingangsrechnungenPage() {
                 { k: "overdue", label: "Überfällig" },
                 { k: "open", label: "Offen" },
                 { k: "archiv", label: "Archiv" },
+                { k: "creditcard", label: "Kreditkarte" },
+                { k: "sepa", label: "SEPA" },
               ].map(({ k, label }) => (
                 <button
                   key={k}
@@ -275,7 +310,13 @@ export default function EingangsrechnungenPage() {
                       className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 flex gap-3 ${meta.row} ${active ? "bg-fuchsia-50/40" : ""}`}
                       data-testid={`invoice-row-${r.id}`}
                     >
-                      <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${r.status === "overdue" ? "text-red-500" : r.status === "paid" ? "text-emerald-500" : "text-amber-500"}`} />
+                      <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                        r.status === "overdue"    ? "text-red-500" :
+                        r.status === "paid"       ? "text-emerald-500" :
+                        r.status === "creditcard" ? "text-indigo-500" :
+                        r.status === "sepa"       ? "text-sky-500" :
+                        "text-amber-500"
+                      }`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2 flex-wrap">
                           <span className="font-medium text-gray-900 truncate">{r.sender || r.filename || "—"}</span>
@@ -379,14 +420,32 @@ export default function EingangsrechnungenPage() {
                 <Button size="sm" variant="outline" onClick={saveMeta} disabled={saving} data-testid="save-meta-btn">
                   <Save className="w-4 h-4 mr-1" /> {saving ? "Speichere…" : "Änderungen speichern"}
                 </Button>
-                {selected.status !== "paid" ? (
+                {selected.status !== "paid" && selected.status !== "creditcard" && selected.status !== "sepa" ? (
                   <Button size="sm" onClick={() => markPaid(selected)} disabled={marking} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="mark-paid-btn">
                     <CheckCircle className="w-4 h-4 mr-1" /> {marking ? "Speichere…" : "Als bezahlt markieren"}
                   </Button>
-                ) : (
+                ) : selected.status === "paid" ? (
                   <span className="text-xs text-emerald-700 self-center inline-flex items-center gap-1">
                     <CheckCircle className="w-3.5 h-3.5" /> Bezahlt {selected.paid_at ? `am ${fmtDate(selected.paid_at)}` : ""}
                   </span>
+                ) : selected.status === "creditcard" ? (
+                  <span className="text-xs text-indigo-700 self-center inline-flex items-center gap-1">
+                    <CreditCard className="w-3.5 h-3.5" /> Kreditkarte {selected.paid_by_creditcard_at ? `seit ${fmtDate(selected.paid_by_creditcard_at)}` : ""}
+                  </span>
+                ) : (
+                  <span className="text-xs text-sky-700 self-center inline-flex items-center gap-1">
+                    <Repeat className="w-3.5 h-3.5" /> SEPA-Lastschrift {selected.paid_by_sepa_at ? `seit ${fmtDate(selected.paid_by_sepa_at)}` : ""}
+                  </span>
+                )}
+                {selected.status !== "creditcard" && selected.status !== "paid" && (
+                  <Button size="sm" variant="outline" onClick={() => markPaymentMethod(selected, "creditcard")} className="text-indigo-700 border-indigo-200 hover:bg-indigo-50" data-testid="mark-creditcard-btn">
+                    <CreditCard className="w-4 h-4 mr-1" /> Kreditkarte
+                  </Button>
+                )}
+                {selected.status !== "sepa" && selected.status !== "paid" && (
+                  <Button size="sm" variant="outline" onClick={() => markPaymentMethod(selected, "sepa")} className="text-sky-700 border-sky-200 hover:bg-sky-50" data-testid="mark-sepa-btn">
+                    <Repeat className="w-4 h-4 mr-1" /> SEPA
+                  </Button>
                 )}
                 <Button size="sm" variant="outline" onClick={() => markNotInvoice(selected)} className="ml-auto text-red-700 border-red-200 hover:bg-red-50" data-testid="mark-not-invoice-btn">
                   <Ban className="w-4 h-4 mr-1" /> Keine Rechnung
