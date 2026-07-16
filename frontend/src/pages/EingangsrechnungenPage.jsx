@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, FileText, CheckCircle, AlertTriangle, Clock,
   Receipt, X, Save, Euro, Landmark, Ban, CreditCard, Repeat,
+  Wifi, WifiOff, ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,6 +32,7 @@ export default function EingangsrechnungenPage() {
 
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [bankStatus, setBankStatus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("aktiv");
   const [search, setSearch] = useState("");
@@ -42,14 +44,21 @@ export default function EingangsrechnungenPage() {
   const [marking, setMarking] = useState(false);
   const [matching, setMatching] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [checkedIds, setCheckedIds] = useState(new Set());
+  const [bulking, setBulking] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const { data } = await api.get("/incoming-invoices", { params: { token } });
+      const [{ data }, statusRes] = await Promise.all([
+        api.get("/incoming-invoices", { params: { token } }),
+        api.get("/incoming-invoices/bank-status", { params: { token } }).catch(() => ({ data: { banks: [] } })),
+      ]);
       setRows(data.invoices || []);
       setSummary(data.summary || null);
+      setBankStatus(statusRes.data?.banks || []);
+      setCheckedIds(new Set());
     } catch (e) {
       toast.error(e.response?.data?.detail || "Fehler beim Laden");
     } finally {
@@ -237,6 +246,47 @@ export default function EingangsrechnungenPage() {
     }
   };
 
+  const toggleCheck = (id) => {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleCheckAllVisible = () => {
+    setCheckedIds(prev => {
+      // Nur unbezahlte, sichtbare Rechnungen im aktuellen Filter erfassbar
+      const eligible = filtered.filter(r => r.status === "open" || r.status === "overdue").map(r => r.id);
+      if (eligible.every(id => prev.has(id))) {
+        return new Set();
+      }
+      return new Set(eligible);
+    });
+  };
+
+  const bulkMarkPaid = async () => {
+    const ids = Array.from(checkedIds).filter(id =>
+      rows.some(r => r.id === id && (r.status === "open" || r.status === "overdue")));
+    if (!ids.length) {
+      toast("Keine offenen Rechnungen ausgewählt");
+      return;
+    }
+    if (!window.confirm(`${ids.length} Rechnung(en) als bezahlt markieren?\n\nHinweis: Dieser Status ist FINAL.`)) return;
+    setBulking(true);
+    try {
+      const token = localStorage.getItem("token");
+      const { data } = await api.post("/incoming-invoices/bulk-mark-paid", { ids }, { params: { token } });
+      toast.success(`${data.updated || 0} von ${data.requested || ids.length} als bezahlt markiert`);
+      setCheckedIds(new Set());
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler beim Bulk-Markieren");
+    } finally {
+      setBulking(false);
+    }
+  };
+
   const saveMeta = async () => {
     if (!selected) return;
     setSaving(true);
@@ -289,6 +339,47 @@ export default function EingangsrechnungenPage() {
         </div>
       </header>
 
+      {/* Bank Status Line */}
+      {bankStatus.length > 0 && (
+        <div className="max-w-[1600px] mx-auto px-4 pt-4">
+          <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" data-testid="bank-status-bar">
+            <span className="text-gray-500 font-medium uppercase tracking-wide">Banken:</span>
+            {bankStatus.map(b => {
+              const active = b.enabled && b.has_state && (b.sca_renewal_in_days ?? 999) > 0;
+              const warn = b.enabled && b.has_state && (b.sca_renewal_in_days ?? 999) <= 7;
+              return (
+                <div key={b.key} className="inline-flex items-center gap-1.5" data-testid={`bank-status-${b.key}`}>
+                  {!b.enabled ? (
+                    <WifiOff className="w-3.5 h-3.5 text-gray-400" />
+                  ) : warn ? (
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                  ) : active ? (
+                    <Wifi className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : (
+                    <WifiOff className="w-3.5 h-3.5 text-red-500" />
+                  )}
+                  <span className="font-medium text-gray-800">{b.name}</span>
+                  {!b.enabled ? (
+                    <span className="text-gray-400">deaktiviert</span>
+                  ) : !b.has_state ? (
+                    <span className="text-red-600">noch keine pushTAN-Anmeldung</span>
+                  ) : (
+                    <span className="text-gray-500">
+                      Sync {b.last_check_at ? new Date(b.last_check_at).toLocaleString("de-DE", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"}) : "—"}
+                      {b.sca_renewal_in_days !== null && b.sca_renewal_in_days !== undefined && (
+                        <span className={warn ? "text-amber-600 ml-1" : "ml-1"}>
+                          • SCA erneuert in {b.sca_renewal_in_days} Tg.
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Summary Cards */}
       {summary && (
         <div className="max-w-[1600px] mx-auto px-4 pt-4">
@@ -335,6 +426,49 @@ export default function EingangsrechnungenPage() {
             </div>
           </div>
 
+          {/* Bulk Action Bar */}
+          {(filter === "aktiv" || filter === "overdue" || filter === "open") && filtered.some(r => r.status === "open" || r.status === "overdue") && (
+            <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 text-xs" data-testid="bulk-action-bar">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={
+                    filtered.filter(r => r.status === "open" || r.status === "overdue").length > 0 &&
+                    filtered.filter(r => r.status === "open" || r.status === "overdue").every(r => checkedIds.has(r.id))
+                  }
+                  onChange={toggleCheckAllVisible}
+                  className="rounded border-gray-300"
+                  data-testid="bulk-check-all"
+                />
+                <span className="text-gray-700">Alle offenen wählen</span>
+              </label>
+              <span className="text-gray-400">•</span>
+              <span className="text-gray-600" data-testid="bulk-selected-count">
+                {checkedIds.size} ausgewählt
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {checkedIds.size > 0 && (
+                  <>
+                    <span className="text-gray-600">
+                      Summe: {fmtEUR(
+                        rows.filter(r => checkedIds.has(r.id) && (r.status === "open" || r.status === "overdue"))
+                            .reduce((s, r) => s + Number(r.amount || 0), 0)
+                      )}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => setCheckedIds(new Set())} data-testid="bulk-clear-btn">
+                      Zurücksetzen
+                    </Button>
+                    <Button size="sm" onClick={bulkMarkPaid} disabled={bulking}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="bulk-mark-paid-btn">
+                      <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                      {bulking ? "Markiere…" : `${checkedIds.size} als bezahlt markieren`}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex-1 overflow-auto">
             {loading && (
               <div className="p-8 text-center text-gray-500">Lädt Eingangsrechnungen…</div>
@@ -350,11 +484,27 @@ export default function EingangsrechnungenPage() {
                 const meta = STATUS_META[r.status] || STATUS_META.open;
                 const Icon = meta.icon;
                 const active = selected?.id === r.id;
+                const isCheckable = r.status === "open" || r.status === "overdue";
                 return (
-                  <li key={r.id}>
+                  <li key={r.id} className={`flex items-stretch border-b border-gray-100 ${meta.row} ${active ? "bg-fuchsia-50/40" : "hover:bg-gray-50"}`}>
+                    {isCheckable && (
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center px-3 cursor-pointer"
+                        data-testid={`row-check-wrap-${r.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checkedIds.has(r.id)}
+                          onChange={() => toggleCheck(r.id)}
+                          className="rounded border-gray-300"
+                          data-testid={`row-check-${r.id}`}
+                        />
+                      </label>
+                    )}
                     <button
                       onClick={() => setSelected(r)}
-                      className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 flex gap-3 ${meta.row} ${active ? "bg-fuchsia-50/40" : ""}`}
+                      className="flex-1 text-left px-4 py-3 flex gap-3"
                       data-testid={`invoice-row-${r.id}`}
                     >
                       <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${

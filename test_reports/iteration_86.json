@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 86 (backend only): Verified the three new incoming-invoices features - GET /api/incoming-invoices/bank-status, POST /api/incoming-invoices/bulk-mark-paid, and the ZUGFeRD/Factur-X XML shortcut in services.heuristic_analyzer.analyze_document_fallback. All 12 pytest cases pass on the preview URL (https://fuel-truck-deploy.preview.emergentagent.com). Regression tests for single-doc mark-paid/mark-creditcard/mark-sepa (404 on missing doc) and POST /api/incoming-invoices/fints/auto-match (no 500) also pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/incoming-invoices/bank-status", "issue": "Missing token returns 422 (FastAPI Query(...) mandatory) instead of 401/403 – acceptable but not standard. Non-issue, works consistently across the module."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_bank_status_bulk_paid_iteration86.py",
+    "/app/test_reports/pytest/iteration_86.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/incoming_invoices.py bulk-mark-paid correctly uses `eingang_paid: {$ne: True}` in the update filter to skip already-paid invoices – idempotent and safe.",
+    "bulk-mark-paid does NOT touch eingang_paid_by_creditcard / eingang_paid_by_sepa flags, so creditcard/SEPA-status invoices are correctly preserved (they'd still show as creditcard/sepa in the list-endpoint's status derivation).",
+    "However: bulk-mark-paid's filter only checks `eingang_paid`. If you bulk-select a creditcard-marked invoice ID, `eingang_paid` will still be set to True. status derivation in list-endpoint puts creditcard/sepa BEFORE paid so it still shows as creditcard – functionally OK, but the DB now carries both flags. Consider adding `eingang_paid_by_creditcard: {$ne: True}, eingang_paid_by_sepa: {$ne: True}` to the filter for cleanliness. Not a bug per spec ('Nur nicht-bereits-bezahlte Rechnungen werden aktualisiert. Kreditkarten/SEPA-Flags bleiben unangetastet.'), just a minor DB-cleanliness note.",
+    "bank-status: `state_age_days` and `sca_renewal_in_days` gracefully handle None. Good.",
+    "ZUGFeRD shortcut in heuristic_analyzer: correctly forces suggested_folder to rechnungseingang_eventenergie_deutschland when BuyerTradeParty matches SELF_COMPANY markers. Verified end-to-end with an in-process fitz-generated PDF (embfile_add factur-x.xml).",
+    "The XML currency defaults to EUR when not in the XML but the parsed dict didn't set currency – existing default fallback `zug.get('currency') or 'EUR'` in analyze_document_fallback covers this.",
+    "Reminder: /app/backend/routes/incoming_invoices.py is now 534 lines. Still readable but growing – bulk endpoints could move into an `incoming_invoices_bulk.py` sub-router once more actions land."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bank_status_bulk_paid_iteration86.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "N/A - backend-only per request"},
+  "test_credentials": "admin@test.com / password (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "test_real_open_invoice_gets_marked_paid picks the first available open/overdue invoice from GET /api/incoming-invoices and marks it as paid via bulk-mark-paid. This does mutate DB state (picks a real doc and sets eingang_paid=true, eingang_paid_source='bulk-manuell (admin)'). If re-running this test suite is needed against the same doc, the invoice will already be paid on the second run and the test will skip via `if not candidates: pytest.skip(...)`. Currently marked as paid: whichever was first in the open/overdue sort order at test time.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All three P0/P1 features from iteration 86 work end-to-end. If re-running test_real_open_invoice_gets_marked_paid, note that it marks a real open invoice paid – the test will simply skip if no open invoice remains. ZUGFeRD end-to-end assertion is in-process via analyze_document_fallback and does not touch DB. The existing test_zugferd_iteration79.py still requires /tmp/zugferd_test.pdf; the new iteration_86 file is self-contained (generates its own PDF with fitz.embfile_add) and can be used as the ZUGFeRD regression baseline going forward.",
+  "rca of the issue": "N/A - feature verification, no bugs found."
+}

@@ -456,3 +456,78 @@ async def fints_auto_match(token: str = Query(...), days_back: int = Query(60, g
         raise HTTPException(status_code=403, detail="Nur Admins")
     result = await auto_match_incoming_invoices(db, create_admin_tasks=True, days_back=days_back)
     return result
+
+
+@router.get("/bank-status")
+async def bank_status(token: str = Query(...)):
+    """Liefert Übersicht aller konfigurierten Banken + letzter Sync-Zeitpunkt +
+    Alter des persistierten Client-States (fuer Statuszeile in der UI)."""
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    from datetime import datetime as _dt, timezone as _tz
+
+    banks_out = []
+    for bank in _bank_configs():
+        key = bank["key"]
+        # Persistierter Client-State
+        state_key = "fints_client_state" if key == "sparkasse" else f"fints_client_state_{key}"
+        state_doc = await db.system_settings.find_one({"key": state_key}, {"_id": 0})
+        has_state = bool(state_doc and state_doc.get("value"))
+        state_updated = state_doc.get("updated_at") if state_doc else None
+        state_age_days = None
+        if state_updated:
+            try:
+                d = _dt.fromisoformat(state_updated.replace("Z", "+00:00"))
+                state_age_days = (_dt.now(_tz.utc) - d).days
+            except Exception:
+                pass
+        # Letzter Abrufversuch
+        last_check_key = "fints_last_check" if key == "sparkasse" else f"fints_last_check_{key}"
+        last_check = await db.system_settings.find_one({"key": last_check_key}, {"_id": 0})
+        # Toggle enabled?
+        enabled_key = "fints_enabled" if key == "sparkasse" else f"fints_enabled_{key}"
+        en_doc = await db.system_settings.find_one({"key": enabled_key}, {"_id": 0})
+        enabled = en_doc.get("value", True) if en_doc else True
+
+        banks_out.append({
+            "key": key,
+            "name": bank.get("name", key),
+            "iban": bank.get("iban", ""),
+            "enabled": bool(enabled),
+            "has_state": has_state,
+            "state_updated_at": state_updated,
+            "state_age_days": state_age_days,
+            "sca_renewal_in_days": max(0, 90 - state_age_days) if state_age_days is not None else None,
+            "last_check_at": last_check.get("value") if last_check else None,
+            "last_check_result": last_check.get("result") if last_check else None,
+        })
+
+    return {"banks": banks_out, "count": len(banks_out)}
+
+
+@router.post("/bulk-mark-paid")
+async def bulk_mark_paid(payload: dict, token: str = Query(...)):
+    """Markiert mehrere Rechnungen gleichzeitig als bezahlt.
+    Body: ``{"ids": ["doc1", "doc2", ...]}``. Nur nicht-bereits-bezahlte
+    Rechnungen werden aktualisiert. Kreditkarten/SEPA-Flags bleiben unangetastet.
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    ids = payload.get("ids") if isinstance(payload, dict) else None
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="ids-Liste ist leer")
+    if len(ids) > 500:
+        raise HTTPException(status_code=400, detail="max. 500 Rechnungen pro Batch")
+    now = datetime.now(timezone.utc).isoformat()
+    src = f"bulk-manuell ({caller.get('name', 'admin')})"
+    res = await db.documents.update_many(
+        {"id": {"$in": ids}, "eingang_paid": {"$ne": True}},
+        {"$set": {
+            "eingang_paid": True,
+            "eingang_paid_at": now,
+            "eingang_paid_source": src,
+        }}
+    )
+    return {"ok": True, "requested": len(ids), "updated": res.modified_count}

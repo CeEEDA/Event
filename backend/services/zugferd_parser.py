@@ -290,3 +290,33 @@ def try_zugferd_parse(pdf_path: str) -> dict:
     if not xml:
         return {}
     return parse_zugferd_xml(xml)
+
+
+def extract_zugferd_xml_from_bytes(pdf_bytes: bytes) -> Optional[str]:
+    """Wie ``extract_zugferd_xml`` aber arbeitet auf einem PDF-Bytes-Buffer
+    ohne Filesystem. Praktisch fuer Downstream-Analysen die das PDF bereits
+    im Speicher haben (Reanalyse-Sweep, Streaming-Uploads)."""
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            for name in doc.embfile_names():
+                info = doc.embfile_info(name) or {}
+                fname = (info.get("ufilename") or info.get("filename") or name or "").lower()
+                if any(z in fname for z in _ZUGFERD_XML_FILENAMES):
+                    data = doc.embfile_get(name)
+                    if data:
+                        return data.decode("utf-8", errors="ignore")
+        finally:
+            doc.close()
+    except Exception as e:
+        logger.debug(f"[zugferd] extract_zugferd_xml_from_bytes failed: {e}")
+    return None
+
+
+def try_zugferd_parse_bytes(pdf_bytes: bytes) -> dict:
+    """Convenience-Variante fuer Aufrufer die das PDF bereits als Bytes haben.
+    Returns dict mit Kernfeldern oder leer bei Non-ZUGFeRD / Parse-Fehler."""
+    xml = extract_zugferd_xml_from_bytes(pdf_bytes)
+    if not xml:
+        return {}
+    return parse_zugferd_xml(xml)

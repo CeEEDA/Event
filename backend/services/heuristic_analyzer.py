@@ -327,10 +327,19 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
     zurueckliefert (suggested_folder, sender, recipient, invoice_number,
     date, amount, subject, full_text, keywords).
     """
+    # ─── ZUGFeRD / Factur-X / XRechnung XML SHORTCUT ──────────────────
+    # Wenn das PDF eine strukturierte E-Rechnung eingebettet hat, sind DIESE
+    # Daten authoritativ. Wir umgehen dann komplett das Layout-Parsing.
+    try:
+        from services.zugferd_parser import try_zugferd_parse_bytes
+        zug = try_zugferd_parse_bytes(pdf_bytes)
+    except Exception:
+        zug = {}
+
     text = _extract_text(pdf_bytes)
 
     # Wenn nichts extrahierbar (z.B. Scan ohne OCR), fallback auf filename+leer
-    if not text:
+    if not text and not zug:
         return {
             "document_type": "unknown",
             "suggested_folder": "unbekannt",
@@ -353,10 +362,47 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
     amount = _extract_amount(text)
     iban = _extract_iban(text)
 
+    # ─── ZUGFeRD-Daten uebernehmen (immer Vorrang vor Text-Heuristik) ───
+    zug_used = False
+    if zug:
+        zug_used = True
+        # Absender / Empfaenger direkt aus XML (100% eindeutig)
+        zug_sender = (zug.get("sender") or "").strip()
+        zug_recipient = (zug.get("recipient") or "").strip()
+        if zug_sender:
+            sender = zug_sender
+        if zug_recipient:
+            recipient = zug_recipient
+        # Richtung anhand XML-Sender vs. eigene Firmenmarker
+        _self_markers = ("eventenergie", "power factor engineering", "powerfactor engineering")
+        _sender_low = zug_sender.lower()
+        _recipient_low = zug_recipient.lower()
+        if _sender_low and any(m in _sender_low for m in _self_markers):
+            direction = "rechnungsausgang_eventenergie_deutschland"
+        elif _recipient_low and any(m in _recipient_low for m in _self_markers):
+            direction = "rechnungseingang_eventenergie_deutschland"
+        elif _sender_low:
+            # Ein fremder Sender im XML → wir sind Empfaenger
+            direction = "rechnungseingang_eventenergie_deutschland"
+        # Metadaten uebernehmen (XML gewinnt gegen Text-Heuristik)
+        if zug.get("invoice_number"):
+            inv_num = zug["invoice_number"]
+        if zug.get("date"):
+            date = zug["date"]
+        if zug.get("amount") is not None:
+            try:
+                amount = float(zug["amount"])
+            except (TypeError, ValueError):
+                pass
+        if zug.get("iban"):
+            iban = str(zug["iban"]).replace(" ", "")
+
     # Dokumenttyp aus Dateiname/Text-Keywords ableiten
     tlow = text.lower()
     fn_lower = filename.lower()
-    if "bestellung" in fn_lower or "bestellung" in tlow[:500]:
+    if zug and zug.get("document_type"):
+        doc_type = zug["document_type"]
+    elif "bestellung" in fn_lower or "bestellung" in tlow[:500]:
         doc_type = "bestellung"
         if direction == "unknown":
             direction = "bestellungen_eingang"
@@ -368,6 +414,9 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
         doc_type = "mahnung"
         direction = direction if direction != "unknown" else "rechnungseingang_eventenergie_deutschland"
     elif "rechnung" in fn_lower or "rechnung" in tlow[:500] or "invoice" in tlow[:500]:
+        doc_type = "rechnung"
+    elif zug_used:
+        # ZUGFeRD-XML vorhanden → mit Sicherheit eine Rechnung
         doc_type = "rechnung"
     else:
         doc_type = "unknown"
@@ -393,6 +442,10 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
         keywords.append(recipient.split(",")[0].strip()[:60])
     if iban:
         keywords.append(iban)
+    if zug_used:
+        keywords.append("e-rechnung")
+        if zug.get("sender_vat"):
+            keywords.append(zug["sender_vat"])
     keywords = [k for k in keywords if k]
 
     return {
@@ -403,12 +456,17 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
         "invoice_number": inv_num,
         "date": date,
         "amount": amount,
-        "currency": "EUR",
+        "currency": (zug.get("currency") if zug_used else None) or "EUR",
         "subject": subject[:200],
         "full_text": text[:20000],  # cap
         "keywords": keywords[:15],
         "iban": iban,
-        "_authoritative_source": "fallback_heuristic",
-        "_fallback_reason": "Ollama nicht erreichbar - heuristische Text-Analyse verwendet",
+        "_authoritative_source": "zugferd_xml" if zug_used else "fallback_heuristic",
+        "_fallback_reason": (
+            "ZUGFeRD/Factur-X XML aus PDF extrahiert - strukturierte E-Rechnung"
+            if zug_used else
+            "Ollama nicht erreichbar - heuristische Text-Analyse verwendet"
+        ),
         "_fallback_at": datetime.now(timezone.utc).isoformat(),
+        "_zugferd_data": zug if zug_used else None,
     }
