@@ -80,12 +80,25 @@ export default function EingangsrechnungenPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // Für "Aktiv": frisch bezahlt (letzte 2 Tage) bleibt sichtbar, danach ab ins Archiv
+    const now = Date.now();
+    const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+    const recentlyPaid = (r) => {
+      if (r.status !== "paid" || !r.paid_at) return false;
+      const t = new Date(r.paid_at).getTime();
+      return isFinite(t) && (now - t) < twoDaysMs;
+    };
     return rows.filter(r => {
-      // "aktiv" = overdue + open (Standard, ohne bezahlte Rechnungen)
-      // "archiv" = nur paid
-      if (filter === "aktiv" && r.status === "paid") return false;
-      if (filter === "archiv" && r.status !== "paid") return false;
-      if (["overdue", "open", "paid"].includes(filter) && r.status !== filter) return false;
+      // "aktiv" = overdue + open + (paid < 2 Tage alt)
+      // "archiv" = paid, aelter als 2 Tage
+      if (filter === "aktiv") {
+        if (r.status === "paid" && !recentlyPaid(r)) return false;
+      } else if (filter === "archiv") {
+        if (r.status !== "paid") return false;
+        if (recentlyPaid(r)) return false;
+      } else if (["overdue", "open", "paid"].includes(filter) && r.status !== filter) {
+        return false;
+      }
       if (!q) return true;
       return [r.sender, r.invoice_number, r.filename, r.notes].some(v => (v || "").toLowerCase().includes(q));
     });
