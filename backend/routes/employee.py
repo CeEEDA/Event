@@ -1090,6 +1090,37 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
         logger.info(f"Overtime V2-MIGRATION: user={user_id} year={year} baseline {old_baseline}h -> {baseline}h (preserves {current_total}h)")
 
     new_overtime = round(float(baseline) + diff_hours - deduction, 2)
+
+    # ─── SAFETY-CHECK: Ueberstunden-Sprung-Detektor ─────────────────────────
+    # Wenn die Berechnung einen grossen Sprung (>5h) gegenueber dem aktuell
+    # gespeicherten overtime_hours erzeugt UND der letzte Admin-Manuell-Set
+    # weniger als 2 Tage her ist, VERZICHTE auf das Ueberschreiben. Der
+    # Admin-Wert ist die Wahrheit, der Loop hat einen Fehler produziert.
+    # Das schuetzt vor "gestern Werte korrigiert, heute alles wieder falsch".
+    if hr:
+        current_value = float(hr.get("overtime_hours") or 0)
+        jump = abs(new_overtime - current_value)
+        if jump > 5.0:
+            _bset_at = hr.get("overtime_baseline_set_at")
+            _bset_recent = False
+            if _bset_at:
+                try:
+                    _bset_dt = datetime.fromisoformat(_bset_at)
+                    if _bset_dt.tzinfo is None:
+                        _bset_dt = _bset_dt.replace(tzinfo=timezone.utc)
+                    age_hours = (datetime.now(timezone.utc) - _bset_dt).total_seconds() / 3600
+                    _bset_recent = age_hours < 48  # weniger als 2 Tage her
+                except (ValueError, TypeError):
+                    pass
+            if _bset_recent:
+                logger.warning(
+                    f"[recompute-safety] Sprung-Blockade: user={user_id} year={year} "
+                    f"current={current_value}h -> new={new_overtime}h (jump={jump}h) "
+                    f"aber Admin-Set war vor <48h. Behalte current, ueberschreibe nicht."
+                )
+                # Nichts an overtime_hours aendern - Admin-Wert ist Wahrheit
+                return current_value
+
     update = {"overtime_hours": new_overtime, "updated_at": datetime.now(timezone.utc).isoformat()}
     if not hr:
         await db.hr_data.insert_one({
