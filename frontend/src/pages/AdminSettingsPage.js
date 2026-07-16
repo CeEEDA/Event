@@ -2216,8 +2216,14 @@ FINTS_VB_IBAN=DE...`}
               <span className="font-semibold">Hinweis:</span> {transactions.hint}
             </div>
             <div className="text-[10px] text-gray-500">
-              BLZ: {transactions.blz} · URL: {transactions.url} · User: {transactions.user_first_chars}
+              BLZ: {transactions.blz} · URL: {transactions.url} · User: {transactions.user_first_chars} (numeric: {String(transactions.user_is_numeric)}, {transactions.user_length} Zeichen) · PIN: {transactions.pin_length} Zeichen · Stage: {transactions.stage}
             </div>
+            {transactions.log_trace && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-gray-600 hover:text-gray-900 font-medium">FinTS-Log-Trace anzeigen ({transactions.log_trace.length} Zeichen)</summary>
+                <pre className="mt-2 text-[10px] bg-gray-900 text-gray-100 p-2 rounded max-h-96 overflow-auto whitespace-pre-wrap break-all">{transactions.log_trace}</pre>
+              </details>
+            )}
           </div>
         )}
 

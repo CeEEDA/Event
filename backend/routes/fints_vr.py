@@ -124,12 +124,26 @@ async def test_connection(token: str = Query(...)):
             "error": "VR-Bank nicht konfiguriert. Setze FINTS_VB_USER, FINTS_VB_PIN, FINTS_VB_URL, FINTS_VB_BLZ, FINTS_VB_IBAN.",
             "hint": "Nach dem Setzen der ENV-Variablen Backend neu starten.",
         }
+
+    # Capture python-fints DEBUG-Trace (analog Sparkasse-Test)
+    import io
+    import logging as _logging
+    buf = io.StringIO()
+    handler = _logging.StreamHandler(buf)
+    handler.setLevel(_logging.DEBUG)
+    handler.setFormatter(_logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    fints_logger = _logging.getLogger("fints")
+    fints_logger.addHandler(handler)
+    prev_level = fints_logger.level
+    fints_logger.setLevel(_logging.DEBUG)
+
     diag = {
         "stage": "init",
         "blz": bank["blz"],
         "url": bank["url"],
         "user_first_chars": (bank["user"][:3] + "***") if bank["user"] else "",
         "user_length": len(bank["user"]),
+        "user_is_numeric": bank["user"].isdigit(),
         "pin_length": len(bank["pin"]),
         "product_id_first_chars": (bank["product_id"][:8] + "***") if bank.get("product_id") else "(leer)",
         "product_version": bank.get("product_version") or "(leer)",
@@ -185,12 +199,17 @@ async def test_connection(token: str = Query(...)):
             pass
         diag["stage"] = "done"
         diag["ok"] = True
+        diag["log_trace"] = buf.getvalue()[-6000:]  # Last 6000 chars
         return diag
     except Exception as e:
         diag["ok"] = False
         diag["error"] = str(e)[:500]
         low = diag["error"].lower()
-        if "9340" in low or "signatur" in low:
+        if "authentication data wrong" in low or "authentifizier" in low:
+            diag["hint"] = ("Bank lehnt die Anmeldung ab. Prüfe (1) VR-NetKey (nicht den Alias!), "
+                            "(2) Online-Banking-PIN, (3) ob der Zugang für FinTS/HBCI-Software "
+                            "im Online-Banking freigeschaltet ist (Einstellungen → Sicherheit → HBCI/FinTS).")
+        elif "9340" in low or "signatur" in low:
             diag["hint"] = "Ungültige Signatur – Produkt-ID/Version prüfen oder mit VR-Bank abklären."
         elif "9210" in low or "9942" in low or "pin" in low:
             diag["hint"] = "PIN wurde von der Bank abgelehnt. Prüfe FINTS_VB_PIN."
@@ -199,8 +218,12 @@ async def test_connection(token: str = Query(...)):
         elif "url" in low or "404" in low or "connection" in low:
             diag["hint"] = "Bank-URL oder Netzwerk-Problem. Prüfe FINTS_VB_URL."
         else:
-            diag["hint"] = "Unbekannter FinTS-Fehler – siehe Log-Trace."
+            diag["hint"] = "Unbekannter FinTS-Fehler – siehe Log-Trace unten."
+        diag["log_trace"] = buf.getvalue()[-6000:]
         return diag
+    finally:
+        fints_logger.removeHandler(handler)
+        fints_logger.setLevel(prev_level)
 
 
 @router.get("/transactions")
