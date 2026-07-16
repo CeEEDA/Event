@@ -1717,6 +1717,90 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     return doc
 
 
+@router.post("/hr-data/emergency-reset-overtime")
+async def emergency_reset_overtime(token: str = Query(...), year: int = Query(...),
+                                    dry_run: bool = Query(True), reset_to_zero: bool = Query(False)):
+    """NOTFALL: Setzt Ueberstunden-Baseline aller Mitarbeiter zurueck, falls die
+    V2-Migration falsche Werte errechnet hat.
+
+    - dry_run=True (default): Zeigt nur was gemacht wuerde, ohne DB-Aenderung
+    - dry_run=False: Setzt tatsaechlich zurueck
+    - reset_to_zero=False: Setzt baseline = overtime_hours der letzten manuellen
+      Admin-Setzung (falls vorhanden) oder 0
+    - reset_to_zero=True: Setzt baseline UND overtime_hours = 0 fuer alle User
+      (nuklear - danach muessen alle Werte wieder manuell gesetzt werden)
+
+    Zusaetzlich: entfernt das overtime_baseline_v2_migrated Flag, damit die
+    naechste Recompute mit sauberen Daten neu startet.
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    affected = []
+    cur = db.hr_data.find({"year": year}, {"_id": 0})
+    async for hr in cur:
+        uid = hr.get("user_id")
+        current_overtime = float(hr.get("overtime_hours") or 0)
+        current_baseline = hr.get("overtime_baseline")
+        reason = hr.get("overtime_baseline_reason") or ""
+        v2_migrated = bool(hr.get("overtime_baseline_v2_migrated"))
+
+        # Nur User in Frage kommen, deren baseline durch V2-Migration gesetzt wurde
+        # (Reason enthaelt "v2-migration" oder "auto-migration")
+        # Manuell gesetzte Admin-Baselines werden NICHT angetastet.
+        was_migrated_baseline = "v2-migration" in reason.lower() or "auto-migration" in reason.lower()
+        if not v2_migrated and not was_migrated_baseline:
+            continue
+
+        if reset_to_zero:
+            new_overtime = 0.0
+            new_baseline = 0.0
+            action = "nuclear_reset"
+        else:
+            # Behalte den angezeigten Saldo, aber setze baseline auf overtime_hours
+            # damit der naechste Recompute mit sauberer Basis startet
+            new_overtime = current_overtime
+            new_baseline = current_overtime
+            action = "preserve_display_reset_baseline"
+
+        user = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1})
+        affected.append({
+            "user_id": uid,
+            "user_name": (user or {}).get("name") or "?",
+            "old_overtime": current_overtime,
+            "old_baseline": current_baseline,
+            "old_reason": reason,
+            "new_overtime": new_overtime,
+            "new_baseline": new_baseline,
+            "action": action,
+        })
+
+        if not dry_run:
+            await db.hr_data.update_one(
+                {"user_id": uid, "year": year},
+                {"$set": {
+                    "overtime_hours": new_overtime,
+                    "overtime_baseline": new_baseline,
+                    "overtime_baseline_v2_migrated": False,
+                    "overtime_baseline_reason": f"emergency-reset ({'nuclear' if reset_to_zero else 'preserve'}) am {datetime.now(timezone.utc).date().isoformat()}",
+                    "overtime_baseline_set_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+
+    return {
+        "dry_run": dry_run,
+        "reset_to_zero": reset_to_zero,
+        "affected_count": len(affected),
+        "affected": affected[:50],  # cap output
+        "message": (
+            f"DRY RUN: {len(affected)} User waeren betroffen. Setze dry_run=false zum Ausfuehren."
+            if dry_run else f"{len(affected)} User zurueckgesetzt."
+        ),
+    }
+
+
 @router.get("/reports/yearly-evaluation/pdf")
 async def yearly_evaluation_pdf(token: str = Query(...), year: Optional[int] = None):
     """Erzeugt eine einseitige PDF-Uebersicht aller aktiven Mitarbeiter fuer
