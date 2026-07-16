@@ -11,7 +11,7 @@ export default function VerwaltungPage() {
   const allItems = [
     {
       key: "finance",
-      label: "Finance",
+      label: "Ausgangsrechnungen",
       description: "Rechnungen verwalten, versenden und exportieren",
       icon: Receipt,
       color: "emerald",

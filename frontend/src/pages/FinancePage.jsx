@@ -203,7 +203,7 @@ export default function FinancePage() {
             </Button>
             <div className="h-5 w-px bg-gray-200" />
             <Receipt className="w-5 h-5 text-emerald-600" />
-            <h1 className="text-base font-semibold text-gray-900">Rechnungsverwaltung</h1>
+            <h1 className="text-base font-semibold text-gray-900">Ausgangsrechnungen</h1>
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && (
