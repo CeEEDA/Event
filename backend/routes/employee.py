@@ -1800,6 +1800,45 @@ async def overtime_set_value(token: str = Query(...), user_id: str = Query(...),
     return {"ok": True, "user_id": user_id, "year": year, "new_value": value}
 
 
+@router.post("/overtime/lock-all-current")
+async def overtime_lock_all_current(token: str = Query(...), year: int = Query(...),
+                                     dry_run: bool = Query(True)):
+    """FRIERT die aktuellen overtime_hours-Werte ALLER Mitarbeiter ein:
+    Setzt baseline = overtime_hours, Reason = "admin-manuell gesetzt (bulk-lock)",
+    set_at = jetzt. Damit hat der naechste Recompute range_start=morgen und kann
+    die Werte nicht mehr aufblaehen. Danach kannst du pro User via
+    /overtime/set-value einzeln korrigieren, ohne dass etwas verschoben wird.
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    affected = []
+    cur = db.hr_data.find({"year": year}, {"_id": 0})
+    async for hr in cur:
+        uid = hr.get("user_id")
+        current_val = float(hr.get("overtime_hours") or 0)
+        user = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1})
+        affected.append({
+            "user_id": uid,
+            "user_name": (user or {}).get("name") or "?",
+            "locked_at_value": current_val,
+        })
+        if not dry_run:
+            await db.hr_data.update_one(
+                {"user_id": uid, "year": year},
+                {"$set": {
+                    "overtime_baseline": current_val,
+                    "overtime_baseline_set_at": now_iso,
+                    "overtime_baseline_reason": "admin-manuell gesetzt (bulk-lock)",
+                    "overtime_baseline_v2_migrated": True,
+                    "updated_at": now_iso,
+                }}
+            )
+    return {"dry_run": dry_run, "affected_count": len(affected), "affected": affected}
+
+
 @router.post("/overtime/emergency-reset")
 async def emergency_reset_overtime(token: str = Query(...), year: int = Query(...),
                                     dry_run: bool = Query(True), reset_to_zero: bool = Query(False)):
