@@ -56,6 +56,10 @@ async def list_incoming_invoices(token: str = Query(...)):
         dtype = (meta.get("document_type") or "").lower()
         if dtype in ("bestellung", "angebot", "lieferschein", "auftragsbestaetigung"):
             continue
+        # Schutz: Ausgangsrechnungen (eigene Firma als Absender) rausfiltern
+        sug = (meta.get("suggested_folder") or "").lower()
+        if sug.startswith("rechnungsausgang"):
+            continue
         fn = (d.get("original_filename") or "").lower()
         subj = (meta.get("subject") or "").lower()
         ref = (meta.get("reference") or "").lower()

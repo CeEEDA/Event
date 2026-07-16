@@ -16,13 +16,20 @@ except Exception:
     fitz = None
 
 
-# Firma des Systembetreibers - wenn dieser Name als Absender im Text steht,
+# Firma(en) des Systembetreibers - wenn dieser Name als Absender im Text steht,
 # ist es eine Ausgangsrechnung. Wenn als Empfaenger, dann Eingangsrechnung.
-SELF_COMPANY_MARKERS = [
+# Optional ueber ENV SELF_COMPANIES (kommaseparierte Liste) erweiterbar.
+import os as _os
+_env_companies = [c.strip() for c in _os.environ.get("SELF_COMPANIES", "").split(",") if c.strip()]
+SELF_COMPANY_MARKERS = list({
     "Eventenergie Deutschland",
     "eventenergie deutschland",
     "EVENTENERGIE DEUTSCHLAND",
-]
+    "Power Factor Engineering",
+    "power factor engineering",
+    "POWER FACTOR ENGINEERING",
+    *_env_companies,
+})
 SELF_IBAN_PATTERNS = [
     # Firmen-IBAN (kann ueber ENV/Config eingespeist werden)
 ]
