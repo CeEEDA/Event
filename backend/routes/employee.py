@@ -1717,6 +1717,80 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     return doc
 
 
+@router.get("/overtime/debug-all")
+async def overtime_debug_all(token: str = Query(...), year: Optional[int] = None):
+    """Diagnose-Endpoint: zeigt die ROHDATEN aller hr_data-Eintraege eines
+    Jahres als lesbare Tabelle. Zum direkten Aufruf im Browser gedacht
+    (Admin-Session per token). Hilft bei der Fehlersuche bei falschen
+    Ueberstunden-Berechnungen.
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    yr = int(year) if year else datetime.now(timezone.utc).year
+    users = await db.users.find(
+        {"is_active": {"$ne": False}, "role": {"$in": ["admin", "mitarbeiter"]}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1}
+    ).to_list(500)
+    users_by_id = {u["id"]: u for u in users}
+
+    rows = []
+    cur = db.hr_data.find({"year": yr}, {"_id": 0})
+    async for hr in cur:
+        uid = hr.get("user_id")
+        u = users_by_id.get(uid) or {}
+        rows.append({
+            "user_id": uid,
+            "user_name": u.get("name") or "?",
+            "email": u.get("email") or "",
+            "overtime_hours": hr.get("overtime_hours"),
+            "overtime_baseline": hr.get("overtime_baseline"),
+            "overtime_baseline_reason": hr.get("overtime_baseline_reason"),
+            "overtime_baseline_set_at": hr.get("overtime_baseline_set_at"),
+            "overtime_baseline_v2_migrated": hr.get("overtime_baseline_v2_migrated"),
+            "vacation_days_total": hr.get("vacation_days_total"),
+            "vacation_days_used": hr.get("vacation_days_used"),
+            "updated_at": hr.get("updated_at"),
+        })
+    rows.sort(key=lambda r: (r.get("user_name") or "").lower())
+
+    return {
+        "year": yr,
+        "total_users": len(users),
+        "total_hr_records": len(rows),
+        "rows": rows,
+    }
+
+
+@router.post("/overtime/set-value")
+async def overtime_set_value(token: str = Query(...), user_id: str = Query(...),
+                              year: int = Query(...), value: float = Query(...)):
+    """Setzt Ueberstunden fuer EINEN User auf einen exakten Wert und markiert
+    sauber als 'admin-manuell', sodass der naechste Recompute das respektiert.
+
+    Einfacher als der Emergency-Reset - fuer schnelle Einzelkorrekturen.
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.hr_data.update_one(
+        {"user_id": user_id, "year": year},
+        {"$set": {
+            "overtime_hours": float(value),
+            "overtime_baseline": float(value),
+            "overtime_baseline_set_at": now_iso,
+            "overtime_baseline_reason": "admin-manuell gesetzt (via debug-endpoint)",
+            "overtime_baseline_v2_migrated": True,
+            "updated_at": now_iso,
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "user_id": user_id, "year": year, "new_value": value}
+
+
 @router.post("/overtime/emergency-reset")
 async def emergency_reset_overtime(token: str = Query(...), year: int = Query(...),
                                     dry_run: bool = Query(True), reset_to_zero: bool = Query(False)):
