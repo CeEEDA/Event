@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, FileText, CheckCircle, AlertTriangle, Clock,
-  Receipt, X, Save, Euro, Landmark,
+  Receipt, X, Save, Euro, Landmark, Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -114,6 +114,20 @@ export default function EingangsrechnungenPage() {
       toast.error(e.response?.data?.detail || "Fehler beim FinTS-Abgleich");
     } finally {
       setMatching(false);
+    }
+  };
+
+  const markNotInvoice = async (row) => {
+    if (!row) return;
+    if (!window.confirm(`"${row.filename}" als KEINE Eingangsrechnung markieren?\n\nDokument wird aus der Liste entfernt. Es bleibt im Rechnungseingang-Ordner und kann im Dokumentenmanagement in den richtigen Ordner verschoben werden.`)) return;
+    try {
+      const token = localStorage.getItem("token");
+      await api.post(`/incoming-invoices/${row.id}/not-invoice`, null, { params: { token } });
+      toast.success("Als keine Rechnung markiert – aus der Liste entfernt");
+      setSelected(null);
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler");
     }
   };
 
@@ -362,6 +376,9 @@ export default function EingangsrechnungenPage() {
                     <CheckCircle className="w-3.5 h-3.5" /> Bezahlt {selected.paid_at ? `am ${fmtDate(selected.paid_at)}` : ""}
                   </span>
                 )}
+                <Button size="sm" variant="outline" onClick={() => markNotInvoice(selected)} className="ml-auto text-red-700 border-red-200 hover:bg-red-50" data-testid="mark-not-invoice-btn">
+                  <Ban className="w-4 h-4 mr-1" /> Keine Rechnung
+                </Button>
               </div>
 
               {/* Preview */}

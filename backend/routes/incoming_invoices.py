@@ -31,7 +31,8 @@ def _parse_date(s):
 
 @router.get("")
 async def list_incoming_invoices(token: str = Query(...)):
-    """Liste aller Eingangsrechnungen aus allen rechnungseingang_*-Ordnern."""
+    """Liste aller Eingangsrechnungen aus allen rechnungseingang_*-Ordnern.
+    Fehl-Klassifizierte Bestellungen/Angebote/Lieferscheine werden ausgeblendet."""
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
@@ -41,13 +42,30 @@ async def list_incoming_invoices(token: str = Query(...)):
         {"_id": 0, "id": 1, "original_filename": 1, "folder_id": 1,
          "content_type": 1, "ai_metadata": 1, "created_at": 1,
          "eingang_paid": 1, "eingang_paid_at": 1, "eingang_paid_source": 1,
-         "eingang_due_date_override": 1, "eingang_notes": 1}
+         "eingang_due_date_override": 1, "eingang_notes": 1,
+         "eingang_not_invoice": 1}
     ).sort("created_at", -1).to_list(2000)
 
     today = datetime.now(timezone.utc).date()
     result = []
     for d in docs:
+        if d.get("eingang_not_invoice"):
+            continue  # manuell als "keine Rechnung" markiert
         meta = d.get("ai_metadata") or {}
+        # Schutz: Bestellung/Angebot/Lieferschein rausfiltern, auch wenn KI-Ordner falsch
+        dtype = (meta.get("document_type") or "").lower()
+        if dtype in ("bestellung", "angebot", "lieferschein", "auftragsbestaetigung"):
+            continue
+        fn = (d.get("original_filename") or "").lower()
+        subj = (meta.get("subject") or "").lower()
+        ref = (meta.get("reference") or "").lower()
+        if any(kw in fn for kw in ("bestellung", "angebot", "lieferschein")):
+            continue
+        if subj.startswith("bestellung") or subj.startswith("angebot") or subj.startswith("lieferschein"):
+            continue
+        if "bestellnummer" in ref and "rechnungsnummer" not in subj and "rechnung" not in fn:
+            continue
+
         inv_date = _parse_date(meta.get("date"))
         # Faelligkeit: 1. Override, 2. AI due_date, 3. Rechnungsdatum + 14 Tage
         due_date = _parse_date(d.get("eingang_due_date_override")) or _parse_date(meta.get("due_date"))
@@ -149,6 +167,27 @@ async def update_incoming(doc_id: str, token: str = Query(...),
     if not update:
         return {"ok": True, "no_changes": True}
     await db.documents.update_one({"id": doc_id}, {"$set": update})
+    return {"ok": True}
+
+
+@router.post("/{doc_id}/not-invoice")
+async def mark_not_invoice(doc_id: str, token: str = Query(...)):
+    """Markiert ein Dokument als 'keine Eingangsrechnung' (Fehl-Klassifizierung durch KI).
+    Wird aus der Eingangsrechnungen-Liste entfernt; Dokument bleibt im Ordner für
+    manuelle Verschiebung im Dokumentenmanagement."""
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    res = await db.documents.update_one(
+        {"id": doc_id},
+        {"$set": {
+            "eingang_not_invoice": True,
+            "eingang_not_invoice_at": datetime.now(timezone.utc).isoformat(),
+            "eingang_not_invoice_by": caller.get("name", "admin"),
+        }}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden")
     return {"ok": True}
 
 
