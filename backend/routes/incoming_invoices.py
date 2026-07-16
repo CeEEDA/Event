@@ -523,7 +523,10 @@ async def bulk_mark_paid(payload: dict, token: str = Query(...)):
     now = datetime.now(timezone.utc).isoformat()
     src = f"bulk-manuell ({caller.get('name', 'admin')})"
     res = await db.documents.update_many(
-        {"id": {"$in": ids}, "eingang_paid": {"$ne": True}},
+        {"id": {"$in": ids},
+         "eingang_paid": {"$ne": True},
+         "eingang_paid_by_creditcard": {"$ne": True},
+         "eingang_paid_by_sepa": {"$ne": True}},
         {"$set": {
             "eingang_paid": True,
             "eingang_paid_at": now,
