@@ -865,6 +865,10 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
       overtime_hours = overtime_baseline + sum(ist_tag - soll_tag fuer alle vergangenen Plan-Tage)
                        - sum(hours_deducted aus genehmigten ueberstundenabbau-Antraegen)
 
+    NOT-AUS: Wenn die ENV-Variable OVERTIME_RECOMPUTE_DISABLED=1 gesetzt ist, kehrt die
+    Funktion sofort zurueck und laesst den bestehenden Wert unangetastet. Zum
+    Einsatz waehrend Datenkorrektur / Bug-Analyse.
+
     WICHTIG: Tag-fuer-Tag, NICHT pro time_entry. Soll wird PRO TAG einmal abgezogen,
     Ist ist die SUMME aller Stempel-Eintraege des Tages. Damit funktioniert auch
     der Fall „8-18 Uhr + 20:30-21:45" korrekt (Soll 8.5h einmal, Ist 9.25+1.25=10.5h,
@@ -878,6 +882,11 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
         (action='auto_balance_day') und beim naechsten Recompute uebersprungen.
       - Am Ende jedes Recompute eine Zusammenfassung (action='auto_balance_recompute').
     """
+    # NOT-AUS: Recompute komplett deaktivieren (fuer Datenkorrektur-Modus)
+    if os.environ.get("OVERTIME_RECOMPUTE_DISABLED", "").strip() in ("1", "true", "yes"):
+        logger.info(f"[recompute] SKIPPED fuer user={user_id} year={year} (OVERTIME_RECOMPUTE_DISABLED gesetzt)")
+        existing = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0, "overtime_hours": 1})
+        return float((existing or {}).get("overtime_hours") or 0)
     from datetime import date as _date, timedelta
     hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0}) or {}
 
