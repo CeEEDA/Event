@@ -42,6 +42,7 @@ import TextbausteineAdminPage from "./pages/TextbausteineAdminPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import TankStatusPage from "./pages/TankStatusPage";
 import FinancePage from "./pages/FinancePage";
+import EingangsrechnungenPage from "./pages/EingangsrechnungenPage";
 import VerwaltungPage from "./pages/VerwaltungPage";
 import FuelManagementPage from "./pages/FuelManagementPage";
 import DocumentManagementPage from "./pages/DocumentManagementPage";
@@ -308,6 +309,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute requiresBilling={true}>
             <FinancePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/eingangsrechnungen"
+        element={
+          <ProtectedRoute requiresBilling={true}>
+            <EingangsrechnungenPage />
           </ProtectedRoute>
         }
       />

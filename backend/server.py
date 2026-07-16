@@ -2201,6 +2201,9 @@ from routes.travel_expenses import router as travel_expenses_router, init_travel
 init_travel_expense_routes(db, decode_jwt_token)
 app.include_router(travel_expenses_router)
 
+from routes.incoming_invoices import router as incoming_invoices_router
+app.include_router(incoming_invoices_router)
+
 
 
 

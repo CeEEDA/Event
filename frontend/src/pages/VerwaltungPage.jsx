@@ -19,6 +19,15 @@ export default function VerwaltungPage() {
       requiresBilling: true,
     },
     {
+      key: "eingangsrechnungen",
+      label: "Eingangsrechnungen",
+      description: "Empfangene Rechnungen tracken, überfällig/bezahlt, PDF-Vorschau",
+      icon: Receipt,
+      color: "amber",
+      path: "/eingangsrechnungen",
+      requiresBilling: true,
+    },
+    {
       key: "documents",
       label: "Dokumentenverwaltung",
       description: "Dokumente ablegen, KI-Erkennung, Volltextsuche",

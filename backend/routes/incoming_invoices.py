@@ -36,9 +36,9 @@ async def list_incoming_invoices(token: str = Query(...)):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
     docs = await db.documents.find(
-        {"folder_id": {"$regex": "^rechnungseingang_"}, "is_deleted": False},
+        {"folder_id": {"$regex": "^rechnungseingang_"}, "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "original_filename": 1, "folder_id": 1,
-         "ai_metadata": 1, "created_at": 1,
+         "content_type": 1, "ai_metadata": 1, "created_at": 1,
          "eingang_paid": 1, "eingang_paid_at": 1, "eingang_paid_source": 1,
          "eingang_due_date_override": 1, "eingang_notes": 1}
     ).sort("created_at", -1).to_list(2000)
@@ -69,6 +69,7 @@ async def list_incoming_invoices(token: str = Query(...)):
         result.append({
             "id": d["id"],
             "filename": d.get("original_filename") or "",
+            "content_type": d.get("content_type") or "",
             "folder_id": d.get("folder_id"),
             "sender": meta.get("sender") or "",
             "invoice_number": meta.get("invoice_number") or "",
@@ -113,23 +114,23 @@ async def list_incoming_invoices(token: str = Query(...)):
 
 
 @router.post("/{doc_id}/mark-paid")
-async def mark_paid(doc_id: str, token: str = Query(...), paid: bool = Query(True)):
-    """Markiert eine Eingangsrechnung manuell als bezahlt (oder revert)."""
+async def mark_paid(doc_id: str, token: str = Query(...)):
+    """Markiert eine Eingangsrechnung als bezahlt (final; keine Rücknahme über UI)."""
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
-    now = datetime.now(timezone.utc).isoformat()
-    update = {"eingang_paid": paid}
-    if paid:
-        update["eingang_paid_at"] = now
-        update["eingang_paid_source"] = f"manuell ({caller.get('name', 'admin')})"
-    else:
-        update["eingang_paid_at"] = None
-        update["eingang_paid_source"] = None
-    res = await db.documents.update_one({"id": doc_id}, {"$set": update})
-    if res.matched_count == 0:
+    existing = await db.documents.find_one({"id": doc_id}, {"_id": 0, "eingang_paid": 1})
+    if not existing:
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
-    return {"ok": True, "paid": paid}
+    if existing.get("eingang_paid"):
+        return {"ok": True, "paid": True, "already": True}
+    now = datetime.now(timezone.utc).isoformat()
+    await db.documents.update_one({"id": doc_id}, {"$set": {
+        "eingang_paid": True,
+        "eingang_paid_at": now,
+        "eingang_paid_source": f"manuell ({caller.get('name', 'admin')})",
+    }})
+    return {"ok": True, "paid": True}
 
 
 @router.patch("/{doc_id}")
