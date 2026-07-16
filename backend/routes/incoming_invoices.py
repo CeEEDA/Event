@@ -142,8 +142,8 @@ async def mark_paid(doc_id: str, token: str = Query(...)):
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
-    existing = await db.documents.find_one({"id": doc_id}, {"_id": 0, "eingang_paid": 1})
-    if not existing:
+    existing = await db.documents.find_one({"id": doc_id}, {"_id": 0, "id": 1, "eingang_paid": 1})
+    if existing is None:
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
     if existing.get("eingang_paid"):
         return {"ok": True, "paid": True, "already": True}
