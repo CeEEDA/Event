@@ -1717,7 +1717,7 @@ async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Bod
     return doc
 
 
-@router.post("/hr-data/emergency-reset-overtime")
+@router.post("/overtime/emergency-reset")
 async def emergency_reset_overtime(token: str = Query(...), year: int = Query(...),
                                     dry_run: bool = Query(True), reset_to_zero: bool = Query(False)):
     """NOTFALL: Setzt Ueberstunden-Baseline aller Mitarbeiter zurueck, falls die
