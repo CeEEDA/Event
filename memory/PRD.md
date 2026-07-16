@@ -20,6 +20,7 @@ German (all UI + agent responses in German only).
 
 ## Recently Implemented (Session current)
 ### 2026-07-16
+- **Eingangsrechnungen Modul – Phase 2 (FinTS Sparkasse Auto-Match)** (`/app/backend/fints_banking.py` + `POST /api/incoming-invoices/fints/auto-match`): Ausgehende Sparkassen-Buchungen (amount<0) werden gegen offene Eingangsrechnungen aus `rechnungseingang_*` gematcht. Match-Logik analog Kirmes: (1) Rechnungsnr. exakt/Suffix/fuzzy im Verwendungszweck + Betrag → `auto_paid`; (2) Rechnungsnr. gefunden aber Betrag weicht ab → Admin-Task `fints_incoming_amount_mismatch`; (3) Nur Absender + Betrag, 1 Kandidat → `auto_paid` (conf 70); (4) Absender + Betrag, mehrere Kandidaten (z.B. 4× gleiche Rechnung) → Admin-Task `fints_incoming_ambiguous` mit allen Kandidaten. Sammelüberweisungen ausdrücklich ausgeschlossen. UI-Button "FinTS-Abgleich" auf `EingangsrechnungenPage`. Alle 6 Test-Szenarien (exakt/ambig/mismatch/unique/eingehend/suffix) laufen korrekt.
 - **Eingangsrechnungen Modul – Phase 1** (`/app/backend/routes/incoming_invoices.py` + `/app/frontend/src/pages/EingangsrechnungenPage.jsx`): Neuer Menüpunkt "Eingangsrechnungen" unter "Ausgangsrechnungen" in Verwaltung. Backend aggregiert alle Docs aus `rechnungseingang_*`-Ordnern inkl. AI-Metadaten (Absender, Rechnungsnr., Betrag, Datum, IBAN). Status: overdue (rot) / open (amber) / paid (grün); Fälligkeit = Override → AI-due_date → Rechnungsdatum+14T. Frontend: Summen-Kacheln, Suche, Filter-Tabs, Split-Layout mit PDF-Preview (Blob), editierbare Fälligkeit + Notiz. `POST /{id}/mark-paid` FINAL (keine Rücknahme in UI, nur DB-seitig laut User-Entscheidung 1b). `PATCH /{id}` für due_date/notes.
 
 ### 2026-07-15
@@ -32,7 +33,7 @@ German (all UI + agent responses in German only).
 - **Meter Auto-Freeze on Event End** (`/app/backend/routes/kirmes.py`): Scheduler runs every 30 min, freezes final `E_imp_kWh` as `kwh_ausbau/meter_end`, computes `kwh_used`, unlinks `emu_device_id/emu_meter_id/emu_meter_name`, marks event `meters_frozen_at`. Manual trigger endpoint `POST /api/kirmes/events/{id}/freeze-meters`. UI banner + button on KirmesEventDetailPage.
 
 ## Backlog (P1)
-- **Eingangsrechnungen Phase 2**: FinTS Auto-Match ausgehender Buchungen gegen Eingangsrechnungen (IBAN + Betrag + Rechnungsnr.) + Volksbank-Konto in `fints_banking.py` neben Sparkasse
+- **Eingangsrechnungen Volksbank**: Zweit-Bank neben Sparkasse in `fints_banking.py` einbinden (FINTS_URL/BLZ/USER/PIN parametrisieren, Konto-Auswahl über IBAN)
 - OTA-Update-Mechanik für Tankbeleg Pi (client-side polling + systemd restart)
 - EpiRent "Lieferscheine" (Delivery Notes) PDF Generation
 - Refactor `kirmes.py` (>4400 lines) into submodules (events / signups / invoices / meters / scheduler)

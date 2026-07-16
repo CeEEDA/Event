@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Query
 from server import db
 from routes.employee import _get_user, _has_verwaltung
+from fints_banking import auto_match_incoming_invoices
 
 router = APIRouter(prefix="/api/incoming-invoices", tags=["incoming-invoices"])
 
@@ -149,3 +150,15 @@ async def update_incoming(doc_id: str, token: str = Query(...),
         return {"ok": True, "no_changes": True}
     await db.documents.update_one({"id": doc_id}, {"$set": update})
     return {"ok": True}
+
+
+@router.post("/fints/auto-match")
+async def fints_auto_match(token: str = Query(...), days_back: int = Query(60, ge=1, le=365)):
+    """Startet den FinTS-Abgleich (Sparkasse): ausgehende Buchungen ↔ offene Eingangsrechnungen.
+    Sammelüberweisungen werden nicht behandelt (jede Buchung = 1 Rechnung).
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+    result = await auto_match_incoming_invoices(db, create_admin_tasks=True, days_back=days_back)
+    return result

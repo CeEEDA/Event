@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Search, FileText, CheckCircle, AlertTriangle, Clock,
-  Receipt, X, Save, Euro,
+  Receipt, X, Save, Euro, Landmark,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,6 +38,7 @@ export default function EingangsrechnungenPage() {
   const [editNotes, setEditNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [matching, setMatching] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +86,32 @@ export default function EingangsrechnungenPage() {
       return [r.sender, r.invoice_number, r.filename, r.notes].some(v => (v || "").toLowerCase().includes(q));
     });
   }, [rows, filter, search]);
+
+  const runAutoMatch = async () => {
+    if (!window.confirm("FinTS-Abgleich starten?\n\nZieht Sparkassen-Buchungen der letzten 60 Tage und ordnet sie automatisch offenen Eingangsrechnungen zu.\n\nHinweis: Bei Erstanmeldung ist eine pushTAN-Bestätigung nötig.")) return;
+    setMatching(true);
+    try {
+      const token = localStorage.getItem("token");
+      const { data } = await api.post("/incoming-invoices/fints/auto-match", null, {
+        params: { token, days_back: 60 }, timeout: 180000,
+      });
+      if (data.ok === false) {
+        toast.error(`FinTS-Fehler: ${data.error || "Unbekannt"}`);
+        return;
+      }
+      const parts = [];
+      parts.push(`${data.checked} Buchungen geprüft`);
+      if (data.auto_marked) parts.push(`${data.auto_marked} auto-bezahlt`);
+      if (data.admin_tasks) parts.push(`${data.admin_tasks} Betrag-Mismatch`);
+      if (data.ambiguous) parts.push(`${data.ambiguous} mehrdeutig`);
+      toast.success(parts.join(" • "));
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Fehler beim FinTS-Abgleich");
+    } finally {
+      setMatching(false);
+    }
+  };
 
   const markPaid = async (row) => {
     if (!row) return;
@@ -142,6 +169,9 @@ export default function EingangsrechnungenPage() {
           <Receipt className="w-5 h-5 text-fuchsia-600" />
           <h1 className="text-base font-semibold text-gray-900">Eingangsrechnungen</h1>
           <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={runAutoMatch} disabled={matching} data-testid="fints-match-btn">
+              <Landmark className="w-4 h-4 mr-1" /> {matching ? "Sparkasse prüft…" : "FinTS-Abgleich"}
+            </Button>
             <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="reload-btn">
               {loading ? "Lädt…" : "Neu laden"}
             </Button>

@@ -678,3 +678,289 @@ async def auto_match_and_mark(db, create_admin_tasks=True):
         "suggestions": suggestions,
         "swept_closed": swept_closed,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Eingangsrechnungen: Ausgehende Buchungen gegen Eingangsrechnungen matchen
+# (Sammelüberweisungen ausdrücklich ausgeschlossen — jede Buchung = 1 Rechnung)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
+    """Matcht ausgehende Bankbuchungen (amount < 0) gegen offene Eingangsrechnungen.
+
+    Regeln (analog Kirmes-Match, aber invertiert):
+    1. Rechnungsnr. im Verwendungszweck + Betrag passt (±0.05) → auto_paid
+    2. Rechnungsnr. gefunden aber Betrag weicht ab → admin_task
+    3. Kein Rechnungsnr.-Match aber Absender-Name + Betrag eindeutig → auto_paid (confidence 70)
+    4. Absender-Name + Betrag, aber mehrere Kandidaten → admin_task (ambig)
+    """
+    matches = []
+    inv_numbers = [inv.get("invoice_number", "") for inv in invoices if inv.get("invoice_number")]
+    inv_by_number = {inv.get("invoice_number", ""): inv for inv in invoices if inv.get("invoice_number")}
+
+    for tx in transactions:
+        amt = tx.get("amount", 0)
+        if amt >= 0:
+            continue  # Nur Belastungen (Ausgänge)
+        paid_amount = abs(amt)
+
+        purpose = tx.get("purpose", "") or ""
+        recipient = tx.get("applicant_name", "") or ""  # Bei Belastungen = Empfänger
+        search_text = f"{purpose} {recipient}"
+
+        # Schritt 1: Rechnungsnummer im Verwendungszweck?
+        found_nr, confidence, match_type = _find_invoice_number_in_text(search_text, inv_numbers)
+
+        if found_nr and found_nr in inv_by_number:
+            inv = inv_by_number[found_nr]
+            expected = float(inv.get("amount", 0) or 0)
+            diff = paid_amount - expected
+
+            if abs(diff) <= 0.05:
+                matches.append({
+                    "invoice_id": inv["id"],
+                    "invoice_number": found_nr,
+                    "sender": inv.get("sender", ""),
+                    "transaction": tx,
+                    "paid_amount": paid_amount,
+                    "expected": expected,
+                    "confidence": confidence,
+                    "match_type": match_type,
+                    "match_reason": f"Rechnungsnr. {found_nr} ({match_type}) + Betrag {paid_amount:.2f} EUR",
+                    "action": "auto_paid",
+                })
+            else:
+                matches.append({
+                    "invoice_id": inv["id"],
+                    "invoice_number": found_nr,
+                    "sender": inv.get("sender", ""),
+                    "transaction": tx,
+                    "paid_amount": paid_amount,
+                    "expected": expected,
+                    "amount_diff": diff,
+                    "confidence": confidence,
+                    "match_type": match_type,
+                    "match_reason": (
+                        f"Rechnungsnr. {found_nr} gefunden, Betrag weicht ab: "
+                        f"erwartet {expected:.2f}, gezahlt {paid_amount:.2f} EUR "
+                        f"(Differenz: {diff:+.2f} EUR)"
+                    ),
+                    "action": "admin_task",
+                })
+            continue
+
+        # Schritt 2: Kein Rechnungsnr.-Match → Absender + Betrag prüfen
+        candidates = []
+        recipient_norm = _normalize(recipient)
+        purpose_norm = _normalize(purpose)
+        for inv in invoices:
+            expected = float(inv.get("amount", 0) or 0)
+            if abs(paid_amount - expected) > 0.05:
+                continue
+            sender = inv.get("sender", "") or ""
+            if not sender:
+                continue
+            sender_norm = _normalize(sender)
+            # Wort-basierter Vergleich: mindestens ein aussagekräftiges Sender-Wort
+            # (>=4 Zeichen) muss im Empfänger oder Verwendungszweck stehen.
+            sender_words = [w for w in re.split(r"\s+", sender_norm) if len(w) >= 4]
+            hit = any(w in recipient_norm or w in purpose_norm for w in sender_words)
+            if not hit:
+                # Fallback: SequenceMatcher gegen den kompletten Empfänger-Namen
+                if recipient_norm and SequenceMatcher(None, sender_norm, recipient_norm).ratio() >= 0.7:
+                    hit = True
+            if hit:
+                candidates.append(inv)
+
+        if len(candidates) == 1:
+            inv = candidates[0]
+            matches.append({
+                "invoice_id": inv["id"],
+                "invoice_number": inv.get("invoice_number", ""),
+                "sender": inv.get("sender", ""),
+                "transaction": tx,
+                "paid_amount": paid_amount,
+                "expected": float(inv.get("amount", 0) or 0),
+                "confidence": 70,
+                "match_type": "sender_amount",
+                "match_reason": f"Absender '{inv.get('sender', '')}' + Betrag {paid_amount:.2f} EUR",
+                "action": "auto_paid",
+            })
+        elif len(candidates) > 1:
+            matches.append({
+                "invoice_id": None,
+                "invoice_number": None,
+                "sender": recipient,
+                "transaction": tx,
+                "paid_amount": paid_amount,
+                "candidate_ids": [c["id"] for c in candidates],
+                "candidate_numbers": [c.get("invoice_number", "") for c in candidates],
+                "confidence": 40,
+                "match_type": "ambiguous",
+                "match_reason": (
+                    f"{len(candidates)} Rechnungen mit gleichem Betrag {paid_amount:.2f} EUR "
+                    f"und Absender '{recipient}' - bitte manuell zuordnen: "
+                    + ", ".join(c.get("invoice_number", "?") for c in candidates)
+                ),
+                "action": "admin_task_ambiguous",
+            })
+
+    logger.info(
+        f"FinTS Eingangsrechnungen: {len(matches)} Zuordnungen "
+        f"({sum(1 for m in matches if m['action']=='auto_paid')} auto, "
+        f"{sum(1 for m in matches if m['action'].startswith('admin_task'))} Admin-Tasks)"
+    )
+    return matches
+
+
+async def _mark_incoming_invoice_paid(db, m: dict):
+    """Markiert eine Eingangsrechnung als bezahlt (FinTS Auto-Match, final)."""
+    await db.documents.update_one(
+        {"id": m["invoice_id"]},
+        {"$set": {
+            "eingang_paid": True,
+            "eingang_paid_at": datetime.now(timezone.utc).isoformat(),
+            "eingang_paid_source": f"FinTS Auto-Match ({m['match_type']}): {m['match_reason']}",
+            "eingang_paid_tx": m["transaction"],
+        }}
+    )
+    logger.info(f"FinTS Eingangsrechnung: {m['invoice_number']} → BEZAHLT ({m['match_type']})")
+
+
+async def _create_incoming_amount_mismatch_task(db, m: dict) -> bool:
+    """Admin-Task bei Betragsabweichung einer Eingangsrechnung (idempotent)."""
+    existing = await db.tasks.find_one({
+        "fints_incoming_invoice_id": m["invoice_id"],
+        "task_type": "fints_incoming_amount_mismatch",
+        "completed": False,
+    })
+    if existing:
+        return False
+    admin_ids, admin_names = await _resolve_billing_assignees(db)
+    diff = m.get("amount_diff", 0)
+    diff_str = f"{diff:+.2f}".replace(".", ",")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.tasks.insert_one({
+        "id": str(uuid.uuid4()),
+        "title": f"Eingangsrechnung {m['invoice_number']}: Betrag weicht ab ({diff_str} EUR)",
+        "description": (
+            f"Eingangsrechnung {m['invoice_number']} von {m.get('sender', '?')} "
+            f"(Soll: {m['expected']:.2f} EUR) - Bezahlt: {m['paid_amount']:.2f} EUR. "
+            f"Differenz: {diff_str} EUR. Bitte manuell prüfen."
+        ),
+        "priority": "high", "priority_order": 0,
+        "due_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "completed": False, "completed_at": None,
+        "completed_by": None, "completed_by_name": None,
+        "created_by": "system", "created_by_name": "FinTS Banking (Eingang)",
+        "assigned_to": admin_ids, "assigned_to_names": admin_names,
+        "attachment": None, "comment_count": 0, "is_deleted": False,
+        "created_at": now_iso, "updated_at": now_iso,
+        "task_type": "fints_incoming_amount_mismatch",
+        "fints_incoming_invoice_id": m["invoice_id"],
+        "fints_incoming_invoice_number": m["invoice_number"],
+        "fints_transaction": m["transaction"],
+        "fints_expected": m["expected"],
+        "fints_paid": m["paid_amount"],
+    })
+    logger.info(f"FinTS Eingang: {m['invoice_number']} → ADMIN-AUFGABE (Diff {diff_str})")
+    return True
+
+
+async def _create_incoming_ambiguous_task(db, m: dict) -> bool:
+    """Admin-Task bei mehreren Kandidaten (gleiche Summe + Absender)."""
+    tx = m["transaction"]
+    # Idempotenz: gleiche Buchung + gleiche Kandidaten
+    tx_key = f"{tx.get('date')}_{tx.get('amount')}_{tx.get('applicant_name')}"
+    existing = await db.tasks.find_one({
+        "task_type": "fints_incoming_ambiguous",
+        "fints_tx_key": tx_key,
+        "completed": False,
+    })
+    if existing:
+        return False
+    admin_ids, admin_names = await _resolve_billing_assignees(db)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.tasks.insert_one({
+        "id": str(uuid.uuid4()),
+        "title": f"Zahlung {m['paid_amount']:.2f} EUR: {len(m['candidate_ids'])} passende Eingangsrechnungen",
+        "description": (
+            f"Buchung {m['paid_amount']:.2f} EUR an '{m.get('sender', '?')}' passt zu mehreren "
+            f"offenen Eingangsrechnungen mit gleichem Betrag und Absender:\n"
+            f"→ {', '.join(m['candidate_numbers'])}\n"
+            "Bitte in den Eingangsrechnungen manuell die richtige Rechnung als bezahlt markieren."
+        ),
+        "priority": "high", "priority_order": 0,
+        "due_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "completed": False, "completed_at": None,
+        "completed_by": None, "completed_by_name": None,
+        "created_by": "system", "created_by_name": "FinTS Banking (Eingang)",
+        "assigned_to": admin_ids, "assigned_to_names": admin_names,
+        "attachment": None, "comment_count": 0, "is_deleted": False,
+        "created_at": now_iso, "updated_at": now_iso,
+        "task_type": "fints_incoming_ambiguous",
+        "fints_tx_key": tx_key,
+        "fints_transaction": tx,
+        "fints_candidate_ids": m["candidate_ids"],
+        "fints_candidate_numbers": m["candidate_numbers"],
+    })
+    logger.info(f"FinTS Eingang: AMBIG → Admin-Task ({len(m['candidate_ids'])} Kandidaten, {m['paid_amount']:.2f} EUR)")
+    return True
+
+
+async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: int = 60):
+    """Hauptfunktion Eingangsrechnungen: FinTS-Transaktionen (Sparkasse) gegen
+    offene Eingangsrechnungen aus rechnungseingang_*-Ordnern abgleichen."""
+    result = await fetch_transactions_persisted(db, days_back=days_back)
+    transactions = result.get("transactions", [])
+    if not transactions:
+        return {"checked": 0, "matched": 0, "auto_marked": 0, "admin_tasks": 0,
+                "ambiguous": 0, "ok": result.get("ok", False), "error": result.get("error")}
+
+    # Offene Eingangsrechnungen laden
+    docs = await db.documents.find(
+        {"folder_id": {"$regex": "^rechnungseingang_"},
+         "is_deleted": {"$ne": True},
+         "eingang_paid": {"$ne": True}},
+        {"_id": 0, "id": 1, "ai_metadata": 1}
+    ).to_list(5000)
+    invoices = []
+    for d in docs:
+        meta = d.get("ai_metadata") or {}
+        try:
+            amount = float(meta.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount <= 0:
+            continue  # ohne Betrag kein Auto-Match
+        invoices.append({
+            "id": d["id"],
+            "invoice_number": (meta.get("invoice_number") or "").strip(),
+            "amount": amount,
+            "sender": (meta.get("sender") or "").strip(),
+        })
+
+    matches = _match_outgoing_to_incoming(transactions, invoices)
+
+    auto_marked = 0
+    admin_tasks = 0
+    ambiguous = 0
+    for m in matches:
+        if m["action"] == "auto_paid":
+            await _mark_incoming_invoice_paid(db, m)
+            auto_marked += 1
+        elif m["action"] == "admin_task" and create_admin_tasks:
+            if await _create_incoming_amount_mismatch_task(db, m):
+                admin_tasks += 1
+        elif m["action"] == "admin_task_ambiguous" and create_admin_tasks:
+            if await _create_incoming_ambiguous_task(db, m):
+                ambiguous += 1
+
+    return {
+        "checked": len(transactions),
+        "matched": len(matches),
+        "auto_marked": auto_marked,
+        "admin_tasks": admin_tasks,
+        "ambiguous": ambiguous,
+        "ok": True,
+    }
