@@ -921,6 +921,22 @@ export default function DocumentManagementPage() {
                 const folderInfo = folders.find(f => f.id === doc.folder_id);
                 const FIcon = folderInfo ? (FOLDER_ICONS[folderInfo.icon] || Folder) : Folder;
                 const fc = folderInfo ? (FOLDER_COLORS[folderInfo.color] || FOLDER_COLORS.gray) : FOLDER_COLORS.gray;
+                // Vollen Ordner-Pfad rekursiv rekonstruieren: "Eingangsrechnung 2026 / Juli"
+                const buildPath = (f) => {
+                  if (!f) return "";
+                  const chain = [f.name];
+                  let cur = f;
+                  const guard = new Set();
+                  while (cur.parent_id && !guard.has(cur.parent_id)) {
+                    guard.add(cur.parent_id);
+                    const parent = folders.find(x => x.id === cur.parent_id);
+                    if (!parent) break;
+                    chain.unshift(parent.name);
+                    cur = parent;
+                  }
+                  return chain.join(" / ");
+                };
+                const folderPath = buildPath(folderInfo);
                 return (
                   <div
                     key={doc.id}
@@ -986,7 +1002,15 @@ export default function DocumentManagementPage() {
                           <span>{doc.original_filename}</span>
                           <span>{formatFileSize(doc.size)}</span>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatDate(doc.created_at)}</span>
-                          {folderInfo && <span className={`px-1.5 py-0.5 rounded ${fc.bg} ${fc.text} text-[10px] font-medium`}>{folderInfo.name}</span>}
+                          {folderInfo && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded ${fc.bg} ${fc.text} text-[10px] font-medium`}
+                              title={`Ablageort: ${folderPath}`}
+                              data-testid={`doc-folder-path-${doc.id}`}
+                            >
+                              {folderPath}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
