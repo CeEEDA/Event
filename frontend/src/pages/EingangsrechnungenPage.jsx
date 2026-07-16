@@ -30,7 +30,7 @@ export default function EingangsrechnungenPage() {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("alle");
+  const [filter, setFilter] = useState("aktiv");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
@@ -81,7 +81,11 @@ export default function EingangsrechnungenPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
-      if (filter !== "alle" && r.status !== filter) return false;
+      // "aktiv" = overdue + open (Standard, ohne bezahlte Rechnungen)
+      // "archiv" = nur paid
+      if (filter === "aktiv" && r.status === "paid") return false;
+      if (filter === "archiv" && r.status !== "paid") return false;
+      if (["overdue", "open", "paid"].includes(filter) && r.status !== filter) return false;
       if (!q) return true;
       return [r.sender, r.invoice_number, r.filename, r.notes].some(v => (v || "").toLowerCase().includes(q));
     });
@@ -183,14 +187,14 @@ export default function EingangsrechnungenPage() {
       {summary && (
         <div className="max-w-[1600px] mx-auto px-4 pt-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <SummaryCard label="Überfällig" count={summary.overdue_count} amount={summary.overdue_amount} tone="red" testid="sum-overdue" />
-            <SummaryCard label="Offen" count={summary.open_count} amount={summary.open_amount} tone="amber" testid="sum-open" />
-            <SummaryCard label="Bezahlt" count={summary.paid_count} amount={summary.paid_amount} tone="emerald" testid="sum-paid" />
+            <SummaryCard label="Überfällig" count={summary.overdue_count} amount={summary.overdue_amount} tone="red" active={filter === "overdue"} onClick={() => setFilter("overdue")} testid="sum-overdue" />
+            <SummaryCard label="Offen" count={summary.open_count} amount={summary.open_amount} tone="amber" active={filter === "open"} onClick={() => setFilter("open")} testid="sum-open" />
+            <SummaryCard label="Bezahlt (Archiv)" count={summary.paid_count} amount={summary.paid_amount} tone="emerald" active={filter === "archiv" || filter === "paid"} onClick={() => setFilter("archiv")} testid="sum-paid" />
           </div>
         </div>
       )}
 
-      <main className="max-w-[1600px] mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+      <main className="max-w-[1600px] mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4">
         {/* Liste */}
         <section className="bg-white rounded-xl border border-gray-200 flex flex-col min-h-[70vh]">
           <div className="p-3 border-b border-gray-200 flex flex-wrap items-center gap-2">
@@ -205,14 +209,19 @@ export default function EingangsrechnungenPage() {
               />
             </div>
             <div className="flex items-center gap-1">
-              {["alle", "overdue", "open", "paid"].map(k => (
+              {[
+                { k: "aktiv", label: "Aktiv" },
+                { k: "overdue", label: "Überfällig" },
+                { k: "open", label: "Offen" },
+                { k: "archiv", label: "Archiv" },
+              ].map(({ k, label }) => (
                 <button
                   key={k}
                   onClick={() => setFilter(k)}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium border ${filter === k ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"}`}
                   data-testid={`filter-${k}-btn`}
                 >
-                  {k === "alle" ? "Alle" : STATUS_META[k].label}
+                  {label}
                 </button>
               ))}
             </div>
@@ -249,7 +258,11 @@ export default function EingangsrechnungenPage() {
                         <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                           <span>Rechn.: {fmtDate(r.invoice_date)}</span>
                           <span>Fällig: {fmtDate(r.due_date)}</span>
-                          {r.paid_at && <span>Bezahlt: {fmtDate(r.paid_at)}</span>}
+                          {r.status === "paid" && r.paid_at && (
+                            <span className="text-emerald-700 font-medium">
+                              Bezahlt am {fmtDate(r.paid_at)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
@@ -379,19 +392,25 @@ export default function EingangsrechnungenPage() {
   );
 }
 
-function SummaryCard({ label, count, amount, tone, testid }) {
+function SummaryCard({ label, count, amount, tone, active, onClick, testid }) {
   const tones = {
-    red: "border-red-200 bg-red-50 text-red-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    red: "border-red-200 bg-red-50 text-red-700 hover:border-red-400",
+    amber: "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-400",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400",
   };
+  const activeRing = active ? "ring-2 ring-gray-900 ring-offset-1" : "";
   return (
-    <div className={`rounded-xl border p-4 ${tones[tone]}`} data-testid={testid}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left rounded-xl border p-4 transition ${tones[tone]} ${activeRing}`}
+      data-testid={testid}
+    >
       <div className="text-xs font-medium uppercase tracking-wide">{label}</div>
       <div className="mt-1 flex items-baseline gap-2">
         <div className="text-2xl font-bold">{fmtEUR(amount)}</div>
         <div className="text-xs opacity-80">({count})</div>
       </div>
-    </div>
+    </button>
   );
 }
