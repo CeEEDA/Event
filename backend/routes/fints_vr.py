@@ -156,9 +156,34 @@ async def test_connection(token: str = Query(...)):
         "product_id_first_chars": (bank["product_id"][:8] + "***") if bank.get("product_id") else "(leer)",
         "product_version": bank.get("product_version") or "(leer)",
     }
+    # Raw-HTTP-Response-Capture (fuer VR-Debugging vor der python-fints-Entschluesselung)
+    raw_captures = []
+    _original_send = None
+
     try:
         from fints.client import FinTS3PinTanClient, NeedRetryResponse
         from fints_banking import _resolve_sca_after_dialog_start, _resolve_decoupled_tan
+        import requests as _requests
+
+        _original_send = _requests.Session.send
+
+        def _capturing_send(self, request, **kwargs):
+            resp = _original_send(self, request, **kwargs)
+            try:
+                body_preview = resp.content[:2000] if resp.content else b""
+                raw_captures.append({
+                    "status": resp.status_code,
+                    "headers": dict(resp.headers),
+                    "content_length": len(resp.content) if resp.content else 0,
+                    "body_hex_first_200": resp.content[:200].hex() if resp.content else "",
+                    "body_text_first_2000": body_preview.decode("latin-1", errors="replace"),
+                })
+            except Exception as _cex:
+                raw_captures.append({"capture_error": str(_cex)[:200]})
+            return resp
+
+        _requests.Session.send = _capturing_send
+
         client = FinTS3PinTanClient(
             bank["blz"], bank["user"], bank["pin"], bank["url"],
             product_id=bank.get("product_id") or DEFAULT_FINTS_PRODUCT_ID,
@@ -266,6 +291,19 @@ async def test_connection(token: str = Query(...)):
         try:
             import http.client as _http_client
             _http_client.HTTPConnection.debuglevel = 0
+        except Exception:
+            pass
+        # Monkey-patch zurueckdrehen
+        try:
+            import requests as _requests_cleanup
+            if _original_send is not None:
+                _requests_cleanup.Session.send = _original_send
+        except Exception:
+            pass
+        # Raw-HTTP-Captures in diag anhaengen
+        try:
+            if raw_captures:
+                diag["raw_http_responses"] = raw_captures
         except Exception:
             pass
 
