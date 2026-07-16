@@ -10,21 +10,21 @@ export default function VerwaltungPage() {
 
   const allItems = [
     {
-      key: "finance",
-      label: "Ausgangsrechnungen",
-      description: "Rechnungen verwalten, versenden und exportieren",
-      icon: Receipt,
-      color: "emerald",
-      path: "/finance",
-      requiresBilling: true,
-    },
-    {
       key: "eingangsrechnungen",
       label: "Eingangsrechnungen",
       description: "Empfangene Rechnungen tracken, überfällig/bezahlt, PDF-Vorschau",
       icon: Receipt,
       color: "amber",
       path: "/eingangsrechnungen",
+      requiresBilling: true,
+    },
+    {
+      key: "finance",
+      label: "Ausgangsrechnungen",
+      description: "Rechnungen verwalten, versenden und exportieren",
+      icon: Receipt,
+      color: "emerald",
+      path: "/finance",
       requiresBilling: true,
     },
     {

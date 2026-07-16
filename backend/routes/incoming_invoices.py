@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Query
 from server import db
 from routes.employee import _get_user, _has_verwaltung
-from fints_banking import auto_match_incoming_invoices
+from fints_banking import auto_match_incoming_invoices, _bank_configs
 
 router = APIRouter(prefix="/api/incoming-invoices", tags=["incoming-invoices"])
 

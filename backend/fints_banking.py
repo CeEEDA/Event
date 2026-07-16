@@ -31,11 +31,52 @@ FINTS_PRODUCT_VERSION = os.environ.get("FINTS_PRODUCT_VERSION", "") or DEFAULT_F
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Multi-Bank-Konfiguration
+# Bank 1: Sparkasse (Standard, bestehende ENV-Variablen fuer Backward Compat)
+# Bank 2: Volksbank (optional, ENV-Variablen mit Praefix FINTS_VB_)
+# Weitere Banken koennen durch Ergaenzung dieser Liste einfach hinzugefuegt werden.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bank_configs() -> list:
+    """Liefert die Liste konfigurierter Banken (Sparkasse + optional Volksbank).
+    Banken ohne User/PIN in der ENV werden uebersprungen."""
+    banks = []
+    # Sparkasse (existierend)
+    if os.environ.get("FINTS_USER") and os.environ.get("FINTS_PIN"):
+        banks.append({
+            "key": "sparkasse",
+            "name": "Sparkasse",
+            "url": FINTS_URL,
+            "blz": FINTS_BLZ,
+            "user": os.environ.get("FINTS_USER", ""),
+            "pin": os.environ.get("FINTS_PIN", ""),
+            "iban": os.environ.get("FINTS_IBAN", "DE28576500100098066756"),
+            "product_id": FINTS_PRODUCT_ID,
+            "product_version": FINTS_PRODUCT_VERSION,
+        })
+    # Volksbank (neu, optional)
+    if os.environ.get("FINTS_VB_USER") and os.environ.get("FINTS_VB_PIN"):
+        banks.append({
+            "key": "volksbank",
+            "name": "Volksbank",
+            "url": os.environ.get("FINTS_VB_URL", ""),
+            "blz": os.environ.get("FINTS_VB_BLZ", ""),
+            "user": os.environ.get("FINTS_VB_USER", ""),
+            "pin": os.environ.get("FINTS_VB_PIN", ""),
+            "iban": os.environ.get("FINTS_VB_IBAN", ""),
+            "product_id": os.environ.get("FINTS_VB_PRODUCT_ID", "") or DEFAULT_FINTS_PRODUCT_ID,
+            "product_version": os.environ.get("FINTS_VB_PRODUCT_VERSION", "") or DEFAULT_FINTS_PRODUCT_VERSION,
+        })
+    return banks
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Credentials + Client-Setup
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_fints_credentials():
-    """Liest FinTS-Zugangsdaten aus Umgebungsvariablen."""
+    """Backward-Compat: gibt die Sparkassen-Zugangsdaten zurueck (aeltere Aufrufer).
+    Neue Aufrufer sollten _bank_configs() verwenden."""
     user = os.environ.get("FINTS_USER", "")
     pin = os.environ.get("FINTS_PIN", "")
     if not user or not pin:
@@ -91,9 +132,13 @@ def _resolve_sca_after_dialog_start(client, max_wait_seconds=120, poll_interval=
 # Persistenter Client-State (PSD2 90-Tage-Regel, MoneyMoney-Style)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _load_fints_state(db) -> bytes | None:
-    """Laedt den persistierten FinTS-Client-State aus der DB (Bytes)."""
-    doc = await db.system_settings.find_one({"key": "fints_client_state"}, {"_id": 0})
+async def _load_fints_state(db, bank_key: str = "sparkasse") -> bytes | None:
+    """Laedt den persistierten FinTS-Client-State aus der DB (Bytes).
+    Pro Bank wird ein eigener State-Key verwendet, damit mehrere Banken parallel
+    ihre PSD2-90-Tage-Sessions halten koennen."""
+    # Backward-Compat: alter Key ohne Bank-Suffix wird fuer 'sparkasse' weiter genutzt
+    key = "fints_client_state" if bank_key == "sparkasse" else f"fints_client_state_{bank_key}"
+    doc = await db.system_settings.find_one({"key": key}, {"_id": 0})
     if not doc:
         return None
     raw = doc.get("value")
@@ -105,13 +150,14 @@ async def _load_fints_state(db) -> bytes | None:
         return None
 
 
-async def _save_fints_state(db, state_bytes: bytes):
-    """Speichert den FinTS-Client-State in der DB (Base64)."""
+async def _save_fints_state(db, state_bytes: bytes, bank_key: str = "sparkasse"):
+    """Speichert den FinTS-Client-State in der DB (Base64), bank-spezifisch."""
+    key = "fints_client_state" if bank_key == "sparkasse" else f"fints_client_state_{bank_key}"
     encoded = base64.b64encode(state_bytes).decode("ascii") if state_bytes else ""
     await db.system_settings.update_one(
-        {"key": "fints_client_state"},
+        {"key": key},
         {"$set": {
-            "key": "fints_client_state",
+            "key": key,
             "value": encoded,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }},
@@ -119,29 +165,37 @@ async def _save_fints_state(db, state_bytes: bytes):
     )
 
 
-async def _build_client(db, force_fresh: bool = False):
+async def _build_client(db, force_fresh: bool = False, bank: dict | None = None):
     """Erzeugt einen FinTS3PinTanClient mit (optional) wiederhergestelltem Bank-State.
-    Bei wiederhergestelltem State entfaellt die SCA-Bestaetigung fuer 90 Tage."""
+    Bei wiederhergestelltem State entfaellt die SCA-Bestaetigung fuer 90 Tage.
+    Wenn ``bank`` None ist, wird die Sparkasse (Backward-Compat) verwendet."""
     from fints.client import FinTS3PinTanClient
-    creds = get_fints_credentials()
-    if not creds:
+    if bank is None:
+        creds = get_fints_credentials()
+        if not creds:
+            return None, None
+        bank = {
+            "key": "sparkasse", "url": FINTS_URL, "blz": FINTS_BLZ,
+            "user": creds["user"], "pin": creds["pin"],
+            "product_id": FINTS_PRODUCT_ID, "product_version": FINTS_PRODUCT_VERSION,
+        }
+    if not (bank.get("user") and bank.get("pin") and bank.get("url") and bank.get("blz")):
         return None, None
-    state = None if force_fresh else await _load_fints_state(db)
+    state = None if force_fresh else await _load_fints_state(db, bank_key=bank["key"])
     client = FinTS3PinTanClient(
-        FINTS_BLZ,
-        creds["user"],
-        creds["pin"],
-        FINTS_URL,
-        product_id=FINTS_PRODUCT_ID,
-        product_version=FINTS_PRODUCT_VERSION,
+        bank["blz"],
+        bank["user"],
+        bank["pin"],
+        bank["url"],
+        product_id=bank.get("product_id") or DEFAULT_FINTS_PRODUCT_ID,
+        product_version=bank.get("product_version") or DEFAULT_FINTS_PRODUCT_VERSION,
     )
-    # State (falls vorhanden) per Methode setzen – seit python-fints 5.x
     if state:
         try:
             client.set_data(state)
-            logger.info(f"FinTS: Client-State wiederhergestellt ({len(state)} Bytes)")
+            logger.info(f"FinTS [{bank['key']}]: Client-State wiederhergestellt ({len(state)} Bytes)")
         except Exception as e:
-            logger.warning(f"FinTS: set_data fehlgeschlagen, starte mit frischem State: {e}")
+            logger.warning(f"FinTS [{bank['key']}]: set_data fehlgeschlagen, starte mit frischem State: {e}")
             state = None
     return client, bool(state)
 
@@ -177,36 +231,25 @@ def _parse_tx_data(t) -> dict:
     }
 
 
-async def fetch_transactions_persisted(db, days_back: int = 14) -> dict:
-    """Holt Transaktionen mit persistiertem Client-State (MoneyMoney-Stil).
-    - Erstanmeldung: pushTAN-Bestaetigung erforderlich, danach State gespeichert
-    - Folgeabrufe (90 Tage): voll automatisch ohne TAN
-    Liefert dict mit transactions + meta-Info."""
-    creds = get_fints_credentials()
-    if not creds:
-        logger.warning("FinTS: Keine Zugangsdaten konfiguriert")
-        return {"transactions": [], "ok": False, "error": "Keine Zugangsdaten"}
-
-    client, restored = await _build_client(db)
+async def _fetch_from_bank(db, bank: dict, days_back: int) -> dict:
+    """Holt Transaktionen einer einzelnen Bank mit ihrem persistierten State."""
+    client, restored = await _build_client(db, bank=bank)
     if not client:
-        return {"transactions": [], "ok": False, "error": "Keine Zugangsdaten"}
+        return {"transactions": [], "ok": False, "error": "Keine Zugangsdaten", "bank": bank["key"]}
 
     sca_required = False
     try:
         with client:
-            # PSD2-SCA: Bei Sparkassen mit pushTAN wird die TAN bereits
-            # beim Dialog-Aufbau angefordert. Zuerst aufloesen!
             sca_required = _resolve_sca_after_dialog_start(client)
-
             from fints.client import NeedRetryResponse
             accounts_resp = client.get_sepa_accounts()
             if isinstance(accounts_resp, NeedRetryResponse):
                 sca_required = True
             accounts = _resolve_decoupled_tan(client, accounts_resp)
             if not accounts:
-                return {"transactions": [], "ok": False, "error": "Keine Konten gefunden"}
+                return {"transactions": [], "ok": False, "error": "Keine Konten gefunden", "bank": bank["key"]}
 
-            target_iban = os.environ.get("FINTS_IBAN", "DE28576500100098066756")
+            target_iban = bank.get("iban", "")
             account = next((a for a in accounts if a.iban == target_iban), accounts[0])
 
             start_date = datetime.now() - timedelta(days=days_back)
@@ -216,27 +259,68 @@ async def fetch_transactions_persisted(db, days_back: int = 14) -> dict:
                 sca_required = True
             transactions = _resolve_decoupled_tan(client, tx_resp)
 
-        # State NACH erfolgreicher Anmeldung sichern
         try:
             new_state = client.deconstruct(including_private=True)
             if new_state:
-                await _save_fints_state(db, new_state)
-                logger.info(f"FinTS: Client-State gespeichert ({len(new_state)} Bytes)")
+                await _save_fints_state(db, new_state, bank_key=bank["key"])
+                logger.info(f"FinTS [{bank['key']}]: Client-State gespeichert ({len(new_state)} Bytes)")
         except Exception as e:
-            logger.warning(f"FinTS: State konnte nicht gespeichert werden: {e}")
+            logger.warning(f"FinTS [{bank['key']}]: State konnte nicht gespeichert werden: {e}")
 
-        results = [_parse_tx_data(t) for t in transactions]
-        logger.info(f"FinTS: {len(results)} Transaktionen (state_restored={restored}, sca_required={sca_required})")
+        results = []
+        for t in transactions:
+            row = _parse_tx_data(t)
+            row["bank"] = bank["key"]
+            row["bank_name"] = bank.get("name", bank["key"])
+            row["bank_iban"] = account.iban
+            results.append(row)
+        logger.info(f"FinTS [{bank['key']}]: {len(results)} Transaktionen "
+                    f"(restored={restored}, sca_required={sca_required})")
         return {
             "transactions": results,
             "ok": True,
             "state_restored": restored,
             "sca_required": sca_required,
             "iban": account.iban,
+            "bank": bank["key"],
         }
     except Exception as e:
-        logger.error(f"FinTS Fehler: {e}")
-        return {"transactions": [], "ok": False, "error": str(e)[:500]}
+        logger.error(f"FinTS [{bank['key']}] Fehler: {e}")
+        return {"transactions": [], "ok": False, "error": str(e)[:500], "bank": bank["key"]}
+
+
+async def fetch_transactions_persisted(db, days_back: int = 14) -> dict:
+    """Holt Transaktionen mit persistiertem Client-State (MoneyMoney-Stil) ueber
+    ALLE konfigurierten Banken (Sparkasse + optional Volksbank). Ergebnis-Format
+    bleibt kompatibel zu bisherigen Aufrufern: ``transactions`` ist die aggregierte
+    Liste; ``banks`` gibt Detail-Ergebnisse pro Bank zurueck.
+    - Erstanmeldung pro Bank: pushTAN erforderlich, State wird bank-spezifisch gespeichert
+    - Folgeabrufe (90 Tage): voll automatisch pro Bank
+    """
+    banks = _bank_configs()
+    if not banks:
+        logger.warning("FinTS: Keine Bank konfiguriert (weder Sparkasse noch Volksbank)")
+        return {"transactions": [], "ok": False, "error": "Keine Zugangsdaten"}
+
+    all_transactions = []
+    bank_results = []
+    any_ok = False
+    errors = []
+    for bank in banks:
+        res = await _fetch_from_bank(db, bank, days_back)
+        bank_results.append(res)
+        if res.get("ok"):
+            any_ok = True
+            all_transactions.extend(res.get("transactions") or [])
+        else:
+            errors.append(f"{bank['key']}: {res.get('error')}")
+
+    return {
+        "transactions": all_transactions,
+        "ok": any_ok,
+        "banks": bank_results,
+        "error": None if any_ok else "; ".join(errors) or "Keine Zugangsdaten",
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -726,7 +810,10 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
                     "expected": expected,
                     "confidence": confidence,
                     "match_type": match_type,
-                    "match_reason": f"Rechnungsnr. {found_nr} ({match_type}) + Betrag {paid_amount:.2f} EUR",
+                    "match_reason": (
+                        f"Rechnungsnr. {found_nr} ({match_type}) + Betrag {paid_amount:.2f} EUR"
+                        f" [{tx.get('bank_name') or tx.get('bank') or 'Bank'}]"
+                    ),
                     "action": "auto_paid",
                 })
             else:
@@ -783,7 +870,10 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
                 "expected": float(inv.get("amount", 0) or 0),
                 "confidence": 70,
                 "match_type": "sender_amount",
-                "match_reason": f"Absender '{inv.get('sender', '')}' + Betrag {paid_amount:.2f} EUR",
+                "match_reason": (
+                    f"Absender '{inv.get('sender', '')}' + Betrag {paid_amount:.2f} EUR"
+                    f" [{tx.get('bank_name') or tx.get('bank') or 'Bank'}]"
+                ),
                 "action": "auto_paid",
             })
         elif len(candidates) > 1:
