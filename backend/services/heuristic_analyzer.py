@@ -207,14 +207,104 @@ def _extract_top_address_recipient(text: str) -> Optional[str]:
     return None
 
 
-def _extract_sender_from_header(text: str) -> Optional[str]:
-    """Sender ist meist die erste nicht-leere Zeile (Firmenname) oder auf Briefkopf ganz oben."""
+def _extract_sender_from_header(text: str, exclude_self: bool = True) -> Optional[str]:
+    """Sender-Erkennung aus dem Briefkopf.
+
+    Strategie (in Prioritaets-Reihenfolge):
+    1. **Bevorzugt**: Zeile mit Firmen-Rechtsformkuerzel (GmbH, AG, KG, UG, e.K.,
+       Ltd, Inc, LLC, e.V., SE, KGaA). Das ist in fast allen echten Rechnungen der
+       Absender-Firmenname.
+    2. **Alternative**: Zeile mit Personennamen + "Veranstaltungsdienstleistungen"
+       oder "- <Berufsbezeichnung>" (Einzelunternehmer/Freiberufler).
+    3. **Fallback**: Erste nicht-leere Header-Zeile die kein generisches Label ist.
+
+    Wenn exclude_self=True (Standard bei Eingangsrechnungen): eigene Firmennamen
+    (Eventenergie, Power Factor Engineering) werden aus der Kandidatenliste
+    ausgeschlossen, da sie in Empfaengerzeilen stehen.
+    """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    for ln in lines[:8]:
-        # Skip generic labels
-        if re.match(r"^(Rechnung|Invoice|Bestellung|Angebot|Datum|Seite)\b", ln, re.IGNORECASE):
+
+    # Zeilen die niemals ein Firmen-Absender sind
+    skip_re = re.compile(
+        r"^(rechnung|invoice|bestellung|angebot|lieferschein|"
+        r"rechnungsnr|rechnungsnummer|kundennr|kundennummer|"
+        r"datum|leistungszeitraum|leistungsdatum|"
+        r"sehr\s+geehrt|hallo|liebe[rn]?\s|guten\s+tag|"
+        r"seite\s|page\s|pos\.|position|"
+        r"bezeichnung|menge|einheit|"
+        r"summe|gesamt|zwischensumme|betrag|umsatzsteuer|mwst)",
+        re.IGNORECASE,
+    )
+    # Rechnungsnummer/Codes: z.B. RE26/020, R26-K-0033, 263472, IN123456
+    invoice_code_re = re.compile(r"^[A-Z]{1,4}[\d\-\/]{2,20}$", re.IGNORECASE)
+    # Rechtsform-Suffixe die einen Firmennamen markieren
+    company_re = re.compile(
+        r"\b(GmbH|AG|KG|UG|e\.?\s*K\.?|OHG|GbR|SE|Ltd\.?|Inc\.?|LLC|Corp\.?|KGaA|e\.?\s*V\.?|Co\.?\s*KG)\b",
+        re.IGNORECASE,
+    )
+    # Berufsbezeichnungen (Einzelunternehmer / Freiberufler) - kein \b weil
+    # deutsche Komposita wie "Veranstaltungsdienstleistungen" sonst nicht greifen
+    profession_re = re.compile(
+        r"(dienstleist|handwerk|beratung|consulting|fotograf|design|architekt|"
+        r"ingenieur|steuerberat|rechtsanwal|freelanc|spedition|logistik|"
+        r"hausmeister|elektroinstallation|it[-\s]?services?)",
+        re.IGNORECASE,
+    )
+    # Eigene Firmen die im Kandidaten-Set NICHT als Sender vorkommen sollen
+    self_markers = ("eventenergie", "power factor engineering", "powerfactor engineering")
+
+    def _is_self(ln: str) -> bool:
+        low = ln.lower()
+        return any(m in low for m in self_markers)
+
+    # 1. Zeile mit Rechtsform-Suffix im TOP-Bereich (erste 50 Zeilen, filtere self)
+    for ln in lines[:50]:
+        if not (3 < len(ln) <= 120):
             continue
-        if len(ln) < 3 or len(ln) > 120:
+        if skip_re.match(ln):
+            continue
+        if exclude_self and _is_self(ln):
+            continue
+        if company_re.search(ln):
+            m = company_re.search(ln)
+            cut = ln[:m.end()].strip(" ,;")
+            cut = re.sub(r"^(an\s*:?\s*|firma\s*:?\s*|absender\s*:?\s*|nach\s*:?\s*|von\s*:?\s*)", "", cut, flags=re.IGNORECASE).strip()
+            # Falls "von: <XY> <PLZ> <Ort>" - Ort abschneiden
+            cut = re.sub(r"\s+\d{5}\s+.*$", "", cut).strip()
+            if len(cut) >= 3 and not _is_self(cut if exclude_self else ""):
+                return cut
+
+    # 2. Zeile mit Berufsbezeichnung (Einzelunternehmer)
+    for i, ln in enumerate(lines[:15]):
+        if not (3 < len(ln) <= 120):
+            continue
+        if skip_re.match(ln):
+            continue
+        if exclude_self and _is_self(ln):
+            continue
+        if profession_re.search(ln):
+            # Bei "Alexander Hilsdorf - Veranstaltungsdienstleistungen"
+            # oder Vorzeile "Alexander Hilsdorf" + naechste Zeile "Veranstaltungsdienstleistungen"
+            # Nimm die aktuelle Zeile als vollstaendigen Namen
+            if " - " in ln or " – " in ln:
+                return ln.split(" - " if " - " in ln else " – ")[0].strip()
+            # Sonst: Vorzeile hat den Personennamen
+            if i > 0 and 3 < len(lines[i-1]) <= 60 and not skip_re.match(lines[i-1]):
+                return lines[i-1]
+            return ln
+
+    # 3. Fallback: erste plausible Zeile
+    for ln in lines[:8]:
+        if not (3 < len(ln) <= 120):
+            continue
+        if skip_re.match(ln):
+            continue
+        if invoice_code_re.match(ln):
+            continue
+        # Reine Zahlen/Codes ausschließen
+        if re.match(r"^[\d\s\-\.\/]+$", ln):
+            continue
+        if exclude_self and _is_self(ln):
             continue
         return ln
     return None

@@ -333,6 +333,119 @@ async def mark_not_invoice(doc_id: str, token: str = Query(...)):
     return {"ok": True}
 
 
+@router.post("/reanalyze-legacy")
+async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True), limit: int = Query(500, ge=1, le=5000)):
+    """Jagd alle alten Dokumente (ohne aktuellen OCR-Analyse-Stempel) durch den
+    Heuristic-Analyzer und aktualisiert Metadata + verschiebt gegebenenfalls
+    zwischen Rechnungseingang und Rechnungsausgang.
+
+    ``dry_run=true`` (Standard): nur Report ohne DB-Aenderungen.
+    ``dry_run=false``: schreibt Aenderungen in die DB.
+    """
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    from services.heuristic_analyzer import analyze_document_fallback
+    from routes.documents import get_object
+
+    # Kandidaten: alle Docs in rechnungseingang_*/rechnungsausgang_* Ordnern
+    # mit alter/fehlender Metadata (ai_source != 'heuristic')
+    docs = await db.documents.find(
+        {"folder_id": {"$regex": "^(rechnungseingang_|rechnungsausgang_)"},
+         "is_deleted": {"$ne": True},
+         "ai_source": {"$ne": "heuristic"}},
+        {"_id": 0, "id": 1, "original_filename": 1, "folder_id": 1,
+         "storage_path": 1, "ai_metadata": 1, "ai_source": 1}
+    ).limit(limit).to_list(limit)
+
+    changes = []
+    moved_to_eingang = 0
+    moved_to_ausgang = 0
+    metadata_updated = 0
+    errors = 0
+
+    for d in docs:
+        try:
+            if not d.get("storage_path"):
+                continue
+            data, _ct = get_object(d["storage_path"])
+            result = analyze_document_fallback(data, d.get("original_filename") or "")
+            new_sug = (result.get("suggested_folder") or "").lower()
+            old_folder = (d.get("folder_id") or "").lower()
+
+            current_direction = "rechnungseingang" if old_folder.startswith("rechnungseingang") else "rechnungsausgang"
+            new_direction = None
+            if new_sug.startswith("rechnungseingang"):
+                new_direction = "rechnungseingang"
+            elif new_sug.startswith("rechnungsausgang"):
+                new_direction = "rechnungsausgang"
+
+            change = {
+                "id": d["id"],
+                "filename": d.get("original_filename"),
+                "old_folder": d.get("folder_id"),
+                "old_meta_sender": (d.get("ai_metadata") or {}).get("sender"),
+                "old_meta_type": (d.get("ai_metadata") or {}).get("document_type"),
+                "new_meta_sender": result.get("sender"),
+                "new_meta_type": result.get("document_type"),
+                "new_suggested_folder": result.get("suggested_folder"),
+                "current_direction": current_direction,
+                "new_direction": new_direction,
+                "will_move": bool(new_direction and new_direction != current_direction),
+            }
+            changes.append(change)
+
+            if not dry_run:
+                update = {
+                    "ai_source": "heuristic",
+                    "ai_analyzed_at": datetime.now(timezone.utc).isoformat(),
+                    "ai_metadata.document_type": result.get("document_type"),
+                    "ai_metadata.sender": result.get("sender"),
+                    "ai_metadata.recipient": result.get("recipient"),
+                    "ai_metadata.invoice_number": result.get("invoice_number"),
+                    "ai_metadata.amount": result.get("amount"),
+                    "ai_metadata.date": result.get("date"),
+                    "ai_metadata.subject": result.get("subject"),
+                    "ai_metadata.suggested_folder": result.get("suggested_folder"),
+                }
+                # Ordner-Verschiebung: neuen Ziel-Ordner suchen (existierender Ordner
+                # mit passendem Praefix + gleichem Datums-Suffix wie der alte)
+                if change["will_move"]:
+                    # Datum-Suffix aus altem Ordner extrahieren (z.B. "_2026_07")
+                    import re as _re
+                    m = _re.search(r"(_\d{4}_\d{2})$", d.get("folder_id") or "")
+                    date_suffix = m.group(1) if m else ""
+                    # Existierenden Ziel-Ordner finden
+                    target = await db.folders.find_one(
+                        {"id": {"$regex": f"^{new_direction}_.*{date_suffix}$"}},
+                        {"_id": 0, "id": 1}
+                    )
+                    if target:
+                        update["folder_id"] = target["id"]
+                        if new_direction == "rechnungseingang":
+                            moved_to_eingang += 1
+                        else:
+                            moved_to_ausgang += 1
+                await db.documents.update_one({"id": d["id"]}, {"$set": update})
+                metadata_updated += 1
+        except Exception as e:
+            errors += 1
+            changes.append({"id": d.get("id"), "error": str(e)[:200]})
+
+    return {
+        "dry_run": dry_run,
+        "scanned": len(docs),
+        "metadata_updated": metadata_updated,
+        "moved_to_eingang": moved_to_eingang,
+        "moved_to_ausgang": moved_to_ausgang,
+        "errors": errors,
+        "would_move_count": sum(1 for c in changes if c.get("will_move")),
+        "changes_preview": changes[:50],
+        "changes_total": len(changes),
+    }
+
+
 @router.post("/fints/auto-match")
 async def fints_auto_match(token: str = Query(...), days_back: int = Query(60, ge=1, le=365)):
     """Startet den FinTS-Abgleich (Sparkasse): ausgehende Buchungen ↔ offene Eingangsrechnungen.

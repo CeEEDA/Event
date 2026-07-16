@@ -41,6 +41,7 @@ export default function EingangsrechnungenPage() {
   const [saving, setSaving] = useState(false);
   const [marking, setMarking] = useState(false);
   const [matching, setMatching] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +112,49 @@ export default function EingangsrechnungenPage() {
       return [r.sender, r.invoice_number, r.filename, r.notes].some(v => (v || "").toLowerCase().includes(q));
     });
   }, [rows, filter, search]);
+
+  const runReanalyzeLegacy = async () => {
+    if (!window.confirm(
+      "Alt-Dokumente durch aktuelle OCR-Heuristik neu klassifizieren?\n\n" +
+      "Der Scan liest jedes betroffene PDF neu, aktualisiert Absender, Betrag und Klassifizierung.\n" +
+      "Dokumente die von 'Ausgang' zu 'Eingang' wechseln (oder umgekehrt), werden in den passenden Monat-Ordner verschoben.\n\n" +
+      "Zuerst wird ein DRY-RUN (Vorschau) ausgeführt, danach die Übernahme."
+    )) return;
+    setReanalyzing(true);
+    try {
+      const token = localStorage.getItem("token");
+      // 1. Dry-Run
+      const dry = await api.post("/incoming-invoices/reanalyze-legacy", null, {
+        params: { token, dry_run: true, limit: 500 }, timeout: 300000
+      });
+      const preview = dry.data;
+      const commit = window.confirm(
+        `DRY-RUN Ergebnis:\n` +
+        `• ${preview.scanned} Alt-Dokumente gescannt\n` +
+        `• ${preview.would_move_count} würden verschoben\n` +
+        `• ${preview.errors} Fehler beim Lesen\n\n` +
+        `Jetzt tatsächlich anwenden?`
+      );
+      if (!commit) {
+        toast("Dry-Run abgeschlossen (keine Änderung)");
+        return;
+      }
+      // 2. Übernahme
+      const real = await api.post("/incoming-invoices/reanalyze-legacy", null, {
+        params: { token, dry_run: false, limit: 500 }, timeout: 600000
+      });
+      const r = real.data;
+      toast.success(
+        `Reanalyse fertig: ${r.metadata_updated} aktualisiert, ` +
+        `${r.moved_to_eingang} → Eingang, ${r.moved_to_ausgang} → Ausgang, ${r.errors} Fehler`
+      );
+      await load();
+    } catch (e) {
+      toast.error("Fehler bei Reanalyse: " + (e.response?.data?.detail || e.message));
+    } finally {
+      setReanalyzing(false);
+    }
+  };
 
   const runAutoMatch = async () => {
     if (!window.confirm("FinTS-Abgleich starten?\n\nZieht Sparkassen-Buchungen der letzten 60 Tage und ordnet sie automatisch offenen Eingangsrechnungen zu.\n\nHinweis: Bei Erstanmeldung ist eine pushTAN-Bestätigung nötig.")) return;
@@ -234,6 +278,9 @@ export default function EingangsrechnungenPage() {
           <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={runAutoMatch} disabled={matching} data-testid="fints-match-btn">
               <Landmark className="w-4 h-4 mr-1" /> {matching ? "Sparkasse prüft…" : "FinTS-Abgleich"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={runReanalyzeLegacy} disabled={reanalyzing} data-testid="reanalyze-legacy-btn">
+              <Repeat className="w-4 h-4 mr-1" /> {reanalyzing ? "Reanalyse läuft…" : "Alt-Docs neu klassifizieren"}
             </Button>
             <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="reload-btn">
               {loading ? "Lädt…" : "Neu laden"}
