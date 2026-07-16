@@ -231,17 +231,18 @@ async def test_connection(token: str = Query(...)):
             diag["hint"] = "Bank-URL oder Netzwerk-Problem. Prüfe FINTS_VB_URL."
         else:
             diag["hint"] = "Unbekannter FinTS-Fehler – siehe Log-Trace unten."
-        # Kompletten Log-Trace in Datei schreiben (fuer lokales Debugging)
+        # Kompletten Log-Trace in Datei schreiben (fuer lokales Debugging, plattformunabhaengig)
         full_trace = buf.getvalue()
+        import tempfile
         import os as _os
-        trace_dir = "/tmp"
+        trace_dir = tempfile.gettempdir()
         trace_file = _os.path.join(trace_dir, f"fints_vr_trace_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         try:
             with open(trace_file, "w", encoding="utf-8") as f:
                 f.write(full_trace)
             diag["trace_file"] = trace_file
-        except Exception:
-            pass
+        except Exception as _fex:
+            diag["trace_file_error"] = str(_fex)[:200]
         # Fuer die UI: erste 4000 + letzte 12000 Zeichen (HIRMS/HIRMG steht meist am Ende)
         if len(full_trace) > 16000:
             diag["log_trace"] = (
