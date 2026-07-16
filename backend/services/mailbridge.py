@@ -98,6 +98,31 @@ def _guess_content_type(filename: str, fallback: str | None) -> str:
     return mapping.get(ext, "")
 
 
+def _is_outgoing_invoice_attachment(filename: str) -> bool:
+    """Filtert typische Anhaenge, die zu EIGENEN Ausgangsrechnungen gehoeren
+    (Tankbelege, Projektberichte, Lieferscheine, Ausrichtungsprotokolle etc.).
+    Solche Belege werden per BCC/Cc oft an das eigene Postfach mitgeschickt, sollen
+    aber NICHT im Rechnungseingang landen (es sind ja unsere eigenen Beweisdokumente
+    zu Rechnungen die wir ausstellen)."""
+    if not filename:
+        return False
+    low = filename.lower()
+    # Numerische Fahrzeug-Belege wie "12345_2026-07-15.pdf" nicht filtern - nur klare Namensmuster
+    outgoing_patterns = [
+        "tankbeleg", "tank_beleg", "tankquittung", "tank-beleg",
+        "projektbericht", "projekt_bericht", "projekt-bericht",
+        "einsatzbericht", "einsatz_bericht",
+        "ausrichtungsprotokoll", "ausrichtung",
+        "servicebericht", "service_bericht", "service-bericht",
+        "arbeitsbericht", "arbeits_bericht",
+        "stundenzettel", "stundenprotokoll",
+        "wartungsprotokoll", "wartungsbericht",
+        "abnahmeprotokoll",
+        "leistungsnachweis",
+    ]
+    return any(pat in low for pat in outgoing_patterns)
+
+
 def _extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes, str]]:
     """Return list of (filename, raw_bytes, content_type) for supported REAL attachments.
     Signature images, logos etc. (Content-Disposition: inline, or Content-ID referenced)
@@ -135,6 +160,10 @@ def _extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes, s
         # (logos, signature icons, tracking pixels). Real docs are >= 15 KB.
         if len(payload) < 15 * 1024:
             logger.info(f"Mailbridge: Anhang '{filename}' nur {len(payload)} B - uebersprungen (zu klein, wahrscheinlich Logo/Signatur)")
+            continue
+        # Filter: Beleg-Anhaenge zu eigenen Ausgangsrechnungen (Tankbeleg, Projektbericht, ...)
+        if _is_outgoing_invoice_attachment(filename):
+            logger.info(f"Mailbridge: Anhang '{filename}' als Beleg zu Ausgangsrechnung erkannt - uebersprungen")
             continue
         out.append((filename, payload, content_type))
     return out
