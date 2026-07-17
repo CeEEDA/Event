@@ -57,31 +57,123 @@ def _find_first(patterns: list[str], text: str, group: int = 0) -> Optional[str]
     return None
 
 
+def _extract_labelled_column(text: str) -> dict:
+    """Erkennt das Label-ueber-Wert-Muster wie in dieser Layout-Klasse:
+        Rechnungsnr.:
+        Kundennr.:
+        Datum:
+        Leistungszeitraum:
+
+        RE26/020
+        10008
+        15.06.2026
+        18.05.2026 bis 12.06.2026
+
+    Wenn wir eine Sequenz von >=2 Label-Zeilen finden, gefolgt (nach Leerzeilen)
+    von der gleichen Anzahl Wert-Zeilen, dann mappen wir 1:1 die Werte auf die
+    Labels. Sehr robust fuer deutsche Rechnungs-Kopfzeilen mit Spalten-Layout.
+    Returns dict mit normalisierten Schluesseln: invoice_number, customer_number,
+    date, service_period.
+    """
+    lines = [ln.strip() for ln in text.splitlines()]
+    # Erlaubte Labels + Ziel-Feldname
+    LABEL_MAP = [
+        (re.compile(r"^Rechnungs?[- ]?(Nr|Nummer)\.?\s*:?\s*$", re.IGNORECASE), "invoice_number"),
+        (re.compile(r"^Kunden[- ]?(Nr|Nummer)\.?\s*:?\s*$", re.IGNORECASE), "customer_number"),
+        (re.compile(r"^Beleg[- ]?(Nr|Nummer)\.?\s*:?\s*$", re.IGNORECASE), "invoice_number"),
+        (re.compile(r"^Datum\s*:?\s*$", re.IGNORECASE), "date"),
+        (re.compile(r"^Rechnungsdatum\s*:?\s*$", re.IGNORECASE), "date"),
+        (re.compile(r"^Leistungszeitraum\s*:?\s*$", re.IGNORECASE), "service_period"),
+    ]
+    result = {}
+    i = 0
+    while i < len(lines):
+        # Sammle konsekutive Label-Zeilen
+        label_block = []
+        j = i
+        while j < len(lines):
+            ln = lines[j]
+            if not ln:
+                j += 1
+                continue
+            matched_field = None
+            for pat, field in LABEL_MAP:
+                if pat.match(ln):
+                    matched_field = field
+                    break
+            if matched_field:
+                label_block.append(matched_field)
+                j += 1
+            else:
+                break
+        # Mindestens 2 Labels in Folge = spaltenartiges Layout
+        if len(label_block) >= 2:
+            # Sammle die naechsten (len(label_block)) nicht-leeren Zeilen
+            values = []
+            k = j
+            while k < len(lines) and len(values) < len(label_block):
+                ln = lines[k]
+                if ln:
+                    values.append(ln)
+                k += 1
+            # Werte 1:1 auf Labels mappen (nur wenn Werte selbst nicht wieder Label sind)
+            for idx, field in enumerate(label_block):
+                if idx >= len(values):
+                    break
+                val = values[idx]
+                # Wenn Wert wie ein Label aussieht -> abbrechen (Doppelbelegung)
+                if any(pat.match(val) for pat, _ in LABEL_MAP):
+                    break
+                result.setdefault(field, val)
+            i = k
+        else:
+            i = j + 1 if j == i else j
+    return result
+
+
+
 def _extract_invoice_number(text: str, filename: str) -> Optional[str]:
     # Zuerst Dateiname: "Rechnung_260257_..." -> 260257
     m = re.search(r"[Rr]echnung[_ ]?(?:[Nn]r\.?[_ ]?)?(\d{4,15})", filename)
     if m:
         return m.group(1)
-    # Dann Text
+    # Multiline-Spalten-Layout (Label ueber Werten)
+    col = _extract_labelled_column(text)
+    if col.get("invoice_number"):
+        cand = col["invoice_number"].strip()
+        # Sanity: darf kein reines Datum sein
+        if not re.fullmatch(r"\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}", cand):
+            if re.fullmatch(r"[A-Z0-9][A-Z0-9\-/]{2,24}", cand, re.IGNORECASE):
+                return cand
+    # Standard-Inline-Patterns (Label + Wert auf gleicher Zeile)
     patterns = [
-        r"Rechnungs?[- ]?[Nn]r\.?\s*:?\s*([A-Z0-9\-/]{3,25})",
-        r"Rechnung\s+[Nn]r\.?\s*:?\s*([A-Z0-9\-/]{3,25})",
-        r"Invoice\s+No\.?\s*:?\s*([A-Z0-9\-/]{3,25})",
-        r"Beleg[- ]?[Nn]r\.?\s*:?\s*([A-Z0-9\-/]{3,25})",
+        r"Rechnungs?[- ]?[Nn]r\.?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{2,24})",
+        r"Rechnung\s+[Nn]r\.?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{2,24})",
+        r"Invoice\s+No\.?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{2,24})",
+        r"Beleg[- ]?[Nn]r\.?\s*:?\s*([A-Z0-9][A-Z0-9\-/]{2,24})",
     ]
-    return _find_first(patterns, text, group=1)
+    cand = _find_first(patterns, text, group=1)
+    # Sanity: darf nicht das Label eines anderen Feldes matchen
+    if cand and cand.lower() in ("kundennr", "kundennummer", "beleg", "invoice", "datum", "rechnungsnr", "rechnungsnummer"):
+        return None
+    return cand
 
 
 def _extract_date(text: str) -> Optional[str]:
-    patterns = [
-        r"Rechnungsdatum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
-        r"Datum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
-        r"vom\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
-        r"(\d{4}-\d{2}-\d{2})",
-    ]
-    raw = _find_first(patterns, text, group=1)
+    # Multiline-Spalten-Layout zuerst
+    col = _extract_labelled_column(text)
+    raw = col.get("date")
+    if not raw:
+        patterns = [
+            r"Rechnungsdatum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            r"Datum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            r"vom\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            r"(\d{4}-\d{2}-\d{2})",
+        ]
+        raw = _find_first(patterns, text, group=1)
     if not raw:
         return None
+    raw = raw.strip()
     # Normalisieren auf YYYY-MM-DD
     for fmt in ("%d.%m.%Y", "%d.%m.%y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
         try:
@@ -92,25 +184,48 @@ def _extract_date(text: str) -> Optional[str]:
 
 
 def _extract_amount(text: str) -> Optional[float]:
-    # Priorisiere "Gesamtbetrag" / "Zu zahlen" / "Rechnungsbetrag" mit EUR
+    # Label-Regexes: DOTALL zwischen Label und Zahl erlauben (bis zu 40 Zeichen
+    # Zwischenraum, damit Newlines und Whitespace matchen). Nicht-gierig via
+    # ``[^0-9]{0,40}?`` verhindert Ausflug in benachbarte Betraege.
     priority_labels = [
-        r"Gesamtbetrag\s+brutto\s*:?\s*([\d.]+,\d{2})",
-        r"Rechnungsbetrag\s*:?\s*([\d.]+,\d{2})",
-        r"Zu\s+zahlen(?:der\s+Betrag)?\s*:?\s*([\d.]+,\d{2})",
-        r"Endbetrag\s*:?\s*([\d.]+,\d{2})",
-        r"Gesamtsumme\s*:?\s*([\d.]+,\d{2})",
-        r"Summe\s+brutto\s*:?\s*([\d.]+,\d{2})",
+        r"Gesamtbetrag\s+brutto[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Rechnungsbetrag[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Zu\s+zahlen(?:der\s+Betrag)?[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Endbetrag[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Gesamtsumme[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Summe\s+brutto[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Gesamtbetrag[^0-9]{0,40}?([\d.]+,\d{2})",     # ohne "brutto"
+        r"Brutto(?:betrag|summe)?[^0-9]{0,40}?([\d.]+,\d{2})",
+        r"Total[^0-9]{0,40}?([\d.]+,\d{2})",
     ]
-    raw = _find_first(priority_labels, text, group=1)
+    raw = None
+    for pat in priority_labels:
+        m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
+        if m:
+            raw = m.group(1)
+            break
     if not raw:
-        # Fallback: hoechster EUR-Betrag im Doc
+        # Fallback 1: hoechster EUR-Betrag mit Waehrungssuffix
         matches = re.findall(r"([\d.]{1,10},\d{2})\s*(?:EUR|€)", text)
-        if not matches:
-            return None
-        try:
-            return max(float(m.replace(".", "").replace(",", ".")) for m in matches)
-        except ValueError:
-            return None
+        if matches:
+            try:
+                return max(float(m.replace(".", "").replace(",", ".")) for m in matches)
+            except ValueError:
+                pass
+        # Fallback 2: rein numerisch neben einem Betrags-Keyword (Spalten-Layout
+        # ohne Waehrungssymbol, z.B. Hilsdorf-Rechnung).
+        keyword_re = re.compile(
+            r"(gesamt|brutto|umsatzsteuer|summe|zwischensumme|zu\s*zahlen|endbetrag)"
+            r".{0,120}?([\d]{1,3}(?:\.[\d]{3})*,\d{2})",
+            re.IGNORECASE | re.DOTALL,
+        )
+        candidates = [m.group(2) for m in keyword_re.finditer(text)]
+        if candidates:
+            try:
+                return max(float(m.replace(".", "").replace(",", ".")) for m in candidates)
+            except ValueError:
+                pass
+        return None
     try:
         return float(raw.replace(".", "").replace(",", "."))
     except ValueError:
@@ -119,7 +234,9 @@ def _extract_amount(text: str) -> Optional[float]:
 
 def _extract_iban(text: str) -> Optional[str]:
     m = re.search(r"DE\s?(?:\d\s?){20}", text)
-    return m.group(0).replace(" ", "") if m else None
+    if not m:
+        return None
+    return re.sub(r"\s+", "", m.group(0))
 
 
 def _detect_direction(text: str, filename: str) -> tuple[str, str, str]:
