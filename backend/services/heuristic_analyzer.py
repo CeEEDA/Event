@@ -58,76 +58,99 @@ def _find_first(patterns: list[str], text: str, group: int = 0) -> Optional[str]
 
 
 def _extract_labelled_column(text: str) -> dict:
-    """Erkennt das Label-ueber-Wert-Muster wie in dieser Layout-Klasse:
+    """Erkennt Label/Wert-Layouts in denen Labels und Werte auf getrennten Zeilen
+    stehen. Deckt zwei Varianten ab:
+
+    Variante A (Spalten-Stapel):
         Rechnungsnr.:
         Kundennr.:
         Datum:
-        Leistungszeitraum:
 
         RE26/020
         10008
         15.06.2026
-        18.05.2026 bis 12.06.2026
 
-    Wenn wir eine Sequenz von >=2 Label-Zeilen finden, gefolgt (nach Leerzeilen)
-    von der gleichen Anzahl Wert-Zeilen, dann mappen wir 1:1 die Werte auf die
-    Labels. Sehr robust fuer deutsche Rechnungs-Kopfzeilen mit Spalten-Layout.
+    Variante B (Interleaved, klassisch NL/international):
+        Datum:
+        13-06-26
+        Factuurnummer:
+        2026197
+        BTW nummer
+        DE 309 259 209
+
     Returns dict mit normalisierten Schluesseln: invoice_number, customer_number,
-    date, service_period.
+    date, service_period, due_date, payment_terms.
     """
     lines = [ln.strip() for ln in text.splitlines()]
-    # Erlaubte Labels + Ziel-Feldname
     LABEL_MAP = [
         (re.compile(r"^Rechnungs?[- ]?(Nr|Nummer)\.?\s*:?\s*$", re.IGNORECASE), "invoice_number"),
+        (re.compile(r"^Factuur(?:[- ]?nummer|[- ]?nr)\.?\s*:?\s*$", re.IGNORECASE), "invoice_number"),
+        (re.compile(r"^Invoice\s*(?:no\.?|number|nr\.?)\s*:?\s*$", re.IGNORECASE), "invoice_number"),
         (re.compile(r"^Kunden[- ]?(Nr|Nummer)\.?\s*:?\s*$", re.IGNORECASE), "customer_number"),
+        (re.compile(r"^Debiteur(?:[- ]?nummer|[- ]?nr)\.?\s*:?\s*$", re.IGNORECASE), "customer_number"),
+        (re.compile(r"^Customer\s*(?:no\.?|number)\s*:?\s*$", re.IGNORECASE), "customer_number"),
         (re.compile(r"^Beleg[- ]?(Nr|Nummer)\.?\s*:?\s*$", re.IGNORECASE), "invoice_number"),
         (re.compile(r"^Datum\s*:?\s*$", re.IGNORECASE), "date"),
         (re.compile(r"^Rechnungsdatum\s*:?\s*$", re.IGNORECASE), "date"),
+        (re.compile(r"^Invoice\s+date\s*:?\s*$", re.IGNORECASE), "date"),
         (re.compile(r"^Leistungszeitraum\s*:?\s*$", re.IGNORECASE), "service_period"),
+        (re.compile(r"^F(?:ae|\u00e4)lligkeit(?:sdatum)?\s*:?\s*$", re.IGNORECASE), "due_date"),
+        (re.compile(r"^Zahlungsziel\s*:?\s*$", re.IGNORECASE), "due_date"),
+        (re.compile(r"^Zahlbar\s+bis\s*:?\s*$", re.IGNORECASE), "due_date"),
+        (re.compile(r"^Due\s+date\s*:?\s*$", re.IGNORECASE), "due_date"),
+        (re.compile(r"^Vervaldatum\s*:?\s*$", re.IGNORECASE), "due_date"),
     ]
+    label_re = LABEL_MAP  # alias for internal loop clarity
+
+    def _is_label(ln: str):
+        for pat, field in label_re:
+            if pat.match(ln):
+                return field
+        return None
+
     result = {}
     i = 0
     while i < len(lines):
-        # Sammle konsekutive Label-Zeilen
-        label_block = []
-        j = i
+        # Skip leere Zeilen
+        if not lines[i]:
+            i += 1
+            continue
+        first_field = _is_label(lines[i])
+        if not first_field:
+            i += 1
+            continue
+        # Sammle konsekutive Label-Zeilen (nur nicht-leere)
+        label_block = [first_field]
+        j = i + 1
         while j < len(lines):
             ln = lines[j]
             if not ln:
                 j += 1
                 continue
-            matched_field = None
-            for pat, field in LABEL_MAP:
-                if pat.match(ln):
-                    matched_field = field
-                    break
-            if matched_field:
-                label_block.append(matched_field)
+            f = _is_label(ln)
+            if f:
+                label_block.append(f)
                 j += 1
             else:
                 break
-        # Mindestens 2 Labels in Folge = spaltenartiges Layout
-        if len(label_block) >= 2:
-            # Sammle die naechsten (len(label_block)) nicht-leeren Zeilen
-            values = []
-            k = j
-            while k < len(lines) and len(values) < len(label_block):
-                ln = lines[k]
-                if ln:
-                    values.append(ln)
+        # Sammle die naechsten len(label_block) nicht-leeren Nicht-Label-Zeilen
+        values = []
+        k = j
+        while k < len(lines) and len(values) < len(label_block):
+            ln = lines[k]
+            if not ln:
                 k += 1
-            # Werte 1:1 auf Labels mappen (nur wenn Werte selbst nicht wieder Label sind)
-            for idx, field in enumerate(label_block):
-                if idx >= len(values):
-                    break
-                val = values[idx]
-                # Wenn Wert wie ein Label aussieht -> abbrechen (Doppelbelegung)
-                if any(pat.match(val) for pat, _ in LABEL_MAP):
-                    break
-                result.setdefault(field, val)
-            i = k
-        else:
-            i = j + 1 if j == i else j
+                continue
+            if _is_label(ln):
+                # Wenn wir mitten in Werten wieder ein Label finden, brechen wir ab
+                break
+            values.append(ln)
+            k += 1
+        for idx, field in enumerate(label_block):
+            if idx >= len(values):
+                break
+            result.setdefault(field, values[idx])
+        i = k if values else j
     return result
 
 
@@ -167,20 +190,113 @@ def _extract_date(text: str) -> Optional[str]:
         patterns = [
             r"Rechnungsdatum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
             r"Datum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            r"Invoice\s+date\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
             r"vom\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
             r"(\d{4}-\d{2}-\d{2})",
         ]
         raw = _find_first(patterns, text, group=1)
     if not raw:
         return None
+    return _normalize_date(raw)
+
+
+def _normalize_date(raw: str) -> Optional[str]:
+    """Wandelt ein rohes Datum in ISO YYYY-MM-DD um."""
+    if not raw:
+        return None
     raw = raw.strip()
-    # Normalisieren auf YYYY-MM-DD
-    for fmt in ("%d.%m.%Y", "%d.%m.%y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+    # ISO YYYY-MM-DD
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return raw
+    for fmt in (
+        "%d.%m.%Y", "%d.%m.%y",
+        "%d-%m-%Y", "%d-%m-%y",
+        "%d/%m/%Y", "%d/%m/%y",
+    ):
         try:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
     return raw
+
+
+def _extract_due_date(text: str, invoice_date_iso: Optional[str]) -> tuple[Optional[str], Optional[int], Optional[str]]:
+    """Bestimmt Fälligkeit + Zahlungsziel aus dem Text.
+    Returns (due_date_iso, payment_term_days, payment_terms_text).
+
+    Reihenfolge:
+    1. Explizites Datum "faellig am DD.MM.YYYY" / Vervaldatum / Due date
+    2. Aus Label-Layout ('Faelligkeit' / 'Zahlungsziel')
+    3. "Zahlbar innerhalb X Tagen" / "Betaling binnen X dagen" / "net X days"
+       ergibt X Tage nach dem Rechnungsdatum
+    """
+    # 1) Explizites Datum
+    m = re.search(
+        r"(?:f(?:ae|\u00e4)llig(?:keit)?(?:sdatum)?(?:\s+am)?|"
+        r"zahlbar\s+(?:bis|am)|due\s+date|vervaldatum)"
+        r"\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{4}-\d{2}-\d{2})",
+        text, re.IGNORECASE)
+    if m:
+        d = _normalize_date(m.group(1))
+        if d:
+            return d, None, m.group(0).strip()
+
+    # 2) Aus Label-Layout
+    col = _extract_labelled_column(text)
+    raw_due = col.get("due_date")
+    if raw_due:
+        # Kann ein Datum sein ("15.07.2026") oder eine Zahl-Angabe ("30 Tage")
+        if re.match(r"\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}", raw_due) or re.match(r"\d{4}-\d{2}-\d{2}", raw_due):
+            d = _normalize_date(raw_due)
+            if d:
+                return d, None, "Fälligkeit: " + raw_due
+        mt = re.search(r"(\d{1,3})\s*(?:tag|tage|dag|dagen|day|days)", raw_due, re.IGNORECASE)
+        if mt:
+            days = int(mt.group(1))
+            due = _add_days(invoice_date_iso, days)
+            return due, days, raw_due
+
+    # 3) Freitext-Zahlungsziel
+    tm = re.search(
+        r"(?:zahlbar|betaling|betaalbaar|payable|zahlung(?:\s+innerhalb)?|"
+        r"payment\s+within|zahlungsziel)"
+        r"[^\n\r]{0,60}?"
+        r"(?:binnen|innerhalb|within)?\s*(\d{1,3})\s*(?:tage|tagen|tag|dagen|dag|days|day)\b",
+        text, re.IGNORECASE)
+    if tm:
+        days = int(tm.group(1))
+        due = _add_days(invoice_date_iso, days)
+        # Kontext bis 80 Zeichen fuer 'terms'-Anzeige
+        start = max(0, tm.start() - 5)
+        end = min(len(text), tm.end() + 15)
+        return due, days, text[start:end].strip()
+
+    # 4) Kurzformen: "netto 30 Tage" / "netto 30 dagen" / "30 Tage ohne Abzug"
+    tm2 = re.search(
+        r"(?:netto\s+(\d{1,3})\s*(?:tage|tagen|tag|dagen|dag|days|day)"
+        r"|(\d{1,3})\s*(?:tage|tagen|tag)\s+ohne\s+abzug"
+        r"|(\d{1,3})\s*(?:tage|tagen|tag)\s+netto)",
+        text, re.IGNORECASE)
+    if tm2:
+        days = int(next(g for g in tm2.groups() if g))
+        due = _add_days(invoice_date_iso, days)
+        return due, days, tm2.group(0)
+
+    return None, None, None
+
+
+def _add_days(iso_date: Optional[str], days: int) -> Optional[str]:
+    if not iso_date or days is None:
+        return None
+    try:
+        dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        from datetime import timedelta as _td
+        return (dt + _td(days=days)).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
 
 
 def _extract_amount(text: str) -> Optional[float]:
@@ -233,10 +349,50 @@ def _extract_amount(text: str) -> Optional[float]:
 
 
 def _extract_iban(text: str) -> Optional[str]:
-    m = re.search(r"DE\s?(?:\d\s?){20}", text)
-    if not m:
-        return None
-    return re.sub(r"\s+", "", m.group(0))
+    """IBAN-Extraktion mit Land-spezifischen Laengen (SEPA):
+    DE=22, NL=18, AT=20, BE=16, CH=21, LU=20, FR=27, IT=27, ES=24, GB=22, DK=18,
+    SE=24, FI=18, PL=28, IE=22, PT=25, NO=15, CZ=24, HU=28, SK=24.
+    Bevorzugt Kandidaten die direkt hinter dem Label 'IBAN' stehen (99% aller
+    echten Rechnungen). BTW/USt-IdNr. (z.B. NL820319739B01) werden per
+    Laengen-Check automatisch verworfen.
+    """
+    IBAN_LEN = {
+        "DE": 22, "NL": 18, "AT": 20, "BE": 16, "CH": 21, "LU": 20,
+        "FR": 27, "IT": 27, "ES": 24, "GB": 22, "DK": 18, "SE": 24,
+        "FI": 18, "PL": 28, "IE": 22, "PT": 25, "NO": 15, "CZ": 24,
+        "HU": 28, "SK": 24, "LI": 21, "MT": 31, "SI": 19, "EE": 20,
+        "LT": 20, "LV": 21, "GR": 27, "RO": 24, "BG": 22, "HR": 21,
+    }
+
+    def _clean_and_validate(raw: str) -> Optional[str]:
+        clean = re.sub(r"\s+", "", raw).upper()
+        if len(clean) < 4:
+            return None
+        cc = clean[:2]
+        need = IBAN_LEN.get(cc)
+        if not need:
+            return None
+        if len(clean) < need:
+            return None
+        # Auf exakte Laenge trimmen (falls Suffix wie 'BIC' hinten dran klebte)
+        cand = clean[:need]
+        # Aufbau: 2 Buchstaben + 2 Ziffern + Rest alphanumerisch
+        if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]+", cand):
+            return None
+        return cand
+
+    # 1. Bevorzugt: Label 'IBAN' im Text
+    for m in re.finditer(r"IBAN[\s:.-]*([A-Z]{2}[\s\d]{2}[\sA-Z0-9]{10,34})", text, re.IGNORECASE):
+        found = _clean_and_validate(m.group(1))
+        if found:
+            return found
+
+    # 2. Fallback: generischer IBAN-Match (max 34 Zeichen incl. Leerzeichen)
+    for m in re.finditer(r"\b([A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]){10,30})\b", text):
+        found = _clean_and_validate(m.group(1))
+        if found:
+            return found
+    return None
 
 
 def _detect_direction(text: str, filename: str) -> tuple[str, str, str]:
@@ -356,7 +512,7 @@ def _extract_sender_from_header(text: str, exclude_self: bool = True) -> Optiona
     invoice_code_re = re.compile(r"^[A-Z]{1,4}[\d\-\/]{2,20}$", re.IGNORECASE)
     # Rechtsform-Suffixe die einen Firmennamen markieren
     company_re = re.compile(
-        r"\b(GmbH|AG|KG|UG|e\.?\s*K\.?|OHG|GbR|SE|Ltd\.?|Inc\.?|LLC|Corp\.?|KGaA|e\.?\s*V\.?|Co\.?\s*KG)\b",
+        r"\b(GmbH|AG|KG|UG|e\.?\s*K\.?|OHG|GbR|SE|Ltd\.?|Inc\.?|LLC|Corp\.?|KGaA|e\.?\s*V\.?|Co\.?\s*KG|B\.?\s*V\.?|N\.?\s*V\.?|S\.?\s*A\.?|S\.?\s*r\.?\s*l\.?|SARL|S\.?\s*p\.?\s*A\.?)\b",
         re.IGNORECASE,
     )
     # Berufsbezeichnungen (Einzelunternehmer / Freiberufler) - kein \b weil
@@ -530,8 +686,14 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
     elif "mahnung" in fn_lower or "mahnung" in tlow[:500]:
         doc_type = "mahnung"
         direction = direction if direction != "unknown" else "rechnungseingang_eventenergie_deutschland"
-    elif "rechnung" in fn_lower or "rechnung" in tlow[:500] or "invoice" in tlow[:500]:
+    elif ("rechnung" in fn_lower or "rechnung" in tlow[:500] or
+          "invoice" in tlow[:500] or "factuur" in tlow[:500] or
+          "factuur" in fn_lower):
         doc_type = "rechnung"
+        # Auslands-Rechnungen ohne Firmenmarker im Text: wenn Empfaenger unser Marker
+        if direction == "unknown" and any(
+                m in tlow for m in ("eventenergie", "power factor engineering")):
+            direction = "rechnungseingang_eventenergie_deutschland"
     elif zug_used:
         # ZUGFeRD-XML vorhanden → mit Sicherheit eine Rechnung
         doc_type = "rechnung"
@@ -540,6 +702,10 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
 
     if direction == "unknown":
         direction = "unbekannt"
+
+    # Fälligkeit / Zahlungsziel aus Text ermitteln (nach date-Extraktion, damit
+    # 'X Tage nach Rechnungsdatum' korrekt aufaddiert werden kann).
+    due_date, payment_term_days, payment_terms_text = _extract_due_date(text, date)
 
     subject = f"{doc_type.title()}"
     if inv_num:
@@ -565,6 +731,9 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
             keywords.append(zug["sender_vat"])
     keywords = [k for k in keywords if k]
 
+    if zug_used and zug.get("due_date"):
+        due_date = zug["due_date"]
+
     return {
         "document_type": doc_type,
         "suggested_folder": direction,
@@ -572,6 +741,9 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
         "recipient": recipient or "",
         "invoice_number": inv_num,
         "date": date,
+        "due_date": due_date,
+        "payment_term_days": payment_term_days,
+        "payment_terms": payment_terms_text,
         "amount": amount,
         "currency": (zug.get("currency") if zug_used else None) or "EUR",
         "subject": subject[:200],

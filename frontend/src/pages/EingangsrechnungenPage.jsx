@@ -589,6 +589,12 @@ export default function EingangsrechnungenPage() {
                     className="h-8"
                     data-testid="detail-due-input"
                   />
+                  {selected.payment_term_days && (
+                    <div className="text-[10px] text-gray-500 mt-0.5" data-testid="detail-payment-terms">
+                      Zahlungsziel: {selected.payment_term_days} Tage
+                      {selected.payment_terms ? ` (${selected.payment_terms.slice(0, 40).trim()}…)` : ""}
+                    </div>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <div className="text-xs text-gray-500">Notiz</div>
