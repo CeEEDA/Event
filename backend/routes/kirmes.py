@@ -2450,6 +2450,52 @@ async def fints_reset_state(user: dict = Depends(_require_staff)):
     return {"ok": True, "deleted": result.deleted_count}
 
 
+@router.post("/fints/dismiss-mismatch-tasks")
+async def fints_dismiss_mismatch_tasks(user: dict = Depends(_require_staff),
+                                        only_unpaid: bool = True):
+    """Loescht alle offenen `fints_amount_mismatch`-Tasks fuer Rechnungen die
+    aktuell nicht als bezahlt gelten. Praktisch nach einem Matcher-Fix, um
+    False-Positive-Tasks aufzuraeumen ohne dass der Admin sie einzeln erledigt.
+    Nach dem Loeschen kann der Auto-Match erneut laufen und produziert mit dem
+    korrigierten Algorithmus nur noch echte Mismatch-Tasks."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Nur Admins")
+
+    query = {"task_type": "fints_amount_mismatch", "completed": False, "is_deleted": {"$ne": True}}
+    tasks = await _db.tasks.find(query, {"_id": 0, "id": 1, "fints_invoice_id": 1,
+                                          "fints_invoice_number": 1}).to_list(1000)
+
+    if only_unpaid and tasks:
+        # Nur Tasks fuer Rechnungen die aktuell nicht als 'bezahlt' gelten
+        inv_ids = list({t.get("fints_invoice_id") for t in tasks if t.get("fints_invoice_id")})
+        paid_ids = set()
+        if inv_ids:
+            async for inv in _db.kirmes_invoices.find(
+                {"id": {"$in": inv_ids}, "payment_status": "bezahlt"},
+                {"_id": 0, "id": 1}
+            ):
+                paid_ids.add(inv["id"])
+        target_ids = [t["id"] for t in tasks if t.get("fints_invoice_id") not in paid_ids]
+    else:
+        target_ids = [t["id"] for t in tasks]
+
+    if not target_ids:
+        return {"ok": True, "dismissed": 0, "total_open": len(tasks)}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    res = await _db.tasks.update_many(
+        {"id": {"$in": target_ids}},
+        {"$set": {
+            "completed": True,
+            "completed_at": now_iso,
+            "completed_by": user.get("id", "admin"),
+            "completed_by_name": user.get("name", "Admin"),
+            "dismissed_reason": "False-Positive-Cleanup (FinTS Matcher-Fix)",
+        }}
+    )
+    return {"ok": True, "dismissed": res.modified_count, "total_open": len(tasks)}
+
+
 @router.get("/fints/state-info")
 async def fints_state_info(user: dict = Depends(_require_staff)):
     """Info ueber den persistierten Bank-State (Alter, ob ein State vorhanden ist)."""

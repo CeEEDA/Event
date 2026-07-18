@@ -355,6 +355,13 @@ def _find_invoice_number_in_text(text: str, invoice_numbers: list) -> tuple:
     """Sucht eine Rechnungsnummer im Text - auch mit Tippfehlern oder wenn der
     Kunde nur die Ziffern ohne Praefix schreibt.
     Returns: (invoice_number, confidence, match_type)
+
+    Match-Typen:
+    - ``exakt`` (conf 100): vollstaendige Rechnungsnummer als Substring gefunden
+    - ``digit_suffix_with_context`` (conf 92): Kunde schreibt nur den Ziffern-
+      Suffix in Zusammenhang mit "Rechnungsnr:" o.ae. Nur bei Suffixen >= 3 Ziffern
+      damit "Rechnung 32" nicht faelschlich R26-K-0032 matcht.
+    - ``fuzzy`` (conf ~85-95): Tippfehler-tolerantes Match, Ratio >= 0.90
     """
     text_clean = _normalize(text)
 
@@ -365,46 +372,49 @@ def _find_invoice_number_in_text(text: str, invoice_numbers: list) -> tuple:
         if inv_clean in text_clean:
             return inv_nr, 100, "exakt"
 
-    # ─── ZIFFER-SUFFIX-MATCH: Kunde schreibt oft nur "33" statt "R26-K-0033"
-    # Vor der Fuzzy-Suche pruefen wir, ob der numerische Suffix (mit/ohne
-    # fuehrende Nullen) im DIRECTEN Umfeld eines Kontext-Wortes steht
-    # (Rechnungsnummer/Rg-Nr etc.). "Stromabrechnung 33 kWh" darf NICHT
-    # als "R26-K-0033" gematcht werden.
-    # Pattern: "Rechnung(snr|Nr|-Nr):? 0033" ODER "Rg-Nr 33" - mit max 20
-    # Zeichen Abstand zwischen Keyword und Ziffernblock.
+    # ─── ZIFFER-SUFFIX-MATCH: Kunde schreibt oft nur "0033" statt "R26-K-0033"
+    # Vor der Fuzzy-Suche pruefen wir, ob der numerische Suffix im DIRECTEN
+    # Umfeld eines Kontext-Wortes steht (Rechnungsnummer/Rg-Nr etc.).
+    # WICHTIG: Suffix muss >= 3 Ziffern haben, sonst kollidieren Zahlen wie
+    # "Rechnung 32" fuer irgendeine Rechnungsserie mit R26-K-0032.
     ctx_pattern = (
         r"(?:rechnungs?[-\s]?(?:nummer|nr|no|number)|rg[-.\s]?nr|beleg[-\s]?nr|invoice\s*(?:no|number|nr))"
-        r"[:\s.\-#]*(\d{2,10})"
+        r"[:\s.\-#]*(\d{3,10})"
     )
     for cm in re.finditer(ctx_pattern, (text or ""), re.IGNORECASE):
         num_in_text = cm.group(1)
         for inv_nr in invoice_numbers:
             suffix = _numeric_suffix(inv_nr)
+            if len(suffix) < 3:
+                continue
             for variant in _digit_variants(suffix):
-                if variant and variant == num_in_text:
+                if len(variant) < 3:
+                    continue
+                if variant == num_in_text:
                     return inv_nr, 92, "digit_suffix_with_context"
 
-    # Fuzzy-Suche: Zahlendreher, Buchstabendreher
+    # Fuzzy-Suche: Zahlendreher, Buchstabendreher. Nur bei sehr hoher Aehnlichkeit
+    # (>= 0.90) damit z.B. R26-K-0004 nicht auf R25-K-0004 einer alten Serie
+    # matched. Zusaetzlich: der numerische Suffix MUSS identisch sein (letzte
+    # Ziffern gleich) damit Zahlendreher kein anderes Konto trifft.
     words = re.split(r"[\s,;./\-]+", text)
     for inv_nr in invoice_numbers:
         inv_clean = _normalize(inv_nr)
+        inv_suffix = _numeric_suffix(inv_nr)
+        if len(inv_clean) < 6:
+            continue
         for word in words:
             word_clean = _normalize(word)
-            if not word_clean or len(word_clean) < 4:
+            if len(word_clean) < 6:
                 continue
-
-            # Levenshtein-aehnliche Pruefung via SequenceMatcher
             ratio = SequenceMatcher(None, inv_clean, word_clean).ratio()
-            if ratio >= 0.75 and len(inv_clean) >= 6:
-                return inv_nr, int(ratio * 100), "fuzzy"
-
-        # Auch zusammenhaengende Substrings pruefen (wenn jemand z.B. "R26K0001" schreibt)
-        for i in range(len(text_clean) - len(inv_clean) + 2):
-            chunk = text_clean[i:i + len(inv_clean)]
-            if len(chunk) >= len(inv_clean) - 2:
-                ratio = SequenceMatcher(None, inv_clean, chunk).ratio()
-                if ratio >= 0.80:
-                    return inv_nr, int(ratio * 100), "substring_fuzzy"
+            if ratio < 0.90:
+                continue
+            # Zusatz-Guard: die Ziffern-Endung muss identisch sein
+            word_suffix = _numeric_suffix(word)
+            if inv_suffix and word_suffix and inv_suffix != word_suffix:
+                continue
+            return inv_nr, int(ratio * 100), "fuzzy"
 
     return None, 0, "none"
 
@@ -465,8 +475,12 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
                     "deposit_applied": deposit_applied,
                     "matched_against": match_target,
                 })
-            else:
-                # Rechnungsnr. gefunden aber Betrag weicht ab → Admin-Aufgabe
+            elif match_type == "exakt":
+                # Rechnungsnr. EXAKT gefunden aber Betrag weicht ab → Admin-Aufgabe
+                # WICHTIG: Nur bei exaktem Match. Fuzzy/Digit-Suffix mit
+                # Betragsabweichung ist zu unsicher und produziert False-Positives
+                # (z.B. Zahlung fuer R25-K-0004 wird fuzzy auf R26-K-0004
+                # gematcht → dann falsche 'Betrag weicht ab'-Task).
                 matches.append({
                     "invoice_id": inv["id"],
                     "invoice_number": found_nr,
@@ -484,7 +498,19 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
                     "deposit_applied": deposit_applied,
                     "amount_diff": amount - open_amount,
                 })
-            continue  # Naechste Transaktion
+            else:
+                # Fuzzy/Digit-Suffix Match aber Betrag stimmt nicht → wir sind
+                # unsicher ob es ueberhaupt diese Rechnung war. Kein Task,
+                # aber weiter zum Firmenname-Fallback.
+                logger.info(
+                    f"FinTS: Unsicherer Match {found_nr} ({match_type}, "
+                    f"conf {confidence}) verworfen wegen Betragsabweichung "
+                    f"{amount - open_amount:+.2f} EUR"
+                )
+                # Fallthrough zum naechsten Schritt (Betrag+Firmenname)
+                found_nr = None
+            if found_nr:
+                continue  # Naechste Transaktion
 
         # Schritt 2: Kein Rechnungsnummer-Match → Betrag + Firmenname als Fallback
         for inv in invoices:
@@ -816,7 +842,8 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
                     ),
                     "action": "auto_paid",
                 })
-            else:
+                continue
+            elif match_type == "exakt":
                 matches.append({
                     "invoice_id": inv["id"],
                     "invoice_number": found_nr,
@@ -834,7 +861,16 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
                     ),
                     "action": "admin_task",
                 })
-            continue
+                continue
+            else:
+                # Fuzzy/Digit-Suffix mit Betragsabweichung → unsicher, kein Task
+                logger.info(
+                    f"FinTS (outgoing): Unsicherer Match {found_nr} "
+                    f"({match_type}, conf {confidence}) verworfen wegen "
+                    f"Betragsabweichung {diff:+.2f} EUR"
+                )
+                # Kein Match fuer diese Transaktion (weiter zur naechsten)
+                continue
 
         # Schritt 2: Kein Rechnungsnr.-Match → Absender + Betrag prüfen
         candidates = []
