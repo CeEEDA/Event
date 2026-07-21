@@ -476,11 +476,101 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
                     "matched_against": match_target,
                 })
             elif match_type == "exakt":
-                # Rechnungsnr. EXAKT gefunden aber Betrag weicht ab → Admin-Aufgabe
-                # WICHTIG: Nur bei exaktem Match. Fuzzy/Digit-Suffix mit
-                # Betragsabweichung ist zu unsicher und produziert False-Positives
-                # (z.B. Zahlung fuer R25-K-0004 wird fuzzy auf R26-K-0004
-                # gematcht → dann falsche 'Betrag weicht ab'-Task).
+                # Rechnungsnr. EXAKT gefunden aber Betrag weicht ab → potenzieller Admin-Task.
+                # ABER: Wir pruefen zusaetzliche Guards um False-Positives zu vermeiden,
+                # z.B. wenn ein fremder Zahler die Rechnungsnummer nur zitiert oder
+                # eine Sammelueberweisung mehrere Rechnungen abdeckt.
+
+                # ─── Guard 1: Sammelueberweisung erkennen ─────────────────
+                # Wenn 2+ verschiedene Rechnungsnummern gleichzeitig im Text
+                # als Substring vorkommen, ist der Betrag typischerweise die
+                # SUMME dieser Rechnungen. Ein einzelner Match ist dann
+                # irrefuehrend.
+                text_clean = _normalize(search_text)
+                other_hits = [
+                    n for n in inv_numbers
+                    if n != found_nr and _normalize(n) in text_clean
+                ]
+                if other_hits:
+                    logger.info(
+                        f"FinTS: Sammelueberweisung erkannt fuer {found_nr} "
+                        f"(+{len(other_hits)} weitere Rechnungen im Purpose: "
+                        f"{', '.join(other_hits[:3])}...) - kein Task"
+                    )
+                    found_nr = None
+                    continue
+
+                # ─── Guard 2: Zahler muss zur Rechnung passen ────────────
+                # Der Bank-Absender (applicant_name) sollte Ähnlichkeit zum
+                # Schausteller-Firma/Nachnamen haben ODER die Kundennummer
+                # der Rechnung muss im Purpose auftauchen. Sonst hat vermutlich
+                # ein fremder Zahler die Rechnungsnummer nur zufaellig
+                # zitiert (z.B. bei OP-Referenz).
+                schausteller_firma = (inv.get("schausteller_firma") or "").lower().strip()
+                schausteller_name = (inv.get("schausteller_name") or "").lower().strip()
+                schausteller_kd = (inv.get("schausteller_kundennummer") or "").lower().strip()
+                zahler_lower = name.lower().strip()
+                purpose_lower = purpose.lower()
+
+                def _has_name_match():
+                    if not zahler_lower:
+                        return False
+                    # Rechtsform-Woerter sind Trivialmatch → ausschliessen
+                    NOISE = {"gmbh", "kg", "ag", "ug", "ohg", "gbr", "co", "se", "ltd",
+                             "inc", "llc", "corp", "kgaa", "sarl", "bv", "nv", "sa",
+                             "srl", "spa", "&", "und", "der", "die", "das", "the"}
+                    def _tokens(s):
+                        return [t for t in re.split(r"[\s,.\-/&]+", s or "")
+                                if t and len(t) >= 4 and t.lower() not in NOISE]
+                    zahler_tokens = _tokens(zahler_lower)
+                    for haystack in (schausteller_firma, schausteller_name):
+                        if not haystack:
+                            continue
+                        haystack_tokens = _tokens(haystack)
+                        for token in haystack_tokens:
+                            if token in zahler_lower:
+                                return True
+                        for token in zahler_tokens:
+                            if token in haystack:
+                                return True
+                        # Fuzzy als letzter Ausweg
+                        if SequenceMatcher(None, zahler_lower[:30], haystack[:30]).ratio() >= 0.55:
+                            return True
+                    return False
+
+                def _has_customer_number_hit():
+                    if not schausteller_kd:
+                        return False
+                    # Wir betrachten den Purpose OHNE die bereits gefundene
+                    # Rechnungsnr. (weil sie typisch die Kundennr. als Suffix
+                    # enthaelt und ein "K-0032"-Match sonst redundant waere).
+                    inv_norm = _normalize(found_nr)
+                    purpose_wo_inv_norm = _normalize(purpose_lower).replace(inv_norm, "", 1)
+                    kd_norm = _normalize(schausteller_kd)
+                    if kd_norm and kd_norm in purpose_wo_inv_norm:
+                        return True
+                    suffix = _numeric_suffix(schausteller_kd)
+                    if not suffix or len(suffix) < 3:
+                        return False
+                    if suffix not in purpose_wo_inv_norm:
+                        return False
+                    # Ziffernsuffix alleine reicht nur mit Kontext-Wort
+                    if not any(kw in purpose_lower for kw in ("kunde", "kdnr", "kd-nr", "kd.nr", "kundennummer")):
+                        return False
+                    return True
+
+                if not (_has_name_match() or _has_customer_number_hit()):
+                    logger.info(
+                        f"FinTS: Rechnungsnr. {found_nr} im Purpose gefunden, "
+                        f"aber Zahler '{name}' passt nicht zu "
+                        f"'{schausteller_firma or schausteller_name}' und "
+                        f"Kundennr. '{schausteller_kd}' nicht im Purpose. "
+                        f"Vermutlich Fremdzitat - kein Task."
+                    )
+                    found_nr = None
+                    continue
+
+                # Alle Guards ueberstanden: echte Betragsabweichung → Admin-Task
                 matches.append({
                     "invoice_id": inv["id"],
                     "invoice_number": found_nr,
