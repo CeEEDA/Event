@@ -994,46 +994,52 @@ export default function OrderDetailPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="order-detail-page">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 p-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
+      <header className="bg-white border-b border-gray-200 p-3 sm:p-4">
+        <div className="max-w-7xl mx-auto flex items-center gap-2 sm:gap-4 justify-between flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigate("/orders")}
-              className="text-gray-600 hover:text-fuchsia-600"
+              className="text-gray-600 hover:text-fuchsia-600 px-2 sm:px-3"
               data-testid="back-to-orders-btn"
             >
-              <ArrowLeft className="w-4 h-4 mr-2" /> Aufträge
+              <ArrowLeft className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Aufträge</span>
             </Button>
-            <div className="h-6 w-px bg-gray-200" />
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <ClipboardList className="w-5 h-5 text-fuchsia-600" />
-                {order?.order_no}
+            <div className="h-6 w-px bg-gray-200 hidden sm:block" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-lg font-semibold text-gray-900 flex items-center gap-1.5 truncate">
+                <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5 text-fuchsia-600 flex-shrink-0" />
+                <span className="truncate">{order?.order_no}</span>
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <StatusBadge order={order} />
-            <Button variant="outline" size="sm" onClick={() => { fetchOrder(); fetchGenerators(); fetchAssets(); }} data-testid="refresh-detail-btn">
-              <RefreshCw className="w-4 h-4 mr-1" /> Aktualisieren
+            <Button variant="outline" size="sm" onClick={() => { fetchOrder(); fetchGenerators(); fetchAssets(); }} data-testid="refresh-detail-btn" className="px-2 sm:px-3" title="Aktualisieren">
+              <RefreshCw className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">Aktualisieren</span>
             </Button>
             {canBilling && (
               <Button
                 variant="outline"
                 size="sm"
-                className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50"
+                className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50 px-2 sm:px-3"
+                title="Abrechnung PDF"
                 onClick={() => {
                   const token = localStorage.getItem("token");
                   openExternal(`${BACKEND_URL}/api/orders/epirent/${pk}/billing-pdf?token=${token}`);
                 }}
                 data-testid="billing-pdf-btn"
               >
-                <FileDown className="w-4 h-4 mr-1" /> Abrechnung PDF
+                <FileDown className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Abrechnung PDF</span>
               </Button>
             )}
-            <Logo size="small" />
+            <div className="hidden md:block">
+              <Logo size="small" />
+            </div>
           </div>
         </div>
       </header>

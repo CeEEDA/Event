@@ -238,25 +238,26 @@ export default function DeliveryNoteDialog({ open, onOpenChange, orderPk, onCrea
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0" data-testid="delivery-note-dialog">
-        <DialogHeader className="px-5 pt-5 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-2 text-base pr-10">
-            <FileText className="w-4 h-4 text-violet-600" />
-            Lieferschein anlegen
-            {prefill && <span className="text-xs text-gray-400 font-mono">Nr. {prefill.suggested_delivery_note_no}</span>}
+      <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0 w-[95vw] sm:w-full" data-testid="delivery-note-dialog">
+        <DialogHeader className="px-3 sm:px-5 pt-4 sm:pt-5 pb-3 border-b">
+          <DialogTitle className="flex items-center gap-2 text-sm sm:text-base pr-8">
+            <FileText className="w-4 h-4 text-violet-600 flex-shrink-0" />
+            <span className="truncate">Lieferschein anlegen</span>
+            {prefill && <span className="text-xs text-gray-400 font-mono truncate hidden sm:inline">Nr. {prefill.suggested_delivery_note_no}</span>}
             <div className="flex-1" />
             <Button
               type="button"
               size="sm"
               variant={splitOpen ? "default" : "outline"}
               onClick={() => setSplitOpen(v => !v)}
-              className={splitOpen
+              className={`${splitOpen
                 ? "bg-orange-500 hover:bg-orange-600 text-white"
-                : "border-orange-300 text-orange-700 hover:bg-orange-50"}
+                : "border-orange-300 text-orange-700 hover:bg-orange-50"} px-2 sm:px-3 flex-shrink-0`}
               data-testid="split-truck-btn"
               title="LKW-Teilung: Mengen pro Fahrt aufteilen"
             >
-              <Truck className="w-3.5 h-3.5 mr-1.5" /> LKW teilen
+              <Truck className="w-3.5 h-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">LKW teilen</span>
             </Button>
           </DialogTitle>
         </DialogHeader>

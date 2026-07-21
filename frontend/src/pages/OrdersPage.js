@@ -231,7 +231,7 @@ export default function OrdersPage() {
           </div>
           <div className="flex items-center gap-2">
             {lastSynced && !isFreelancer && (
-              <span className="text-xs text-gray-400 hidden sm:inline">
+              <span className="text-xs text-gray-400 hidden lg:inline">
                 Sync: {new Date(lastSynced).toLocaleString("de-DE", {hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit"})}
               </span>
             )}
@@ -240,12 +240,12 @@ export default function OrdersPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => navigate("/project-report/new")}
-                className="border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-50 hover:text-fuchsia-700 hover:border-fuchsia-300"
+                className="border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-50 hover:text-fuchsia-700 hover:border-fuchsia-300 px-2 sm:px-3"
                 data-testid="new-blank-report-btn"
+                title="Projektbericht (leer) anlegen"
               >
-                <FilePlus className="w-4 h-4 mr-1" />
+                <FilePlus className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Projektbericht leer</span>
-                <span className="sm:hidden">Leer</span>
               </Button>
             )}
             {!isFreelancer && (
@@ -255,9 +255,11 @@ export default function OrdersPage() {
                 onClick={triggerSync}
                 disabled={syncing}
                 data-testid="sync-orders-btn"
+                className="px-2 sm:px-3"
+                title="Aufträge aktualisieren"
               >
-                <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Synchronisiere..." : "Aktualisieren"}
+                <RefreshCw className={`w-4 h-4 sm:mr-1 ${syncing ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{syncing ? "Synchronisiere..." : "Aktualisieren"}</span>
               </Button>
             )}
             {isFreelancer && (
@@ -272,7 +274,9 @@ export default function OrdersPage() {
                 <span className="hidden sm:inline">Abmelden</span>
               </Button>
             )}
-            <Logo size="small" />
+            <div className="hidden md:block">
+              <Logo size="small" />
+            </div>
           </div>
         </div>
       </header>
@@ -371,7 +375,53 @@ export default function OrdersPage() {
           )}
 
           {(loading || orders.length > 0) && (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+            <>
+              {/* Mobile: Card-Layout (<md) */}
+              <div className="md:hidden space-y-2" data-testid="orders-mobile-list">
+                {loading && orders.length === 0 ? (
+                  <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-fuchsia-500 mb-2" />
+                    <span className="text-sm text-gray-500">Aufträge werden geladen...</span>
+                  </div>
+                ) : (
+                  sortedOrders.map((order) => (
+                    <button
+                      key={order.primary_key}
+                      onClick={() => navigate(`/orders/${order.primary_key}`)}
+                      className={`w-full text-left bg-white rounded-lg border border-gray-200 p-3 hover:border-fuchsia-300 active:bg-fuchsia-50/50 transition-colors ${order.is_canceled ? "opacity-50" : ""}`}
+                      data-testid={`order-card-${order.primary_key}`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <span className="font-mono text-xs font-semibold text-fuchsia-700 flex-shrink-0" data-testid="order-no">
+                          {order.order_no}
+                        </span>
+                        <StatusBadge order={order} />
+                      </div>
+                      <div className="font-medium text-sm text-gray-900 mb-1 truncate" data-testid="order-event">
+                        {order.event || "—"}
+                      </div>
+                      <div className="text-xs text-gray-500 space-y-0.5">
+                        <div className="truncate" data-testid="order-contact">{order.contact_name || "—"}</div>
+                        {order.address && (
+                          <div className="flex items-start gap-1 truncate" data-testid="order-address">
+                            <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5 text-gray-400" />
+                            <span className="truncate">{order.address}</span>
+                          </div>
+                        )}
+                        <div className="text-gray-400" data-testid="order-period">
+                          {formatDateRange(
+                            order.event_start || order.dispo_start,
+                            order.event_end || order.dispo_end
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop/Tablet: Table (md und höher) */}
+              <div className="hidden md:block bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="orders-table">
                   <thead>
@@ -469,6 +519,7 @@ export default function OrdersPage() {
                 </table>
               </div>
             </div>
+            </>
           )}
         </div>
       </main>
