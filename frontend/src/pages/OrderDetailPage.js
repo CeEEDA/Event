@@ -3542,49 +3542,74 @@ export default function OrderDetailPage() {
 
       {/* ═════ Sticky Bottom-Tab-Bar (nur Handy, nur wenn Modul aktiv) ═════ */}
       {activeTab !== null && (
-        <div
-          className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
-          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
-          data-testid="order-bottom-nav"
-        >
-          <div className="overflow-x-auto scrollbar-none">
-            <div className="flex items-stretch min-w-max px-2 py-1.5 gap-0.5">
-              <button
-                onClick={() => setActiveTab(null)}
-                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors ${
-                  activeTab === null ? "bg-fuchsia-50 text-fuchsia-700" : "text-gray-500 hover:text-gray-700"
-                }`}
-                data-testid="bottom-nav-home"
-              >
-                <LayoutGrid className="w-4 h-4" />
-                <span className="text-[10px] font-medium">Übersicht</span>
-              </button>
-              {orderTabs.map((t) => {
-                const TIcon = t.icon;
-                const isActive = activeTab === t.key;
-                return (
-                  <button
-                    key={t.key}
-                    onClick={() => openTab(t.key)}
-                    className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative ${
-                      isActive ? "bg-fuchsia-50 text-fuchsia-700" : "text-gray-500 hover:text-gray-700"
-                    }`}
-                    data-testid={`bottom-nav-${t.key}`}
-                  >
-                    <TIcon className="w-4 h-4" />
-                    <span className="text-[10px] font-medium whitespace-nowrap">{t.short}</span>
-                    {t.count > 0 && (
-                      <span className="absolute top-0 right-1 text-[8px] font-bold px-1 rounded-full bg-fuchsia-600 text-white min-w-[14px] text-center leading-tight">
-                        {t.count > 99 ? "99+" : t.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <BottomTabNav
+          activeTab={activeTab}
+          tabs={orderTabs}
+          onSelect={openTab}
+          onHome={() => setActiveTab(null)}
+        />
       )}
+    </div>
+  );
+}
+
+// ─── Bottom-Tab-Bar (Handy) ───────────────────────────────────────────
+function BottomTabNav({ activeTab, tabs, onSelect, onHome }) {
+  const scrollRef = useRef(null);
+  const activeBtnRef = useRef(null);
+
+  useEffect(() => {
+    if (!activeBtnRef.current || !scrollRef.current) return;
+    const btn = activeBtnRef.current;
+    const container = scrollRef.current;
+    // Auto-Scroll: aktiver Tab in die Mitte des Containers ziehen
+    const btnRect = btn.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const target = btn.offsetLeft - (containerRect.width / 2) + (btnRect.width / 2);
+    container.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [activeTab]);
+
+  return (
+    <div
+      className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      data-testid="order-bottom-nav"
+    >
+      <div ref={scrollRef} className="overflow-x-auto scrollbar-none">
+        <div className="flex items-stretch min-w-max px-2 py-1.5 gap-0.5">
+          <button
+            onClick={onHome}
+            className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-gray-700"
+            data-testid="bottom-nav-home"
+          >
+            <LayoutGrid className="w-4 h-4" />
+            <span className="text-[10px] font-medium">Übersicht</span>
+          </button>
+          {tabs.map((t) => {
+            const TIcon = t.icon;
+            const isActive = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                ref={isActive ? activeBtnRef : null}
+                onClick={() => onSelect(t.key)}
+                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative ${
+                  isActive ? "bg-fuchsia-50 text-fuchsia-700" : "text-gray-500 hover:text-gray-700"
+                }`}
+                data-testid={`bottom-nav-${t.key}`}
+              >
+                <TIcon className="w-4 h-4" />
+                <span className="text-[10px] font-medium whitespace-nowrap">{t.short}</span>
+                {t.count > 0 && (
+                  <span className="absolute top-0 right-1 text-[8px] font-bold px-1 rounded-full bg-fuchsia-600 text-white min-w-[14px] text-center leading-tight">
+                    {t.count > 99 ? "99+" : t.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

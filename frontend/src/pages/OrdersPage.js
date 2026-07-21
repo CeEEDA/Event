@@ -22,6 +22,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronRight,
+  Pin,
   Filter,
   FilePlus,
   LogOut,
@@ -120,6 +121,32 @@ export default function OrdersPage() {
   const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
 
+  // ─── Pins (VIP-Aufträge oben) ───
+  const [pinnedIds, setPinnedIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem("orders_pinned_v1");
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+  const persistPins = (next) => {
+    try { localStorage.setItem("orders_pinned_v1", JSON.stringify(Array.from(next))); } catch {}
+  };
+  const togglePin = useCallback((pk) => {
+    setPinnedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(pk)) next.delete(pk); else next.add(pk);
+      persistPins(next);
+      return next;
+    });
+  }, []);
+
+  // ─── Pull-to-Refresh State ───
+  const [pullOffset, setPullOffset] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const pullStartY = useRef(null);
+  const pullActive = useRef(false);
+  const PULL_TRIGGER = 70;
+
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -188,14 +215,78 @@ export default function OrdersPage() {
   const sortedOrders = [...orders]
     .filter((o) => statusFilter === "all" || getOrderStatus(o) === statusFilter)
     .sort((a, b) => {
-    let va = a[sortField] ?? "";
-    let vb = b[sortField] ?? "";
-    if (typeof va === "string") va = va.toLowerCase();
-    if (typeof vb === "string") vb = vb.toLowerCase();
-    if (va < vb) return sortDir === "asc" ? -1 : 1;
-    if (va > vb) return sortDir === "asc" ? 1 : -1;
-    return 0;
-  });
+      // Pins immer zuerst (unabhaengig vom Sort-Feld)
+      const ap = pinnedIds.has(a.primary_key) ? 0 : 1;
+      const bp = pinnedIds.has(b.primary_key) ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      let va = a[sortField] ?? "";
+      let vb = b[sortField] ?? "";
+      if (typeof va === "string") va = va.toLowerCase();
+      if (typeof vb === "string") vb = vb.toLowerCase();
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+  // Aktive Filter-Chips (Mobile)
+  const activeChips = [];
+  if (dateFrom || dateTo) {
+    const fmt = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : "…";
+    activeChips.push({
+      key: "dates",
+      label: `${fmt(dateFrom)} – ${fmt(dateTo)}`,
+      clear: () => { setDateFrom(""); setDateTo(""); },
+    });
+  }
+  if (statusFilter !== "all") {
+    const opt = STATUS_OPTIONS.find(o => o.value === statusFilter);
+    activeChips.push({
+      key: "status",
+      label: opt?.label || statusFilter,
+      clear: () => setStatusFilter("all"),
+    });
+  }
+  if (search.trim()) {
+    activeChips.push({
+      key: "search",
+      label: `„${search.trim().slice(0, 20)}${search.trim().length > 20 ? "…" : ""}"`,
+      clear: () => setSearch(""),
+    });
+  }
+
+  // Pull-to-Refresh Touch-Handler (nur wenn ScrollY == 0)
+  const onPullStart = (e) => {
+    if (typeof window !== "undefined" && window.scrollY > 5) return;
+    pullStartY.current = e.touches[0].clientY;
+    pullActive.current = false;
+  };
+  const onPullMove = (e) => {
+    if (pullStartY.current === null) return;
+    const dy = e.touches[0].clientY - pullStartY.current;
+    if (dy <= 0) { setPullOffset(0); return; }
+    if (window.scrollY > 5) { pullStartY.current = null; setPullOffset(0); return; }
+    pullActive.current = true;
+    // Dampfen: Widerstand ab 60px staerker
+    const damped = dy < 60 ? dy : 60 + (dy - 60) * 0.35;
+    setPullOffset(Math.min(damped, 120));
+  };
+  const onPullEnd = async () => {
+    const shouldRefresh = pullActive.current && pullOffset >= PULL_TRIGGER;
+    pullStartY.current = null;
+    pullActive.current = false;
+    if (shouldRefresh) {
+      setPullOffset(PULL_TRIGGER);   // halte Position waehrend Refresh
+      setRefreshing(true);
+      try {
+        await triggerSync();
+      } finally {
+        setRefreshing(false);
+        setPullOffset(0);
+      }
+    } else {
+      setPullOffset(0);
+    }
+  };
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return null;
@@ -465,22 +556,76 @@ export default function OrdersPage() {
 
           {(loading || orders.length > 0) && (
             <>
-              {/* Mobile: Card-Layout (<md) */}
-              <div className="md:hidden space-y-2" data-testid="orders-mobile-list">
-                {loading && orders.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-fuchsia-500 mb-2" />
-                    <span className="text-sm text-gray-500">Aufträge werden geladen...</span>
+              {/* Filter-Chips ueber der Liste (Mobile) */}
+              {activeChips.length > 0 && (
+                <div className="md:hidden flex flex-wrap gap-1.5 mb-2" data-testid="filter-chips">
+                  {activeChips.map(chip => (
+                    <button
+                      key={chip.key}
+                      onClick={chip.clear}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-fuchsia-100 text-fuchsia-700 text-xs font-medium hover:bg-fuchsia-200"
+                      data-testid={`chip-${chip.key}`}
+                    >
+                      {chip.label}
+                      <XCircle className="w-3 h-3" />
+                    </button>
+                  ))}
+                  {activeChips.length > 1 && (
+                    <button
+                      onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); setSearch(""); }}
+                      className="text-[10px] text-gray-500 hover:text-gray-700 underline ml-1 self-center"
+                      data-testid="chip-clear-all"
+                    >
+                      Alle löschen
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Mobile: Card-Layout (<md) mit Pull-to-Refresh */}
+              <div
+                className="md:hidden relative"
+                onTouchStart={onPullStart}
+                onTouchMove={onPullMove}
+                onTouchEnd={onPullEnd}
+                onTouchCancel={onPullEnd}
+                data-testid="orders-mobile-list"
+              >
+                {/* Pull-Indikator */}
+                {(pullOffset > 0 || refreshing) && (
+                  <div
+                    className="absolute left-0 right-0 -top-2 flex items-center justify-center text-fuchsia-500 pointer-events-none"
+                    style={{ height: Math.min(pullOffset, 70), transition: pullActive.current ? "none" : "height 200ms ease-out" }}
+                    aria-live="polite"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-medium">
+                      <RefreshCw className={`w-4 h-4 ${refreshing || pullOffset >= PULL_TRIGGER ? "animate-spin" : ""}`}
+                                 style={{ transform: refreshing ? "none" : `rotate(${pullOffset * 3}deg)` }} />
+                      {refreshing ? "Aktualisiere…" : pullOffset >= PULL_TRIGGER ? "Loslassen zum Aktualisieren" : "Zum Aktualisieren ziehen"}
+                    </div>
                   </div>
-                ) : (
-                  sortedOrders.map((order) => (
-                    <SwipeableOrderCard
-                      key={order.primary_key}
-                      order={order}
-                      onOpen={() => navigate(`/orders/${order.primary_key}`)}
-                    />
-                  ))
                 )}
+                <div
+                  className="space-y-2"
+                  style={{ transform: `translateY(${pullOffset}px)`, transition: pullActive.current ? "none" : "transform 200ms ease-out" }}
+                >
+                  {loading && orders.length === 0 ? (
+                    <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto text-fuchsia-500 mb-2" />
+                      <span className="text-sm text-gray-500">Aufträge werden geladen...</span>
+                    </div>
+                  ) : (
+                    sortedOrders.map((order) => (
+                      <SwipeableOrderCard
+                        key={order.primary_key}
+                        order={order}
+                        pinned={pinnedIds.has(order.primary_key)}
+                        onOpen={() => navigate(`/orders/${order.primary_key}`)}
+                        onTogglePin={() => togglePin(order.primary_key)}
+                      />
+                    ))
+                  )}
+                </div>
               </div>
 
               {/* Desktop/Tablet: Table (md und höher) */}
@@ -591,18 +736,19 @@ export default function OrdersPage() {
 }
 
 // ─── Swipeable Order Card (Mobile) ────────────────────────────────────
-// Swipe nach links: zeigt "Öffnen"-Zone rechts und navigiert bei Threshold.
+// Swipe LINKS: zeigt "Öffnen"-Zone rechts und navigiert bei Threshold.
+// Swipe RECHTS: zeigt "Pin"-Zone links, togglet Pin-Status bei Threshold.
 // Tap: Standard-Navigation. Auto-Reset bei zu kurzem Swipe.
-function SwipeableOrderCard({ order, onOpen }) {
+function SwipeableOrderCard({ order, onOpen, onTogglePin, pinned }) {
   const [offset, setOffset] = useState(0);
   const [swiping, setSwiping] = useState(false);
   const startX = useRef(null);
   const startY = useRef(null);
-  const locked = useRef(false);  // horizontal-lock nach 8px Threshold
+  const locked = useRef(false);
   const cancelClick = useRef(false);
 
-  const REVEAL_WIDTH = 96;   // Zone-Breite rechts
-  const TRIGGER_DIST = 70;   // >= diese px → navigate on release
+  const REVEAL_WIDTH = 96;
+  const TRIGGER_DIST = 70;
 
   const onTouchStart = (e) => {
     startX.current = e.touches[0].clientX;
@@ -617,7 +763,6 @@ function SwipeableOrderCard({ order, onOpen }) {
     const dy = e.touches[0].clientY - startY.current;
     if (!locked.current) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      // Sichere Achse festlegen – wenn vertikale Bewegung dominant, kein Swipe
       if (Math.abs(dy) > Math.abs(dx)) {
         startX.current = null;
         setSwiping(false);
@@ -625,20 +770,19 @@ function SwipeableOrderCard({ order, onOpen }) {
       }
       locked.current = true;
     }
-    // Nur nach links wischen
-    if (dx < 0) {
-      cancelClick.current = true;
-      setOffset(Math.max(dx, -REVEAL_WIDTH * 1.4));
-    } else {
-      setOffset(0);
-    }
+    cancelClick.current = true;
+    // Beide Richtungen erlaubt, gedämpft
+    const clamped = Math.max(Math.min(dx, REVEAL_WIDTH * 1.4), -REVEAL_WIDTH * 1.4);
+    setOffset(clamped);
   };
   const onTouchEnd = () => {
     setSwiping(false);
     if (offset <= -TRIGGER_DIST) {
-      // Animation kurz halten, dann navigieren
       setOffset(-REVEAL_WIDTH);
       setTimeout(() => { onOpen(); setOffset(0); }, 120);
+    } else if (offset >= TRIGGER_DIST) {
+      setOffset(REVEAL_WIDTH);
+      setTimeout(() => { onTogglePin && onTogglePin(); setOffset(0); }, 120);
     } else {
       setOffset(0);
     }
@@ -648,7 +792,6 @@ function SwipeableOrderCard({ order, onOpen }) {
   };
 
   const handleClick = (e) => {
-    // Klick unterdrücken wenn User gewischt hat
     if (cancelClick.current) {
       e.preventDefault();
       e.stopPropagation();
@@ -660,7 +803,18 @@ function SwipeableOrderCard({ order, onOpen }) {
 
   return (
     <div className="relative overflow-hidden rounded-lg" data-testid={`swipe-wrap-${order.primary_key}`}>
-      {/* Reveal-Zone unter der Karte */}
+      {/* Pin-Zone (links, sichtbar bei Rechts-Swipe) */}
+      <div
+        className={`absolute inset-y-0 left-0 flex items-center justify-center text-white px-4 ${pinned ? "bg-gradient-to-r from-gray-500 to-gray-400" : "bg-gradient-to-r from-amber-500 to-amber-400"}`}
+        style={{ width: REVEAL_WIDTH }}
+        aria-hidden="true"
+      >
+        <div className="flex flex-col items-center gap-0.5">
+          <Pin className={`w-5 h-5 ${pinned ? "" : "rotate-45"}`} />
+          <span className="text-[10px] font-medium">{pinned ? "Lösen" : "Pinnen"}</span>
+        </div>
+      </div>
+      {/* Öffnen-Zone (rechts, sichtbar bei Links-Swipe) */}
       <div
         className="absolute inset-y-0 right-0 flex items-center justify-center text-white bg-gradient-to-l from-fuchsia-500 to-fuchsia-400 px-4"
         style={{ width: REVEAL_WIDTH }}
@@ -679,14 +833,17 @@ function SwipeableOrderCard({ order, onOpen }) {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
-        className={`relative w-full text-left bg-white border border-gray-200 p-3 hover:border-fuchsia-300 active:bg-fuchsia-50/50 ${order.is_canceled ? "opacity-50" : ""} ${swiping ? "" : "transition-transform duration-150 ease-out"}`}
+        className={`relative w-full text-left bg-white border p-3 hover:border-fuchsia-300 active:bg-fuchsia-50/50 ${pinned ? "border-l-4 border-l-amber-400 border-y-gray-200 border-r-gray-200" : "border-gray-200"} ${order.is_canceled ? "opacity-50" : ""} ${swiping ? "" : "transition-transform duration-150 ease-out"}`}
         style={{ transform: `translateX(${offset}px)`, touchAction: "pan-y" }}
         data-testid={`order-card-${order.primary_key}`}
       >
         <div className="flex items-start justify-between gap-2 mb-1">
-          <span className="font-mono text-xs font-semibold text-fuchsia-700 flex-shrink-0" data-testid="order-no">
-            {order.order_no}
-          </span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            {pinned && <Pin className="w-3 h-3 text-amber-500 flex-shrink-0" data-testid="pin-badge" />}
+            <span className="font-mono text-xs font-semibold text-fuchsia-700 truncate" data-testid="order-no">
+              {order.order_no}
+            </span>
+          </div>
           <StatusBadge order={order} />
         </div>
         <div className="font-medium text-sm text-gray-900 mb-1 truncate" data-testid="order-event">
