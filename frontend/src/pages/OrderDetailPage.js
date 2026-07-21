@@ -991,6 +991,31 @@ export default function OrderDetailPage() {
 
   const center = order?.center_lat && order?.center_lng ? [order.center_lat, order.center_lng] : null;
 
+  // Modul-Definition (fuer Tiles + Bottom-Tab-Nav auf Handy)
+  const orderTabs = [
+    { key: "articles", label: "Artikel-Positionierung", short: "Artikel", desc: "Stromerzeuger, Lichtmasten & mehr", icon: MapPin, color: "orange", count: assets?.length || 0 },
+    { key: "article-list", label: "Artikelliste", short: "Liste", desc: "Komplette Auftrags-Übersicht", icon: Package, color: "teal", count: 0, hideForFreelancer: true },
+    { key: "documents-link", label: "Dokumente", short: "Docs", desc: "Lageplan, Fotos & Unterlagen", icon: FolderOpen, color: "fuchsia", count: docCount },
+    { key: "reports", label: "Projektberichte", short: "Berichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
+    { key: "fuel", label: "Tankbelege", short: "Tanken", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
+    { key: "tankstatus", label: "Tankstatus", short: "Status", desc: "Tankrunde · Prognose · CSV", icon: Fuel, color: "amber", count: 0, isLink: true },
+    { key: "messprotokolle", label: "Messprotokolle", short: "Messung", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
+    { key: "diary", label: "Einsatztagebuch", short: "Diary", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
+    { key: "delivery-notes", label: "Lieferscheine", short: "LS", desc: "Anlegen & Verwalten", icon: FileText, color: "violet", count: deliveryNotes.length, hideForFreelancer: true },
+  ].filter(t => (!t.hideForFreelancer || !isFreelancer) && (!t.adminOnly || isAdmin));
+
+  // Tab-Handler (aus dem Tile-Klick-Handler extrahiert)
+  const openTab = (tabKey) => {
+    if (tabKey === "documents-link") { navigate(`/orders/${pk}/dokumente`); return; }
+    if (tabKey === "tankstatus")     { navigate(`/orders/${pk}/tankstatus`); return; }
+    if (tabKey === "article-list")   { setShowArticleListDialog(true); return; }
+    setActiveTab(tabKey);
+    // Scroll oben ansetzen damit Kontent sichtbar
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="order-detail-page">
       {/* Header */}
@@ -1044,7 +1069,7 @@ export default function OrderDetailPage() {
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6">
+      <main className="flex-1 p-4 md:p-6 pb-24 md:pb-6">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Order Info Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1435,17 +1460,7 @@ export default function OrderDetailPage() {
                 Auftrags-Module
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {[
-                  { key: "articles", label: "Artikel-Positionierung", desc: "Stromerzeuger, Lichtmasten & mehr", icon: MapPin, color: "orange", count: assets?.length || 0 },
-                  { key: "article-list", label: "Artikelliste", desc: "Komplette Auftrags-Übersicht", icon: Package, color: "teal", count: 0, hideForFreelancer: true },
-                  { key: "documents-link", label: "Dokumente", desc: "Lageplan, Fotos & Unterlagen", icon: FolderOpen, color: "fuchsia", count: docCount },
-                  { key: "reports", label: "Projektberichte", desc: "Berichte & Auswertungen", icon: ClipboardList, color: "violet", count: projectReports?.length || 0 },
-                  { key: "fuel", label: "Tankbelege", desc: "Diesel-Abrechnung pro Auftrag", icon: Fuel, color: "amber", count: fuelReceipts?.length || 0, hideForFreelancer: true },
-                  { key: "tankstatus", label: "Tankstatus", desc: "Tankrunde · Prognose · CSV", icon: Fuel, color: "amber", count: 0, isLink: true },
-                  { key: "messprotokolle", label: "Messprotokolle", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
-                  { key: "diary", label: "Einsatztagebuch", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
-                  { key: "delivery-notes", label: "Lieferscheine", desc: "Anlegen & Verwalten", icon: FileText, color: "violet", count: deliveryNotes.length, hideForFreelancer: true },
-                ].filter(t => (!t.hideForFreelancer || !isFreelancer) && (!t.adminOnly || isAdmin)).map((t) => {
+                {orderTabs.map((t) => {
                   const colorMap = {
                     orange: "bg-orange-50 text-orange-600 group-hover:bg-orange-100",
                     fuchsia: "bg-fuchsia-50 text-fuchsia-600 group-hover:bg-fuchsia-100",
@@ -3524,10 +3539,55 @@ export default function OrderDetailPage() {
           )}
         </div>
       </main>
+
+      {/* ═════ Sticky Bottom-Tab-Bar (nur Handy, nur wenn Modul aktiv) ═════ */}
+      {activeTab !== null && (
+        <div
+          className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+          data-testid="order-bottom-nav"
+        >
+          <div className="overflow-x-auto scrollbar-none">
+            <div className="flex items-stretch min-w-max px-2 py-1.5 gap-0.5">
+              <button
+                onClick={() => setActiveTab(null)}
+                className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors ${
+                  activeTab === null ? "bg-fuchsia-50 text-fuchsia-700" : "text-gray-500 hover:text-gray-700"
+                }`}
+                data-testid="bottom-nav-home"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                <span className="text-[10px] font-medium">Übersicht</span>
+              </button>
+              {orderTabs.map((t) => {
+                const TIcon = t.icon;
+                const isActive = activeTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => openTab(t.key)}
+                    className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors relative ${
+                      isActive ? "bg-fuchsia-50 text-fuchsia-700" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                    data-testid={`bottom-nav-${t.key}`}
+                  >
+                    <TIcon className="w-4 h-4" />
+                    <span className="text-[10px] font-medium whitespace-nowrap">{t.short}</span>
+                    {t.count > 0 && (
+                      <span className="absolute top-0 right-1 text-[8px] font-bold px-1 rounded-full bg-fuchsia-600 text-white min-w-[14px] text-center leading-tight">
+                        {t.count > 99 ? "99+" : t.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 function FuelAdjustModal({ orderPk, receipts, onClose, onSave }) {
   const [pct, setPct] = useState(receipts[0]?.adjustment_percent || 0);
@@ -3615,6 +3675,7 @@ function FuelAdjustModal({ orderPk, receipts, onClose, onSave }) {
     </div>
   );
 }
+
 
 
 function GpsMapModal({ receipt, onClose }) {

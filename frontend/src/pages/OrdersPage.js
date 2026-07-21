@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
 import { useAuth } from "../context/AuthContext";
@@ -6,6 +6,7 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../components/ui/sheet";
 import {
   ArrowLeft,
   ClipboardList,
@@ -20,6 +21,7 @@ import {
   MapPin,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   Filter,
   FilePlus,
   LogOut,
@@ -281,8 +283,8 @@ export default function OrdersPage() {
         </div>
       </header>
 
-      {/* Filters */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
+      {/* Filters - Desktop/Tablet */}
+      <div className="hidden md:block bg-white border-b border-gray-200 px-4 py-3">
         <div className="max-w-7xl mx-auto flex flex-wrap items-end gap-4">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-gray-400" />
@@ -351,6 +353,93 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {/* Filters - Mobile (Sheet) */}
+      <div className="md:hidden bg-white border-b border-gray-200 px-3 py-2 flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Suche..."
+            className="pl-8 h-9 text-sm"
+            data-testid="order-search-input-mobile"
+          />
+        </div>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" className="relative px-3 h-9" data-testid="mobile-filter-btn">
+              <Filter className="w-4 h-4" />
+              {(dateFrom || dateTo || statusFilter !== "all") && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-fuchsia-500 rounded-full" />
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="rounded-t-2xl">
+            <SheetHeader>
+              <SheetTitle className="text-left flex items-center gap-2">
+                <Filter className="w-4 h-4 text-fuchsia-500" /> Filter
+              </SheetTitle>
+            </SheetHeader>
+            <div className="space-y-4 mt-4 pb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Zeitraum</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Von</label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-500"
+                      data-testid="date-from-input-mobile"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-0.5">Bis</label>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-500"
+                      data-testid="date-to-input-mobile"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-fuchsia-500 bg-white"
+                  data-testid="status-filter-select-mobile"
+                >
+                  {STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500" data-testid="order-count-mobile">
+                  {loading ? "Laden..." : `${sortedOrders.length} Aufträge`}
+                </span>
+                {(dateFrom || dateTo || statusFilter !== "all") && (
+                  <button
+                    onClick={() => { setDateFrom(""); setDateTo(""); setStatusFilter("all"); }}
+                    className="text-fuchsia-600 hover:text-fuchsia-700 font-medium"
+                    data-testid="clear-filter-btn"
+                  >
+                    Filter zurücksetzen
+                  </button>
+                )}
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+
       {/* Content */}
       <main className="flex-1 p-4 md:p-6">
         <div className="max-w-7xl mx-auto">
@@ -385,37 +474,11 @@ export default function OrdersPage() {
                   </div>
                 ) : (
                   sortedOrders.map((order) => (
-                    <button
+                    <SwipeableOrderCard
                       key={order.primary_key}
-                      onClick={() => navigate(`/orders/${order.primary_key}`)}
-                      className={`w-full text-left bg-white rounded-lg border border-gray-200 p-3 hover:border-fuchsia-300 active:bg-fuchsia-50/50 transition-colors ${order.is_canceled ? "opacity-50" : ""}`}
-                      data-testid={`order-card-${order.primary_key}`}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <span className="font-mono text-xs font-semibold text-fuchsia-700 flex-shrink-0" data-testid="order-no">
-                          {order.order_no}
-                        </span>
-                        <StatusBadge order={order} />
-                      </div>
-                      <div className="font-medium text-sm text-gray-900 mb-1 truncate" data-testid="order-event">
-                        {order.event || "—"}
-                      </div>
-                      <div className="text-xs text-gray-500 space-y-0.5">
-                        <div className="truncate" data-testid="order-contact">{order.contact_name || "—"}</div>
-                        {order.address && (
-                          <div className="flex items-start gap-1 truncate" data-testid="order-address">
-                            <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5 text-gray-400" />
-                            <span className="truncate">{order.address}</span>
-                          </div>
-                        )}
-                        <div className="text-gray-400" data-testid="order-period">
-                          {formatDateRange(
-                            order.event_start || order.dispo_start,
-                            order.event_end || order.dispo_end
-                          )}
-                        </div>
-                      </div>
-                    </button>
+                      order={order}
+                      onOpen={() => navigate(`/orders/${order.primary_key}`)}
+                    />
                   ))
                 )}
               </div>
@@ -523,6 +586,128 @@ export default function OrdersPage() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+// ─── Swipeable Order Card (Mobile) ────────────────────────────────────
+// Swipe nach links: zeigt "Öffnen"-Zone rechts und navigiert bei Threshold.
+// Tap: Standard-Navigation. Auto-Reset bei zu kurzem Swipe.
+function SwipeableOrderCard({ order, onOpen }) {
+  const [offset, setOffset] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const startX = useRef(null);
+  const startY = useRef(null);
+  const locked = useRef(false);  // horizontal-lock nach 8px Threshold
+  const cancelClick = useRef(false);
+
+  const REVEAL_WIDTH = 96;   // Zone-Breite rechts
+  const TRIGGER_DIST = 70;   // >= diese px → navigate on release
+
+  const onTouchStart = (e) => {
+    startX.current = e.touches[0].clientX;
+    startY.current = e.touches[0].clientY;
+    locked.current = false;
+    cancelClick.current = false;
+    setSwiping(true);
+  };
+  const onTouchMove = (e) => {
+    if (startX.current === null) return;
+    const dx = e.touches[0].clientX - startX.current;
+    const dy = e.touches[0].clientY - startY.current;
+    if (!locked.current) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      // Sichere Achse festlegen – wenn vertikale Bewegung dominant, kein Swipe
+      if (Math.abs(dy) > Math.abs(dx)) {
+        startX.current = null;
+        setSwiping(false);
+        return;
+      }
+      locked.current = true;
+    }
+    // Nur nach links wischen
+    if (dx < 0) {
+      cancelClick.current = true;
+      setOffset(Math.max(dx, -REVEAL_WIDTH * 1.4));
+    } else {
+      setOffset(0);
+    }
+  };
+  const onTouchEnd = () => {
+    setSwiping(false);
+    if (offset <= -TRIGGER_DIST) {
+      // Animation kurz halten, dann navigieren
+      setOffset(-REVEAL_WIDTH);
+      setTimeout(() => { onOpen(); setOffset(0); }, 120);
+    } else {
+      setOffset(0);
+    }
+    startX.current = null;
+    startY.current = null;
+    locked.current = false;
+  };
+
+  const handleClick = (e) => {
+    // Klick unterdrücken wenn User gewischt hat
+    if (cancelClick.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelClick.current = false;
+      return;
+    }
+    onOpen();
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-lg" data-testid={`swipe-wrap-${order.primary_key}`}>
+      {/* Reveal-Zone unter der Karte */}
+      <div
+        className="absolute inset-y-0 right-0 flex items-center justify-center text-white bg-gradient-to-l from-fuchsia-500 to-fuchsia-400 px-4"
+        style={{ width: REVEAL_WIDTH }}
+        aria-hidden="true"
+      >
+        <div className="flex flex-col items-center gap-0.5">
+          <ChevronRight className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Öffnen</span>
+        </div>
+      </div>
+      {/* Vordere Karte */}
+      <button
+        type="button"
+        onClick={handleClick}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+        className={`relative w-full text-left bg-white border border-gray-200 p-3 hover:border-fuchsia-300 active:bg-fuchsia-50/50 ${order.is_canceled ? "opacity-50" : ""} ${swiping ? "" : "transition-transform duration-150 ease-out"}`}
+        style={{ transform: `translateX(${offset}px)`, touchAction: "pan-y" }}
+        data-testid={`order-card-${order.primary_key}`}
+      >
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <span className="font-mono text-xs font-semibold text-fuchsia-700 flex-shrink-0" data-testid="order-no">
+            {order.order_no}
+          </span>
+          <StatusBadge order={order} />
+        </div>
+        <div className="font-medium text-sm text-gray-900 mb-1 truncate" data-testid="order-event">
+          {order.event || "—"}
+        </div>
+        <div className="text-xs text-gray-500 space-y-0.5">
+          <div className="truncate" data-testid="order-contact">{order.contact_name || "—"}</div>
+          {order.address && (
+            <div className="flex items-start gap-1 truncate" data-testid="order-address">
+              <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5 text-gray-400" />
+              <span className="truncate">{order.address}</span>
+            </div>
+          )}
+          <div className="text-gray-400" data-testid="order-period">
+            {formatDateRange(
+              order.event_start || order.dispo_start,
+              order.event_end || order.dispo_end
+            )}
+          </div>
+        </div>
+      </button>
     </div>
   );
 }
