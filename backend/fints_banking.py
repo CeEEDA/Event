@@ -483,19 +483,68 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
 
                 # ─── Guard 1: Sammelueberweisung erkennen ─────────────────
                 # Wenn 2+ verschiedene Rechnungsnummern gleichzeitig im Text
-                # als Substring vorkommen, ist der Betrag typischerweise die
-                # SUMME dieser Rechnungen. Ein einzelner Match ist dann
-                # irrefuehrend.
+                # als Substring vorkommen, pruefen wir ob die SUMME der
+                # Rechnungen dem Transaktionsbetrag entspricht → Auto-Split:
+                # alle Rechnungen werden als bezahlt markiert.
                 text_clean = _normalize(search_text)
                 other_hits = [
                     n for n in inv_numbers
                     if n != found_nr and _normalize(n) in text_clean
                 ]
                 if other_hits:
+                    all_hits = [found_nr] + other_hits
+                    all_invs = [inv_by_number[n] for n in all_hits if n in inv_by_number]
+                    total_open = 0.0
+                    total_brutto = 0.0
+                    for i in all_invs:
+                        b = float(i.get("brutto", 0) or 0)
+                        d = float(i.get("deposit_applied", 0) or 0)
+                        total_brutto += b
+                        total_open += max(0.0, b - d)
+                    # Toleranz proportional zur Anzahl der Rechnungen
+                    # (jeweils 5 Cent Rundungsdifferenz erlaubt)
+                    tol = 0.05 * max(1, len(all_invs))
+                    diff_to_open = abs(amount - total_open)
+                    diff_to_brutto = abs(amount - total_brutto)
+                    if diff_to_open <= tol or diff_to_brutto <= tol:
+                        matched_target = "restbetrag" if diff_to_open <= diff_to_brutto else "brutto"
+                        logger.info(
+                            f"FinTS: Sammelueberweisung AUTO-SPLIT: "
+                            f"{len(all_invs)} Rechnungen ({', '.join(all_hits[:5])}), "
+                            f"Summe {amount:.2f} EUR = {matched_target} "
+                            f"(diff {min(diff_to_open, diff_to_brutto):+.2f} EUR)"
+                        )
+                        for sub_inv in all_invs:
+                            sub_b = float(sub_inv.get("brutto", 0) or 0)
+                            sub_d = float(sub_inv.get("deposit_applied", 0) or 0)
+                            sub_open = round(max(0.0, sub_b - sub_d), 2)
+                            sub_amt = sub_open if matched_target == "restbetrag" else sub_b
+                            matches.append({
+                                "invoice_id": sub_inv["id"],
+                                "invoice_number": sub_inv.get("invoice_number"),
+                                "transaction": tx,
+                                "confidence": 95,
+                                "match_type": "sammel_split",
+                                "match_reason": (
+                                    f"Sammelueberweisung ({len(all_invs)} Rechnungen: "
+                                    f"{', '.join(all_hits)}) - Summe {amount:.2f} EUR = "
+                                    f"{matched_target}"
+                                ),
+                                "action": "auto_paid",
+                                "brutto": sub_b,
+                                "open_amount": sub_open,
+                                "deposit_applied": sub_d,
+                                "matched_against": matched_target,
+                                "sammel_amount": round(sub_amt, 2),
+                                "sammel_group": all_hits,
+                            })
+                        continue  # Transaktion vollstaendig verarbeitet
+                    # Summe passt NICHT → nicht als Task erzeugen (unsicher)
                     logger.info(
                         f"FinTS: Sammelueberweisung erkannt fuer {found_nr} "
-                        f"(+{len(other_hits)} weitere Rechnungen im Purpose: "
-                        f"{', '.join(other_hits[:3])}...) - kein Task"
+                        f"(+{len(other_hits)} weitere: {', '.join(other_hits[:3])}) "
+                        f"aber Summen passen nicht (amount {amount:.2f} vs "
+                        f"open {total_open:.2f} / brutto {total_brutto:.2f}) - kein Task"
                     )
                     found_nr = None
                     continue
@@ -845,16 +894,21 @@ async def _resolve_billing_assignees(db) -> tuple[list, dict]:
 
 
 async def _mark_invoice_paid(db, m: dict):
-    """Markiert eine Rechnung als bezahlt und schliesst offene Mahnungs-Tasks."""
+    """Markiert eine Rechnung als bezahlt und schliesst offene Mahnungs-Tasks.
+    Bei Sammel-Splits wird der anteilige Betrag (`sammel_amount`) statt der
+    vollen Transaktions-Summe als paid_amount gespeichert."""
+    paid_amount = m.get("sammel_amount", m["transaction"]["amount"])
+    note = f"Auto-Zuordnung: {m['match_reason']}"
     await db.kirmes_invoices.update_one(
         {"id": m["invoice_id"]},
         {"$set": {
             "payment_status": "bezahlt",
             "paid_at": datetime.now(timezone.utc).isoformat(),
-            "paid_amount": m["transaction"]["amount"],
-            "payment_note": f"Auto-Zuordnung: {m['match_reason']}",
+            "paid_amount": paid_amount,
+            "payment_note": note,
             "payment_matched_tx": m["transaction"],
             "payment_updated_by": "FinTS Auto-Match",
+            **({"sammel_group": m["sammel_group"]} if m.get("sammel_group") else {}),
         }}
     )
     tc = await _close_mahnung_tasks(db, m["invoice_id"], "FinTS Auto-Match (Zahlung eingegangen)")
