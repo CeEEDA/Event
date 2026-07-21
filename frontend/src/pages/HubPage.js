@@ -12,7 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
-  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck,
+  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, AlertTriangle, HelpCircle, Truck,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import { WorkTimeOverview } from "../components/WorkTimeOverview";
@@ -817,6 +817,35 @@ export default function HubPage() {
 
               {/* Task List */}
               <div className="flex-1 overflow-y-auto">
+                {(() => {
+                  const fintsMismatchCount = filteredTasks.filter(t => t.task_type === "fints_amount_mismatch").length;
+                  if (fintsMismatchCount === 0 || user?.role !== "admin") return null;
+                  return (
+                    <div className="mx-3 mt-2 mb-1 p-2 rounded-md bg-amber-50 border border-amber-200 flex items-center gap-2 text-xs" data-testid="fints-cleanup-banner">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-amber-900">{fintsMismatchCount} FinTS-Betrag-Warnung(en)</div>
+                        <div className="text-[10px] text-amber-700 leading-tight">Fremdzahler-Zitate oder Sammelbuchungen? Alle offenen dismissen für unbezahlte Rechnungen.</div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm(`${fintsMismatchCount} FinTS-Betragswarnungen dismissen?\n\nEs werden nur Tasks für Rechnungen geschlossen, die aktuell NICHT als bezahlt gelten. Bereits ausgezahlte Rechnungen bleiben unangetastet.`)) return;
+                          try {
+                            const { data } = await api.post("/kirmes/fints/dismiss-mismatch-tasks?only_unpaid=true");
+                            toast.success(`${data.dismissed || 0} Task(s) dismisst`);
+                            loadTasks();
+                          } catch (e) {
+                            toast.error(e.response?.data?.detail || "Fehler beim Dismissen");
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold flex-shrink-0"
+                        data-testid="fints-dismiss-all-btn"
+                      >
+                        Alle dismissen
+                      </button>
+                    </div>
+                  );
+                })()}
                 {filteredTasks.length === 0 ? (
                   <div className="p-6 text-center text-gray-400 text-xs">
                     <Check className="w-8 h-8 mx-auto mb-2 opacity-30" />
