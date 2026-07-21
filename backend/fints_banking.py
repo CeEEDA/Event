@@ -705,10 +705,15 @@ async def _close_mahnung_tasks(db, invoice_id, reason):
 
 async def _sweep_paid_invoices(db) -> int:
     """Sweep: Offene Tasks (Mahnung + Betrag-Mismatch) fuer Rechnungen, die
-    bereits als 'bezahlt' markiert sind, automatisch schliessen (Aufraeumen
-    falls Tasks vor dem Bezahlt-Status erstellt wurden).
+    bereits als 'bezahlt' markiert sind, automatisch schliessen. ZUSAETZLICH:
+    Re-validiert alle offenen fints_amount_mismatch-Tasks gegen die aktuellen
+    Guards - Tasks die die Guards nicht mehr passieren werden auto-geschlossen
+    (z.B. Fremdzahler-Zitate, Sammelueberweisungen).
     Returns: Anzahl geschlossener Tasks."""
-    # Sammle alle Rechnungs-IDs aus offenen Tasks (beide Task-Typen)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    swept_closed = 0
+
+    # ── Schritt 1: Tasks fuer bereits bezahlte Rechnungen schliessen ──
     ids_mahnung = await db.tasks.distinct(
         "payment_reminder_invoice_id",
         {"task_type": "payment_reminder", "completed": False, "is_deleted": {"$ne": True}}
@@ -718,18 +723,110 @@ async def _sweep_paid_invoices(db) -> int:
         {"task_type": "fints_amount_mismatch", "completed": False, "is_deleted": {"$ne": True}}
     )
     invoice_ids = list({*(ids_mahnung or []), *(ids_mismatch or [])})
-    if not invoice_ids:
-        return 0
-    paid_invoices = await db.kirmes_invoices.find(
-        {"id": {"$in": invoice_ids}, "payment_status": "bezahlt"},
-        {"_id": 0, "id": 1}
+    if invoice_ids:
+        paid_invoices = await db.kirmes_invoices.find(
+            {"id": {"$in": invoice_ids}, "payment_status": "bezahlt"},
+            {"_id": 0, "id": 1}
+        ).to_list(5000)
+        for pinv in paid_invoices:
+            tc = await _close_mahnung_tasks(db, pinv["id"], "Auto-Cleanup (Rechnung bereits bezahlt)")
+            swept_closed += tc.modified_count or 0
+
+    # ── Schritt 2: Alle offenen fints_amount_mismatch-Tasks re-validieren ──
+    # Bug-Fix: Tasks aus fruehren Match-Laeufen bleiben persistent auch wenn
+    # der Matcher inzwischen strengere Guards hat. Wir wenden die Guards
+    # jetzt auch auf existierende Tasks an.
+    open_mismatch = await db.tasks.find(
+        {"task_type": "fints_amount_mismatch", "completed": False, "is_deleted": {"$ne": True}},
+        {"_id": 0, "id": 1, "fints_invoice_id": 1, "fints_invoice_number": 1,
+         "fints_transaction": 1}
+    ).to_list(1000)
+
+    # Alle offenen Kirmes-Rechnungen laden (nur unbezahlte relevant)
+    all_open_inv = await db.kirmes_invoices.find(
+        {"payment_status": {"$ne": "bezahlt"}},
+        {"_id": 0, "id": 1, "invoice_number": 1, "schausteller_firma": 1,
+         "schausteller_name": 1, "schausteller_kundennummer": 1}
     ).to_list(5000)
-    swept_closed = 0
-    for pinv in paid_invoices:
-        tc = await _close_mahnung_tasks(db, pinv["id"], "Auto-Cleanup (Rechnung bereits bezahlt)")
-        swept_closed += tc.modified_count or 0
+    inv_by_id = {i["id"]: i for i in all_open_inv}
+    all_inv_numbers = [i.get("invoice_number", "") for i in all_open_inv if i.get("invoice_number")]
+
+    stale_ids = []
+    for t in open_mismatch:
+        inv = inv_by_id.get(t.get("fints_invoice_id"))
+        if not inv:
+            # Rechnung existiert nicht mehr oder ist bereits bezahlt → Task stale
+            stale_ids.append(t["id"])
+            continue
+        tx = t.get("fints_transaction") or {}
+        purpose = tx.get("purpose") or ""
+        name = tx.get("applicant_name") or ""
+        # Guard 1: Sammelueberweisung
+        text_clean = _normalize(f"{purpose} {name}")
+        found_nr = inv.get("invoice_number", "")
+        other_hits = [n for n in all_inv_numbers if n != found_nr and _normalize(n) in text_clean]
+        if other_hits:
+            stale_ids.append(t["id"])
+            continue
+        # Guard 2: Zahler-Verifikation
+        schausteller_firma = (inv.get("schausteller_firma") or "").lower()
+        schausteller_name = (inv.get("schausteller_name") or "").lower()
+        schausteller_kd = (inv.get("schausteller_kundennummer") or "").lower()
+        zahler_lower = name.lower()
+        purpose_lower = purpose.lower()
+
+        NOISE = {"gmbh", "kg", "ag", "ug", "ohg", "gbr", "co", "se", "ltd",
+                 "inc", "llc", "corp", "kgaa", "sarl", "bv", "nv", "sa",
+                 "srl", "spa", "und", "der", "die", "das", "the"}
+        def _tokens(s):
+            return [tok for tok in re.split(r"[\s,.\-/&]+", s or "")
+                    if tok and len(tok) >= 4 and tok.lower() not in NOISE]
+        name_match = False
+        zahler_tokens = _tokens(zahler_lower)
+        for haystack in (schausteller_firma, schausteller_name):
+            if not haystack: continue
+            haystack_tokens = _tokens(haystack)
+            if any(tok in zahler_lower for tok in haystack_tokens):
+                name_match = True; break
+            if any(tok in haystack for tok in zahler_tokens):
+                name_match = True; break
+            if SequenceMatcher(None, zahler_lower[:30], haystack[:30]).ratio() >= 0.55:
+                name_match = True; break
+
+        kd_hit = False
+        if schausteller_kd:
+            inv_norm = _normalize(found_nr)
+            p_norm_wo_inv = _normalize(purpose_lower).replace(inv_norm, "", 1)
+            kd_norm = _normalize(schausteller_kd)
+            if kd_norm and kd_norm in p_norm_wo_inv:
+                kd_hit = True
+            else:
+                suffix = _numeric_suffix(schausteller_kd)
+                if suffix and len(suffix) >= 3 and suffix in p_norm_wo_inv:
+                    if any(kw in purpose_lower for kw in ("kunde", "kdnr", "kd-nr", "kd.nr", "kundennummer")):
+                        kd_hit = True
+
+        if not (name_match or kd_hit):
+            stale_ids.append(t["id"])
+
+    if stale_ids:
+        res = await db.tasks.update_many(
+            {"id": {"$in": stale_ids}},
+            {"$set": {
+                "completed": True,
+                "completed_at": now_iso,
+                "completed_by_name": "Auto-Cleanup (Matcher-Guard aktualisiert)",
+                "dismissed_reason": "Auto-revalidiert: Fremdzahler/Sammel oder Rechnung nicht mehr offen",
+            }}
+        )
+        swept_closed += res.modified_count or 0
+        logger.info(
+            f"FinTS Sweep: {res.modified_count} alte False-Positive-Tasks "
+            f"automatisch geschlossen (Guard-Revalidation)"
+        )
+
     if swept_closed:
-        logger.info(f"FinTS Sweep: {swept_closed} offene Task(s) fuer bereits bezahlte Rechnungen geschlossen")
+        logger.info(f"FinTS Sweep total: {swept_closed} offene Task(s) geschlossen")
     return swept_closed
 
 
