@@ -158,11 +158,22 @@ async def get_all_employees(token: str = Query(...)):
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
-    users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}).to_list(500)
+    users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1, "date_of_birth": 1}).to_list(500)
+    # Sicherstellen dass der aufrufende Admin immer selbst in der Liste ist
+    # (falls z.B. wegen zukünftiger Filter versehentlich rausfliegt).
+    if not any(u.get("id") == caller.get("id") for u in users):
+        users.append({
+            "id": caller.get("id"),
+            "name": caller.get("name", ""),
+            "email": caller.get("email", ""),
+            "role": caller.get("role", "admin"),
+        })
     result = []
     for u in users:
         # Freelancer gehoeren nicht in die Mitarbeiter-Liste (eigene Vertragsart).
-        if (u.get("role") or "").lower() == "freelancer":
+        # Ausnahme: der aufrufende Admin/Verwaltung selbst darf sich immer sehen.
+        role_lower = (u.get("role") or "").lower()
+        if role_lower == "freelancer" and u.get("id") != caller.get("id"):
             continue
         profile = await db.employee_profiles.find_one({"user_id": u["id"]}, {"_id": 0})
         docs = await db.employee_documents.find(
@@ -1455,6 +1466,12 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
     clock_in = _parse_local_time_to_utc(date_str, start_str)
     clock_out = _parse_local_time_to_utc(date_str, end_str) if end_str else None
 
+    # Nachtschicht: Wenn Endzeit vor Startzeit liegt (z.B. 22:00 → 02:00),
+    # gilt sie automatisch als am NAECHSTEN Tag.
+    if clock_out and clock_out <= clock_in:
+        from datetime import timedelta as _td
+        clock_out = clock_out + _td(days=1)
+
     if clock_out and clock_out <= clock_in:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
@@ -1534,6 +1551,10 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
         raise HTTPException(status_code=400, detail="Startzeit erforderlich")
     clock_in = _parse_local_time_to_utc(date_str, start_str)
     clock_out = _parse_local_time_to_utc(date_str, end_str) if end_str else None
+    # Nachtschicht: Wenn Endzeit vor Startzeit liegt → nächster Tag
+    if clock_out and clock_out <= clock_in:
+        from datetime import timedelta as _td
+        clock_out = clock_out + _td(days=1)
     if clock_out and clock_out <= clock_in:
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
     raw_duration = round((clock_out - clock_in).total_seconds() / 60.0, 1) if clock_out else None

@@ -28,7 +28,7 @@ const DOC_TYPES = [
 ];
 
 export default function EmployeeAdminPage() {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -41,9 +41,25 @@ export default function EmployeeAdminPage() {
   const loadEmployees = useCallback(async () => {
     try {
       const res = await api.get(`/employee/all?token=${token}`);
-      setEmployees(res.data);
+      let list = res.data || [];
+      // Sicherheitsnetz: eingeloggter Admin/Verwaltung IMMER in Liste,
+      // damit man sein eigenes Zeitkonto/Profile bearbeiten kann.
+      if (user?.id && !list.some(e => e.user_id === user.id)) {
+        list = [{
+          user_id: user.id,
+          name: user.name || "(Ich)",
+          email: user.email || "",
+          role: user.role || "admin",
+          doc_count: 0,
+          doc_summary: {},
+          expired_count: 0,
+          expiring_soon_count: 0,
+          _is_self_fallback: true,
+        }, ...list];
+      }
+      setEmployees(list);
     } catch (err) { toast.error("Fehler beim Laden"); }
-  }, [token]);
+  }, [token, user]);
 
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
@@ -144,6 +160,11 @@ export default function EmployeeAdminPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-gray-900 truncate">{e.name}</p>
+                      {e.user_id === user?.id && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700" data-testid="self-badge">
+                          Du
+                        </span>
+                      )}
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${e.role === "admin" ? "bg-fuchsia-100 text-fuchsia-700" : "bg-gray-100 text-gray-600"}`}>{e.role}</span>
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-500">
