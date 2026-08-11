@@ -2127,11 +2127,45 @@ async def list_invoices(
         "reminder2_sent_at": 1, "reminder2_sent_by": 1,
     }).sort("invoice_number", 1).to_list(5000)
 
+    # Refund-Info aus payment_transactions einsammeln (invoice_id → refund_amount + status)
+    invoice_ids = [i["id"] for i in invoices]
+    refunds_by_inv = {}
+    if invoice_ids:
+        async for tx in _db.payment_transactions.find(
+            {"invoice_id": {"$in": invoice_ids},
+             "$or": [
+                 {"refund_status": {"$in": ["succeeded", "pending", "canceled"]}},
+                 {"refund_amount": {"$gt": 0}},
+                 {"type": "refund"},
+             ]},
+            {"_id": 0, "invoice_id": 1, "refund_amount": 1, "refund_status": 1, "refund_created_at": 1, "type": 1, "amount": 1}
+        ):
+            iid = tx["invoice_id"]
+            r = refunds_by_inv.setdefault(iid, {"refunded_amount": 0.0, "status": None, "at": None})
+            r["refunded_amount"] += float(tx.get("refund_amount") or (tx.get("amount") if tx.get("type") == "refund" else 0) or 0)
+            if tx.get("refund_status"):
+                r["status"] = tx["refund_status"]
+            if tx.get("refund_created_at"):
+                r["at"] = tx["refund_created_at"]
+
     # Berechne Faelligkeitsstatus fuer jede Rechnung
     # Zahlungsziel: Rechnungsdatum + 14 Tage
     # Mahnung: ab 17 Tage nach Rechnungsdatum (3 Tage nach Faelligkeit)
     now = datetime.now(timezone.utc)
     for inv in invoices:
+        refund_info = refunds_by_inv.get(inv["id"])
+        if refund_info and refund_info["refunded_amount"] > 0:
+            inv["refund_amount"] = round(refund_info["refunded_amount"], 2)
+            inv["refund_status"] = refund_info["status"]
+            inv["refunded_at"] = refund_info["at"]
+            # Wenn Rueckerstattung mind. den Rechnungsbetrag deckt → "erstattet",
+            # sonst "teilweise_erstattet". Ueberschreibt spaetere Faelligkeitsberechnung.
+            brutto = float(inv.get("brutto") or 0)
+            if refund_info["refunded_amount"] + 0.01 >= brutto and brutto > 0:
+                inv["payment_status"] = "erstattet"
+            elif inv.get("payment_status") != "bezahlt":
+                inv["payment_status"] = "teilweise_erstattet"
+            continue
         ps = inv.get("payment_status", "offen")
         if ps == "bezahlt":
             inv["payment_status"] = "bezahlt"
@@ -2584,12 +2618,38 @@ async def fints_toggle(data: FintsToggle, user: dict = Depends(_require_staff)):
 
 
 async def check_overdue_invoices():
-    """Prueft alle Rechnungen auf Faelligkeit und erstellt Aufgaben fuer Admins bei Mahnstufe."""
+    """Prueft alle Rechnungen auf Faelligkeit und erstellt Aufgaben fuer Admins bei Mahnstufe.
+
+    Ueberspringt Rechnungen, die per Stripe (teilweise) rueckerstattet wurden -
+    denn dann ist die Zahlung ja gegangen und wieder zurueckgegeben worden,
+    eine Mahnung waere unsinnig.
+    """
     if _db is None:
         return
     now = datetime.now(timezone.utc)
+
+    # Set aller Rechnungs-IDs mit erfolgreicher (oder in Bearbeitung
+    # befindlicher) Stripe-Rueckerstattung. Diese Rechnungen bekommen KEINE
+    # Mahnung, auch wenn deren payment_status nicht explizit "erstattet" ist.
+    refunded_ids = set()
+    async for tx in _db.payment_transactions.find(
+        {
+            "invoice_id": {"$ne": None},
+            "$or": [
+                {"refund_status": {"$in": ["succeeded", "pending", "canceled"]}},
+                {"refund_amount": {"$gt": 0}},
+                {"type": "refund"},
+            ],
+        },
+        {"_id": 0, "invoice_id": 1},
+    ):
+        if tx.get("invoice_id"):
+            refunded_ids.add(tx["invoice_id"])
+
     invoices = await _db.kirmes_invoices.find(
-        {"payment_status": {"$ne": "bezahlt"}},
+        {
+            "payment_status": {"$nin": ["bezahlt", "storniert", "erstattet", "rueckerstattet", "refunded"]},
+        },
         {"_id": 0, "id": 1, "invoice_number": 1, "invoice_date": 1, "brutto": 1,
          "schausteller_firma": 1, "schausteller_name": 1, "schausteller_id": 1,
          "schausteller_email": 1, "sent_at": 1, "payment_status": 1}
@@ -2598,6 +2658,9 @@ async def check_overdue_invoices():
     created = 0
     for inv in invoices:
         if not inv.get("sent_at"):
+            continue
+        # Refunded: keine Mahnung mehr
+        if inv["id"] in refunded_ids:
             continue
         try:
             inv_date = datetime.strptime(inv.get("invoice_date", ""), "%d.%m.%Y").replace(tzinfo=timezone.utc)

@@ -164,6 +164,21 @@ async def refund_deposit_difference(signup_id: str, invoice_brutto: float, invoi
                 "deposit_refund_error": None,
             }},
         )
+        # Refund fuer eine Rechnung → offene Mahnungs-Aufgaben dieser Rechnung
+        # sofort schliessen (keine Mahnung mehr sinnvoll wenn Geld zurueck ist).
+        if invoice_id and refund.status in ("succeeded", "pending"):
+            close_res = await _db.tasks.update_many(
+                {"payment_reminder_invoice_id": invoice_id, "completed": False,
+                 "is_deleted": {"$ne": True}},
+                {"$set": {
+                    "completed": True,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_by_name": "Auto-Cleanup (Stripe-Rueckerstattung)",
+                    "dismissed_reason": f"Rechnung wurde per Stripe erstattet (Refund {refund.id})",
+                }},
+            )
+            if close_res.modified_count:
+                logger.info(f"[payments] {close_res.modified_count} Mahnungs-Task(s) fuer Rechnung {invoice_number} geschlossen (Refund)")
         return {"ok": True, "refunded": True, "amount": refundable, "refund_id": refund.id, "status": refund.status}
     except Exception as e:
         logger.exception(f"[payments] Refund creation failed signup={signup_id}: {e}")
