@@ -3007,93 +3007,153 @@ Eventenergie Deutschland GmbH & Co. KG"""
 
 
 async def _create_kirmes_invoice_payment_link(inv: dict, amount: float, origin_url: str) -> Optional[str]:
-    """Create a Stripe Checkout session for the open balance of a Kirmes invoice.
+    """Erstellt den DAUERHAFTEN Redirect-Link fuer die Kirmes-Rechnung.
 
-    Returns the checkout URL, or None if Stripe is not configured or amount <= 0.
-    Stores a payment_transactions record with type='invoice' so the webhook
-    (see /api/payments/webhook/stripe) can mark the invoice as 'bezahlt' automatically.
+    Frueher wurde direkt eine Stripe-Checkout-Session verlinkt - diese laeuft
+    aber nach 24h ab. Wenn der Kunde die Mail spaeter oeffnet, klickt er auf
+    einen toten Link. Jetzt zeigt der Button auf eine eigene Route
+    ``/api/kirmes/invoices/{invoice_id}/pay?t={token}``, die bei jedem Klick
+    eine frische Stripe-Session erstellt und den Kunden dorthin weiterleitet.
+    Token = HMAC-Signatur ueber invoice_id (kein User muss die URL raten).
     """
     stripe_key = os.environ.get("STRIPE_API_KEY")
     if not stripe_key or amount is None or float(amount) < 0.5:
         return None
     try:
+        import hmac, hashlib
+        secret = (os.environ.get("SECRET_KEY") or os.environ.get("JWT_SECRET") or "kirmes-pay-fallback").encode()
+        token = hmac.new(secret, inv["id"].encode(), hashlib.sha256).hexdigest()[:24]
+        pay_url = f"{origin_url}/api/kirmes/invoices/{inv['id']}/pay?t={token}"
+        # Cache Link + Betrag auf der Rechnung damit spaeter sichtbar
+        await _db.kirmes_invoices.update_one(
+            {"id": inv["id"]},
+            {"$set": {
+                "payment_link_url": pay_url,
+                "payment_link_amount": round(float(amount), 2),
+                "payment_link_created_at": datetime.now(timezone.utc).isoformat(),
+                "payment_link_error": None,
+            }},
+        )
+        return pay_url
+    except Exception as e:
+        logger.error(f"[kirmes] Could not create payment redirect for invoice {inv.get('invoice_number')}: {e}")
+        try:
+            await _db.kirmes_invoices.update_one(
+                {"id": inv["id"]},
+                {"$set": {"payment_link_error": str(e)[:300],
+                          "payment_link_error_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        except Exception:
+            pass
+        return None
+
+
+@router.get("/invoices/{invoice_id}/pay")
+async def redirect_to_stripe_checkout(invoice_id: str, t: str, request: Request):
+    """Dauerhafter Kunden-Zahlungslink: erstellt frische Stripe-Session
+    bei jedem Aufruf und leitet weiter. Token-basiert (HMAC ueber invoice_id).
+    """
+    from fastapi.responses import RedirectResponse, HTMLResponse
+    import hmac, hashlib
+    secret = (os.environ.get("SECRET_KEY") or os.environ.get("JWT_SECRET") or "kirmes-pay-fallback").encode()
+    expected = hmac.new(secret, invoice_id.encode(), hashlib.sha256).hexdigest()[:24]
+    if not hmac.compare_digest(expected, t or ""):
+        return HTMLResponse("<h1>Ungültiger Zahlungslink</h1><p>Der Link ist ungültig oder wurde manipuliert.</p>", status_code=400)
+
+    inv = await _db.kirmes_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        return HTMLResponse("<h1>Rechnung nicht gefunden</h1>", status_code=404)
+
+    # Refund oder bereits bezahlt? → Info-Seite statt Checkout
+    if inv.get("payment_status") == "bezahlt":
+        return HTMLResponse(
+            "<h1 style='font-family:sans-serif'>Bereits bezahlt</h1>"
+            f"<p>Die Rechnung {inv.get('invoice_number')} ist bereits als bezahlt markiert. Vielen Dank!</p>",
+            status_code=200,
+        )
+    refund_exists = await _db.payment_transactions.find_one({
+        "invoice_id": invoice_id,
+        "$or": [{"refund_status": {"$in": ["succeeded", "pending"]}}, {"type": "refund"}],
+    })
+    if refund_exists or inv.get("payment_status") in ("storniert", "erstattet", "rueckerstattet", "refunded"):
+        return HTMLResponse(
+            "<h1 style='font-family:sans-serif'>Rechnung erstattet</h1>"
+            "<p>Diese Rechnung wurde bereits erstattet oder storniert. Bitte kontaktieren Sie uns falls Fragen bestehen.</p>",
+            status_code=200,
+        )
+
+    brutto = float(inv.get("brutto", 0) or 0)
+    deposit_applied = float(inv.get("deposit_applied", 0) or 0)
+    open_balance = round(max(0.0, brutto - deposit_applied), 2)
+    if open_balance < 0.5:
+        return HTMLResponse(
+            "<h1 style='font-family:sans-serif'>Kein offener Betrag</h1>"
+            "<p>Diese Rechnung hat keinen offenen Betrag mehr. Vielen Dank!</p>",
+            status_code=200,
+        )
+
+    origin_url = (
+        os.environ.get("PUBLIC_APP_URL")
+        or (request.headers.get("origin") or "").rstrip("/")
+        or str(request.base_url).rstrip("/")
+    )
+    from urllib.parse import urlparse
+    parsed = urlparse(origin_url)
+    if parsed.scheme and parsed.netloc:
+        origin_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    stripe_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_key:
+        return HTMLResponse("<h1>Zahlung derzeit nicht möglich</h1><p>Bitte überweisen Sie den Betrag auf das in der Rechnung angegebene Konto.</p>", status_code=503)
+
+    try:
         from emergentintegrations.payments.stripe.checkout import (
-            StripeCheckout,
-            CheckoutSessionRequest,
+            StripeCheckout, CheckoutSessionRequest,
         )
         webhook_url = f"{origin_url}/api/payments/webhook/stripe"
         success_url = f"{origin_url}/rechnung/bezahlt?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{origin_url}/rechnung/abgebrochen"
-        metadata = {
-            "type": "invoice",
-            "invoice_id": inv["id"],
-            "invoice_number": inv.get("invoice_number", ""),
-            "event_name": inv.get("event_name", ""),
-        }
-        # Zahlungsmethoden aus ENV konfigurierbar. Default 'card' allein - PayPal muss im Stripe-Dashboard
-        # aktiviert sein, sonst schlaegt die Checkout-Erstellung fehl.
+        metadata = {"type": "invoice", "invoice_id": invoice_id,
+                    "invoice_number": inv.get("invoice_number", ""),
+                    "event_name": inv.get("event_name", "")}
         pm_env = os.environ.get("STRIPE_INVOICE_PAYMENT_METHODS", "card")
         payment_methods = [m.strip() for m in pm_env.split(",") if m.strip()]
         stripe = StripeCheckout(api_key=stripe_key, webhook_url=webhook_url)
         checkout_req = CheckoutSessionRequest(
-            amount=round(float(amount), 2),
-            currency="eur",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata=metadata,
-            payment_methods=payment_methods,
+            amount=open_balance, currency="eur",
+            success_url=success_url, cancel_url=cancel_url,
+            metadata=metadata, payment_methods=payment_methods,
         )
         try:
             session = await stripe.create_checkout_session(checkout_req)
-        except Exception as first_err:
-            # Fallback: wenn eine Payment-Methode nicht aktiviert ist, versuche noch einmal nur mit 'card'
-            if "card" not in payment_methods or len(payment_methods) == 1:
+        except Exception:
+            if len(payment_methods) > 1:
+                checkout_req.payment_methods = ["card"]
+                session = await stripe.create_checkout_session(checkout_req)
+            else:
                 raise
-            logger.warning(
-                f"[kirmes] Stripe rejected payment_methods={payment_methods} for invoice "
-                f"{inv.get('invoice_number')} ({first_err}). Retrying with card-only."
-            )
-            checkout_req.payment_methods = ["card"]
-            session = await stripe.create_checkout_session(checkout_req)
 
-        # Persist a payment_transactions row so the webhook can auto-close the invoice
         await _db.payment_transactions.insert_one({
             "id": str(uuid.uuid4()),
             "session_id": session.session_id,
             "type": "invoice",
-            "invoice_id": inv["id"],
+            "invoice_id": invoice_id,
             "invoice_number": inv.get("invoice_number", ""),
-            "amount": round(float(amount), 2),
+            "amount": open_balance,
             "currency": "eur",
             "payment_status": "pending",
             "metadata": metadata,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        # Also cache the latest link on the invoice itself so we don't create endless sessions on re-send
-        await _db.kirmes_invoices.update_one(
-            {"id": inv["id"]},
-            {"$set": {
-                "payment_link_url": session.url,
-                "payment_link_session_id": session.session_id,
-                "payment_link_amount": round(float(amount), 2),
-                "payment_link_created_at": datetime.now(timezone.utc).isoformat(),
-            }},
-        )
-        return session.url
+        return RedirectResponse(url=session.url, status_code=302)
     except Exception as e:
-        logger.error(f"[kirmes] Could not create Stripe payment link for invoice {inv.get('invoice_number')}: {e}")
-        # Persist the failure so admins can see WHY the button is missing
-        try:
-            await _db.kirmes_invoices.update_one(
-                {"id": inv["id"]},
-                {"$set": {
-                    "payment_link_error": str(e)[:300],
-                    "payment_link_error_at": datetime.now(timezone.utc).isoformat(),
-                }},
-            )
-        except Exception:
-            pass
-        return None
+        logger.error(f"[kirmes] pay-redirect: Stripe session failed for {invoice_id}: {e}")
+        return HTMLResponse(
+            f"<h1 style='font-family:sans-serif'>Zahlung derzeit nicht möglich</h1>"
+            f"<p>Fehler: {str(e)[:200]}</p>"
+            f"<p>Bitte überweisen Sie {open_balance:.2f} EUR auf das in der Rechnung angegebene Konto.</p>",
+            status_code=503,
+        )
 
 
 @router.post("/invoices/{invoice_id}/send")
