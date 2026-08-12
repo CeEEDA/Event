@@ -388,20 +388,20 @@ export default function EinsatzplanungPage() {
   return (
     <div className="min-h-screen bg-gray-50" data-testid="einsatzplanung-page">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/hub")} className="text-gray-500 hover:text-gray-700" data-testid="back-btn">
+        <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <button onClick={() => navigate("/hub")} className="text-gray-500 hover:text-gray-700 flex-shrink-0" data-testid="back-btn">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <CalendarDays className="w-5 h-5 text-indigo-600" />
-            <h1 className="text-lg font-semibold text-gray-900">Einsatzplanung</h1>
+            <CalendarDays className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+            <h1 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Einsatzplanung</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 order-3 md:order-none w-full md:w-auto justify-center">
             <button onClick={prevWeek} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="prev-week"><ChevronLeft className="w-5 h-5" /></button>
-            <span className="text-sm font-medium text-gray-700 min-w-[200px] text-center">{weekKey} · {weekLabel}</span>
+            <span className="text-xs sm:text-sm font-medium text-gray-700 min-w-[150px] sm:min-w-[200px] text-center truncate">{weekKey} · {weekLabel}</span>
             <button onClick={nextWeek} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="next-week"><ChevronRight className="w-5 h-5" /></button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             {copySource && (
               <div className="flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-lg px-3 py-1.5">
                 <Copy className="w-4 h-4 text-amber-600" />
@@ -474,13 +474,13 @@ export default function EinsatzplanungPage() {
         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
             Aufträge diese Woche
-            {selectedJob && <span className="ml-2 text-indigo-600 normal-case">— Klicke auf eine Zelle zum Zuweisen</span>}
+            {selectedJob && <span className="ml-2 text-indigo-600 normal-case hidden sm:inline">— Klicke auf eine Zelle zum Zuweisen</span>}
           </p>
-          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-[11px]" data-testid="order-filter">
+          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-[10px] sm:text-[11px]" data-testid="order-filter">
             {[
-              { key: "crew", label: "Nur Personal" },
-              { key: "confirmed", label: "Alle bestätigten" },
-              { key: "all", label: "Alle Jobs" },
+              { key: "crew", label: "Personal", labelLong: "Nur Personal" },
+              { key: "confirmed", label: "Bestätigt", labelLong: "Alle bestätigten" },
+              { key: "all", label: "Alle", labelLong: "Alle Jobs" },
             ].map(opt => {
               // "Nur Personal" = bestaetigt UND hat Personal (EpiRent-Crew oder manueller Bedarf).
               // "Alle bestaetigten" = bestaetigt (auch ohne Personal-Definition).
@@ -499,10 +499,12 @@ export default function EinsatzplanungPage() {
                   : orders.length;
               return (
                 <button key={opt.key} onClick={() => setOrderFilter(opt.key)}
-                  className={`px-3 py-1.5 transition ${orderFilter === opt.key ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-indigo-50"}`}
+                  className={`px-2 sm:px-3 py-1.5 transition ${orderFilter === opt.key ? "bg-indigo-600 text-white" : "bg-white text-gray-600 hover:bg-indigo-50"}`}
                   data-testid={`order-filter-${opt.key}`}
                 >
-                  {opt.label} <span className={`ml-1 text-[10px] ${orderFilter === opt.key ? "text-indigo-200" : "text-gray-400"}`}>({count})</span>
+                  <span className="sm:hidden">{opt.label}</span>
+                  <span className="hidden sm:inline">{opt.labelLong}</span>
+                  <span className={`ml-1 text-[10px] ${orderFilter === opt.key ? "text-indigo-200" : "text-gray-400"}`}>({count})</span>
                 </button>
               );
             })}
@@ -640,21 +642,25 @@ export default function EinsatzplanungPage() {
       </div>
 
       {/* Weekly Grid */}
-      <div className="max-w-[1600px] mx-auto px-4 py-4">
+      <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-4">
+        {/* Mobile-Hinweis: horizontal wischen */}
+        <div className="md:hidden flex items-center justify-center gap-1 text-[10px] text-gray-400 mb-1.5" data-testid="mobile-scroll-hint">
+          <ChevronLeft className="w-3 h-3" /> Wische horizontal für alle 7 Tage <ChevronRight className="w-3 h-3" />
+        </div>
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full text-xs" data-testid="shift-grid">
             <thead>
               <tr className="border-b-2 border-gray-300">
-                <th className="text-left px-3 py-2 sticky left-0 bg-white z-10 min-w-[140px] border-r-2 border-gray-200">
+                <th className="text-left px-1.5 sm:px-3 py-2 sticky left-0 bg-white z-10 min-w-[90px] sm:min-w-[140px] border-r-2 border-gray-200">
                   <div className="flex items-center gap-1.5 text-[10px] text-gray-400 uppercase font-semibold">
-                    <Users className="w-3.5 h-3.5" /> Mitarbeiter
+                    <Users className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Mitarbeiter</span>
                   </div>
                 </th>
                 {weekDates.map((d, i) => {
                   const isToday = d === new Date().toISOString().split("T")[0];
                   const isSun = i === 6;
                   return (
-                    <th key={d} className={`text-center px-1 py-2 min-w-[140px] border-r border-gray-200 last:border-r-0 ${isToday ? "bg-indigo-50" : ""} ${isSun ? "bg-red-50/50" : ""}`}>
+                    <th key={d} className={`text-center px-1 py-2 min-w-[100px] sm:min-w-[140px] border-r border-gray-200 last:border-r-0 ${isToday ? "bg-indigo-50" : ""} ${isSun ? "bg-red-50/50" : ""}`}>
                       <p className={`text-[10px] uppercase font-semibold ${isToday ? "text-indigo-600" : isSun ? "text-red-500" : "text-gray-400"}`}>{WEEKDAYS[i]}</p>
                       <p className={`text-sm font-bold ${isToday ? "text-indigo-700" : "text-gray-700"}`}>{formatDateShort(d)}</p>
                     </th>
@@ -665,9 +671,9 @@ export default function EinsatzplanungPage() {
             <tbody>
               {users.map(user => (
                 <tr key={user.id} className="border-b-2 border-gray-200 hover:bg-gray-50/50" data-testid={`row-${user.id}`}>
-                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10 border-r-2 border-gray-200">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-medium text-gray-900 truncate text-xs">{user.name}</p>
+                  <td className="px-1.5 sm:px-3 py-1.5 sticky left-0 bg-white z-10 border-r-2 border-gray-200 max-w-[90px] sm:max-w-none">
+                    <div className="flex items-center justify-between gap-1 sm:gap-2">
+                      <p className="font-medium text-gray-900 truncate text-[11px] sm:text-xs">{user.name}</p>
                       {offdayBalances[user.id] !== undefined && (
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${
                           offdayBalances[user.id] > 0 ? "bg-violet-100 text-violet-700" :
