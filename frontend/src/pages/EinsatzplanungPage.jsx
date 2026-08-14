@@ -397,33 +397,34 @@ export default function EinsatzplanungPage() {
   return (
     <div className="min-h-screen bg-gray-50" data-testid="einsatzplanung-page">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 flex-wrap overflow-x-hidden">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink">
             <button onClick={() => navigate("/hub")} className="text-gray-500 hover:text-gray-700 flex-shrink-0" data-testid="back-btn">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <CalendarDays className="w-5 h-5 text-indigo-600 flex-shrink-0" />
             <h1 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Einsatzplanung</h1>
           </div>
-          <div className="flex items-center gap-1 sm:gap-2 order-3 md:order-none w-full md:w-auto justify-center">
+          {/* Wochennav oben: nur Desktop - Mobile hat die Bottom-Bar */}
+          <div className="hidden md:flex items-center gap-1 sm:gap-2 order-3 md:order-none justify-center">
             <button onClick={prevWeek} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="prev-week"><ChevronLeft className="w-5 h-5" /></button>
             <span className="text-xs sm:text-sm font-medium text-gray-700 min-w-[150px] sm:min-w-[200px] text-center truncate">{weekKey} · {weekLabel}</span>
             <button onClick={nextWeek} className="p-1.5 rounded-lg hover:bg-gray-100" data-testid="next-week"><ChevronRight className="w-5 h-5" /></button>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-end min-w-0">
             {copySource && (
-              <div className="flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-lg px-3 py-1.5">
-                <Copy className="w-4 h-4 text-amber-600" />
-                <span className="text-xs font-medium text-amber-800 max-w-[150px] truncate">{copySource.order_name || "Aufgabe"}</span>
-                <span className="text-[10px] text-amber-600">→ Zelle klicken zum Einfügen</span>
+              <div className="flex items-center gap-2 bg-amber-100 border border-amber-300 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5">
+                <Copy className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span className="text-xs font-medium text-amber-800 max-w-[80px] sm:max-w-[150px] truncate">{copySource.order_name || "Aufgabe"}</span>
+                <span className="text-[10px] text-amber-600 hidden sm:inline">→ Zelle klicken zum Einfügen</span>
                 <button onClick={() => setCopySource(null)} className="text-amber-500 hover:text-amber-700" data-testid="cancel-copy"><X className="w-3.5 h-3.5" /></button>
               </div>
             )}
             {selectedJob && (
-              <div className="flex items-center gap-2 bg-indigo-100 border border-indigo-300 rounded-lg px-3 py-1.5">
-                <UserPlus className="w-4 h-4 text-indigo-600" />
-                <span className="text-xs font-medium text-indigo-800 max-w-[150px] truncate">{selectedJob.event || selectedJob.order_no}</span>
-                <label className="flex items-center gap-1.5 text-xs text-indigo-800 cursor-pointer select-none ml-1 pl-2 border-l border-indigo-300"
+              <div className="flex items-center gap-2 bg-indigo-100 border border-indigo-300 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5">
+                <UserPlus className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                <span className="text-xs font-medium text-indigo-800 max-w-[80px] sm:max-w-[150px] truncate">{selectedJob.event || selectedJob.order_no}</span>
+                <label className="flex items-center gap-1 sm:gap-1.5 text-xs text-indigo-800 cursor-pointer select-none ml-1 pl-1 sm:pl-2 border-l border-indigo-300"
                   title="Bei Klick auf Mitarbeiter werden alle Tage von Dispo-Start bis Dispo-Ende zugewiesen">
                   <input
                     type="checkbox"
@@ -432,12 +433,13 @@ export default function EinsatzplanungPage() {
                     className="w-3.5 h-3.5 accent-indigo-600"
                     data-testid="span-whole-job-toggle"
                   />
-                  Alle Tage
+                  <span className="hidden sm:inline">Alle Tage</span>
+                  <span className="sm:hidden">Alle</span>
                 </label>
                 <button onClick={() => { setSelectedJob(null); setSpanWholeJob(false); }} className="text-indigo-500 hover:text-indigo-700"><X className="w-3.5 h-3.5" /></button>
               </div>
             )}
-            {released && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Freigegeben</span>}
+            {released && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Freigegeben</span></span>}
             {!canEdit && (
               <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-1 flex items-center gap-1" data-testid="einsatzplanung-readonly-badge" title="Nur Admin oder Mitarbeiter mit aktiver Einsatzplanungs-Berechtigung können bearbeiten">
                 <Eye className="w-3.5 h-3.5" /> Nur Ansicht
@@ -454,11 +456,12 @@ export default function EinsatzplanungPage() {
                 disabled={syncing}
                 size="sm"
                 variant="outline"
+                className="px-2 sm:px-3"
                 data-testid="einsatzplanung-sync-btn"
                 title="EpiRent-Aufträge & Personalbedarfe aktualisieren"
               >
-                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Synchronisiere..." : "Aktualisieren"}
+                <RefreshCw className={`w-3.5 h-3.5 sm:mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{syncing ? "Synchronisiere..." : "Aktualisieren"}</span>
               </Button>
             )}
             {canEdit && (
@@ -466,16 +469,18 @@ export default function EinsatzplanungPage() {
                 onClick={() => { setOffdayMode(v => !v); setSelectedJob(null); setCopySource(null); }}
                 size="sm"
                 variant={offdayMode ? "default" : "outline"}
-                className={offdayMode ? "bg-violet-600 hover:bg-violet-700" : "border-violet-300 text-violet-700 hover:bg-violet-50"}
+                className={`px-2 sm:px-3 ${offdayMode ? "bg-violet-600 hover:bg-violet-700" : "border-violet-300 text-violet-700 hover:bg-violet-50"}`}
                 data-testid="offday-mode-toggle"
                 title="Offday-Modus: Klick auf Zelle vergibt einen Ausgleichstag und zieht ihn vom Saldo ab"
               >
-                <CalendarCheck2 className="w-3.5 h-3.5 mr-1.5" /> Offday {offdayMode ? "AN" : ""}
+                <CalendarCheck2 className="w-3.5 h-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">Offday {offdayMode ? "AN" : ""}</span>
               </Button>
             )}
             {canEdit && (
-              <Button onClick={releasePlan} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="release-plan-btn">
-                <Send className="w-3.5 h-3.5 mr-1.5" /> Freigeben
+              <Button onClick={releasePlan} size="sm" className="bg-indigo-600 hover:bg-indigo-700 px-2 sm:px-3" data-testid="release-plan-btn">
+                <Send className="w-3.5 h-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">Freigeben</span>
               </Button>
             )}
           </div>
