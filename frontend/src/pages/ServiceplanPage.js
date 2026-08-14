@@ -125,9 +125,13 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
   const [form, setForm] = useState({
     performed_by: user?.name || "",
     performed_at: new Date().toISOString().split("T")[0],
-    hours_at_service: "",
-    next_maintenance_months: "",
-    next_maintenance_hours: "",
+    // Vorbelegung mit aktuellen Live-Betriebsstunden aus Power Monitoring
+    // (falls vorhanden). Sonst leer -> User traegt es manuell ein.
+    hours_at_service: planDetail?.current_hours && planDetail.current_hours > 0
+      ? String(Math.round(planDetail.current_hours))
+      : "",
+    next_maintenance_months: planDetail?.interval_months ? String(planDetail.interval_months) : "",
+    next_maintenance_hours: planDetail?.interval_hours ? String(planDetail.interval_hours) : "",
     mechanical: initChecklist(MECHANICAL_ITEMS),
     electrical: initChecklist(ELECTRICAL_ITEMS),
     measurements: MEASUREMENT_FIELDS.reduce((acc, f) => { acc[f.key] = ""; return acc; }, {}),
@@ -805,8 +809,16 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
 
   const status = getServiceStatus(planDetail);
   const currentHrs = planDetail.current_hours || 0;
-  const lastServiceHrs = planDetail.latest_entry?.hours_at_service || 0;
-  const hrsUntilNext = (planDetail.interval_hours || 500) - (currentHrs - lastServiceHrs);
+  const hasLiveHrs = planDetail.current_hours_source === "telemetry";
+  const lastEntry = planDetail.latest_entry;
+  const lastServiceHrs = lastEntry?.hours_at_service;
+  // Naechster Service = hours_at_service + interval (Timo-Regel: Service bei 2456 + 500 = 2956).
+  // Stunden bis Wartung = naechster Service - aktuelle Betriebsstunden.
+  const intervalHours = planDetail.interval_hours || 500;
+  const nextServiceHrs = lastServiceHrs != null ? (lastServiceHrs + intervalHours) : null;
+  const hrsUntilNext = (nextServiceHrs != null && currentHrs > 0)
+    ? Math.round(nextServiceHrs - currentHrs)
+    : null;
 
   return (
     <div>
@@ -834,10 +846,30 @@ function ServicePlanDetail({ plan, onBack, onUpdate }) {
           <div className={`px-3 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>{status.label}</div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-gray-100">
-          <div><p className="text-xs text-gray-400">Akt. Betriebsstunden</p><p className="text-sm font-bold text-gray-900">{currentHrs || "–"} h</p></div>
-          <div><p className="text-xs text-gray-400">Stunden bis Wartung</p><p className={`text-sm font-bold ${hrsUntilNext <= 50 ? "text-amber-600" : hrsUntilNext <= 0 ? "text-red-600" : "text-gray-900"}`}>{planDetail.latest_entry ? `${hrsUntilNext} h` : "–"}</p></div>
+          <div>
+            <p className="text-xs text-gray-400 flex items-center gap-1">
+              Akt. Betriebsstunden
+              {hasLiveHrs && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded-full font-semibold uppercase" title="Live aus Power Monitoring">live</span>}
+            </p>
+            <p className="text-sm font-bold text-gray-900" data-testid="plan-current-hours">{currentHrs > 0 ? `${Math.round(currentHrs)} h` : "–"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400">Stunden bis Wartung</p>
+            {hrsUntilNext == null ? (
+              <p className="text-sm font-medium text-gray-400" title={lastEntry && lastServiceHrs == null ? "Bitte 'Stunden zum Service' im letzten Eintrag pflegen" : "Warte auf Telemetrie"}>
+                {lastEntry ? (lastServiceHrs == null ? "Stunden fehlen" : "–") : "–"}
+              </p>
+            ) : (
+              <p className={`text-sm font-bold ${hrsUntilNext <= 0 ? "text-red-600" : hrsUntilNext <= 50 ? "text-amber-600" : "text-gray-900"}`} data-testid="plan-hrs-until-next">
+                {hrsUntilNext} h
+              </p>
+            )}
+            {nextServiceHrs != null && (
+              <p className="text-[10px] text-gray-400">→ nächster: {Math.round(nextServiceHrs)} h</p>
+            )}
+          </div>
           <div><p className="text-xs text-gray-400">Intervall</p><p className="text-sm font-medium text-gray-900">{planDetail.interval_hours || "–"} h / {planDetail.interval_months || "–"} Mon.</p></div>
-          <div><p className="text-xs text-gray-400">Letzter Service</p><p className="text-sm font-medium text-gray-900">{planDetail.latest_entry ? new Date(planDetail.latest_entry.performed_at).toLocaleDateString("de-DE") : "–"}</p></div>
+          <div><p className="text-xs text-gray-400">Letzter Service</p><p className="text-sm font-medium text-gray-900">{lastEntry ? new Date(lastEntry.performed_at).toLocaleDateString("de-DE") : "–"}</p></div>
         </div>
       </div>
 

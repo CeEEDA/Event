@@ -106,6 +106,19 @@ async def list_service_plans(user: dict = Depends(require_staff)):
         plan["device_status"] = device.get("status", "aktiv")
         plan["device_code"] = device.get("device_code", "")
 
+        # Live-Betriebsstunden aus Telemetrie (latest_snapshot) uebernehmen,
+        # ueberschreibt den manuell in service_plans gepflegten Wert.
+        snap = device.get("latest_snapshot") or {}
+        live_hrs = snap.get("engine_run_hours")
+        if live_hrs is None:
+            live_hrs = snap.get("hours_run")
+        if live_hrs is not None:
+            try:
+                plan["current_hours"] = float(live_hrs)
+                plan["current_hours_source"] = "telemetry"
+            except (TypeError, ValueError):
+                pass
+
         # Get latest maintenance entry
         latest_entry = await db.maintenance_entries.find_one(
             {"service_plan_id": plan["id"]},
@@ -364,11 +377,26 @@ async def get_service_plan(plan_id: str, user: dict = Depends(require_staff)):
         plan["device_user_field"] = device.get("user_field", "")
         plan["device_status"] = device.get("status", "aktiv")
 
+        # Live-Betriebsstunden aus Telemetrie (latest_snapshot) uebernehmen.
+        # Fallback: manuell gepflegter Wert in service_plans.current_hours.
+        snap = device.get("latest_snapshot") or {}
+        live_hrs = snap.get("engine_run_hours")
+        if live_hrs is None:
+            live_hrs = snap.get("hours_run")
+        if live_hrs is not None:
+            try:
+                plan["current_hours"] = float(live_hrs)
+                plan["current_hours_source"] = "telemetry"
+            except (TypeError, ValueError):
+                pass
+
     # Get all maintenance entries
     entries = await db.maintenance_entries.find(
         {"service_plan_id": plan_id}, {"_id": 0}
     ).sort([("performed_at", -1), ("created_at", -1)]).to_list(500)
     plan["entries"] = entries
+    # Neuester Eintrag fuer Frontend-Header (Letzter Service / Stunden bis Wartung)
+    plan["latest_entry"] = entries[0] if entries else None
 
     return plan
 
@@ -481,10 +509,24 @@ async def get_device_service_info(device_id: str, user: dict = Depends(require_s
     if not plan:
         return {"has_plan": False, "device_id": device_id}
 
+    # Live-Betriebsstunden aus Device-Telemetrie
+    device = await db.devices.find_one({"id": device_id}, {"_id": 0, "latest_snapshot": 1})
+    snap = (device or {}).get("latest_snapshot") or {}
+    live_hrs = snap.get("engine_run_hours")
+    if live_hrs is None:
+        live_hrs = snap.get("hours_run")
+    if live_hrs is not None:
+        try:
+            plan["current_hours"] = float(live_hrs)
+            plan["current_hours_source"] = "telemetry"
+        except (TypeError, ValueError):
+            pass
+
     entries = await db.maintenance_entries.find(
         {"service_plan_id": plan["id"]}, {"_id": 0}
     ).sort("performed_at", -1).to_list(500)
     plan["entries"] = entries
+    plan["latest_entry"] = entries[0] if entries else None
     plan["has_plan"] = True
 
     return plan
