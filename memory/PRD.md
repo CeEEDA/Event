@@ -19,6 +19,9 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-14 (Bugfix Einsatzplanung Notiz-Edit)
+- **Bugfix: Zuweisung verschwindet beim Notiz-Edit** (`/app/frontend/src/pages/EinsatzplanungPage.jsx` + `/app/backend/routes/employee.py`): Beim Editieren einer bestehenden Zuweisung via Stift-Icon sendete das Frontend `user_id` und `date` NICHT im Update-Payload → Backend setzte beide Felder auf `None` → Assignment war nicht mehr an den User gekoppelt und verschwand aus der Ansicht. Fix: Frontend `saveAssignment` schickt `user_id`/`date` aus `editCell` mit; Backend defensive Guard – falls Felder fehlen, bleiben die alten `prev`-Werte erhalten. Curl-Test mit "alten" Payload bestätigt: `user_id`/`date`/`note` bleiben nach Update korrekt gesetzt.
+
 ### 2026-07-16 (später Nachmittag)
 - **ZUGFeRD / Factur-X / XRechnung Parser im Heuristic-Fallback** (`/app/backend/services/zugferd_parser.py` + `/app/backend/services/heuristic_analyzer.py`): Neue Byte-basierte Helfer `extract_zugferd_xml_from_bytes()` + `try_zugferd_parse_bytes()`. `analyze_document_fallback()` prüft PDF jetzt zuerst auf eingebettete `factur-x.xml` / `zugferd-invoice.xml` / `xrechnung.xml`. Wenn gefunden: Absender, Empfänger, Rechnungsnummer, Datum, Betrag, IBAN, Waehrung kommen direkt aus der strukturierten XML (`_authoritative_source="zugferd_xml"`). Richtung (Eingang/Ausgang) wird über BuyerTradeParty vs. Firmen-Marker bestimmt – behebt Fehlklassifikation von PDFs mit irreführendem Sichttext (z.B. Mathias Normann). End-to-End Test grün.
 - **Bank-Statuszeile in Eingangsrechnungen** (`GET /api/incoming-invoices/bank-status` + Header-Zeile in `EingangsrechnungenPage.jsx`): Übersicht aller konfigurierten Banken (Sparkasse + Volksbank) mit letztem Sync-Zeitpunkt, SCA-Verlängerungs-Countdown und Enabled-Status. UI-Icon je Zustand (Wifi/WifiOff/ShieldAlert).

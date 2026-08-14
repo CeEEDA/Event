@@ -3650,12 +3650,19 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
         # Bei Update: vorhandenen Eintrag holen, um is_offday Flip
         # (war-Offday -> wird-normal oder umgekehrt) korrekt zu behandeln.
         prev = await db.shift_assignments.find_one({"id": assignment_id}, {"_id": 0})
+        if not prev:
+            raise HTTPException(status_code=404, detail="Assignment nicht gefunden")
+        # Defensive: Falls user_id/date im Payload fehlen (z.B. Notiz-Edit),
+        # NIEMALS den bestehenden Eintrag entkoppeln -- alte Werte behalten.
+        eff_user_id = data.get("user_id") or prev.get("user_id")
+        eff_date = data.get("date") or prev.get("date")
+        eff_week_key = data.get("week_key") or prev.get("week_key")
         # Konflikt-Pruefung beim Update auch (z.B. wenn Datum geaendert wird)
-        await _check_day_conflict(data.get("user_id"), data.get("date"),
+        await _check_day_conflict(eff_user_id, eff_date,
                                   bool(data.get("is_offday")), exclude_id=assignment_id)
         await db.shift_assignments.update_one({"id": assignment_id}, {"$set": {
-            "user_id": data.get("user_id"),
-            "date": data.get("date"),
+            "user_id": eff_user_id,
+            "date": eff_date,
             "order_pk": data.get("order_pk"),
             "order_name": data.get("order_name", ""),
             "role": data.get("role", ""),
@@ -3663,7 +3670,7 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             "start_time": data.get("start_time", ""),
             "end_time": data.get("end_time", ""),
             "is_offday": bool(data.get("is_offday")),
-            "week_key": data.get("week_key"),
+            "week_key": eff_week_key,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }})
         # Offday-Konto-Update bei Statuswechsel
@@ -3674,10 +3681,10 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
             if was_off and not now_off:
                 await release_offday_for_assignment(assignment_id)
             elif now_off and not was_off:
-                target = await db.users.find_one({"id": data.get("user_id")}, {"_id": 0, "name": 1})
+                target = await db.users.find_one({"id": eff_user_id}, {"_id": 0, "name": 1})
                 await consume_offday_for_assignment(
-                    data.get("user_id"), (target or {}).get("name", ""),
-                    data.get("date"), assignment_id,
+                    eff_user_id, (target or {}).get("name", ""),
+                    eff_date, assignment_id,
                     caller.get("name") or caller.get("email") or "admin",
                 )
         except Exception as _e:

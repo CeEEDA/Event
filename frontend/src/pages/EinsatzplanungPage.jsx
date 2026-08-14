@@ -338,6 +338,8 @@ export default function EinsatzplanungPage() {
     const payload = id ? {
       id,
       ...editForm,
+      user_id: editCell?.userId,
+      date: editCell?.date,
       order_pk: editForm.order_pk ? parseInt(editForm.order_pk) : null,
       week_key: weekKey,
     } : {
