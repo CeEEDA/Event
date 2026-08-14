@@ -53,6 +53,28 @@ def _has_verwaltung(caller: dict) -> bool:
     return False
 
 
+def _is_staff(caller: dict) -> bool:
+    """True fuer Admin oder Mitarbeiter (nicht Kunde). Nur-Lese-Rechte
+    in Einsatzplanung (jeder MA darf den Wochenplan sehen)."""
+    if not caller:
+        return False
+    return caller.get("role") in ("admin", "mitarbeiter")
+
+
+def _can_edit_einsatzplanung(caller: dict) -> bool:
+    """Admin oder Mitarbeiter mit aktivem Modul-Toggle 'einsatzplanung'.
+    Nur diese User duerfen die Einsatzplanung schreibend aendern
+    (Assignments anlegen/aendern/loeschen, Freigabe, Job-Requirements)."""
+    if not caller:
+        return False
+    if caller.get("role") == "admin":
+        return True
+    if caller.get("role") == "mitarbeiter":
+        modules = (caller.get("apps") or {}).get("modules") or {}
+        return modules.get("einsatzplanung") is not False
+    return False
+
+
 def _get_storage_fns():
     from routes.documents import put_object, get_object
     return put_object, get_object
@@ -2674,7 +2696,9 @@ WEEKDAYS = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"
 @router.get("/work-schedule/{user_id}")
 async def get_work_schedule(user_id: str, token: str = Query(...)):
     caller = await _get_user(token)
-    if not _has_verwaltung(caller) and caller["id"] != user_id:
+    # Jeder Staff-User darf Wochenplaene LESEN (Read-only in Einsatzplanung).
+    # Kunden bekommen 403.
+    if not (_is_staff(caller) or caller["id"] == user_id):
         raise HTTPException(status_code=403, detail="Kein Zugriff")
     doc = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
@@ -3476,10 +3500,12 @@ def _iso_week_key(d) -> str:
 
 @router.get("/shift-plan")
 async def get_shift_plan(week: str = Query(...), token: str = Query(...)):
-    """Admin: Get all assignments for a week (e.g. '2026-W15')."""
+    """Get all assignments for a week (e.g. '2026-W15').
+    Jeder eingeloggte Mitarbeiter/Admin darf den Wochenplan LESEN.
+    Aendern/Loeschen erfordert `_can_edit_einsatzplanung`."""
     caller = await _get_user(token)
-    if not _has_verwaltung(caller):
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _is_staff(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
     assignments = await db.shift_assignments.find({"week_key": week}, {"_id": 0}).to_list(1000)
     # Get release status
     release = await db.shift_releases.find_one({"week_key": week}, {"_id": 0})
@@ -3562,8 +3588,8 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
       (Einsatz/Offday) erlaubt - der Tag ist exklusiv geblockt.
     """
     caller = await _get_user(token)
-    if not _has_verwaltung(caller):
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _can_edit_einsatzplanung(caller):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung zum Bearbeiten der Einsatzplanung")
     assignment_id = data.get("id")
 
     async def _check_day_conflict(user_id: str, date_iso: str, is_offday: bool, exclude_id: str | None = None):
@@ -3738,8 +3764,8 @@ async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
     auf das Offday-Konto zurueckgebucht (release) UND das Stundenkonto neu
     berechnet (weil Offday-Status wegfaellt -> Soll wird wieder abgezogen)."""
     caller = await _get_user(token)
-    if not _has_verwaltung(caller):
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _can_edit_einsatzplanung(caller):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung zum Bearbeiten der Einsatzplanung")
     # Vor dem Loeschen: Eintrag laden, um Offday-Status zu erkennen
     prev = await db.shift_assignments.find_one({"id": assignment_id}, {"_id": 0})
     await db.shift_assignments.delete_one({"id": assignment_id})
@@ -3767,10 +3793,10 @@ async def get_job_reqs(week: str = Query(...), token: str = Query(...)):
 
 @router.post("/shift-plan/job-reqs")
 async def upsert_job_req(data: dict = Body(...), token: str = Query(...)):
-    """Admin: Set personnel requirements for a job in a week."""
+    """Set personnel requirements for a job in a week."""
     caller = await _get_user(token)
-    if not _has_verwaltung(caller):
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _can_edit_einsatzplanung(caller):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung zum Bearbeiten der Einsatzplanung")
     order_pk = data.get("order_pk")
     week_key = data.get("week_key")
     existing = await db.shift_job_reqs.find_one({"order_pk": order_pk, "week_key": week_key})
@@ -3788,10 +3814,10 @@ async def upsert_job_req(data: dict = Body(...), token: str = Query(...)):
 
 @router.post("/shift-plan/release")
 async def release_shift_plan(week: str = Query(...), token: str = Query(...)):
-    """Admin: Release a week plan so employees can see it."""
+    """Release a week plan so employees can see it."""
     caller = await _get_user(token)
-    if not _has_verwaltung(caller):
-        raise HTTPException(status_code=403, detail="Nur Admins")
+    if not _can_edit_einsatzplanung(caller):
+        raise HTTPException(status_code=403, detail="Keine Berechtigung zum Bearbeiten der Einsatzplanung")
     await db.shift_releases.update_one({"week_key": week}, {"$set": {
         "week_key": week,
         "released_by": caller["id"],

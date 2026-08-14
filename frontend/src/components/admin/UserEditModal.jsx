@@ -146,11 +146,11 @@ export default function UserEditModal({
               {formData.role === "mitarbeiter" && (
                 <div className="border-t border-gray-200 pt-4 mt-2">
                   <h3 className="font-semibold text-gray-900 mb-3">Hub-Kacheln (Module)</h3>
-                  <p className="text-xs text-gray-500 mb-3">Steuere welche Bereiche der Mitarbeiter im Hub sieht. <strong>Chat, Mitarbeiter-Daten und FAQ sind immer sichtbar.</strong></p>
+                  <p className="text-xs text-gray-500 mb-3">Steuere welche Bereiche der Mitarbeiter im Hub sieht. <strong>Chat, Mitarbeiter-Daten, Einsatzplanung (nur Ansicht) und FAQ sind immer sichtbar.</strong> Der Schalter <em>„Einsatzplanung"</em> steuert, ob der Mitarbeiter den Wochenplan zusätzlich bearbeiten darf (Zuweisungen anlegen/ändern, freigeben, Job-Anforderungen).</p>
                   <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {[
                       { key: "orders", label: "Aufträge" },
-                      { key: "einsatzplanung", label: "Einsatzplanung" },
+                      { key: "einsatzplanung", label: "Einsatzplanung (bearbeiten)" },
                       { key: "kirmes", label: "Kirmes" },
                       { key: "verwaltung", label: "Verwaltung" },
                       { key: "power_monitoring", label: "Power Monitoring" },

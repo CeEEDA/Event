@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, Users, Plus, X, Trash2,
   Check, Send, Palmtree, ThermometerSun, TrendingUp, Clock, Edit2, UserPlus, ExternalLink, Copy,
-  CalendarCheck2, Trees, RefreshCw,
+  CalendarCheck2, Trees, RefreshCw, Eye,
 } from "lucide-react";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -52,6 +53,11 @@ function timeDiffHours(start, end) {
 export default function EinsatzplanungPage() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
+  const { user: authUser, isAdmin } = useAuth();
+  // Bearbeiten erlaubt: Admin ODER Mitarbeiter mit aktivem "einsatzplanung"-Modul.
+  // Alle anderen (inkl. Kunde) sehen den Plan im Nur-Lese-Modus.
+  const canEdit = isAdmin || (authUser?.role === "mitarbeiter"
+    && authUser?.apps?.modules?.einsatzplanung !== false);
   const [weekKey, setWeekKey] = useState(() => getWeekKey(new Date()));
   const [users, setUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -249,6 +255,7 @@ export default function EinsatzplanungPage() {
   };
 
   const handleCellClick = async (userId, date) => {
+    if (!canEdit) return;  // Read-only: Zellklicks ignorieren
     // Offday-Mode: belastet Konto direkt
     if (offdayMode) {
       // Vorab-Check: existiert bereits ein Eintrag fuer diesen Tag?
@@ -431,35 +438,46 @@ export default function EinsatzplanungPage() {
               </div>
             )}
             {released && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Freigegeben</span>}
-            {lastSynced && (
+            {!canEdit && (
+              <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-1 flex items-center gap-1" data-testid="einsatzplanung-readonly-badge" title="Nur Admin oder Mitarbeiter mit aktiver Einsatzplanungs-Berechtigung können bearbeiten">
+                <Eye className="w-3.5 h-3.5" /> Nur Ansicht
+              </span>
+            )}
+            {canEdit && lastSynced && (
               <span className="text-[11px] text-gray-400 hidden md:inline" title={`Zuletzt synchronisiert: ${new Date(lastSynced).toLocaleString("de-DE")}`}>
                 Sync: {new Date(lastSynced).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
-            <Button
-              onClick={triggerSync}
-              disabled={syncing}
-              size="sm"
-              variant="outline"
-              data-testid="einsatzplanung-sync-btn"
-              title="EpiRent-Aufträge & Personalbedarfe aktualisieren"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Synchronisiere..." : "Aktualisieren"}
-            </Button>
-            <Button
-              onClick={() => { setOffdayMode(v => !v); setSelectedJob(null); setCopySource(null); }}
-              size="sm"
-              variant={offdayMode ? "default" : "outline"}
-              className={offdayMode ? "bg-violet-600 hover:bg-violet-700" : "border-violet-300 text-violet-700 hover:bg-violet-50"}
-              data-testid="offday-mode-toggle"
-              title="Offday-Modus: Klick auf Zelle vergibt einen Ausgleichstag und zieht ihn vom Saldo ab"
-            >
-              <CalendarCheck2 className="w-3.5 h-3.5 mr-1.5" /> Offday {offdayMode ? "AN" : ""}
-            </Button>
-            <Button onClick={releasePlan} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="release-plan-btn">
-              <Send className="w-3.5 h-3.5 mr-1.5" /> Freigeben
-            </Button>
+            {canEdit && (
+              <Button
+                onClick={triggerSync}
+                disabled={syncing}
+                size="sm"
+                variant="outline"
+                data-testid="einsatzplanung-sync-btn"
+                title="EpiRent-Aufträge & Personalbedarfe aktualisieren"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Synchronisiere..." : "Aktualisieren"}
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                onClick={() => { setOffdayMode(v => !v); setSelectedJob(null); setCopySource(null); }}
+                size="sm"
+                variant={offdayMode ? "default" : "outline"}
+                className={offdayMode ? "bg-violet-600 hover:bg-violet-700" : "border-violet-300 text-violet-700 hover:bg-violet-50"}
+                data-testid="offday-mode-toggle"
+                title="Offday-Modus: Klick auf Zelle vergibt einen Ausgleichstag und zieht ihn vom Saldo ab"
+              >
+                <CalendarCheck2 className="w-3.5 h-3.5 mr-1.5" /> Offday {offdayMode ? "AN" : ""}
+              </Button>
+            )}
+            {canEdit && (
+              <Button onClick={releasePlan} size="sm" className="bg-indigo-600 hover:bg-indigo-700" data-testid="release-plan-btn">
+                <Send className="w-3.5 h-3.5 mr-1.5" /> Freigeben
+              </Button>
+            )}
           </div>
         </div>
         {offdayMode && (
@@ -539,14 +557,14 @@ export default function EinsatzplanungPage() {
             const pct = needed > 0 ? Math.min(100, Math.round(assigned / needed * 100)) : 0;
             return (
               <div key={pk}
-                className={`flex-shrink-0 border-2 rounded-lg px-3 py-2 text-xs cursor-pointer transition-all min-w-[200px] max-w-[260px] ${
+                className={`flex-shrink-0 border-2 rounded-lg px-3 py-2 text-xs transition-all min-w-[200px] max-w-[260px] ${canEdit ? "cursor-pointer" : ""} ${
                   isSelected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200" :
                   isFull ? "border-green-400 bg-green-50 hover:border-green-500 shadow-sm shadow-green-100" :
                   hasReqs ? "border-orange-200 bg-white hover:border-orange-300" :
                   isUnconfirmed ? "border-dashed border-gray-300 bg-gray-50/60 hover:border-gray-400 opacity-80" :
                   "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30"
                 }`}
-                onClick={() => setSelectedJob(isSelected ? null : o)}
+                onClick={() => canEdit && setSelectedJob(isSelected ? null : o)}
                 data-testid={`order-${pk}`}
               >
                 <div className="flex items-start justify-between gap-1">
@@ -608,22 +626,28 @@ export default function EinsatzplanungPage() {
                       ) : req?.roles ? (
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] text-gray-500 truncate">{req.roles}</p>
-                          <button onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: req?.count || 1, roles: req?.roles || "" }); }}
-                            className="text-gray-400 hover:text-indigo-600 p-0.5" data-testid={`edit-req-${pk}`}>
-                            <Edit2 className="w-3 h-3" />
-                          </button>
+                          {canEdit && (
+                            <button onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: req?.count || 1, roles: req?.roles || "" }); }}
+                              className="text-gray-400 hover:text-indigo-600 p-0.5" data-testid={`edit-req-${pk}`}>
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       ) : null}
                     </div>
                   ) : (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: 1, roles: "" }); }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1 rounded-md border border-dashed border-gray-300 text-gray-400 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors"
-                      data-testid={`add-req-${pk}`}
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span className="text-[10px] font-medium">Personal definieren</span>
-                    </button>
+                    canEdit ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingReq(pk); setReqForm({ count: 1, roles: "" }); }}
+                        className="w-full flex items-center justify-center gap-1.5 py-1 rounded-md border border-dashed border-gray-300 text-gray-400 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors"
+                        data-testid={`add-req-${pk}`}
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span className="text-[10px] font-medium">Personal definieren</span>
+                      </button>
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic text-center py-1">Kein Personalbedarf definiert</p>
+                    )
                   )}
                 </div>
               </div>
@@ -698,11 +722,11 @@ export default function EinsatzplanungPage() {
                     const hasWork = cellAssignments.length > 0;
                     return (
                       <td key={date}
-                        className={`px-1 py-1 align-top relative group cursor-pointer border-r border-gray-200 last:border-r-0 ${
+                        className={`px-1 py-1 align-top relative group border-r border-gray-200 last:border-r-0 ${canEdit ? "cursor-pointer" : ""} ${
                           isToday ? "bg-indigo-50/50" : ""} ${isSun ? "bg-red-50/30" : ""} ${
-                          selectedJob || copySource ? "hover:bg-indigo-100/50 hover:ring-1 hover:ring-indigo-300 hover:ring-inset" : ""
-                        } ${offdayMode ? "hover:bg-violet-100/50 hover:ring-1 hover:ring-violet-300 hover:ring-inset" : ""}`}
-                        onClick={() => !absence && !isEditing && handleCellClick(user.id, date)}
+                          canEdit && (selectedJob || copySource) ? "hover:bg-indigo-100/50 hover:ring-1 hover:ring-indigo-300 hover:ring-inset" : ""
+                        } ${canEdit && offdayMode ? "hover:bg-violet-100/50 hover:ring-1 hover:ring-violet-300 hover:ring-inset" : ""}`}
+                        onClick={() => canEdit && !absence && !isEditing && handleCellClick(user.id, date)}
                       >
                         {absence && (() => {
                           const a = absenceLabel(absence.type);
@@ -729,7 +753,7 @@ export default function EinsatzplanungPage() {
                               </>
                             )}
                             <div className="absolute -top-1 -right-1 flex gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                              {!asgn.is_offday && (
+                              {canEdit && !asgn.is_offday && (
                                 <>
                                   <button onClick={(e) => {
                                     e.stopPropagation();
@@ -757,10 +781,12 @@ export default function EinsatzplanungPage() {
                                   </button>
                                 </>
                               )}
-                              <button onClick={(e) => { e.stopPropagation(); deleteAssignment(asgn.id); }}
-                                className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center" title="Löschen">
-                                <X className="w-2.5 h-2.5" />
-                              </button>
+                              {canEdit && (
+                                <button onClick={(e) => { e.stopPropagation(); deleteAssignment(asgn.id); }}
+                                  className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center" title="Löschen">
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -773,7 +799,7 @@ export default function EinsatzplanungPage() {
                         )}
 
                         {/* Plus button when no selected job */}
-                        {!absence && !isEditing && !selectedJob && (
+                        {canEdit && !absence && !isEditing && !selectedJob && (
                           <button onClick={(e) => { e.stopPropagation(); handleCellClick(user.id, date); }}
                             className="w-full py-0.5 rounded border border-dashed border-transparent hover:border-indigo-300 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center mt-0.5">
                             <Plus className="w-3 h-3 text-indigo-400" />

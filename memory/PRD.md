@@ -19,6 +19,9 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-14 (Einsatzplanung – Lese-/Bearbeitungs-Trennung)
+- **Alle Mitarbeiter sehen Einsatzplanung (Read-Only)** (`/app/frontend/src/pages/HubPage.js` + `/app/frontend/src/pages/EinsatzplanungPage.jsx` + `/app/backend/routes/employee.py`): Die Kachel „Einsatzplanung" wird jetzt jedem Mitarbeiter im Hub angezeigt. Alle können den Wochenplan mit allen Aufgaben & Mitarbeitern sehen. Bearbeitungsrechte (Zuweisungen ändern, Freigabe, Job-Anforderungen, Offday-Vergabe) erfordern jetzt `apps.modules.einsatzplanung !== false` (Toggle in Benutzerverwaltung). Neue Backend-Helper `_is_staff` (Lesen) und `_can_edit_einsatzplanung` (Schreiben); GET `/shift-plan` + `/work-schedule` öffnen für alle Staff, POST/DELETE/release/job-reqs bleiben Editor-only. Frontend zeigt „Nur Ansicht"-Badge und blendet alle Bearbeiten-Icons/Buttons/Cell-Handler aus. Curl-Test grün: MA ohne Toggle → 200 GET, 403 auf allen Schreib-Ops.
+
 ### 2026-02-14 (Bugfix Einsatzplanung Notiz-Edit)
 - **Bugfix: Zuweisung verschwindet beim Notiz-Edit** (`/app/frontend/src/pages/EinsatzplanungPage.jsx` + `/app/backend/routes/employee.py`): Beim Editieren einer bestehenden Zuweisung via Stift-Icon sendete das Frontend `user_id` und `date` NICHT im Update-Payload → Backend setzte beide Felder auf `None` → Assignment war nicht mehr an den User gekoppelt und verschwand aus der Ansicht. Fix: Frontend `saveAssignment` schickt `user_id`/`date` aus `editCell` mit; Backend defensive Guard – falls Felder fehlen, bleiben die alten `prev`-Werte erhalten. Curl-Test mit "alten" Payload bestätigt: `user_id`/`date`/`note` bleiben nach Update korrekt gesetzt.
 
