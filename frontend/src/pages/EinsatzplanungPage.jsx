@@ -489,7 +489,8 @@ export default function EinsatzplanungPage() {
         )}
       </header>
 
-      {/* Jobs with personnel requirements */}
+      {/* Jobs with personnel requirements - nur fuer Editoren */}
+      {canEdit && (
       <div className="max-w-[1600px] mx-auto px-4 pt-4">
         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
@@ -666,6 +667,7 @@ export default function EinsatzplanungPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Weekly Grid */}
       <div className="max-w-[1600px] mx-auto px-2 sm:px-4 py-4">
