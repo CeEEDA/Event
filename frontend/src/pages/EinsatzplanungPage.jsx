@@ -697,11 +697,20 @@ export default function EinsatzplanungPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map(user => (
-                <tr key={user.id} className="border-b-2 border-gray-200 hover:bg-gray-50/50" data-testid={`row-${user.id}`}>
-                  <td className="px-1.5 sm:px-3 py-1.5 sticky left-0 bg-white z-10 border-r-2 border-gray-200 max-w-[90px] sm:max-w-none">
+              {users.map(user => {
+                const isMe = authUser?.id === user.id;
+                return (
+                <tr key={user.id}
+                  className={`border-b-2 border-gray-200 ${isMe ? "bg-indigo-50/40 hover:bg-indigo-50/60" : "hover:bg-gray-50/50"}`}
+                  data-testid={`row-${user.id}`}>
+                  <td className={`px-1.5 sm:px-3 py-1.5 sticky left-0 z-10 border-r-2 border-gray-200 max-w-[90px] sm:max-w-none ${isMe ? "bg-indigo-50 border-l-4 border-l-indigo-500" : "bg-white"}`}>
                     <div className="flex items-center justify-between gap-1 sm:gap-2">
-                      <p className="font-medium text-gray-900 truncate text-[11px] sm:text-xs">{user.name}</p>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className={`font-medium truncate text-[11px] sm:text-xs ${isMe ? "text-indigo-900 font-semibold" : "text-gray-900"}`}>{user.name}</p>
+                        {isMe && (
+                          <span className="text-[9px] font-semibold bg-indigo-600 text-white px-1.5 py-0.5 rounded-full flex-shrink-0" data-testid={`me-badge-${user.id}`}>ICH</span>
+                        )}
+                      </div>
                       {offdayBalances[user.id] !== undefined && (
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${
                           offdayBalances[user.id] > 0 ? "bg-violet-100 text-violet-700" :
@@ -844,11 +853,39 @@ export default function EinsatzplanungPage() {
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Mobile Bottom-Bar: Wochennavigation (nur auf kleinen Screens) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40 flex items-center justify-between px-3 py-2 gap-2" data-testid="mobile-week-nav">
+        <button onClick={prevWeek}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 active:bg-indigo-100 font-medium text-sm min-w-[80px] justify-center"
+          data-testid="mobile-prev-week"
+          aria-label="Vorherige Woche">
+          <ChevronLeft className="w-5 h-5" />
+          <span className="text-xs">KW</span>
+        </button>
+        <button onClick={() => setWeekKey(getWeekKey(new Date()))}
+          className="flex-1 flex flex-col items-center justify-center px-2 py-1.5 rounded-lg bg-gradient-to-b from-indigo-600 to-indigo-700 text-white active:from-indigo-700 active:to-indigo-800"
+          data-testid="mobile-current-week"
+          title="Zur aktuellen Woche springen">
+          <span className="text-[10px] uppercase tracking-wider opacity-80 leading-none">{weekKey}</span>
+          <span className="text-xs font-semibold leading-tight mt-0.5 truncate max-w-[200px]">{weekLabel}</span>
+        </button>
+        <button onClick={nextWeek}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 active:bg-indigo-100 font-medium text-sm min-w-[80px] justify-center"
+          data-testid="mobile-next-week"
+          aria-label="Nächste Woche">
+          <span className="text-xs">KW</span>
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+      {/* Spacer damit letzte Zeile nicht von Bottom-Bar verdeckt wird (nur mobile) */}
+      <div className="md:hidden h-16" aria-hidden="true"></div>
     </div>
   );
 }
