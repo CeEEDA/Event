@@ -2281,6 +2281,196 @@ FINTS_VB_IBAN=DE...`}
 }
 
 
+/* ───── HalloPetra KI-Telefonassistent ───── */
+function HalloPetraSection() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [simulating, setSimulating] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [recent, setRecent] = useState([]);
+
+  const withToken = (extra = {}) => ({ params: { token: localStorage.getItem("token"), ...extra } });
+
+  const loadStatus = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get("/hallopetra/status", withToken());
+      setStatus(r.data);
+    } catch { setStatus(null); }
+    finally { setLoading(false); }
+  };
+
+  const loadRecent = async () => {
+    try {
+      const r = await api.get("/hallopetra/recent-calls", withToken({ limit: 10 }));
+      setRecent(r.data.tasks || []);
+    } catch { /* still */ }
+  };
+
+  useEffect(() => { loadStatus(); loadRecent(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const testOutbound = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const r = await api.post("/hallopetra/test-outbound", null, withToken());
+      setTestResult(r.data);
+      if (r.data.ok) toast.success(`HalloPetra API erreichbar (${r.data.status_code})`);
+      else toast.error(r.data.error || `Fehler ${r.data.status_code}`);
+    } catch (e) { toast.error("Test fehlgeschlagen"); setTestResult({ ok: false, error: String(e) }); }
+    finally { setTesting(false); }
+  };
+
+  const simulateCall = async (isEmergency) => {
+    setSimulating(true);
+    try {
+      await api.post("/hallopetra/simulate-call", {
+        is_emergency: isEmergency,
+        caller_name: isEmergency ? "Peter Notfall" : "Anna Muster",
+        caller_phone: "+493081234567",
+        summary: isEmergency ? "Aggregat XBSG_125 komplett ausgefallen" : "Anfrage Stromversorgung Sommerfest",
+      }, withToken());
+      toast.success(isEmergency ? "🚨 Notfall-Task erstellt" : "Task erstellt");
+      await loadRecent();
+      await loadStatus();
+    } catch { toast.error("Fehler beim Simulieren"); }
+    finally { setSimulating(false); }
+  };
+
+  const webhookUrl = ((process.env.REACT_APP_BACKEND_URL || window.location.origin).replace(/\/$/, "")) + "/api/hallopetra/webhook";
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6" data-testid="hallopetra-section">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center text-white font-bold">P</div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">HalloPetra – KI-Telefonassistent</h2>
+            <p className="text-xs text-gray-500">Qualifizierte Anrufe landen automatisch als Aufgabe im Hub</p>
+          </div>
+        </div>
+        <Button onClick={loadStatus} disabled={loading} size="sm" variant="outline" data-testid="petra-refresh">
+          {loading ? "..." : "Aktualisieren"}
+        </Button>
+      </div>
+
+      {/* Status-Zeile */}
+      {status && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className={`rounded-lg border p-3 ${status.configured ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+            <p className="text-[10px] uppercase font-semibold text-gray-500">Status</p>
+            <p className={`text-sm font-bold ${status.configured ? "text-emerald-700" : "text-amber-700"}`} data-testid="petra-status">
+              {status.configured ? "Konfiguriert" : "Nicht konfiguriert"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-[10px] uppercase font-semibold text-gray-500">Webhook-Secret</p>
+            <p className={`text-sm font-bold ${status.webhook_secret_set ? "text-emerald-700" : "text-red-600"}`}>
+              {status.webhook_secret_set ? "gesetzt" : "fehlt (unsicher!)"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-[10px] uppercase font-semibold text-gray-500">Anrufe (7 Tage)</p>
+            <p className="text-sm font-bold text-gray-900">{status.last_7d?.tasks_created ?? 0} Tasks</p>
+            <p className="text-[10px] text-gray-400">{status.last_7d?.events_received ?? 0} Events empfangen</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-[10px] uppercase font-semibold text-gray-500">Notfälle (7 T.)</p>
+            <p className={`text-sm font-bold ${(status.last_7d?.emergencies || 0) > 0 ? "text-red-600" : "text-gray-900"}`}>
+              🚨 {status.last_7d?.emergencies ?? 0}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Webhook-URL */}
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 mb-4">
+        <p className="text-xs font-semibold text-indigo-900 mb-1">📥 Webhook-URL für Petra-Dashboard</p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-xs bg-white border border-indigo-200 rounded px-2 py-1 font-mono truncate">{webhookUrl}</code>
+          <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success("URL kopiert"); }} data-testid="copy-webhook-url">Kopieren</Button>
+        </div>
+        <p className="text-[10px] text-indigo-700 mt-1">Diese URL bei HalloPetra unter Einstellungen → Integrationen → Webhooks eintragen. Signatur-Header: <code>X-Petra-Signature</code> (HMAC-SHA256)</p>
+      </div>
+
+      {/* Konfiguration Hinweis */}
+      {!status?.configured && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4">
+          <p className="text-xs font-semibold text-amber-900 mb-1">⚙️ Konfiguration in .env erforderlich</p>
+          <pre className="text-[11px] bg-white border border-amber-200 rounded p-2 font-mono overflow-x-auto">{`HALLOPETRA_CLIENT_ID=hp_ck_...
+HALLOPETRA_CLIENT_SECRET=hp_sk_...        # oder API_TOKEN
+HALLOPETRA_API_TOKEN=                     # (alternativ zu Secret)
+HALLOPETRA_AUTH_HEADER=Authorization      # anpassbar falls Petra anderen Namen nutzt
+HALLOPETRA_AUTH_SCHEME=Bearer             # oder leer lassen
+HALLOPETRA_WEBHOOK_SECRET=whsec_...       # aus Petra-Dashboard
+HALLOPETRA_BASE_URL=https://api.hallopetra.de/api/v1`}</pre>
+          <p className="text-[10px] text-amber-700 mt-1">Nach Änderung Backend neu starten. Webhook-Secret ist erforderlich für sichere Signatur-Prüfung.</p>
+        </div>
+      )}
+
+      {/* Aktionen */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <Button onClick={testOutbound} disabled={testing || !status?.api_token_set} size="sm" variant="outline" data-testid="petra-test-outbound">
+          {testing ? "Teste..." : "🔌 Verbindung testen"}
+        </Button>
+        <Button onClick={() => simulateCall(false)} disabled={simulating} size="sm" variant="outline" data-testid="petra-simulate-normal">
+          📞 Anruf simulieren
+        </Button>
+        <Button onClick={() => simulateCall(true)} disabled={simulating} size="sm" className="bg-red-600 hover:bg-red-700" data-testid="petra-simulate-emergency">
+          🚨 Notfall simulieren
+        </Button>
+        <Button onClick={loadRecent} size="sm" variant="ghost" data-testid="petra-refresh-recent">
+          Letzte Anrufe neu laden
+        </Button>
+      </div>
+
+      {/* Test-Ergebnis */}
+      {testResult && (
+        <div className={`rounded-lg border p-3 mb-4 ${testResult.ok ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+          <p className={`text-xs font-semibold ${testResult.ok ? "text-emerald-900" : "text-red-900"}`}>
+            {testResult.ok ? "✓ API erreichbar" : "✗ API-Fehler"} {testResult.status_code && `(HTTP ${testResult.status_code})`}
+          </p>
+          {testResult.body_preview && <pre className="text-[10px] mt-1 font-mono max-h-32 overflow-auto whitespace-pre-wrap">{testResult.body_preview}</pre>}
+          {testResult.error && <p className="text-[11px] text-red-700 mt-1">{testResult.error}</p>}
+        </div>
+      )}
+
+      {/* Letzte Anrufe */}
+      <div>
+        <p className="text-xs font-semibold text-gray-700 mb-2">Letzte {recent.length} Anrufe</p>
+        {recent.length === 0 ? (
+          <p className="text-xs text-gray-400 italic py-4 text-center">Noch keine Anrufe von Petra empfangen. Simuliere einen oben um zu testen.</p>
+        ) : (
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-80 overflow-y-auto">
+            {recent.map(t => (
+              <div key={t.id} className="p-3 hover:bg-gray-50 flex items-start gap-3">
+                <span className={`text-lg flex-shrink-0 ${t.is_emergency ? "text-red-600" : "text-gray-400"}`}>
+                  {t.is_emergency ? "🚨" : "📞"}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium ${t.is_emergency ? "text-red-800" : "text-gray-900"} truncate`}>{t.title}</p>
+                  <p className="text-[11px] text-gray-500">
+                    {t.caller_name || "Unbekannt"} · {t.caller_phone || "keine Tel."} · {new Date(t.created_at).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {t.customer_id && <span className="ml-1 text-emerald-600">· 🎯 Kunde erkannt</span>}
+                  </p>
+                  {t.description && <p className="text-[11px] text-gray-600 mt-0.5 line-clamp-2">{t.description}</p>}
+                </div>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                  t.priority === "urgent" ? "bg-red-100 text-red-700" :
+                  t.priority === "high" ? "bg-amber-100 text-amber-700" :
+                  "bg-gray-100 text-gray-600"
+                }`}>{t.priority}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
 /* ───── Backup-System Einstellungen ───── */
 function BackupSettingsSection() {
   const [settings, setSettings] = useState({
@@ -2747,6 +2937,9 @@ export default function AdminSettingsPage() {
 
           {/* FinTS Banking Volksbank (VR) */}
           <FinTSVRBankingSection />
+
+          {/* HalloPetra KI-Telefonassistent */}
+          <HalloPetraSection />
 
           {/* Tankbeleg Pi */}
           <TankbelegPiSection />
