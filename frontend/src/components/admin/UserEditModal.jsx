@@ -158,6 +158,7 @@ export default function UserEditModal({
                       { key: "devices", label: "Geräte" },
                       { key: "fileshare", label: "FileShare" },
                       { key: "serviceplan", label: "Serviceplan" },
+                      { key: "telefon", label: "Telefon (Anrufe)" },
                     ].map(m => (
                       <div key={m.key} className="flex items-center justify-between bg-white rounded-md px-3 py-2 border border-gray-100">
                         <Label className="text-sm text-gray-800 cursor-pointer" htmlFor={`mod-${m.key}`}>{m.label}</Label>

@@ -8,6 +8,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import HubPage from "./pages/HubPage";
+import TelefonPage from "./pages/TelefonPage";
 import FAQPage from "./pages/FAQPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage from "./pages/AdminPage";
@@ -622,6 +623,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <EinsatzplanungPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/telefon"
+        element={
+          <ProtectedRoute>
+            <TelefonPage />
           </ProtectedRoute>
         }
       />

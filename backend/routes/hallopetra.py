@@ -330,3 +330,70 @@ async def recent_calls(token: str = Query(...), limit: int = 20):
         {"_id": 0, "petra_full_payload": 0},
     ).sort("created_at", -1).limit(limit).to_list(limit)
     return {"tasks": tasks, "count": len(tasks)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Telefon-Uebersicht fuer Mitarbeiter (Hub-Kachel "Telefon")
+# ─────────────────────────────────────────────────────────────────────────────
+def _can_view_telefon(caller: dict) -> bool:
+    """Admin oder Mitarbeiter mit aktivem 'telefon'-Modul."""
+    if not caller:
+        return False
+    if caller.get("role") == "admin":
+        return True
+    if caller.get("role") == "mitarbeiter":
+        modules = (caller.get("apps") or {}).get("modules") or {}
+        return bool(modules.get("telefon"))
+    return False
+
+
+@router.get("/calls")
+async def list_calls(token: str = Query(...), limit: int = 100, only_open: bool = False):
+    """Liste aller Petra-Anrufe fuer die Telefon-Kachel im Hub.
+    Jeder Staff-User mit Telefon-Modul-Toggle darf sehen."""
+    caller = await _get_user(token)
+    if not _can_view_telefon(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff auf Telefon-Uebersicht")
+    query = {"source": "hallopetra"}
+    if only_open:
+        query["status"] = "open"
+    tasks = await db.tasks.find(
+        query,
+        {"_id": 0, "petra_full_payload": 0},
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    # Statistik
+    total = await db.tasks.count_documents({"source": "hallopetra"})
+    open_count = await db.tasks.count_documents({"source": "hallopetra", "status": "open"})
+    urgent_count = await db.tasks.count_documents({"source": "hallopetra", "status": "open", "priority": "urgent"})
+    return {"calls": tasks, "count": len(tasks), "total": total, "open": open_count, "urgent_open": urgent_count}
+
+
+@router.get("/calls/{task_id}")
+async def call_detail(task_id: str, token: str = Query(...)):
+    """Volle Anruf-Details inkl. Petra-Payload (Transkript, Recording-URL)."""
+    caller = await _get_user(token)
+    if not _can_view_telefon(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff auf Telefon-Uebersicht")
+    task = await db.tasks.find_one({"id": task_id, "source": "hallopetra"}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Anruf nicht gefunden")
+    return task
+
+
+@router.post("/calls/{task_id}/mark-done")
+async def mark_call_done(task_id: str, token: str = Query(...)):
+    """Markiert einen Anruf-Task als erledigt."""
+    caller = await _get_user(token)
+    if not _can_view_telefon(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+    result = await db.tasks.update_one(
+        {"id": task_id, "source": "hallopetra"},
+        {"$set": {
+            "status": "done",
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "closed_by": caller.get("name") or caller.get("email"),
+        }},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Anruf nicht gefunden")
+    return {"ok": True}

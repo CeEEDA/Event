@@ -12,7 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
-  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck,
+  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck, Phone,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import { WorkTimeOverview } from "../components/WorkTimeOverview";
@@ -374,6 +374,7 @@ export default function HubPage() {
   const modules = [
     isStaff && tileAllowed("orders") && { key: "orders", icon: ClipboardList, label: "Aufträge", path: "/orders", color: "bg-fuchsia-100 text-fuchsia-600" },
     isStaff && { key: "einsatzplanung", icon: CalendarDays, label: "Einsatzplanung", path: "/einsatzplanung", color: "bg-indigo-100 text-indigo-600" },
+    (isAdmin || (isStaff && tileAllowed("telefon"))) && { key: "telefon", icon: Phone, label: "Telefon", path: "/telefon", color: "bg-rose-100 text-rose-600" },
     isStaff && tileAllowed("kirmes") && { key: "kirmes", icon: Tent, label: "Kirmes", path: "/kirmes", color: "bg-pink-100 text-pink-600" },
     !isCustomer && tileAllowed("verwaltung") && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
     hasMonitoring && tileAllowed("power_monitoring") && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
