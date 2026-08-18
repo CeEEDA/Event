@@ -32,6 +32,7 @@ export default function HubPage() {
   const token = localStorage.getItem("token");
 
   const [tasks, setTasks] = useState([]);
+  const [petraOpen, setPetraOpen] = useState(0);
   const [taskFilter, setTaskFilter] = useState("mine");
   const [viewFilter, setViewFilter] = useState("aktuell");
   const [taskSearch, setTaskSearch] = useState("");
@@ -177,12 +178,19 @@ export default function HubPage() {
     api.get(`/employee/birthdays/today?token=${token}`).then(r => setBirthdays(r.data || [])).catch(() => {});
     // Info-Posts der Admins
     loadInfoPosts();
+    // HalloPetra offene Anrufe (nur wenn Modul aktiv)
+    const loadPetra = () => {
+      api.get(`/hallopetra/calls?token=${token}&limit=1&only_open=true`)
+        .then(r => setPetraOpen(r.data.open || 0))
+        .catch(() => setPetraOpen(0));
+    };
+    loadPetra();
     // Load own avatar
     api.get(`/employee/profile?token=${token}`).then(r => {
       if (r.data.avatar_path) setMyAvatarUrl(`${API}/api/employee/avatar/${r.data.user_id}?token=${token}&_=${r.data.avatar_path}`);
     }).catch(() => {});
     // Poll for updates every 10 seconds
-    const poll = setInterval(() => { loadTasks(); loadUnreadChats(); loadPresence(); }, 10000);
+    const poll = setInterval(() => { loadTasks(); loadUnreadChats(); loadPresence(); loadPetra(); }, 10000);
     return () => clearInterval(poll);
   }, [loadTasks, token]);
 
@@ -374,7 +382,7 @@ export default function HubPage() {
   const modules = [
     isStaff && tileAllowed("orders") && { key: "orders", icon: ClipboardList, label: "Aufträge", path: "/orders", color: "bg-fuchsia-100 text-fuchsia-600" },
     isStaff && { key: "einsatzplanung", icon: CalendarDays, label: "Einsatzplanung", path: "/einsatzplanung", color: "bg-indigo-100 text-indigo-600" },
-    (isAdmin || (isStaff && tileAllowed("telefon"))) && { key: "telefon", icon: Phone, label: "Telefon", path: "/telefon", color: "bg-rose-100 text-rose-600" },
+    (isAdmin || (isStaff && tileAllowed("telefon"))) && { key: "telefon", icon: Phone, label: "Telefon", path: "/telefon", color: "bg-rose-100 text-rose-600", badge: petraOpen },
     isStaff && tileAllowed("kirmes") && { key: "kirmes", icon: Tent, label: "Kirmes", path: "/kirmes", color: "bg-pink-100 text-pink-600" },
     !isCustomer && tileAllowed("verwaltung") && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
     hasMonitoring && tileAllowed("power_monitoring") && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
@@ -762,9 +770,18 @@ export default function HubPage() {
                   <button
                     key={m.key}
                     onClick={() => handleModuleClick(m.path)}
-                    className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center"
+                    className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex flex-col items-center gap-2 hover:border-fuchsia-400 hover:shadow-md transition-all group text-center relative"
                     data-testid={`module-${m.key}`}
                   >
+                    {m.badge > 0 && (
+                      <span
+                        className="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1.5 rounded-full bg-yellow-300 text-black text-[11px] font-bold flex items-center justify-center shadow-sm animate-pulse"
+                        data-testid={`badge-${m.key}`}
+                        title={`${m.badge} neue Anrufe`}
+                      >
+                        {m.badge > 99 ? "99+" : m.badge}
+                      </span>
+                    )}
                     <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl ${m.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
                       <m.icon className="w-5 h-5" />
                     </div>
