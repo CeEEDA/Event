@@ -386,13 +386,18 @@ _sync_task = None
 
 
 async def _auto_sync_loop(interval_seconds: int = 300):
-    """Poll-Loop: holt alle 5min die neuesten Anrufe von Petra."""
+    """Poll-Loop: holt alle 5min die neuesten Anrufe von Petra.
+    Alle 24h zusätzlich: Kontakt-Import + Enrich der bestehenden Anrufe."""
     await _asyncio.sleep(30)  # Startup-Delay damit DB/Router bereit sind
+    last_contact_sync = 0.0
+    contact_interval = 24 * 3600  # 24h
+    import time as _time
     while True:
         try:
             cfg = _config()
             headers = _auth_headers(cfg)
             if headers:
+                # 1) Anrufe pullen (alle 5 Min)
                 async with httpx.AsyncClient(timeout=20) as client:
                     resp = await client.get(cfg["base_url"] + "/v1/calls",
                                             headers=headers, params={"limit": 50})
@@ -416,9 +421,100 @@ async def _auto_sync_loop(interval_seconds: int = 300):
                                             "source": "auto"}}},
                         upsert=True,
                     )
+
+                # 2) Kontakte + Enrich (alle 24h)
+                now = _time.time()
+                if now - last_contact_sync >= contact_interval:
+                    try:
+                        contact_stats = await _import_all_contacts(cfg, headers)
+                        enrich_stats = await _enrich_calls_backfill()
+                        logger.info(f"HalloPetra nightly contacts: {contact_stats} | enrich: {enrich_stats}")
+                        last_contact_sync = now
+                    except Exception as _ce:
+                        logger.warning(f"HalloPetra nightly Kontakt-Sync Fehler: {_ce}")
         except Exception as e:
             logger.warning(f"HalloPetra auto-sync Fehler: {e}")
         await _asyncio.sleep(interval_seconds)
+
+
+async def _import_all_contacts(cfg: dict, headers: dict) -> dict:
+    """Interne Hilfsfunktion: importiert alle Kontakte paginiert."""
+    stats = {"total_fetched": 0, "created": 0, "updated": 0, "linked_to_kunde": 0, "pages": 0}
+    cursor = None
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            params = {"limit": 100}
+            if cursor:
+                params["cursor"] = cursor
+            resp = await client.get(cfg["base_url"] + "/v1/contacts",
+                                    headers=headers, params=params)
+            if resp.status_code >= 400:
+                stats["error"] = f"{resp.status_code}: {resp.text[:200]}"
+                return stats
+            data = resp.json()
+            items = data.get("items", [])
+            stats["pages"] += 1
+            stats["total_fetched"] += len(items)
+            for pc in items:
+                res = await _upsert_petra_contact(pc)
+                if res["action"] == "created":
+                    stats["created"] += 1
+                else:
+                    stats["updated"] += 1
+                if res["linked"]:
+                    stats["linked_to_kunde"] += 1
+            cursor = data.get("nextCursor")
+            if not cursor or stats["pages"] > 100:
+                break
+    await db.system_settings.update_one(
+        {"key": "hallopetra_contacts_last_import"},
+        {"$set": {"key": "hallopetra_contacts_last_import",
+                  "value": datetime.now(timezone.utc).isoformat(),
+                  "stats": stats}},
+        upsert=True,
+    )
+    return stats
+
+
+async def _enrich_calls_backfill() -> dict:
+    """Interne Hilfsfunktion: reichert bestehende Anruf-Tasks mit Namen
+    aus dem Petra-Telefonbuch an."""
+    tasks = await db.tasks.find(
+        {"source": "hallopetra", "caller_name": {"$in": ["Anrufer", "Unbekannt", "", None]}},
+        {"_id": 0, "id": 1, "caller_phone": 1, "caller_name": 1, "customer_id": 1}
+    ).to_list(2000)
+    stats = {"checked": len(tasks), "enriched": 0}
+    for t in tasks:
+        phone = t.get("caller_phone") or ""
+        if not phone:
+            continue
+        digits = _normalize_phone(phone)
+        tail = digits[-8:] if len(digits) >= 8 else digits
+        if not tail:
+            continue
+        local = await _match_local_customer(tail)
+        contact = None if local else await db.hallopetra_contacts.find_one(
+            {"phone_digits": {"$regex": tail + "$"}},
+            {"_id": 0, "name": 1, "petra_contact_id": 1,
+             "linked_kunde_id": 1, "linked_kunde_name": 1, "standort": 1},
+        )
+        update = {}
+        if local:
+            update["caller_name"] = local.get("name")
+            update["customer_id"] = local.get("id")
+            update["customer_name"] = local.get("name")
+        elif contact and contact.get("name"):
+            update["caller_name"] = contact.get("name")
+            update["petra_contact_id"] = contact.get("petra_contact_id")
+            if contact.get("linked_kunde_id"):
+                update["customer_id"] = contact.get("linked_kunde_id")
+                update["customer_name"] = contact.get("linked_kunde_name")
+            if contact.get("standort"):
+                update["caller_standort"] = contact.get("standort")
+        if update:
+            await db.tasks.update_one({"id": t["id"]}, {"$set": update})
+            stats["enriched"] += 1
+    return stats
 
 
 def start_hallopetra_sync():
@@ -836,24 +932,47 @@ def _can_view_telefon(caller: dict) -> bool:
 
 
 @router.get("/calls")
-async def list_calls(token: str = Query(...), limit: int = 100, only_open: bool = False):
+async def list_calls(token: str = Query(...), limit: int = 100, only_open: bool = False,
+                     search: str = ""):
     """Liste aller Petra-Anrufe fuer die Telefon-Kachel im Hub.
-    Jeder Staff-User mit Telefon-Modul-Toggle darf sehen."""
+    Jeder Staff-User mit Telefon-Modul-Toggle darf sehen.
+    `search` durchsucht Titel, Beschreibung, Anrufer-Name, Telefonnummer, Standort
+    UND den kompletten Gespraechsverlauf (Volltext ueber `petra_transcript.text`)."""
     caller = await _get_user(token)
     if not _can_view_telefon(caller):
         raise HTTPException(status_code=403, detail="Kein Zugriff auf Telefon-Uebersicht")
-    query = {"source": "hallopetra"}
+    query: dict = {"source": "hallopetra"}
     if only_open:
         query["status"] = "open"
+    if search and search.strip():
+        s = search.strip()
+        # Escape MongoDB-Regex-Metazeichen (Nutzer koennte "." oder "(" eingeben)
+        import re
+        s_esc = re.escape(s)
+        digits = _normalize_phone(s)
+        or_conds = [
+            {"title": {"$regex": s_esc, "$options": "i"}},
+            {"description": {"$regex": s_esc, "$options": "i"}},
+            {"caller_name": {"$regex": s_esc, "$options": "i"}},
+            {"customer_name": {"$regex": s_esc, "$options": "i"}},
+            {"caller_standort": {"$regex": s_esc, "$options": "i"}},
+            {"category": {"$regex": s_esc, "$options": "i"}},
+            {"petra_transcript.text": {"$regex": s_esc, "$options": "i"}},
+        ]
+        if digits:
+            or_conds.append({"caller_phone": {"$regex": digits}})
+        query["$or"] = or_conds
     tasks = await db.tasks.find(
         query,
         {"_id": 0, "petra_full_payload": 0},
     ).sort("created_at", -1).limit(limit).to_list(limit)
-    # Statistik
+    # Statistik (immer ohne search, damit Kacheln stabil bleiben)
     total = await db.tasks.count_documents({"source": "hallopetra"})
     open_count = await db.tasks.count_documents({"source": "hallopetra", "status": "open"})
     urgent_count = await db.tasks.count_documents({"source": "hallopetra", "status": "open", "priority": "urgent"})
-    return {"calls": tasks, "count": len(tasks), "total": total, "open": open_count, "urgent_open": urgent_count}
+    return {"calls": tasks, "count": len(tasks), "total": total,
+            "open": open_count, "urgent_open": urgent_count,
+            "search_active": bool(search and search.strip())}
 
 
 @router.get("/calls/{task_id}")

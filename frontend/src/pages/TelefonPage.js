@@ -161,7 +161,9 @@ export default function TelefonPage() {
   const loadCalls = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/hallopetra/calls", withToken({ limit: 200, only_open: filter === "open" }));
+      const extra = { limit: 200, only_open: filter === "open" };
+      if (search) extra.search = search;
+      const r = await api.get("/hallopetra/calls", withToken(extra));
       setCalls(r.data.calls || []);
       setStats({ total: r.data.total || 0, open: r.data.open || 0, urgent_open: r.data.urgent_open || 0 });
     } catch (e) {
@@ -170,7 +172,7 @@ export default function TelefonPage() {
         navigate("/hub");
       } else { toast.error("Fehler beim Laden"); }
     } finally { setLoading(false); }
-  }, [filter, navigate]);
+  }, [filter, search, navigate]);
 
   const loadContacts = useCallback(async () => {
     setLoading(true);
@@ -187,9 +189,13 @@ export default function TelefonPage() {
   }, [contactFilter, search]);
 
   useEffect(() => {
-    if (tab === "calls") loadCalls();
-    else loadContacts();
-  }, [tab, loadCalls, loadContacts]);
+    if (tab !== "calls" && tab !== "contacts") return;
+    const t = setTimeout(() => {
+      if (tab === "calls") loadCalls();
+      else loadContacts();
+    }, search ? 300 : 0);  // Debounce nur bei aktiver Suche
+    return () => clearTimeout(t);
+  }, [tab, search, filter, contactFilter, loadCalls, loadContacts]);
 
   const markDone = async (id) => {
     try {
@@ -284,7 +290,7 @@ export default function TelefonPage() {
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Suche nach Name, Nummer, Anliegen..."
+            placeholder="Suche in Anrufen (auch Gesprächsverlauf) – z.B. Notstromerzeuger Bonn"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none text-sm bg-white"
