@@ -111,25 +111,64 @@ def _is_qualified(call: dict) -> bool:
     return True
 
 
+async def _match_local_customer(digits_tail: str) -> dict | None:
+    """Sucht in unseren Kundencollections (kunden + kirmes_schausteller) nach dem
+    Phone-Tail. Erste Treffer gewinnt."""
+    if not digits_tail:
+        return None
+    # Direkte Kunden (klassisch)
+    doc = await db.kunden.find_one(
+        {"$or": [
+            {"telefon": {"$regex": digits_tail + "$"}},
+            {"mobil": {"$regex": digits_tail + "$"}},
+            {"phone": {"$regex": digits_tail + "$"}},
+        ]},
+        {"_id": 0, "id": 1, "name": 1, "firma": 1},
+    )
+    if doc:
+        return {"id": doc.get("id"), "name": doc.get("firma") or doc.get("name"), "source": "kunden"}
+    # Kirmes-Schausteller (Kundenstamm im Kirmes-Modul)
+    schau = await db.kirmes_schausteller.find_one(
+        {"$or": [
+            {"telefon": {"$regex": digits_tail + "$"}},
+            {"mobil": {"$regex": digits_tail + "$"}},
+        ]},
+        {"_id": 0, "id": 1, "name": 1, "firma": 1, "kundennummer": 1},
+    )
+    if schau:
+        return {"id": schau.get("id"),
+                "name": schau.get("firma") or schau.get("name"),
+                "kundennummer": schau.get("kundennummer"),
+                "source": "kirmes_schausteller"}
+    return None
+
+
 async def _find_customer_by_phone(phone: str) -> dict | None:
-    """Sucht Kunde per Telefonnummer in kunden-Collection (loose match)."""
+    """Sucht Kontakt per Telefonnummer. Priorisiert unsere Kunden-Collections,
+    fallback auf importierte hallopetra_contacts."""
     if not phone:
         return None
-    # Normalize: nur Ziffern, letzte 8+ Stellen
     digits = "".join(ch for ch in phone if ch.isdigit())
     if len(digits) < 6:
         return None
     tail = digits[-8:]
-    # Suche via Regex am Ende
-    doc = await db.kunden.find_one(
-        {"$or": [
-            {"telefon": {"$regex": tail + "$"}},
-            {"mobil": {"$regex": tail + "$"}},
-            {"phone": {"$regex": tail + "$"}},
-        ]},
-        {"_id": 0, "id": 1, "name": 1, "firma": 1},
+    local = await _match_local_customer(tail)
+    if local:
+        return {"id": local.get("id"), "name": local.get("name"),
+                "firma": local.get("name"), "source": local.get("source")}
+    # HalloPetra-Kontakte
+    petra_contact = await db.hallopetra_contacts.find_one(
+        {"phone_digits": {"$regex": tail + "$"}},
+        {"_id": 0, "id": 1, "name": 1, "petra_contact_id": 1, "linked_kunde_id": 1, "linked_kunde_name": 1},
     )
-    return doc
+    if petra_contact:
+        return {
+            "id": petra_contact.get("linked_kunde_id"),
+            "name": petra_contact.get("linked_kunde_name") or petra_contact.get("name"),
+            "petra_contact_id": petra_contact.get("petra_contact_id"),
+            "source": "petra_contact",
+        }
+    return None
 
 
 def _map_priority_from_petra_call(call: dict) -> str:
@@ -463,6 +502,186 @@ async def sync_calls(token: str = Query(...), limit: int = 50):
         upsert=True,
     )
     return {"ok": True, **stats, "next_cursor": data.get("nextCursor")}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HalloPetra Telefonbuch (Kontakte)
+# ─────────────────────────────────────────────────────────────────────────────
+def _normalize_phone(phone: str) -> str:
+    """Nur Ziffern (fuer robustes Matching)."""
+    return "".join(ch for ch in (phone or "") if ch.isdigit())
+
+
+async def _upsert_petra_contact(pc: dict) -> dict:
+    """Speichert einen Petra-Kontakt in hallopetra_contacts.
+    Versucht Verknuepfung mit unseren Kundencollections per Telefonnummer.
+    Return: {'action': 'created'|'updated', 'linked': bool}"""
+    petra_id = pc.get("id")
+    phone = pc.get("phone") or ""
+    digits = _normalize_phone(phone)
+    tail = digits[-8:] if len(digits) >= 8 else digits
+
+    # Match mit Kunden-Collections (kunden + kirmes_schausteller)
+    local = await _match_local_customer(tail) if tail else None
+    linked_kunde_id = (local or {}).get("id")
+    linked_kunde_name = (local or {}).get("name")
+    linked_source = (local or {}).get("source")
+
+    existing = await db.hallopetra_contacts.find_one({"petra_contact_id": petra_id}, {"_id": 0, "id": 1})
+    doc = {
+        "petra_contact_id": petra_id,
+        "name": pc.get("name") or "",
+        "first_name": pc.get("firstName") or "",
+        "last_name": pc.get("lastName") or "",
+        "salutation": pc.get("salutation") or "",
+        "phone": phone,
+        "phone_digits": digits,
+        "email": pc.get("email") or "",
+        "contact_group_ids": pc.get("contactGroupIds") or [],
+        "fields": pc.get("fields") or {},
+        "standort": (pc.get("fields") or {}).get("standort") or "",
+        "notes": (pc.get("fields") or {}).get("notes") or "",
+        "linked_kunde_id": linked_kunde_id,
+        "linked_kunde_name": linked_kunde_name,
+        "linked_source": linked_source,
+        "petra_created_at": pc.get("createdAt"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if existing:
+        await db.hallopetra_contacts.update_one(
+            {"petra_contact_id": petra_id}, {"$set": doc}
+        )
+        return {"action": "updated", "linked": bool(linked_kunde_id)}
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    await db.hallopetra_contacts.insert_one(doc)
+    return {"action": "created", "linked": bool(linked_kunde_id)}
+
+
+@router.post("/import-contacts")
+async def import_contacts(token: str = Query(...)):
+    """Importiert das komplette HalloPetra-Telefonbuch (alle Seiten via Cursor)
+    in unsere hallopetra_contacts-Collection und verknuepft mit vorhandenen
+    Kunden per Telefonnummer."""
+    await _require_admin(token)
+    cfg = _config()
+    headers = _auth_headers(cfg)
+    if not headers:
+        raise HTTPException(status_code=400, detail="HalloPetra-Token nicht konfiguriert")
+
+    stats = {"total_fetched": 0, "created": 0, "updated": 0, "linked_to_kunde": 0, "pages": 0}
+    cursor = None
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            while True:
+                params = {"limit": 100}
+                if cursor:
+                    params["cursor"] = cursor
+                resp = await client.get(cfg["base_url"] + "/v1/contacts",
+                                        headers=headers, params=params)
+                if resp.status_code >= 400:
+                    return {"ok": False, "status_code": resp.status_code,
+                            "body": resp.text[:500], "stats": stats}
+                data = resp.json()
+                items = data.get("items", [])
+                stats["pages"] += 1
+                stats["total_fetched"] += len(items)
+                for pc in items:
+                    res = await _upsert_petra_contact(pc)
+                    if res["action"] == "created":
+                        stats["created"] += 1
+                    else:
+                        stats["updated"] += 1
+                    if res["linked"]:
+                        stats["linked_to_kunde"] += 1
+                cursor = data.get("nextCursor")
+                if not cursor or stats["pages"] > 100:  # Safety-Limit
+                    break
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Petra-API Fehler: {e}")
+
+    await db.system_settings.update_one(
+        {"key": "hallopetra_contacts_last_import"},
+        {"$set": {"key": "hallopetra_contacts_last_import",
+                  "value": datetime.now(timezone.utc).isoformat(),
+                  "stats": stats}},
+        upsert=True,
+    )
+    logger.info(f"HalloPetra Kontakte-Import: {stats}")
+    return {"ok": True, **stats}
+
+
+@router.get("/contacts")
+async def list_contacts(token: str = Query(...), search: str = "", limit: int = 100,
+                        only_linked: bool = False, only_unlinked: bool = False):
+    """Liste der importierten Petra-Kontakte. Sichtbar fuer alle Staff mit Telefon-Modul."""
+    caller = await _get_user(token)
+    if not _can_view_telefon(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+    q = {}
+    if search:
+        s = search.strip()
+        digits = _normalize_phone(s)
+        or_conds = [
+            {"name": {"$regex": s, "$options": "i"}},
+            {"linked_kunde_name": {"$regex": s, "$options": "i"}},
+            {"standort": {"$regex": s, "$options": "i"}},
+        ]
+        if digits:
+            or_conds.append({"phone_digits": {"$regex": digits}})
+        q["$or"] = or_conds
+    if only_linked:
+        q["linked_kunde_id"] = {"$ne": None}
+    elif only_unlinked:
+        q["linked_kunde_id"] = None
+
+    contacts = await db.hallopetra_contacts.find(q, {"_id": 0, "fields": 0}).sort("name", 1).limit(limit).to_list(limit)
+    total = await db.hallopetra_contacts.count_documents({})
+    linked = await db.hallopetra_contacts.count_documents({"linked_kunde_id": {"$ne": None}})
+    return {"contacts": contacts, "count": len(contacts),
+            "total": total, "linked": linked, "unlinked": total - linked}
+
+
+@router.get("/contacts/{contact_id}")
+async def contact_detail(contact_id: str, token: str = Query(...)):
+    """Volle Details eines Petra-Kontakts inkl. aller `fields`."""
+    caller = await _get_user(token)
+    if not _can_view_telefon(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+    c = await db.hallopetra_contacts.find_one({"id": contact_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Kontakt nicht gefunden")
+    return c
+
+
+class LinkContactPayload(BaseModel):
+    kunde_id: str | None = None  # None = unlink
+
+
+@router.post("/contacts/{contact_id}/link")
+async def link_contact(contact_id: str, data: LinkContactPayload, token: str = Query(...)):
+    """Verknuepft einen Petra-Kontakt manuell mit einem unserer Kunden (oder unlinkt)."""
+    caller = await _get_user(token)
+    if not _can_view_telefon(caller):
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+    linked_name = None
+    if data.kunde_id:
+        kunde = await db.kunden.find_one({"id": data.kunde_id}, {"_id": 0, "id": 1, "name": 1, "firma": 1})
+        if not kunde:
+            raise HTTPException(status_code=404, detail="Kunde nicht gefunden")
+        linked_name = kunde.get("firma") or kunde.get("name")
+    result = await db.hallopetra_contacts.update_one(
+        {"id": contact_id},
+        {"$set": {
+            "linked_kunde_id": data.kunde_id,
+            "linked_kunde_name": linked_name,
+            "linked_at": datetime.now(timezone.utc).isoformat(),
+            "linked_by": caller.get("name") or caller.get("email"),
+        }},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Kontakt nicht gefunden")
+    return {"ok": True, "linked_kunde_id": data.kunde_id, "linked_kunde_name": linked_name}
 
 
 @router.post("/register-webhook")

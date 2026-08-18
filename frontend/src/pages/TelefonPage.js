@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import {
   ArrowLeft, Phone, RefreshCw, Search, CheckCircle2, AlertCircle,
-  Clock, User, X, ExternalLink, FileText,
+  Clock, User, X, ExternalLink, FileText, BookOpen, Download, MapPin,
 } from "lucide-react";
 
 const PRIORITY_STYLES = {
@@ -100,40 +100,77 @@ function CallDetailModal({ call, onClose, onDone }) {
 
 export default function TelefonPage() {
   const navigate = useNavigate();
+  const [tab, setTab] = useState("calls"); // calls | contacts
   const [calls, setCalls] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [contactStats, setContactStats] = useState({ total: 0, linked: 0, unlinked: 0 });
   const [stats, setStats] = useState({ total: 0, open: 0, urgent_open: 0 });
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [filter, setFilter] = useState("open"); // open | all | urgent
+  const [contactFilter, setContactFilter] = useState("all"); // all | linked | unlinked
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      setIsAdmin(u.role === "admin");
+    } catch { /* ignore */ }
+  }, []);
+
+  const withToken = (extra = {}) => ({ params: { token: localStorage.getItem("token"), ...extra } });
+
+  const loadCalls = useCallback(async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const r = await api.get("/hallopetra/calls", { params: { token, limit: 200, only_open: filter === "open" } });
+      const r = await api.get("/hallopetra/calls", withToken({ limit: 200, only_open: filter === "open" }));
       setCalls(r.data.calls || []);
       setStats({ total: r.data.total || 0, open: r.data.open || 0, urgent_open: r.data.urgent_open || 0 });
     } catch (e) {
       if (e?.response?.status === 403) {
         toast.error("Kein Zugriff auf Telefon-Übersicht");
         navigate("/hub");
-      } else {
-        toast.error("Fehler beim Laden");
-      }
+      } else { toast.error("Fehler beim Laden"); }
     } finally { setLoading(false); }
   }, [filter, navigate]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadContacts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const extra = { limit: 300 };
+      if (contactFilter === "linked") extra.only_linked = true;
+      else if (contactFilter === "unlinked") extra.only_unlinked = true;
+      if (search) extra.search = search;
+      const r = await api.get("/hallopetra/contacts", withToken(extra));
+      setContacts(r.data.contacts || []);
+      setContactStats({ total: r.data.total || 0, linked: r.data.linked || 0, unlinked: r.data.unlinked || 0 });
+    } catch { toast.error("Fehler beim Laden"); }
+    finally { setLoading(false); }
+  }, [contactFilter, search]);
+
+  useEffect(() => {
+    if (tab === "calls") loadCalls();
+    else loadContacts();
+  }, [tab, loadCalls, loadContacts]);
 
   const markDone = async (id) => {
     try {
-      const token = localStorage.getItem("token");
-      await api.post(`/hallopetra/calls/${id}/mark-done`, null, { params: { token } });
+      await api.post(`/hallopetra/calls/${id}/mark-done`, null, withToken());
       toast.success("Anruf als erledigt markiert");
-      setSelected(null);
-      load();
+      setSelected(null); loadCalls();
     } catch { toast.error("Fehler"); }
+  };
+
+  const importContacts = async () => {
+    setImporting(true);
+    try {
+      const r = await api.post("/hallopetra/import-contacts", null, withToken());
+      toast.success(`${r.data.total_fetched} Kontakte importiert · ${r.data.linked_to_kunde} mit Kunden verknüpft`);
+      loadContacts();
+    } catch { toast.error("Import fehlgeschlagen"); }
+    finally { setImporting(false); }
   };
 
   const filteredCalls = calls.filter(c => {
@@ -161,15 +198,29 @@ export default function TelefonPage() {
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-semibold text-gray-900 truncate">Telefon</h1>
-            <p className="text-[11px] text-gray-500 hidden sm:block">Anrufe von Petra – qualifizierte Anfragen mit Zusammenfassung</p>
+            <p className="text-[11px] text-gray-500 hidden sm:block">Anrufe von Petra & Telefonbuch</p>
           </div>
-          <Button onClick={load} disabled={loading} size="sm" variant="outline" data-testid="telefon-refresh">
+          <Button onClick={() => tab === "calls" ? loadCalls() : loadContacts()} disabled={loading} size="sm" variant="outline" data-testid="telefon-refresh">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
+        </div>
+        {/* Tabs */}
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 flex gap-1 border-t border-gray-100">
+          <button onClick={() => setTab("calls")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "calls" ? "border-rose-500 text-rose-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+            data-testid="tab-calls">
+            📞 Anrufe
+          </button>
+          <button onClick={() => setTab("contacts")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === "contacts" ? "border-rose-500 text-rose-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+            data-testid="tab-contacts">
+            📇 Telefonbuch {contactStats.total > 0 && <span className="ml-1 text-[10px] bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5">{contactStats.total}</span>}
+          </button>
         </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-3 sm:px-4 py-4 space-y-4">
+        {tab === "calls" && (<>
         {/* Statistik-Kacheln */}
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <button onClick={() => setFilter("open")}
@@ -244,6 +295,99 @@ export default function TelefonPage() {
             })}
           </div>
         )}
+        </>)}
+
+        {tab === "contacts" && (<>
+        {/* Filter-Kacheln */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <button onClick={() => setContactFilter("all")}
+            className={`rounded-xl border p-3 text-left transition-all ${contactFilter === "all" ? "bg-rose-50 border-rose-300 ring-2 ring-rose-200" : "bg-white border-gray-200 hover:border-rose-200"}`}
+            data-testid="cf-all">
+            <p className="text-[10px] uppercase font-semibold text-gray-500">Alle</p>
+            <p className="text-2xl font-bold text-gray-900">{contactStats.total}</p>
+          </button>
+          <button onClick={() => setContactFilter("linked")}
+            className={`rounded-xl border p-3 text-left transition-all ${contactFilter === "linked" ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200" : "bg-white border-gray-200 hover:border-emerald-200"}`}
+            data-testid="cf-linked">
+            <p className="text-[10px] uppercase font-semibold text-gray-500">✅ Verknüpft</p>
+            <p className="text-2xl font-bold text-emerald-700">{contactStats.linked}</p>
+          </button>
+          <button onClick={() => setContactFilter("unlinked")}
+            className={`rounded-xl border p-3 text-left transition-all ${contactFilter === "unlinked" ? "bg-amber-50 border-amber-300 ring-2 ring-amber-200" : "bg-white border-gray-200 hover:border-amber-200"}`}
+            data-testid="cf-unlinked">
+            <p className="text-[10px] uppercase font-semibold text-gray-500">Neu (unverknüpft)</p>
+            <p className="text-2xl font-bold text-amber-700">{contactStats.unlinked}</p>
+          </button>
+        </div>
+
+        {/* Import-Button (nur Admin) + Suche */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Suche nach Name, Nummer, Standort..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none text-sm bg-white"
+              data-testid="contact-search"
+            />
+          </div>
+          {isAdmin && (
+            <Button onClick={importContacts} disabled={importing} size="sm" className="bg-emerald-600 hover:bg-emerald-700" data-testid="import-contacts-btn">
+              <Download className={`w-4 h-4 mr-1.5 ${importing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{importing ? "Importiere..." : "Aus Petra abrufen"}</span>
+            </Button>
+          )}
+        </div>
+
+        {/* Kontaktliste */}
+        {contacts.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <BookOpen className="w-10 h-10 mx-auto text-gray-300 mb-3" />
+            <p className="text-sm text-gray-500">
+              {loading ? "Lädt..." : contactStats.total === 0 ? "Noch keine Kontakte importiert." : "Kein Kontakt passt zur Suche."}
+            </p>
+            {contactStats.total === 0 && isAdmin && (
+              <p className="text-xs text-gray-400 mt-2">Klick auf &bdquo;Aus Petra abrufen&ldquo; um das Telefonbuch zu importieren.</p>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+            {contacts.map(c => (
+              <div key={c.id} className="p-3 sm:p-4 flex items-start gap-3 hover:bg-gray-50" data-testid={`contact-row-${c.id}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${c.linked_kunde_id ? "bg-emerald-100" : "bg-gray-100"}`}>
+                  <User className={`w-5 h-5 ${c.linked_kunde_id ? "text-emerald-600" : "text-gray-500"}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{c.name || "Unbenannt"}</p>
+                    {c.linked_kunde_id && (
+                      <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5">
+                        🎯 {c.linked_kunde_name}
+                      </span>
+                    )}
+                    {c.salutation && !c.first_name && <span className="text-[10px] text-gray-400">{c.salutation}</span>}
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {c.phone && <a href={`tel:${c.phone}`} className="text-rose-600 hover:underline">{c.phone}</a>}
+                    {c.standort && <span className="ml-2"><MapPin className="w-3 h-3 inline -mt-0.5" /> {c.standort}</span>}
+                    {c.email && <span className="ml-2 text-blue-600">{c.email}</span>}
+                  </p>
+                  {c.notes && <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{c.notes}</p>}
+                </div>
+                {c.phone && (
+                  <a href={`tel:${c.phone}`}
+                    className="flex-shrink-0 text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg px-3 py-1.5 flex items-center gap-1"
+                    data-testid={`call-contact-${c.id}`}>
+                    <Phone className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Anrufen</span>
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        </>)}
       </div>
 
       <CallDetailModal call={selected} onClose={() => setSelected(null)} onDone={markDone} />
