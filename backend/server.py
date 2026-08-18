@@ -2319,6 +2319,13 @@ async def startup_event():
     import asyncio
     from mqtt_service import start_mqtt_client
 
+    # HalloPetra Auto-Sync-Loop (alle 5 Min neue Anrufe abrufen)
+    try:
+        from routes.hallopetra import start_hallopetra_sync
+        start_hallopetra_sync()
+    except Exception as _e:
+        logger.warning(f"HalloPetra Auto-Sync konnte nicht starten: {_e}")
+
     # ── ALLE Indexes im Hintergrund (blockiert Startup NIE) ──────────
     async def _ensure_all_indexes():
         from pymongo import ASCENDING, DESCENDING

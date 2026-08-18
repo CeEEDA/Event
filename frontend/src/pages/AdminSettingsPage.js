@@ -2321,6 +2321,21 @@ function HalloPetraSection() {
     finally { setTesting(false); }
   };
 
+  const syncCalls = async () => {
+    setTesting(true);
+    try {
+      const r = await api.post("/hallopetra/sync-calls", null, withToken({ limit: 100 }));
+      if (r.data.ok) {
+        toast.success(`${r.data.created} neue Anrufe importiert (${r.data.skipped_duplicate} bereits vorhanden, ${r.data.skipped_unqualified} nicht qualifiziert)`);
+        await loadRecent();
+        await loadStatus();
+      } else {
+        toast.error(`Sync fehlgeschlagen: ${r.data.body || r.data.status_code}`);
+      }
+    } catch { toast.error("Sync fehlgeschlagen"); }
+    finally { setTesting(false); }
+  };
+
   const simulateCall = async (isEmergency) => {
     setSimulating(true);
     try {
@@ -2412,6 +2427,9 @@ HALLOPETRA_BASE_URL=https://api.hallopetra.de/api/v1`}</pre>
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <Button onClick={testOutbound} disabled={testing || !status?.api_token_set} size="sm" variant="outline" data-testid="petra-test-outbound">
           {testing ? "Teste..." : "🔌 Verbindung testen"}
+        </Button>
+        <Button onClick={syncCalls} disabled={testing || !status?.api_token_set} size="sm" className="bg-emerald-600 hover:bg-emerald-700" data-testid="petra-sync-calls">
+          {testing ? "Sync läuft..." : "⬇️ Anrufe von Petra abrufen"}
         </Button>
         <Button onClick={() => simulateCall(false)} disabled={simulating} size="sm" variant="outline" data-testid="petra-simulate-normal">
           📞 Anruf simulieren

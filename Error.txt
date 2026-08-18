@@ -141,3 +141,7 @@ stripe._error.AuthenticationError: Invalid API Key provided: sk_test_****gent
 2026-07-16 12:24:30,241 [ERROR] routes.documents: Doc ffac4a9a-6d64-4fa9-898c-da147303a3bd: could not be fetched (all fallbacks failed); storage_path=eventenergie-docs/uploads/7d5c7819-5263-4bfa-a4bf-6913732dd27b.pdf
 2026-07-16 14:04:19,678 [ERROR] routes.documents: Doc b9e264c9-f8f1-4581-8724-1f3c25567259: could not be fetched (all fallbacks failed); storage_path=eventenergie-docs/uploads/c6e3239d-2711-496b-aa12-e3752733230e.pdf
 2026-07-16 15:55:22,399 [ERROR] routes.documents: Doc d31be3f7-b50c-4a40-b4b7-63eb4b3de3d6: could not be fetched (all fallbacks failed); storage_path=eventenergie-docs/uploads/09fa6a6c-879c-4390-844d-a521f2f7d18e.png
+2026-08-18 12:41:04,179 [ERROR] orders_sync: Sync Fehler: All connection attempts failed
+2026-08-18 12:42:19,905 [ERROR] orders_sync: Sync Fehler: All connection attempts failed
+2026-08-18 12:42:45,633 [ERROR] orders_sync: Sync Fehler: All connection attempts failed
+2026-08-18 12:42:59,973 [ERROR] orders_sync: Sync Fehler: All connection attempts failed

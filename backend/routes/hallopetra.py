@@ -40,7 +40,7 @@ def _config() -> dict:
         "auth_header": os.environ.get("HALLOPETRA_AUTH_HEADER", "Authorization"),
         "auth_scheme": os.environ.get("HALLOPETRA_AUTH_SCHEME", "Bearer"),
         "webhook_secret": os.environ.get("HALLOPETRA_WEBHOOK_SECRET", ""),
-        "base_url": os.environ.get("HALLOPETRA_BASE_URL", "https://api.hallopetra.de/api/v1"),
+        "base_url": os.environ.get("HALLOPETRA_BASE_URL", "https://hallopetra-api.vercel.app"),
     }
 
 
@@ -63,16 +63,23 @@ async def _require_admin(token: str):
 # ─────────────────────────────────────────────────────────────────────────────
 # HMAC-Signaturpruefung (Webhook)
 # ─────────────────────────────────────────────────────────────────────────────
-def _verify_signature(body: bytes, signature_header: str | None, secret: str) -> bool:
-    """Vergleicht X-Petra-Signature (HMAC-SHA256 hex) gegen erwartete Signatur.
+def _verify_signature(body: bytes, signature_header: str | None, secret: str, tolerance_seconds: int = 300) -> bool:
+    """Verifiziert X-HalloPetra-Signature (Format: 't=<unixSeconds>,v1=<hex>').
+    HMAC ueber "t.body". Timestamp aelter als tolerance -> abgelehnt (Replay-Schutz).
     Konstante-Zeit-Vergleich, kein Timing-Leak."""
+    import re
+    import time
     if not signature_header or not secret:
         return False
-    # Petra sendet moeglicherweise als "sha256=<hex>" (Github/Stripe-Style).
-    expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    provided = signature_header.strip()
-    if provided.lower().startswith("sha256="):
-        provided = provided.split("=", 1)[1]
+    m = re.match(r"^t=(\d+),v1=([0-9a-f]{64})$", signature_header.strip())
+    if not m:
+        return False
+    ts_str, provided = m.group(1), m.group(2)
+    ts = int(ts_str)
+    if abs(int(time.time()) - ts) > tolerance_seconds:
+        return False
+    signed = f"{ts_str}.{body.decode('utf-8', errors='replace')}"
+    expected = hmac.new(secret.encode("utf-8"), signed.encode("utf-8"), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, provided)
 
 
@@ -125,57 +132,119 @@ async def _find_customer_by_phone(phone: str) -> dict | None:
     return doc
 
 
-async def _create_task_from_call(call: dict) -> dict:
-    """Erzeugt eine Aufgabe in `tasks` aus einem Petra-Anruf-Event.
-    Idempotent via petra_call_id: doppelte Webhooks fuegen keinen neuen Task an."""
-    petra_call_id = call.get("id") or call.get("call_id")
-    if not petra_call_id:
-        raise ValueError("call.id / call_id fehlt")
+def _map_priority_from_petra_call(call: dict) -> str:
+    """Uebersetzt Petras Call-Payload in unser Priority-Schema.
+    Notfall wird via executedTasks erkannt (z.B. 'Störung Stromausfall').
+    Ansonsten normal."""
+    tasks = call.get("executedTasks") or []
+    tasks_lower = " ".join(str(t).lower() for t in tasks)
+    if any(kw in tasks_lower for kw in ("stör", "notfall", "notruf", "ausfall", "stromausfall")):
+        return "urgent"
+    return "normal"
 
-    # Idempotenz-Check
+
+def _is_qualified_petra_call(call: dict) -> bool:
+    """User-Vorgabe: NUR qualifizierte Anrufe werden zu Tasks.
+    Kriterium: executedTasks nicht leer (Petra hat einen echten Ablauf durchlaufen)
+    UND es gibt eine Zusammenfassung."""
+    if not call.get("executedTasks"):
+        return False
+    if not (call.get("summary") or "").strip():
+        return False
+    return True
+
+
+async def _create_task_from_petra_call(call: dict) -> dict:
+    """Erzeugt eine Aufgabe aus einer Petra-Call-Response (echtes API-Schema).
+    Idempotent via petra_call_id."""
+    petra_call_id = call.get("id")
+    if not petra_call_id:
+        raise ValueError("call.id fehlt")
+
     existing = await db.tasks.find_one({"petra_call_id": petra_call_id}, {"_id": 0})
     if existing:
         return {"created": False, "task_id": existing.get("id"), "reason": "duplicate"}
 
-    q = call.get("qualification") or {}
-    caller = call.get("caller") or {}
-    caller_phone = caller.get("phone") or call.get("from")
-    caller_name = caller.get("name") or "Unbekannt"
-
-    customer = await _find_customer_by_phone(caller_phone) if caller_phone else None
-    priority = _map_priority(q)
+    caller_phone = call.get("callerNumber") or ""
+    tasks_list = call.get("executedTasks") or []
+    priority = _map_priority_from_petra_call(call)
     is_emergency = priority == "urgent"
 
-    subject = q.get("summary") or q.get("subject") or f"Anruf von {caller_name}"
-    if is_emergency:
-        subject = "🚨 NOTFALL: " + subject
+    # Kunde per Telefonnummer matchen
+    customer = await _find_customer_by_phone(caller_phone)
+    caller_name = (customer or {}).get("name") or (customer or {}).get("firma") or "Anrufer"
+
+    subject_base = tasks_list[0] if tasks_list else (call.get("summary") or "Anruf")[:80]
+    subject = f"🚨 NOTFALL: {subject_base}" if is_emergency else subject_base
 
     task = {
         "id": str(uuid.uuid4()),
         "type": "hallopetra_call",
         "petra_call_id": petra_call_id,
         "title": subject[:200],
-        "description": (call.get("transcript_summary") or q.get("description") or "")[:2000],
+        "description": (call.get("summary") or "")[:2000],
         "priority": priority,
         "status": "open",
         "source": "hallopetra",
         "caller_name": caller_name,
-        "caller_phone": caller_phone or "",
+        "caller_phone": caller_phone,
         "customer_id": (customer or {}).get("id"),
         "customer_name": (customer or {}).get("name") or (customer or {}).get("firma"),
-        "category": q.get("category") or "call",
+        "category": tasks_list[0] if tasks_list else "call",
+        "executed_tasks": tasks_list,
         "is_emergency": is_emergency,
-        "petra_call_started_at": call.get("started_at"),
-        "petra_call_ended_at": call.get("ended_at"),
-        "petra_duration_seconds": call.get("duration_seconds"),
-        "petra_recording_url": call.get("recording_url"),
-        "petra_transcript_url": call.get("transcript_url"),
-        "petra_full_payload": call,  # Full raw payload fuer spaetere Auswertung
+        "petra_call_started_at": call.get("startedAt"),
+        "petra_duration_seconds": call.get("durationSeconds"),
+        "petra_call_type": call.get("callType"),
+        "petra_contact_id": call.get("contactId"),
+        "petra_transcript": call.get("transcript") or [],
+        "petra_full_payload": call,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.tasks.insert_one(task)
     logger.info(f"HalloPetra: Task {task['id']} erstellt "
-                f"(petra_call={petra_call_id}, priority={priority}, customer={task['customer_id']})")
+                f"(petra_call={petra_call_id}, priority={priority}, tasks={tasks_list})")
+    return {"created": True, "task_id": task["id"], "priority": priority,
+            "customer_matched": bool(customer)}
+
+
+# Backward compatible alias (fuer Webhook der schon deployed war):
+async def _create_task_from_call(call: dict) -> dict:
+    """Alter Webhook-Payload-Style. Delegiert an neuen Handler wenn moeglich."""
+    if "callerNumber" in call or "executedTasks" in call or "durationSeconds" in call:
+        return await _create_task_from_petra_call(call)
+    # Fallback fuer simulate-call / alten Payload
+    petra_call_id = call.get("id") or call.get("call_id")
+    if not petra_call_id:
+        raise ValueError("call.id fehlt")
+    existing = await db.tasks.find_one({"petra_call_id": petra_call_id}, {"_id": 0})
+    if existing:
+        return {"created": False, "task_id": existing.get("id"), "reason": "duplicate"}
+    q = call.get("qualification") or {}
+    caller = call.get("caller") or {}
+    caller_phone = caller.get("phone") or call.get("from") or ""
+    caller_name = caller.get("name") or "Unbekannt"
+    customer = await _find_customer_by_phone(caller_phone) if caller_phone else None
+    priority = _map_priority(q)
+    is_emergency = priority == "urgent"
+    subject = q.get("summary") or q.get("subject") or f"Anruf von {caller_name}"
+    if is_emergency:
+        subject = "🚨 NOTFALL: " + subject
+    task = {
+        "id": str(uuid.uuid4()),
+        "type": "hallopetra_call",
+        "petra_call_id": petra_call_id,
+        "title": subject[:200],
+        "description": (call.get("transcript_summary") or q.get("description") or "")[:2000],
+        "priority": priority, "status": "open", "source": "hallopetra",
+        "caller_name": caller_name, "caller_phone": caller_phone or "",
+        "customer_id": (customer or {}).get("id"),
+        "customer_name": (customer or {}).get("name") or (customer or {}).get("firma"),
+        "category": q.get("category") or "call", "is_emergency": is_emergency,
+        "petra_full_payload": call,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.tasks.insert_one(task)
     return {"created": True, "task_id": task["id"], "priority": priority,
             "customer_matched": bool(customer)}
 
@@ -249,6 +318,7 @@ async def status(token: str = Query(...)):
         {"source": "hallopetra", "is_emergency": True, "created_at": {"$gte": since}}
     )
     last_event = await db.hallopetra_events.find_one({}, sort=[("received_at", -1)])
+    last_sync = await db.system_settings.find_one({"key": "hallopetra_last_sync"}, {"_id": 0})
     return {
         "configured": _is_configured(cfg),
         "webhook_secret_set": bool(cfg["webhook_secret"]),
@@ -263,32 +333,176 @@ async def status(token: str = Query(...)):
             "emergencies": emergency_count,
         },
         "last_event_at": (last_event or {}).get("received_at"),
+        "last_sync_at": (last_sync or {}).get("value"),
+        "last_sync_stats": (last_sync or {}).get("stats"),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-Sync Scheduler (5-Minuten-Poll)
+# ─────────────────────────────────────────────────────────────────────────────
+import asyncio as _asyncio
+
+_sync_task = None
+
+
+async def _auto_sync_loop(interval_seconds: int = 300):
+    """Poll-Loop: holt alle 5min die neuesten Anrufe von Petra."""
+    await _asyncio.sleep(30)  # Startup-Delay damit DB/Router bereit sind
+    while True:
+        try:
+            cfg = _config()
+            headers = _auth_headers(cfg)
+            if headers:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    resp = await client.get(cfg["base_url"] + "/v1/calls",
+                                            headers=headers, params={"limit": 50})
+                if resp.status_code < 400:
+                    data = resp.json()
+                    items = data.get("items", [])
+                    created = 0
+                    for call in items:
+                        if not _is_qualified_petra_call(call):
+                            continue
+                        res = await _create_task_from_petra_call(call)
+                        if res.get("created"):
+                            created += 1
+                    if created:
+                        logger.info(f"HalloPetra auto-sync: {created} neue Anrufe importiert")
+                    await db.system_settings.update_one(
+                        {"key": "hallopetra_last_sync"},
+                        {"$set": {"key": "hallopetra_last_sync",
+                                  "value": datetime.now(timezone.utc).isoformat(),
+                                  "stats": {"created": created, "total_fetched": len(items),
+                                            "source": "auto"}}},
+                        upsert=True,
+                    )
+        except Exception as e:
+            logger.warning(f"HalloPetra auto-sync Fehler: {e}")
+        await _asyncio.sleep(interval_seconds)
+
+
+def start_hallopetra_sync():
+    """Startet den Auto-Sync-Loop (wird von server.py aufgerufen)."""
+    global _sync_task
+    if _sync_task is None or _sync_task.done():
+        _sync_task = _asyncio.create_task(_auto_sync_loop())
+        logger.info("HalloPetra Auto-Sync-Loop gestartet (Intervall 5 Min)")
+
+
+def _auth_headers(cfg: dict) -> dict:
+    """Baut den Auth-Header laut Petra-Doku (Bearer hp_ck_...)."""
+    token_value = cfg["api_token"] or cfg["client_secret"] or cfg["client_id"]
+    if not token_value:
+        return {}
+    header_val = f"{cfg['auth_scheme']} {token_value}".strip() if cfg["auth_scheme"] else token_value
+    return {cfg["auth_header"]: header_val, "Accept": "application/json"}
 
 
 @router.post("/test-outbound")
 async def test_outbound(token: str = Query(...)):
-    """Testet den Ausgehend-Aufruf gegen HalloPetra. Ruft base_url/ auf und
-    liefert den HTTP-Status + Body zurueck."""
+    """Testet den Ausgehend-Aufruf gegen HalloPetra (GET /v1/webhooks)."""
     await _require_admin(token)
     cfg = _config()
-    if not (cfg["api_token"] or cfg["client_secret"]):
-        return {"ok": False, "error": "Kein Token/Secret gesetzt. HALLOPETRA_API_TOKEN oder HALLOPETRA_CLIENT_SECRET in .env eintragen."}
-    token_value = cfg["api_token"] or cfg["client_secret"]
-    header_val = f"{cfg['auth_scheme']} {token_value}".strip() if cfg["auth_scheme"] else token_value
+    headers = _auth_headers(cfg)
+    if not headers:
+        return {"ok": False, "error": "Kein Token gesetzt (HALLOPETRA_CLIENT_ID/CLIENT_SECRET/API_TOKEN)."}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(cfg["base_url"] + "/", headers={cfg["auth_header"]: header_val})
+            resp = await client.get(cfg["base_url"] + "/v1/webhooks", headers=headers)
         return {
             "ok": resp.status_code < 400,
             "status_code": resp.status_code,
             "body_preview": resp.text[:500],
             "url": str(resp.url),
-            "auth_header_used": cfg["auth_header"],
-            "auth_scheme_used": cfg["auth_scheme"],
         }
     except Exception as e:
         return {"ok": False, "error": str(e)[:500]}
+
+
+@router.post("/sync-calls")
+async def sync_calls(token: str = Query(...), limit: int = 50):
+    """Zieht die letzten N Anrufe aktiv von Petra ab und legt Tasks an
+    fuer alle qualifizierten Anrufe (idempotent, doppelte werden geskippt)."""
+    await _require_admin(token)
+    cfg = _config()
+    headers = _auth_headers(cfg)
+    if not headers:
+        raise HTTPException(status_code=400, detail="HalloPetra-Token nicht konfiguriert")
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(
+                cfg["base_url"] + "/v1/calls",
+                headers=headers,
+                params={"limit": limit},
+            )
+        if resp.status_code >= 400:
+            return {"ok": False, "status_code": resp.status_code, "body": resp.text[:500]}
+        data = resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Petra-API Fehler: {e}")
+
+    items = data.get("items", [])
+    stats = {"total": len(items), "created": 0, "skipped_duplicate": 0, "skipped_unqualified": 0}
+    for call in items:
+        if not _is_qualified_petra_call(call):
+            stats["skipped_unqualified"] += 1
+            continue
+        res = await _create_task_from_petra_call(call)
+        if res.get("created"):
+            stats["created"] += 1
+        else:
+            stats["skipped_duplicate"] += 1
+    logger.info(f"HalloPetra sync: {stats}")
+    # Letzten Sync-Zeitpunkt merken
+    await db.system_settings.update_one(
+        {"key": "hallopetra_last_sync"},
+        {"$set": {"key": "hallopetra_last_sync",
+                  "value": datetime.now(timezone.utc).isoformat(),
+                  "stats": stats}},
+        upsert=True,
+    )
+    return {"ok": True, **stats, "next_cursor": data.get("nextCursor")}
+
+
+@router.post("/register-webhook")
+async def register_webhook(token: str = Query(...), event: str = Query("call.finished")):
+    """Registriert unseren Webhook-Endpoint bei Petra (POST /v1/webhooks).
+    Speichert den zurueckgegebenen whsec fuer die HMAC-Verifikation."""
+    await _require_admin(token)
+    cfg = _config()
+    headers = _auth_headers(cfg)
+    if not headers:
+        raise HTTPException(status_code=400, detail="HalloPetra-Token nicht konfiguriert")
+    public_url = os.environ.get("PUBLIC_URL") or os.environ.get("REACT_APP_BACKEND_URL", "")
+    if not public_url:
+        raise HTTPException(status_code=400, detail="PUBLIC_URL nicht gesetzt")
+    webhook_url = public_url.rstrip("/") + "/api/hallopetra/webhook"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                cfg["base_url"] + "/v1/webhooks",
+                headers={**headers, "Content-Type": "application/json"},
+                json={"event": event, "url": webhook_url},
+            )
+        if resp.status_code >= 400:
+            return {"ok": False, "status_code": resp.status_code, "body": resp.text[:500]}
+        data = resp.json()
+        # Secret speichern
+        secret = data.get("secret") or data.get("signingSecret")
+        if secret:
+            await db.system_settings.update_one(
+                {"key": "hallopetra_webhook_secret_db"},
+                {"$set": {"key": "hallopetra_webhook_secret_db", "value": secret,
+                          "webhook_id": data.get("id"),
+                          "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True,
+            )
+        return {"ok": True, "webhook_id": data.get("id"),
+                "secret_stored": bool(secret),
+                "url_registered": webhook_url, "event": event}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Petra-API Fehler: {e}")
 
 
 class SimulateEvent(BaseModel):
