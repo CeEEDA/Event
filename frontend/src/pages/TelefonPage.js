@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button";
 import { toast } from "sonner";
 import {
   ArrowLeft, Phone, RefreshCw, Search, CheckCircle2, AlertCircle,
-  Clock, User, X, ExternalLink, FileText, BookOpen, Download, MapPin,
+  Clock, User, X, ExternalLink, FileText, BookOpen, Download, MapPin, MessageSquare,
 } from "lucide-react";
 
 const PRIORITY_STYLES = {
@@ -16,19 +16,24 @@ const PRIORITY_STYLES = {
 };
 
 function CallDetailModal({ call, onClose, onDone }) {
+  const [showTranscript, setShowTranscript] = useState(false);
   if (!call) return null;
   const p = PRIORITY_STYLES[call.priority] || PRIORITY_STYLES.normal;
   const payload = call.petra_full_payload || {};
   const q = payload.qualification || {};
+  const transcript = call.petra_transcript || payload.transcript || [];
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-5 border-b border-gray-200 flex items-start justify-between gap-3 sticky top-0 bg-white">
+        <div className="p-5 border-b border-gray-200 flex items-start justify-between gap-3 sticky top-0 bg-white z-10">
           <div className="flex-1 min-w-0">
             <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${p.bg} ${p.text} mb-2`}>{p.label}</span>
             <h2 className="text-lg font-semibold text-gray-900">{call.title}</h2>
             <p className="text-xs text-gray-500 mt-1">
-              {call.caller_name || "Unbekannt"} · {call.caller_phone || "keine Tel."} · {new Date(call.created_at).toLocaleString("de-DE")}
+              <strong className="text-gray-800">{call.caller_name || "Unbekannt"}</strong>
+              {call.caller_phone && <> · <a href={`tel:${call.caller_phone}`} className="text-rose-600 hover:underline">{call.caller_phone}</a></>}
+              {" · "}{new Date(call.created_at).toLocaleString("de-DE")}
+              {call.caller_standort && <span className="ml-1 text-gray-400">· 📍 {call.caller_standort}</span>}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700" data-testid="close-call-detail"><X className="w-5 h-5" /></button>
@@ -44,10 +49,10 @@ function CallDetailModal({ call, onClose, onDone }) {
             <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Zusammenfassung</p>
             <p className="text-sm text-gray-800 whitespace-pre-wrap">{call.description || q.summary || "Keine Zusammenfassung von Petra hinterlegt."}</p>
           </div>
-          {q.category && (
+          {(q.category || call.category) && (
             <div className="grid grid-cols-2 gap-3">
-              <div><p className="text-[10px] uppercase text-gray-400">Kategorie</p><p className="text-sm font-medium text-gray-900">{q.category}</p></div>
-              {q.urgency && <div><p className="text-[10px] uppercase text-gray-400">Dringlichkeit</p><p className="text-sm font-medium text-gray-900">{q.urgency}</p></div>}
+              <div><p className="text-[10px] uppercase text-gray-400">Kategorie</p><p className="text-sm font-medium text-gray-900">{call.category || q.category}</p></div>
+              {(q.urgency || call.priority) && <div><p className="text-[10px] uppercase text-gray-400">Dringlichkeit</p><p className="text-sm font-medium text-gray-900">{q.urgency || call.priority}</p></div>}
             </div>
           )}
           {call.petra_duration_seconds != null && (
@@ -56,19 +61,50 @@ function CallDetailModal({ call, onClose, onDone }) {
               <p className="text-sm text-gray-800">{Math.floor(call.petra_duration_seconds / 60)}:{String(call.petra_duration_seconds % 60).padStart(2, "0")} min</p>
             </div>
           )}
+
+          {/* Transkript-Sektion (ausklappbar) */}
+          {transcript.length > 0 && (
+            <div className="border-t border-gray-100 pt-3">
+              <button onClick={() => setShowTranscript(v => !v)}
+                className="w-full flex items-center justify-between gap-2 text-xs font-semibold text-gray-700 hover:text-gray-900 py-1"
+                data-testid="toggle-transcript">
+                <span className="flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4 text-rose-500" />
+                  Gesprächsverlauf ({transcript.length} Nachrichten)
+                </span>
+                <span className="text-gray-400">{showTranscript ? "▲ zuklappen" : "▼ anzeigen"}</span>
+              </button>
+              {showTranscript && (
+                <div className="mt-3 space-y-2 max-h-96 overflow-y-auto bg-gray-50 rounded-lg p-3 border border-gray-100" data-testid="transcript-content">
+                  {transcript.map((line, i) => {
+                    const isPetra = (line.role || "").toLowerCase() === "petra"
+                                    || (line.role || "").toLowerCase() === "assistant";
+                    return (
+                      <div key={i} className={`flex ${isPetra ? "justify-start" : "justify-end"}`}>
+                        <div className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                          isPetra
+                            ? "bg-white border border-gray-200 text-gray-800"
+                            : "bg-rose-100 border border-rose-200 text-rose-900"
+                        }`}>
+                          <p className={`text-[9px] font-semibold uppercase mb-0.5 ${isPetra ? "text-rose-500" : "text-rose-700"}`}>
+                            {isPetra ? "🤖 Petra" : "📞 Anrufer"}
+                          </p>
+                          <p className="whitespace-pre-wrap">{line.text || line.content || ""}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             {call.petra_recording_url && (
               <a href={call.petra_recording_url} target="_blank" rel="noreferrer"
                  className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg px-3 py-1.5"
                  data-testid="call-recording-link">
                 <ExternalLink className="w-3.5 h-3.5" /> Aufnahme anhören
-              </a>
-            )}
-            {call.petra_transcript_url && (
-              <a href={call.petra_transcript_url} target="_blank" rel="noreferrer"
-                 className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg px-3 py-1.5"
-                 data-testid="call-transcript-link">
-                <FileText className="w-3.5 h-3.5" /> Volles Transkript
               </a>
             )}
             {call.caller_phone && (

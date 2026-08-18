@@ -642,6 +642,61 @@ async def list_contacts(token: str = Query(...), search: str = "", limit: int = 
             "total": total, "linked": linked, "unlinked": total - linked}
 
 
+@router.post("/enrich-calls")
+async def enrich_calls(token: str = Query(...)):
+    """Backfill: Setzt caller_name/customer_id fuer bestehende Anruf-Tasks
+    anhand des importierten Petra-Telefonbuchs.
+    Nuetzlich nach dem Erst-Import der Kontakte."""
+    await _require_admin(token)
+    tasks = await db.tasks.find(
+        {"source": "hallopetra"},
+        {"_id": 0, "id": 1, "caller_phone": 1, "caller_name": 1, "customer_id": 1}
+    ).to_list(2000)
+    stats = {"total": len(tasks), "enriched": 0, "skipped_no_phone": 0, "skipped_no_match": 0}
+    for t in tasks:
+        phone = t.get("caller_phone") or ""
+        if not phone:
+            stats["skipped_no_phone"] += 1
+            continue
+        digits = _normalize_phone(phone)
+        tail = digits[-8:] if len(digits) >= 8 else digits
+        if not tail:
+            stats["skipped_no_phone"] += 1
+            continue
+        # Priorisiere Kunden-DB, dann Petra-Kontakt
+        local = await _match_local_customer(tail)
+        contact = None if local else await db.hallopetra_contacts.find_one(
+            {"phone_digits": {"$regex": tail + "$"}},
+            {"_id": 0, "name": 1, "first_name": 1, "last_name": 1,
+             "petra_contact_id": 1, "linked_kunde_id": 1, "linked_kunde_name": 1,
+             "standort": 1, "fields": 1},
+        )
+        update = {}
+        if local:
+            if not t.get("customer_id"):
+                update["customer_id"] = local.get("id")
+            update["customer_name"] = local.get("name")
+            if t.get("caller_name") in ("Anrufer", "Unbekannt", "", None):
+                update["caller_name"] = local.get("name")
+        elif contact and contact.get("name"):
+            if t.get("caller_name") in ("Anrufer", "Unbekannt", "", None):
+                update["caller_name"] = contact.get("name")
+            update["petra_contact_id"] = contact.get("petra_contact_id")
+            if contact.get("linked_kunde_id") and not t.get("customer_id"):
+                update["customer_id"] = contact.get("linked_kunde_id")
+                update["customer_name"] = contact.get("linked_kunde_name")
+            if contact.get("standort"):
+                update["caller_standort"] = contact.get("standort")
+        else:
+            stats["skipped_no_match"] += 1
+            continue
+        if update:
+            await db.tasks.update_one({"id": t["id"]}, {"$set": update})
+            stats["enriched"] += 1
+    logger.info(f"HalloPetra enrich-calls: {stats}")
+    return {"ok": True, **stats}
+
+
 @router.get("/contacts/{contact_id}")
 async def contact_detail(contact_id: str, token: str = Query(...)):
     """Volle Details eines Petra-Kontakts inkl. aller `fields`."""
