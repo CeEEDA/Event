@@ -41,24 +41,14 @@ root.render(
   </React.StrictMode>,
 );
 
+// Service Worker: deregistriere komplett und loesche alle Caches.
+// (Frueher fuehrte der SW auf Android Chrome zu Reload-Loops bei neuen Deployments,
+// weil gecachte index.html auf inzwischen entfernte JS-Bundle-Hashes zeigte.)
 if ('serviceWorker' in navigator) {
-  // Service Worker NICHT auf Kiosk-Routen registrieren - sonst cached er die
-  // einsatzzentrale-kiosk.html und alte Versionen bleiben haengen.
-  const onKioskRoute = (
-    window.location.pathname.startsWith('/einsatzzentrale') ||
-    window.location.pathname.startsWith('/api/einsatzzentrale/kiosk-page')
-  );
-  if (!onKioskRoute) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    });
-  } else {
-    // Falls bereits registriert (von frueheren Besuchen): abmelden + Caches loeschen
-    navigator.serviceWorker.getRegistrations().then((regs) => {
-      regs.forEach((r) => r.unregister());
-    }).catch(() => {});
-    if (window.caches && caches.keys) {
-      caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).catch(() => {});
-    }
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((r) => r.unregister());
+  }).catch(() => {});
+  if (window.caches && caches.keys) {
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).catch(() => {});
   }
 }
