@@ -1374,20 +1374,72 @@ async def get_time_overview(token: str = Query(...)):
         else:
             ist_by_date[d] = ist_by_date.get(d, 0.0) + float(e.get("duration_minutes") or 0)
 
+    # Urlaub / Krank / Ueberstundenabbau in dieser Woche UND den 7-Tagen-Preview
+    # (bis today+7 damit die Vorschau auch Urlaub der Folgewoche zeigt).
+    preview_end = today + timedelta(days=8)
+    off_days: set = set()  # urlaub + krank (Soll faellt weg, KEINE Belastung Konto)
+    abbau_days: set = set()  # ueberstundenabbau (Soll faellt weg, Konto belastet)
+    async for r in db.time_off_requests.find(
+        {"user_id": user_id, "status": "approved",
+         "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]},
+         "start_date": {"$lte": preview_end.isoformat()},
+         "end_date": {"$gte": week_from}},
+        {"_id": 0, "type": 1, "start_date": 1, "end_date": 1},
+    ):
+        try:
+            s = _date.fromisoformat(r["start_date"])
+            e = _date.fromisoformat(r["end_date"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        target = abbau_days if (r.get("type") or "").lower() == "ueberstundenabbau" else off_days
+        cur_d = s
+        while cur_d <= e:
+            if week_start <= cur_d <= preview_end:
+                target.add(cur_d.isoformat())
+            cur_d += timedelta(days=1)
+
+    # Offdays aus Einsatzplanung (Ausgleichstage - Soll = 0)
+    offday_days: set = set()
+    preview_end_str = (preview_end + timedelta(days=1)).isoformat()
+    async for r in db.shift_assignments.find(
+        {"user_id": user_id, "is_offday": True,
+         "date": {"$gte": week_from, "$lt": preview_end_str}},
+        {"_id": 0, "date": 1},
+    ):
+        d = r.get("date")
+        if d:
+            offday_days.add(d)
+
     def _day_info(d: _date) -> dict:
         ds = d.isoformat()
         weekday = d.weekday()
         is_holiday = ds in holidays
-        # Soll: 0 bei Feiertag, sonst aus Wochenplan
-        soll = 0 if is_holiday else _soll_minutes_from_schedule(schedule, weekday)
+        is_urlaub = ds in off_days
+        is_abbau = ds in abbau_days
+        is_offday = ds in offday_days
+        # Soll: 0 bei Feiertag/Urlaub/Krank/Ueberstundenabbau/Offday, sonst Plan
+        if is_holiday or is_urlaub or is_abbau or is_offday:
+            soll = 0
+        else:
+            soll = _soll_minutes_from_schedule(schedule, weekday)
         ist = int(round(ist_by_date.get(ds, 0.0)))
         weekday_label = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][weekday]
+        # Label fuer die UI (was warum kein Soll gerechnet wird)
+        reason = None
+        if is_holiday: reason = "Feiertag"
+        elif is_urlaub: reason = "Urlaub/Krank"
+        elif is_abbau: reason = "Überstundenabbau"
+        elif is_offday: reason = "Offday"
         return {
             "date": ds,
             "weekday": weekday_label,
             "weekday_short": weekday_label[:2],
             "is_holiday": is_holiday,
             "holiday_name": holidays.get(ds) if is_holiday else None,
+            "is_urlaub": is_urlaub,
+            "is_abbau": is_abbau,
+            "is_offday": is_offday,
+            "reason": reason,
             "soll_minutes": int(soll),
             "ist_minutes": ist,
             "diff_minutes": ist - int(soll),
