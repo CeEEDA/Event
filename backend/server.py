@@ -41,7 +41,7 @@ client = AsyncIOMotorClient(
     minPoolSize=10,         # warme Connections, vermeidet Cold-Start-Latenz
     maxIdleTimeMS=30000,
     waitQueueTimeoutMS=5000,
-    serverSelectionTimeoutMS=10000,
+    serverSelectionTimeoutMS=30000,
 )
 db = client[os.environ['DB_NAME']]
 fs = AsyncIOMotorGridFSBucket(db)

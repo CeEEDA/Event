@@ -385,8 +385,8 @@ import asyncio as _asyncio
 _sync_task = None
 
 
-async def _auto_sync_loop(interval_seconds: int = 300):
-    """Poll-Loop: holt alle 5min die neuesten Anrufe von Petra.
+async def _auto_sync_loop(interval_seconds: int = 1800):
+    """Poll-Loop: holt alle 30min die neuesten Anrufe von Petra.
     Alle 24h zusätzlich: Kontakt-Import + Enrich der bestehenden Anrufe."""
     await _asyncio.sleep(30)  # Startup-Delay damit DB/Router bereit sind
     last_contact_sync = 0.0
@@ -397,7 +397,7 @@ async def _auto_sync_loop(interval_seconds: int = 300):
             cfg = _config()
             headers = _auth_headers(cfg)
             if headers:
-                # 1) Anrufe pullen (alle 5 Min)
+                # 1) Anrufe pullen (alle 30 Min)
                 async with httpx.AsyncClient(timeout=20) as client:
                     resp = await client.get(cfg["base_url"] + "/v1/calls",
                                             headers=headers, params={"limit": 50})
@@ -411,6 +411,8 @@ async def _auto_sync_loop(interval_seconds: int = 300):
                         res = await _create_task_from_petra_call(call)
                         if res.get("created"):
                             created += 1
+                        # Yield to event loop, entlastet den DB-Pool
+                        await _asyncio.sleep(0.05)
                     if created:
                         logger.info(f"HalloPetra auto-sync: {created} neue Anrufe importiert")
                     await db.system_settings.update_one(
@@ -463,6 +465,8 @@ async def _import_all_contacts(cfg: dict, headers: dict) -> dict:
                     stats["updated"] += 1
                 if res["linked"]:
                     stats["linked_to_kunde"] += 1
+                # Yield to event loop, entlastet den DB-Pool bei grossen Batches
+                await _asyncio.sleep(0.05)
             cursor = data.get("nextCursor")
             if not cursor or stats["pages"] > 100:
                 break
@@ -514,6 +518,8 @@ async def _enrich_calls_backfill() -> dict:
         if update:
             await db.tasks.update_one({"id": t["id"]}, {"$set": update})
             stats["enriched"] += 1
+        # Yield to event loop, entlastet den DB-Pool bei grossen Enrich-Batches
+        await _asyncio.sleep(0.05)
     return stats
 
 
@@ -522,7 +528,7 @@ def start_hallopetra_sync():
     global _sync_task
     if _sync_task is None or _sync_task.done():
         _sync_task = _asyncio.create_task(_auto_sync_loop())
-        logger.info("HalloPetra Auto-Sync-Loop gestartet (Intervall 5 Min)")
+        logger.info("HalloPetra Auto-Sync-Loop gestartet (Intervall 30 Min)")
 
 
 def _auth_headers(cfg: dict) -> dict:

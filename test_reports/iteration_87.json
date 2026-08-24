@@ -1,0 +1,31 @@
+{
+  "summary": "Backend-only regression testing for HalloPetra stability fixes (MongoDB timeout, sync interval, throttling). All 13 pytest tests passed. Verified code-level fixes (serverSelectionTimeoutMS=30000, _auto_sync_loop default=1800s, throttling yields present) and runtime API behavior (/api/health, admin login, /api/tasks, all /api/hallopetra/* endpoints including manual /sync-calls). Backend logs confirm 'HalloPetra Auto-Sync-Loop gestartet (Intervall 30 Min)' and zero ServerSelectionTimeoutError occurrences. Manual sync completes in <60s without crashing backend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_hallopetra_stability_iteration87.py",
+    "/app/test_reports/pytest/iteration87_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "hallopetra.py is 1013 lines — approaching the 700-line threshold; consider splitting into hallopetra_sync.py, hallopetra_contacts.py, hallopetra_routes.py for maintainability.",
+    "Auth pattern uses token as query param (?token=...) across all HalloPetra endpoints — leaks JWTs into access logs (visible in /var/log/supervisor/backend.out.log). Should switch to Authorization: Bearer header.",
+    "_auto_sync_loop swallows all exceptions with a broad `except Exception` and only logs a warning — a permanently failing DB call would silently spin every 30 min. Consider exponential backoff on repeated failures."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_hallopetra_stability_iteration87.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "n/a"},
+  "test_credentials": "admin@test.com / password (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "HalloPetra stability tests live in test_hallopetra_stability_iteration87.py. Reuse as regression whenever hallopetra.py or MongoDB init in server.py changes. Note: manual sync currently returns 200 with created=0 (token configured, no new qualified calls). If test env token is removed, expect 400 'HalloPetra-Token nicht konfiguriert' — test allows both."
+}

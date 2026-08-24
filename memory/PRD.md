@@ -19,6 +19,11 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-24 (HalloPetra Sync-Throttling – MongoDB-Timeout-Fix)
+- **MongoDB-Stabilität** (`/app/backend/server.py`): `serverSelectionTimeoutMS` von 10 s → **30 s** erhöht, verhindert `ServerSelectionTimeoutError` unter Last.
+- **HalloPetra Auto-Sync-Loop entzerrt** (`/app/backend/routes/hallopetra.py`): Poll-Intervall von 5 Min → **30 Min** (1800 s). Drei innere Loops (Call-Import, `_import_all_contacts`, `_enrich_calls_backfill`) mit `await asyncio.sleep(0.05)` pro Iteration entlastet – DB-Pool bleibt frei.
+- **Backend-Tests** (`/app/backend/tests/test_hallopetra_stability_iteration87.py`): 13/13 grün, manueller Sync `<60 s`, keine Timeouts, alle bestehenden Endpoints (Auth, Tasks, HalloPetra) unverändert.
+
 ### 2026-02-18 (Telefon-Kachel im Hub + Toggle in Benutzerverwaltung)
 - **Neue Hub-Kachel „Telefon"** (`/app/frontend/src/pages/HubPage.js` + `/app/frontend/src/pages/TelefonPage.js` + `/app/frontend/src/App.js`): Admin + jeder Mitarbeiter mit `apps.modules.telefon===true` sieht die neue rosa Telefon-Kachel im Hub. Route `/telefon` zeigt alle Petra-Anrufe mit Statistik-Kacheln (Offen / 🚨 Notfälle / Alle), Suche, Filter, Detail-Modal mit Zusammenfassung, Anrufdauer, „Zurückrufen"-Link (tel:), Aufnahme/Transkript-Links, „Als erledigt markieren"-Button.
 - **Neuer Toggle „Telefon (Anrufe)"** in UserEditModal (`/app/frontend/src/components/admin/UserEditModal.jsx`): Neues Modul-Feld `telefon` in der Hub-Kachel-Grid – wenn AN sieht der Mitarbeiter die Telefon-Kachel.
