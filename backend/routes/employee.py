@@ -2134,7 +2134,8 @@ async def get_birthdays_today(token: str = Query(...)):
     today_mmdd = today.strftime("%m-%d")
 
     users = await db.users.find(
-        {"date_of_birth": {"$exists": True, "$ne": ""}},
+        {"date_of_birth": {"$exists": True, "$ne": ""},
+         "is_active": {"$ne": False}},
         {"_id": 0, "id": 1, "name": 1, "date_of_birth": 1}
     ).to_list(1000)
 
