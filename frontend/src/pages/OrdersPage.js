@@ -514,7 +514,7 @@ export default function OrdersPage() {
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500" data-testid="order-count-mobile">
-                  {loading ? "Laden..." : `${sortedOrders.length} Aufträge`}
+                  {loading ? "Laden..." : `${sortedOrders.filter(o => statusFilter === "canceled" || !o.is_canceled).length} Aufträge`}
                 </span>
                 {(dateFrom || dateTo || statusFilter !== "all") && (
                   <button
@@ -615,7 +615,9 @@ export default function OrdersPage() {
                       <span className="text-sm text-gray-500">Aufträge werden geladen...</span>
                     </div>
                   ) : (
-                    sortedOrders.map((order) => (
+                    sortedOrders
+                      .filter((order) => statusFilter === "canceled" || !order.is_canceled)
+                      .map((order) => (
                       <SwipeableOrderCard
                         key={order.primary_key}
                         order={order}
