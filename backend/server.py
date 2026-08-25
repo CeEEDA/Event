@@ -2125,6 +2125,9 @@ app.include_router(tank_status_router)
 from routes.hallopetra import router as hallopetra_router
 app.include_router(hallopetra_router)
 
+from routes.system_diag import router as system_diag_router
+app.include_router(system_diag_router)
+
 from routes.einsatzzentrale import router as einsatzzentrale_router, init_einsatzzentrale_routes
 init_einsatzzentrale_routes(db, verify_password, create_jwt_token, decode_jwt_token, get_default_apps)
 app.include_router(einsatzzentrale_router)
@@ -2325,6 +2328,13 @@ async def startup_event():
         start_hallopetra_sync()
     except Exception as _e:
         logger.warning(f"HalloPetra Auto-Sync konnte nicht starten: {_e}")
+
+    # Health-Diag Log-Loop (alle 15 Min RSS/FDs/Tasks/Mongo-Ping)
+    try:
+        from routes.system_diag import start_health_diag_logger
+        start_health_diag_logger()
+    except Exception as _e:
+        logger.warning(f"Health-Diag Log-Loop konnte nicht starten: {_e}")
 
     # ── ALLE Indexes im Hintergrund (blockiert Startup NIE) ──────────
     async def _ensure_all_indexes():
