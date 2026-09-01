@@ -7,8 +7,11 @@ markiert und bekommt `ai_status = "completed"` mit Hinweis, dass User optional
 "KI neu analysieren" klicken kann sobald Ollama wieder laeuft.
 """
 import re
+import logging
 from datetime import datetime, timezone
 from typing import Optional
+
+logger = logging.getLogger("heuristic_analyzer")
 
 try:
     import fitz  # PyMuPDF
@@ -810,3 +813,128 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
         "_fallback_at": datetime.now(timezone.utc).isoformat(),
         "_zugferd_data": zug if zug_used else None,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Ollama-Plausibilitaets-Kontrolle
+# ═══════════════════════════════════════════════════════════════════════════
+
+def is_result_suspicious(result: dict) -> tuple[bool, list]:
+    """Prueft ob das Heuristik-Ergebnis verdaechtig aussieht - dann sollte
+    Ollama als Zweitmeinung ran. Returns (suspicious, reasons).
+    """
+    reasons = []
+    if not result:
+        return True, ["kein_ergebnis"]
+    if result.get("_authoritative_source") == "fallback_heuristic_no_text":
+        return True, ["kein_text_layer_scan"]
+    sender = (result.get("sender") or "").strip()
+    doc_type = result.get("document_type") or ""
+    amount = result.get("amount")
+    inv = result.get("invoice_number") or ""
+    sug = (result.get("suggested_folder") or "").lower()
+
+    # Sender leer bei Rechnung/Mahnung/Unknown-Doc im Rechnungs-Ordner
+    if not sender and (doc_type in ("rechnung", "mahnung", "unknown")
+                       or sug.startswith(("rechnungseingang", "rechnungsausgang"))):
+        reasons.append("sender_leer")
+    # Sender zu kurz oder nur Zahlen/Codes
+    if sender and len(sender) < 4:
+        reasons.append("sender_zu_kurz")
+    if sender and (re.match(r"^\d+$", sender) or re.search(r"\b[A-Z0-9]{10,}\b", sender)):
+        reasons.append("sender_wie_id")
+    # Sender enthaelt bekannte "Bogus"-Woerter (Grussformeln, Labels, Tabellen-Header)
+    lower = sender.lower()
+    for bad in ("mit freundlich", "freundliche gr", "beste gr", "herzliche gr",
+                "viele gr", "kind regards", "best regards",
+                "preis \u20ac", "^preis$", "artikel", "menge",
+                "kfz-kennzeichen", "fahrgestell", "monteur", "kundenbeleg",
+                "^firma$", "empf\u00e4nger", "absender"):
+        if bad.startswith("^") and bad.endswith("$"):
+            if re.match(bad, lower):
+                reasons.append(f"sender_bogus:{bad}")
+        elif bad in lower:
+            reasons.append(f"sender_bogus:{bad}")
+    # Rechnung ohne Rechnungsnummer
+    if doc_type == "rechnung" and not inv:
+        reasons.append("rechnungsnr_fehlt")
+    # Rechnung ohne Betrag
+    if doc_type == "rechnung" and (not amount or amount <= 0):
+        reasons.append("betrag_fehlt")
+    # Dokumenttyp unbekannt aber Ordner deutet auf Rechnung
+    if doc_type == "unknown" and sug.startswith(("rechnungseingang", "rechnungsausgang")):
+        reasons.append("dokumententyp_unbekannt")
+    return bool(reasons), reasons
+
+
+async def enrich_with_ollama_if_suspicious(pdf_bytes: bytes, filename: str, result: dict) -> dict:
+    """Wenn die Heuristik verdaechtig aussieht (siehe is_result_suspicious),
+    holt Ollama eine Zweitmeinung ein. Ollama-Ergebnis ueberschreibt NUR die
+    Felder wo die Heuristik leer/verdaechtig war. Bei Ollama-Fehler bleibt
+    das Heuristik-Ergebnis unveraendert."""
+    suspicious, reasons = is_result_suspicious(result)
+    if not suspicious:
+        return result
+    import tempfile
+    import os as _os
+    tmp_path = None
+    try:
+        from services.ollama_client import analyze_document_smart, parse_json_response
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+        system_prompt = (
+            "Du bist ein Buchhaltungs-Assistent. Analysiere das Dokument. "
+            "Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (keine Erklaerungen). "
+            "Format: {\"sender\": string, \"invoice_number\": string, "
+            "\"amount\": number, \"date\": \"YYYY-MM-DD\", "
+            "\"due_date\": \"YYYY-MM-DD\", \"iban\": string, "
+            "\"document_type\": \"rechnung|auftrag|angebot|lieferschein|mahnung|unknown\"}. "
+            "Wenn ein Feld nicht sicher ermittelbar ist, verwende null. "
+            "sender ist der AUSSTELLER (Lieferant/Rechnungssteller), NICHT der Empfaenger."
+        )
+        hint = (
+            f"Heuristik-Ergebnis war verdaechtig ({', '.join(reasons)}). "
+            f"Bitte Absender, Rechnungsnummer, Betrag, Datum sorgfaeltig extrahieren."
+        )
+        resp, mode = await analyze_document_smart(
+            system_prompt=system_prompt,
+            file_path=tmp_path,
+            mime_type="application/pdf",
+            user_text_vision=hint,
+            want_json=True,
+        )
+        data = parse_json_response(resp) if resp else {}
+        merged = dict(result)
+        # Sender: uebernehmen wenn Ollama einen liefert UND Heuristik leer/verdaechtig war
+        sender_was_suspicious = any(r == "sender_leer" or r.startswith("sender_") for r in reasons)
+        if data.get("sender") and (not merged.get("sender") or sender_was_suspicious):
+            merged["sender"] = str(data["sender"]).strip()
+        # Andere Felder nur wenn leer in Heuristik
+        for key in ("invoice_number", "date", "due_date", "iban"):
+            val = data.get(key)
+            if val and not merged.get(key):
+                merged[key] = str(val).strip()
+        if data.get("amount") and not merged.get("amount"):
+            try:
+                merged["amount"] = float(data["amount"])
+            except (TypeError, ValueError):
+                pass
+        if data.get("document_type") and merged.get("document_type") in (None, "", "unknown"):
+            merged["document_type"] = data["document_type"]
+        merged["_ollama_enriched"] = True
+        merged["_ollama_reasons"] = reasons
+        merged["_ollama_mode"] = mode
+        merged["_authoritative_source"] = f"heuristic+ollama_{mode}"
+        return merged
+    except Exception as e:
+        logger.warning(f"Ollama-Plausibilitaetskontrolle fehlgeschlagen: {e}")
+        result["_ollama_error"] = str(e)[:200]
+        result["_ollama_reasons"] = reasons
+        return result
+    finally:
+        if tmp_path:
+            try:
+                _os.unlink(tmp_path)
+            except Exception:
+                pass

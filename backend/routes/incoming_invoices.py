@@ -10,10 +10,13 @@ Statuslogik:
 - open: sonst
 """
 from datetime import datetime, timezone, timedelta
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from server import db
 from routes.employee import _get_user, _has_verwaltung
 from fints_banking import auto_match_incoming_invoices, _bank_configs
+
+logger = logging.getLogger("incoming_invoices")
 
 
 def _normalize_sender(name: str) -> str:
@@ -350,7 +353,7 @@ async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True),
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
 
-    from services.heuristic_analyzer import analyze_document_fallback
+    from services.heuristic_analyzer import analyze_document_fallback, enrich_with_ollama_if_suspicious
     from routes.documents import get_object
 
     # Kandidaten: alle Docs in rechnungseingang_*/rechnungsausgang_* Ordnern
@@ -380,6 +383,14 @@ async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True),
                 continue
             data, _ct = get_object(d["storage_path"])
             result = analyze_document_fallback(data, d.get("original_filename") or "")
+            # Ollama-Plausibilitaetskontrolle: wenn Heuristik verdaechtig,
+            # holt Ollama eine Zweitmeinung (dauert 30-180s pro Dokument)
+            try:
+                result = await enrich_with_ollama_if_suspicious(
+                    data, d.get("original_filename") or "", result
+                )
+            except Exception as _oe:
+                logger.warning(f"Ollama-Plausibilitaet fuer {d['id']} fehlgeschlagen: {_oe}")
             new_sug = (result.get("suggested_folder") or "").lower()
             old_folder = (d.get("folder_id") or "").lower()
 
