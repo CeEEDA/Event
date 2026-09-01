@@ -12,11 +12,13 @@ import {
 import { toast } from "sonner";
 
 const STATUS_META = {
-  overdue:    { label: "Überfällig",       cls: "bg-red-50 text-red-700 border-red-200",         icon: AlertTriangle, row: "border-l-4 border-l-red-500" },
-  open:       { label: "Offen",            cls: "bg-amber-50 text-amber-700 border-amber-200",   icon: Clock,         row: "border-l-4 border-l-amber-400" },
-  paid:       { label: "Bezahlt",          cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle, row: "border-l-4 border-l-emerald-500" },
-  creditcard: { label: "Kreditkarte",      cls: "bg-indigo-50 text-indigo-700 border-indigo-200", icon: CreditCard,    row: "border-l-4 border-l-indigo-400" },
-  sepa:       { label: "SEPA-Lastschrift", cls: "bg-sky-50 text-sky-700 border-sky-200",         icon: Repeat,        row: "border-l-4 border-l-sky-400" },
+  overdue:     { label: "Überfällig",       cls: "bg-red-50 text-red-700 border-red-200",         icon: AlertTriangle, row: "border-l-4 border-l-red-500" },
+  open:        { label: "Offen",            cls: "bg-amber-50 text-amber-700 border-amber-200",   icon: Clock,         row: "border-l-4 border-l-amber-400" },
+  teilzahlung: { label: "Teilzahlung",      cls: "bg-orange-50 text-orange-700 border-orange-200", icon: Clock,        row: "border-l-4 border-l-orange-500" },
+  gutschrift:  { label: "Gutschrift",       cls: "bg-purple-50 text-purple-700 border-purple-200", icon: CheckCircle,  row: "border-l-4 border-l-purple-400" },
+  paid:        { label: "Bezahlt",          cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: CheckCircle, row: "border-l-4 border-l-emerald-500" },
+  creditcard:  { label: "Kreditkarte",      cls: "bg-indigo-50 text-indigo-700 border-indigo-200", icon: CreditCard,    row: "border-l-4 border-l-indigo-400" },
+  sepa:        { label: "SEPA-Lastschrift", cls: "bg-sky-50 text-sky-700 border-sky-200",         icon: Repeat,        row: "border-l-4 border-l-sky-400" },
 };
 
 const fmtEUR = (n) => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(Number(n || 0));
@@ -551,6 +553,11 @@ export default function EingangsrechnungenPage() {
                               Bezahlt am {fmtDate(r.paid_at)}
                             </span>
                           )}
+                          {r.status === "teilzahlung" && r.partial_paid_sum > 0 && (
+                            <span className="text-orange-700 font-medium">
+                              {fmtEUR(r.partial_paid_sum)} gezahlt · Rest {fmtEUR(r.remaining_amount)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
@@ -591,6 +598,11 @@ export default function EingangsrechnungenPage() {
                 <div>
                   <div className="text-xs text-gray-500">Betrag</div>
                   <div className="font-semibold text-gray-900 flex items-center gap-1"><Euro className="w-3.5 h-3.5" /> {fmtEUR(selected.amount)}</div>
+                  {selected.partial_paid_sum > 0 && !selected.paid && (
+                    <div className="mt-1 text-xs text-orange-700">
+                      Bereits gezahlt: <b>{fmtEUR(selected.partial_paid_sum)}</b> · Rest: <b>{fmtEUR(selected.remaining_amount)}</b>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">Status</div>
@@ -639,6 +651,25 @@ export default function EingangsrechnungenPage() {
                 {selected.paid_source && (
                   <div className="col-span-2 text-xs text-gray-500">
                     Bezahlt-Quelle: <span className="text-gray-700">{selected.paid_source}</span>
+                  </div>
+                )}
+                {selected.partial_payments && selected.partial_payments.length > 0 && (
+                  <div className="col-span-2">
+                    <div className="text-xs text-gray-500 mb-1">Teilzahlungen ({selected.partial_payments.length})</div>
+                    <ul className="space-y-1 max-h-40 overflow-y-auto pr-1" data-testid="detail-partial-payments">
+                      {selected.partial_payments.map((pp, idx) => (
+                        <li key={idx} className="text-xs bg-orange-50 border border-orange-200 rounded px-2 py-1 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-orange-900 font-medium">{fmtEUR(pp.amount)}<span className="text-gray-500 font-normal ml-1">· {fmtDate(pp.date)}</span></div>
+                            {pp.bank && <div className="text-[10px] text-gray-500 truncate">{pp.bank}{pp.source === "fints_auto" ? " · FinTS auto" : ""}</div>}
+                            {pp.purpose && <div className="text-[10px] text-gray-500 truncate">{pp.purpose}</div>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-1 text-xs text-orange-800 font-medium">
+                      Summe Teilzahlungen: {fmtEUR(selected.partial_paid_sum)} · Restbetrag: {fmtEUR(selected.remaining_amount)}
+                    </div>
                   </div>
                 )}
               </div>

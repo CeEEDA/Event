@@ -58,7 +58,8 @@ async def list_incoming_invoices(token: str = Query(...)):
          "eingang_due_date_override": 1, "eingang_notes": 1,
          "eingang_not_invoice": 1,
          "eingang_paid_by_creditcard": 1, "eingang_paid_by_creditcard_at": 1,
-         "eingang_paid_by_sepa": 1, "eingang_paid_by_sepa_at": 1}
+         "eingang_paid_by_sepa": 1, "eingang_paid_by_sepa_at": 1,
+         "eingang_partial_payments": 1, "eingang_partial_paid_sum": 1}
     ).sort("created_at", -1).to_list(2000)
 
     # Sender-Merker fuer wiederkehrende Kreditkarten-/SEPA-Rechnungen
@@ -101,6 +102,13 @@ async def list_incoming_invoices(token: str = Query(...)):
         paid = bool(d.get("eingang_paid"))
         paid_by_cc = bool(d.get("eingang_paid_by_creditcard"))
         paid_by_sepa = bool(d.get("eingang_paid_by_sepa"))
+        # Teilzahlungen: Historie + kumulierter Sum
+        partial_payments = d.get("eingang_partial_payments") or []
+        partial_sum = 0.0
+        for pp in partial_payments:
+            try: partial_sum += float(pp.get("amount", 0) or 0)
+            except (TypeError, ValueError): pass
+        partial_sum = round(partial_sum, 2)
 
         # Sender-basierter Merker: wenn Absender bekannt als CC/SEPA gezahlt,
         # kuenftige Rechnungen automatisch entsprechend markieren
@@ -122,6 +130,8 @@ async def list_incoming_invoices(token: str = Query(...)):
         elif meta.get("document_type") == "gutschrift":
             # Gutschriften sind keine Rechnungen zum Zahlen - eigener Status
             status = "gutschrift"
+        elif partial_sum > 0:
+            status = "teilzahlung"
         elif due_date and due_date < today:
             status = "overdue"
         else:
@@ -155,13 +165,16 @@ async def list_incoming_invoices(token: str = Query(...)):
             "paid_by_sepa": paid_by_sepa,
             "paid_by_sepa_at": d.get("eingang_paid_by_sepa_at"),
             "auto_flagged_by_sender": bool(auto_source) and not d.get("eingang_paid_by_creditcard") and not d.get("eingang_paid_by_sepa"),
+            "partial_payments": partial_payments,
+            "partial_paid_sum": partial_sum,
+            "remaining_amount": round(max(0.0, amount - partial_sum), 2) if amount > 0 else 0.0,
             "notes": d.get("eingang_notes") or "",
             "created_at": d.get("created_at"),
         })
 
-    # Sortierung: overdue → open → gutschrift → paid → creditcard → sepa
+    # Sortierung: overdue → open → teilzahlung → gutschrift → paid → creditcard → sepa
     def _sort_key(r):
-        st_order = {"overdue": 0, "open": 1, "gutschrift": 2, "paid": 3, "creditcard": 4, "sepa": 5}.get(r["status"], 6)
+        st_order = {"overdue": 0, "open": 1, "teilzahlung": 2, "gutschrift": 3, "paid": 4, "creditcard": 5, "sepa": 6}.get(r["status"], 7)
         due = r.get("due_date") or "9999-12-31"
         return (st_order, due)
 

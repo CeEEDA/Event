@@ -1179,6 +1179,32 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
                 })
                 continue
             elif match_type == "exakt":
+                # Wenn Zahlung deutlich UNTER Erwartung: Teilzahlung erfassen statt Task
+                # (Diff negativ, > 3% ausserhalb Toleranz)
+                if diff < -0.05 and paid_amount < expected * 0.995:
+                    already_partial = float(inv.get("partial_paid") or 0)
+                    remaining = expected - already_partial - paid_amount
+                    logger.info(
+                        f"FinTS (Eingang): TEILZAHLUNG erkannt fuer {found_nr}: "
+                        f"gezahlt {paid_amount:.2f} EUR (bisher {already_partial:.2f}, "
+                        f"Rest {remaining:.2f}, gesamt {expected:.2f})"
+                    )
+                    matches.append({
+                        "invoice_id": inv["id"],
+                        "invoice_number": found_nr,
+                        "sender": inv.get("sender", ""),
+                        "transaction": tx,
+                        "paid_amount": paid_amount,
+                        "expected": expected,
+                        "confidence": confidence,
+                        "match_type": "teilzahlung",
+                        "match_reason": (
+                            f"Teilzahlung fuer Rechnung {found_nr}: {paid_amount:.2f} EUR gezahlt, "
+                            f"bisher {already_partial:.2f} EUR, Restbetrag {remaining:.2f} EUR"
+                        ),
+                        "action": "partial_payment",
+                    })
+                    continue
                 matches.append({
                     "invoice_id": inv["id"],
                     "invoice_number": found_nr,
@@ -1415,11 +1441,18 @@ async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: i
             continue  # ohne Betrag kein Auto-Match
         if d.get("eingang_paid"):
             paid_backfill_ids.add(d["id"])
+        # Bereits geleistete Teilzahlungen aufsummieren (fuer Rest-Berechnung)
+        partial_paid = 0.0
+        for pp in (d.get("eingang_partial_payments") or []):
+            try: partial_paid += float(pp.get("amount", 0) or 0)
+            except (TypeError, ValueError): pass
         invoices.append({
             "id": d["id"],
             "invoice_number": (meta.get("invoice_number") or "").strip(),
             "amount": amount,
             "sender": (meta.get("sender") or "").strip(),
+            "partial_paid": partial_paid,
+            "partial_txids": [pp.get("tx_id") for pp in (d.get("eingang_partial_payments") or []) if pp.get("tx_id")],
         })
 
     matches = _match_outgoing_to_incoming(transactions, invoices)
@@ -1427,10 +1460,14 @@ async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: i
     auto_marked = 0
     admin_tasks = 0
     ambiguous = 0
+    partial_marked = 0
     for m in matches:
         if m["action"] == "auto_paid":
             await _mark_incoming_invoice_paid(db, m)
             auto_marked += 1
+        elif m["action"] == "partial_payment":
+            if await _apply_incoming_partial_payment(db, m):
+                partial_marked += 1
         elif m["action"] == "admin_task" and create_admin_tasks:
             if await _create_incoming_amount_mismatch_task(db, m):
                 admin_tasks += 1
@@ -1442,7 +1479,62 @@ async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: i
         "checked": len(transactions),
         "matched": len(matches),
         "auto_marked": auto_marked,
+        "partial_payments": partial_marked,
         "admin_tasks": admin_tasks,
         "ambiguous": ambiguous,
         "ok": True,
     }
+
+
+async def _apply_incoming_partial_payment(db, m: dict) -> bool:
+    """Erfasst eine Teilzahlung an einer Eingangsrechnung.
+    Prueft Duplikate ueber die Bank-tx-Referenz und markiert automatisch als
+    bezahlt wenn die Summe der Teilzahlungen den Gesamtbetrag erreicht."""
+    tx = m.get("transaction") or {}
+    # Bank-Buchungs-ID zur Duplikat-Erkennung
+    tx_id = (
+        tx.get("id") or tx.get("tx_id") or
+        f"{tx.get('date','')}_{tx.get('amount','')}_{(tx.get('purpose') or '')[:40]}"
+    )
+    doc = await db.documents.find_one({"id": m["invoice_id"]}, {"_id": 0, "eingang_partial_payments": 1, "ai_metadata": 1})
+    if not doc:
+        return False
+    existing = doc.get("eingang_partial_payments") or []
+    if any(pp.get("tx_id") == tx_id for pp in existing):
+        return False  # bereits erfasst
+    entry = {
+        "tx_id": tx_id,
+        "amount": m["paid_amount"],
+        "date": tx.get("date") or "",
+        "source": "fints_auto",
+        "purpose": (tx.get("purpose") or "")[:200],
+        "bank": tx.get("bank_name") or tx.get("bank") or "",
+        "note": m.get("match_reason", ""),
+    }
+    new_list = existing + [entry]
+    total_partial = sum(float(pp.get("amount", 0) or 0) for pp in new_list)
+    expected = float((doc.get("ai_metadata") or {}).get("amount") or 0)
+    update = {
+        "eingang_partial_payments": new_list,
+        "eingang_partial_paid_sum": round(total_partial, 2),
+    }
+    # Wenn Teilzahlungssumme >= Gesamtbetrag (mit 3% Skonto-Toleranz) -> voll bezahlt
+    if expected > 0 and total_partial >= expected * 0.97:
+        update.update({
+            "eingang_paid": True,
+            "eingang_paid_at": tx.get("date") or datetime.now(timezone.utc).isoformat(),
+            "eingang_paid_source": f"FinTS Auto-Match (Teilzahlungen -> voll): {len(new_list)} Zahlungen",
+            "eingang_paid_tx": tx,
+        })
+        logger.info(
+            f"FinTS Eingangsrechnung: {(doc.get('ai_metadata') or {}).get('invoice_number','?')} "
+            f"-> BEZAHLT durch {len(new_list)} Teilzahlungen (Summe {total_partial:.2f} / {expected:.2f})"
+        )
+    else:
+        logger.info(
+            f"FinTS Eingangsrechnung: TEILZAHLUNG erfasst fuer "
+            f"{(doc.get('ai_metadata') or {}).get('invoice_number','?')}: "
+            f"+{m['paid_amount']:.2f} EUR (Summe bisher: {total_partial:.2f} / {expected:.2f})"
+        )
+    await db.documents.update_one({"id": m["invoice_id"]}, {"$set": update})
+    return True
