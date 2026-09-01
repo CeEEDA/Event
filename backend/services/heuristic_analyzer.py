@@ -521,14 +521,22 @@ def _extract_sender_from_header(text: str, exclude_self: bool = True) -> Optiona
         r"rechnungsnr|rechnungsnummer|kundennr|kundennummer|"
         r"datum|leistungszeitraum|leistungsdatum|belegdatum|"
         r"sehr\s+geehrt|hallo|liebe[rn]?\s|guten\s+tag|"
+        # Grussformel-Endungen (deutsch/englisch) - matchen sowohl ß als auch ss
+        r"mit\s+freundlichen?\s+gr(?:ue|\u00fc)(?:ssen|\u00dfen)|"
+        r"mit\s+freundlichem\s+gru(?:ss|\u00df)|"
+        r"(?:freundliche|beste|herzliche|viele|liebe)\s+gr(?:ue|\u00fc)(?:sse|\u00dfe)\b|"
+        r"gr(?:ue|\u00fc)(?:sse|\u00dfe)\s+aus\b|"
+        r"ihr\s+team|ihre\s+(?:firma|kanzlei|praxis)|"
+        r"kind\s+regards|best\s+regards|yours\s+(?:sincerely|truly|faithfully)|"
         r"seite\s|page\s|pos\.|position|"
         r"bezeichnung|menge|einheit|artikel|art\.?[\-\s]?nr|"
         r"preis|einzelpreis|st(?:ck|k|ueck|\u00fcck)|stueck|"
         r"summe|gesamt|zwischensumme|betrag|umsatzsteuer|mwst|"
-        # Reine Kontext-Labels, oft alleine in einer Zeile
-        r"firma|absender|empf(?:aenger|\u00e4nger)|an\s*:?\s*$|"
-        r"company|from\s*:?\s*$|bill[-\s]?to|invoice[-\s]?to|ship[-\s]?to|"
-        r"kfz|monteur)",
+        # Reine Kontext-Labels alleine in einer Zeile (nicht "Firma Muster GmbH")
+        r"firma\s*:?\s*$|absender\s*:?\s*$|empf(?:aenger|\u00e4nger)\s*:?\s*$|"
+        r"an\s*:?\s*$|company\s*:?\s*$|from\s*:?\s*$|"
+        r"bill[-\s]?to\s*:?\s*$|invoice[-\s]?to\s*:?\s*$|ship[-\s]?to\s*:?\s*$|"
+        r"kfz[\-\s]|monteur)",
         re.IGNORECASE,
     )
     # Rechnungsnummer/Codes: z.B. RE26/020, R26-K-0033, 263472, IN123456
