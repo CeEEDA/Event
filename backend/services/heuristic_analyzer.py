@@ -727,8 +727,17 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
     # Dokumenttyp aus Dateiname/Text-Keywords ableiten
     tlow = text.lower()
     fn_lower = filename.lower()
+    # Gutschrift-Keywords (auch als Header-Bezeichnung von SAP: "Rechnungsstornobeleg")
+    gutschrift_kw = ("gutschrift", "rechnungsstornobeleg", "storno-beleg",
+                     "stornorechnung", "credit note", "kreditnota")
     if zug and zug.get("document_type"):
         doc_type = zug["document_type"]
+    elif any(kw in fn_lower for kw in gutschrift_kw) or any(kw in tlow[:2000] for kw in gutschrift_kw):
+        doc_type = "gutschrift"
+        # Ordner-Richtung wie Rechnung, damit Gutschriften sichtbar bleiben
+        if direction == "unknown" and any(
+                m in tlow for m in ("eventenergie", "power factor engineering")):
+            direction = "rechnungseingang_eventenergie_deutschland"
     elif "bestellung" in fn_lower or "bestellung" in tlow[:500]:
         doc_type = "bestellung"
         if direction == "unknown":
@@ -756,6 +765,12 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
 
     if direction == "unknown":
         direction = "unbekannt"
+
+    # Gutschrift-Betrag negativ: Betrag ist wirtschaftlich eine Reduktion.
+    # Wir speichern ihn als negative Zahl, damit die UI ihn korrekt darstellt
+    # und Summen (Summe offen) korrekt aufaddiert werden.
+    if doc_type == "gutschrift" and amount is not None and amount > 0:
+        amount = -abs(amount)
 
     # Fälligkeit / Zahlungsziel aus Text ermitteln (nach date-Extraktion, damit
     # 'X Tage nach Rechnungsdatum' korrekt aufaddiert werden kann).

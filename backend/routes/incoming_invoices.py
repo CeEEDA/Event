@@ -119,6 +119,9 @@ async def list_incoming_invoices(token: str = Query(...)):
             status = "sepa"
         elif paid:
             status = "paid"
+        elif meta.get("document_type") == "gutschrift":
+            # Gutschriften sind keine Rechnungen zum Zahlen - eigener Status
+            status = "gutschrift"
         elif due_date and due_date < today:
             status = "overdue"
         else:
@@ -156,9 +159,9 @@ async def list_incoming_invoices(token: str = Query(...)):
             "created_at": d.get("created_at"),
         })
 
-    # Sortierung: overdue → open → paid → creditcard → sepa
+    # Sortierung: overdue → open → gutschrift → paid → creditcard → sepa
     def _sort_key(r):
-        st_order = {"overdue": 0, "open": 1, "paid": 2, "creditcard": 3, "sepa": 4}.get(r["status"], 5)
+        st_order = {"overdue": 0, "open": 1, "gutschrift": 2, "paid": 3, "creditcard": 4, "sepa": 5}.get(r["status"], 6)
         due = r.get("due_date") or "9999-12-31"
         return (st_order, due)
 
