@@ -309,6 +309,27 @@ async def fetch_transactions_persisted(db, days_back: int = 14) -> dict:
     for bank in banks:
         res = await _fetch_from_bank(db, bank, days_back)
         bank_results.append(res)
+        # Zeitstempel pro Bank speichern (fuer UI-Anzeige "Sync ...")
+        # Schluessel-Konvention: fints_last_check fuer Sparkasse (legacy),
+        # fints_last_check_<key> fuer alle anderen Banken.
+        _key = bank["key"]
+        _lc_key = "fints_last_check" if _key == "sparkasse" else f"fints_last_check_{_key}"
+        try:
+            await db.system_settings.update_one(
+                {"key": _lc_key},
+                {"$set": {
+                    "key": _lc_key,
+                    "value": datetime.now(timezone.utc).isoformat(),
+                    "result": {
+                        "ok": res.get("ok"),
+                        "tx_count": len(res.get("transactions") or []),
+                        "error": (res.get("error") or "")[:200],
+                    },
+                }},
+                upsert=True,
+            )
+        except Exception as _e:
+            logger.warning(f"FinTS: last_check-Zeitstempel fuer {_key} konnte nicht gespeichert werden: {_e}")
         if res.get("ok"):
             any_ok = True
             all_transactions.extend(res.get("transactions") or [])
