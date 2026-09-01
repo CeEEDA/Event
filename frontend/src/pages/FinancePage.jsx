@@ -9,7 +9,7 @@ import {
   ArrowLeft, Search, Download, FileText, Send, ChevronRight,
   TrendingUp, Receipt, CheckCircle, Clock, AlertTriangle,
   CircleDollarSign, Ban, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw,
-  CreditCard, Wallet, TrendingDown, Printer,
+  CreditCard, Wallet, TrendingDown, Printer, Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -110,6 +110,30 @@ export default function FinancePage() {
       await api.post(`/kirmes/invoices/${inv.id}/send`);
       loadInvoices();
     } catch { /* */ } finally {
+      setSending(null);
+    }
+  };
+
+  const sendReminder = async (inv) => {
+    if (inv.reminder2_sent_at) {
+      toast.info("2. Mahnung wurde bereits versendet - hoehere Stufen bitte manuell / anwaltlich.");
+      return;
+    }
+    const stufe = inv.reminder_sent_at ? "2. Mahnung" : "1. Mahnung";
+    if (!window.confirm(`${stufe} fuer Rechnung ${inv.invoice_number} an ${inv.schausteller_email || "Kunde"} senden?`)) return;
+    try {
+      setSending(inv.id);
+      const res = await api.post(`/kirmes/invoices/${inv.id}/send-reminder`);
+      const msg = res?.data?.message || `${stufe} versendet`;
+      if (res?.data?.email_sent === false) {
+        toast.warning(msg);
+      } else {
+        toast.success(`${stufe} versendet`);
+      }
+      loadInvoices();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Fehler beim Versenden der Mahnung");
+    } finally {
       setSending(null);
     }
   };
@@ -598,6 +622,19 @@ export default function FinancePage() {
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-emerald-600" onClick={() => sendInvoice(inv)} disabled={sending === inv.id} title="Per E-Mail senden" data-testid={`send-inv-${inv.id}`}>
                             <Send className="w-4 h-4" />
                           </Button>
+                          {inv.payment_status !== "bezahlt" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={`h-8 w-8 ${inv.reminder2_sent_at ? "text-gray-300" : inv.reminder_sent_at ? "text-red-600 hover:text-red-700" : "text-amber-600 hover:text-amber-700"}`}
+                              onClick={() => sendReminder(inv)}
+                              disabled={sending === inv.id || !!inv.reminder2_sent_at}
+                              title={inv.reminder2_sent_at ? "2. Mahnung bereits versendet" : inv.reminder_sent_at ? "2. Mahnung senden" : "1. Mahnung senden"}
+                              data-testid={`send-reminder-${inv.id}`}
+                            >
+                              <Bell className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-fuchsia-600" onClick={() => navigate(`/admin/schausteller/${inv.schausteller_id || ""}`)} title="Kunde anzeigen" data-testid={`view-sch-${inv.id}`}>
                             <ChevronRight className="w-4 h-4" />
                           </Button>
