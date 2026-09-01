@@ -36,12 +36,18 @@ SELF_IBAN_PATTERNS = [
 
 
 def _extract_text(pdf_bytes: bytes) -> str:
-    """Extrahiert Volltext aus PDF-Bytes ohne KI."""
+    """Extrahiert Volltext aus PDF-Bytes ohne KI.
+
+    `sort=True` sortiert die Text-Bloecke nach Y-dann-X Koordinate. Damit landen
+    Firmenkopf/Belegdatum vor der Positionstabelle - viele Layouts (z.B. Anton
+    Radosevic Werkstatt-Rechnung) liefern sonst Tabellenspalten wie "Preis \u20ac"
+    ganz oben, was Sender-/Datums-Heuristiken korrumpiert.
+    """
     if not fitz:
         return ""
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
-            return "\n".join((p.get_text("text") or "") for p in pdf).strip()
+            return "\n".join((p.get_text("text", sort=True) or "") for p in pdf).strip()
     except Exception:
         return ""
 
@@ -188,10 +194,17 @@ def _extract_date(text: str) -> Optional[str]:
     raw = col.get("date")
     if not raw:
         patterns = [
+            # Rechnungsdatum / Belegdatum (hoechste Prioritaet - eindeutig)
             r"Rechnungsdatum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
-            r"Datum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            r"Belegdatum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            r"Belegdatum\s*[:\n\r]+\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
             r"Invoice\s+date\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            # "vom DD.MM.YYYY" - typisch in Rechnungskoepfen
             r"vom\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+            # "Datum" allein - mit negative lookbehind, damit
+            # Leistungsdatum/Lieferdatum/Zahldatum/Faelligkeitsdatum NICHT greifen
+            r"(?<!leistungs)(?<!liefer)(?<!zahl)(?<!f\u00e4llig)(?<!faellig)"
+            r"Datum\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
             r"(\d{4}-\d{2}-\d{2})",
         ]
         raw = _find_first(patterns, text, group=1)
@@ -236,7 +249,12 @@ def _extract_due_date(text: str, invoice_date_iso: Optional[str]) -> tuple[Optio
     # 1) Explizites Datum
     m = re.search(
         r"(?:f(?:ae|\u00e4)llig(?:keit)?(?:sdatum)?(?:\s+am)?|"
-        r"zahlbar\s+(?:bis|am)|due\s+date|vervaldatum)"
+        r"zahlbar\s+(?:bis|am)|"
+        # "Zahlbar sofort netto, spaetestens bis zum 5.8.2026"
+        r"zahlbar[^\n\r]{0,60}?(?:sp(?:ae|\u00e4)testens\s+)?bis(?:\s+zum)?|"
+        # Standalone "spaetestens bis zum DD.MM.YYYY"
+        r"sp(?:ae|\u00e4)testens\s+bis(?:\s+zum)?|"
+        r"due\s+date|vervaldatum)"
         r"\s*:?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{4}-\d{2}-\d{2})",
         text, re.IGNORECASE)
     if m:
@@ -501,11 +519,16 @@ def _extract_sender_from_header(text: str, exclude_self: bool = True) -> Optiona
     skip_re = re.compile(
         r"^(rechnung|invoice|bestellung|angebot|lieferschein|"
         r"rechnungsnr|rechnungsnummer|kundennr|kundennummer|"
-        r"datum|leistungszeitraum|leistungsdatum|"
+        r"datum|leistungszeitraum|leistungsdatum|belegdatum|"
         r"sehr\s+geehrt|hallo|liebe[rn]?\s|guten\s+tag|"
         r"seite\s|page\s|pos\.|position|"
-        r"bezeichnung|menge|einheit|"
-        r"summe|gesamt|zwischensumme|betrag|umsatzsteuer|mwst)",
+        r"bezeichnung|menge|einheit|artikel|art\.?[\-\s]?nr|"
+        r"preis|einzelpreis|st(?:ck|k|ueck|\u00fcck)|stueck|"
+        r"summe|gesamt|zwischensumme|betrag|umsatzsteuer|mwst|"
+        # Reine Kontext-Labels, oft alleine in einer Zeile
+        r"firma|absender|empf(?:aenger|\u00e4nger)|an\s*:?\s*$|"
+        r"company|from\s*:?\s*$|bill[-\s]?to|invoice[-\s]?to|ship[-\s]?to|"
+        r"kfz|monteur)",
         re.IGNORECASE,
     )
     # Rechnungsnummer/Codes: z.B. RE26/020, R26-K-0033, 263472, IN123456
@@ -567,6 +590,12 @@ def _extract_sender_from_header(text: str, exclude_self: bool = True) -> Optiona
             return ln
 
     # 3. Fallback: erste plausible Zeile
+    # Woehrungssymbole/Preis-Kandidaten ausschliessen (z.B. "Preis €", "Total $")
+    currency_only_re = re.compile(r"[\u20ac$\u00a3\u00a5]|EUR\b|USD\b|GBP\b|CHF\b", re.IGNORECASE)
+    # PLZ am Zeilenanfang = Adress-Fortsetzungszeile, kein Firmenname
+    postcode_start_re = re.compile(r"^\d{4,5}\s+[A-Za-z\u00c0-\u017e]")
+    # VIN-artige / Kennzeichen-artige technische IDs (>=6 Zeichen Mixed alnum)
+    technical_id_re = re.compile(r"\b[A-Z]{2,}\d{2,}[A-Z0-9]{4,}\b|\b[A-Z0-9]{10,}\b")
     for ln in lines[:8]:
         if not (3 < len(ln) <= 120):
             continue
@@ -576,6 +605,20 @@ def _extract_sender_from_header(text: str, exclude_self: bool = True) -> Optiona
             continue
         # Reine Zahlen/Codes ausschließen
         if re.match(r"^[\d\s\-\.\/]+$", ln):
+            continue
+        # PLZ + Ort am Anfang = Adressfortsetzung
+        if postcode_start_re.match(ln):
+            continue
+        # Zeilen die nur aus Waehrungssymbol/-code + evtl. 1 Wort bestehen
+        # ("Preis \u20ac", "Total $", "Netto EUR") sind Tabellenspalten, keine Firmennamen
+        if len(ln) < 40 and currency_only_re.search(ln) and len(re.sub(r"[^A-Za-z]", "", ln)) < 20:
+            continue
+        # Fahrgestellnr., VIN, Bestellnummer u.ae. technische IDs
+        if technical_id_re.search(ln):
+            continue
+        # Muss mind. 2 Woerter mit Buchstaben haben (verhindert "Kfz-Kennzeichen")
+        word_count = len([w for w in re.split(r"\s+", ln) if re.search(r"[A-Za-z\u00c0-\u017e]{2,}", w)])
+        if word_count < 2:
             continue
         if exclude_self and _is_self(ln):
             continue
@@ -686,8 +729,8 @@ def analyze_document_fallback(pdf_bytes: bytes, filename: str) -> dict:
     elif "mahnung" in fn_lower or "mahnung" in tlow[:500]:
         doc_type = "mahnung"
         direction = direction if direction != "unknown" else "rechnungseingang_eventenergie_deutschland"
-    elif ("rechnung" in fn_lower or "rechnung" in tlow[:500] or
-          "invoice" in tlow[:500] or "factuur" in tlow[:500] or
+    elif ("rechnung" in fn_lower or "rechnung" in tlow[:2000] or
+          "invoice" in tlow[:2000] or "factuur" in tlow[:2000] or
           "factuur" in fn_lower):
         doc_type = "rechnung"
         # Auslands-Rechnungen ohne Firmenmarker im Text: wenn Empfaenger unser Marker
