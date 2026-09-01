@@ -366,12 +366,8 @@ async def add_image(item_id: str, file: UploadFile = File(...)):
         result = put_object(storage_path, file_data, file.content_type)
         cloud_path = result["path"]
     except Exception as e:
-        logger.warning(f"[inventory] Cloud upload failed, using local fallback: {e}")
-        # Local fallback
-        local_dir = f"/app/data/inventory/{item_id}"
-        os.makedirs(local_dir, exist_ok=True)
-        with open(f"{local_dir}/{img_id}.{ext}", "wb") as f:
-            f.write(file_data)
+        logger.warning(f"[inventory] Cloud upload failed: {e}")
+        raise HTTPException(500, "Bild-Upload zum Cloud-Storage fehlgeschlagen")
 
     image_entry = {
         "id": img_id,
@@ -482,11 +478,8 @@ async def add_document(item_id: str, file: UploadFile = File(...)):
         result = put_object(storage_path, file_data, ct)
         cloud_path = result["path"]
     except Exception as e:
-        logger.warning(f"[inventory] Cloud doc upload failed, local fallback: {e}")
-        local_dir = f"/app/data/inventory/{item_id}/docs"
-        os.makedirs(local_dir, exist_ok=True)
-        with open(f"{local_dir}/{doc_id}.{ext}", "wb") as f:
-            f.write(file_data)
+        logger.warning(f"[inventory] Cloud doc upload failed: {e}")
+        raise HTTPException(500, "Dokument-Upload zum Cloud-Storage fehlgeschlagen")
 
     doc_entry = {
         "id": doc_id,

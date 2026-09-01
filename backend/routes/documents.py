@@ -2371,6 +2371,15 @@ async def delete_spam_blacklist_entry(entry_id: str):
     return {"deleted": r.deleted_count}
 
 
+# NOTE: literal route MUST stay above parameterized `/{doc_id}` to avoid shadowing.
+@router.get("/ai-training-samples")
+async def get_training_samples():
+    samples = []
+    async for s in db.ai_training_samples.find({}, {"_id": 0}).sort("created_at", -1).limit(50):
+        samples.append(s)
+    return {"samples": samples}
+
+
 @router.get("/{doc_id}")
 async def get_document(doc_id: str):
     """Get a single document with all metadata."""
@@ -2652,14 +2661,6 @@ async def download_file(doc_id: str):
 
 
 # ─── AI Training Samples ───
-
-@router.get("/ai-training-samples")
-async def get_training_samples():
-    samples = []
-    async for s in db.ai_training_samples.find({}, {"_id": 0}).sort("created_at", -1).limit(50):
-        samples.append(s)
-    return {"samples": samples}
-
 
 @router.post("/ai-training-samples")
 async def upload_training_sample(

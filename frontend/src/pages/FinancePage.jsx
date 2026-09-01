@@ -9,7 +9,7 @@ import {
   ArrowLeft, Search, Download, FileText, Send, ChevronRight,
   TrendingUp, Receipt, CheckCircle, Clock, AlertTriangle,
   CircleDollarSign, Ban, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw,
-  CreditCard, Wallet, TrendingDown,
+  CreditCard, Wallet, TrendingDown, Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -193,6 +193,118 @@ export default function FinancePage() {
       : <ArrowDown className="w-3 h-3 inline-block ml-1 text-fuchsia-600" />;
   };
 
+  // ─── Drucken ────────────────────────────────────────────────────
+  const filterLabelMap = {
+    alle: "Alle Rechnungen",
+    bezahlt: "Bezahlt",
+    offen: "Offene Posten",
+    ueberfaellig: "Mahnungen (ueberfaellig)",
+  };
+  const handlePrint = () => {
+    if (!sorted.length) {
+      toast.info("Keine Rechnungen zum Drucken.");
+      return;
+    }
+    const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+    const fmtEur = (n) => (Number(n) || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 });
+    const nowStr = new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    const filterLabel = filterLabelMap[filter] || "Alle Rechnungen";
+    const sumNetto = sorted.reduce((s, i) => s + (Number(i.netto) || 0), 0);
+    const sumBrutto = sorted.reduce((s, i) => s + (Number(i.brutto) || 0), 0);
+
+    const rowsHtml = sorted.map((inv) => {
+      const status = PAYMENT_STATUS[inv.payment_status]?.label || "-";
+      const mahn = [
+        inv.reminder_sent_at ? `1. Mahn. ${new Date(inv.reminder_sent_at).toLocaleDateString("de-DE")}` : "",
+        inv.reminder2_sent_at ? `2. Mahn. ${new Date(inv.reminder2_sent_at).toLocaleDateString("de-DE")}` : "",
+      ].filter(Boolean).join(" · ");
+      return `
+        <tr>
+          <td class="mono">${escapeHtml(inv.invoice_number || "-")}</td>
+          <td class="mono">${escapeHtml(inv.schausteller_kundennummer || "-")}</td>
+          <td>${escapeHtml(inv.schausteller_firma || inv.schausteller_name || "-")}
+            ${inv.schausteller_firma && inv.schausteller_name ? `<div class="sub">${escapeHtml(inv.schausteller_name)}</div>` : ""}
+          </td>
+          <td>${escapeHtml(inv.event_name || "-")}</td>
+          <td>${escapeHtml(inv.invoice_date || "-")}${inv.days_since_invoice > 14 && inv.payment_status !== "bezahlt" ? `<div class="sub red">${inv.days_since_invoice} Tage</div>` : ""}</td>
+          <td class="num">${fmtEur(inv.netto)}&nbsp;&euro;</td>
+          <td class="num">${fmtEur(inv.brutto)}&nbsp;&euro;</td>
+          <td>${escapeHtml(status)}${mahn ? `<div class="sub red">${escapeHtml(mahn)}</div>` : ""}</td>
+        </tr>`;
+    }).join("");
+
+    const html = `<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Ausgangsrechnungen · ${escapeHtml(filterLabel)} · ${escapeHtml(nowStr)}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #111; font-size: 10pt; margin: 0; padding: 0; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; border-bottom: 2px solid #111; padding-bottom: 6px; }
+  header h1 { font-size: 16pt; margin: 0 0 2px 0; }
+  header .meta { font-size: 9pt; color: #555; text-align: right; }
+  .summary { display: flex; gap: 20px; margin: 8px 0 12px 0; font-size: 10pt; }
+  .summary .item { border: 1px solid #ddd; padding: 4px 10px; border-radius: 4px; }
+  .summary .item b { display: block; font-size: 12pt; color: #111; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  thead { background: #f3f3f3; }
+  th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { font-weight: 600; text-transform: uppercase; font-size: 8pt; color: #555; }
+  td.mono { font-family: "Courier New", monospace; }
+  td.num, th.num { text-align: right; font-family: "Courier New", monospace; white-space: nowrap; }
+  .sub { font-size: 8pt; color: #888; }
+  .sub.red { color: #b00; }
+  tfoot td { font-weight: 700; border-top: 2px solid #111; background: #f9f9f9; }
+  footer { margin-top: 12px; font-size: 8pt; color: #888; text-align: center; }
+  @media print { .no-print { display: none; } }
+</style>
+</head><body>
+  <header>
+    <div>
+      <h1>Ausgangsrechnungen &ndash; ${escapeHtml(filterLabel)}</h1>
+      <div class="meta">Eventenergie Deutschland GmbH &amp; Co. KG</div>
+    </div>
+    <div class="meta">
+      Druckdatum: ${escapeHtml(nowStr)}<br>
+      ${search ? `Suche: &bdquo;${escapeHtml(search)}&ldquo;<br>` : ""}
+      ${sorted.length} Eintr&auml;ge
+    </div>
+  </header>
+  <div class="summary">
+    <div class="item"><span>Anzahl</span><b>${sorted.length}</b></div>
+    <div class="item"><span>Summe Netto</span><b>${fmtEur(sumNetto)}&nbsp;&euro;</b></div>
+    <div class="item"><span>Summe Brutto</span><b>${fmtEur(sumBrutto)}&nbsp;&euro;</b></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Re.-Nr.</th><th>Kd.-Nr.</th><th>Kunde</th><th>Event</th>
+      <th>Datum</th><th class="num">Netto</th><th class="num">Brutto</th><th>Zahlung</th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+    <tfoot><tr>
+      <td colspan="5">Gesamt (${sorted.length} Eintr&auml;ge)</td>
+      <td class="num">${fmtEur(sumNetto)}&nbsp;&euro;</td>
+      <td class="num">${fmtEur(sumBrutto)}&nbsp;&euro;</td>
+      <td></td>
+    </tr></tfoot>
+  </table>
+  <footer>Erstellt am ${escapeHtml(nowStr)} &middot; Eventenergie Deutschland</footer>
+  <script>window.addEventListener("load", function () { setTimeout(function () { window.focus(); window.print(); }, 250); });</script>
+</body></html>`;
+
+    const win = window.open("", "_blank", "width=1100,height=800");
+    if (!win) {
+      toast.error("Popup wurde blockiert. Bitte Popups fuer diese Seite erlauben.");
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="finance-page">
       <header className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-20">
@@ -206,6 +318,18 @@ export default function FinancePage() {
             <h1 className="text-base font-semibold text-gray-900">Ausgangsrechnungen</h1>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              disabled={loading || sorted.length === 0}
+              className="text-xs h-8"
+              data-testid="print-invoices-btn"
+              title="Aktuelle Liste drucken"
+            >
+              <Printer className="w-3.5 h-3.5 mr-1.5" />
+              Drucken
+            </Button>
             {isAdmin && (
               <Button
                 variant="outline"

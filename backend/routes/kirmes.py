@@ -12,6 +12,7 @@ import re
 import os
 import asyncio
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 mahnung_logger = logging.getLogger("mahnung_checker")
@@ -4050,8 +4051,7 @@ async def upload_event_document(event_id: str, file: UploadFile = File(...), kat
     _os.makedirs(event_dir, exist_ok=True)
 
     file_path = _os.path.join(event_dir, stored_name)
-    with open(file_path, "wb") as f:
-        f.write(content)
+    Path(file_path).write_bytes(content)
 
     doc = {
         "id": doc_id,

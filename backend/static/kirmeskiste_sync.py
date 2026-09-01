@@ -34,7 +34,6 @@ import configparser
 from pathlib import Path
 from datetime import datetime, timezone
 
-import struct
 import requests
 from pymodbus.client import ModbusTcpClient
 

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import uuid
 import os
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -420,8 +421,7 @@ async def upload_document(token: str = Query(...),
         local_root = _os.environ.get("LOCAL_STORAGE_PATH", r"C:\eventenergie\Dokumentenablage")
         local_file = _os.path.join(local_root, "_mitarbeiter", storage_path.replace("/", _os.sep))
         _os.makedirs(_os.path.dirname(local_file), exist_ok=True)
-        with open(local_file, "wb") as f:
-            f.write(file_bytes)
+        Path(local_file).write_bytes(file_bytes)
     except Exception as e:
         logger.warning(f"Employee doc local save failed: {e}")
         if not cloud_ok:

@@ -7,6 +7,7 @@ import httpx
 import asyncio
 import math
 import re
+from pathlib import Path
 from utils.http_headers import content_disposition
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -2888,8 +2889,7 @@ async def upload_order_document(order_pk: str, file: UploadFile = File(...), kat
     _os.makedirs(order_dir, exist_ok=True)
 
     file_path = _os.path.join(order_dir, stored_name)
-    with open(file_path, "wb") as f:
-        f.write(content)
+    Path(file_path).write_bytes(content)
 
     doc = {
         "id": doc_id,
