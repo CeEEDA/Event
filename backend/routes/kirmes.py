@@ -2766,10 +2766,17 @@ async def _mahnung_scheduler():
                 enabled_setting = await _db.system_settings.find_one({"key": "fints_enabled"}, {"_id": 0})
                 fints_enabled = enabled_setting.get("value", True) if enabled_setting else True
                 if fints_enabled:
-                    from fints_banking import auto_match_and_mark, get_fints_credentials
+                    from fints_banking import auto_match_and_mark, auto_match_incoming_invoices, get_fints_credentials
                     if get_fints_credentials():
+                        # 1a. Ausgangsrechnungen: Zahlungseingaenge unserer Kunden
                         result = await auto_match_and_mark(_db)
-                        mahnung_logger.info(f"FinTS-Check: {result}")
+                        mahnung_logger.info(f"FinTS-Check (Ausgang): {result}")
+                        # 1b. Eingangsrechnungen: unsere Zahlungen an Lieferanten
+                        try:
+                            in_result = await auto_match_incoming_invoices(_db, create_admin_tasks=True)
+                            mahnung_logger.info(f"FinTS-Check (Eingang): {in_result}")
+                        except Exception as e_in:
+                            mahnung_logger.error(f"FinTS-Check (Eingang) Fehler: {e_in}")
                 else:
                     mahnung_logger.debug("FinTS-Check deaktiviert")
             except Exception as e:
