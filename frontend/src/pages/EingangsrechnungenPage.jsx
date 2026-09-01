@@ -123,23 +123,31 @@ export default function EingangsrechnungenPage() {
   }, [rows, filter, search]);
 
   const runReanalyzeLegacy = async () => {
-    if (!window.confirm(
+    const includeAlreadyAnalyzed = window.confirm(
       "Alt-Dokumente durch aktuelle OCR-Heuristik neu klassifizieren?\n\n" +
-      "Der Scan liest jedes betroffene PDF neu, aktualisiert Absender, Betrag und Klassifizierung.\n" +
-      "Dokumente die von 'Ausgang' zu 'Eingang' wechseln (oder umgekehrt), werden in den passenden Monat-Ordner verschoben.\n\n" +
-      "Zuerst wird ein DRY-RUN (Vorschau) ausgeführt, danach die Übernahme."
+      "OK  = auch bereits gescannte Rechnungen einbeziehen (empfohlen nach Heuristik-Update).\n" +
+      "Abbrechen = weiter ohne diese Frage (nur neue/nicht analysierte Docs)."
+    );
+    // Zweiter Dialog: Bestaetigung dass wir starten
+    if (!window.confirm(
+      (includeAlreadyAnalyzed
+        ? "ALLE Rechnungseingaenge (auch bereits heuristisch analysierte) werden neu gescannt.\n\n"
+        : "Nur Alt-Dokumente ohne aktuelle Heuristik-Analyse werden neu gescannt.\n\n") +
+      "Der Scan aktualisiert Absender, Betrag und Klassifizierung.\n" +
+      "Dokumente die von 'Ausgang' zu 'Eingang' wechseln (oder umgekehrt) werden in den passenden Monat-Ordner verschoben.\n\n" +
+      "Zuerst wird ein DRY-RUN (Vorschau) ausgeführt, danach die Übernahme. Fortfahren?"
     )) return;
     setReanalyzing(true);
     try {
       const token = localStorage.getItem("token");
       // 1. Dry-Run
       const dry = await api.post("/incoming-invoices/reanalyze-legacy", null, {
-        params: { token, dry_run: true, limit: 500 }, timeout: 300000
+        params: { token, dry_run: true, limit: 500, force: includeAlreadyAnalyzed }, timeout: 300000
       });
       const preview = dry.data;
       const commit = window.confirm(
         `DRY-RUN Ergebnis:\n` +
-        `• ${preview.scanned} Alt-Dokumente gescannt\n` +
+        `• ${preview.scanned} Dokumente gescannt\n` +
         `• ${preview.would_move_count} würden verschoben\n` +
         `• ${preview.errors} Fehler beim Lesen\n\n` +
         `Jetzt tatsächlich anwenden?`
@@ -150,7 +158,7 @@ export default function EingangsrechnungenPage() {
       }
       // 2. Übernahme
       const real = await api.post("/incoming-invoices/reanalyze-legacy", null, {
-        params: { token, dry_run: false, limit: 500 }, timeout: 600000
+        params: { token, dry_run: false, limit: 500, force: includeAlreadyAnalyzed }, timeout: 600000
       });
       const r = real.data;
       toast.success(

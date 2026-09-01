@@ -336,13 +336,15 @@ async def mark_not_invoice(doc_id: str, token: str = Query(...)):
 
 
 @router.post("/reanalyze-legacy")
-async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True), limit: int = Query(500, ge=1, le=5000)):
+async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True), limit: int = Query(500, ge=1, le=5000), force: bool = Query(False)):
     """Jagd alle alten Dokumente (ohne aktuellen OCR-Analyse-Stempel) durch den
     Heuristic-Analyzer und aktualisiert Metadata + verschiebt gegebenenfalls
     zwischen Rechnungseingang und Rechnungsausgang.
 
     ``dry_run=true`` (Standard): nur Report ohne DB-Aenderungen.
     ``dry_run=false``: schreibt Aenderungen in die DB.
+    ``force=true``: rescant auch Dokumente die bereits vom Heuristic
+    analysiert wurden (z.B. nach einem Heuristic-Update).
     """
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
@@ -352,11 +354,16 @@ async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True),
     from routes.documents import get_object
 
     # Kandidaten: alle Docs in rechnungseingang_*/rechnungsausgang_* Ordnern
-    # mit alter/fehlender Metadata (ai_source != 'heuristic')
+    # Standardmaessig nur Docs mit alter/fehlender Metadata; mit force=True
+    # auch bereits vom Heuristic analysierte (nuetzlich nach Heuristic-Update).
+    query = {
+        "folder_id": {"$regex": "^(rechnungseingang_|rechnungsausgang_)"},
+        "is_deleted": {"$ne": True},
+    }
+    if not force:
+        query["ai_source"] = {"$ne": "heuristic"}
     docs = await db.documents.find(
-        {"folder_id": {"$regex": "^(rechnungseingang_|rechnungsausgang_)"},
-         "is_deleted": {"$ne": True},
-         "ai_source": {"$ne": "heuristic"}},
+        query,
         {"_id": 0, "id": 1, "original_filename": 1, "folder_id": 1,
          "storage_path": 1, "ai_metadata": 1, "ai_source": 1}
     ).limit(limit).to_list(limit)
