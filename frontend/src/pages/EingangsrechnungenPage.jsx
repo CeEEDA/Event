@@ -174,12 +174,28 @@ export default function EingangsrechnungenPage() {
   };
 
   const runAutoMatch = async () => {
-    if (!window.confirm("FinTS-Abgleich starten?\n\nZieht Sparkassen-Buchungen der letzten 60 Tage und ordnet sie automatisch offenen Eingangsrechnungen zu.\n\nHinweis: Bei Erstanmeldung ist eine pushTAN-Bestätigung nötig.")) return;
+    // Frage 1: Umfang (Zeitraum + auch bereits bezahlte einbeziehen)
+    const full = window.confirm(
+      "FinTS-Abgleich starten?\n\n" +
+      "OK   = Voll-Rescan (365 Tage) inkl. bereits bezahlter Rechnungen ohne Buchungs-Referenz\n" +
+      "Abbrechen = Standard-Rescan (60 Tage, nur offene Rechnungen)"
+    );
+    // Frage 2: Bestaetigung
+    if (!window.confirm(
+      full
+        ? "VOLL-RESCAN starten? Das kann bei vielen Rechnungen ein paar Minuten dauern."
+        : "Standard-Abgleich der letzten 60 Tage starten?"
+    )) return;
     setMatching(true);
     try {
       const token = localStorage.getItem("token");
       const { data } = await api.post("/incoming-invoices/fints/auto-match", null, {
-        params: { token, days_back: 60 }, timeout: 180000,
+        params: {
+          token,
+          days_back: full ? 365 : 60,
+          include_paid: full,
+        },
+        timeout: 300000,
       });
       if (data.ok === false) {
         toast.error(`FinTS-Fehler: ${data.error || "Unbekannt"}`);

@@ -461,14 +461,18 @@ async def reanalyze_legacy(token: str = Query(...), dry_run: bool = Query(True),
 
 
 @router.post("/fints/auto-match")
-async def fints_auto_match(token: str = Query(...), days_back: int = Query(60, ge=1, le=365)):
-    """Startet den FinTS-Abgleich (Sparkasse): ausgehende Buchungen ↔ offene Eingangsrechnungen.
-    Sammelüberweisungen werden nicht behandelt (jede Buchung = 1 Rechnung).
+async def fints_auto_match(token: str = Query(...), days_back: int = Query(60, ge=1, le=365), include_paid: bool = Query(False)):
+    """Startet den FinTS-Abgleich: ausgehende Buchungen ↔ Eingangsrechnungen.
+    ``include_paid=True`` erlaubt auch bereits als bezahlt markierte Rechnungen
+    nachtraeglich mit Buchungs-Referenz anzureichern (nur wenn `eingang_paid_tx`
+    fehlt). Sammelueberweisungen mit 3%-Skonto-Toleranz werden erkannt.
     """
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Admins")
-    result = await auto_match_incoming_invoices(db, create_admin_tasks=True, days_back=days_back)
+    result = await auto_match_incoming_invoices(
+        db, create_admin_tasks=True, days_back=days_back, include_paid=include_paid,
+    )
     return result
 
 

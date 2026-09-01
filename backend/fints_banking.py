@@ -1374,24 +1374,38 @@ async def _create_incoming_ambiguous_task(db, m: dict) -> bool:
     return True
 
 
-async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: int = 60):
+async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: int = 60, include_paid: bool = False):
     """Hauptfunktion Eingangsrechnungen: FinTS-Transaktionen (Sparkasse) gegen
-    offene Eingangsrechnungen aus rechnungseingang_*-Ordnern abgleichen."""
+    offene Eingangsrechnungen aus rechnungseingang_*-Ordnern abgleichen.
+
+    ``include_paid=True``: nimmt auch bereits als bezahlt markierte Rechnungen
+    in den Kandidaten-Pool auf, ueberspringt aber jene mit bereits gesetztem
+    `eingang_paid_tx`. Nuetzlich um alten Bestand nachtraeglich mit
+    Buchungs-Referenzen anzureichern.
+    """
     result = await fetch_transactions_persisted(db, days_back=days_back)
     transactions = result.get("transactions", [])
     if not transactions:
         return {"checked": 0, "matched": 0, "auto_marked": 0, "admin_tasks": 0,
                 "ambiguous": 0, "ok": result.get("ok", False), "error": result.get("error")}
 
-    # Offene Eingangsrechnungen laden
+    # Offene Eingangsrechnungen laden (optional inkl. bezahlte ohne tx-Referenz)
+    inv_query = {
+        "folder_id": {"$regex": "^rechnungseingang_"},
+        "is_deleted": {"$ne": True},
+    }
+    if not include_paid:
+        inv_query["eingang_paid"] = {"$ne": True}
     docs = await db.documents.find(
-        {"folder_id": {"$regex": "^rechnungseingang_"},
-         "is_deleted": {"$ne": True},
-         "eingang_paid": {"$ne": True}},
-        {"_id": 0, "id": 1, "ai_metadata": 1}
+        inv_query,
+        {"_id": 0, "id": 1, "ai_metadata": 1, "eingang_paid": 1, "eingang_paid_tx": 1}
     ).to_list(5000)
     invoices = []
+    paid_backfill_ids = set()
     for d in docs:
+        # Bereits bezahlte mit existierender tx-Referenz auslassen
+        if d.get("eingang_paid") and d.get("eingang_paid_tx"):
+            continue
         meta = d.get("ai_metadata") or {}
         try:
             amount = float(meta.get("amount") or 0)
@@ -1399,6 +1413,8 @@ async def auto_match_incoming_invoices(db, create_admin_tasks=True, days_back: i
             amount = 0.0
         if amount <= 0:
             continue  # ohne Betrag kein Auto-Match
+        if d.get("eingang_paid"):
+            paid_backfill_ids.add(d["id"])
         invoices.append({
             "id": d["id"],
             "invoice_number": (meta.get("invoice_number") or "").strip(),
