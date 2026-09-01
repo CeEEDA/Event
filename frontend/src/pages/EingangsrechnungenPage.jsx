@@ -125,47 +125,27 @@ export default function EingangsrechnungenPage() {
   }, [rows, filter, search]);
 
   const runReanalyzeLegacy = async () => {
-    const includeAlreadyAnalyzed = window.confirm(
-      "Alt-Dokumente durch aktuelle OCR-Heuristik neu klassifizieren?\n\n" +
-      "OK  = auch bereits gescannte Rechnungen einbeziehen (empfohlen nach Heuristik-Update).\n" +
-      "Abbrechen = weiter ohne diese Frage (nur neue/nicht analysierte Docs)."
-    );
-    // Zweiter Dialog: Bestaetigung dass wir starten
     if (!window.confirm(
-      (includeAlreadyAnalyzed
-        ? "ALLE Rechnungseingaenge (auch bereits heuristisch analysierte) werden neu gescannt.\n\n"
-        : "Nur Alt-Dokumente ohne aktuelle Heuristik-Analyse werden neu gescannt.\n\n") +
-      "Der Scan aktualisiert Absender, Betrag und Klassifizierung.\n" +
-      "Dokumente die von 'Ausgang' zu 'Eingang' wechseln (oder umgekehrt) werden in den passenden Monat-Ordner verschoben.\n\n" +
-      "Zuerst wird ein DRY-RUN (Vorschau) ausgeführt, danach die Übernahme. Fortfahren?"
+      "ALLE Rechnungseingaenge neu klassifizieren?\n\n" +
+      "• Voll-Rescan inkl. bereits analysierter Dokumente\n" +
+      "• Nutzt die aktuelle Heuristik + Ollama-Plausibilitaet fuer verdaechtige Faelle\n" +
+      "• Dauert ca. 1 Sekunde pro Rechnung (bei Ollama 10-30 s pro verdaechtigem Doc)\n" +
+      "• Aenderungen werden direkt uebernommen, kein Dry-Run\n\n" +
+      "Fortfahren?"
     )) return;
     setReanalyzing(true);
     try {
       const token = localStorage.getItem("token");
-      // 1. Dry-Run
-      const dry = await api.post("/incoming-invoices/reanalyze-legacy", null, {
-        params: { token, dry_run: true, limit: 500, force: includeAlreadyAnalyzed }, timeout: 300000
+      const t0 = Date.now();
+      const { data } = await api.post("/incoming-invoices/reanalyze-legacy", null, {
+        params: { token, dry_run: false, limit: 500, force: true },
+        timeout: 900000, // 15 Min - Ollama kann bei vielen verdaechtigen Docs lange dauern
       });
-      const preview = dry.data;
-      const commit = window.confirm(
-        `DRY-RUN Ergebnis:\n` +
-        `• ${preview.scanned} Dokumente gescannt\n` +
-        `• ${preview.would_move_count} würden verschoben\n` +
-        `• ${preview.errors} Fehler beim Lesen\n\n` +
-        `Jetzt tatsächlich anwenden?`
-      );
-      if (!commit) {
-        toast("Dry-Run abgeschlossen (keine Änderung)");
-        return;
-      }
-      // 2. Übernahme
-      const real = await api.post("/incoming-invoices/reanalyze-legacy", null, {
-        params: { token, dry_run: false, limit: 500, force: includeAlreadyAnalyzed }, timeout: 600000
-      });
-      const r = real.data;
+      const secs = Math.round((Date.now() - t0) / 1000);
       toast.success(
-        `Reanalyse fertig: ${r.metadata_updated} aktualisiert, ` +
-        `${r.moved_to_eingang} → Eingang, ${r.moved_to_ausgang} → Ausgang, ${r.errors} Fehler`
+        `Reanalyse fertig (${secs}s): ${data.metadata_updated} aktualisiert, ` +
+        `${data.moved_to_eingang} → Eingang, ${data.moved_to_ausgang} → Ausgang` +
+        (data.errors ? `, ${data.errors} Fehler` : "")
       );
       await load();
     } catch (e) {
