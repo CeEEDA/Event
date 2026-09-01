@@ -351,6 +351,25 @@ def _digit_variants(num_str: str) -> list:
     return variants
 
 
+def _find_all_invoice_numbers_in_text(text: str, invoice_numbers: list) -> list[str]:
+    """Findet ALLE Rechnungsnummern die als Substring im Verwendungszweck stehen.
+    Nur exakte Matches (normalisiert). Fuer Sammelueberweisungen wie
+    'Rechnungs-Nr.: 263468 + 263471 + 263472'."""
+    text_clean = _normalize(text)
+    hits = []
+    seen = set()
+    for inv_nr in invoice_numbers:
+        if not inv_nr:
+            continue
+        inv_clean = _normalize(inv_nr)
+        if len(inv_clean) < 3:
+            continue
+        if inv_clean in text_clean and inv_nr not in seen:
+            hits.append(inv_nr)
+            seen.add(inv_nr)
+    return hits
+
+
 def _find_invoice_number_in_text(text: str, invoice_numbers: list) -> tuple:
     """Sucht eine Rechnungsnummer im Text - auch mit Tippfehlern oder wenn der
     Kunde nur die Ziffern ohne Praefix schreibt.
@@ -501,9 +520,10 @@ def match_transactions_to_invoices(transactions: list, invoices: list) -> list:
                         d = float(i.get("deposit_applied", 0) or 0)
                         total_brutto += b
                         total_open += max(0.0, b - d)
-                    # Toleranz proportional zur Anzahl der Rechnungen
-                    # (jeweils 5 Cent Rundungsdifferenz erlaubt)
-                    tol = 0.05 * max(1, len(all_invs))
+                    # Toleranz: max(0.05 EUR * N Rechnungen, 3% Skonto vom Erwarteten)
+                    base_tol = 0.05 * max(1, len(all_invs))
+                    skonto_tol = min(total_open, total_brutto) * 0.03
+                    tol = max(base_tol, skonto_tol)
                     diff_to_open = abs(amount - total_open)
                     diff_to_brutto = abs(amount - total_brutto)
                     if diff_to_open <= tol or diff_to_brutto <= tol:
@@ -896,14 +916,17 @@ async def _resolve_billing_assignees(db) -> tuple[list, dict]:
 async def _mark_invoice_paid(db, m: dict):
     """Markiert eine Rechnung als bezahlt und schliesst offene Mahnungs-Tasks.
     Bei Sammel-Splits wird der anteilige Betrag (`sammel_amount`) statt der
-    vollen Transaktions-Summe als paid_amount gespeichert."""
+    vollen Transaktions-Summe als paid_amount gespeichert.
+    Als paid_at wird das Bank-Buchungsdatum verwendet (falls vorhanden)."""
     paid_amount = m.get("sammel_amount", m["transaction"]["amount"])
     note = f"Auto-Zuordnung: {m['match_reason']}"
+    tx_date = (m["transaction"] or {}).get("date") or ""
+    paid_at = tx_date if tx_date else datetime.now(timezone.utc).isoformat()
     await db.kirmes_invoices.update_one(
         {"id": m["invoice_id"]},
         {"$set": {
             "payment_status": "bezahlt",
-            "paid_at": datetime.now(timezone.utc).isoformat(),
+            "paid_at": paid_at,
             "paid_amount": paid_amount,
             "payment_note": note,
             "payment_matched_tx": m["transaction"],
@@ -1059,6 +1082,56 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
         recipient = tx.get("applicant_name", "") or ""  # Bei Belastungen = Empfänger
         search_text = f"{purpose} {recipient}"
 
+        # ─── Sammelueberweisung (mehrere Eingangsrechnungen in 1 Transfer) ───
+        # Typisch: "Rechnungs-Nr.: 263468 + 263471 + 263472 + 263489 + 263495"
+        all_hits = _find_all_invoice_numbers_in_text(search_text, inv_numbers)
+        if len(all_hits) >= 2:
+            all_invs = [inv_by_number[n] for n in all_hits if n in inv_by_number]
+            total_expected = sum(float(i.get("amount", 0) or 0) for i in all_invs)
+            base_tol = 0.05 * max(1, len(all_invs))
+            skonto_tol = total_expected * 0.03  # max 3% Skonto
+            tol = max(base_tol, skonto_tol)
+            diff = paid_amount - total_expected
+            if abs(diff) <= tol:
+                logger.info(
+                    f"FinTS (Eingang): Sammelueberweisung AUTO-SPLIT an '{recipient}': "
+                    f"{len(all_invs)} Rechnungen ({', '.join(all_hits)}), "
+                    f"gezahlt {paid_amount:.2f} EUR vs. erwartet {total_expected:.2f} EUR "
+                    f"(Diff {diff:+.2f}, Tol {tol:.2f})"
+                )
+                for sub_inv in all_invs:
+                    sub_expected = float(sub_inv.get("amount", 0) or 0)
+                    # Anteiliger Betrag proportional zur erwarteten Summe
+                    if total_expected > 0:
+                        sub_paid = round(paid_amount * (sub_expected / total_expected), 2)
+                    else:
+                        sub_paid = sub_expected
+                    matches.append({
+                        "invoice_id": sub_inv["id"],
+                        "invoice_number": sub_inv.get("invoice_number", ""),
+                        "sender": sub_inv.get("sender", ""),
+                        "transaction": tx,
+                        "paid_amount": sub_paid,
+                        "expected": sub_expected,
+                        "confidence": 95,
+                        "match_type": "sammel_split",
+                        "match_reason": (
+                            f"Sammelueberweisung ({len(all_invs)} Eingangs-Rechnungen: "
+                            f"{', '.join(all_hits)}) - "
+                            f"Gesamt {paid_amount:.2f} EUR (Diff {diff:+.2f}, Skonto-Tol {tol:.2f})"
+                        ),
+                        "action": "auto_paid",
+                        "sammel_group": all_hits,
+                    })
+                continue  # Transaktion vollstaendig verarbeitet
+            else:
+                logger.info(
+                    f"FinTS (Eingang): Sammelueberweisung erkannt ({len(all_hits)} Rechnungen) "
+                    f"aber Summe passt nicht: {paid_amount:.2f} vs {total_expected:.2f} "
+                    f"(Diff {diff:+.2f}, Tol {tol:.2f}) - Fallback auf Einzel-Match"
+                )
+                # Fall-through: Einzel-Match versuchen (evtl. matcht wenigstens einer)
+
         # Schritt 1: Rechnungsnummer im Verwendungszweck?
         found_nr, confidence, match_type = _find_invoice_number_in_text(search_text, inv_numbers)
 
@@ -1181,14 +1254,19 @@ def _match_outgoing_to_incoming(transactions: list, invoices: list) -> list:
 
 
 async def _mark_incoming_invoice_paid(db, m: dict):
-    """Markiert eine Eingangsrechnung als bezahlt (FinTS Auto-Match, final)."""
+    """Markiert eine Eingangsrechnung als bezahlt (FinTS Auto-Match, final).
+    Bei Sammel-Splits wird `sammel_group` mitgespeichert. Als
+    `eingang_paid_at` wird das Bank-Buchungsdatum verwendet."""
+    tx_date = (m.get("transaction") or {}).get("date") or ""
+    paid_at = tx_date if tx_date else datetime.now(timezone.utc).isoformat()
     await db.documents.update_one(
         {"id": m["invoice_id"]},
         {"$set": {
             "eingang_paid": True,
-            "eingang_paid_at": datetime.now(timezone.utc).isoformat(),
+            "eingang_paid_at": paid_at,
             "eingang_paid_source": f"FinTS Auto-Match ({m['match_type']}): {m['match_reason']}",
             "eingang_paid_tx": m["transaction"],
+            **({"eingang_sammel_group": m["sammel_group"]} if m.get("sammel_group") else {}),
         }}
     )
     logger.info(f"FinTS Eingangsrechnung: {m['invoice_number']} → BEZAHLT ({m['match_type']})")
