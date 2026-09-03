@@ -2126,12 +2126,27 @@ async def list_invoices(
         "payment_status": 1, "paid_at": 1, "paid_amount": 1, "payment_note": 1, "due_date": 1,
         "reminder_sent_at": 1, "reminder_sent_by": 1,
         "reminder2_sent_at": 1, "reminder2_sent_by": 1,
+        "deposit_applied": 1, "signup_id": 1,
     }).sort("invoice_number", 1).to_list(5000)
 
-    # Refund-Info aus payment_transactions einsammeln (invoice_id → refund_amount + status)
+    # Refund-Info aus payment_transactions einsammeln
+    # Wichtig: Refunds koennen entweder direkt gegen die Rechnung (invoice_id) ODER
+    # gegen die Anzahlungs-Transaktion (signup_id) laufen. Wir sammeln beide Wege.
     invoice_ids = [i["id"] for i in invoices]
+    signup_to_invoice = {i.get("signup_id"): i["id"] for i in invoices if i.get("signup_id")}
+    signup_ids_for_refunds = list(signup_to_invoice.keys())
+
     refunds_by_inv = {}
+    async def _add_refund(iid: str, tx: dict):
+        r = refunds_by_inv.setdefault(iid, {"refunded_amount": 0.0, "status": None, "at": None})
+        r["refunded_amount"] += float(tx.get("refund_amount") or (tx.get("amount") if tx.get("type") == "refund" else 0) or 0)
+        if tx.get("refund_status"):
+            r["status"] = tx["refund_status"]
+        if tx.get("refund_created_at"):
+            r["at"] = tx["refund_created_at"]
+
     if invoice_ids:
+        # Direkte Refunds gegen die Rechnung
         async for tx in _db.payment_transactions.find(
             {"invoice_id": {"$in": invoice_ids},
              "$or": [
@@ -2141,28 +2156,52 @@ async def list_invoices(
              ]},
             {"_id": 0, "invoice_id": 1, "refund_amount": 1, "refund_status": 1, "refund_created_at": 1, "type": 1, "amount": 1}
         ):
-            iid = tx["invoice_id"]
-            r = refunds_by_inv.setdefault(iid, {"refunded_amount": 0.0, "status": None, "at": None})
-            r["refunded_amount"] += float(tx.get("refund_amount") or (tx.get("amount") if tx.get("type") == "refund" else 0) or 0)
-            if tx.get("refund_status"):
-                r["status"] = tx["refund_status"]
-            if tx.get("refund_created_at"):
-                r["at"] = tx["refund_created_at"]
+            await _add_refund(tx["invoice_id"], tx)
+
+    if signup_ids_for_refunds:
+        # Refunds gegen die Anzahlungs-Transaktion (Ueberzahlungs-Rueckerstattung)
+        async for tx in _db.payment_transactions.find(
+            {"signup_id": {"$in": signup_ids_for_refunds},
+             "refund_amount": {"$gt": 0}},
+            {"_id": 0, "signup_id": 1, "refund_amount": 1, "refund_status": 1, "refund_created_at": 1, "type": 1, "amount": 1}
+        ):
+            iid = signup_to_invoice.get(tx.get("signup_id"))
+            if iid:
+                await _add_refund(iid, tx)
 
     # Berechne Faelligkeitsstatus fuer jede Rechnung
     # Zahlungsziel: Rechnungsdatum + 14 Tage
     # Mahnung: ab 17 Tage nach Rechnungsdatum (3 Tage nach Faelligkeit)
     now = datetime.now(timezone.utc)
     for inv in invoices:
+        brutto = float(inv.get("brutto") or 0)
+        deposit_applied = float(inv.get("deposit_applied") or 0)
+        paid_amount_direct = float(inv.get("paid_amount") or 0)
         refund_info = refunds_by_inv.get(inv["id"])
-        if refund_info and refund_info["refunded_amount"] > 0:
-            inv["refund_amount"] = round(refund_info["refunded_amount"], 2)
+        refunded_amount = float(refund_info["refunded_amount"]) if refund_info else 0.0
+
+        # Effektive Zahlung: Anzahlung + Direktzahlung - Refund
+        effective_paid = deposit_applied + paid_amount_direct - refunded_amount
+
+        # Wenn Rechnung durch Anzahlung + Zahlung gedeckt ist (unabhaengig von Refund):
+        # dann als bezahlt markieren (mit 2ct Toleranz fuer Rundungen)
+        if brutto > 0 and effective_paid >= brutto - 0.02 and inv.get("payment_status") != "bezahlt":
+            inv["payment_status"] = "bezahlt"
+            inv["paid_amount"] = round(effective_paid, 2)
+            if refunded_amount > 0:
+                inv["refund_amount"] = round(refunded_amount, 2)
+                inv["refund_status"] = refund_info["status"] if refund_info else None
+                inv["refunded_at"] = refund_info["at"] if refund_info else None
+                inv["payment_note"] = (inv.get("payment_note") or "") + \
+                    f" [Ueberzahlung {refunded_amount:.2f} EUR erstattet]"
+            continue
+
+        if refund_info and refunded_amount > 0:
+            inv["refund_amount"] = round(refunded_amount, 2)
             inv["refund_status"] = refund_info["status"]
             inv["refunded_at"] = refund_info["at"]
-            # Wenn Rueckerstattung mind. den Rechnungsbetrag deckt → "erstattet",
-            # sonst "teilweise_erstattet". Ueberschreibt spaetere Faelligkeitsberechnung.
-            brutto = float(inv.get("brutto") or 0)
-            if refund_info["refunded_amount"] + 0.01 >= brutto and brutto > 0:
+            # Wenn Rueckerstattung mind. den Rechnungsbetrag deckt → "erstattet"
+            if refunded_amount + 0.01 >= brutto and brutto > 0:
                 inv["payment_status"] = "erstattet"
             elif inv.get("payment_status") != "bezahlt":
                 inv["payment_status"] = "teilweise_erstattet"
