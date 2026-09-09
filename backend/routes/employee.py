@@ -1042,8 +1042,14 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
         elif date_str in abbau_days:
             reason = "Überstundenabbau"
         elif date_str in offday_days:
-            # Ersatzruhetag (Offday) - bezahlter freier Tag, KEIN Soll abziehen.
+            # Ersatzruhetag (Offday) - der MA bleibt zu Hause, aber der Tag zaehlt
+            # als "geleistet" gegen sein Soll. Wir setzen soll = geplante Tagesarbeitszeit,
+            # damit ist(0) - soll(x) = -x die Ueberstunden um x reduziert. So wird die
+            # zuvor am Sonntag/Feiertag verdiente +8h Ueberstunde wieder aufgezehrt
+            # (Verbrauch des Offdays statt Auszahlung).
             reason = "Offday (Ausgleichstag)"
+            if has_schedule:
+                soll = _soll_minutes_from_schedule(schedule, cur.weekday())
         elif date_str in night_followup_days and ist == 0:
             # Tag X+1 nach einer Nachtschicht (Vortag 22:30 -> 08:10 heute).
             # Die Arbeitszeit wurde bereits auf den Schicht-Start-Tag gebucht.
@@ -1417,8 +1423,11 @@ async def get_time_overview(token: str = Query(...)):
         is_urlaub = ds in off_days
         is_abbau = ds in abbau_days
         is_offday = ds in offday_days
-        # Soll: 0 bei Feiertag/Urlaub/Krank/Ueberstundenabbau/Offday, sonst Plan
-        if is_holiday or is_urlaub or is_abbau or is_offday:
+        # Soll: 0 bei Feiertag/Urlaub/Krank/Ueberstundenabbau, sonst Plan.
+        # WICHTIG: Bei Offday behaelt der Tag sein volles Soll - der MA bleibt
+        # zu Hause und der Tag "verzehrt" die zuvor am Sonntag verdienten
+        # Ueberstunden (ist=0, soll=8h -> diff=-8h reduziert Ueberstunden-Konto).
+        if is_holiday or is_urlaub or is_abbau:
             soll = 0
         else:
             soll = _soll_minutes_from_schedule(schedule, weekday)
