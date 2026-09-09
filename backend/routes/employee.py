@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Body
 from fastapi.responses import Response
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 import os
 import logging
@@ -2490,12 +2490,26 @@ async def admin_create_time_off(token: str = Query(...), data: dict = Body(...))
     }
     await db.time_off_requests.insert_one(entry)
 
-    # Ueberstundenabbau: Konto belasten - exakte Stunden oder days*8.
+    # Ueberstundenabbau: Konto belasten - exakte Stunden oder Summe der
+    # geplanten Tagesarbeitszeit fuer alle Werktage im Zeitraum.
     if req_type == "ueberstundenabbau":
         if hours is not None:
             hours_to_deduct = hours
         elif days > 0:
-            hours_to_deduct = days * 8.0
+            # Wochenplan des Users laden und pro Werktag die Soll-Stunden aufsummieren
+            _ws = await db.work_schedules.find_one({"user_id": target_user_id}, {"_id": 0})
+            hours_to_deduct = 0.0
+            try:
+                _sd = datetime.strptime(start_date, "%Y-%m-%d").date()
+                _ed = datetime.strptime(end_date, "%Y-%m-%d").date()
+                _cur = _sd
+                while _cur <= _ed:
+                    if _cur.weekday() < 5:  # Mo-Fr
+                        _mins = _soll_minutes_from_schedule(_ws or {}, _cur.weekday())
+                        hours_to_deduct += _mins / 60.0
+                    _cur += timedelta(days=1)
+            except (ValueError, TypeError):
+                hours_to_deduct = days * 8.0  # Fallback nur wenn Datum-Parsing scheitert
         else:
             hours_to_deduct = 0
         if hours_to_deduct > 0:
@@ -2534,8 +2548,22 @@ async def admin_delete_time_off(request_id: str, token: str = Query(...)):
         # admin_create_time_off).
         hours_to_refund = req.get("hours_deducted")
         if hours_to_refund is None:
-            days = req.get("days", 0) or 0
-            hours_to_refund = days * 8.0
+            # Rueckgabe = Summe der geplanten Tagesarbeitszeit aller Werktage
+            # im Zeitraum (nicht mehr flat 8h - respektiert per-User Regelarbeitszeit).
+            _ws = await db.work_schedules.find_one({"user_id": req.get("user_id")}, {"_id": 0})
+            hours_to_refund = 0.0
+            try:
+                _sd = datetime.strptime(req.get("start_date"), "%Y-%m-%d").date()
+                _ed = datetime.strptime(req.get("end_date") or req.get("start_date"), "%Y-%m-%d").date()
+                _cur = _sd
+                while _cur <= _ed:
+                    if _cur.weekday() < 5:
+                        _mins = _soll_minutes_from_schedule(_ws or {}, _cur.weekday())
+                        hours_to_refund += _mins / 60.0
+                    _cur += timedelta(days=1)
+            except (ValueError, TypeError):
+                days = req.get("days", 0) or 0
+                hours_to_refund = days * 8.0
         try:
             hours_to_refund = float(hours_to_refund or 0)
         except (TypeError, ValueError):
@@ -2968,8 +2996,12 @@ async def get_payroll(user_id: str, month: str = Query(...), token: str = Query(
             continue
         soll_min = _soll_minutes_from_schedule(ws or {}, d_obj.weekday())
         if soll_min <= 0:
-            # Kein Soll im Wochenplan -> Default 8h ansetzen (sonst keine Verguetung).
-            soll_min = 8 * 60
+            # Kein Soll im Wochenplan (z.B. Samstag) -> Wochendurchschnitt
+            # ansetzen (Summe Woche / 5 Werktage). Bei komplett leerem Plan Fallback 8h.
+            _week_sum = 0
+            for _wd in range(5):
+                _week_sum += _soll_minutes_from_schedule(ws or {}, _wd)
+            soll_min = int(round(_week_sum / 5)) if _week_sum > 0 else 8 * 60
         hours = soll_min / 60
         base_wage = round(hours * hourly_wage, 2)
         rows.append({
