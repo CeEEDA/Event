@@ -2118,12 +2118,35 @@ async def yearly_evaluation_pdf(token: str = Query(...), year: Optional[int] = N
                     sick_days += 1
                 cur += _td(days=1)
 
+        # Offdays: zugestanden (verdient), genommen und Restsaldo aus offday_ledger
+        # Jahres-Werte: nur Eintraege im aktuellen Jahr; Saldo = kumulativ ueber alle Jahre
+        offday_earned_year = 0
+        offday_consumed_year = 0
+        async for e in db.offday_ledger.find(
+            {"user_id": uid, "ref_date": {"$gte": year_start, "$lte": year_end}},
+            {"_id": 0, "delta": 1},
+        ):
+            d = int(e.get("delta") or 0)
+            if d > 0:
+                offday_earned_year += d
+            elif d < 0:
+                offday_consumed_year += -d
+        # Aktueller Gesamtsaldo (kumulativ, kann jahresuebergreifend sein)
+        offday_bal_agg = await db.offday_ledger.aggregate([
+            {"$match": {"user_id": uid}},
+            {"$group": {"_id": None, "total": {"$sum": "$delta"}}},
+        ]).to_list(1)
+        offday_open = int(offday_bal_agg[0]["total"]) if offday_bal_agg else 0
+
         rows.append({
             "name": u.get("name") or "",
             "overtime_hours": round(overtime, 2),
             "vacation_days_used": vac_used,
             "vacation_days_remaining": vac_remaining,
             "sick_days": sick_days,
+            "offday_earned": offday_earned_year,
+            "offday_consumed": offday_consumed_year,
+            "offday_open": offday_open,
         })
 
     pdf_bytes = generate_yearly_evaluation_pdf(rows, yr)

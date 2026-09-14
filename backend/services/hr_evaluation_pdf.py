@@ -76,6 +76,9 @@ def generate_yearly_evaluation_pdf(rows: list[dict], year: int) -> bytes:
         Paragraph("Urlaub genommen", styles["EvHeadCellR"]),
         Paragraph("Resturlaub", styles["EvHeadCellR"]),
         Paragraph("Krankheitstage", styles["EvHeadCellR"]),
+        Paragraph("Offdays zugestanden", styles["EvHeadCellR"]),
+        Paragraph("Offdays genommen", styles["EvHeadCellR"]),
+        Paragraph("Offdays offen", styles["EvHeadCellR"]),
     ]
 
     data = [header]
@@ -88,13 +91,16 @@ def generate_yearly_evaluation_pdf(rows: list[dict], year: int) -> bytes:
             Paragraph(_fmt_days(r.get("vacation_days_used")), styles["EvCellR"]),
             Paragraph(_fmt_days(r.get("vacation_days_remaining")), styles["EvCellR"]),
             Paragraph(_fmt_days(r.get("sick_days")), styles["EvCellR"]),
+            Paragraph(_fmt_days(r.get("offday_earned")), styles["EvCellR"]),
+            Paragraph(_fmt_days(r.get("offday_consumed")), styles["EvCellR"]),
+            Paragraph(_fmt_days(r.get("offday_open")), styles["EvCellR"]),
         ])
 
     if len(data) == 1:
         # Keine MA vorhanden
-        data.append([Paragraph("Keine aktiven Mitarbeiter gefunden.", styles["EvCell"]), "", "", "", ""])
+        data.append([Paragraph("Keine aktiven Mitarbeiter gefunden.", styles["EvCell"]), "", "", "", "", "", "", ""])
 
-    col_widths = [60 * mm, 30 * mm, 30 * mm, 26 * mm, 28 * mm]
+    col_widths = [44 * mm, 24 * mm, 22 * mm, 20 * mm, 22 * mm, 24 * mm, 24 * mm, 20 * mm]
     tbl = Table(data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), PURPLE),
@@ -120,11 +126,16 @@ def generate_yearly_evaluation_pdf(rows: list[dict], year: int) -> bytes:
     total_ot = sum(float(r.get("overtime_hours") or 0) for r in rows_sorted)
     total_vac_used = sum(float(r.get("vacation_days_used") or 0) for r in rows_sorted)
     total_sick = sum(float(r.get("sick_days") or 0) for r in rows_sorted)
+    total_off_earned = sum(int(r.get("offday_earned") or 0) for r in rows_sorted)
+    total_off_consumed = sum(int(r.get("offday_consumed") or 0) for r in rows_sorted)
+    total_off_open = sum(int(r.get("offday_open") or 0) for r in rows_sorted)
     footer_text = (
         f"Summen: {total_ma} Mitarbeiter &nbsp;|&nbsp; "
         f"Überstunden gesamt: {_fmt_hours(total_ot)} &nbsp;|&nbsp; "
         f"Urlaub {year}: {_fmt_days(total_vac_used)} Tage &nbsp;|&nbsp; "
-        f"Krank {year}: {_fmt_days(total_sick)} Tage"
+        f"Krank {year}: {_fmt_days(total_sick)} Tage &nbsp;|&nbsp; "
+        f"Offdays {year}: {total_off_earned} zug. / {total_off_consumed} genom. &nbsp;|&nbsp; "
+        f"Offene Offdays gesamt: {total_off_open}"
     )
     elements.append(Paragraph(footer_text, styles["EvSub"]))
 
