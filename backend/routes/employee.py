@@ -928,6 +928,28 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     year_end = _date(year, 12, 31)
     end_day = min(today, year_end)
 
+    # ── BUG-FIX (Feb 2026): Offene Stempelung heute aus Bilanz aussparen
+    # Ohne diesen Skip wuerde der Tag mit Ist=0 vs Soll=Xh als Minus-Tag
+    # verbucht, weil `duration_minutes: {"$ne": None}` (siehe unten) noch keinen
+    # Wert liefert. Wenn dann parallel die Baseline-Auto-Setzung anspringt (v2-
+    # migration oder erstmalige baseline), wird das temporaere Minus in die
+    # Baseline eingepflegt (`baseline = current - diff + ded` erhoeht baseline
+    # um den fehlenden Betrag). Sobald der MA am Abend ausstempelt und der
+    # Recompute nochmal laeuft, faellt das Minus weg — aber die Baseline
+    # bleibt erhoeht -> es entstehen "geschenkte" Ueberstunden.
+    # Loesung: solange ein offener Eintrag lebt, wird sein Datum in der
+    # Tag-fuer-Tag-Schleife geskippt. Das Datum wird beim Ausstempeln durch
+    # den dann folgenden Recompute wieder korrekt in die Bilanz einbezogen.
+    open_entry_today = await db.time_entries.find_one(
+        {"user_id": user_id, "clock_out": None},
+        {"_id": 0, "date": 1}
+    )
+    _open_date_str = (open_entry_today or {}).get("date") if open_entry_today else None
+    try:
+        open_skip_date = _date.fromisoformat(_open_date_str) if _open_date_str else None
+    except (TypeError, ValueError):
+        open_skip_date = None
+
     # Wenn Admin die Ueberstunden manuell gesetzt hat, ist alles VOR diesem
     # Datum bereits in der baseline enthalten. Der Recompute darf ausschliesslich
     # Tage AB diesem Datum ein weiteres Mal in die diff-Berechnung einbeziehen -
@@ -1032,6 +1054,10 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     cur = range_start
     while cur <= end_day:
         date_str = cur.isoformat()
+        # BUG-FIX: Tag mit offener Stempelung ueberspringen (siehe Kommentar oben)
+        if open_skip_date and cur == open_skip_date:
+            cur += timedelta(days=1)
+            continue
         ist = ist_by_day.get(date_str, 0.0)
         soll = 0
         reason = ""
