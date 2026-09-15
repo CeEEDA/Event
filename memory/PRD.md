@@ -19,6 +19,11 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (Bugfix: Clock-Out überschreibt tagsüber-Admin-Korrekturen)
+- **Root Cause** (`/app/backend/routes/employee.py` `_recompute_overtime_for_year`): Wenn Admin tagsüber eine Zeitkorrektur macht (oder eine andere Aktion einen Recompute triggert), während der MA noch eingestempelt ist (offener `time_entry` mit `duration_minutes=None`), wird der Tag mit **Ist=0 vs Soll=8h** als Minus-Tag verbucht. Bei erstmaliger Baseline-Setzung / V2-Migration wird `baseline = current - diff + deduction` gerechnet und dieses temporäre Minus wird als **positive Kompensation in die Baseline eingebrannt** (z.B. +8h). Am Abend nach Ausstempeln fällt das Minus weg, aber die Baseline bleibt erhöht → es entstehen "geschenkte" +8h Überstunden.
+- **Fix**: Vor der Tag-für-Tag-Bilanzschleife wird geprüft, ob aktuell ein offener `time_entry` existiert. Falls ja, wird das Datum dieses Eintrags in der Schleife **übersprungen** — so entsteht keine künstliche Baseline-Kompensation. Sobald der MA ausstempelt, läuft der nächste Recompute mit korrekten `duration_minutes` und der Tag landet regulär in der Bilanz.
+- **Regression-Test** (`/app/backend/tests/test_clockout_daytime_admin_edit_fix.py`): Simuliert kompletten Ablauf (einstempeln → Recompute tagsüber → ausstempeln → Recompute abends). Kern-Assert: overtime_hours bleibt 0h wenn Ist = Soll (vorher fälschlicherweise +8h). Bonus-Fall: 9h Arbeit / 8h Soll → +1h ✓.
+
 ### 2026-02-24 (HalloPetra Sync-Throttling – MongoDB-Timeout-Fix)
 - **MongoDB-Stabilität** (`/app/backend/server.py`): `serverSelectionTimeoutMS` von 10 s → **30 s** erhöht, verhindert `ServerSelectionTimeoutError` unter Last.
 - **HalloPetra Auto-Sync-Loop entzerrt** (`/app/backend/routes/hallopetra.py`): Poll-Intervall von 5 Min → **30 Min** (1800 s). Drei innere Loops (Call-Import, `_import_all_contacts`, `_enrich_calls_backfill`) mit `await asyncio.sleep(0.05)` pro Iteration entlastet – DB-Pool bleibt frei.
