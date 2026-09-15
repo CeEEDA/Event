@@ -3892,6 +3892,31 @@ async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
             await release_offday_for_assignment(assignment_id)
         except Exception as _e:
             logger.warning(f"Offday release fehlgeschlagen: {_e}")
+        # Offday-Konsum rueckgaengig: Baseline um die zuvor abgezogenen Sollstunden
+        # anheben, damit der nachfolgende Recompute (der den Tag jetzt als
+        # 'versaeumten Arbeitstag' behandelt und -soll rechnet) sich netto zu 0
+        # ausgleicht. So bleibt der Mitarbeiter beim Storno nicht auf -soll sitzen.
+        try:
+            uid = prev.get("user_id")
+            off_date = prev.get("date") or ""
+            y = int(off_date[:4]) if off_date[:4].isdigit() else None
+            if uid and off_date and y:
+                _ws = await db.work_schedules.find_one({"user_id": uid}, {"_id": 0})
+                _d_obj = datetime.strptime(off_date, "%Y-%m-%d").date()
+                _mins = _soll_minutes_from_schedule(_ws or {}, _d_obj.weekday())
+                _hours_refund = _mins / 60.0
+                if _hours_refund > 0:
+                    await db.hr_data.update_one(
+                        {"user_id": uid, "year": y},
+                        {"$inc": {"overtime_baseline": _hours_refund}},
+                        upsert=False,
+                    )
+                    logger.info(
+                        f"Offday-Storno: {_hours_refund:.2f}h auf Baseline zurueckgegeben "
+                        f"(user={uid}, date={off_date})"
+                    )
+        except Exception as _e:
+            logger.warning(f"Offday-Rueckerstattung fehlgeschlagen: {_e}")
         try:
             y = int(str(prev.get("date") or "")[:4])
             await _recompute_overtime_for_year(prev.get("user_id"), y)
