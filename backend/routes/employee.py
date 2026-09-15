@@ -1204,7 +1204,13 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
                              summary=summary, details=entry)
 
     # 9) Audit-Log: Zusammenfassung (aggregiert) – nur wenn was passiert ist
-    if plus_days or minus_days or deduction > 0:
+    #    UND sich der Saldo tatsaechlich veraendert hat. Das verhindert Log-
+    #    Spam bei jedem Clock-In wenn der Recompute lediglich denselben Wert
+    #    berechnet (frueher wurde bei jedem Trigger ein Eintrag geschrieben,
+    #    auch wenn nichts geaendert war -> viele identische Zeilen im Audit).
+    prev_ot = float(hr.get("overtime_hours") or 0) if hr else None
+    balance_changed = prev_ot is None or abs(new_overtime - prev_ot) > 0.01
+    if (plus_days or minus_days or deduction > 0) and balance_changed:
         summary_text = (
             f"Recompute Stundenkonto {year}: "
             f"+{round(plus_minutes/60.0,2)}h an {plus_days} Tag(en), "
