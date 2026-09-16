@@ -37,6 +37,7 @@ import FilesharingAppCard from "./user_modal/FilesharingAppCard";
 import GeneratorMonitoringCard from "./user_modal/GeneratorMonitoringCard";
 import EnergyMonitoringCard from "./user_modal/EnergyMonitoringCard";
 import AccountAvailabilityCard from "./user_modal/AccountAvailabilityCard";
+import StundenkontoCard from "./user_modal/StundenkontoCard";
 
 export default function UserEditModal({
   open,
@@ -190,6 +191,10 @@ export default function UserEditModal({
                     </div>
                   </div>
                 </div>
+              )}
+
+              {formData.role === "mitarbeiter" && editingUser?.id && (
+                <StundenkontoCard userId={editingUser.id} />
               )}
 
               {formData.role === "mitarbeiter" && (

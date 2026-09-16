@@ -80,6 +80,7 @@ export default function AdminZeitDetailPage() {
   const [vacationTotal, setVacationTotal] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [hrData, setHrData] = useState(null);
+  const [saldoSummary, setSaldoSummary] = useState(null);
   const [saving, setSaving] = useState(false);
 
   // Vacation entries
@@ -234,6 +235,10 @@ export default function AdminZeitDetailPage() {
       setOvertimeHours(String(res.data.overtime_hours || 0));
       setVacationTotal(String(res.data.vacation_days_total || 0));
       setDateOfBirth(res.data.date_of_birth || "");
+    } catch {}
+    try {
+      const res2 = await api.get(`/employee/hr-data/${userId}/saldo-summary?token=${token}`);
+      setSaldoSummary(res2.data);
     } catch {}
   }, [token, userId]);
 
@@ -646,11 +651,24 @@ export default function AdminZeitDetailPage() {
               </Button>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-shrink-0">
-              <div className="flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-2.5">
-                <TrendingUp className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                <div>
+              <div className="flex flex-col bg-amber-50 rounded-lg px-3 py-2.5" data-testid="stundenkonto-card">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="w-4 h-4 text-amber-600 flex-shrink-0" />
                   <p className="text-[10px] font-medium text-amber-600 uppercase">Stundenkonto</p>
-                  <p className="text-lg font-bold text-amber-800">{parseFloat(overtimeHours) || 0} <span className="text-xs font-normal text-amber-500">Std.</span></p>
+                </div>
+                <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10px] leading-tight">
+                  <span className="text-amber-500">Übertrag</span>
+                  <span className="text-amber-500">Monatsende</span>
+                  <span className="text-amber-500 font-semibold">Aktuell</span>
+                  <span className="font-mono text-amber-800" data-testid="saldo-carry-over">
+                    {saldoSummary?.carry_over != null ? saldoSummary.carry_over.toFixed(2) : "–"}
+                  </span>
+                  <span className="font-mono text-amber-800" data-testid="saldo-month-end">
+                    {saldoSummary?.month_end != null ? saldoSummary.month_end.toFixed(2) : "–"}
+                  </span>
+                  <span className="font-mono font-bold text-amber-900" data-testid="saldo-current">
+                    {(parseFloat(overtimeHours) || 0).toFixed(2)}
+                  </span>
                 </div>
               </div>
               <div className="flex items-center gap-2 bg-sky-50 rounded-lg px-3 py-2.5">

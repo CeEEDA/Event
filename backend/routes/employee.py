@@ -1822,6 +1822,210 @@ async def get_hr_data(user_id: str, token: str = Query(...)):
     return doc
 
 
+@router.get("/hr-data/{user_id}/saldo-summary")
+async def get_saldo_summary(user_id: str, token: str = Query(...)):
+    """Liefert Uebertrag (Vormonatsende), Aktuell und Monatsende-Prognose fuer
+    die Stundenkonto-Anzeige in der Verwaltungsmaske / Zeit-Detail-Seite.
+
+    - carry_over: Saldo am letzten Tag des Vormonats (analog Recompute,
+      aber end_day = prev_month_last).
+    - current: aktueller overtime_hours-Wert (Live aus hr_data).
+    - month_end: Prognose Saldo am letzten Tag des laufenden Monats,
+      unter der Annahme dass der Mitarbeiter fuer alle Rest-Plan-Tage
+      seine Sollstunden erfuellt. Bereits genehmigte Urlaub/Krank/Abbau/
+      Offday-Antraege werden korrekt beruecksichtigt (Offdays reduzieren
+      den Saldo um das Tages-Soll, Ueberstundenabbau um hours_deducted).
+    """
+    from datetime import date as _date, timedelta
+    import calendar as _cal
+    import zoneinfo as _zi
+
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller) and caller["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Kein Zugriff")
+
+    _berlin = _zi.ZoneInfo("Europe/Berlin")
+    today = datetime.now(timezone.utc).astimezone(_berlin).date()
+    year = today.year
+    year_start = _date(year, 1, 1)
+    year_end = _date(year, 12, 31)
+
+    month_first = today.replace(day=1)
+    month_last = _date(today.year, today.month, _cal.monthrange(today.year, today.month)[1])
+    prev_month_last = month_first - timedelta(days=1)
+
+    hr = await db.hr_data.find_one({"user_id": user_id, "year": year}, {"_id": 0}) or {}
+    current = round(float(hr.get("overtime_hours") or 0), 2)
+    baseline = float(hr.get("overtime_baseline") or 0)
+
+    # Range-Start (respektiert Admin-Manuell-Baseline analog Recompute)
+    range_start = year_start
+    reason = (hr.get("overtime_baseline_reason") or "").lower()
+    if reason.startswith("admin-manuell") and hr.get("overtime_baseline_set_at"):
+        try:
+            _bset = datetime.fromisoformat(hr["overtime_baseline_set_at"])
+            if _bset.tzinfo is None:
+                _bset = _bset.replace(tzinfo=timezone.utc)
+            _bset_date = _bset.astimezone(timezone.utc).date()
+            if _bset_date > year_start:
+                range_start = _bset_date + timedelta(days=1)
+        except (ValueError, TypeError):
+            pass
+
+    # Offener Eintrag heute -> aus Tages-Bilanz ausklammern (siehe Recompute-Fix)
+    open_entry = await db.time_entries.find_one(
+        {"user_id": user_id, "clock_out": None},
+        {"_id": 0, "date": 1}
+    )
+    _open_date_str = (open_entry or {}).get("date") if open_entry else None
+    try:
+        open_skip_date = _date.fromisoformat(_open_date_str) if _open_date_str else None
+    except (TypeError, ValueError):
+        open_skip_date = None
+
+    # Feiertage
+    holidays = set(_get_holidays(year).keys())
+
+    # Urlaub/Krank/Abbau aus time_off_requests
+    off_days: set = set()
+    abbau_days: set = set()
+    async for r in db.time_off_requests.find(
+        {"user_id": user_id, "status": "approved",
+         "type": {"$in": ["urlaub", "krank", "ueberstundenabbau"]}},
+        {"_id": 0, "type": 1, "start_date": 1, "end_date": 1}
+    ):
+        try:
+            s = _date.fromisoformat(r["start_date"])
+            e = _date.fromisoformat(r["end_date"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        target = abbau_days if (r.get("type") or "").lower() == "ueberstundenabbau" else off_days
+        cur = s
+        while cur <= e:
+            if cur.year == year:
+                target.add(cur.isoformat())
+            cur += timedelta(days=1)
+
+    # Deductions pro Tag aus absences
+    ded_by_date: dict = {}
+    async for a in db.absences.find(
+        {"user_id": user_id, "type": "ueberstundenabbau", "status": "approved",
+         "date": {"$regex": f"^{year}-"}},
+        {"_id": 0, "hours_deducted": 1, "date": 1}
+    ):
+        d = a.get("date")
+        if d:
+            ded_by_date[d] = ded_by_date.get(d, 0.0) + float(a.get("hours_deducted") or 0)
+
+    # Offdays aus shift_assignments
+    offday_days: set = set()
+    async for r in db.shift_assignments.find(
+        {"user_id": user_id, "is_offday": True, "date": {"$regex": f"^{year}-"}},
+        {"_id": 0, "date": 1}
+    ):
+        d = r.get("date")
+        if d:
+            offday_days.add(d)
+
+    # Ist aus time_entries + Nachtschicht-Folgetage
+    ist_by_day: dict = {}
+    night_followup_days: set = set()
+    async for e in db.time_entries.find(
+        {"user_id": user_id, "date": {"$regex": f"^{year}-"}, "duration_minutes": {"$ne": None}},
+        {"_id": 0, "date": 1, "duration_minutes": 1, "type": 1, "clock_in": 1, "clock_out": 1}
+    ):
+        if (e.get("type") or "").lower() in ("urlaub", "krank", "ueberstundenabbau", "feiertag"):
+            continue
+        d = e.get("date")
+        if not d:
+            continue
+        ist_by_day[d] = ist_by_day.get(d, 0.0) + float(e.get("duration_minutes") or 0)
+        ci_str, co_str = e.get("clock_in"), e.get("clock_out")
+        if ci_str and co_str:
+            try:
+                ci_dt = datetime.fromisoformat(ci_str)
+                co_dt = datetime.fromisoformat(co_str)
+                if ci_dt.tzinfo is None:
+                    ci_dt = ci_dt.replace(tzinfo=timezone.utc)
+                if co_dt.tzinfo is None:
+                    co_dt = co_dt.replace(tzinfo=timezone.utc)
+                ci_date = ci_dt.astimezone(_berlin).date()
+                co_date = co_dt.astimezone(_berlin).date()
+                if ci_date < co_date:
+                    cur_d = ci_date + timedelta(days=1)
+                    while cur_d <= co_date:
+                        if cur_d.year == year:
+                            night_followup_days.add(cur_d.isoformat())
+                        cur_d += timedelta(days=1)
+            except (ValueError, TypeError):
+                pass
+
+    schedule = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0})
+    has_schedule = bool(schedule and (schedule.get("days") or {}))
+
+    def _day_diff_min(cur_day: _date, prognosis: bool = False) -> float:
+        """Diff (ist - soll) in Minuten fuer einen Tag."""
+        date_str = cur_day.isoformat()
+        ist = ist_by_day.get(date_str, 0.0)
+        soll = 0
+        if date_str in holidays:
+            pass
+        elif date_str in off_days:
+            pass
+        elif date_str in abbau_days:
+            pass
+        elif date_str in offday_days:
+            if has_schedule:
+                soll = _soll_minutes_from_schedule(schedule, cur_day.weekday())
+        elif date_str in night_followup_days and ist == 0:
+            pass
+        elif has_schedule:
+            soll = _soll_minutes_from_schedule(schedule, cur_day.weekday())
+        if prognosis and date_str not in offday_days:
+            # Zukunft: nehme an, MA erfuellt planmaessig sein Soll -> Ist = Soll
+            ist = soll
+        return ist - soll
+
+    # ── 1) Uebertrag: baseline + Σ(diff bis prev_month_last) - Σ(ded bis prev_month_last)
+    if prev_month_last < year_start:
+        carry_over = round(baseline, 2)
+    else:
+        diff_pm_min = 0.0
+        ded_pm_h = 0.0
+        cur = range_start
+        while cur <= prev_month_last:
+            if open_skip_date and cur == open_skip_date:
+                cur += timedelta(days=1)
+                continue
+            diff_pm_min += _day_diff_min(cur, prognosis=False)
+            ded_pm_h += ded_by_date.get(cur.isoformat(), 0.0)
+            cur += timedelta(days=1)
+        carry_over = round(baseline + diff_pm_min / 60.0 - ded_pm_h, 2)
+
+    # ── 2) Aktuell aus hr_data (current)
+
+    # ── 3) Monatsende: current + Σ(prognostizierter diff/ded von morgen bis month_last)
+    diff_fut_min = 0.0
+    ded_fut_h = 0.0
+    tomorrow = today + timedelta(days=1)
+    cur = tomorrow
+    while cur <= month_last and cur <= year_end:
+        diff_fut_min += _day_diff_min(cur, prognosis=True)
+        ded_fut_h += ded_by_date.get(cur.isoformat(), 0.0)
+        cur += timedelta(days=1)
+    month_end = round(current + diff_fut_min / 60.0 - ded_fut_h, 2)
+
+    return {
+        "user_id": user_id,
+        "year": year,
+        "month": today.strftime("%Y-%m"),
+        "carry_over": carry_over,
+        "current": current,
+        "month_end": month_end,
+    }
+
+
+
 @router.put("/hr-data/{user_id}")
 async def update_hr_data(user_id: str, token: str = Query(...), data: dict = Body(...)):
     """Admin only: update HR data for a user."""
