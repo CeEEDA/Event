@@ -19,6 +19,12 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (Mitarbeiter „Meine Arbeitszeit": Geplante Abbau-Tage + Reserved-Hinweis)
+- **Backend** (`/app/backend/routes/employee.py` `GET /time-off`): Endpoint reichert jetzt jeden genehmigten `ueberstundenabbau`-Antrag mit `hours_deducted_display` an — 3-Stufen-Berechnung: (1) explizite `hours_deducted` (Stunden-Modus), (2) Uhrzeit-Spanne bei Halbtags-Antrag, (3) Summe Werktags-Soll aus Wochenplan; Fallback `days * 8` wenn Wochenplan leer.
+- **Frontend** (`/app/frontend/src/pages/ArbeitszeitPage.jsx`): Neue Sektion „Geplante Abbau-Tage" (mit Kalender-Icon) zeigt zukuenftige/laufende genehmigte Abbau-Antraege mit Datum-Range, Tagen, Stunden und „✓ bereits vom Konto abgezogen"-Hinweis. Header-Summe: „N Tage · Xh bereits abgezogen". Vergangene Abbau-Tage separat als „Bereits eingeloest".
+- **Ueberstunden-Kachel**: kleine Zeile unter dem Wert: „davon X Std. fuer geplante freie Tage reserviert" — sichtbar nur wenn Zukunft-Abbau > 0.
+- Curl+Screenshot verifiziert: 2 Zukunfts-Abbau × 5 Tage × 40h = 10 Tage · 80h, plus vergangene Abbau werden korrekt getrennt gerendert.
+
 ### 2026-02-25 (Verwaltungsmaske: Stundenkonto-Anzeige Übertrag / Monatsende / Aktuell)
 - **Neuer Backend-Endpoint** `GET /api/employee/hr-data/{user_id}/saldo-summary` (`/app/backend/routes/employee.py`): Berechnet für einen User drei Werte — `carry_over` (Saldo Stand letzter Tag des Vormonats), `current` (Live overtime_hours) und `month_end` (Prognose Saldo Ende laufender Monat unter Annahme, dass alle Rest-Plan-Tage planmäßig erfüllt werden; genehmigte Urlaub/Krank/Abbau/Offday-Anträge werden korrekt eingerechnet). Skippt den Tag mit offenem Time-Entry (analog zum Clock-Out-Fix).
 - **Stundenkonto-Karte** (`/app/frontend/src/pages/AdminZeitDetailPage.jsx`): Die bisherige "Aktuell"-Only-Kachel zeigt jetzt in 3 Spalten `Übertrag | Monatsende | Aktuell` mit monospace-formatierten Werten (2 Nachkommastellen). Struktur analog zur Legacy-Zeiterfassung.

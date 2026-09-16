@@ -77,6 +77,15 @@ export default function ArbeitszeitPage() {
     .filter(r => r.type === "krank" && r.status === "approved" && r.start_date?.startsWith(String(year)))
     .reduce((s, r) => s + (r.days || 0), 0);
 
+  // Geplante (heute + zukuenftige) und historische Abbau-Antraege dieses Jahres
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const approvedAbbau = timeOffRequests.filter(r =>
+    r.type === "ueberstundenabbau" && r.status === "approved" && r.start_date?.startsWith(String(year))
+  );
+  const plannedAbbau = approvedAbbau.filter(r => (r.end_date || r.start_date) >= todayISO);
+  const plannedAbbauDays = plannedAbbau.reduce((s, r) => s + (r.days || 0), 0);
+  const plannedAbbauHours = plannedAbbau.reduce((s, r) => s + (r.hours_deducted_display || 0), 0);
+
   const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
   const formatDur = (mins) => { if (!mins) return "—"; const h = Math.floor(mins / 60); const m = Math.round(mins % 60); return `${h}h ${m}m`; };
   const fmtH = (mins) => { const h = Math.floor(mins / 60); const m = Math.round(mins % 60); return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : ""; };
@@ -113,9 +122,14 @@ export default function ArbeitszeitPage() {
             <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
               <TrendingUp className="w-4 h-4 text-amber-600" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">Überstunden</p>
-              <p className="text-xl font-bold text-amber-800 leading-tight">{hrData?.overtime_hours ?? 0} <span className="text-xs font-normal text-amber-500">Std.</span></p>
+              <p className="text-xl font-bold text-amber-800 leading-tight" data-testid="overtime-value">{hrData?.overtime_hours ?? 0} <span className="text-xs font-normal text-amber-500">Std.</span></p>
+              {plannedAbbauHours > 0 && (
+                <p className="text-[9px] text-amber-500 leading-tight mt-0.5" data-testid="overtime-reserved-hint">
+                  davon {plannedAbbauHours.toFixed(2)} Std. für geplante freie Tage reserviert
+                </p>
+              )}
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3">
@@ -130,7 +144,7 @@ export default function ArbeitszeitPage() {
         </div>
 
         {/* Genehmigte Urlaube & Überstundenabbau Übersicht */}
-        {(vacationEntries.length > 0 || timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved").length > 0) && (
+        {(vacationEntries.length > 0 || approvedAbbau.length > 0) && (
           <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3" data-testid="approved-overview">
             {vacationEntries.length > 0 && (
               <div>
@@ -151,18 +165,45 @@ export default function ArbeitszeitPage() {
                 </div>
               </div>
             )}
-            {timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved").length > 0 && (
-              <div>
+            {plannedAbbau.length > 0 && (
+              <div data-testid="planned-abbau-section">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Überstundenabbau</span>
+                  <CalendarDays className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Geplante Abbau-Tage</span>
+                  <span className="text-xs font-bold text-amber-700 ml-auto" data-testid="planned-abbau-total">
+                    {plannedAbbauDays} Tage · {plannedAbbauHours.toFixed(2)} Std. bereits abgezogen
+                  </span>
                 </div>
                 <div className="space-y-1">
-                  {timeOffRequests.filter(r => r.type === "ueberstundenabbau" && r.status === "approved").map(r => (
-                    <div key={r.id} className="flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-1.5 text-sm">
+                  {plannedAbbau.map(r => (
+                    <div key={r.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 bg-amber-50 rounded-lg px-3 py-1.5 text-sm">
                       <span className="text-amber-700">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                       {r.end_date !== r.start_date && <><span className="text-gray-400">—</span><span className="text-amber-700">{new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span></>}
-                      {r.days > 0 && <span className="text-amber-700 font-bold ml-auto">{r.days} Tage</span>}
+                      <span className="text-amber-700 font-bold ml-auto">
+                        {r.days > 0 ? `${r.days} Tage · ` : ""}{(r.hours_deducted_display || 0).toFixed(2)}h
+                      </span>
+                      <span className="text-[10px] text-emerald-600 basis-full pl-0.5" title="Diese Stunden wurden bei Genehmigung vom Stundenkonto abgezogen">
+                        ✓ bereits vom Konto abgezogen
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {approvedAbbau.filter(r => (r.end_date || r.start_date) < todayISO).length > 0 && (
+              <div data-testid="past-abbau-section">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-gray-400" />
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Bereits eingelöst</span>
+                </div>
+                <div className="space-y-1">
+                  {approvedAbbau.filter(r => (r.end_date || r.start_date) < todayISO).map(r => (
+                    <div key={r.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5 text-sm">
+                      <span className="text-gray-600">{new Date(r.start_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      {r.end_date !== r.start_date && <><span className="text-gray-400">—</span><span className="text-gray-600">{new Date(r.end_date + "T00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span></>}
+                      <span className="text-gray-500 font-medium ml-auto">
+                        {r.days > 0 ? `${r.days} Tage · ` : ""}{(r.hours_deducted_display || 0).toFixed(2)}h
+                      </span>
                     </div>
                   ))}
                 </div>

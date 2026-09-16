@@ -2931,7 +2931,13 @@ async def create_time_off_request(token: str = Query(...), data: dict = Body(...
 
 @router.get("/time-off")
 async def get_time_off_requests(token: str = Query(...), user_id: str = None):
-    """Get time-off requests. Employees see their own, admins/verwaltung can filter by user_id or see all."""
+    """Get time-off requests. Employees see their own, admins/verwaltung can filter by user_id or see all.
+
+    Angereichert wird zusaetzlich `hours_deducted_display` fuer genehmigte
+    `ueberstundenabbau`-Antraege: exakte Stundenzahl die vom Stundenkonto
+    abgezogen wurde (analog zur Approval-Logik). Damit kann das Frontend
+    ohne weitere Requests die "bereits abgezogen"-Zeile pro Zeile rendern.
+    """
     caller = await _get_user(token)
     query = {}
     if _has_verwaltung(caller):
@@ -2941,6 +2947,54 @@ async def get_time_off_requests(token: str = Query(...), user_id: str = None):
         query["user_id"] = caller["id"]
 
     entries = await db.time_off_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+    # Wochenplan-Cache pro User (mehrere Abbau-Antraege desselben Users teilen sich denselben Plan)
+    _ws_cache: dict = {}
+
+    async def _ws_for(uid: str):
+        if uid not in _ws_cache:
+            _ws_cache[uid] = await db.work_schedules.find_one({"user_id": uid}, {"_id": 0}) or {}
+        return _ws_cache[uid]
+
+    for e in entries:
+        if e.get("type") != "ueberstundenabbau" or e.get("status") != "approved":
+            continue
+        # 1) Explizite hours_deducted vom Antrag (Stunden-Modus)
+        hd = e.get("hours_deducted")
+        if hd is not None:
+            try:
+                e["hours_deducted_display"] = round(float(hd), 2)
+                continue
+            except (TypeError, ValueError):
+                pass
+        # 2) Halbtags-Antrag mit Uhrzeit-Spanne
+        if not e.get("all_day") and e.get("start_time") and e.get("end_time"):
+            try:
+                sh, sm = [int(x) for x in str(e["start_time"]).split(":")[:2]]
+                eh, em = [int(x) for x in str(e["end_time"]).split(":")[:2]]
+                e["hours_deducted_display"] = round(max(0, ((eh * 60 + em) - (sh * 60 + sm)) / 60.0), 2)
+                continue
+            except (TypeError, ValueError):
+                pass
+        # 3) Ganztags-Antrag: Summe Werktags-Soll aus Wochenplan
+        try:
+            _sd = datetime.strptime(e["start_date"], "%Y-%m-%d").date()
+            _ed = datetime.strptime(e.get("end_date") or e["start_date"], "%Y-%m-%d").date()
+            ws = await _ws_for(e["user_id"])
+            total_min = 0
+            cur = _sd
+            while cur <= _ed:
+                if cur.weekday() < 5:
+                    total_min += _soll_minutes_from_schedule(ws, cur.weekday())
+                cur += timedelta(days=1)
+            if total_min <= 0 and (e.get("days") or 0) > 0:
+                # Wochenplan leer/nicht gepflegt -> flat 8h-Fallback (analog Approval-Logik)
+                e["hours_deducted_display"] = round((e.get("days") or 0) * 8.0, 2)
+            else:
+                e["hours_deducted_display"] = round(total_min / 60.0, 2)
+        except (TypeError, ValueError, KeyError):
+            e["hours_deducted_display"] = round((e.get("days", 0) or 0) * 8.0, 2)
+
     return entries
 
 
