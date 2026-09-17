@@ -280,10 +280,21 @@ async def get_offdays_for_user(user_id: str, token: str = Query(...)):
 
 @router.post("/adjust")
 async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
-    """Verwaltung: Manuelles Plus/Minus auf das Konto eines Users.
+    """Verwaltung: Manuelles Plus/Minus auf das Offday-Konto eines Users.
 
-    Body: { user_id, delta (int), note, ref_date (optional, "YYYY-MM-DD") }
-    Wenn `ref_date` nicht gesetzt: heute.
+    Body: { user_id, delta (int), note, ref_date (optional, "YYYY-MM-DD"),
+            affect_overtime (bool, default True) }
+
+    Wenn `affect_overtime=True` (Default): Zusaetzlich zur Ledger-Buchung wird
+    auch das Ueberstunden-Konto angepasst — bei `delta<0` (Abziehen = Offday
+    konsumiert) wird das Tages-Soll aus dem Wochenplan des `ref_date` von der
+    `overtime_baseline` abgebucht; bei `delta>0` (Gutschrift) analog aufgerechnet.
+    Anschliessend wird der Recompute mit `force=True` ausgeloest und ein
+    Audit-Log-Eintrag geschrieben.
+
+    Wenn `affect_overtime=False`: Nur Ledger-Buchung (fuer Sonderfaelle wie
+    Sonntagsarbeit-Nachtrag, wo das Ueberstundenkonto schon durch den
+    Time-Entry gutgeschrieben wurde).
     """
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
@@ -292,9 +303,12 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
     delta = data.get("delta")
     note = (data.get("note") or "").strip()
     ref_date = (data.get("ref_date") or "").strip() or _date.today().isoformat()
+    affect_overtime = data.get("affect_overtime")
+    if affect_overtime is None:
+        affect_overtime = True
     # Validierung ISO-Datum
     try:
-        _date.fromisoformat(ref_date)
+        _refdt = _date.fromisoformat(ref_date)
     except Exception:
         raise HTTPException(status_code=400, detail="ref_date muss im Format YYYY-MM-DD sein")
     if not user_id:
@@ -326,7 +340,39 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
         "created_by": caller.get("name") or caller.get("email") or "admin",
     })
     new_balance = await _balance_for_user(user_id)
-    return {"ok": True, "new_balance": new_balance}
+
+    # ── Ueberstunden-Konto anpassen (Feb 2026 Fix) ────────────────────────
+    overtime_deducted_h = 0.0
+    if affect_overtime:
+        try:
+            from routes import employee as _em
+            _ws = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0}) or {}
+            _mins_per_day = _em._soll_minutes_from_schedule(_ws, _refdt.weekday())
+            _h_per_day = _mins_per_day / 60.0
+            # delta<0 (Abzug) => baseline -abs(delta)*h; delta>0 (Gutschrift) => +delta*h
+            overtime_deducted_h = round(delta * _h_per_day, 2)
+            if _h_per_day > 0:
+                await db.hr_data.update_one(
+                    {"user_id": user_id, "year": _refdt.year},
+                    {"$inc": {"overtime_baseline": overtime_deducted_h}},
+                    upsert=True,
+                )
+                await _em._recompute_overtime_for_year(user_id, _refdt.year, force=True)
+                # Audit-Log fuer Nachvollziehbarkeit
+                _label = "Offday abgezogen" if delta < 0 else "Offday gutgeschrieben"
+                _sign = "+" if overtime_deducted_h >= 0 else ""
+                await _em._log_audit(
+                    user_id, "offday_manual_adjust", caller,
+                    after={"ref_date": ref_date, "delta": delta,
+                           "overtime_delta_h": overtime_deducted_h, "note": note},
+                    summary=f"{_label} {ref_date} ({delta:+d} Tag / {_sign}{overtime_deducted_h:.2f}h Ueberstunden)",
+                )
+        except Exception as _e:
+            # Ledger-Buchung soll auch bei Overtime-Adjust-Fehler bestehen bleiben
+            import logging
+            logging.getLogger("employee").warning(f"Offday-Manual-Adjust Overtime-Update fehlgeschlagen: {_e}")
+
+    return {"ok": True, "new_balance": new_balance, "overtime_delta_h": overtime_deducted_h}
 
 
 @router.post("/recompute")
