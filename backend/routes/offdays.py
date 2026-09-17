@@ -342,15 +342,21 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
     new_balance = await _balance_for_user(user_id)
 
     # ── Ueberstunden-Konto anpassen (Feb 2026 Fix) ────────────────────────
+    # Semantik: NUR Abzuege (delta<0) reduzieren das Ueberstunden-Konto —
+    # der MA verbraucht seine Ueberstunden fuer den freien Tag.
+    # Gutschriften (delta>0) beruehren das Ueberstunden-Konto NICHT: das
+    # Offday-Guthaben kommt entweder aus tatsaechlicher Sonntagsarbeit
+    # (dort wurde die Zeit schon per time_entry auf's Konto gebucht) oder
+    # aus einer geschenkten Zuweisung durch den Admin (die haben keinen
+    # Ueberstunden-Gegenwert).
     overtime_deducted_h = 0.0
-    if affect_overtime:
+    if affect_overtime and delta < 0:
         try:
             from routes import employee as _em
             _ws = await db.work_schedules.find_one({"user_id": user_id}, {"_id": 0}) or {}
             _mins_per_day = _em._soll_minutes_from_schedule(_ws, _refdt.weekday())
             _h_per_day = _mins_per_day / 60.0
-            # delta<0 (Abzug) => baseline -abs(delta)*h; delta>0 (Gutschrift) => +delta*h
-            overtime_deducted_h = round(delta * _h_per_day, 2)
+            overtime_deducted_h = round(delta * _h_per_day, 2)  # negativ
             if _h_per_day > 0:
                 await db.hr_data.update_one(
                     {"user_id": user_id, "year": _refdt.year},
@@ -358,19 +364,29 @@ async def manual_adjust(data: dict = Body(...), token: str = Query(...)):
                     upsert=True,
                 )
                 await _em._recompute_overtime_for_year(user_id, _refdt.year, force=True)
-                # Audit-Log fuer Nachvollziehbarkeit
-                _label = "Offday abgezogen" if delta < 0 else "Offday gutgeschrieben"
-                _sign = "+" if overtime_deducted_h >= 0 else ""
                 await _em._log_audit(
                     user_id, "offday_manual_adjust", caller,
                     after={"ref_date": ref_date, "delta": delta,
                            "overtime_delta_h": overtime_deducted_h, "note": note},
-                    summary=f"{_label} {ref_date} ({delta:+d} Tag / {_sign}{overtime_deducted_h:.2f}h Ueberstunden)",
+                    summary=f"Offday abgezogen {ref_date} ({delta:+d} Tag / {overtime_deducted_h:.2f}h Ueberstunden)",
                 )
         except Exception as _e:
-            # Ledger-Buchung soll auch bei Overtime-Adjust-Fehler bestehen bleiben
             import logging
             logging.getLogger("employee").warning(f"Offday-Manual-Adjust Overtime-Update fehlgeschlagen: {_e}")
+    else:
+        # Gutschrift oder affect_overtime=False -> nur Ledger + Audit ohne Overtime-Effekt
+        try:
+            from routes import employee as _em
+            _label = "Offday gutgeschrieben" if delta > 0 else "Offday-Ledger-Korrektur"
+            await _em._log_audit(
+                user_id, "offday_manual_adjust", caller,
+                after={"ref_date": ref_date, "delta": delta,
+                       "overtime_delta_h": 0.0, "note": note},
+                summary=f"{_label} {ref_date} ({delta:+d} Tag, ohne Ueberstunden-Effekt)",
+            )
+        except Exception as _e:
+            import logging
+            logging.getLogger("employee").warning(f"Offday-Manual-Adjust Audit-Log fehlgeschlagen: {_e}")
 
     return {"ok": True, "new_balance": new_balance, "overtime_delta_h": overtime_deducted_h}
 
