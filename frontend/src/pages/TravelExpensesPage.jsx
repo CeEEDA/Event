@@ -352,7 +352,7 @@ export default function TravelExpensesPage() {
               {receipts.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {receipts.map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs bg-gray-50 px-2 py-1 rounded">
+                    <div key={`${f.name}-${f.size}-${f.lastModified || i}`} className="flex items-center gap-2 text-xs bg-gray-50 px-2 py-1 rounded">
                       <Paperclip className="w-3 h-3 text-gray-400" />
                       <span className="flex-1 truncate">{f.name}</span>
                       <span className="text-gray-400">{(f.size / 1024).toFixed(0)} KB</span>

@@ -292,7 +292,7 @@ function MaintenanceEntryForm({ planDetail, onSave, onCancel }) {
               </thead>
               <tbody>
                 {form.load_test.map((lt, idx) => (
-                  <tr key={idx} className="border-t border-gray-100">
+                  <tr key={lt.load || `lt-${idx}`} className="border-t border-gray-100">
                     <td className="px-3 py-2 font-medium text-gray-700">{lt.load}</td>
                     <td className="px-3 py-1"><Input value={lt.values} onChange={e => updateLoadTest(idx, "values", e.target.value)} placeholder="–" className="text-sm h-8" data-testid={`lt-val-${idx}`} /></td>
                     <td className="px-3 py-1"><Input value={lt.remarks} onChange={e => updateLoadTest(idx, "remarks", e.target.value)} placeholder="–" className="text-sm h-8" data-testid={`lt-rem-${idx}`} /></td>
@@ -629,7 +629,7 @@ ${mechHtml}${elecHtml}${measHtml}${ltHtml}${atsHtml}${diagHtml}${remarksHtml}${n
                   <span className="text-[10px] font-medium text-gray-500">Bemerkungen</span>
                 </div>
                 {lt.map((r, i) => (
-                  <div key={i} className="grid grid-cols-3 px-2 py-1 border-t border-gray-100">
+                  <div key={r.load || `lt-view-${i}`} className="grid grid-cols-3 px-2 py-1 border-t border-gray-100">
                     <span className="text-gray-600">{r.load}</span>
                     <span className="text-gray-700">{r.values || "–"}</span>
                     <span className="text-gray-400">{r.remarks || "–"}</span>
