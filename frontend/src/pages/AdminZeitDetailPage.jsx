@@ -628,69 +628,76 @@ export default function AdminZeitDetailPage() {
 
       <div className="max-w-5xl mx-auto px-4 py-5 space-y-4">
         {/* HR Data + Summary */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4" data-testid="hr-data-section">
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 space-y-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Stammdaten bearbeiten</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Überstunden (Std.)</label>
-                  <Input type="number" step="0.5" value={overtimeHours} onChange={e => setOvertimeHours(e.target.value)} data-testid="input-overtime" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Urlaubstage (Gesamt/Jahr)</label>
-                  <Input type="number" value={vacationTotal} onChange={e => setVacationTotal(e.target.value)} data-testid="input-vacation-total" />
-                </div>
-                <div className="sm:col-span-2 max-w-xs">
-                  <label className="text-xs text-gray-500 mb-1 block">Geburtstag</label>
-                  <Input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} data-testid="input-date-of-birth" />
-                </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4" data-testid="hr-data-section">
+          {/* Stammdaten kompakt oben */}
+          <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Stammdaten bearbeiten</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[140px] max-w-[200px]">
+                <label className="text-xs text-gray-500 mb-1 block">Überstunden (Std.)</label>
+                <Input type="number" step="0.5" value={overtimeHours} onChange={e => setOvertimeHours(e.target.value)} data-testid="input-overtime" />
               </div>
-              <Button onClick={saveHrData} disabled={saving} size="sm" className="bg-green-600 hover:bg-green-700" data-testid="save-hr-btn">
+              <div className="flex-1 min-w-[140px] max-w-[200px]">
+                <label className="text-xs text-gray-500 mb-1 block">Urlaubstage (Gesamt/Jahr)</label>
+                <Input type="number" value={vacationTotal} onChange={e => setVacationTotal(e.target.value)} data-testid="input-vacation-total" />
+              </div>
+              <div className="flex-1 min-w-[140px] max-w-[200px]">
+                <label className="text-xs text-gray-500 mb-1 block">Geburtstag</label>
+                <Input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} data-testid="input-date-of-birth" />
+              </div>
+              <Button onClick={saveHrData} disabled={saving} size="sm" className="bg-green-600 hover:bg-green-700 h-9" data-testid="save-hr-btn">
                 <Save className="w-3.5 h-3.5 mr-1.5" /> {saving ? "Speichern..." : "Speichern"}
               </Button>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-shrink-0">
-              <div className="flex flex-col bg-amber-50 rounded-lg px-3 py-2.5" data-testid="stundenkonto-card">
-                <div className="flex items-center gap-2 mb-1">
-                  <TrendingUp className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                  <p className="text-[10px] font-medium text-amber-600 uppercase">Stundenkonto</p>
-                </div>
-                <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10px] leading-tight">
-                  <span className="text-amber-500">Übertrag</span>
-                  <span className="text-amber-500">Monatsende</span>
-                  <span className="text-amber-500 font-semibold">Aktuell</span>
-                  <span className="font-mono text-amber-800" data-testid="saldo-carry-over">
+          </div>
+
+          {/* Karten-Reihe: Stundenkonto (breit) + 3 kompakte */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="col-span-2 flex flex-col justify-center bg-amber-50 rounded-lg px-4 py-3" data-testid="stundenkonto-card">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">Stundenkonto</p>
+              </div>
+              <div className="grid grid-cols-3 gap-x-4 items-baseline">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-amber-500 uppercase tracking-wider">Übertrag</span>
+                  <span className="font-mono text-sm text-amber-800" data-testid="saldo-carry-over">
                     {saldoSummary?.carry_over != null ? saldoSummary.carry_over.toFixed(2) : "–"}
                   </span>
-                  <span className="font-mono text-amber-800" data-testid="saldo-month-end">
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-amber-500 uppercase tracking-wider">Monatsende</span>
+                  <span className="font-mono text-sm text-amber-800" data-testid="saldo-month-end">
                     {saldoSummary?.month_end != null ? saldoSummary.month_end.toFixed(2) : "–"}
                   </span>
-                  <span className="font-mono font-bold text-amber-900" data-testid="saldo-current">
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-amber-600 uppercase tracking-wider font-semibold">Aktuell</span>
+                  <span className="font-mono text-lg font-bold text-amber-900 leading-tight" data-testid="saldo-current">
                     {(parseFloat(overtimeHours) || 0).toFixed(2)}
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-2 bg-sky-50 rounded-lg px-3 py-2.5">
-                <Palmtree className="w-4 h-4 text-sky-600 flex-shrink-0" />
-                <div>
-                  <p className="text-[10px] font-medium text-sky-600 uppercase">Genehmigt</p>
-                  <p className="text-lg font-bold text-sky-800">{vacUsed} <span className="text-xs font-normal text-sky-500">Tage</span></p>
-                </div>
+            </div>
+            <div className="flex items-center gap-2 bg-sky-50 rounded-lg px-3 py-3">
+              <Palmtree className="w-4 h-4 text-sky-600 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-sky-600 uppercase truncate">Genehmigt</p>
+                <p className="text-lg font-bold text-sky-800 leading-tight">{vacUsed} <span className="text-xs font-normal text-sky-500">Tage</span></p>
               </div>
-              <div className={`flex items-center gap-2 rounded-lg px-3 py-2.5 ${vacRemaining < 0 ? "bg-red-50" : "bg-green-50"}`}>
-                <Palmtree className={`w-4 h-4 flex-shrink-0 ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`} />
-                <div>
-                  <p className={`text-[10px] font-medium uppercase ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`}>Resturlaub</p>
-                  <p className={`text-lg font-bold ${vacRemaining < 0 ? "text-red-800" : "text-green-800"}`}>{vacRemaining} <span className={`text-xs font-normal ${vacRemaining < 0 ? "text-red-500" : "text-green-500"}`}>Tage</span></p>
-                </div>
+            </div>
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-3 ${vacRemaining < 0 ? "bg-red-50" : "bg-green-50"}`}>
+              <Palmtree className={`w-4 h-4 flex-shrink-0 ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`} />
+              <div className="min-w-0">
+                <p className={`text-[10px] font-medium uppercase truncate ${vacRemaining < 0 ? "text-red-600" : "text-green-600"}`}>Resturlaub</p>
+                <p className={`text-lg font-bold leading-tight ${vacRemaining < 0 ? "text-red-800" : "text-green-800"}`}>{vacRemaining} <span className={`text-xs font-normal ${vacRemaining < 0 ? "text-red-500" : "text-green-500"}`}>Tage</span></p>
               </div>
-              <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2.5">
-                <ThermometerSun className="w-4 h-4 text-red-500 flex-shrink-0" />
-                <div>
-                  <p className="text-[10px] font-medium text-red-500 uppercase">Krankheit</p>
-                  <p className="text-lg font-bold text-red-800">{sickDaysYear} <span className="text-xs font-normal text-red-400">Tage</span></p>
-                </div>
+            </div>
+            <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-3">
+              <ThermometerSun className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-red-500 uppercase truncate">Krankheit</p>
+                <p className="text-lg font-bold text-red-800 leading-tight">{sickDaysYear} <span className="text-xs font-normal text-red-400">Tage</span></p>
               </div>
             </div>
           </div>

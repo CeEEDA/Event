@@ -891,7 +891,7 @@ def _soll_minutes_from_schedule(schedule: dict, weekday: int) -> int:
     return 0
 
 
-async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller: Optional[dict] = None) -> float:
+async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller: Optional[dict] = None, force: bool = False) -> float:
     """Berechne Ueberstunden eines Jahres aus Baseline + Tag-fuer-Tag-Bilanz.
 
     Pattern:
@@ -1162,7 +1162,13 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     # weniger als 2 Tage her ist, VERZICHTE auf das Ueberschreiben. Der
     # Admin-Wert ist die Wahrheit, der Loop hat einen Fehler produziert.
     # Das schuetzt vor "gestern Werte korrigiert, heute alles wieder falsch".
-    if hr:
+    #
+    # AUSNAHME (force=True): Aufrufer wissen dass sie eine legitime Mutation
+    # ausgeloest haben (Offday-Zuweisung, Zeiteintrag-Aenderung, Urlaubs-/
+    # Abbau-Genehmigung etc.). In diesen Faellen ist der Sprung erwartet und
+    # darf gebucht werden. Nur automatische Scheduler-Recomputes (force=False)
+    # bekommen die Blockade.
+    if hr and not force:
         current_value = float(hr.get("overtime_hours") or 0)
         jump = abs(new_overtime - current_value)
         if jump > 5.0:
@@ -1642,7 +1648,7 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
     try:
         from datetime import date as _date
         year = _date.fromisoformat(date_str).year
-        await _recompute_overtime_for_year(target_user_id, year)
+        await _recompute_overtime_for_year(target_user_id, year, force=True)
     except Exception as e:
         logger.error(f"Overtime recompute (manual create) error: {e}")
     return await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
@@ -1724,7 +1730,7 @@ async def update_time_entry(entry_id: str, token: str = Query(...), body: dict =
         new_year = _date.fromisoformat(date_str).year
         old_year = _date.fromisoformat(entry.get("date") or date_str).year if entry.get("date") else new_year
         for y in {new_year, old_year}:
-            await _recompute_overtime_for_year(entry.get("user_id"), y)
+            await _recompute_overtime_for_year(entry.get("user_id"), y, force=True)
     except Exception as e:
         logger.error(f"Overtime recompute (edit) error: {e}")
     return await db.time_entries.find_one({"id": entry_id}, {"_id": 0})
@@ -1754,7 +1760,7 @@ async def delete_time_entry(entry_id: str, token: str = Query(...)):
         try:
             from datetime import date as _date
             year = _date.fromisoformat(entry.get("date") or "").year
-            await _recompute_overtime_for_year(entry.get("user_id"), year)
+            await _recompute_overtime_for_year(entry.get("user_id"), year, force=True)
         except Exception as e:
             logger.error(f"Overtime recompute (delete) error: {e}")
     return {"ok": True}
@@ -4030,6 +4036,7 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
         if d1 < d0:
             raise HTTPException(status_code=400, detail="date_to < date_from")
         created_ids = []
+        created_dates = []
         from datetime import timedelta as _td
         cur = d0
         user_id = data.get("user_id")
@@ -4065,6 +4072,7 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
                 created_ids.append(new_id)
+                created_dates.append(cur_iso)
                 # Offday-Konto belasten falls Mehrtages-Offday
                 if data.get("is_offday"):
                     try:
@@ -4077,6 +4085,28 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                     except Exception as _e:
                         logger.warning(f"Offday consume fehlgeschlagen: {_e}")
             cur = cur + _td(days=1)
+        # BUG-FIX (Feb 2026): Bei Offday-Mehrtages-Anlage MUSS das Stundenkonto
+        # neu berechnet werden. force=True verhindert dass die 5h-Sprung-Safety
+        # legitime Batches (z.B. 14 Tage) blockiert.
+        if data.get("is_offday") and created_ids:
+            try:
+                _years = sorted({int(d[:4]) for d in created_dates if d[:4].isdigit()})
+                for _y in _years:
+                    await _recompute_overtime_for_year(user_id, _y, force=True)
+            except Exception as _e:
+                logger.warning(f"Overtime-Recompute nach Multi-Offday fehlgeschlagen: {_e}")
+            # Audit-Log fuer Nachvollziehbarkeit im Aenderungsprotokoll
+            try:
+                _first = created_dates[0] if created_dates else ""
+                _last = created_dates[-1] if created_dates else ""
+                _range = f"{_first} – {_last}" if _first != _last else _first
+                await _log_audit(
+                    user_id, "offday_create", caller,
+                    after={"dates": created_dates, "count": len(created_dates), "is_offday": True},
+                    summary=f"Offday {_range} eingetragen ({len(created_dates)} Tage)",
+                )
+            except Exception as _e:
+                logger.warning(f"Audit-Log Offday-Create fehlgeschlagen: {_e}")
         return {"ok": True, "created": len(created_ids), "skipped_existing": len(existing_dates), "ids": created_ids}
 
     if assignment_id:
@@ -4120,6 +4150,25 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                     eff_date, assignment_id,
                     caller.get("name") or caller.get("email") or "admin",
                 )
+            # BUG-FIX (Feb 2026): Bei Offday-Flip (Einsatz -> Offday oder umgekehrt)
+            # muss das Stundenkonto neu berechnet werden.
+            if was_off != now_off:
+                try:
+                    _y = int(str(eff_date or "")[:4])
+                    await _recompute_overtime_for_year(eff_user_id, _y, force=True)
+                except Exception as _e:
+                    logger.warning(f"Overtime-Recompute nach Offday-Flip fehlgeschlagen: {_e}")
+                try:
+                    _label = "Offday" if now_off else "Einsatz"
+                    _prev_label = "Offday" if was_off else "Einsatz"
+                    await _log_audit(
+                        eff_user_id, "offday_update", caller,
+                        before={"date": eff_date, "is_offday": was_off},
+                        after={"date": eff_date, "is_offday": now_off},
+                        summary=f"{eff_date}: {_prev_label} -> {_label}",
+                    )
+                except Exception as _e:
+                    logger.warning(f"Audit-Log Offday-Update fehlgeschlagen: {_e}")
         except Exception as _e:
             logger.warning(f"Offday-Update fehlgeschlagen: {_e}")
     else:
@@ -4155,12 +4204,21 @@ async def upsert_shift_assignment(data: dict = Body(...), token: str = Query(...
                 )
             except Exception as _e:
                 logger.warning(f"Offday consume fehlgeschlagen: {_e}")
-            # Stundenkonto neu rechnen, da Offday den Soll-Abzug aufhebt.
+            # Stundenkonto neu rechnen mit force=True (legitimate Mutation)
             try:
                 y = int(str(data.get("date") or "")[:4])
-                await _recompute_overtime_for_year(data.get("user_id"), y)
+                await _recompute_overtime_for_year(data.get("user_id"), y, force=True)
             except Exception as _e:
                 logger.warning(f"Overtime-Recompute nach Offday fehlgeschlagen: {_e}")
+            # Audit-Log: sichtbar im Aenderungsprotokoll
+            try:
+                await _log_audit(
+                    data.get("user_id"), "offday_create", caller,
+                    after={"date": data.get("date"), "is_offday": True},
+                    summary=f"Offday {data.get('date')} eingetragen",
+                )
+            except Exception as _e:
+                logger.warning(f"Audit-Log Offday-Create fehlgeschlagen: {_e}")
     return {"ok": True, "id": assignment_id}
 
 
@@ -4209,9 +4267,18 @@ async def delete_shift_assignment(assignment_id: str, token: str = Query(...)):
             logger.warning(f"Offday-Rueckerstattung fehlgeschlagen: {_e}")
         try:
             y = int(str(prev.get("date") or "")[:4])
-            await _recompute_overtime_for_year(prev.get("user_id"), y)
+            await _recompute_overtime_for_year(prev.get("user_id"), y, force=True)
         except Exception as _e:
             logger.warning(f"Overtime-Recompute nach Offday-Delete fehlgeschlagen: {_e}")
+        # Audit-Log
+        try:
+            await _log_audit(
+                prev.get("user_id"), "offday_delete", caller,
+                before={"date": prev.get("date"), "is_offday": True},
+                summary=f"Offday {prev.get('date')} geloescht",
+            )
+        except Exception as _e:
+            logger.warning(f"Audit-Log Offday-Delete fehlgeschlagen: {_e}")
     return {"ok": True}
 
 

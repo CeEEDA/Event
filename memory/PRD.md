@@ -19,6 +19,13 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (Offday-Bugfixes Teil 1: Multi-Day-Recompute, Audit-Log, Safety-Bypass)
+- **Multi-Day-Offday-Anlage** (`POST /shift-plan` mit `date_from`/`date_to`): Rief bisher weder `_recompute_overtime_for_year` noch schrieb Audit-Log. Jetzt wird pro betroffenem Jahr Recompute mit `force=True` ausgeloest und ein Audit-Log-Eintrag mit Datumsbereich erzeugt.
+- **Single-Day-Offday & Update-Flip & Delete**: Alle drei Pfade schreiben jetzt `offday_create` / `offday_update` / `offday_delete` ins Audit-Log — damit im Aenderungsprotokoll sichtbar.
+- **5h-Sprung-Safety-Check** (`_recompute_overtime_for_year`): Neuer Parameter `force=False`. Legitime Mutationen (Offday, Zeit-Edit, Urlaub/Abbau-Approve, Clock-out, Manuell-Create/Delete) rufen mit `force=True` und umgehen die Blockade. Automatische Scheduler-Recomputes bleiben durch die Safety geschuetzt.
+- **Bewusst OFFEN gelassen** (siehe naechster Punkt): Die Semantik-Frage „Soll ein Offday an einem Wochentag automatisch -9h vom Konto abziehen?" wurde nicht implementiert, weil (1) das aktuelle Design den Tag bereits durch fehlenden Time-Entry auf -9h bucht und (2) eine Aenderung Baseline-Migration fuer alle Bestandsuser braucht. User-Entscheidung ausstehend.
+- **Regression-Test** (`/app/backend/tests/test_offday_batch_deduction_fix.py`): Safety-Blockade ohne force, force=True bypass, Audit-Log-Eintraege werden korrekt geschrieben.
+
 ### 2026-02-25 (Mitarbeiter „Meine Arbeitszeit": Geplante Abbau-Tage + Reserved-Hinweis)
 - **Backend** (`/app/backend/routes/employee.py` `GET /time-off`): Endpoint reichert jetzt jeden genehmigten `ueberstundenabbau`-Antrag mit `hours_deducted_display` an — 3-Stufen-Berechnung: (1) explizite `hours_deducted` (Stunden-Modus), (2) Uhrzeit-Spanne bei Halbtags-Antrag, (3) Summe Werktags-Soll aus Wochenplan; Fallback `days * 8` wenn Wochenplan leer.
 - **Frontend** (`/app/frontend/src/pages/ArbeitszeitPage.jsx`): Neue Sektion „Geplante Abbau-Tage" (mit Kalender-Icon) zeigt zukuenftige/laufende genehmigte Abbau-Antraege mit Datum-Range, Tagen, Stunden und „✓ bereits vom Konto abgezogen"-Hinweis. Header-Summe: „N Tage · Xh bereits abgezogen". Vergangene Abbau-Tage separat als „Bereits eingeloest".
