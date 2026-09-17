@@ -53,7 +53,24 @@ export default function MonthlyBreakdownSection({
                 {/* Manual Entry Add Row (Admin only) */}
                 <div className="px-4 py-2 bg-emerald-50/40 flex items-center gap-2 text-xs flex-wrap" data-testid={`add-time-row-${m.key}`}>
                   <Plus className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                  <span className="font-semibold text-emerald-700 mr-1">Manuell erfassen:</span>
+                  <div className="flex items-center gap-1 mr-1">
+                    <button
+                      type="button"
+                      onClick={() => updateAddRow(m.key, "mode", "time")}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${(addRow[m.key]?.mode || "time") === "time" ? "bg-emerald-600 text-white" : "bg-white text-emerald-700 border border-emerald-200"}`}
+                      data-testid={`add-mode-time-${m.key}`}
+                    >
+                      Stempelzeit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateAddRow(m.key, "mode", "correction")}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${addRow[m.key]?.mode === "correction" ? "bg-amber-600 text-white" : "bg-white text-amber-700 border border-amber-200"}`}
+                      data-testid={`add-mode-correction-${m.key}`}
+                    >
+                      Korrektur ±h
+                    </button>
+                  </div>
                   <input
                     type="date"
                     value={addRow[m.key]?.date || ""}
@@ -63,31 +80,45 @@ export default function MonthlyBreakdownSection({
                     className="border border-emerald-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
                     data-testid={`add-time-date-${m.key}`}
                   />
-                  <input
-                    type="time"
-                    value={addRow[m.key]?.start || ""}
-                    onChange={e => updateAddRow(m.key, "start", e.target.value)}
-                    placeholder="Start"
-                    className="border border-emerald-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                    data-testid={`add-time-start-${m.key}`}
-                  />
-                  <span className="text-gray-400">—</span>
-                  <input
-                    type="time"
-                    value={addRow[m.key]?.end || ""}
-                    onChange={e => updateAddRow(m.key, "end", e.target.value)}
-                    placeholder="Ende"
-                    className="border border-emerald-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                    data-testid={`add-time-end-${m.key}`}
-                  />
+                  {addRow[m.key]?.mode === "correction" ? (
+                    <input
+                      type="number"
+                      step="0.25"
+                      value={addRow[m.key]?.hours_correction || ""}
+                      onChange={e => updateAddRow(m.key, "hours_correction", e.target.value)}
+                      placeholder="± Stunden (z.B. -3.5)"
+                      className="border border-amber-300 rounded px-2 py-1 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                      data-testid={`add-time-correction-${m.key}`}
+                    />
+                  ) : (
+                    <>
+                      <input
+                        type="time"
+                        value={addRow[m.key]?.start || ""}
+                        onChange={e => updateAddRow(m.key, "start", e.target.value)}
+                        placeholder="Start"
+                        className="border border-emerald-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        data-testid={`add-time-start-${m.key}`}
+                      />
+                      <span className="text-gray-400">—</span>
+                      <input
+                        type="time"
+                        value={addRow[m.key]?.end || ""}
+                        onChange={e => updateAddRow(m.key, "end", e.target.value)}
+                        placeholder="Ende"
+                        className="border border-emerald-200 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        data-testid={`add-time-end-${m.key}`}
+                      />
+                    </>
+                  )}
                   <Button
                     onClick={() => submitAddRow(m.key)}
                     disabled={addingRow === m.key}
                     size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-7 text-xs px-2.5 ml-auto"
+                    className={`${addRow[m.key]?.mode === "correction" ? "bg-amber-600 hover:bg-amber-700" : "bg-emerald-600 hover:bg-emerald-700"} text-white h-7 text-xs px-2.5 ml-auto`}
                     data-testid={`add-time-save-${m.key}`}
                   >
-                    <Save className="w-3 h-3 mr-1" /> {addingRow === m.key ? "Speichere…" : "Hinzufügen"}
+                    <Save className="w-3 h-3 mr-1" /> {addingRow === m.key ? "Speichere…" : (addRow[m.key]?.mode === "correction" ? "Buchen" : "Hinzufügen")}
                   </Button>
                 </div>
                 {stats.vacs.map(v => (

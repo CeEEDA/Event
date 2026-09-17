@@ -1582,6 +1582,51 @@ async def create_manual_time_entry(token: str = Query(...), body: dict = Body(..
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
     date_str = body.get("date")
+    # ── Korrektur-Modus (Feb 2026): Admin kann direkt Stunden (auch negativ)
+    #    buchen, z.B. um vergessene Ausstempelungen zu neutralisieren oder
+    #    Ueberstunden nachtraeglich zu korrigieren. Der Eintrag hat kein
+    #    clock_in/clock_out, aber duration_minutes (signed).
+    hours_correction = body.get("hours_correction")
+    if hours_correction is not None:
+        try:
+            _hc = float(hours_correction)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="hours_correction muss eine Zahl sein")
+        if _hc == 0:
+            raise HTTPException(status_code=400, detail="hours_correction darf nicht 0 sein")
+        duration = round(_hc * 60.0, 1)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "user_id": target_user_id,
+            "user_name": target_user.get("name", ""),
+            "clock_in": None, "clock_out": None,
+            "clock_in_lat": None, "clock_in_lng": None,
+            "clock_out_lat": None, "clock_out_lng": None,
+            "duration_minutes": duration,
+            "break_min": 0,
+            "date": date_str,
+            "manual": True,
+            "type": "korrektur",
+            "manual_by": caller.get("id"),
+            "manual_by_name": caller.get("name", ""),
+            "manual_note": body.get("note") or "Stunden-Korrektur",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.time_entries.insert_one(entry)
+        await _log_audit(
+            target_user_id, "time_manual_correction", caller,
+            after={"date": date_str, "hours_correction": _hc,
+                   "duration_minutes": duration, "note": entry.get("manual_note")},
+            summary=f"Stunden-Korrektur {date_str}: {_hc:+.2f} h ({entry.get('manual_note')})",
+        )
+        try:
+            from datetime import date as _date
+            year = _date.fromisoformat(date_str).year
+            await _recompute_overtime_for_year(target_user_id, year, force=True)
+        except Exception as e:
+            logger.error(f"Overtime recompute (manual correction) error: {e}")
+        return await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
+
     start_str = body.get("clock_in_time")
     end_str = body.get("clock_out_time")
     clock_in = _parse_local_time_to_utc(date_str, start_str)

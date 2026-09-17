@@ -580,20 +580,31 @@ export default function AdminZeitDetailPage() {
     // Warte einen Tick, damit React den onChange-State aus dem Blur propagiert
     await new Promise(r => setTimeout(r, 60));
     const row = addRowRef.current[monthKey] || {};
-    if (!row.date || !row.start) { toast.error("Datum und Startzeit erforderlich"); return; }
+    if (!row.date) { toast.error("Datum erforderlich"); return; }
     if (!row.date.startsWith(monthKey)) { toast.error(`Datum muss im Monat ${monthKey} liegen`); return; }
+    const isCorrection = row.mode === "correction";
+    if (isCorrection) {
+      const hc = parseFloat(row.hours_correction);
+      if (!hc || isNaN(hc)) { toast.error("Stunden-Korrektur erforderlich (± Zahl)"); return; }
+    } else {
+      if (!row.start) { toast.error("Startzeit erforderlich"); return; }
+    }
     setAddingRow(monthKey);
     try {
-      await api.post(`/employee/time/manual?token=${token}`, {
-        user_id: userId,
-        date: row.date,
-        clock_in_time: row.start,
-        clock_out_time: row.end || null,
+      const payload = isCorrection ? {
+        user_id: userId, date: row.date,
+        hours_correction: parseFloat(row.hours_correction),
+        note: row.note || "Stunden-Korrektur durch Admin",
+      } : {
+        user_id: userId, date: row.date,
+        clock_in_time: row.start, clock_out_time: row.end || null,
         note: row.note || "Manuell durch Admin erfasst",
-      });
-      toast.success("Eintrag hinzugefügt");
-      setAddRow(prev => ({ ...prev, [monthKey]: { date: "", start: "", end: "", note: "" } }));
+      };
+      await api.post(`/employee/time/manual?token=${token}`, payload);
+      toast.success(isCorrection ? `Korrektur ${parseFloat(row.hours_correction) >= 0 ? "+" : ""}${row.hours_correction}h gebucht` : "Eintrag hinzugefügt");
+      setAddRow(prev => ({ ...prev, [monthKey]: { date: "", start: "", end: "", note: "", mode: row.mode, hours_correction: "" } }));
       reloadEntries();
+      loadHrData();
     } catch (err) { toast.error(err.response?.data?.detail || "Fehler beim Speichern"); }
     setAddingRow(null);
   };
