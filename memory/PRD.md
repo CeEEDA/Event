@@ -19,6 +19,14 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (P0 DevOps: Windows-Live-Server SSL-Migration Sectigo→Let's Encrypt via Caddy 2)
+- **Root Cause identifiziert**: NSSM-Service `EventenergieCaddy` startete Caddy aus `C:\caddy\` mit einer alten Config die `tls internal` + `auto_https off` + `:8001` als Testport hatte → daher `SEC_E_CERT_EXPIRED` + `SEC_E_ILLEGAL_MESSAGE`. Zusätzlich lief parallel Nginx aus `C:\tools\nginx-1.29.8\` als zweiter Reverse-Proxy mit dem alten (abgelaufenen) IONOS/Sectigo-Zertifikat und blockierte Port 80 komplett.
+- **Fix Nginx**: Prozess gekillt + Binary umbenannt (`nginx.exe` → `nginx.exe.disabled`) damit Watchdog ihn nicht neu startet.
+- **Fix Caddy**: `Caddyfile.production` aus Repo nach `C:\caddy\Caddyfile` kopiert (nicht `C:\eventenergie\Caddyfile` wie zuerst vermutet!). NSSM-Service `EventenergieCaddy` neu gestartet → Caddy bindet jetzt Port 80 + 443, holt automatisches Let's-Encrypt-Cert via ACME.
+- **Verified live**: `curl https://www.eventenergie.app` → HTTP/1.1 200; `curl https://eventenergie.app` → 301 → www; `Server: Caddy` Header; keine SSL-Fehler mehr.
+- **Loose ends dokumentiert**: (1) IONOS-DNS-Record `www` fehlt noch bei User, (2) Router-Portweiterleitung Port 80 tcp extern nötig für zukünftige ACME-Renewals.
+
+
 ### 2026-02-25 (Offday-Bugfixes Teil 1: Multi-Day-Recompute, Audit-Log, Safety-Bypass)
 - **Multi-Day-Offday-Anlage** (`POST /shift-plan` mit `date_from`/`date_to`): Rief bisher weder `_recompute_overtime_for_year` noch schrieb Audit-Log. Jetzt wird pro betroffenem Jahr Recompute mit `force=True` ausgeloest und ein Audit-Log-Eintrag mit Datumsbereich erzeugt.
 - **Single-Day-Offday & Update-Flip & Delete**: Alle drei Pfade schreiben jetzt `offday_create` / `offday_update` / `offday_delete` ins Audit-Log — damit im Aenderungsprotokoll sichtbar.
