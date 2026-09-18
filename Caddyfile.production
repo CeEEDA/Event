@@ -1,0 +1,68 @@
+# =====================================================================
+# Caddyfile.production - Live-Server (Windows, native Caddy)
+# =====================================================================
+# Ersetzt das kostenpflichtige IONOS-Zertifikat durch Let's Encrypt.
+# Caddy holt automatisch das Zertifikat via HTTP-01-Challenge und
+# erneuert es selbstaendig.
+#
+# Installation: Speichere diese Datei als `Caddyfile` auf dem Live-
+# Server (z.B. C:\eventenergie\Caddyfile) und starte Caddy neu.
+# =====================================================================
+
+# Globale Optionen
+{
+    # Bei Bedarf E-Mail fuer Let's-Encrypt-Ablaufwarnungen setzen
+    # email admin@eventenergie.app
+    admin off
+}
+
+# ── Redirect: nackte Domain -> www ─────────────────────────────────
+eventenergie.app {
+    redir https://www.eventenergie.app{uri} permanent
+}
+
+# ── Haupt-Site (HTTPS + Let's-Encrypt automatisch) ─────────────────
+www.eventenergie.app {
+    encode gzip zstd
+
+    # Backend-API (FastAPI/Uvicorn auf Port 8002)
+    handle /api/download-* {
+        header Cache-Control "no-cache, no-store, must-revalidate"
+        header Pragma "no-cache"
+        reverse_proxy localhost:8002
+    }
+    handle /api/* {
+        reverse_proxy localhost:8002 {
+            transport http {
+                read_timeout 300s
+                write_timeout 300s
+            }
+        }
+    }
+
+    # Frontend-Build als Static-File-Server (React SPA)
+    handle {
+        root * C:\eventenergie\frontend\build
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Security-Header
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Zugriffs-Log
+    log {
+        output file C:\eventenergie\logs\caddy_access.log {
+            roll_size     10mb
+            roll_keep     10
+            roll_keep_for 720h
+        }
+        format json
+    }
+}
