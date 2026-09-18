@@ -942,9 +942,15 @@ export default function AdminZeitDetailPage() {
             return (
               <div className="space-y-1.5">
                 {merged.map(v => {
-                  // Bei Stundenmodus-Ueberstundenabbau: hours_deducted ueberschreibt days*8.
+                  // Bei Stundenmodus-Ueberstundenabbau: hours_deducted ueberschreibt.
+                  // Ansonsten Backend-Wert hours_deducted_display (Wochenplan-Summe) nutzen,
+                  // Fallback nur fuer sehr alte Antraege ohne Display-Wert: days * 8.
                   const isHoursOnly = v._kind === "ueberstundenabbau" && v.hours_deducted != null;
-                  const ovHours = isHoursOnly ? Number(v.hours_deducted) : (v.days || 0) * 8;
+                  const ovHours = isHoursOnly
+                    ? Number(v.hours_deducted)
+                    : (v.hours_deducted_display != null
+                        ? Number(v.hours_deducted_display)
+                        : (v.days || 0) * 8);
                   const cfg = v._kind === "ueberstundenabbau"
                     ? { bg: "bg-amber-50", icon: <TrendingUp className="w-4 h-4 text-amber-500 flex-shrink-0" />, badge: "bg-amber-200 text-amber-800", label: "Üb-Abbau", text: "text-amber-700", suffix: ` · ${ovHours}h` }
                     : v._kind === "krank"

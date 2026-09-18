@@ -19,6 +19,12 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (Teilzeit-Bugfix: Überstundenabbau zog 40h statt 20h ab)
+- **Root Cause 1 (Frontend, `AdminZeitDetailPage.jsx` L947)**: Anzeige rechnete stur `days * 8` statt das vom Backend gelieferte `hours_deducted_display` (Wochenplan-Summe) zu verwenden. Bei 4h/Tag Teilzeit × 5 Werktage: UI zeigt 40h, Backend deduziert korrekt 20h.
+- **Root Cause 2 (Backend, `employee.py` `resolve_time_off_request` L3115)**: Employee-Antrag-Approve-Pfad nutzte flat `days * 8` beim Verrechnen aufs Stundenkonto. Jetzt Wochenplan-Loop mit `_soll_minutes_from_schedule` pro Werktag, Fallback nur bei leerem Plan.
+- **Root Cause 3 (Backend, `chat.py` Task-Approve L716)**: Task-basierter Approve-Pfad (Chat/Tasks) hatte gleichen Bug. Ebenfalls auf Wochenplan-Loop umgestellt. Import `_soll_minutes_from_schedule` und `timedelta` ergänzt.
+- **Regression-Test** (`/app/backend/tests/test_ueberstundenabbau_teilzeit_display.py`): 3 Tests grün (Teilzeit-Berechnung 20h, soll_hours mit Nachkomma, start/end-Spanne mit Pause).
+
 ### 2026-02-25 (P0 Followup: Login-Bug durch Naked→www Redirect + NSSM-basiertes Update-Skript)
 - **Login-Bug Root Cause**: Alte `Caddyfile.production` machte `redir https://www.eventenergie.app{uri} permanent` für die nackte Domain — auch für `/api/*`. Frontend war gebaut mit `REACT_APP_BACKEND_URL=https://eventenergie.app` (nackt). POST /api/auth/login → 301 → Browser bricht Redirect ab (CORS-Preflight failt, Body geht verloren) → Login schlug still fehl.
 - **Fix**: `Caddyfile.production` umgebaut: `eventenergie.app, www.eventenergie.app { … }` bedient beide Domains direkt ohne Redirect. Gleicher Content, gleiche Security-Header, ACME für beide Domains.

@@ -3112,7 +3112,26 @@ async def resolve_time_off_request(request_id: str, token: str = Query(...), dat
                 hours_to_deduct = 0
         else:
             days = req.get("days", 0) or 0
-            hours_to_deduct = days * 8 if days > 0 else 8
+            # Wochenplan-Summe statt flat 8h (respektiert Teilzeit-Regelarbeitszeit)
+            if days > 0:
+                _ws = await db.work_schedules.find_one({"user_id": req["user_id"]}, {"_id": 0})
+                hours_to_deduct = 0.0
+                try:
+                    _sd = datetime.strptime(req["start_date"], "%Y-%m-%d").date()
+                    _ed = datetime.strptime(req.get("end_date") or req["start_date"], "%Y-%m-%d").date()
+                    _cur = _sd
+                    while _cur <= _ed:
+                        if _cur.weekday() < 5:  # Mo-Fr
+                            _mins = _soll_minutes_from_schedule(_ws or {}, _cur.weekday())
+                            hours_to_deduct += _mins / 60.0
+                        _cur += timedelta(days=1)
+                    # Fallback nur wenn Wochenplan leer/nicht gepflegt
+                    if hours_to_deduct <= 0:
+                        hours_to_deduct = days * 8
+                except (ValueError, TypeError):
+                    hours_to_deduct = days * 8
+            else:
+                hours_to_deduct = 8
         year = int(req["start_date"][:4])
         hr = await db.hr_data.find_one({"user_id": req["user_id"], "year": year})
         current_overtime = float(hr.get("overtime_hours", 0)) if hr else 0
