@@ -1,119 +1,143 @@
-# Eventenergie Portal - Update & Betrieb
+# Eventenergie Portal – Update & Betrieb (Live-Server Windows)
 
-## Schnell-Update (empfohlen)
+## Aktuelles Setup (Stand 2026-09-18)
 
-1. **Update-Paket herunterladen** (Admin → Einstellungen → "Server Update-Paket")
-2. **ZIP entpacken** an beliebige Stelle (z.B. `C:\Downloads\`)
-3. **`update.bat` doppelklicken** (Als Administrator ausfuehren)
-4. Das Script erkennt automatisch den Quellordner und fuehrt alles durch:
-   - Sichert .env Dateien
-   - Erstellt DB-Backup (mongodump)
-   - Stoppt laufende Dienste
-   - Aktualisiert Backend + Frontend
-   - Installiert neue Abhaengigkeiten
-   - Erstellt neuen Frontend-Build
-   - Startet alle Dienste automatisch
+Der Live-Server läuft komplett über **NSSM-Windows-Services**:
 
-## Geschuetzte Dateien (werden NIE ueberschrieben)
+| Service | Zweck | Port |
+|---------|-------|------|
+| `EventenergieBackend` | FastAPI/uvicorn | 8002 (nur lokal) |
+| `EventenergieCaddy`   | Caddy 2 Reverse-Proxy + Let's-Encrypt-SSL | 80 + 443 |
+| `MongoDB`             | Datenbank | 27017 |
+| `Mosquitto` (optional)| MQTT-Broker | 1883 |
 
-- `backend\.env` - Datenbank, SMTP, alle Zugangsdaten
-- `frontend\.env` - Portal-URL
-- MongoDB Daten - komplett unberuehrt
-- `node_modules` - werden nur ergaenzt
+**Wichtig:** Backend wird NIE mehr manuell mit `uvicorn` gestartet, sondern immer über `Start-Service` / `Restart-Service`. Sonst gibt es Port-Konflikte (Errno 10048).
 
-## Dienste starten / stoppen
+## Update-Ablauf (empfohlen)
 
-### Starten
+### Automatisch – ein Klick
+
+1. **`update.bat` doppelklicken** (Rechtsklick → "Als Administrator ausführen")
+2. Skript läuft komplett durch:
+   - `.env` gesichert
+   - `git pull origin Main_0.9APP`
+   - Python-Pakete via pip installiert
+   - Frontend gebaut (`yarn build`)
+   - Backend-Service neu gestartet
+   - Health-Check am Ende
+3. Am Ende: Status-Zeile Backend/Frontend + Log-Datei
+
+Die Datei `update.bat` ist nur ein dünner Wrapper – die Logik steckt in `update-live.ps1`.
+
+### Manuell – für spezifische Fälle
+
+```powershell
+# Nur Backend updaten (Frontend überspringen)
+powershell -File C:\eventenergie\update-live.ps1 -SkipFrontend
+
+# Nur Frontend updaten (Backend-Service nicht anfassen)
+powershell -File C:\eventenergie\update-live.ps1 -SkipBackend
+
+# Auch Caddy neu starten (nur nötig wenn Caddyfile verändert)
+powershell -File C:\eventenergie\update-live.ps1 -RestartCaddy
 ```
-C:\eventenergie\start-all.bat
+
+## Services verwalten (ohne Update)
+
+```powershell
+# Status aller Services
+Get-Service EventenergieBackend, EventenergieCaddy, MongoDB
+
+# Backend neu starten (z.B. nach .env-Aenderung)
+Restart-Service EventenergieBackend
+
+# Backend-Logs live
+& "C:\ProgramData\chocolatey\lib\NSSM\tools\nssm.exe" get EventenergieBackend AppStderr
+# → Pfad kopieren, dann:
+Get-Content "<pfad>" -Wait -Tail 50
 ```
-Macht automatisch:
-1. Stoppt alte Prozesse
-2. Startet MongoDB (falls nicht aktiv)
-3. Erstellt Sicherheits-Backup der Datenbank
-4. Prueft Python venv
-5. Prueft Frontend Build
-6. Startet Backend (uvicorn, Port 8001)
-7. Startet Caddy (Reverse Proxy, Port 3000)
 
-### Stoppen
+## Geschützte Dateien (werden NIE überschrieben)
+
+- `backend\.env` – Datenbank, SMTP, JWT-Secret, Stripe-Keys, ...
+- `frontend\.env` – Portal-URL
+- MongoDB-Daten – komplett unberührt
+- `node_modules` – wird nur ergänzt
+- `C:\caddy\Caddyfile` – Caddy-Config (liegt bewusst außerhalb des Repos)
+
+## Zertifikat / SSL
+
+Caddy holt und erneuert das Let's-Encrypt-Zertifikat **automatisch**:
+- Neu-Ausstellung: einmalig beim ersten Start (~15-30 Sek.)
+- Erneuerung: automatisch ~30 Tage vor Ablauf
+- Voraussetzung: Port 80 tcp muss extern erreichbar sein (Router-Port-Forwarding)
+
+Zertifikat prüfen:
+```powershell
+curl.exe -vI https://www.eventenergie.app 2>&1 | Select-String "issuer|expire"
+# Erwartet: issuer: Let's Encrypt (nicht Sectigo/IONOS)
 ```
-C:\eventenergie\stop-all.bat
-```
-Stoppt Backend, Caddy und alle Portal-Prozesse.
-
-## Caddy Reverse Proxy
-
-Caddy ersetzt `npx serve` und bietet:
-- Statische Frontend-Dateien ausliefern
-- API-Anfragen (`/api/*`) an Backend weiterleiten
-- Kein CORS-Problem zwischen Frontend und Backend
-
-### Installation (einmalig)
-1. Caddy herunterladen: https://caddyserver.com/download (Windows amd64)
-2. `caddy.exe` nach `C:\eventenergie\` kopieren
-3. `Caddyfile` liegt bereits im Hauptordner
 
 ## Backup-System
 
-Das Portal erstellt automatisch Backups:
-- **Datenbank-Backup:** via `mongodump` (Standard: alle 12 Stunden)
-- **Quellcode-Backup:** als ZIP (Standard: alle 3 Tage)
-- **Aufbewahrung:** Alte Backups werden nach 7 Tagen automatisch geloescht
-- **Konfiguration:** Admin → Einstellungen → Backup-System
+Automatische Backups laufen im Backend:
+- Datenbank-Backup via `mongodump` alle 12 Stunden
+- Quellcode-Backup als ZIP alle 3 Tage
+- Aufbewahrung: 7 Tage
+- Konfiguration: Admin → Einstellungen → Backup-System
 
-### Manuelles Backup
-- Ueber die Admin-UI: "Datenbank jetzt sichern" / "Quellcode jetzt sichern"
-- Beim jedem Start (`start-all.bat`) wird automatisch ein DB-Backup erstellt
+Backup-Speicherort: `C:\eventenergie\backups\`
 
-### Backup-Speicherort
+Datenbank wiederherstellen:
 ```
-C:\eventenergie\backups\
-  db\          - Datenbank-Backups (.gz)
-  files\       - Quellcode-Backups (.zip)
-  code\        - Pre-Update Code-Backups (.zip)
-```
-
-### Datenbank wiederherstellen
-```
-mongorestore --uri="mongodb://localhost:27017" --db=eventenergie --archive=PFAD_ZUM_BACKUP.gz --gzip --drop
+mongorestore --uri="mongodb://localhost:27017" --db=eventenergie ^
+             --archive=PFAD_ZUM_BACKUP.gz --gzip --drop
 ```
 
 ## Verzeichnisstruktur
+
 ```
-C:\eventenergie\
-  backend\         - FastAPI Server
-    .env           - Datenbank + SMTP Konfiguration
-    server.py      - Hauptserver
-    routes\        - API-Routes
-    services\      - Dienste (PDF etc.)
-    static\        - Downloads, Pi-Scripts
-  frontend\        - React Frontend
-    .env           - Portal-URL
-    src\           - Quellcode
-    build\         - Kompiliertes Frontend
-  backups\         - Automatische Backups
-  caddy.exe        - Reverse Proxy
-  Caddyfile        - Caddy-Konfiguration
-  start-all.bat    - Dienste starten
-  stop-all.bat     - Dienste stoppen
-  update.bat       - Automatisches Update
+C:\eventenergie\               ← Git-Repo Root
+  backend\                     ← FastAPI Server
+    .env                       ← DB, SMTP, JWT (nicht im Git)
+    server.py
+    routes\
+    ...
+  frontend\
+    .env                       ← REACT_APP_BACKEND_URL (nicht im Git)
+    build\                     ← Von Caddy statisch ausgeliefert
+    src\
+  backups\
+  update-live.ps1              ← Update-Logik
+  update.bat                   ← Doppelklick-Wrapper
+  logs\update-*.log
+
+C:\caddy\                      ← Caddy-Installation (getrennt vom Repo)
+  caddy.exe
+  Caddyfile                    ← Produktions-Config
+
+C:\ProgramData\chocolatey\lib\NSSM\tools\nssm.exe  ← Service-Manager
 ```
 
 ## Fehlerbehebung
 
-### Portal nicht erreichbar
-1. `start-all.bat` als Administrator ausfuehren
-2. Pruefen ob MongoDB laeuft: `sc query MongoDB`
-3. Pruefen ob Backend laeuft: `curl https://eventenergie.app/api/health`
-4. Pruefen ob Caddy laeuft: `curl http://localhost:3000`
+### Update-Skript bricht mit Fehler ab
+1. Log anschauen: `Get-Content C:\eventenergie\logs\update-*.log -Tail 50` (neueste Datei)
+2. Services-Status: `Get-Service EventenergieBackend, EventenergieCaddy`
 
-### Login funktioniert nicht
-1. Pruefen ob `frontend\.env` korrekt ist: `REACT_APP_BACKEND_URL=https://eventenergie.app`
-2. Frontend neu bauen: `cd C:\eventenergie\frontend && npm run build`
-3. Dienste neu starten: `stop-all.bat` dann `start-all.bat`
+### Backend startet nach Update nicht
+1. NSSM-Log: `& "C:\ProgramData\chocolatey\lib\NSSM\tools\nssm.exe" get EventenergieBackend AppStderr` → Pfad → `Get-Content <pfad> -Tail 50`
+2. Häufigste Ursachen:
+   - Neue Python-Dependency fehlt → `pip install -r backend\requirements.txt` manuell
+   - `.env` fehlt → aus `.env.backup` wiederherstellen
+   - MongoDB down → `Start-Service MongoDB`
 
-### Datenbank-Problem
-1. Backup wiederherstellen (siehe oben)
-2. MongoDB-Service pruefen: `sc query MongoDB`
-3. MongoDB-Logdatei pruefen: `C:\Program Files\MongoDB\Server\X.X\log\`
+### Frontend zeigt alte Version (Caching)
+- Browser: `Strg+Shift+R` (Hard-Reload)
+- Prüfen ob `build\index.html` das neue Datum hat
+
+### Portal komplett nicht erreichbar (Extern)
+1. `Get-Service EventenergieCaddy` → sollte Running sein
+2. `netstat -ano | findstr /R ":80 :443"` → Caddy-PID sollte beide halten
+3. `curl.exe -I https://www.eventenergie.app` von einem Handy im 4G-Netz testen
+4. Router-Port-Forwarding 80+443 prüfen
