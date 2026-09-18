@@ -19,6 +19,13 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (P0 Followup: Login-Bug durch Naked→www Redirect + NSSM-basiertes Update-Skript)
+- **Login-Bug Root Cause**: Alte `Caddyfile.production` machte `redir https://www.eventenergie.app{uri} permanent` für die nackte Domain — auch für `/api/*`. Frontend war gebaut mit `REACT_APP_BACKEND_URL=https://eventenergie.app` (nackt). POST /api/auth/login → 301 → Browser bricht Redirect ab (CORS-Preflight failt, Body geht verloren) → Login schlug still fehl.
+- **Fix**: `Caddyfile.production` umgebaut: `eventenergie.app, www.eventenergie.app { … }` bedient beide Domains direkt ohne Redirect. Gleicher Content, gleiche Security-Header, ACME für beide Domains.
+- **NSSM-Update-Workflow**: Neues `update-live.ps1` erstellt (Admin-Check, .env-Backup, git pull, pip install, yarn build, Restart-Service EventenergieBackend, Health-Check, Log-File). Alte `update.bat` durch dünnen PowerShell-Wrapper ersetzt. Alte cmd-Fenster-basierte start-all.bat/stop-all.bat sind obsolet (verursachten `Errno 10048` Port-Konflikte mit NSSM-Services).
+- **UPDATE_ANLEITUNG.md**: Komplett überarbeitet mit NSSM-Servicelogik, Fehlerbehebung, Verzeichnisstruktur.
+- **Verified**: `curl -X POST https://eventenergie.app/api/auth/login` → HTTP 401 statt 301 (Endpoint direkt erreichbar), Login funktioniert im Browser.
+
 ### 2026-02-25 (P0 DevOps: Windows-Live-Server SSL-Migration Sectigo→Let's Encrypt via Caddy 2)
 - **Root Cause identifiziert**: NSSM-Service `EventenergieCaddy` startete Caddy aus `C:\caddy\` mit einer alten Config die `tls internal` + `auto_https off` + `:8001` als Testport hatte → daher `SEC_E_CERT_EXPIRED` + `SEC_E_ILLEGAL_MESSAGE`. Zusätzlich lief parallel Nginx aus `C:\tools\nginx-1.29.8\` als zweiter Reverse-Proxy mit dem alten (abgelaufenen) IONOS/Sectigo-Zertifikat und blockierte Port 80 komplett.
 - **Fix Nginx**: Prozess gekillt + Binary umbenannt (`nginx.exe` → `nginx.exe.disabled`) damit Watchdog ihn nicht neu startet.
