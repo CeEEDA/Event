@@ -5,8 +5,8 @@
 # Caddy holt automatisch das Zertifikat via HTTP-01-Challenge und
 # erneuert es selbstaendig.
 #
-# Installation: Speichere diese Datei als `Caddyfile` auf dem Live-
-# Server (z.B. C:\eventenergie\Caddyfile) und starte Caddy neu.
+# Beide Domains (naked + www) bedienen die App DIREKT ohne Redirect,
+# damit Login/API-POST-Requests nicht durch 301-Redirects verloren gehen.
 # =====================================================================
 
 # Globale Optionen
@@ -16,13 +16,8 @@
     admin off
 }
 
-# ── Redirect: nackte Domain -> www ─────────────────────────────────
-eventenergie.app {
-    redir https://www.eventenergie.app{uri} permanent
-}
-
-# ── Haupt-Site (HTTPS + Let's-Encrypt automatisch) ─────────────────
-www.eventenergie.app {
+# ── Haupt-Site (beide Hostnamen, HTTPS + Let's-Encrypt automatisch) ─
+eventenergie.app, www.eventenergie.app {
     encode gzip zstd
 
     # Backend-API (FastAPI/Uvicorn auf Port 8002)
