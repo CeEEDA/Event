@@ -1327,6 +1327,112 @@ async def clock_out(token: str = Query(...), body: dict | None = None):
     return updated
 
 
+@router.get("/time/entries/csv")
+async def export_time_entries_csv(
+    month: str = Query(..., description="YYYY-MM"),
+    user_id: str = Query(None),
+    token: str = Query(...),
+):
+    """Exportiert alle Stempel- und Korrektur-Eintraege eines Monats als CSV.
+    - Mitarbeiter: nur eigene Eintraege (user_id ignoriert).
+    - Admin/Verwaltung: user_id waehlbar, Default = eigene Eintraege.
+    Semikolon-Trennung + BOM => oeffnet in Excel korrekt mit Umlauten.
+    WICHTIG: Diese Route MUSS vor `PUT/DELETE /time/entries/{entry_id}` registriert
+    sein, sonst matcht FastAPI die dynamische Route zuerst und liefert 405."""
+    caller = await _get_user(token)
+    target_id = user_id if (user_id and _has_verwaltung(caller)) else caller["id"]
+
+    if not month or len(month) != 7 or month[4] != "-":
+        raise HTTPException(status_code=400, detail="month muss im Format YYYY-MM sein")
+
+    user = await db.users.find_one({"id": target_id}, {"_id": 0, "name": 1, "email": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    name = user.get("name") or user.get("email") or target_id
+
+    cursor = db.time_entries.find(
+        {"user_id": target_id, "date": {"$regex": f"^{month}"}},
+        {"_id": 0}
+    ).sort([("date", 1), ("clock_in", 1)])
+    entries = await cursor.to_list(2000)
+
+    try:
+        import zoneinfo as _zi
+        _tz = _zi.ZoneInfo("Europe/Berlin")
+    except Exception:  # pragma: no cover
+        _tz = timezone.utc
+
+    def _fmt_dt(iso: Optional[str]) -> str:
+        if not iso:
+            return ""
+        try:
+            dt = datetime.fromisoformat(iso)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(_tz).strftime("%H:%M")
+        except (TypeError, ValueError):
+            return ""
+
+    _weekdays_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+    def _weekday(date_str: str) -> str:
+        try:
+            return _weekdays_de[datetime.strptime(date_str, "%Y-%m-%d").weekday()]
+        except (TypeError, ValueError):
+            return ""
+
+    output = io.StringIO()
+    output.write("\ufeff")  # UTF-8 BOM fuer Excel
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow([f"Stempelzeiten {name} – {month}"])
+    writer.writerow([])
+    writer.writerow([
+        "Datum", "Tag", "Beginn", "Ende", "Pause (Min)",
+        "Dauer (h:mm)", "Dauer (h)", "Typ", "Manuell", "Notiz",
+        "GPS Start", "GPS Ende",
+    ])
+
+    total_min = 0.0
+    for e in entries:
+        date_str = e.get("date") or (e.get("clock_in") or "")[:10]
+        dur_min = float(e.get("duration_minutes") or 0)
+        total_min += dur_min
+        h_full = int(abs(dur_min) // 60)
+        m_rest = int(round(abs(dur_min) % 60))
+        sign = "-" if dur_min < 0 else ""
+        dur_hmm = f"{sign}{h_full}:{m_rest:02d}" if dur_min else ""
+        dur_dec = f"{dur_min / 60.0:.2f}" if dur_min else ""
+        gps_start = f"{e['clock_in_lat']},{e['clock_in_lng']}" if e.get("clock_in_lat") else ""
+        gps_end = f"{e['clock_out_lat']},{e['clock_out_lng']}" if e.get("clock_out_lat") else ""
+        writer.writerow([
+            date_str,
+            _weekday(date_str),
+            _fmt_dt(e.get("clock_in")),
+            _fmt_dt(e.get("clock_out")) if e.get("clock_out") else ("" if e.get("type") == "korrektur" else "Aktiv"),
+            int(e.get("break_min") or 0),
+            dur_hmm,
+            dur_dec,
+            (e.get("type") or "stempelzeit").capitalize(),
+            "Ja" if e.get("manual") else "",
+            e.get("manual_note") or e.get("note") or "",
+            gps_start,
+            gps_end,
+        ])
+
+    writer.writerow([])
+    tot_h = int(abs(total_min) // 60)
+    tot_m = int(round(abs(total_min) % 60))
+    tot_sign = "-" if total_min < 0 else ""
+    writer.writerow(["Summe", "", "", "", "", f"{tot_sign}{tot_h}:{tot_m:02d}", f"{total_min / 60.0:.2f}"])
+
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="stempelzeiten_{safe_name}_{month}.csv"'}
+    )
+
+
 @router.get("/time/entries")
 async def get_time_entries(token: str = Query(...), user_id: Optional[str] = None,
                             date_from: Optional[str] = None, date_to: Optional[str] = None):
@@ -3610,110 +3716,6 @@ async def get_payroll_csv(user_id: str, month: str = Query(...), token: str = Qu
         content=output.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=lohn_{name}_{month}.csv"}
-    )
-
-
-@router.get("/time/entries/csv")
-async def export_time_entries_csv(
-    month: str = Query(..., description="YYYY-MM"),
-    user_id: str = Query(None),
-    token: str = Query(...),
-):
-    """Exportiert alle Stempel- und Korrektur-Eintraege eines Monats als CSV.
-    - Mitarbeiter: nur eigene Eintraege (user_id ignoriert).
-    - Admin/Verwaltung: user_id waehlbar, Default = eigene Eintraege.
-    Semikolon-Trennung + BOM => oeffnet in Excel korrekt mit Umlauten."""
-    caller = await _get_user(token)
-    target_id = user_id if (user_id and _has_verwaltung(caller)) else caller["id"]
-
-    if not month or len(month) != 7 or month[4] != "-":
-        raise HTTPException(status_code=400, detail="month muss im Format YYYY-MM sein")
-
-    user = await db.users.find_one({"id": target_id}, {"_id": 0, "name": 1, "email": 1})
-    if not user:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
-    name = user.get("name") or user.get("email") or target_id
-
-    cursor = db.time_entries.find(
-        {"user_id": target_id, "date": {"$regex": f"^{month}"}},
-        {"_id": 0}
-    ).sort([("date", 1), ("clock_in", 1)])
-    entries = await cursor.to_list(2000)
-
-    try:
-        import zoneinfo as _zi
-        _tz = _zi.ZoneInfo("Europe/Berlin")
-    except Exception:  # pragma: no cover
-        _tz = timezone.utc
-
-    def _fmt_dt(iso: Optional[str]) -> str:
-        if not iso:
-            return ""
-        try:
-            dt = datetime.fromisoformat(iso)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(_tz).strftime("%H:%M")
-        except (TypeError, ValueError):
-            return ""
-
-    _weekdays_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-
-    def _weekday(date_str: str) -> str:
-        try:
-            return _weekdays_de[datetime.strptime(date_str, "%Y-%m-%d").weekday()]
-        except (TypeError, ValueError):
-            return ""
-
-    output = io.StringIO()
-    output.write("\ufeff")  # UTF-8 BOM fuer Excel
-    writer = csv.writer(output, delimiter=";")
-    writer.writerow([f"Stempelzeiten {name} – {month}"])
-    writer.writerow([])
-    writer.writerow([
-        "Datum", "Tag", "Beginn", "Ende", "Pause (Min)",
-        "Dauer (h:mm)", "Dauer (h)", "Typ", "Manuell", "Notiz",
-        "GPS Start", "GPS Ende",
-    ])
-
-    total_min = 0.0
-    for e in entries:
-        date_str = e.get("date") or (e.get("clock_in") or "")[:10]
-        dur_min = float(e.get("duration_minutes") or 0)
-        total_min += dur_min
-        h_full = int(abs(dur_min) // 60)
-        m_rest = int(round(abs(dur_min) % 60))
-        sign = "-" if dur_min < 0 else ""
-        dur_hmm = f"{sign}{h_full}:{m_rest:02d}" if dur_min else ""
-        dur_dec = f"{dur_min / 60.0:.2f}" if dur_min else ""
-        gps_start = f"{e['clock_in_lat']},{e['clock_in_lng']}" if e.get("clock_in_lat") else ""
-        gps_end = f"{e['clock_out_lat']},{e['clock_out_lng']}" if e.get("clock_out_lat") else ""
-        writer.writerow([
-            date_str,
-            _weekday(date_str),
-            _fmt_dt(e.get("clock_in")),
-            _fmt_dt(e.get("clock_out")) if e.get("clock_out") else ("" if e.get("type") == "korrektur" else "Aktiv"),
-            int(e.get("break_min") or 0),
-            dur_hmm,
-            dur_dec,
-            (e.get("type") or "stempelzeit").capitalize(),
-            "Ja" if e.get("manual") else "",
-            e.get("manual_note") or e.get("note") or "",
-            gps_start,
-            gps_end,
-        ])
-
-    writer.writerow([])
-    tot_h = int(abs(total_min) // 60)
-    tot_m = int(round(abs(total_min) % 60))
-    tot_sign = "-" if total_min < 0 else ""
-    writer.writerow(["Summe", "", "", "", "", f"{tot_sign}{tot_h}:{tot_m:02d}", f"{total_min / 60.0:.2f}"])
-
-    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="stempelzeiten_{safe_name}_{month}.csv"'}
     )
 
 
