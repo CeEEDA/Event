@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import {
   ArrowLeft, Clock, CalendarDays, CalendarOff, Palmtree, TrendingUp,
-  ThermometerSun, ChevronDown, ChevronUp, Archive,
+  ThermometerSun, ChevronDown, ChevronUp, Archive, FileDown,
 } from "lucide-react";
 import { WorkTimeOverview } from "../components/WorkTimeOverview";
 
@@ -329,6 +329,29 @@ export default function ArbeitszeitPage() {
                     {hasSick && (
                       <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded">
                         <ThermometerSun className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.sickDays}T
+                      </span>
+                    )}
+                    {(hasHours || stats.entries.length > 0) && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/time/entries/csv?month=${m.key}&token=${token}`;
+                          window.open(url, "_blank");
+                        }}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter") {
+                            ev.stopPropagation();
+                            const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/time/entries/csv?month=${m.key}&token=${token}`;
+                            window.open(url, "_blank");
+                          }
+                        }}
+                        className="text-xs text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 p-1 rounded transition-colors"
+                        title="Stempelzeiten als CSV exportieren"
+                        data-testid={`export-csv-${m.key}`}
+                      >
+                        <FileDown className="w-3.5 h-3.5" />
                       </span>
                     )}
                     {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}

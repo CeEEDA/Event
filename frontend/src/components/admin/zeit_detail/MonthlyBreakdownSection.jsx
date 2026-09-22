@@ -6,7 +6,7 @@
  *  - Urlaub/Krank/Ueberstundenabbau-Eintraege
  *  - Stempelliste mit Inline-Edit & Loeschen
  */
-import { CalendarDays, Clock, Palmtree, ThermometerSun, ChevronDown, ChevronUp, Plus, TrendingUp, Save, Pencil, X, Trash2, MapPin } from "lucide-react";
+import { CalendarDays, Clock, Palmtree, ThermometerSun, ChevronDown, ChevronUp, Plus, TrendingUp, Save, Pencil, X, Trash2, MapPin, FileDown } from "lucide-react";
 import { Button } from "../../ui/button";
 
 const formatTime = (iso) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
@@ -29,6 +29,7 @@ export default function MonthlyBreakdownSection({
   startEditEntry,
   saveEditEntry,
   deleteEntry,
+  onExportCsv,
 }) {
   return (
     <div className="space-y-2">
@@ -45,6 +46,19 @@ export default function MonthlyBreakdownSection({
                 {stats.totalMins > 0 && <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded"><Clock className="w-3 h-3 inline mr-0.5 -mt-0.5" />{fmtH(stats.totalMins)}</span>}
                 {stats.vacDays > 0 && <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded"><Palmtree className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.vacDays}T</span>}
                 {stats.sickDays > 0 && <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded"><ThermometerSun className="w-3 h-3 inline mr-0.5 -mt-0.5" />{stats.sickDays}T</span>}
+                {onExportCsv && (stats.totalMins > 0 || (stats.entries || []).length > 0) && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(ev) => { ev.stopPropagation(); onExportCsv(m.key); }}
+                    onKeyDown={(ev) => { if (ev.key === "Enter") { ev.stopPropagation(); onExportCsv(m.key); } }}
+                    className="text-xs text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 p-1 rounded transition-colors"
+                    title="Stempelzeiten als CSV exportieren"
+                    data-testid={`export-csv-${m.key}`}
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                  </span>
+                )}
                 {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
               </div>
             </button>

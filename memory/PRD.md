@@ -19,6 +19,12 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (Feature: CSV-Export je Monat für Stempelzeiten)
+- **Backend** `GET /api/employee/time/entries/csv?month=YYYY-MM&user_id=…`: UTF-8-BOM (Excel-Umlaute), Semikolon-Trennung, Spalten Datum/Tag/Beginn/Ende/Pause/Dauer h:mm/Dauer h/Typ/Manuell/Notiz/GPS + Summenzeile. Admin kann `user_id` setzen, Mitarbeiter nur eigene Daten. Berlin-TZ für Uhrzeiten. Negative Korrektur-Dauern werden korrekt mit Vorzeichen ausgegeben.
+- **Frontend Mitarbeiter** `ArbeitszeitPage.jsx`: FileDown-Icon in jeder Monatskarte (öffnet CSV in neuem Tab).
+- **Frontend Admin** `MonthlyBreakdownSection.jsx` + `AdminZeitDetailPage.jsx`: identisches Icon mit Callback-Prop `onExportCsv(monthKey)`.
+- **Regression-Test** `tests/test_time_entries_csv_export.py`: 4/4 grün.
+
 ### 2026-02-25 (Teilzeit-Bugfix: Überstundenabbau zog 40h statt 20h ab)
 - **Root Cause 1 (Frontend, `AdminZeitDetailPage.jsx` L947)**: Anzeige rechnete stur `days * 8` statt das vom Backend gelieferte `hours_deducted_display` (Wochenplan-Summe) zu verwenden. Bei 4h/Tag Teilzeit × 5 Werktage: UI zeigt 40h, Backend deduziert korrekt 20h.
 - **Root Cause 2 (Backend, `employee.py` `resolve_time_off_request` L3115)**: Employee-Antrag-Approve-Pfad nutzte flat `days * 8` beim Verrechnen aufs Stundenkonto. Jetzt Wochenplan-Loop mit `_soll_minutes_from_schedule` pro Werktag, Fallback nur bei leerem Plan.

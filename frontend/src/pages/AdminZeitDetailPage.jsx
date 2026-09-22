@@ -1089,6 +1089,10 @@ export default function AdminZeitDetailPage() {
           startEditEntry={startEditEntry}
           saveEditEntry={saveEditEntry}
           deleteEntry={deleteEntry}
+          onExportCsv={(monthKey) => {
+            const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/time/entries/csv?user_id=${userId}&month=${monthKey}&token=${token}`;
+            window.open(url, "_blank");
+          }}
         />
 
         {/* Audit-Log (Protokoll der manuellen Aenderungen) */}
