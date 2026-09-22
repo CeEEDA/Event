@@ -19,6 +19,11 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (Bugfix + Härtung: CSV-Route-Order + Zombie-Backend-Cleanup)
+- **Route-Order-Bug**: `GET /time/entries/csv` wurde am Ende der Datei (~Zeile 3616) registriert, aber `PUT /time/entries/{entry_id}` bei ~1702. FastAPI matchte die dynamische PUT-Route zuerst (`entry_id="csv"`) → 405 mit `Allow: PUT`. Route jetzt umgezogen an Position 1330 (VOR `GET /time/entries` und den PUT/DELETE-Handlern) mit Warnkommentar. Lokal + Live-Test: GET 200 ✅.
+- **Zombie-Backend-Cleanup**: Auf dem Live-Server waren 4 uvicorn-Master-Instanzen parallel aktiv (durch manuelle Starts in verschiedenen Sessions + inkorrekte NSSM-Restarts). `update-live.ps1` killte bisher nur Prozesse mit `uvicorn.*server:app.*8002`. Neu: kill auch `multiprocessing.spawn`-Worker + harter Port-8002-Fallback der jeden Prozess killt der noch auf 8002 hört. Verhindert dass sich Zombies über die Zeit ansammeln.
+- **Bestätigt harmlos**: MongoDB WiredTiger belegt 42 GB RAM (Standard: 50 % vom RAM − 1 GB). Wird bei Bedarf freigegeben.
+
 ### 2026-02-25 (Feature: CSV-Export je Monat für Stempelzeiten)
 - **Backend** `GET /api/employee/time/entries/csv?month=YYYY-MM&user_id=…`: UTF-8-BOM (Excel-Umlaute), Semikolon-Trennung, Spalten Datum/Tag/Beginn/Ende/Pause/Dauer h:mm/Dauer h/Typ/Manuell/Notiz/GPS + Summenzeile. Admin kann `user_id` setzen, Mitarbeiter nur eigene Daten. Berlin-TZ für Uhrzeiten. Negative Korrektur-Dauern werden korrekt mit Vorzeichen ausgegeben.
 - **Frontend Mitarbeiter** `ArbeitszeitPage.jsx`: FileDown-Icon in jeder Monatskarte (öffnet CSV in neuem Tab).

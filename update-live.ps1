@@ -79,11 +79,22 @@ foreach ($svc in $Services) {
 
 # Verwaiste manuelle Prozesse killen (falls jemand uvicorn manuell laufen liess)
 $OrphanedUvicorn = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-    Where-Object { $_.CommandLine -match "uvicorn.*server:app.*8002" }
+    Where-Object { $_.CommandLine -match "uvicorn.*server:app.*8002" -or $_.CommandLine -match "multiprocessing.spawn" }
 foreach ($p in $OrphanedUvicorn) {
-    Log "  Killt verwaisten uvicorn PID $($p.ProcessId)"
+    Log "  Killt verwaisten Python-Prozess PID $($p.ProcessId)"
     Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
 }
+Start-Sleep -Seconds 2
+
+# Harter Fallback: alles auf Port 8002 killen falls noch was hoert
+$Port8002 = netstat -ano | Select-String ":8002\s.*ABH" | ForEach-Object {
+    ($_ -split "\s+")[-1]
+} | Where-Object { $_ -match "^\d+$" } | Sort-Object -Unique
+foreach ($pid in $Port8002) {
+    Log "  Killt verbliebenen Prozess auf Port 8002: PID $pid" "Yellow"
+    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Seconds 2
 
 # =====================================================================
 # 2) .env sichern
