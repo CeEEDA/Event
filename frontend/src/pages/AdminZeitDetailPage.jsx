@@ -1093,6 +1093,17 @@ export default function AdminZeitDetailPage() {
             const url = `${process.env.REACT_APP_BACKEND_URL}/api/employee/time/entries/csv?user_id=${userId}&month=${monthKey}&token=${token}`;
             window.open(url, "_blank");
           }}
+          onForceClockOut={async (entry) => {
+            if (!window.confirm(`Offenen Eintrag von ${new Date(entry.clock_in).toLocaleString("de-DE")} jetzt zwangsweise ausstempeln?`)) return;
+            try {
+              await api.post(`/employee/time/force-clock-out/${userId}?token=${token}`, {});
+              toast.success("Eintrag geschlossen");
+              reloadEntries();
+              loadHrData();
+            } catch (err) {
+              toast.error(err.response?.data?.detail || "Fehler beim Zwangsausstempeln");
+            }
+          }}
         />
 
         {/* Audit-Log (Protokoll der manuellen Aenderungen) */}

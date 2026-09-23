@@ -30,6 +30,7 @@ export default function MonthlyBreakdownSection({
   saveEditEntry,
   deleteEntry,
   onExportCsv,
+  onForceClockOut,
 }) {
   return (
     <div className="space-y-2">
@@ -165,6 +166,16 @@ export default function MonthlyBreakdownSection({
                     <span className="text-green-600 font-medium">{formatTime(e.clock_in)}</span>
                     <span className="text-gray-300">—</span>
                     <span className={`font-medium ${e.clock_out ? "text-red-500" : "text-amber-500"}`}>{e.clock_out ? formatTime(e.clock_out) : "Aktiv"}</span>
+                    {!e.clock_out && typeof onForceClockOut === "function" && (
+                      <button
+                        onClick={(ev) => { ev.stopPropagation(); onForceClockOut(e); }}
+                        className="text-[9px] bg-rose-100 text-rose-700 hover:bg-rose-200 px-1.5 py-0.5 rounded-full font-semibold"
+                        title="Notfall: offenen Eintrag jetzt ausstempeln"
+                        data-testid={`force-clock-out-${e.id}`}
+                      >
+                        Jetzt ausstempeln
+                      </button>
+                    )}
                     {(e.manual || e.edited_by) && (
                       <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold" title={e.manual ? `Manuell durch ${e.manual_by_name || "Admin"}` : `Bearbeitet durch ${e.edited_by_name || "Admin"}`}>
                         {e.manual ? "manuell" : "geändert"}

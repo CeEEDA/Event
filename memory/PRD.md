@@ -19,6 +19,12 @@ German (all UI + agent responses in German only).
 - **OTA**: Update pipeline for Pi devices
 
 ## Recently Implemented (Session current)
+### 2026-02-25 (P0 Bugfix: Ausstempeln crasht mit HTTP 500 bei kaputtem clock_in-Wert)
+- **Root Cause**: `datetime.fromisoformat(entry["clock_in"])` in `POST /time/clock-out` crasht mit uncaught `ValueError/TypeError` wenn der Wert None ist oder als BSON-datetime (statt ISO-String) in der DB liegt → 500 in 12ms, silent Frontend-Failure ohne Toast. Betroffener User: roberto.alfano@eventenergie-deutschland.de.
+- **Backend-Fix**: `clock_out` toleriert jetzt sowohl String als auch datetime-Werte, gibt bei kaputtem Wert 400 mit klarer Anweisung an den Admin zurueck (statt 500). Logger loggt den kaputten Wert + entry_id fuer weitere Diagnose.
+- **Notfall-Endpoint** `POST /employee/time/force-clock-out/{user_id}` (Admin/Verwaltung): schliesst haengenden offenen Eintrag zwangsweise, Fallback clock_in = now-30min wenn DB-Wert unrettbar. Recompute Overtime laeuft danach automatisch.
+- **Frontend-Button**: In `MonthlyBreakdownSection.jsx` bei jedem `Aktiv`-Eintrag ein "Jetzt ausstempeln"-Badge. In `AdminZeitDetailPage.jsx` gewired mit confirm-Dialog + Toast.
+
 ### 2026-02-25 (Bugfix + Härtung: CSV-Route-Order + Zombie-Backend-Cleanup)
 - **Route-Order-Bug**: `GET /time/entries/csv` wurde am Ende der Datei (~Zeile 3616) registriert, aber `PUT /time/entries/{entry_id}` bei ~1702. FastAPI matchte die dynamische PUT-Route zuerst (`entry_id="csv"`) → 405 mit `Allow: PUT`. Route jetzt umgezogen an Position 1330 (VOR `GET /time/entries` und den PUT/DELETE-Handlern) mit Warnkommentar. Lokal + Live-Test: GET 200 ✅.
 - **Zombie-Backend-Cleanup**: Auf dem Live-Server waren 4 uvicorn-Master-Instanzen parallel aktiv (durch manuelle Starts in verschiedenen Sessions + inkorrekte NSSM-Restarts). `update-live.ps1` killte bisher nur Prozesse mit `uvicorn.*server:app.*8002`. Neu: kill auch `multiprocessing.spawn`-Worker + harter Port-8002-Fallback der jeden Prozess killt der noch auf 8002 hört. Verhindert dass sich Zombies über die Zeit ansammeln.

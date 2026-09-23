@@ -1267,6 +1267,55 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     return new_overtime
 
 
+@router.post("/time/force-clock-out/{user_id}")
+async def force_clock_out(user_id: str, token: str = Query(...), body: dict | None = None):
+    """Admin-Notfall: schliesst einen haengenden offenen time_entries-Eintrag
+    eines beliebigen Users. Wenn der DB-Wert kaputt ist, wird now-30min als
+    clock_in gesetzt und clock_out = now."""
+    caller = await _get_user(token)
+    if not _has_verwaltung(caller):
+        raise HTTPException(status_code=403, detail="Nur Verwaltung")
+    body = body or {}
+    entry = await db.time_entries.find_one({"user_id": user_id, "clock_out": None})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Kein offener Eintrag")
+    now = datetime.now(timezone.utc)
+
+    raw_ci = body.get("clock_in") or entry.get("clock_in")
+    try:
+        if isinstance(raw_ci, datetime):
+            clock_in_time = raw_ci
+        else:
+            clock_in_time = datetime.fromisoformat(str(raw_ci))
+        if clock_in_time.tzinfo is None:
+            clock_in_time = clock_in_time.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        clock_in_time = now - timedelta(minutes=30)
+
+    duration = max(0.0, (now - clock_in_time).total_seconds() / 60.0)
+    await db.time_entries.update_one(
+        {"id": entry["id"]},
+        {"$set": {
+            "clock_in": clock_in_time.isoformat(),
+            "clock_out": now.isoformat(),
+            "duration_minutes": round(duration, 1),
+            "manual": True,
+            "manual_by": caller["id"],
+            "manual_by_name": caller.get("name"),
+            "manual_note": (body.get("note") or f"Force-Clock-Out durch {caller.get('name', 'Admin')}"),
+        }}
+    )
+    try:
+        import zoneinfo
+        berlin = zoneinfo.ZoneInfo("Europe/Berlin")
+        await _recompute_overtime_for_year(user_id, now.astimezone(berlin).year, force=True)
+    except Exception as e:
+        logger.error(f"Overtime recompute (force clock-out) error: {e}")
+
+    return await db.time_entries.find_one({"id": entry["id"]}, {"_id": 0})
+
+
+
 @router.post("/time/clock-out")
 async def clock_out(token: str = Query(...), body: dict | None = None):
     """Clock out with GPS coordinates. Auto-calculates overtime vs. schedule."""
@@ -1277,9 +1326,36 @@ async def clock_out(token: str = Query(...), body: dict | None = None):
         raise HTTPException(status_code=400, detail="Nicht eingestempelt")
 
     now = datetime.now(timezone.utc)
-    clock_in_time = datetime.fromisoformat(entry["clock_in"])
-    if clock_in_time.tzinfo is None:
-        clock_in_time = clock_in_time.replace(tzinfo=timezone.utc)
+
+    # Robust: clock_in kann als ISO-String ODER als BSON-datetime in der DB
+    # liegen (Legacy-Daten). Beide Faelle abfangen, damit der Ausstempel-Klick
+    # nicht mit 500 crasht.
+    raw_ci = entry.get("clock_in")
+    try:
+        if isinstance(raw_ci, datetime):
+            clock_in_time = raw_ci
+        elif isinstance(raw_ci, str) and raw_ci:
+            clock_in_time = datetime.fromisoformat(raw_ci)
+        else:
+            raise ValueError(f"clock_in leer oder ungueltig: {raw_ci!r}")
+        if clock_in_time.tzinfo is None:
+            clock_in_time = clock_in_time.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError) as parse_err:
+        logger.error(
+            f"clock_out: kaputter clock_in-Wert bei user={user['id']} "
+            f"entry_id={entry.get('id')} value={raw_ci!r} err={parse_err}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Offener Stempeleintrag hat kein gueltiges Startdatum. "
+                "Bitte den Admin bitten, den Eintrag ueber "
+                f"Admin -> Arbeitszeit -> {user.get('name', 'Mitarbeiter')} "
+                "zu korrigieren oder zu loeschen. "
+                f"(entry_id={entry.get('id')})"
+            ),
+        ) from parse_err
+
     raw_duration = (now - clock_in_time).total_seconds() / 60.0
 
     # Pausen-Abzug: konfigurierte Pause aus dem Wochenplan abziehen
