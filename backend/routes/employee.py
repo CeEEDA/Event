@@ -1268,15 +1268,22 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
 
 
 @router.post("/time/force-clock-out/{user_id}")
-async def force_clock_out(user_id: str, token: str = Query(...), body: dict | None = None):
+async def force_clock_out(user_id: str, token: str = Query(...),
+                          entry_id: Optional[str] = Query(None),
+                          body: dict | None = None):
     """Admin-Notfall: schliesst einen haengenden offenen time_entries-Eintrag
     eines beliebigen Users. Wenn der DB-Wert kaputt ist, wird now-30min als
-    clock_in gesetzt und clock_out = now."""
+    clock_in gesetzt und clock_out = now.
+    Wenn `entry_id` mitgegeben ist, wird EXAKT dieser Eintrag geschlossen
+    (wichtig wenn mehrere offene Eintraege existieren)."""
     caller = await _get_user(token)
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Verwaltung")
     body = body or {}
-    entry = await db.time_entries.find_one({"user_id": user_id, "clock_out": None})
+    query = {"user_id": user_id, "clock_out": None}
+    if entry_id:
+        query["id"] = entry_id
+    entry = await db.time_entries.find_one(query)
     if not entry:
         raise HTTPException(status_code=404, detail="Kein offener Eintrag")
     now = datetime.now(timezone.utc)

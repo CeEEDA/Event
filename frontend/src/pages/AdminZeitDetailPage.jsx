@@ -1096,7 +1096,7 @@ export default function AdminZeitDetailPage() {
           onForceClockOut={async (entry) => {
             if (!window.confirm(`Offenen Eintrag von ${new Date(entry.clock_in).toLocaleString("de-DE")} jetzt zwangsweise ausstempeln?`)) return;
             try {
-              await api.post(`/employee/time/force-clock-out/${userId}?token=${token}`, {});
+              await api.post(`/employee/time/force-clock-out/${userId}?token=${token}&entry_id=${entry.id}`, {});
               toast.success("Eintrag geschlossen");
               reloadEntries();
               loadHrData();
