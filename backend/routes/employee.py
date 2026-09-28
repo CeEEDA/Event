@@ -940,8 +940,14 @@ async def _recompute_overtime_for_year(user_id: str, year: int, *, audit_caller:
     # Loesung: solange ein offener Eintrag lebt, wird sein Datum in der
     # Tag-fuer-Tag-Schleife geskippt. Das Datum wird beim Ausstempeln durch
     # den dann folgenden Recompute wieder korrekt in die Bilanz einbezogen.
+    #
+    # BUG-FIX (Feb 2026 - Bug B): NUR echte offene Stempelungen (clock_in gesetzt)
+    # skippen. Ohne diesen Filter matchen auch type="korrektur"-Eintraege
+    # (haben clock_in=None und clock_out=None) - die Folge war, dass eine
+    # Admin-Stundenkorrektur (z.B. -22h) NIE in die Bilanz einfloss, weil ihr
+    # Datum komplett aus der Tag-fuer-Tag-Schleife geskippt wurde.
     open_entry_today = await db.time_entries.find_one(
-        {"user_id": user_id, "clock_out": None},
+        {"user_id": user_id, "clock_out": None, "clock_in": {"$ne": None}},
         {"_id": 0, "date": 1}
     )
     _open_date_str = (open_entry_today or {}).get("date") if open_entry_today else None

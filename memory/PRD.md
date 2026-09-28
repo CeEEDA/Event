@@ -18,6 +18,16 @@ German (all UI + agent responses in German only).
 - **EpiRent Integration**: Order sync, Lieferscheine (planned)
 - **OTA**: Update pipeline for Pi devices
 
+
+## Recently Implemented (Session current)
+### 2026-02-28 (P0 Bugfix: Stundenkonto-Bilanz falsch bei Admin-Korrektur & Offday-Konsum)
+- **Bug A (Martin/Marcel)** – Der Endpoint `POST /api/employee/offdays/adjust` (delta<0 = Offday abziehen) reduzierte IMMER die `overtime_baseline`, auch wenn der MA an `ref_date` Urlaub/Krank hatte oder tatsächlich gestempelt hatte → Doppelbelastung des Ueberstunden-Kontos. Fix in `routes/offdays.py`: Vor dem Baseline-Abzug wird jetzt geprüft, ob (a) ein genehmigter `urlaub`/`krank`-Antrag über `ref_date` läuft oder (b) ein echter `time_entry` mit `duration_minutes>0` und `type NOT IN {urlaub,krank,ueberstundenabbau,feiertag,korrektur}` existiert. In beiden Fällen bleibt die Baseline unangetastet; das Offday-Ledger wird trotzdem gebucht und ein Audit-Log-Eintrag mit `skip_overtime_reason` geschrieben. Andre/Byron (weder Stempel noch Urlaub) → unverändert normaler Abzug.
+- **Bug B (Timo -22h Stunden-Korrektur ohne Wirkung)** – In `_recompute_overtime_for_year` matchte die `open_entry_today`-Query (`clock_out: None`) auch `type="korrektur"`-Einträge (haben clock_in=None UND clock_out=None) → der ganze Korrektur-Tag wurde in der Tag-für-Tag-Schleife übersprungen, die -22h flossen nie in die Bilanz ein. Fix in `routes/employee.py`: Query um `clock_in: {"$ne": None}` erweitert → nur ECHTE offene Stempelungen skippen den Tag.
+- **Tests** – Zwei neue Regressions-Suites (6 Testfälle, 6/6 grün):
+  - `tests/test_time_admin_correction_recompute_bug_b.py`: Korrektur senkt Bilanz; echte offene Stempelung skippt weiterhin.
+  - `tests/test_offday_manual_adjust_skip_overtime_bug_a.py`: Urlaub → Skip; gestempelt → Skip; nichts → normaler Abzug; Korrektur-Eintrag zählt NICHT als „gestempelt".
+- **Regression** – Alle 24 bestehenden HR-Tests weiterhin grün. Kein Daten-Backfill (Anweisung User: „nur Logik fixen, ich korrigiere manuell").
+
 ## Recently Implemented (Session current)
 ### 2026-02-25 (P0 Bugfix: Ausstempeln crasht mit HTTP 500 bei kaputtem clock_in-Wert)
 - **Root Cause**: `datetime.fromisoformat(entry["clock_in"])` in `POST /time/clock-out` crasht mit uncaught `ValueError/TypeError` wenn der Wert None ist oder als BSON-datetime (statt ISO-String) in der DB liegt → 500 in 12ms, silent Frontend-Failure ohne Toast. Betroffener User: roberto.alfano@eventenergie-deutschland.de.
