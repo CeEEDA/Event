@@ -20,6 +20,12 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (P0 Bugfix: „Bereits eingestempelt" – MA konnten morgens nicht einstempeln)
+- **Root Cause**: `POST /time/clock-in`, `GET /time/status`, `GET /time/presence`, `POST /time/clock-out`, `force-clock-out` und `saldo-summary` suchten den „offenen Eintrag" nur über `{"clock_out": None}`. Admin-Stunden-Korrekturen (`type="korrektur"`) haben `clock_in=None` UND `clock_out=None` → sobald der Admin für einen MA eine Korrektur gebucht hatte, galt dieser dauerhaft als eingestempelt (400 „Bereits eingestempelt"). Traf deshalb nacheinander genau die MA, bei denen zuvor korrigiert wurde.
+- **Fix** (`routes/employee.py`): alle 6 Queries filtern jetzt zusätzlich `clock_in: {"$ne": None}` (analog zum Bug-B-Fix im Recompute).
+- **Test**: `tests/test_clock_in_blocked_by_korrektur_entry.py` (Korrektur vorhanden → Status=nicht eingestempelt, Einstempeln 200, Doppel-Einstempeln 400, Ausstempeln schließt echten Eintrag, Korrektur bleibt unverändert). 16 HR-Tests grün.
+- **Hinweis Live**: kein Daten-Backfill nötig – Korrektur-Einträge sind korrekt, nur die Abfrage war falsch. Nach `update.bat` sofort wirksam.
+
 ### 2026-02-28 (P0 Bugfix: Stundenkonto-Bilanz falsch bei Admin-Korrektur & Offday-Konsum)
 - **Bug A (Martin/Marcel)** – Der Endpoint `POST /api/employee/offdays/adjust` (delta<0 = Offday abziehen) reduzierte IMMER die `overtime_baseline`, auch wenn der MA an `ref_date` Urlaub/Krank hatte oder tatsächlich gestempelt hatte → Doppelbelastung des Ueberstunden-Kontos. Fix in `routes/offdays.py`: Vor dem Baseline-Abzug wird jetzt geprüft, ob (a) ein genehmigter `urlaub`/`krank`-Antrag über `ref_date` läuft oder (b) ein echter `time_entry` mit `duration_minutes>0` und `type NOT IN {urlaub,krank,ueberstundenabbau,feiertag,korrektur}` existiert. In beiden Fällen bleibt die Baseline unangetastet; das Offday-Ledger wird trotzdem gebucht und ein Audit-Log-Eintrag mit `skip_overtime_reason` geschrieben. Andre/Byron (weder Stempel noch Urlaub) → unverändert normaler Abzug.
 - **Bug B (Timo -22h Stunden-Korrektur ohne Wirkung)** – In `_recompute_overtime_for_year` matchte die `open_entry_today`-Query (`clock_out: None`) auch `type="korrektur"`-Einträge (haben clock_in=None UND clock_out=None) → der ganze Korrektur-Tag wurde in der Tag-für-Tag-Schleife übersprungen, die -22h flossen nie in die Bilanz ein. Fix in `routes/employee.py`: Query um `clock_in: {"$ne": None}` erweitert → nur ECHTE offene Stempelungen skippen den Tag.

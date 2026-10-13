@@ -702,7 +702,7 @@ async def get_time_status(token: str = Query(...)):
     user = await _get_user(token)
     # Find open entry (clocked in but not out)
     entry = await db.time_entries.find_one(
-        {"user_id": user["id"], "clock_out": None},
+        {"user_id": user["id"], "clock_out": None, "clock_in": {"$ne": None}},
         {"_id": 0}
     )
     return {
@@ -724,7 +724,7 @@ async def get_time_presence(token: str = Query(...)):
     ).to_list(500)
     # Aktuell offene Time-Entries (eingestempelt)
     open_entries = await db.time_entries.find(
-        {"clock_out": None}, {"_id": 0, "user_id": 1, "clock_in": 1}
+        {"clock_out": None, "clock_in": {"$ne": None}}, {"_id": 0, "user_id": 1, "clock_in": 1}
     ).to_list(500)
     by_user = {e["user_id"]: e["clock_in"] for e in open_entries}
     presence = []
@@ -747,8 +747,10 @@ async def clock_in(token: str = Query(...), body: dict | None = None):
     """Clock in with GPS coordinates."""
     body = body or {}
     user = await _get_user(token)
-    # Check not already clocked in
-    existing = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    # Check not already clocked in. WICHTIG: clock_in != None, sonst blockieren
+    # Admin-Stundenkorrekturen (type=korrektur, clock_in=clock_out=None) das Einstempeln.
+    existing = await db.time_entries.find_one(
+        {"user_id": user["id"], "clock_out": None, "clock_in": {"$ne": None}})
     if existing:
         raise HTTPException(status_code=400, detail="Bereits eingestempelt")
 
@@ -1286,7 +1288,7 @@ async def force_clock_out(user_id: str, token: str = Query(...),
     if not _has_verwaltung(caller):
         raise HTTPException(status_code=403, detail="Nur Verwaltung")
     body = body or {}
-    query = {"user_id": user_id, "clock_out": None}
+    query = {"user_id": user_id, "clock_out": None, "clock_in": {"$ne": None}}
     if entry_id:
         query["id"] = entry_id
     entry = await db.time_entries.find_one(query)
@@ -1334,7 +1336,8 @@ async def clock_out(token: str = Query(...), body: dict | None = None):
     """Clock out with GPS coordinates. Auto-calculates overtime vs. schedule."""
     body = body or {}
     user = await _get_user(token)
-    entry = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    entry = await db.time_entries.find_one(
+        {"user_id": user["id"], "clock_out": None, "clock_in": {"$ne": None}})
     if not entry:
         raise HTTPException(status_code=400, detail="Nicht eingestempelt")
 
@@ -2120,7 +2123,7 @@ async def get_saldo_summary(user_id: str, token: str = Query(...)):
 
     # Offener Eintrag heute -> aus Tages-Bilanz ausklammern (siehe Recompute-Fix)
     open_entry = await db.time_entries.find_one(
-        {"user_id": user_id, "clock_out": None},
+        {"user_id": user_id, "clock_out": None, "clock_in": {"$ne": None}},
         {"_id": 0, "date": 1}
     )
     _open_date_str = (open_entry or {}).get("date") if open_entry else None
