@@ -20,6 +20,9 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Bugfix: Projektbericht – Material-Kachel scrollte über den Speichern-Button)
+- `ProjectReportFormPage.jsx`: Material-Kopfzeile war `sticky top-0 z-20` und lag damit über dem Seiten-Header (`z-10`). Fix: Header `z-30` + per `ResizeObserver` gemessene Header-Höhe als `top`-Offset der Material-Zeile (mobil umbricht der Titel → Header höher). Verifiziert Desktop + 390px.
+
 ### 2026-06 (Feature: M-Box Lichtmast-Fernbedienung – OPC UA / Siemens S7)
 - **Quelle**: ZIP der SPS-Firma (`M-Box_Webintegration.md` + Node-Dienst). Code 1:1 nach `backend/mbox_service/` übernommen (server.js, texte.js, Anleitung als `ANLEITUNG_SPS_FIRMA.md`). OPC-UA-Logik/Befehlslisten NICHT verändert (Vorgabe).
 - **Mehrmast-Architektur** (User-Wunsch): Gerätetyp `mbox` in der Geräteverwaltung (Felder `mbox_endpoint`, `mbox_security_mode/policy`, `mbox_user`, `mbox_password`, auto `mbox_port` ab 8101). `routes/mbox.py` startet pro Gerät einen Node-Kindprozess (Start beim Backend-Start, Neustart bei Konfigänderung/Crash mit 5-s-Drossel, Stop bei Löschen/außer Betrieb, Logs in `mbox_service/logs/`).

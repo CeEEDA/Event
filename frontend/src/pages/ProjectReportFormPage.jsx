@@ -39,6 +39,18 @@ export default function ProjectReportFormPage() {
   const orderName = searchParams.get("order_name") || "";
 
   const [saving, setSaving] = useState(false);
+  // Hoehe des Sticky-Headers messen, damit die Material-Kopfzeile darunter (nicht darueber) haftet
+  const headerRef = useRef(null);
+  const [headerH, setHeaderH] = useState(57);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const measure = () => setHeaderH(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [loading, setLoading] = useState(isEdit);
   const [locked, setLocked] = useState(false); // true if customer signed
 
@@ -226,7 +238,7 @@ export default function ProjectReportFormPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <div ref={headerRef} className="bg-white border-b border-gray-200 sticky top-0 z-30">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-gray-500 hover:text-fuchsia-600" data-testid="back-btn">
@@ -480,7 +492,7 @@ export default function ProjectReportFormPage() {
 
         {/* Section 4: Material */}
         <div className="bg-white rounded-lg border border-gray-200 p-4" data-testid="section-material">
-          <div className="flex items-center justify-between mb-3 sticky top-0 z-20 bg-white py-2 -mx-4 px-4 -mt-4 pt-4 border-b border-gray-100 rounded-t-lg">
+          <div style={{ top: headerH }} className="flex items-center justify-between mb-3 sticky z-10 bg-white py-2 -mx-4 px-4 -mt-4 pt-4 border-b border-gray-100 rounded-t-lg" data-testid="material-sticky-header">
             <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Wrench className="w-4 h-4 text-amber-500" /> Material / Artikel
               {material.length > 0 && (
