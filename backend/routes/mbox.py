@@ -476,7 +476,11 @@ async def mbox_pi_sync(device_id: str, body: dict):
     now = datetime.now(timezone.utc).isoformat()
     upd = {"mbox_pi_last_seen": now, "mbox_pi_playing": body.get("playing"), "mbox_pi_files": body.get("files") or [],
            "mbox_pi_version": body.get("version"), "mbox_pi_hostname": body.get("hostname")}
-    if body.get("volume") is not None:
+    if "audio_cards" in body:
+        upd["mbox_pi_audio_cards"] = body.get("audio_cards") or []
+    if "last_error" in body:
+        upd["mbox_pi_last_error"] = body.get("last_error")
+    if body.get("volume") is not None and device.get("mbox_pi_volume") is None:
         upd["mbox_pi_volume"] = body.get("volume")
     gps = body.get("gps") or {}
     if gps.get("fix") and gps.get("lat") is not None and gps.get("lon") is not None:
@@ -487,7 +491,31 @@ async def mbox_pi_sync(device_id: str, body: dict):
     pending = await db.mbox_pi_commands.find({"device_id": device_id, "status": "pending"}, {"_id": 0}).sort("created_at", 1).to_list(20)
     if pending:
         await db.mbox_pi_commands.update_many({"id": {"$in": [c["id"] for c in pending]}}, {"$set": {"status": "sent", "sent_at": now}})
-    return {"pending_commands": pending, "audio_manifest": mbox_pi.audio_manifest(), "server_time": now}
+    return {"pending_commands": pending, "audio_manifest": mbox_pi.audio_manifest(), "server_time": now,
+            "config": {"audio_device": device.get("mbox_pi_audio_device") or "", "volume": device.get("mbox_pi_volume")},
+            "script_sha256": mbox_pi.pi_script_sha()}
+
+
+@router.get("/pi/{device_id}/script")
+async def mbox_pi_script(device_id: str, api_key: str = ""):
+    """Aktuelles Sync-Skript fuer das Selbst-Update des Pi."""
+    device = await _device(device_id)
+    mbox_pi.verify_pi_key(device, api_key)
+    from fastapi.responses import Response
+    return Response(content=mbox_pi.pi_script_bytes(), media_type="text/x-python")
+
+
+@router.post("/{device_id}/audio/device")
+async def mbox_audio_device(device_id: str, body: dict, user: dict = Depends(get_user)):
+    """ALSA-Ausgabegeraet des Pi aendern (leer = automatisch: Standard, dann USB-Karten)."""
+    await _allow(user, "bedienen", device_id)
+    device = await _device(device_id)
+    dev = str(body.get("audio_device") or "").strip()[:60]
+    if dev and not re.match(r"^[A-Za-z0-9_:,.=-]+$", dev):
+        raise HTTPException(status_code=400, detail="Ungueltiger Geraetename")
+    await db.devices.update_one({"id": device_id}, {"$set": {"mbox_pi_audio_device": dev, "mbox_pi_last_error": None}})
+    await _audit(device, user, "audio/device", {"audio_device": dev or "auto"}, {"ok": True})
+    return {"ok": True, "audio_device": dev}
 
 
 @router.post("/pi/{device_id}/command-result")

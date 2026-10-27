@@ -90,10 +90,33 @@ export function AudioPiTab({ deviceId, darf, isAdmin, kunde }) {
       </Karte>
 
       <Karte titel="Pi im Lichtmast" testId="mbox-audio-pi">
+        {pi.last_error && (
+          <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 break-words" data-testid="mbox-audio-last-error">
+            <b>Letzter Audio-Fehler auf dem Pi:</b> {pi.last_error}
+          </p>
+        )}
+        {pi.configured && pi.version && !pi.script_current && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3" data-testid="mbox-audio-old-script">
+            Pi-Skript v{pi.version} ist veraltet – bitte das Setup auf dem Pi einmal neu einspielen (danach aktualisiert sich der Pi selbst).
+          </p>
+        )}
         <Tab>
           <Zeile label="Verbindung"><Dot on={pi.online} farbe="gruen" />{pi.configured ? (pi.online ? "online" : "offline") : "nicht eingerichtet"}</Zeile>
           <Zeile label="Letzte Meldung">{fmtTime(pi.last_seen)}</Zeile>
-          <Zeile label="Wiedergabe">{playing ? `${playing.file}` : "–"}</Zeile>
+          <Zeile label="Wiedergabe">{playing ? `${playing.file}${playing.device ? ` → ${playing.device}` : ""}` : "–"}</Zeile>
+          {!kunde && (
+            <Zeile label="Ausgabegerät">
+              {darf ? (
+                <select value={pi.audio_device || ""} disabled={!!busy} onChange={e => cmd(`Ausgabegerät: ${e.target.value || "automatisch"}`, () => api.post(`/mbox/${deviceId}/audio/device`, { audio_device: e.target.value }))}
+                  className="text-sm border border-gray-200 rounded-md px-2 py-1 bg-white max-w-full" data-testid="mbox-audio-device-select">
+                  <option value="">automatisch (Standard, dann USB)</option>
+                  {(pi.audio_cards || []).map(c => <option key={c.device} value={c.device}>{c.device} – {c.name}</option>)}
+                  {pi.audio_device && !(pi.audio_cards || []).some(c => c.device === pi.audio_device) && <option value={pi.audio_device}>{pi.audio_device}</option>}
+                </select>
+              ) : (pi.audio_device || "automatisch")}
+              {pi.configured && pi.online && (pi.audio_cards || []).length === 0 && pi.script_current && <span className="block text-[11px] text-red-600 mt-1">Keine Soundkarte erkannt (aplay -l leer) – USB-Soundkarte prüfen.</span>}
+            </Zeile>
+          )}
           <Zeile label="GPS (USB-Antenne)">
             {pi.gps?.fix ? (
               <span className="inline-flex items-center gap-1"><Satellite className="w-3.5 h-3.5 text-emerald-600" />{pi.gps.lat.toFixed(5)}, {pi.gps.lon.toFixed(5)}{pi.gps.sats != null ? ` · ${pi.gps.sats} Sat.` : ""}</span>

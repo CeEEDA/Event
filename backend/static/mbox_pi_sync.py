@@ -13,6 +13,7 @@ Log:           sudo journalctl -u mbox_pi -f
 """
 import configparser
 import hashlib
+import re
 import json
 import logging
 import os
@@ -28,7 +29,7 @@ import requests
 CONF_PATH = "/etc/mbox_pi.conf"
 AUDIO_DIR = "/opt/mbox_audio"
 POLL_SEC = 3
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mbox_pi")
@@ -94,6 +95,19 @@ def read_gps(timeout=4.0):
 
 # ---------------- Audio ----------------
 
+def list_cards():
+    """ALSA-Karten per 'aplay -l' -> [{"card":1,"name":"USB Audio","device":"plughw:1,0"}]"""
+    out = []
+    try:
+        r = subprocess.run(["aplay", "-l"], capture_output=True, text=True, timeout=5)
+        for m in re.finditer(r"^card (\d+): ([^\[]+)\[([^\]]+)\], device (\d+)", r.stdout, re.M):
+            out.append({"card": int(m.group(1)), "name": m.group(3).strip(), "id": m.group(2).strip(),
+                        "device": f"plughw:{m.group(1)},{m.group(4)}"})
+    except Exception as e:
+        log.debug(f"aplay -l: {e}")
+    return out
+
+
 class Player:
     def __init__(self, conf):
         self.conf = conf
@@ -102,14 +116,22 @@ class Player:
         self.since = None
         self.loop = False
         self.lock = threading.Lock()
+        self.last_error = None
+        self.used_device = None
+        self._err_file = None
 
     def set_volume(self, pct):
         pct = max(0, min(100, int(pct)))
-        for ctl in ("PCM", "Master", "Speaker", "Headphone"):
+        dev = self.conf.get("audio_device") or ""
+        ctl_dev = ""
+        m = re.match(r"^(?:plug)?hw:(\d+)", dev)
+        if m:
+            ctl_dev = f"hw:{m.group(1)}"
+        for ctl in ("PCM", "Master", "Speaker", "Headphone", "Digital"):
             try:
                 args = ["amixer"]
-                if self.conf.get("audio_device"):
-                    args += ["-D", self.conf["audio_device"]]
+                if ctl_dev:
+                    args += ["-D", ctl_dev]
                 r = subprocess.run(args + ["sset", ctl, f"{pct}%"], capture_output=True, timeout=5)
                 if r.returncode == 0:
                     return True
@@ -117,25 +139,55 @@ class Player:
                 pass
         return False
 
+    def _candidates(self):
+        """Konfiguriertes Geraet zuerst, sonst Standard + jede gefundene Karte (USB zuerst)."""
+        if self.conf.get("audio_device"):
+            return [self.conf["audio_device"]]
+        cards = list_cards()
+        usb = [c["device"] for c in cards if "usb" in (c["name"] + c["id"]).lower()]
+        rest = [c["device"] for c in cards if c["device"] not in usb]
+        return [""] + usb + rest
+
+    def _try_start(self, path, loop, device):
+        cmd = ["mpg123", "-q"]
+        if device:
+            cmd += ["-a", device]
+        if loop:
+            cmd += ["--loop", "-1"]
+        cmd.append(path)
+        import tempfile
+        err = tempfile.TemporaryFile()
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err)
+        except FileNotFoundError:
+            return None, "mpg123 nicht installiert"
+        time.sleep(1.5)
+        if proc.poll() is not None:
+            err.seek(0)
+            msg = err.read().decode("utf-8", "replace").strip().splitlines()
+            return None, (msg[-1] if msg else f"mpg123 beendet mit Code {proc.returncode}")
+        self._err_file = err
+        return proc, None
+
     def play(self, filename, loop=False):
         path = os.path.join(AUDIO_DIR, os.path.basename(filename))
         if not os.path.exists(path):
             return False, f"Datei fehlt auf dem Pi: {filename}"
         with self.lock:
             self._stop_locked()
-            cmd = ["mpg123", "-q"]
-            if self.conf.get("audio_device"):
-                cmd += ["-a", self.conf["audio_device"]]
-            if loop:
-                cmd += ["--loop", "-1"]
-            cmd.append(path)
-            try:
-                self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except FileNotFoundError:
-                return False, "mpg123 nicht installiert"
-            self.file, self.since, self.loop = os.path.basename(path), time.time(), loop
-        log.info(f"Audio START {self.file} loop={loop}")
-        return True, "gestartet"
+            fehler = []
+            for dev in self._candidates():
+                proc, err = self._try_start(path, loop, dev)
+                if proc:
+                    self.proc, self.used_device = proc, (dev or "default")
+                    self.file, self.since, self.loop = os.path.basename(path), time.time(), loop
+                    self.last_error = None
+                    log.info(f"Audio START {self.file} loop={loop} device={self.used_device}")
+                    return True, f"gestartet ({self.used_device})"
+                fehler.append(f"{dev or 'default'}: {err}")
+                log.warning(f"Audio Start fehlgeschlagen auf {dev or 'default'}: {err}")
+            self.last_error = " | ".join(fehler)[:400]
+            return False, self.last_error or "kein Audiogeraet gefunden"
 
     def _stop_locked(self):
         if self.proc and self.proc.poll() is None:
@@ -159,8 +211,16 @@ class Player:
     def state(self):
         with self.lock:
             if self.proc and self.proc.poll() is None:
-                return {"file": self.file, "since": self.since, "loop": self.loop}
+                return {"file": self.file, "since": self.since, "loop": self.loop, "device": self.used_device}
             if self.proc is not None:
+                if self.proc.returncode not in (0, None, -15) and self._err_file:
+                    try:
+                        self._err_file.seek(0)
+                        tail = self._err_file.read().decode("utf-8", "replace").strip().splitlines()
+                        self.last_error = f"mpg123 abgebrochen (Code {self.proc.returncode}): {tail[-1] if tail else ''}"[:400]
+                        log.warning(self.last_error)
+                    except Exception:
+                        pass
                 self.proc, self.file, self.since, self.loop = None, None, None, False
             return None
 
@@ -207,6 +267,29 @@ def sync_files(conf, manifest, have):
                 pass
 
 
+# ---------------- Selbst-Update ----------------
+
+def self_update(conf, want_sha):
+    """Portal liefert SHA-256 des aktuellen Skripts; bei Abweichung laden und neu starten."""
+    try:
+        me = os.path.abspath(__file__)
+        with open(me, "rb") as f:
+            have = hashlib.sha256(f.read()).hexdigest()
+        if not want_sha or have == want_sha:
+            return
+        r = requests.get(f"{conf['api_url']}/mbox/pi/{conf['device_id']}/script", params={"api_key": conf["device_key"]}, timeout=30)
+        if r.status_code != 200 or hashlib.sha256(r.content).hexdigest() != want_sha:
+            log.warning(f"Script-Update: HTTP {r.status_code} / Hash passt nicht")
+            return
+        with open(me + ".new", "wb") as f:
+            f.write(r.content)
+        os.replace(me + ".new", me)
+        log.info("Skript aktualisiert - Neustart")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        log.warning(f"Script-Update: {e}")
+
+
 # ---------------- Hauptschleife ----------------
 
 def main():
@@ -215,6 +298,7 @@ def main():
     player.set_volume(conf["volume"])
     log.info(f"M-Box Pi Sync v{VERSION} gestartet -> {conf['api_url']} ({conf['device_id'][:8]}...)")
     last_gps, last_gps_t, last_files_t, have = None, 0, 0, {}
+    cards, last_cards_t = [], 0
     while True:
         t0 = time.time()
         try:
@@ -222,6 +306,8 @@ def main():
                 last_gps, last_gps_t = read_gps(), t0
             if t0 - last_files_t > 60 or not have:
                 have, last_files_t = local_files(), t0
+            if t0 - last_cards_t > 60:
+                cards, last_cards_t = list_cards(), t0
             payload = {
                 "api_key": conf["device_key"],
                 "version": VERSION,
@@ -229,6 +315,9 @@ def main():
                 "playing": player.state(),
                 "files": sorted(have.keys()),
                 "volume": conf["volume"],
+                "audio_device": conf.get("audio_device") or "",
+                "audio_cards": cards,
+                "last_error": player.last_error,
                 "hostname": socket.gethostname(),
             }
             r = requests.post(f"{conf['api_url']}/mbox/pi/{conf['device_id']}/sync", json=payload, timeout=15)
@@ -236,6 +325,15 @@ def main():
                 log.warning(f"Sync HTTP {r.status_code}: {r.text[:200]}")
             else:
                 data = r.json()
+                cfg = data.get("config") or {}
+                if "audio_device" in cfg and (cfg.get("audio_device") or "") != (conf.get("audio_device") or ""):
+                    conf["audio_device"] = cfg.get("audio_device") or ""
+                    log.info(f"Audiogeraet vom Portal: '{conf['audio_device'] or 'auto'}'")
+                    player.set_volume(conf["volume"])
+                if cfg.get("volume") is not None and int(cfg["volume"]) != conf["volume"]:
+                    conf["volume"] = int(cfg["volume"])
+                    player.set_volume(conf["volume"])
+                self_update(conf, data.get("script_sha256"))
                 for cmd in data.get("pending_commands", []):
                     ok, msg = False, "unbekannter Befehl"
                     typ, p = cmd.get("command"), cmd.get("params") or {}

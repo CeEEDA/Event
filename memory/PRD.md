@@ -20,6 +20,12 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Bugfix/Härtung: Pi spielt Testansage nicht – mpg123 bricht sofort ab)
+- Befund am echten Pi EED-M-Box001 (M-Box_001): Sync/Download/Befehl ok, „gestartet" gemeldet, aber 3 s später `playing=None` → mpg123 beendet sofort (falsches/fehlendes ALSA-Standardgerät); Fehler wurde verschluckt (stderr → DEVNULL).
+- `static/mbox_pi_sync.py` **v1.1.0**: stderr erfassen, 1,5 s Startprüfung, **Karten-Fallback** (Standard → USB-Karten → Rest aus `aplay -l`), meldet `audio_cards`, `last_error`, genutztes Gerät; `amixer -D hw:N`; **Selbst-Update** über `script_sha256` im Sync + `GET /api/mbox/pi/{id}/script`; Konfig (`audio_device`, `volume`) kommt live vom Portal.
+- Backend: `POST /api/mbox/{id}/audio/device` (Ausgabegerät setzen), `pi_state` mit `audio_cards/last_error/script_current`. Frontend Audio-Reiter: Fehlerbox, Hinweis bei veraltetem Skript, Dropdown Ausgabegerät.
+- **Einmalig nötig**: Pi mit v1.0.0 kann sich noch nicht selbst aktualisieren → Setup auf dem Pi einmal neu einspielen.
+
 ### 2026-06 (Ausbaustufe: Audio-Durchsage via Pi + Kunden-Zuweisung per Umkreis)
 - **Pi im Lichtmast** (DSE-5510-Muster): `routes/mbox_pi.py` + `static/mbox_pi_sync.py`. Admin generiert in der Geräteverwaltung ein Setup-Skript mit Geräteschlüssel (`mbox_pi_key_hash`), Pi pollt `POST /api/mbox/pi/{id}/sync` alle 3 s (GPS via gpsd, Abspielstatus, Dateien), holt Befehle (`mbox_pi_commands`: play/stop/volume/sync_files) + Audio-Manifest (`mbox_service/audio/`, aktuell `testansage.mp3`, SHA-256-Abgleich), meldet Ergebnisse. Pi-GPS schreibt `latitude/longitude` des Geräts.
 - **Reiter „Audio"** (rechts neben Diagnose, `AudioPiTab.jsx`): Durchsage abspielen/stoppen, Pi-Status (online < 20 s), GPS, letzte Befehle, Lautstärke (nur Mitarbeiter/Admin).

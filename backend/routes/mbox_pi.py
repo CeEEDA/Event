@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import math
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,9 +97,26 @@ def pi_state(device: dict) -> dict:
         "gps": device.get("mbox_pi_gps"),
         "files": device.get("mbox_pi_files") or [],
         "volume": device.get("mbox_pi_volume"),
+        "audio_device": device.get("mbox_pi_audio_device") or "",
+        "audio_cards": device.get("mbox_pi_audio_cards") or [],
+        "last_error": device.get("mbox_pi_last_error"),
         "version": device.get("mbox_pi_version"),
         "hostname": device.get("mbox_pi_hostname"),
+        "script_current": device.get("mbox_pi_version") == pi_script_version(),
     }
+
+
+def pi_script_bytes() -> bytes:
+    return PI_SCRIPT_PATH.read_bytes()
+
+
+def pi_script_sha() -> str:
+    return hashlib.sha256(pi_script_bytes()).hexdigest()
+
+
+def pi_script_version() -> str:
+    m = re.search(r'^VERSION = "([^"]+)"', PI_SCRIPT_PATH.read_text(encoding="utf-8"), re.M)
+    return m.group(1) if m else ""
 
 
 # ---------------- Setup-Skript ----------------
