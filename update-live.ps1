@@ -179,6 +179,20 @@ if (-not $SkipBackend) {
         pip install -r $ReqFile --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ 2>&1 | Tee-Object -FilePath $LogFile -Append
     }
     Log "  Python-Pakete OK"
+
+    # M-Box Lichtmast: Node-Abhaengigkeiten des OPC-UA-Dienstes (wird vom Backend pro Geraet gestartet)
+    $MBoxDir = Join-Path $BackendDir "mbox_service"
+    if (Test-Path (Join-Path $MBoxDir "package.json")) {
+        if (Get-Command npm -ErrorAction SilentlyContinue) {
+            Log "  M-Box: npm install (mbox_service)..."
+            Push-Location $MBoxDir
+            npm install --no-audit --no-fund --omit=dev 2>&1 | Tee-Object -FilePath $LogFile -Append
+            Pop-Location
+            Log "  M-Box Node-Pakete OK"
+        } else {
+            Log "  WARNUNG: npm nicht gefunden - M-Box Dienst kann nicht starten (Node.js LTS >= 20 installieren)" "Yellow"
+        }
+    }
 } else {
     Log "[4/6] Backend uebersprungen (-SkipBackend)" "DarkGray"
 }

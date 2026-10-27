@@ -932,9 +932,61 @@ function DseGatewaySetupSection({ controller, serialNumber, formData, update, de
   );
 }
 
+function MBoxConnectionSection({ formData, update, editing }) {
+  const navigate = useNavigate();
+  const inp = "w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-fuchsia-500 bg-white";
+  return (
+    <div className="border-t border-gray-100 pt-4 space-y-4" data-testid="mbox-connection-section">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+          <Lightbulb className="w-4 h-4 text-fuchsia-600" />
+          M-Box Steuerung (Siemens S7, OPC UA)
+        </h3>
+        {editing && (
+          <Button type="button" size="sm" variant="outline" onClick={() => navigate(`/mbox/${editing.id}`)} data-testid="mbox-open-remote-btn">
+            Fernbedienung öffnen
+          </Button>
+        )}
+      </div>
+      <div>
+        <Label className="text-gray-700 text-sm">SPS-Adresse (OPC-UA-Endpunkt) *</Label>
+        <Input value={formData.mbox_endpoint} onChange={(e) => update("mbox_endpoint", e.target.value)} placeholder="opc.tcp://192.168.0.100:4840" className="mt-1 font-mono" data-testid="mbox-endpoint-input" />
+        <p className="text-[10px] text-gray-400 mt-1">Der Server muss die SPS auf TCP-Port 4840 erreichen (PowerShell: <code>Test-NetConnection &lt;IP&gt; -Port 4840</code>).</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <Label className="text-gray-700 text-sm">Sicherheitsmodus</Label>
+          <select value={formData.mbox_security_mode} onChange={(e) => update("mbox_security_mode", e.target.value)} className={inp} data-testid="mbox-security-mode-select">
+            <option value="None">Keine Sicherheit (Test)</option>
+            <option value="Sign">Sign</option>
+            <option value="SignAndEncrypt">Sign &amp; Encrypt (Betrieb)</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-gray-700 text-sm">Sicherheitsrichtlinie</Label>
+          <select value={formData.mbox_security_policy} onChange={(e) => update("mbox_security_policy", e.target.value)} className={inp} data-testid="mbox-security-policy-select">
+            <option value="None">None (Test)</option>
+            <option value="Basic256Sha256">Basic256Sha256 (Betrieb)</option>
+          </select>
+        </div>
+        <div>
+          <Label className="text-gray-700 text-sm">OPC-UA-Benutzer</Label>
+          <Input value={formData.mbox_user} onChange={(e) => update("mbox_user", e.target.value)} placeholder="leer = Gastzugang" className="mt-1" data-testid="mbox-user-input" />
+        </div>
+        <div>
+          <Label className="text-gray-700 text-sm">OPC-UA-Passwort</Label>
+          <Input type="password" value={formData.mbox_password} onChange={(e) => update("mbox_password", e.target.value)} className="mt-1" data-testid="mbox-password-input" />
+        </div>
+      </div>
+      {editing?.mbox_port && <p className="text-[10px] text-gray-400">Interner Dienst-Port: {editing.mbox_port} (nur localhost, wird automatisch verwaltet)</p>}
+    </div>
+  );
+}
+
 const DEVICE_TYPES = [
   { value: "stromerzeuger", label: "Stromerzeuger", icon: Zap },
   { value: "lichtmast", label: "Lichtmast", icon: Lightbulb },
+  { value: "mbox", label: "M-Box", icon: Lightbulb },
   { value: "messkoffer", label: "Messkoffer", icon: Settings },
   { value: "kirmeskiste", label: "Kirmeskiste", icon: Settings },
   { value: "verteiler", label: "Verteiler", icon: Settings },
@@ -998,6 +1050,11 @@ const EMPTY_FORM = {
   next_inspection_date: "",
   latitude: "",
   longitude: "",
+  mbox_endpoint: "",
+  mbox_security_mode: "None",
+  mbox_security_policy: "None",
+  mbox_user: "",
+  mbox_password: "",
 };
 
 function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, isAdmin, allDevices }) {
@@ -1668,6 +1725,11 @@ function DeviceModal({ open, onClose, formData, setFormData, onSave, editing, is
             </>
           )}
 
+          {/* M-Box Lichtmast: SPS-Verbindung (OPC UA) */}
+          {formData.device_type === "mbox" && (
+            <MBoxConnectionSection formData={formData} update={update} editing={editing} />
+          )}
+
           {/* Messkoffer-specific fields: Pi connection + Setup */}
           {(formData.device_type === "messkoffer" || formData.device_type === "kirmeskiste") && (
             <>
@@ -2053,6 +2115,11 @@ export default function DeviceManagementPage() {
       dse_module_uid: device.dse_module_uid || "",
       dse_gateway_uid: device.dse_gateway_uid || "",
       kirmeskiste_variant: device.kirmeskiste_variant || "standard",
+      mbox_endpoint: device.mbox_endpoint || "",
+      mbox_security_mode: device.mbox_security_mode || "None",
+      mbox_security_policy: device.mbox_security_policy || "None",
+      mbox_user: device.mbox_user || "",
+      mbox_password: device.mbox_password || "",
     });
     setModalOpen(true);
   };

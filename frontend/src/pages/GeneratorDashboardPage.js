@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { MapContainer, Marker, Popup, Tooltip, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
+import { MBoxSection } from "../components/mbox/MBoxSection";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -367,6 +368,9 @@ export default function GeneratorDashboardPage() {
             />
           </div>
         </div>
+
+        {/* M-Box Lichtmasten (Fernbedienung per OPC UA) */}
+        <MBoxSection search={search} />
 
         {/* Map View */}
         {viewMode === "map" && (

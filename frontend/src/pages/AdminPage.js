@@ -125,6 +125,8 @@ export default function AdminPage() {
         fileshare: true,
         serviceplan: true,
         adr: false,
+        mbox_lesen: false,
+        mbox_bedienen: false,
       }
     }
   });
@@ -464,6 +466,8 @@ export default function AdminPage() {
           fileshare: user.apps?.modules?.fileshare !== false,
           serviceplan: user.apps?.modules?.serviceplan !== false,
           adr: !!user.apps?.modules?.adr,
+          mbox_lesen: !!user.apps?.modules?.mbox_lesen,
+          mbox_bedienen: !!user.apps?.modules?.mbox_bedienen,
         }
       }
     });

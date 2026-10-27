@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M-Box Fernbedienung</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; background: #f3f5f8; color: #1a1a1a; font-size: 15px; }
+  header { background: #1F4E78; color: #fff; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; }
+  header .rechts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; }
+  .pill { padding: 2px 10px; border-radius: 12px; background: rgba(255,255,255,.15); white-space: nowrap; }
+  .pill.ok { background: #2e7d32; } .pill.warn { background: #b26a00; } .pill.err { background: #c62828; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 16px 0; max-width: 1100px; margin: 0 auto; }
+  nav button { border: 1px solid #c9d1db; border-bottom: none; border-radius: 8px 8px 0 0; background: #e6eaef; padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  nav button.aktiv { background: #fff; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; }
+  .seite { display: none; background: #fff; border: 1px solid #c9d1db; border-radius: 0 8px 8px 8px; padding: 16px; }
+  .seite.aktiv { display: block; }
+  .raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .karte { border: 1px solid #d6dbe2; border-radius: 10px; padding: 14px; }
+  h2 { font-size: 16px; margin: 0 0 10px 0; color: #1F4E78; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  button.b { font-size: 14px; padding: 9px 14px; border-radius: 8px; border: 1px solid #9aa5b1; background: #fff; cursor: pointer; }
+  button.b:active { transform: scale(0.98); }
+  button.haupt { background: #1F4E78; color: #fff; border-color: #1F4E78; }
+  button.an { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+  button.laeuft { background: #f2c94c; border-color: #d4a017; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 5px 4px; border-bottom: 1px solid #eef0f3; text-align: left; vertical-align: top; }
+  td:first-child { color: #555; }
+  th { font-size: 13px; color: #555; font-weight: 600; }
+  .lampen { display: flex; gap: 10px; margin: 6px 0 10px; }
+  .lampe { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #9aa5b1; background: #e4e7eb; font-weight: 600; cursor: pointer; position: relative; }
+  .lampe.an { background: #f2c94c; border-color: #d4a017; }
+  .lampe.aus_gewaehlt::after { content: ""; position: absolute; right: -2px; top: -2px; width: 10px; height: 10px; border-radius: 50%; background: #9aa5b1; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #d5d9df; vertical-align: -1px; }
+  .dot.gruen { background: #2e7d32; } .dot.gelb { background: #f2c94c; } .dot.rot { background: #c62828; }
+  .balken { height: 14px; background: #e4e7eb; border-radius: 7px; overflow: hidden; margin-top: 3px; }
+  .balken div { height: 100%; background: #1F4E78; }
+  .balken div.warn { background: #d4a017; } .balken div.err { background: #c62828; }
+  .hinweis { padding: 8px 12px; border-radius: 8px; margin: 0 0 12px; }
+  .hinweis.warn { background: #fff4d6; border: 1px solid #e8c766; }
+  .hinweis.err { background: #fde3e3; border: 1px solid #e6a1a1; }
+  .klein { font-size: 13px; color: #555; }
+  .badge { font-size: 12px; padding: 1px 7px; border-radius: 8px; background: #e4e7eb; }
+  .badge.S { background: #fde3e3; color: #8b1a1a; } .badge.I { background: #e3eefb; color: #1F4E78; }
+  input[type=number], input[type=text] { width: 90px; padding: 5px 6px; font-size: 14px; border: 1px solid #9aa5b1; border-radius: 6px; }
+  .einst { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 8px; align-items: center; }
+  .uhr td { font-size: 13px; white-space: nowrap; }
+  h2.titel { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  input[type=time], input[type=date], select { padding: 4px 6px; font-size: 14px; border: 1px solid #9aa5b1; border-radius: 6px; }
+  #k_uhr_edit input[type=time] { width: 96px; }
+  #k_uhr_edit input:disabled { opacity: .45; }
+  #k_woche tr.waehlbar { cursor: pointer; } #k_woche tr.gewaehlt td { background: #e3eefb; }
+  button.klein { font-size: 12px; padding: 3px 9px; border-radius: 6px; border: 1px solid #9aa5b1; background: #fff; cursor: pointer; }
+  .geaendert { color: #b26a00; font-size: 13px; }
+  .io { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px; font-size: 13px; }
+  #meldung { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 16px; border-radius: 8px; font-size: 14px; display: none; max-width: 90vw; }
+</style>
+<script src="texte.js"></script>
+</head>
+<body>
+<header>
+  <strong>M-Box Fernbedienung</strong>
+  <div class="rechts">
+    <span id="h_zeit" class="pill">--:--</span>
+    <span id="h_stoerung" class="pill">Störungen</span>
+    <span id="h_fern" class="pill">Fernbedienung</span>
+    <span id="h_verbindung" class="pill">verbinde …</span>
+  </div>
+</header>
+<nav id="tabs">
+  <button data-seite="uebersicht" class="aktiv">Übersicht</button>
+  <button data-seite="automatik">Automatik</button>
+  <button data-seite="audio">Steckdosen &amp; Audio</button>
+  <button data-seite="uhr">Zeitschaltuhr</button>
+  <button data-seite="meldungen">Meldungen &amp; Protokoll</button>
+  <button data-seite="service">Service</button>
+  <button data-seite="diagnose">Diagnose</button>
+</nav>
+<main>
+  <div id="hinweise" style="margin-top:12px"></div>
+
+  <section class="seite aktiv" id="s_uebersicht">
+    <div class="raster">
+      <div class="karte"><h2>Licht</h2><div id="k_licht"></div>
+        <div class="buttons">
+          <button class="b haupt" onclick="befehl('Schnellstart')">Schnellstart</button>
+          <button class="b" onclick="befehl('Schnellstop')">Schnellstop</button>
+          <button class="b" onclick="befehl('Lampen_Ein')">Lampen ein</button>
+          <button class="b" onclick="befehl('Lampen_Aus')">Lampen aus</button>
+        </div>
+        <p class="klein">Lampe antippen = einzeln ein/aus. Schnellstart startet im Generatorbetrieb zuerst den Motor.</p>
+      </div>
+      <div class="karte"><h2>Versorgung &amp; Generator</h2><div id="k_energie"></div>
+        <div class="buttons">
+          <button class="b" id="b_netz" onclick="befehl('Netzbetrieb')">Netzbetrieb</button>
+          <button class="b" id="b_gen" onclick="befehl('Generatorbetrieb')">Generatorbetrieb</button>
+        </div>
+        <div class="buttons">
+          <button class="b" onclick="befehl('Gen_Start')">Generator start</button>
+          <button class="b" onclick="befehl('Gen_Stop')">Generator stop</button>
+        </div>
+      </div>
+      <div class="karte"><h2 class="titel">Netzüberwachung <button class="b" id="b_nub" onclick="befehl('Netzueberwachung_Umschalten')">einschalten</button></h2>
+        <div id="k_nub"></div>
+        <p class="klein">Wirkt nur im Netzbetrieb: Fällt das Netz aus, startet der Generator und alle Lampen gehen an. Ist das Netz wieder stabil da, geht es nach der Rückkehrzeit zurück in Wartestellung.</p>
+      </div>
+      <div class="karte"><h2>Tank &amp; Messwerte</h2><div id="k_mess"></div></div>
+    </div>
+  </section>
+
+  <section class="seite" id="s_automatik">
+    <div class="raster">
+      <div class="karte"><h2 class="titel">Automatik-Quellen <button class="b" id="b_auto_akt" onclick="befehl('Auto_Umschalten')">Automatik aktivieren</button></h2>
+        <p class="klein">Wirken nur in Betriebsart Auto. Wer zuerst „an“ bzw. „aus“ sagt, schaltet. Nach SPS-Neustart sind alle Quellen abgewählt.</p>
+        <div class="buttons">
+          <button class="b" id="b_qd" onclick="befehl('Auto_Daemmerung_Umschalten')">Dämmerung</button>
+          <button class="b" id="b_qu" onclick="befehl('Auto_Uhr_Umschalten')">Zeitschaltuhr</button>
+          <button class="b" id="b_qa" onclick="befehl('Auto_Astro_Umschalten')">Astro</button>
+        </div>
+        <div id="k_auto"></div>
+      </div>
+      <div class="karte"><h2>Astro-Uhr</h2><div id="k_astro"></div>
+        <h2 style="margin-top:14px">GPS wie Raspberry Pi senden</h2>
+        <div class="buttons" style="align-items:center">
+          <label>Breite <input type="text" id="gps_breite" value="53.55"></label>
+          <label>Länge <input type="text" id="gps_laenge" value="9.99"></label>
+          <label><input type="checkbox" id="gps_fix" checked> Fix</label>
+          <button class="b" onclick="gps()">Senden</button>
+        </div>
+      </div>
+      <div class="karte"><h2>Einstellungen</h2>
+        <div class="einst">
+          <span>Astro: Ein [min nach Untergang]</span><input type="number" id="e_DB_Astro.Versatz_Ein" min="-120" max="120"><button class="b" onclick="einstellen('DB_Astro.Versatz_Ein')">Setzen</button>
+          <span>Astro: Aus [min nach Aufgang]</span><input type="number" id="e_DB_Astro.Versatz_Aus" min="-120" max="120"><button class="b" onclick="einstellen('DB_Astro.Versatz_Aus')">Setzen</button>
+          <span>Dämmerung: Ein unter [Lux]</span><input type="number" id="e_DB_Parameter.Daemmerung_Ein" min="10" max="400"><button class="b" onclick="einstellen('DB_Parameter.Daemmerung_Ein')">Setzen</button>
+          <span>Dämmerung: Hysterese [Lux]</span><input type="number" id="e_DB_Parameter.Daemmerung_Hysterese" min="5" max="100"><button class="b" onclick="einstellen('DB_Parameter.Daemmerung_Hysterese')">Setzen</button>
+        </div>
+        <p class="klein">Der graue Wert im Feld ist der aktuelle Wert. Schreiben geht nur bei „Fernbedienung erlaubt“.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="seite" id="s_audio">
+    <div class="raster">
+      <div class="karte"><h2>Steckdosen</h2><div class="buttons" id="k_steckdosen"></div></div>
+      <div class="karte"><h2>Stumpfelbox / Audio</h2><div id="k_audio"></div></div>
+    </div>
+  </section>
+
+  <section class="seite" id="s_uhr">
+    <div class="raster">
+      <div class="karte"><h2>Wochenprogramm bearbeiten</h2>
+        <div class="buttons" id="k_uhr_tage"></div>
+        <table class="uhr" id="k_uhr_edit"></table>
+        <div class="buttons">
+          <button class="b haupt" id="b_uhr_tag" onclick="uhrSpeichern('tag')">Speichern</button>
+          <button class="b" onclick="uhrSpeichern('alle')">Auf alle Tage</button>
+        </div>
+        <div class="buttons" style="align-items:center">
+          <button class="b" onclick="uhrSpeichern('auswahl')">Auf ausgewählte Tage:</button>
+          <span id="k_uhr_kopieren"></span>
+        </div>
+        <p class="klein">Jedes Paar hat einen Ein- und einen Aus-Schaltpunkt, beide einzeln abschaltbar. Liegt „Aus“ vor „Ein“, ist der Aus-Punkt am Folgetag. Es gilt immer der zuletzt erreichte Schaltpunkt.</p>
+      </div>
+      <div class="karte"><h2>Datums-Schaltzeiten</h2>
+        <table id="k_datum"></table>
+        <h2 style="margin-top:14px">Neue Datums-Schaltzeit</h2>
+        <div class="buttons" style="align-items:center">
+          <input type="date" id="ud_datum">
+          <input type="time" id="ud_zeit">
+          <select id="ud_art"><option value="1">Ein</option><option value="0">Aus</option></select>
+          <button class="b" onclick="datumHinzu()">Hinzufügen</button>
+        </div>
+        <p class="klein">Eine fällige Datums-Schaltzeit übersteuert das Wochenprogramm bis zum nächsten Schaltpunkt der Woche und wird danach automatisch gelöscht. Max. 20 Einträge.</p>
+      </div>
+    </div>
+    <div class="karte" style="margin-top:14px"><h2>Wochenübersicht</h2>
+      <div style="overflow-x:auto"><table class="uhr" id="k_woche"></table></div>
+      <p class="klein">Zeile antippen, um den Tag zu bearbeiten.</p>
+    </div>
+  </section>
+
+  <section class="seite" id="s_meldungen">
+    <div class="karte"><h2>Anstehende Meldungen</h2><div id="k_meldungen"></div>
+      <div class="buttons"><button class="b haupt" onclick="befehl('Quittieren')">Quittieren</button></div>
+    </div>
+    <div class="karte" style="margin-top:14px"><h2>Ereignisprotokoll (neueste 30)</h2><table id="k_protokoll"></table></div>
+  </section>
+
+  <section class="seite" id="s_service">
+    <div class="raster">
+      <div class="karte"><h2>Zähler &amp; Wartung</h2><div id="k_zaehler"></div>
+        <div class="buttons">
+          <button class="b" onclick="befehl('Wartung_Reset', null, 'Wartung als erledigt quittieren?')">Wartung erledigt</button>
+          <button class="b" onclick="befehl('Kundenzaehler_Reset', null, 'Kundenzähler wirklich auf 0 setzen?')">Kundenzähler zurücksetzen</button>
+        </div>
+      </div>
+      <div class="karte"><h2>Probelauf</h2><div id="k_probelauf"></div>
+        <div class="buttons"><button class="b" onclick="befehl('Probelauf_Start', null, 'Probelauf jetzt starten? Der Generator läuft an.')">Probelauf starten</button></div>
+      </div>
+      <div class="karte"><h2>Zusatzmodule</h2><div id="k_module"></div></div>
+      <div class="karte"><h2>Anlage</h2><div id="k_anlage"></div></div>
+    </div>
+  </section>
+
+  <section class="seite" id="s_diagnose">
+    <div class="karte"><h2>Eingänge, Ausgänge, Rohwerte</h2><div class="io" id="k_io"></div></div>
+  </section>
+</main>
+<div id="meldung"></div>
+
+<script>
+// ===================== Variablen =====================
+const ST = "DB_HMI.Status.";
+const STATUS_NAMEN = ["Betriebsart","Versorgung","Netzwaechter","Licht_Ein","Lampen_Alle_An","Lampen_Alle_Aus","Notbetrieb",
+  "NUB_Rueckkehr_Laeuft","NUB_Rest_Min","NUB_Rest_Sek","Gen_Zustand","Netzschuetz","Generatorschuetz","Lampe","Ladung_Aktiv",
+  "Abschaltung_Aktiv","Umschalten_Gesperrt","Uhr_Gueltig","Uhrzeit_Text","Datum_Text","Datum_Uebersteuert","Auto_Licht_Soll",
+  "Auto_Daemmerung","Auto_Uhr","Auto_Astro","Astro_An","Astro_Aufgang","Astro_Untergang","Astro_Ein","Astro_Aus","Astro_Sonderfall",
+  "GPS_Aktuell","Dunkel","Mast_Zustand","Mast_Heben_Gesperrt","Mast_Senken_Gesperrt","Windalarm","Sammelstoerung","Stoerung_Zustand",
+  "Steckdose_1","Steckdose_34","Stumpfelbox","Stumpfelbox_Zustand","Audio_Bereit","Audio_Kanal","Tank_Extern_Angeschlossen",
+  "Tank_Extern_Plausibel","Tank_Extern_Aktiv","Probelauf_Aktiv","Probelauf_Ergebnis","Tank_Niedrig","Tank_Kritisch","Wartungsmodus",
+  "Fern_Erlaubt","Fern_Verbunden","Lebenszeichen","Akku_Zustand"];
+const ZAEHLER_NAMEN = ["Betrieb_h","Betrieb_min","Wartung_Bei_h","Wartung_Rest_h","Wartung_Rest_min","Wartung_Faellig","Wartung_Vorwarnung",
+  "Wartung_Datum_Jahr","Wartung_Datum_Monat","Wartung_Datum_Tag","Wartung_Rest_Tage","Kunde_h","Kunde_min","Kunde_Minuten_Gesamt"];
+const BASIS = [
+  ...STATUS_NAMEN.map(n => ST + n),
+  ...["Wind","Daemmerung","Fuellstand_Intern","Fuellstand_Extern"].map(n => "DB_HMI.Analog." + n),
+  "DB_Parameter.NUB_Ausfall_Verz", "DB_Parameter.NUB_Rueckkehr_Zeit",
+  "DB_HMI.Module.Aktiv", "DB_HMI.Module.Abgelaufen", "DB_HMI.Module.Rest_Tage", "DB_HMI.Alarm",
+  ...ZAEHLER_NAMEN.map(n => "DB_HMI.Zaehler." + n),
+  "DB_Parameter.Lampen_Auswahl", "DB_Parameter.Audio_Name", "DB_Parameter.Daemmerung_Ein", "DB_Parameter.Daemmerung_Hysterese",
+  "DB_Parameter.Generator_Gesperrt", "DB_Parameter.Netzueberwachung_Ein",
+  "DB_Astro.Breite", "DB_Astro.Laenge", "DB_Astro.Position_Gueltig", "DB_Astro.Versatz_Ein", "DB_Astro.Versatz_Aus"
+];
+const ZEIT = ["Jahr","Monat","Tag","Std","Min","Sek"];
+const EXTRA = {
+  meldungen: Array.from({ length: 30 }, (_, i) => [...ZEIT.map(z => `DB_Fern.Protokoll[${i + 1}].Zeit.${z}`), `DB_Fern.Protokoll[${i + 1}].Code`]).flat(),
+  uhr: [
+    ...Array.from({ length: 49 }, (_, k) => ["Aktiv_Ein","Aktiv_Aus","Ein_Std","Ein_Min","Aus_Std","Aus_Min"]
+      .map(f => `DB_Schaltuhr.Woche[${Math.floor(k / 7) + 1},${k % 7 + 1}].${f}`)).flat(),
+    ...Array.from({ length: 20 }, (_, i) => ["Belegt","Einschalten","Jahr","Monat","Tag","Std","Min"].map(f => `DB_Schaltuhr.Datum[${i + 1}].${f}`)).flat()
+  ],
+  diagnose: ["DI_NotAus_OK","DI_Isowaechter_1","DI_Isowaechter_2","DI_Stoerung_Allgemein","DI_Motor_Betriebsbereit","DI_Motor_Stoerung",
+    "DI_Batterieueberwachung","DI_Taster_Mast_Ab","DI_Taster_Mast_Auf","DI_Mast_Einfahrposition","DI_Mast_SichereHoehe","DI_Tank_Extern_Stecker",
+    "DI_Sicherheitswanne_OK","DI_Netzwaechter","DI_Akkupack_Angeschlossen","DI_Akkupack_Stoerung","AI_Windsensor","AI_Daemmerungssensor",
+    "AI_Fuellstand_Intern","AI_Fuellstand_Extern","AI_Temp_Gehaeuse","AI_Temp_Netzteil","DQ_Netzschuetz","DQ_Generatorschuetz",
+    "DQ_Akku_Einspeisung","DQ_Akku_Bruecke","DQ_Akku_Abgabe","DQ_Lampe_1","DQ_Lampe_2","DQ_Lampe_3","DQ_Lampe_4","DQ_Lampe_5",
+    "DQ_Audiosignal_1","DQ_Audiosignal_2","DQ_Audiosignal_3","DQ_Audiosignal_4","DQ_Audiosignal_5","DQ_Audiosignal_6","DQ_Steckdose_1",
+    "DQ_Steckdose_3_4","DQ_Hydraulikmotor","DQ_Mast_Senken","DQ_Generator_RemoteStart","DQ_StumpfelBox","DQ_Audioverstaerker",
+    "DQ_Akku_Extern_EinAus","DQ_Tank_Umschaltventil","DQ_Generator_DisplayFreigabe"].map(n => "DB_HMI.IO." + n)
+};
+
+// ===================== Hilfen =====================
+let W = {}, seite = "uebersicht", laeuft = false;
+const roh = n => W[n];
+const v = n => { const x = W[n]; return (x && typeof x === "object" && !Array.isArray(x) && x.fehler) ? undefined : x; };
+const s = n => v(ST + n);
+const ja = b => b === true ? "ja" : b === false ? "nein" : "–";
+const dot = (b, farbe = "gruen") => `<span class="dot ${b === true ? farbe : ""}"></span>`;
+const zeile = (label, wert) => `<tr><td>${label}</td><td>${wert ?? "–"}</td></tr>`;
+const tab = zeilen => `<table>${zeilen.join("")}</table>`;
+const z2 = x => String(typeof x === "number" ? x : 0).padStart(2, "0");
+const zahl = (x, st = 1) => typeof x === "number" ? x.toLocaleString("de-DE", { minimumFractionDigits: st, maximumFractionDigits: st }) : "–";
+const text = (map, x) => map[x] ?? (x === undefined ? "–" : x);
+const fehlt = n => { const x = roh(n); return x && x.fehler ? ` <span class="klein" title="${x.fehler}">(nicht lesbar)</span>` : ""; };
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const GEN = { 0: "Aus", 10: "Startet", 20: "Läuft", 30: "Fährt herunter" };
+const MAST = { 0: "Ruhe", 10: "Heben", 20: "Senken (Tippen)", 30: "Senken automatisch", 40: "Senken wegen Wind" };
+const AKKU = { 0: "kein Akkupack", 10: "Brücke offen", 20: "Einspeisung", 30: "Betrieb", 99: "Not-Aus" };
+const PROBE = { 0: "noch keiner", 1: "OK", 2: "Fehler", 3: "abgebrochen" };
+const SONDER = { 0: "normal", 1: "Polarnacht (immer an)", 2: "Mitternachtssonne (immer aus)", 3: "keine Position oder Uhrzeit" };
+const BOX = { 0: "aus", 1: "fährt hoch (10 s)", 2: "bereit" };
+const TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const MODULE = ["Audio", "Akkupack", "Netzüberwachung", "Fernzugriff"];
+
+function zeigeMeldung(t, fehler) {
+  const m = document.getElementById("meldung");
+  m.textContent = t; m.style.background = fehler ? "#c62828" : "#333"; m.style.display = "block";
+  clearTimeout(zeigeMeldung.t); zeigeMeldung.t = setTimeout(() => m.style.display = "none", fehler ? 6000 : 2000);
+}
+async function post(url, body) {
+  // nach 15 s abbrechen, damit eine haengende Anfrage die Aktualisierung nicht blockiert
+  const abbruch = new AbortController(), t = setTimeout(() => abbruch.abort(), 20000);
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: abbruch.signal });
+    return await r.json();
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("keine Antwort vom Programm (20 s) - beim ersten Verbinden sucht es noch die Variablen, sonst Eingabeaufforderung prüfen");
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
+// ===================== Aktionen =====================
+async function befehl(name, index, frage) {
+  if (frage && !confirm(frage)) return;
+  try {
+    const r = await post("api/befehl/" + name + (index !== undefined && index !== null ? "?index=" + index : ""));
+    if (!r.ok) return zeigeMeldung(r.fehler, true);
+    const gesperrt = s("Fern_Erlaubt") === false || s("Wartungsmodus") === true;
+    zeigeMeldung(gesperrt ? "gesendet – wird aber ignoriert (Fernbedienung gesperrt)" : "gesendet", gesperrt);
+    setTimeout(aktualisieren, 400);
+  } catch (e) { zeigeMeldung(e.message, true); }
+}
+async function einstellen(name) {
+  const feld = document.getElementById("e_" + name);
+  if (feld.value === "") return zeigeMeldung("Erst einen Wert eingeben.", true);
+  try {
+    const r = await post("api/einstellung", { name, wert: Number(feld.value.replace(",", ".")) });
+    if (!r.ok) return zeigeMeldung(r.fehler, true);
+    feld.value = ""; zeigeMeldung("gespeichert"); setTimeout(aktualisieren, 400);
+  } catch (e) { zeigeMeldung(e.message, true); }
+}
+async function gps() {
+  const q = new URLSearchParams({ breite: gps_breite.value.replace(",", "."), laenge: gps_laenge.value.replace(",", "."), fix: gps_fix.checked ? "1" : "0" });
+  try {
+    const r = await post("api/gps?" + q);
+    zeigeMeldung(r.ok ? "GPS gesendet" : r.fehler, !r.ok);
+  } catch (e) { zeigeMeldung(e.message, true); }
+}
+
+// ===================== Anzeige =====================
+function kopf() {
+  h_zeit.textContent = (s("Datum_Text") || "") + "  " + (s("Uhrzeit_Text") || "--:--");
+  const sz = s("Stoerung_Zustand");
+  h_stoerung.textContent = sz === 2 ? "Störung" : sz === 1 ? "Quittieren" : "keine Störung";
+  h_stoerung.className = "pill " + (sz === 2 ? "err" : sz === 1 ? "warn" : "ok");
+  const fe = s("Fern_Erlaubt"), fm = (v("DB_HMI.Module.Aktiv") || [])[3];
+  h_fern.textContent = fm === false ? "Modul Fernzugriff aus" : fe ? "Fernbedienung erlaubt" : "Fernbedienung gesperrt";
+  h_fern.className = "pill " + (fe && fm !== false ? "ok" : "warn");
+  const h = [];
+  if (fm === false) h.push(["warn", "Das Modul Fernzugriff ist nicht freigeschaltet. Befehle werden von der SPS ignoriert."]);
+  else if (fe === false) h.push(["warn", "Am Panel ist „Fernbedienung erlaubt“ aus. Befehle werden von der SPS ignoriert."]);
+  if (s("Wartungsmodus")) h.push(["warn", "Wartungsmodus aktiv: Fernbefehle und Generator sind gesperrt."]);
+  if (sz === 2) h.push(["err", "Eine Störung steht an, siehe Meldungen."]);
+  hinweise.innerHTML = h.map(([k, t]) => `<div class="hinweis ${k}">${t}</div>`).join("");
+}
+
+function uebersicht() {
+  const lampen = v(ST + "Lampe") || [], ausw = v("DB_Parameter.Lampen_Auswahl") || [];
+  k_licht.innerHTML = `<div class="lampen">${[1, 2, 3, 4, 5].map(i =>
+      `<button class="lampe ${lampen[i - 1] ? "an" : ""} ${ausw[i - 1] === false ? "aus_gewaehlt" : ""}" title="Lampe ${i}" onclick="befehl('Lampe_Umschalten', ${i})">${i}</button>`).join("")}</div>` +
+    tab([zeile("Licht zentral ein", ja(s("Licht_Ein"))), zeile("Alle an / alle aus", ja(s("Lampen_Alle_An")) + " / " + ja(s("Lampen_Alle_Aus")))]);
+  const vs = s("Versorgung");
+  b_netz.className = "b" + (vs === 1 ? " an" : ""); b_gen.className = "b" + (vs === 2 ? " an" : "");
+  k_energie.innerHTML = tab([
+    zeile("Versorgung", { 1: "Netz", 2: "Generator" }[vs] ?? "–"),
+    zeile("Netz liegt an", dot(s("Netzwaechter")) + " " + ja(s("Netzwaechter"))),
+    zeile("Generator", text(GEN, s("Gen_Zustand")) + (v("DB_Parameter.Generator_Gesperrt") ? " (gesperrt)" : "")),
+    zeile("Netz- / Generatorschütz", dot(s("Netzschuetz")) + " " + dot(s("Generatorschuetz"))),
+    zeile("Batterieladung", ja(s("Ladung_Aktiv"))),
+    zeile("Störabschaltung", s("Abschaltung_Aktiv") ? dot(true, "rot") + " aktiv" : "nein"),
+    zeile("Akkupack", text(AKKU, s("Akku_Zustand"))),
+    s("Umschalten_Gesperrt") ? zeile("Hinweis", "Netz/Generator nur umschaltbar, wenn Generator und Lampen aus") : ""
+  ]);
+  // Netzueberwachung
+  const nEin = v("DB_Parameter.Netzueberwachung_Ein"), nModul = (v("DB_HMI.Module.Aktiv") || [])[2];
+  b_nub.textContent = nEin ? "ausschalten" : "einschalten";
+  b_nub.className = "b" + (nEin ? " an" : "");
+  const sek = ms => typeof ms === "number" ? (ms >= 60000 ? zahl(ms / 60000, ms % 60000 ? 1 : 0) + " min" : zahl(ms / 1000, 0) + " s") : "–";
+  let zustand;
+  if (nModul === false) zustand = dot(false) + " Modul nicht freigeschaltet";
+  else if (!nEin) zustand = dot(false) + " aus";
+  else if (s("Notbetrieb")) zustand = dot(true, "rot") + " Notbetrieb – Generator versorgt die Lampen";
+  else if (vs !== 1) zustand = dot(true, "gelb") + " ein, aber nicht wirksam (nur im Netzbetrieb)";
+  else zustand = dot(true) + " überwacht";
+  k_nub.innerHTML = tab([
+    zeile("Zustand", zustand),
+    zeile("Netz liegt an", dot(s("Netzwaechter")) + " " + ja(s("Netzwaechter"))),
+    s("NUB_Rueckkehr_Laeuft") ? zeile("Netz wieder da", `zurück in Wartestellung in ${s("NUB_Rest_Min")}:${z2(s("NUB_Rest_Sek"))}`) : "",
+    zeile("Notbetrieb nach Netzausfall von", sek(v("DB_Parameter.NUB_Ausfall_Verz"))),
+    zeile("Rückkehr nach Netz stabil für", sek(v("DB_Parameter.NUB_Rueckkehr_Zeit")))
+  ]);
+  const balken = (p, warn, err) => `<div class="balken"><div class="${err ? "err" : warn ? "warn" : ""}" style="width:${Math.max(0, Math.min(100, p || 0))}%"></div></div>`;
+  const fi = v("DB_HMI.Analog.Fuellstand_Intern"), fx = v("DB_HMI.Analog.Fuellstand_Extern");
+  k_mess.innerHTML = tab([
+    zeile("Tank intern", zahl(fi, 0) + " %" + balken(fi, s("Tank_Niedrig"), s("Tank_Kritisch"))),
+    s("Tank_Extern_Angeschlossen") ? zeile("Tank extern" + (s("Tank_Extern_Aktiv") ? " (aktiv)" : ""),
+      s("Tank_Extern_Plausibel") === false ? "unplausibel" : zahl(fx, 0) + " %" + balken(fx)) : zeile("Tank extern", "nicht angeschlossen"),
+    zeile("Wind", zahl(v("DB_HMI.Analog.Wind")) + " m/s"),
+    zeile("Helligkeit", zahl(v("DB_HMI.Analog.Daemmerung"), 0) + " Lux")
+  ]);
+}
+
+function automatik() {
+  const ba = s("Betriebsart");
+  b_auto_akt.textContent = ba === 2 ? "Automatik deaktivieren" : ba === 3 ? "Einrichten aktiv (nur vor Ort)" : "Automatik aktivieren";
+  b_auto_akt.className = "b" + (ba === 2 ? " an" : "");
+  b_qd.className = "b" + (s("Auto_Daemmerung") ? " an" : "");
+  b_qu.className = "b" + (s("Auto_Uhr") ? " an" : "");
+  b_qa.className = "b" + (s("Auto_Astro") ? " an" : "");
+  k_auto.innerHTML = tab([
+    zeile("Betriebsart", { 1: "Hand", 2: "Auto", 3: "Einrichten" }[s("Betriebsart")] ?? "–"),
+    zeile("Automatik verlangt Licht", ja(s("Auto_Licht_Soll"))),
+    zeile("Dämmerung: dunkel erkannt", ja(s("Dunkel")) + " (" + zahl(v("DB_HMI.Analog.Daemmerung"), 0) + " Lux)"),
+    zeile("Datums-Schaltzeit übersteuert", ja(s("Datum_Uebersteuert"))),
+    zeile("Uhrzeit gültig", ja(s("Uhr_Gueltig")))
+  ]);
+  k_astro.innerHTML = tab([
+    zeile("Sonnenaufgang / -untergang", (s("Astro_Aufgang") || "--:--") + " / " + (s("Astro_Untergang") || "--:--")),
+    zeile("Licht ein / aus", "<b>" + (s("Astro_Ein") || "--:--") + " / " + (s("Astro_Aus") || "--:--") + "</b>"),
+    zeile("Astro sagt gerade", s("Astro_An") === undefined ? "–" : s("Astro_An") ? "an" : "aus"),
+    zeile("Sonderfall", text(SONDER, s("Astro_Sonderfall"))),
+    zeile("GPS", s("GPS_Aktuell") ? "aktuell" : v("DB_Astro.Position_Gueltig") ? "letzte Position" : "keine Position"),
+    zeile("Position", zahl(v("DB_Astro.Breite"), 4) + " / " + zahl(v("DB_Astro.Laenge"), 4) + fehlt("DB_Astro.Breite"))
+  ]);
+  for (const n of ["DB_Astro.Versatz_Ein", "DB_Astro.Versatz_Aus", "DB_Parameter.Daemmerung_Ein", "DB_Parameter.Daemmerung_Hysterese"]) {
+    const x = v(n); document.getElementById("e_" + n).placeholder = typeof x === "number" ? Math.round(x * 10) / 10 : "?";
+  }
+}
+
+function audio() {
+  k_steckdosen.innerHTML =
+    `<button class="b ${s("Steckdose_1") ? "an" : ""}" onclick="befehl('Steckdose_1_Umschalten')">Steckdose 1: ${s("Steckdose_1") ? "an" : "aus"}</button>` +
+    `<button class="b ${s("Steckdose_34") ? "an" : ""}" onclick="befehl('Steckdose_34_Umschalten')">Steckdose 3+4: ${s("Steckdose_34") ? "an" : "aus"}</button>`;
+  if ((v("DB_HMI.Module.Aktiv") || [])[0] === false) { k_audio.innerHTML = `<p class="klein">Das Modul Audio ist nicht freigeschaltet.</p>`; return; }
+  const bz = s("Stumpfelbox_Zustand"), kanal = s("Audio_Kanal"), namen = v("DB_Parameter.Audio_Name") || [];
+  k_audio.innerHTML =
+    `<div class="buttons"><button class="b ${bz === 2 ? "an" : bz === 1 ? "laeuft" : ""}" onclick="befehl('Stumpfelbox_Umschalten')">Stumpfelbox: ${text(BOX, bz)}</button></div>` +
+    `<div class="buttons">${[0, 1, 2, 3, 4, 5, 6].map(i =>
+      `<button class="b ${kanal === i ? "an" : ""}" onclick="befehl('Audio_Umschalten', ${i})">${esc(namen[i] || (i ? "Signal " + i : "Durchsage"))}</button>`).join("")}</div>` +
+    `<p class="klein">${s("Audio_Bereit") ? "Audio bereit. Nochmal tippen schaltet aus." : "Erst die Stumpfelbox einschalten (10 s Hochlauf)."}</p>`;
+}
+
+// ----- Zeitschaltuhr: Editor fuer einen Tag. Wird nur neu gefuellt, solange nichts geaendert wurde.
+let uhrTag = 1, uhrGeaendert = false;
+const UHR_PAARE = [1, 2, 3, 4, 5, 6, 7];
+
+function uhrTagWaehlen(d) {
+  if (uhrGeaendert && d !== uhrTag && !confirm("Änderungen für " + TAGE[uhrTag - 1] + " sind noch nicht gespeichert. Verwerfen?")) return;
+  uhrTag = d; uhrGeaendert = false; uhr();
+}
+function uhrEditorFuellen() {
+  let h = `<tr><th>Paar</th><th>Einschalten</th><th>Ausschalten</th></tr>`;
+  for (const p of UHR_PAARE) {
+    const b = `DB_Schaltuhr.Woche[${uhrTag},${p}].`, ae = v(b + "Aktiv_Ein") === true, aa = v(b + "Aktiv_Aus") === true;
+    h += `<tr><td>${p}</td>` +
+      `<td><input type="checkbox" id="ue_ae${p}" ${ae ? "checked" : ""}> <input type="time" id="ue_e${p}" value="${z2(v(b + "Ein_Std"))}:${z2(v(b + "Ein_Min"))}" ${ae ? "" : "disabled"}></td>` +
+      `<td><input type="checkbox" id="ue_aa${p}" ${aa ? "checked" : ""}> <input type="time" id="ue_a${p}" value="${z2(v(b + "Aus_Std"))}:${z2(v(b + "Aus_Min"))}" ${aa ? "" : "disabled"}></td></tr>`;
+  }
+  k_uhr_edit.innerHTML = h;
+}
+k_uhr_edit.addEventListener("input", e => {
+  uhrGeaendert = true;
+  b_uhr_tag.innerHTML = "Speichern für " + TAGE[uhrTag - 1] + ` <span class="geaendert">●</span>`;
+  const m = /^ue_a([ea])(\d)$/.exec(e.target.id);   // Haken steuert, ob die Uhrzeit eingebbar ist
+  if (m) document.getElementById(`ue_${m[1]}${m[2]}`).disabled = !e.target.checked;
+});
+
+async function uhrSpeichern(ziel) {
+  const paare = [];
+  for (const p of UHR_PAARE) {
+    const aktivEin = document.getElementById("ue_ae" + p).checked, aktivAus = document.getElementById("ue_aa" + p).checked;
+    const ein = document.getElementById("ue_e" + p).value || "00:00", aus = document.getElementById("ue_a" + p).value || "00:00";
+    if ((aktivEin && !document.getElementById("ue_e" + p).value) || (aktivAus && !document.getElementById("ue_a" + p).value))
+      return zeigeMeldung(`Paar ${p}: Uhrzeit fehlt.`, true);
+    const [einStd, einMin] = ein.split(":").map(Number), [ausStd, ausMin] = aus.split(":").map(Number);
+    paare.push({ aktivEin, einStd, einMin, aktivAus, ausStd, ausMin });
+  }
+  const kopieren = UHR_PAARE.map(d => document.getElementById("uk_" + d).checked);
+  if (ziel === "auswahl" && !kopieren.some(Boolean)) return zeigeMeldung("Erst die Zieltage anhaken.", true);
+  if (ziel === "alle" && !confirm("Das Programm von " + TAGE[uhrTag - 1] + " auf ALLE 7 Tage übernehmen?")) return;
+  try {
+    const r = await post("api/uhr/woche", { tag: uhrTag, paare, ziel, kopieren });
+    if (!r.ok) return zeigeMeldung(r.fehler, true);
+    zeigeMeldung(r.meldung || "gespeichert");
+    uhrGeaendert = false;
+    UHR_PAARE.forEach(d => document.getElementById("uk_" + d).checked = false);
+    setTimeout(aktualisieren, 300);
+  } catch (e) { zeigeMeldung(e.message, true); }
+}
+
+async function datumHinzu() {
+  if (!ud_datum.value || !ud_zeit.value) return zeigeMeldung("Datum und Uhrzeit eingeben.", true);
+  const [jahr, monat, tag] = ud_datum.value.split("-").map(Number), [std, min] = ud_zeit.value.split(":").map(Number);
+  try {
+    const r = await post("api/uhr/datum", { jahr, monat, tag, std, min, einschalten: ud_art.value === "1" });
+    if (!r.ok) return zeigeMeldung(r.fehler, true);
+    zeigeMeldung(r.meldung || "gespeichert"); ud_datum.value = ""; ud_zeit.value = "";
+    setTimeout(aktualisieren, 300);
+  } catch (e) { zeigeMeldung(e.message, true); }
+}
+async function datumLoeschen(i, text) {
+  if (!confirm("Datums-Schaltzeit " + text + " löschen?")) return;
+  try {
+    const r = await post("api/uhr/datum_loeschen", { index: i });
+    if (!r.ok) return zeigeMeldung(r.fehler, true);
+    zeigeMeldung(r.meldung || "gelöscht"); setTimeout(aktualisieren, 300);
+  } catch (e) { zeigeMeldung(e.message, true); }
+}
+
+function uhr() {
+  k_uhr_tage.innerHTML = TAGE.map((t, i) => `<button class="b ${uhrTag === i + 1 ? "haupt" : ""}" onclick="uhrTagWaehlen(${i + 1})">${t}</button>`).join("");
+  if (!k_uhr_kopieren.innerHTML) k_uhr_kopieren.innerHTML = TAGE.map((t, i) => `<label style="margin-right:8px"><input type="checkbox" id="uk_${i + 1}"> ${t}</label>`).join("");
+  if (!uhrGeaendert && !k_uhr_edit.contains(document.activeElement)) {
+    uhrEditorFuellen();
+    b_uhr_tag.textContent = "Speichern für " + TAGE[uhrTag - 1];
+  }
+  let h = `<tr><th>Tag</th>${UHR_PAARE.map(p => `<th>Paar ${p}</th>`).join("")}</tr>`;
+  for (let d = 1; d <= 7; d++) {
+    h += `<tr class="waehlbar ${d === uhrTag ? "gewaehlt" : ""}" onclick="uhrTagWaehlen(${d})"><td>${TAGE[d - 1]}</td>`;
+    for (let p = 1; p <= 7; p++) {
+      const b = `DB_Schaltuhr.Woche[${d},${p}].`, t = [];
+      if (v(b + "Aktiv_Ein")) t.push("Ein " + z2(v(b + "Ein_Std")) + ":" + z2(v(b + "Ein_Min")));
+      if (v(b + "Aktiv_Aus")) t.push("Aus " + z2(v(b + "Aus_Std")) + ":" + z2(v(b + "Aus_Min")));
+      h += `<td>${roh(b + "Aktiv_Ein")?.fehler ? "?" : t.join("<br>") || "<span class='klein'>–</span>"}</td>`;
+    }
+    h += "</tr>";
+  }
+  k_woche.innerHTML = h;
+  const zeilen = [];
+  for (let i = 1; i <= 20; i++) {
+    const b = `DB_Schaltuhr.Datum[${i}].`;
+    if (!v(b + "Belegt")) continue;
+    const text = `${z2(v(b + "Tag"))}.${z2(v(b + "Monat"))}.${v(b + "Jahr")} ${z2(v(b + "Std"))}:${z2(v(b + "Min"))}`;
+    zeilen.push(`<tr><td>${text}</td><td>${v(b + "Einschalten") ? "Ein" : "Aus"}</td>` +
+      `<td style="text-align:right"><button class="klein" onclick="datumLoeschen(${i}, '${text}')">Löschen</button></td></tr>`);
+  }
+  k_datum.innerHTML = zeilen.length ? zeilen.join("") : `<tr><td class="klein">keine Einträge${fehlt("DB_Schaltuhr.Datum[1].Belegt")}</td></tr>`;
+}
+
+function meldungen() {
+  const w = v("DB_HMI.Alarm") || [], aktiv = [];
+  for (let n = 0; n < 32; n++) if (((w[n >> 4] || 0) >> (n & 15)) & 1) aktiv.push(n);
+  k_meldungen.innerHTML = aktiv.length ? tab(aktiv.map(n => {
+    const m = MELDUNGEN[n] || ["I", "Meldung " + n, ""];
+    return `<tr><td style="width:70px"><span class="badge ${m[0]}">${m[0] === "S" ? "Störung" : "Info"}</span></td><td><b>${m[1]}</b><br><span class="klein">${m[2]}</span></td></tr>`;
+  })) : `<p class="klein">keine Meldungen${fehlt("DB_HMI.Alarm")}</p>`;
+  const zeilen = [];
+  for (let i = 1; i <= 30; i++) {
+    const b = `DB_Fern.Protokoll[${i}].`, code = v(b + "Code");
+    if (!code) continue;
+    const zt = n => v(b + "Zeit." + n);
+    zeilen.push(`<tr><td style="white-space:nowrap">${z2(zt("Tag"))}.${z2(zt("Monat"))}.${zt("Jahr")} ${z2(zt("Std"))}:${z2(zt("Min"))}:${z2(zt("Sek"))}</td><td>${esc(codeText(code))}</td><td class="klein">${code}</td></tr>`);
+  }
+  k_protokoll.innerHTML = zeilen.length ? `<tr><th>Zeit</th><th>Ereignis</th><th>Code</th></tr>` + zeilen.join("")
+    : `<tr><td class="klein">keine Einträge${fehlt("DB_Fern.Protokoll[1].Code")}</td></tr>`;
+}
+
+function service() {
+  const z = n => v("DB_HMI.Zaehler." + n);
+  k_zaehler.innerHTML = tab([
+    zeile("Betriebsstunden", `${z("Betrieb_h") ?? "–"} h ${z2(z("Betrieb_min"))} min`),
+    zeile("Nächste Wartung bei", `${z("Wartung_Bei_h") ?? "–"} h (noch ${z("Wartung_Rest_h") ?? "–"} h ${z2(z("Wartung_Rest_min"))} min)`),
+    zeile("Wartung spätestens am", z("Wartung_Datum_Jahr") ? `${z2(z("Wartung_Datum_Tag"))}.${z2(z("Wartung_Datum_Monat"))}.${z("Wartung_Datum_Jahr")} (noch ${z("Wartung_Rest_Tage")} Tage)` : "–"),
+    zeile("Wartung", z("Wartung_Faellig") ? dot(true, "rot") + " fällig" : z("Wartung_Vorwarnung") ? dot(true, "gelb") + " bald fällig" : "ok"),
+    zeile("Kundenzähler", `${z("Kunde_h") ?? "–"} h ${z2(z("Kunde_min"))} min (${z("Kunde_Minuten_Gesamt") ?? "–"} min gesamt)`)
+  ]);
+  k_probelauf.innerHTML = tab([zeile("Läuft gerade", ja(s("Probelauf_Aktiv"))), zeile("Letztes Ergebnis", text(PROBE, s("Probelauf_Ergebnis")))]);
+  const ak = v("DB_HMI.Module.Aktiv") || [], ab = v("DB_HMI.Module.Abgelaufen") || [], rt = v("DB_HMI.Module.Rest_Tage") || [];
+  k_module.innerHTML = tab(MODULE.map((m, i) => zeile(m, ak[i] ? dot(true) + " aktiv" + (rt[i] > 0 ? ` (noch ${rt[i]} Tage)` : "")
+    : ab[i] ? dot(true, "rot") + " abgelaufen" : dot(false) + " nicht gebucht")));
+  k_anlage.innerHTML = tab([
+    zeile("Wartungsmodus", ja(s("Wartungsmodus"))),
+    zeile("Generator gesperrt", ja(v("DB_Parameter.Generator_Gesperrt"))),
+    zeile("Netzüberwachung ein", ja(v("DB_Parameter.Netzueberwachung_Ein"))),
+    zeile("Mast Heben / Senken gesperrt", ja(s("Mast_Heben_Gesperrt")) + " / " + ja(s("Mast_Senken_Gesperrt"))),
+    zeile("Verbindung erkannt (SPS)", ja(s("Fern_Verbunden"))),
+    zeile("Lebenszeichen SPS", s("Lebenszeichen") ?? "–")
+  ]);
+}
+
+function diagnose() {
+  k_io.innerHTML = EXTRA.diagnose.map(n => {
+    const kurz = n.replace("DB_HMI.IO.", ""), x = v(n);
+    return `<div>${typeof x === "number" ? `<b>${x}</b>` : dot(x)} ${kurz}</div>`;
+  }).join("");
+}
+
+const ANZEIGE = { uebersicht, automatik, audio, uhr, meldungen, service, diagnose };
+
+async function aktualisieren() {
+  if (laeuft) return; laeuft = true;
+  try {
+    const r = await post("api/lesen", { namen: [...BASIS, ...(EXTRA[seite] || [])] });
+    if (!r.ok) { h_verbindung.textContent = "keine Verbindung"; h_verbindung.className = "pill err"; h_verbindung.title = r.fehler; zeigeMeldung(r.fehler, true); return; }
+    Object.assign(W, r.werte);
+    h_verbindung.textContent = "Stand " + new Date().toLocaleTimeString("de-DE"); h_verbindung.className = "pill ok"; h_verbindung.title = "letzte erfolgreiche Abfrage";
+    kopf(); ANZEIGE[seite]();
+  } catch (e) {
+    h_verbindung.textContent = "Programm nicht erreichbar"; h_verbindung.className = "pill err"; h_verbindung.title = e.message;
+  } finally { laeuft = false; }
+}
+
+tabs.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  seite = b.dataset.seite;
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("aktiv", x === b));
+  document.querySelectorAll(".seite").forEach(x => x.classList.toggle("aktiv", x.id === "s_" + seite));
+  ANZEIGE[seite](); aktualisieren();
+});
+// Browser bremsen Zeitgeber in verdeckten oder minimierten Fenstern -> beim Zurueckkommen sofort aktualisieren
+document.addEventListener("visibilitychange", () => { if (!document.hidden) aktualisieren(); });
+aktualisieren();
+setInterval(aktualisieren, 2000);
+</script>
+</body>
+</html>

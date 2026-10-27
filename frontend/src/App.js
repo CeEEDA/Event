@@ -42,6 +42,7 @@ import StundenberichteListPage from "./pages/StundenberichteListPage";
 import TextbausteineAdminPage from "./pages/TextbausteineAdminPage";
 import OrderDocumentsPage from "./pages/OrderDocumentsPage";
 import TankStatusPage from "./pages/TankStatusPage";
+import MBoxPage from "./pages/MBoxPage";
 import FinancePage from "./pages/FinancePage";
 import EingangsrechnungenPage from "./pages/EingangsrechnungenPage";
 import VerwaltungPage from "./pages/VerwaltungPage";
@@ -285,6 +286,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <TankStatusPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mbox/:id"
+        element={
+          <ProtectedRoute>
+            <MBoxPage />
           </ProtectedRoute>
         }
       />

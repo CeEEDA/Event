@@ -29,7 +29,8 @@ def init_device_routes(_db, _decode_jwt_token, _fs):
     fs = _fs
 
 
-DEVICE_TYPES = ["stromerzeuger", "lichtmast", "messkoffer", "kirmeskiste", "verteiler", "tank"]
+DEVICE_TYPES = ["stromerzeuger", "lichtmast", "mbox", "messkoffer", "kirmeskiste", "verteiler", "tank"]
+MBOX_FIELDS = ("mbox_endpoint", "mbox_security_mode", "mbox_security_policy", "mbox_user", "mbox_password")
 
 
 # ============== Models ==============
@@ -72,6 +73,12 @@ class DeviceCreate(BaseModel):
     next_inspection_date: Optional[str] = None  # ISO-Datum YYYY-MM-DD
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    # M-Box Lichtmast (OPC UA zur Siemens S7 -> routes/mbox.py)
+    mbox_endpoint: Optional[str] = None
+    mbox_security_mode: Optional[str] = None
+    mbox_security_policy: Optional[str] = None
+    mbox_user: Optional[str] = None
+    mbox_password: Optional[str] = None
 
     @field_validator("latitude", "longitude", mode="before")
     @classmethod
@@ -126,6 +133,11 @@ class DeviceUpdate(BaseModel):
     next_inspection_date: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    mbox_endpoint: Optional[str] = None
+    mbox_security_mode: Optional[str] = None
+    mbox_security_policy: Optional[str] = None
+    mbox_user: Optional[str] = None
+    mbox_password: Optional[str] = None
 
     @field_validator("latitude", "longitude", mode="before")
     @classmethod
@@ -253,8 +265,17 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if data.device_type == "mbox":
+        from routes.mbox import next_free_port
+        if not (data.mbox_endpoint or "").startswith("opc.tcp://"):
+            raise HTTPException(status_code=400, detail="SPS-Adresse muss mit opc.tcp:// beginnen (z.B. opc.tcp://192.168.0.100:4840)")
+        device_doc.update({f: getattr(data, f) for f in MBOX_FIELDS})
+        device_doc["mbox_port"] = await next_free_port()
 
     await db.devices.insert_one(device_doc)
+    if data.device_type == "mbox":
+        from routes.mbox import sync_device
+        await sync_device(device_doc)
 
     # Copy image, parts, and documents from source device if specified
     if data.copy_from_device_id:
@@ -390,8 +411,20 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
         if existing:
             raise HTTPException(status_code=400, detail="Seriennummer bereits vorhanden")
 
+    if (update_data.get("device_type") or device.get("device_type")) == "mbox" and \
+            not (update_data.get("mbox_endpoint") or device.get("mbox_endpoint") or "").startswith("opc.tcp://"):
+        raise HTTPException(status_code=400, detail="SPS-Adresse muss mit opc.tcp:// beginnen")
+
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.devices.update_one({"id": device_id}, {"$set": update_data})
+
+    if device.get("device_type") == "mbox" or update_data.get("device_type") == "mbox":
+        from routes.mbox import sync_device, next_free_port
+        fresh = await db.devices.find_one({"id": device_id}, {"_id": 0})
+        if fresh.get("device_type") == "mbox" and not fresh.get("mbox_port"):
+            fresh["mbox_port"] = await next_free_port()
+            await db.devices.update_one({"id": device_id}, {"$set": {"mbox_port": fresh["mbox_port"]}})
+        await sync_device(fresh)
 
     # Sync latitude/longitude to linked generator (if Stromerzeuger/Lichtmast)
     if ("latitude" in update_data or "longitude" in update_data) and device.get("device_type") in ("stromerzeuger", "lichtmast"):
@@ -428,6 +461,8 @@ async def delete_device(device_id: str, admin: dict = Depends(require_admin)):
     result = await db.devices.delete_one({"id": device_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+    from routes.mbox import stop_device
+    await stop_device(device_id)
     docs = await db.device_documents.find({"device_id": device_id}).to_list(100)
     for doc in docs:
         if doc.get("gridfs_id"):

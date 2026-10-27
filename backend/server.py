@@ -2083,6 +2083,10 @@ from routes.devices import router as device_router, init_device_routes
 init_device_routes(db, decode_jwt_token, fs)
 app.include_router(device_router)
 
+from routes.mbox import router as mbox_router, init_mbox_routes
+init_mbox_routes(db, decode_jwt_token)
+app.include_router(mbox_router)
+
 # Admin GPS Diagnose/Reset
 from routes.admin_gps import router as admin_gps_router, init_admin_gps_routes
 init_admin_gps_routes(db, decode_jwt_token)
@@ -2227,6 +2231,11 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     from mqtt_service import stop_mqtt_client
+    try:
+        from routes.mbox import stop_all as _mbox_stop_all
+        await _mbox_stop_all()
+    except Exception as _e:
+        logger.warning(f"M-Box Dienste stoppen fehlgeschlagen: {_e}")
     await stop_mqtt_client()
     client.close()
 
@@ -2328,6 +2337,13 @@ async def startup_event():
         start_hallopetra_sync()
     except Exception as _e:
         logger.warning(f"HalloPetra Auto-Sync konnte nicht starten: {_e}")
+
+    # M-Box Lichtmast: pro Geraet einen Node/OPC-UA-Dienst starten
+    try:
+        from routes.mbox import start_all as _mbox_start_all
+        asyncio.create_task(_mbox_start_all())
+    except Exception as _e:
+        logger.warning(f"M-Box Dienste konnten nicht starten: {_e}")
 
     # Health-Diag Log-Loop (alle 15 Min RSS/FDs/Tasks/Mongo-Ping)
     try:
