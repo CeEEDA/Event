@@ -29,7 +29,7 @@ import requests
 CONF_PATH = "/etc/mbox_pi.conf"
 AUDIO_DIR = "/opt/mbox_audio"
 POLL_SEC = 3
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mbox_pi")
@@ -278,6 +278,31 @@ def sync_files(conf, manifest, have):
                 pass
 
 
+def ensure_file(conf, name, manifest, want_sha=None):
+    """Datei vor dem Abspielen sicherstellen: fehlt sie (oder passt die Pruefsumme nicht), sofort vom Portal laden.
+    So klappt der Test auch direkt nach dem Upload / beim Aufbau, ohne auf den naechsten Manifest-Abgleich zu warten."""
+    name = os.path.basename(name)
+    path = os.path.join(AUDIO_DIR, name)
+    have = local_files() if os.path.exists(path) else {}
+    meta = next((m for m in (manifest or []) if m.get("name") == name), None)
+    want = want_sha or (meta or {}).get("sha256")
+    if os.path.exists(path) and (not want or have.get(name) == want):
+        return True
+    try:
+        url = f"{conf['api_url']}/mbox/pi/{conf['device_id']}/audio/{requests.utils.quote(name)}"
+        with requests.get(url, params={"api_key": conf["device_key"]}, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            tmp = os.path.join(AUDIO_DIR, "." + name + ".part")
+            with open(tmp, "wb") as f:
+                shutil.copyfileobj(r.raw, f)
+            os.replace(tmp, path)
+        log.info(f"Audio nachgeladen: {name}")
+        return True
+    except Exception as e:
+        log.warning(f"Nachladen {name}: {e}")
+        return os.path.exists(path)
+
+
 # ---------------- Selbst-Update ----------------
 
 def self_update(conf, want_sha):
@@ -357,6 +382,10 @@ def main():
                     ok, msg = False, "unbekannter Befehl"
                     typ, p = cmd.get("command"), cmd.get("params") or {}
                     if typ == "play":
+                        # Datei sicherstellen (ggf. sofort nachladen) - vor dem Warten auf den Startzeitpunkt
+                        if p.get("file"):
+                            if ensure_file(conf, p["file"], data.get("audio_manifest"), p.get("sha256")):
+                                have = local_files()
                         # Gruppenstart: bis zum Server-Startzeitpunkt warten, damit alle Masten gleichzeitig loslegen
                         if p.get("start_at"):
                             try:

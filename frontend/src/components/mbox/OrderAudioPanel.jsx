@@ -157,6 +157,9 @@ export function OrderAudioPanel({ orderPk }) {
       {/* Ziel-Masten */}
       <div className="flex flex-wrap items-start gap-2" data-testid="order-audio-devices">
         <div className="flex-1 min-w-0">{data ? <MastAuswahl devices={devices} selected={selected} onChange={setSelected} /> : <span className="text-xs text-gray-400">Lade Masten…</span>}</div>
+        {data && !data.kunde && devices.length === 0 && (
+          <p className="w-full text-[11px] text-gray-400" data-testid="order-audio-staff-hint">Zum Testen beim Aufbau den Mast oben unter „Mast manuell zuweisen…" hinzufügen – Mitarbeiter können jederzeit starten, auch vor Lieferung.</p>
+        )}
         {(playing.length > 0 || countdown != null) && (
           <Button size="sm" variant="outline" onClick={stop} disabled={busy} className="text-red-600 border-red-200 hover:bg-red-50 w-full sm:w-auto" data-testid="order-audio-stop-all">
             <Square className="w-4 h-4 mr-1" /> {countdown != null ? `Start in ${countdown} s – abbrechen` : `Stopp (${zielText()})`}

@@ -61,4 +61,6 @@ Rate-Limit: 30 schreibende Befehle/min je Benutzer+Gerät. Jeder Schreibzugriff 
 - Ablage: MongoDB GridFS (Bucket `mbox_audio`), Metadaten in `mbox_order_audio`; ffmpeg nutzt nur das System-Temp. Verarbeitung: Rauschteppich > -50 dB -> `afftdn`, dann Spitzenpegel auf 0 dBFS, MP3 192k.
 - Verteilung: fertige Dateien erscheinen im Audio-Manifest aller dem Auftrag zugewiesenen Masten; der Pi laedt sie beim naechsten Sync (einmalig). Loeschen entfernt sie wieder vom Pi.
 - Gruppenstart: `play` mit `start_at = jetzt + 6 s` fuer jeden Mast; Pi (ab Skript v1.3) wartet bis `start_at` (Server-Zeitversatz aus `server_time`) -> alle Masten starten gleichzeitig. Befehle, die ein Pi > 2 min nicht abholt, verfallen.
+- Ab Skript v1.3.1: fehlt die Datei beim `play` auf dem Pi (z.B. direkt nach Upload oder beim Aufbau), laedt der Pi sie sofort nach (`ensure_file`, Pruefsumme aus dem Befehl) und spielt dann. Manifest enthaelt Dateien aktiver UND kommender Auftraege. Auftraege ohne Dispo-Zeitraum gelten als laufend, sobald ein Mast manuell zugewiesen oder ein Kunde freigegeben ist.
+- Timer (`mbox_order_timers`): Backend-Schleife alle 10 s (Europe/Berlin) startet Durchsagen zu festen Uhrzeiten (nur bei laufendem Auftrag).
 - Kundenzugang: Kundennummer am Login (automatisch) ODER Haekchen "Kundenzugang" in der Auftrags-Kachel. Kunde: Hub-Kachel "Durchsagen" -> /durchsagen.

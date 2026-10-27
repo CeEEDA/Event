@@ -430,7 +430,8 @@ _manifest_cache: dict = {}
 
 
 async def device_manifest(db, device_id: str) -> list:
-    """Standard-Dateien + fertige Auftrags-Durchsagen aller heute aktiven Auftraege, denen der Mast zugewiesen ist (30 s Cache)."""
+    """Standard-Dateien + fertige Auftrags-Durchsagen aller Auftraege, denen der Mast zugewiesen ist (30 s Cache).
+    Aktive UND kommende Auftraege (Mast steht beim Aufbau schon vor Ort -> Dateien liegen vorab bereit)."""
     import time as _t
     hit = _manifest_cache.get(device_id)
     if hit and _t.monotonic() - hit[0] < 30:
@@ -438,7 +439,7 @@ async def device_manifest(db, device_id: str) -> list:
     out = list(audio_manifest())
     orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "dispo_start": 1, "dispo_end": 1,
                                              "event_start": 1, "event_end": 1}).to_list(2000)
-    active_pks = [o["primary_key"] for o in orders if order_active(o)]
+    active_pks = [o["primary_key"] for o in orders if order_active(o) or order_upcoming(o)]
     active_pks += [int(p) for p in await manual_active_pks(db) if int(p) not in active_pks]
     if active_pks:
         files = await db.mbox_order_audio.find({"order_pk": {"$in": [str(p) for p in active_pks]}, "status": {"$in": ["ready", "ready_unprocessed"]}},

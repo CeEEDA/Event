@@ -203,7 +203,7 @@ async def _enqueue_order(order_pk, user: Optional[dict], command: str, params: d
 
 async def _group_play(order_pk: int, f: dict, user: Optional[dict], loop: bool, device_ids: Optional[list], source: str = "manuell") -> dict:
     start_at = (datetime.now(timezone.utc) + timedelta(seconds=GROUP_START_LEAD_SEC)).isoformat()
-    sent = await _enqueue_order(order_pk, user, "play", {"file": f["stored"], "loop": loop, "start_at": start_at, "label": f["name"]}, device_ids)
+    sent = await _enqueue_order(order_pk, user, "play", {"file": f["stored"], "sha256": f.get("sha256"), "loop": loop, "start_at": start_at, "label": f["name"]}, device_ids)
     if not sent:
         raise HTTPException(status_code=409, detail="Kein (ausgewaehlter) Mast ist diesem Auftrag aktuell zugewiesen")
     devices = await db.devices.find({"id": {"$in": [s["device_id"] for s in sent]}}, {"_id": 0}).to_list(100)
