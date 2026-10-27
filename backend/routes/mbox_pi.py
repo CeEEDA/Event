@@ -122,6 +122,24 @@ def pi_script_version() -> str:
 
 # ---------------- Setup-Skript ----------------
 
+def embedded_audio_block() -> str:
+    """Alle Standard-Audiodateien (z.B. Testansage) base64 ins Setup einbetten,
+    damit sie sofort nach der Installation auf dem Pi liegen - auch ohne ersten Sync."""
+    import base64
+    parts = []
+    for m in audio_manifest():
+        data = base64.b64encode((AUDIO_DIR / m["name"]).read_bytes()).decode("ascii")
+        parts.append(f'''echo "  -> {m['name']} ({m['size'] // 1024} KB)"
+base64 -d > "/opt/mbox_audio/{m['name']}" <<'B64EOF'
+{data}
+B64EOF
+if [ "$(sha256sum "/opt/mbox_audio/{m['name']}" | cut -d' ' -f1)" != "{m['sha256']}" ]; then
+  echo "  WARNUNG: Pruefsumme von {m['name']} stimmt nicht - Datei wird beim ersten Sync neu geladen"
+  rm -f "/opt/mbox_audio/{m['name']}"
+fi''')
+    return "\n".join(parts) if parts else 'echo "  (keine Standard-Audiodateien auf dem Server)"'
+
+
 def build_setup_script(device: dict, plain_key: str, base: str, volume: int) -> str:
     name = device.get("user_field") or device.get("serial_number") or device["id"]
     py = PI_SCRIPT_PATH.read_text(encoding="utf-8")
@@ -133,17 +151,18 @@ def build_setup_script(device: dict, plain_key: str, base: str, volume: int) -> 
 # ================================================================
 #  Nutzung:  sudo bash setup.sh
 #  Richtet ein: mpg123 (Audio), DAC als ALSA-Standard, gpsd (USB-GPS),
-#               /opt/mbox_pi_sync.py, /etc/mbox_pi.conf, systemd-Dienst "mbox_pi"
+#               /opt/mbox_pi_sync.py, Testansage in /opt/mbox_audio,
+#               /etc/mbox_pi.conf, systemd-Dienst "mbox_pi"
 # ================================================================
 set -e
 if [ "$EUID" -ne 0 ]; then echo "Bitte mit sudo ausfuehren: sudo bash $0"; exit 1; fi
 
-echo "[1/6] Pakete installieren..."
+echo "[1/7] Pakete installieren..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq python3 python3-requests mpg123 alsa-utils gpsd gpsd-clients >/dev/null
 
-echo "[2/6] DAC als Standard-Audioausgabe setzen..."
+echo "[2/7] DAC als Standard-Audioausgabe setzen..."
 # Bevorzugt: DAC / USB-Soundkarte; HDMI und Onboard-Headphones nur als Rueckfall
 CARDS="$(aplay -l 2>/dev/null | grep -E '^card [0-9]+:' || true)"
 DAC_CARD="$(echo "$CARDS" | grep -iE 'dac|usb|codec|hifiberry|iqaudio|pcm5|wm8' | grep -viE 'hdmi|vc4' | head -n1 | sed -E 's/^card ([0-9]+):.*/\\1/')"
@@ -163,7 +182,7 @@ else
   echo "  WARNUNG: keine Soundkarte gefunden (aplay -l leer) - DAC anschliessen und Setup erneut ausfuehren"
 fi
 
-echo "[3/6] gpsd fuer USB-GPS konfigurieren..."
+echo "[3/7] gpsd fuer USB-GPS konfigurieren..."
 cat > /etc/default/gpsd <<'EOF'
 START_DAEMON="true"
 USBAUTO="true"
@@ -173,14 +192,17 @@ EOF
 systemctl enable gpsd >/dev/null 2>&1 || true
 systemctl restart gpsd || true
 
-echo "[4/6] Sync-Skript installieren..."
+echo "[4/7] Sync-Skript installieren..."
 mkdir -p /opt/mbox_audio
 cat > /opt/mbox_pi_sync.py <<'PYEOF'
 {py}
 PYEOF
 chmod +x /opt/mbox_pi_sync.py
 
-echo "[5/6] Konfiguration schreiben..."
+echo "[5/7] Standard-Audiodateien (Testansage) ablegen..."
+{embedded_audio_block()}
+
+echo "[6/7] Konfiguration schreiben..."
 cat > /etc/mbox_pi.conf <<EOF
 [mbox_pi]
 api_url = {base}
@@ -191,7 +213,7 @@ volume = {volume}
 EOF
 chmod 600 /etc/mbox_pi.conf
 
-echo "[6/6] Systemd-Dienst einrichten..."
+echo "[7/7] Systemd-Dienst einrichten..."
 cat > /etc/systemd/system/mbox_pi.service <<'EOF'
 [Unit]
 Description=M-Box Pi Sync (Audio + GPS) - Eventenergie Portal

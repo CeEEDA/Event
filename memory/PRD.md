@@ -20,6 +20,9 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Testansage im Pi-Setup eingebettet)
+- `mbox_pi.embedded_audio_block()`: alle Dateien aus `mbox_service/audio/` werden base64 ins Setup-Skript eingebettet (Schritt „[5/7] Standard-Audiodateien"), nach `/opt/mbox_audio/` dekodiert und per SHA-256 geprüft (bei Fehler gelöscht → Nachladen beim Sync). Setup ≈ 3 MB. Damit liegt die Testansage sofort nach der Installation auf jedem Pi, auch ohne ersten Sync.
+
 ### 2026-06 (Pi-Online-Anzeige + GPS auf der M-Box-Seite)
 - Monitoring-Liste: M-Box-Punkt ist nur grün („Pi online"), wenn der Pi sich in den letzten 20 s per Key am Backend gemeldet hat (`pi.online`), nicht mehr wenn nur der Node-Dienst läuft; Zeitstempel = letzte Pi-Meldung.
 - M-Box-Seite Info-Leiste: `GpsAnzeige` (lat/lon 5 Dezimalen, 2D/3D, genutzte Sat, ±m aus epx/epy, Alter bei Pi offline, Google-Maps-Link; Zustände: nicht eingerichtet / Pi offline / gpsd läuft nicht / kein Fix + sichtbare Sat). `/status` wird alle 10 s nachgeladen.
