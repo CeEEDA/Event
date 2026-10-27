@@ -29,7 +29,7 @@ import requests
 CONF_PATH = "/etc/mbox_pi.conf"
 AUDIO_DIR = "/opt/mbox_audio"
 POLL_SEC = 3
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mbox_pi")
@@ -310,6 +310,7 @@ def main():
     log.info(f"M-Box Pi Sync v{VERSION} gestartet -> {conf['api_url']} ({conf['device_id'][:8]}...)")
     last_gps, last_gps_t, last_files_t, have = None, 0, 0, {}
     cards, last_cards_t = [], 0
+    server_offset = 0.0  # server_time - lokale Zeit (Sekunden), fuer zeitgleichen Gruppenstart
     while True:
         t0 = time.time()
         try:
@@ -336,6 +337,13 @@ def main():
                 log.warning(f"Sync HTTP {r.status_code}: {r.text[:200]}")
             else:
                 data = r.json()
+                try:
+                    st = data.get("server_time")
+                    if st:
+                        from datetime import datetime as _dt
+                        server_offset = _dt.fromisoformat(st.replace("Z", "+00:00")).timestamp() - time.time()
+                except Exception:
+                    pass
                 cfg = data.get("config") or {}
                 if "audio_device" in cfg and (cfg.get("audio_device") or "") != (conf.get("audio_device") or ""):
                     conf["audio_device"] = cfg.get("audio_device") or ""
@@ -349,6 +357,16 @@ def main():
                     ok, msg = False, "unbekannter Befehl"
                     typ, p = cmd.get("command"), cmd.get("params") or {}
                     if typ == "play":
+                        # Gruppenstart: bis zum Server-Startzeitpunkt warten, damit alle Masten gleichzeitig loslegen
+                        if p.get("start_at"):
+                            try:
+                                from datetime import datetime as _dt
+                                ziel = _dt.fromisoformat(str(p["start_at"]).replace("Z", "+00:00")).timestamp()
+                                warte = ziel - (time.time() + server_offset)
+                                if 0 < warte <= 30:
+                                    time.sleep(warte)
+                            except Exception as e:
+                                log.warning(f"start_at: {e}")
                         ok, msg = player.play(p.get("file", ""), bool(p.get("loop")))
                     elif typ == "stop":
                         ok, msg = player.stop()

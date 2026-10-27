@@ -13,7 +13,7 @@ import sys
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -493,10 +493,14 @@ async def mbox_pi_sync(device_id: str, body: dict):
                               "speed": gps.get("speed"), "gps_time": gps.get("time"), "ts": now}
         upd["latitude"], upd["longitude"] = float(gps["lat"]), float(gps["lon"])
     await db.devices.update_one({"id": device_id}, {"$set": upd})
+    # Veraltete Befehle (> 2 min, z.B. waehrend Pi offline) verfallen - kein verspaeteter Start
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    await db.mbox_pi_commands.update_many({"device_id": device_id, "status": "pending", "created_at": {"$lt": cutoff}},
+                                          {"$set": {"status": "expired", "message": "verfallen (Pi war nicht erreichbar)"}})
     pending = await db.mbox_pi_commands.find({"device_id": device_id, "status": "pending"}, {"_id": 0}).sort("created_at", 1).to_list(20)
     if pending:
         await db.mbox_pi_commands.update_many({"id": {"$in": [c["id"] for c in pending]}}, {"$set": {"status": "sent", "sent_at": now}})
-    return {"pending_commands": pending, "audio_manifest": mbox_pi.audio_manifest(), "server_time": now,
+    return {"pending_commands": pending, "audio_manifest": await mbox_pi.device_manifest(db, device_id), "server_time": now,
             "config": {"audio_device": device.get("mbox_pi_audio_device") or "", "volume": device.get("mbox_pi_volume")},
             "script_sha256": mbox_pi.pi_script_sha()}
 
@@ -524,7 +528,14 @@ async def mbox_pi_command_result(device_id: str, body: dict):
 async def mbox_pi_audio_download(device_id: str, name: str, api_key: str = ""):
     device = await _device(device_id)
     mbox_pi.verify_pi_key(device, api_key)
-    return mbox_pi.audio_file_response(name)
+    safe = os.path.basename(name)
+    if safe.startswith("order"):
+        from routes.mbox_audio import ORDER_AUDIO_DIR
+        from fastapi.responses import FileResponse
+        if not (ORDER_AUDIO_DIR / safe).exists():
+            raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+        return FileResponse(ORDER_AUDIO_DIR / safe, media_type="audio/mpeg", filename=safe)
+    return mbox_pi.audio_file_response(safe)
 
 
 async def _pi_command(device: dict, user: dict, command: str, params: dict) -> dict:
@@ -545,7 +556,7 @@ async def mbox_audio_status(device_id: str, user: dict = Depends(get_user)):
     await _allow(user, "lesen", device_id)
     device = await _device(device_id)
     last = await db.mbox_pi_commands.find({"device_id": device_id}, {"_id": 0}).sort("created_at", -1).to_list(10)
-    return {"pi": mbox_pi.pi_state(device), "files": mbox_pi.audio_manifest(), "commands": last}
+    return {"pi": mbox_pi.pi_state(device), "files": await mbox_pi.device_manifest(db, device_id), "commands": last}
 
 
 @router.post("/{device_id}/audio/play")
@@ -554,7 +565,7 @@ async def mbox_audio_play(device_id: str, body: dict, user: dict = Depends(get_u
     device = await _device(device_id)
     _rate_check(user["id"], device_id)
     name = os.path.basename(str(body.get("file") or ""))
-    if name not in {m["name"] for m in mbox_pi.audio_manifest()}:
+    if name not in {m["name"] for m in await mbox_pi.device_manifest(db, device_id)}:
         raise HTTPException(status_code=404, detail="Audiodatei nicht gefunden")
     return await _pi_command(device, user, "play", {"file": name, "loop": bool(body.get("loop"))})
 

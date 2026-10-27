@@ -55,7 +55,7 @@ export function AudioPiTab({ deviceId, darf, isAdmin, kunde }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-2">
                     {aktiv && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
-                    {f.name.replace(/\.(mp3|wav|ogg)$/i, "")}
+                    {f.label || f.name.replace(/\.(mp3|wav|ogg)$/i, "")}
                   </p>
                   <p className="text-[11px] text-gray-400">{fmtSize(f.size)} · {onPi.has(f.name) ? "auf dem Pi" : pi.configured ? "wird auf den Pi geladen…" : "noch nicht übertragen"}</p>
                 </div>

@@ -362,14 +362,22 @@ async def compute_order_mboxes(db, order_pk, devices: Optional[list] = None) -> 
     }
 
 
+async def customer_orders(db, user: dict) -> list:
+    """Heute aktive Auftraege des Kunden: ueber EpiRent-Kundennummer ODER explizite Freigabe in der Auftrags-Kachel."""
+    cno = str(user.get("customer_no") or "").strip()
+    cfgs = await db.mbox_order_config.find({"customer_user_ids": user["id"]}, {"_id": 0, "order_pk": 1}).to_list(500)
+    freigegeben = {str(c["order_pk"]) for c in cfgs}
+    if not cno and not freigegeben:
+        return []
+    orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "customer_no": 1, "event": 1, "address": 1,
+                                             "dispo_start": 1, "dispo_end": 1, "event_start": 1, "event_end": 1}).to_list(2000)
+    return [o for o in orders if order_active(o) and
+            ((cno and str(o.get("customer_no") or "").strip() == cno) or str(o.get("primary_key")) in freigegeben)]
+
+
 async def customer_device_ids(db, user: dict) -> set:
     """Alle M-Boxen, die dem Kunden ueber heute aktive Auftraege zugewiesen sind."""
-    cno = str(user.get("customer_no") or "").strip()
-    if not cno:
-        return set()
-    orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "customer_no": 1, "dispo_start": 1, "dispo_end": 1,
-                                             "event_start": 1, "event_end": 1}).to_list(2000)
-    active = [o for o in orders if str(o.get("customer_no") or "").strip() == cno and order_active(o)]
+    active = await customer_orders(db, user)
     if not active:
         return set()
     devices = await db.devices.find({"device_type": "mbox", "status": {"$ne": "ausser_betrieb"}}, {"_id": 0}).to_list(500)
@@ -378,3 +386,37 @@ async def customer_device_ids(db, user: dict) -> set:
         res = await compute_order_mboxes(db, o["primary_key"], devices)
         ids.update(x["id"] for x in res["devices"])
     return ids
+
+
+_manifest_cache: dict = {}
+
+
+async def device_manifest(db, device_id: str) -> list:
+    """Standard-Dateien + fertige Auftrags-Durchsagen aller heute aktiven Auftraege, denen der Mast zugewiesen ist (30 s Cache)."""
+    import time as _t
+    hit = _manifest_cache.get(device_id)
+    if hit and _t.monotonic() - hit[0] < 30:
+        return hit[1]
+    out = list(audio_manifest())
+    orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "dispo_start": 1, "dispo_end": 1,
+                                             "event_start": 1, "event_end": 1}).to_list(2000)
+    active_pks = [o["primary_key"] for o in orders if order_active(o)]
+    if active_pks:
+        files = await db.mbox_order_audio.find({"order_pk": {"$in": [str(p) for p in active_pks]}, "status": {"$in": ["ready", "ready_unprocessed"]}},
+                                               {"_id": 0}).to_list(1000)
+        if files:
+            devices = await db.devices.find({"device_type": "mbox", "status": {"$ne": "ausser_betrieb"}}, {"_id": 0}).to_list(500)
+            assigned_pks = set()
+            for pk in {f["order_pk"] for f in files}:
+                res = await compute_order_mboxes(db, int(pk), devices)
+                if any(x["id"] == device_id for x in res["devices"]):
+                    assigned_pks.add(pk)
+            for f in files:
+                if f["order_pk"] in assigned_pks:
+                    out.append({"name": f["stored"], "sha256": f["sha256"], "size": f["size"], "label": f["name"], "order_pk": f["order_pk"]})
+    _manifest_cache[device_id] = (_t.monotonic(), out)
+    return out
+
+
+def invalidate_manifest_cache():
+    _manifest_cache.clear()

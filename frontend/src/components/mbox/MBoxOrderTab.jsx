@@ -1,16 +1,60 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Lightbulb, MapPin, Plus, X, RotateCcw, ExternalLink, Satellite } from "lucide-react";
+import { Lightbulb, MapPin, Plus, X, RotateCcw, ExternalLink, Satellite, Users, Volume2 } from "lucide-react";
 import api from "../../lib/api";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { OrderAudioPanel } from "./OrderAudioPanel";
+
+// Kunden, die diesen Auftrag (Masten + Durchsagen) sehen und bedienen duerfen
+function KundenFreigabe({ orderPk }) {
+  const [kunden, setKunden] = useState([]);
+  const [sel, setSel] = useState([]);
+  const [auto, setAuto] = useState([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    api.get("/mbox/customers").then(r => setKunden(r.data)).catch(() => {});
+    api.get(`/mbox/orders/${orderPk}/customers`).then(r => { setSel(r.data.user_ids || []); setAuto(r.data.auto_by_customer_no || []); }).catch(() => {});
+  }, [orderPk]);
+  const toggle = async (id) => {
+    const next = sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id];
+    setSel(next);
+    try { await api.put(`/mbox/orders/${orderPk}/customers`, { user_ids: next }); toast.success("Kundenzugang gespeichert"); }
+    catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
+  };
+  const namen = [...auto.map(a => a.name), ...kunden.filter(k => sel.includes(k.id) && !auto.some(a => a.id === k.id)).map(k => k.name)];
+  return (
+    <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 mb-4" data-testid="mbox-order-customers">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Users className="w-4 h-4 text-gray-400" />
+        <span className="text-xs font-medium text-gray-700">Kundenzugang:</span>
+        <span className="text-xs text-gray-500" data-testid="mbox-order-customers-summary">{namen.length ? namen.join(", ") : "noch kein Kunde freigegeben"}</span>
+        <Button size="sm" variant="outline" onClick={() => setOpen(o => !o)} className="ml-auto h-7 text-xs" data-testid="mbox-order-customers-toggle">{open ? "Schließen" : "Kunden auswählen"}</Button>
+      </div>
+      {open && (
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-60 overflow-y-auto" data-testid="mbox-order-customers-list">
+          {kunden.length === 0 && <p className="text-xs text-gray-400">Keine Kunden-Logins vorhanden (Benutzerverwaltung → Rolle Kunde).</p>}
+          {kunden.map(k => {
+            const viaNo = auto.some(a => a.id === k.id);
+            return (
+              <label key={k.id} className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded hover:bg-white cursor-pointer ${viaNo ? "opacity-70" : ""}`}>
+                <input type="checkbox" checked={viaNo || sel.includes(k.id)} disabled={viaNo} onChange={() => toggle(k.id)} className="accent-fuchsia-600" data-testid={`mbox-order-customer-${k.id}`} />
+                <span className="flex-1 truncate">{k.name} <span className="text-gray-400 text-xs">{k.email}</span></span>
+                {viaNo && <span className="text-[10px] text-gray-400">automatisch (Kundennr.)</span>}
+              </label>
+            );
+          })}
+        </div>
+      )}
+      <p className="text-[11px] text-gray-400 mt-2">Freigegebene Kunden sehen die zugewiesenen Masten (Licht + Durchsagen) von Lieferung bis Abholung. Kunden mit passender EpiRent-Kundennummer sind automatisch dabei.</p>
+    </div>
+  );
+}
 
 // Kachel im Auftrag: automatische Umkreis-Zuweisung + manuelle Korrektur
 export function MBoxOrderTab({ orderPk }) {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
-  const [expected, setExpected] = useState("");
   const [addId, setAddId] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -18,7 +62,6 @@ export function MBoxOrderTab({ orderPk }) {
     try {
       const r = await api.get(`/mbox/orders/${orderPk}`);
       setData(r.data);
-      setExpected(String(r.data.expected_count || ""));
     } catch (e) { toast.error(e.response?.data?.detail || "M-Box Zuweisung nicht ladbar"); }
   }, [orderPk]);
   useEffect(() => { laden(); }, [laden]);
@@ -30,7 +73,6 @@ export function MBoxOrderTab({ orderPk }) {
     finally { setBusy(false); }
   };
   const override = (device_id, action, msg) => run(() => api.post(`/mbox/orders/${orderPk}/override`, { device_id, action }), msg);
-  const saveExpected = () => run(() => api.put(`/mbox/orders/${orderPk}/config`, { expected_count: parseInt(expected) || 0 }), "Mastanzahl gespeichert");
 
   if (!data) return <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 text-sm text-gray-500">Lade M-Box Zuweisung…</div>;
   const assigned = new Set(data.devices.map(d => d.id));
@@ -46,18 +88,11 @@ export function MBoxOrderTab({ orderPk }) {
         </h3>
         <div className="text-xs text-gray-500 flex items-center gap-1 flex-wrap">
           <MapPin className="w-3.5 h-3.5" />
-          {data.center ? <>Umkreis {data.radius_km} km{data.radius_used_km > data.radius_km ? <> → automatisch auf <b>{data.radius_used_km} km</b> erweitert</> : null}</> : <span className="text-amber-600">Auftrag hat noch keine Koordinaten (Adresse geocodieren)</span>}
+          {data.center ? <>Umkreis {data.radius_km} km · Zuweisung von Lieferung bis Abholung, live geprüft</> : <span className="text-amber-600">Auftrag hat noch keine Koordinaten (Adresse geocodieren)</span>}
         </div>
       </div>
 
-      <div className="flex items-end gap-3 flex-wrap mb-4 bg-gray-50 rounded-lg border border-gray-200 p-3">
-        <div>
-          <label className="text-[11px] text-gray-500 block mb-1">Masten laut Auftrag</label>
-          <Input type="number" min={0} value={expected} onChange={e => setExpected(e.target.value)} className="h-8 w-28 text-sm" placeholder="z.B. 4" data-testid="mbox-order-expected-input" />
-        </div>
-        <Button size="sm" variant="outline" onClick={saveExpected} disabled={busy} data-testid="mbox-order-expected-save">Speichern</Button>
-        <p className="text-[11px] text-gray-400 flex-1 min-w-[200px]">Stehen weniger Masten im 1-km-Umkreis als hier angegeben, wächst der Umkreis in 500-m-Schritten (max. 10 km), bis die Anzahl erreicht ist. Zuweisung gilt von Lieferung bis Abholung und wird live geprüft.</p>
-      </div>
+      <KundenFreigabe orderPk={orderPk} />
 
       {data.devices.length === 0 ? (
         <p className="text-sm text-gray-500 mb-4" data-testid="mbox-order-empty">Aktuell steht kein Lichtmast im Umkreis der Veranstaltungsadresse.</p>
@@ -100,6 +135,11 @@ export function MBoxOrderTab({ orderPk }) {
           {freie.map(c => <option key={c.id} value={c.id}>{c.name}{c.distance_km != null ? ` (${c.distance_km} km)` : ""}</option>)}
         </select>
         <Button size="sm" onClick={() => { if (addId) { override(addId, "add", "Mast manuell zugewiesen"); setAddId(""); } }} disabled={!addId || busy} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="mbox-order-add-btn"><Plus className="w-4 h-4 mr-1" />Zuweisen</Button>
+      </div>
+
+      <div className="border-t border-gray-100 mt-5 pt-4" data-testid="mbox-order-audio">
+        <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3"><Volume2 className="w-4 h-4 text-fuchsia-600" /> Durchsagen für diesen Auftrag</h4>
+        <OrderAudioPanel orderPk={orderPk} />
       </div>
     </div>
   );

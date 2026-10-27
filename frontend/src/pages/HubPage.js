@@ -12,7 +12,7 @@ import {
   Plus, Check, Calendar, Flag, User, ChevronRight, Trash2, X,
   Paperclip, Send, MessageCircle, Download, Search, Clock,
   Sun, Timer, Palmtree, TrendingUp, CalendarOff, ThumbsUp, ThumbsDown, Undo2, CalendarDays, Cake,
-  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck, Phone,
+  Megaphone, FileText, Image as ImageIcon, Eye, CheckCircle2, AlertCircle, HelpCircle, Truck, Phone, Volume2,
 } from "lucide-react";
 import { SwipeClock } from "../components/SwipeClock";
 import { WorkTimeOverview } from "../components/WorkTimeOverview";
@@ -32,6 +32,12 @@ export default function HubPage() {
   const token = localStorage.getItem("token");
 
   const [tasks, setTasks] = useState([]);
+  // Kunde: Durchsagen-Kachel nur, wenn heute ein Auftrag mit Lichtmasten zugeordnet ist
+  const [hasDurchsagen, setHasDurchsagen] = useState(false);
+  useEffect(() => {
+    if (user?.role !== "kunde") return;
+    api.get("/mbox/my/orders").then(r => setHasDurchsagen((r.data || []).length > 0)).catch(() => {});
+  }, [user?.role]);
   const [petraOpen, setPetraOpen] = useState(0);
   const [taskFilter, setTaskFilter] = useState("mine");
   const [viewFilter, setViewFilter] = useState("aktuell");
@@ -86,7 +92,7 @@ export default function HubPage() {
 
   // Mitarbeiter: Hub-Kachel-Toggles steuern. Kunden: Legacy-App-Berechtigungen.
   const hasFilesharing = isAdmin || (isCustomer ? !!user?.apps?.filesharing?.enabled : tileAllowed("fileshare"));
-  const hasMonitoring = isAdmin || (isCustomer ? (!!user?.apps?.generator_monitoring?.enabled || !!user?.customer_no) : tileAllowed("power_monitoring"));
+  const hasMonitoring = isAdmin || (isCustomer ? (!!user?.apps?.generator_monitoring?.enabled || !!user?.customer_no || hasDurchsagen) : tileAllowed("power_monitoring"));
   const hasEnergyMonitoring = isAdmin || (isCustomer ? !!user?.apps?.energy_monitoring?.enabled : tileAllowed("energy_monitoring"));
   const hasBilling = isAdmin || !!user?.permissions?.can_billing;
 
@@ -386,6 +392,7 @@ export default function HubPage() {
     isStaff && tileAllowed("kirmes") && { key: "kirmes", icon: Tent, label: "Kirmes", path: "/kirmes", color: "bg-pink-100 text-pink-600" },
     !isCustomer && tileAllowed("verwaltung") && { key: "verwaltung", icon: Briefcase, label: "Verwaltung", path: "/verwaltung", color: "bg-violet-100 text-violet-600" },
     hasMonitoring && tileAllowed("power_monitoring") && { key: "generators", icon: Activity, label: "Power Monitoring", path: "/generators", color: "bg-emerald-100 text-emerald-600" },
+    isCustomer && hasDurchsagen && { key: "durchsagen", icon: Volume2, label: "Durchsagen", path: "/durchsagen", color: "bg-fuchsia-100 text-fuchsia-600" },
     hasEnergyMonitoring && tileAllowed("energy_monitoring") && { key: "energy", icon: Zap, label: "Energy Monitoring", path: "/energy-monitoring", color: "bg-yellow-100 text-yellow-700" },
     isStaff && tileAllowed("devices") && { key: "devices", icon: Cpu, label: "Geräte", path: "/devices", color: "bg-teal-100 text-teal-600" },
     hasFilesharing && tileAllowed("fileshare") && { key: "fileshare", icon: FolderOpen, label: "FileShare", path: "/fileshare", color: "bg-sky-100 text-sky-600" },
