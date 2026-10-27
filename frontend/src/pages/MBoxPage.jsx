@@ -15,6 +15,7 @@ import { AudioTab } from "../components/mbox/AudioTab";
 import { UhrTab } from "../components/mbox/UhrTab";
 import { MeldungenTab, ServiceTab, DiagnoseTab } from "../components/mbox/InfoTabs";
 import { AudioPiTab } from "../components/mbox/AudioPiTab";
+import { MBoxStandortKarte } from "../components/mbox/MBoxStandortKarte";
 
 const TABS = [
   ["uebersicht", "Übersicht"], ["automatik", "Automatik"], ["audio", "Steckdosen & Audio"], ["uhr", "Zeitschaltuhr"],
@@ -154,7 +155,10 @@ export default function MBoxPage() {
           </nav>
           <div className="p-4 sm:p-5 space-y-4 bg-gray-50/60">
             {hinweise.map(([a, t], i) => <Hinweis key={i} art={a} testId={`mbox-hinweis-${i}`}>{t}</Hinweis>)}
-            {seite === "uebersicht" && <UebersichtTab {...tabProps} />}
+            {seite === "uebersicht" && (<>
+              <UebersichtTab {...tabProps} />
+              <MBoxStandortKarte device={info?.device} />
+            </>)}
             {seite === "automatik" && <AutomatikTab {...tabProps} />}
             {seite === "audio" && <AudioTab {...tabProps} />}
             {seite === "uhr" && <UhrTab {...tabProps} />}

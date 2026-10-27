@@ -20,6 +20,10 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Standort-Karte auf der M-Box-Seite wie bei Generatoren)
+- `components/mbox/MBoxStandortKarte.jsx` (Leaflet, gleicher Marker-Stil wie GeneratorDetailPage) unter der Übersicht: Position = Pi-GPS (mit Zeitstempel) sonst Gerätekoordinaten, Quelle wird angezeigt, Google-Maps-Link. Monitoring-Karte zeigt M-Boxen über `latitude/longitude` (vom Pi-GPS gesetzt) bereits als Marker; Klick → `/mbox/:id`.
+- Live-Stand: M-Box_001 meldet seit dem gpsd-Fix echten GPS-Fix (Pi online, Pin in der Liste).
+
 ### 2026-06 (Bugfix Pi-Setup: gpsd fand bereits gesteckten GPS-Stick nicht)
 - Ursache: Setup schrieb `DEVICES=""` und startete gpsd neu → bereits gesteckter u-blox wird nur per USB-Hotplug erkannt → `devices:[]`, kein Fix (lokal lesbar). Fix in `build_setup_script` Schritt [3/7]: Empfänger dynamisch erkennen (`/dev/serial/by-id/*u-blox*|*GPS*|*GNSS*|*Prolific*|*`, sonst ttyACM0/1, ttyUSB0/1), fest in `DEVICES` eintragen, nach Neustart `gpsdctl add <dev>`. Erkennung mit Fake-by-id-Pfad verifiziert.
 - Hinweis: Jedes „Pi-Setup generieren" ersetzt den Geräteschlüssel → laufender Pi meldet 401 bis das neue Setup eingespielt ist (so bei M-Box_001 passiert; seit 21:06 wieder 200 OK). Nicht für Live-Geräte „zum Testen" generieren.
