@@ -20,6 +20,10 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Bugfix Pi-Setup: gpsd fand bereits gesteckten GPS-Stick nicht)
+- Ursache: Setup schrieb `DEVICES=""` und startete gpsd neu → bereits gesteckter u-blox wird nur per USB-Hotplug erkannt → `devices:[]`, kein Fix (lokal lesbar). Fix in `build_setup_script` Schritt [3/7]: Empfänger dynamisch erkennen (`/dev/serial/by-id/*u-blox*|*GPS*|*GNSS*|*Prolific*|*`, sonst ttyACM0/1, ttyUSB0/1), fest in `DEVICES` eintragen, nach Neustart `gpsdctl add <dev>`. Erkennung mit Fake-by-id-Pfad verifiziert.
+- Hinweis: Jedes „Pi-Setup generieren" ersetzt den Geräteschlüssel → laufender Pi meldet 401 bis das neue Setup eingespielt ist (so bei M-Box_001 passiert; seit 21:06 wieder 200 OK). Nicht für Live-Geräte „zum Testen" generieren.
+
 ### 2026-06 (Testansage im Pi-Setup eingebettet)
 - `mbox_pi.embedded_audio_block()`: alle Dateien aus `mbox_service/audio/` werden base64 ins Setup-Skript eingebettet (Schritt „[5/7] Standard-Audiodateien"), nach `/opt/mbox_audio/` dekodiert und per SHA-256 geprüft (bei Fehler gelöscht → Nachladen beim Sync). Setup ≈ 3 MB. Damit liegt die Testansage sofort nach der Installation auf jedem Pi, auch ohne ersten Sync.
 

@@ -183,14 +183,32 @@ else
 fi
 
 echo "[3/7] gpsd fuer USB-GPS konfigurieren..."
-cat > /etc/default/gpsd <<'EOF'
+# GPS-Empfaenger finden: stabiler by-id-Pfad bevorzugt (u-blox etc.), sonst ttyACM/ttyUSB
+GPS_DEV=""
+for CAND in /dev/serial/by-id/*u-blox* /dev/serial/by-id/*GPS* /dev/serial/by-id/*GNSS* /dev/serial/by-id/*Prolific* /dev/serial/by-id/*; do
+  if [ -e "$CAND" ]; then GPS_DEV="$CAND"; break; fi
+done
+if [ -z "$GPS_DEV" ]; then
+  for CAND in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB0 /dev/ttyUSB1; do
+    if [ -e "$CAND" ]; then GPS_DEV="$CAND"; break; fi
+  done
+fi
+# Mit leerem DEVICES findet gpsd einen BEREITS gesteckten Empfaenger nicht (nur per USB-Hotplug) -> fest eintragen
+cat > /etc/default/gpsd <<EOF
 START_DAEMON="true"
 USBAUTO="true"
-DEVICES=""
+DEVICES="$GPS_DEV"
 GPSD_OPTIONS="-n"
 EOF
 systemctl enable gpsd >/dev/null 2>&1 || true
 systemctl restart gpsd || true
+sleep 2
+if [ -n "$GPS_DEV" ]; then
+  gpsdctl add "$GPS_DEV" >/dev/null 2>&1 || true   # laufendem gpsd das Geraet sofort anhaengen
+  echo "  GPS-Empfaenger: $GPS_DEV"
+else
+  echo "  WARNUNG: kein GPS-Empfaenger gefunden - Stick anschliessen; gpsd uebernimmt ihn dann per USB-Hotplug"
+fi
 
 echo "[4/7] Sync-Skript installieren..."
 mkdir -p /opt/mbox_audio
@@ -236,7 +254,7 @@ systemctl restart mbox_pi
 
 echo ""
 echo "Fertig. Status: sudo systemctl status mbox_pi   Log: sudo journalctl -u mbox_pi -f"
-echo "Soundkarten:    aplay -l      Soundtest: speaker-test -c2 -t wav -l1      GPS-Test: gpsmon"
+echo "Soundkarten:    aplay -l      Soundtest: speaker-test -c2 -t wav -l1      GPS-Test: gpspipe -w -n 10"
 '''.replace("\r\n", "\n")
 
 
