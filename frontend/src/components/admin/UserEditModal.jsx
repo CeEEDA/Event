@@ -258,6 +258,13 @@ export default function UserEditModal({
               <div className="border-t border-gray-200 pt-4 mt-4">
                 <h3 className="font-semibold text-gray-900 mb-4">App-Berechtigungen</h3>
 
+                {/* EpiRent-Kundennummer: verknuepft den Login mit den Auftraegen -> M-Box Lichtmasten im Umkreis */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4" data-testid="kunde-customer-no-block">
+                  <Label className="text-gray-900 font-medium">EpiRent-Kundennummer</Label>
+                  <p className="text-xs text-gray-500 mt-0.5 mb-2">Über die Kundennummer sieht der Kunde seine Aufträge und bekommt die M-Box Lichtmasten im Umkreis der Veranstaltung automatisch zugewiesen (Licht & Durchsagen, von Lieferung bis Abholung).</p>
+                  <Input value={formData.customer_no || ""} onChange={(e) => setFormData(p => ({ ...p, customer_no: e.target.value }))} placeholder="z.B. 10234" className="bg-white max-w-xs" data-testid="kunde-customer-no-input" />
+                </div>
+
                 {/* FileShare App */}
                 <FilesharingAppCard
                   formData={formData}

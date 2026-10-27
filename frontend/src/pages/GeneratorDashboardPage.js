@@ -255,8 +255,8 @@ export default function GeneratorDashboardPage() {
   const fetchData = useCallback(async () => {
     try {
       const [genRes, statsRes, mboxRes] = await Promise.all([
-        api.get("/generators"),
-        api.get("/generators/stats/overview"),
+        api.get("/generators").catch(() => ({ data: [] })),
+        api.get("/generators/stats/overview").catch(() => ({ data: null })),
         api.get("/mbox/devices").catch(() => ({ data: { devices: [] } })),
       ]);
       // M-Box Lichtmasten als normale Zeilen in die Liste einreihen

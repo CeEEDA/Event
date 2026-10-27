@@ -1,7 +1,7 @@
 import { Karte, Zeile, Tab, Dot, Balken, Btn } from "./MBoxUi";
 import { GEN, AKKU, ja, zahl, z2, text } from "./mboxVars";
 
-export function UebersichtTab({ h, befehl, darf }) {
+export function UebersichtTab({ h, befehl, darf, kunde }) {
   const { v, s } = h;
   const lampen = v("DB_HMI.Status.Lampe") || [], ausw = v("DB_Parameter.Lampen_Auswahl") || [];
   const vs = s("Versorgung");
@@ -52,6 +52,7 @@ export function UebersichtTab({ h, befehl, darf }) {
           <Zeile label="Akkupack">{text(AKKU, s("Akku_Zustand"))}</Zeile>
           {s("Umschalten_Gesperrt") && <Zeile label="Hinweis">Netz/Generator nur umschaltbar, wenn Generator und Lampen aus</Zeile>}
         </Tab>
+        {!kunde && (<>
         <div className="flex flex-wrap gap-2 mt-3">
           <Btn variant={vs === 1 ? "an" : undefined} disabled={!darf} onClick={() => befehl("Netzbetrieb")} testId="mbox-btn-netzbetrieb">Netzbetrieb</Btn>
           <Btn variant={vs === 2 ? "an" : undefined} disabled={!darf} onClick={() => befehl("Generatorbetrieb")} testId="mbox-btn-generatorbetrieb">Generatorbetrieb</Btn>
@@ -60,9 +61,10 @@ export function UebersichtTab({ h, befehl, darf }) {
           <Btn disabled={!darf} onClick={() => befehl("Gen_Start")} testId="mbox-btn-gen-start">Generator start</Btn>
           <Btn disabled={!darf} onClick={() => befehl("Gen_Stop")} testId="mbox-btn-gen-stop">Generator stop</Btn>
         </div>
+        </>)}
       </Karte>
 
-      <Karte titel="Netzüberwachung" action={<Btn variant={nEin ? "an" : undefined} disabled={!darf} onClick={() => befehl("Netzueberwachung_Umschalten")} testId="mbox-btn-nub">{nEin ? "ausschalten" : "einschalten"}</Btn>}>
+      {!kunde && <Karte titel="Netzüberwachung" action={<Btn variant={nEin ? "an" : undefined} disabled={!darf} onClick={() => befehl("Netzueberwachung_Umschalten")} testId="mbox-btn-nub">{nEin ? "ausschalten" : "einschalten"}</Btn>}>
         <Tab>
           <Zeile label="Zustand">{zustand}</Zeile>
           <Zeile label="Netz liegt an"><Dot on={s("Netzwaechter")} /> {ja(s("Netzwaechter"))}</Zeile>
@@ -71,7 +73,7 @@ export function UebersichtTab({ h, befehl, darf }) {
           <Zeile label="Rückkehr nach Netz stabil für">{sek(v("DB_Parameter.NUB_Rueckkehr_Zeit"))}</Zeile>
         </Tab>
         <p className="text-xs text-gray-500 mt-2">Wirkt nur im Netzbetrieb: Fällt das Netz aus, startet der Generator und alle Lampen gehen an. Ist das Netz wieder stabil da, geht es nach der Rückkehrzeit zurück in Wartestellung.</p>
-      </Karte>
+      </Karte>}
 
       <Karte titel="Tank & Messwerte">
         <Tab>

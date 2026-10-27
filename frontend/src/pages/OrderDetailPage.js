@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
+import { MBoxOrderTab } from "../components/mbox/MBoxOrderTab";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -1002,6 +1003,7 @@ export default function OrderDetailPage() {
     { key: "messprotokolle", label: "Messprotokolle", short: "Messung", desc: "VDE 0100-600 / DGUV V3", icon: ClipboardCheck, color: "purple", count: messprotokolle?.length || 0 },
     { key: "diary", label: "Einsatztagebuch", short: "Diary", desc: "Störungsmeldungen & Verlauf", icon: BookOpen, color: "slate", count: diaryOpenCount },
     { key: "delivery-notes", label: "Lieferscheine", short: "LS", desc: "Anlegen & Verwalten", icon: FileText, color: "violet", count: deliveryNotes.length, hideForFreelancer: true },
+    { key: "mbox", label: "M-Box Lichtmasten", short: "M-Box", desc: "Umkreis-Zuweisung & Fernbedienung", icon: Lightbulb, color: "amber", count: 0, hideForFreelancer: true },
   ].filter(t => (!t.hideForFreelancer || !isFreelancer) && (!t.adminOnly || isAdmin));
 
   // Tab-Handler (aus dem Tile-Klick-Handler extrahiert)
@@ -2997,6 +2999,8 @@ export default function OrderDetailPage() {
           )}
 
           {/* ═════ Einsatztagebuch ═════ */}
+          {activeTab === "mbox" && <MBoxOrderTab orderPk={pk} />}
+
           {activeTab === "diary" && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5" data-testid="diary-section">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">

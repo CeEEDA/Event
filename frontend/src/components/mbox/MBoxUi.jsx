@@ -36,7 +36,7 @@ export const Balken = ({ p, warn, err }) => (
 );
 
 export const Hinweis = ({ art, children, testId }) => (
-  <div data-testid={testId} className={`px-3 py-2 rounded-lg text-sm border ${art === "err" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-900"}`}>{children}</div>
+  <div data-testid={testId} className={`px-3 py-2 rounded-lg text-sm border ${art === "err" ? "bg-red-50 border-red-200 text-red-800" : art === "info" ? "bg-fuchsia-50 border-fuchsia-200 text-fuchsia-900" : "bg-amber-50 border-amber-200 text-amber-900"}`}>{children}</div>
 );
 
 // Buttons: variant "haupt" | "an" | "laeuft" | default

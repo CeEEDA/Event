@@ -14,11 +14,14 @@ import { AutomatikTab } from "../components/mbox/AutomatikTab";
 import { AudioTab } from "../components/mbox/AudioTab";
 import { UhrTab } from "../components/mbox/UhrTab";
 import { MeldungenTab, ServiceTab, DiagnoseTab } from "../components/mbox/InfoTabs";
+import { AudioPiTab } from "../components/mbox/AudioPiTab";
 
 const TABS = [
   ["uebersicht", "Übersicht"], ["automatik", "Automatik"], ["audio", "Steckdosen & Audio"], ["uhr", "Zeitschaltuhr"],
-  ["meldungen", "Meldungen & Protokoll"], ["service", "Service"], ["diagnose", "Diagnose"],
+  ["meldungen", "Meldungen & Protokoll"], ["service", "Service"], ["diagnose", "Diagnose"], ["durchsage", "Audio"],
 ];
+// Kunden sehen nur Licht (Übersicht, eingeschränkt) und Audio-Durchsagen
+const KUNDE_TABS = new Set(["uebersicht", "durchsage"]);
 
 // Status-Pills im Stil der Generator-Detailseite (heller Hintergrund, Rand, Punkt)
 const PILL = {
@@ -45,7 +48,8 @@ export default function MBoxPage() {
   const h = useMemo(() => ({ ...mkHelpers(W), W }), [W]);
   const { confirm, dialog } = useConfirm();
   const level = info?.level || (isAdmin ? "admin" : "lesen");
-  const darf = level === "admin" || level === "bedienen";
+  const kunde = level === "kunde";
+  const darf = level === "admin" || level === "bedienen" || kunde;
   const { s, v } = h;
 
   const sz = s("Stoerung_Zustand"), fe = s("Fern_Erlaubt"), fm = (v("DB_HMI.Module.Aktiv") || [])[3];
@@ -55,6 +59,7 @@ export default function MBoxPage() {
   if (s("Wartungsmodus")) hinweise.push(["warn", "Wartungsmodus aktiv: Fernbefehle und Generator sind gesperrt."]);
   if (sz === 2) hinweise.push(["err", "Eine Störung steht an, siehe Meldungen."]);
   if (!darf && level !== "none") hinweise.push(["warn", "Du hast nur Lese-Zugriff: Status ist sichtbar, Schalten ist gesperrt."]);
+  if (kunde) hinweise.push(["info", "Sie können an diesem Lichtmast die Beleuchtung schalten und Durchsagen abspielen. Generator, Netz und Einstellungen betreut Eventenergie."]);
   if (info?.error) hinweise.push(["err", info.error]);
   if (info && info.service_installed === false) hinweise.push(["err", "Auf dem Server fehlen die Node-Abhängigkeiten des M-Box Dienstes (npm install in backend/mbox_service)."]);
 
@@ -65,7 +70,8 @@ export default function MBoxPage() {
   };
 
   const name = info?.device?.user_field || info?.device?.serial_number || "M-Box";
-  const tabProps = { h, befehl, post, aktualisieren, darf, isAdmin: level === "admin", confirm };
+  const tabProps = { h, befehl, post, aktualisieren, darf, isAdmin: level === "admin", confirm, kunde };
+  const sichtbareTabs = TABS.filter(([k]) => (k !== "diagnose" || level === "admin") && (!kunde || KUNDE_TABS.has(k)));
   const spsZeit = (s("Datum_Text") || s("Uhrzeit_Text")) ? `${s("Datum_Text") || ""} ${s("Uhrzeit_Text") || ""}`.trim() : null;
 
   return (
@@ -73,7 +79,7 @@ export default function MBoxPage() {
       <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/generators")} className="text-gray-600 hover:text-fuchsia-600 shrink-0" data-testid="mbox-back-btn">
+            <Button variant="ghost" size="sm" onClick={() => navigate(kunde ? "/hub" : "/generators")} className="text-gray-600 hover:text-fuchsia-600 shrink-0" data-testid="mbox-back-btn">
               <ArrowLeft className="w-4 h-4 mr-1" /> Zurück
             </Button>
             <div className="h-5 w-px bg-gray-200 shrink-0" />
@@ -116,7 +122,7 @@ export default function MBoxPage() {
         {/* Reiter */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
           <nav className="flex gap-1 px-2 overflow-x-auto border-b border-gray-100" data-testid="mbox-tabs">
-            {TABS.filter(([k]) => k !== "diagnose" || level === "admin").map(([k, l]) => (
+            {sichtbareTabs.map(([k, l]) => (
               <button key={k} type="button" onClick={() => setSeite(k)} data-testid={`mbox-tab-btn-${k}`}
                 className={`px-3.5 py-3 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${seite === k ? "border-fuchsia-600 text-fuchsia-700 font-semibold" : "border-transparent text-gray-500 hover:text-gray-900"}`}>{l}</button>
             ))}
@@ -130,6 +136,7 @@ export default function MBoxPage() {
             {seite === "meldungen" && <MeldungenTab {...tabProps} />}
             {seite === "service" && <ServiceTab {...tabProps} />}
             {seite === "diagnose" && level === "admin" && <DiagnoseTab {...tabProps} />}
+            {seite === "durchsage" && <AudioPiTab deviceId={id} darf={darf} isAdmin={level === "admin"} kunde={kunde} />}
           </div>
         </div>
       </main>

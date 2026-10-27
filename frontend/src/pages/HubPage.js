@@ -86,7 +86,7 @@ export default function HubPage() {
 
   // Mitarbeiter: Hub-Kachel-Toggles steuern. Kunden: Legacy-App-Berechtigungen.
   const hasFilesharing = isAdmin || (isCustomer ? !!user?.apps?.filesharing?.enabled : tileAllowed("fileshare"));
-  const hasMonitoring = isAdmin || (isCustomer ? !!user?.apps?.generator_monitoring?.enabled : tileAllowed("power_monitoring"));
+  const hasMonitoring = isAdmin || (isCustomer ? (!!user?.apps?.generator_monitoring?.enabled || !!user?.customer_no) : tileAllowed("power_monitoring"));
   const hasEnergyMonitoring = isAdmin || (isCustomer ? !!user?.apps?.energy_monitoring?.enabled : tileAllowed("energy_monitoring"));
   const hasBilling = isAdmin || !!user?.permissions?.can_billing;
 

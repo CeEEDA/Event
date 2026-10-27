@@ -119,6 +119,7 @@ class UserUpdate(BaseModel):
     access_start: Optional[str] = None
     access_end: Optional[str] = None
     permissions: Optional[Dict] = None
+    customer_no: Optional[str] = None
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
@@ -156,6 +157,7 @@ class UserResponse(BaseModel):
     access_start: Optional[str] = None
     access_end: Optional[str] = None
     permissions: Dict = {}
+    customer_no: Optional[str] = None
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -443,7 +445,9 @@ async def login(data: LoginRequest, request: Request):
         apps=user.get("apps", get_default_apps()),
         access_type=user.get("access_type", "permanent"),
         access_start=user.get("access_start"),
-        access_end=user.get("access_end")
+        access_end=user.get("access_end"),
+        permissions=user.get("permissions", {}),
+        customer_no=user.get("customer_no"),
     )
     
     return LoginResponse(token=token, user=user_response)
@@ -474,7 +478,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         access_type=user.get("access_type", "permanent"),
         access_start=user.get("access_start"),
         access_end=user.get("access_end"),
-        permissions=user.get("permissions", {})
+        permissions=user.get("permissions", {}),
+        customer_no=user.get("customer_no"),
     )
 
 # ============== Password Reset ==============
@@ -595,7 +600,8 @@ async def list_users(admin: dict = Depends(require_admin)):
         access_type=u.get("access_type", "permanent"),
         access_start=u.get("access_start"),
         access_end=u.get("access_end"),
-        permissions=u.get("permissions", {})
+        permissions=u.get("permissions", {}),
+        customer_no=u.get("customer_no"),
     ) for u in users]
 
 @api_router.post("/users", response_model=UserResponse)
@@ -653,6 +659,8 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         update_data["access_end"] = data.access_end if data.access_end else None
     if data.permissions is not None:
         update_data["permissions"] = data.permissions
+    if data.customer_no is not None:
+        update_data["customer_no"] = data.customer_no.strip()
     
     if update_data:
         await db.users.update_one({"id": user_id}, {"$set": update_data})
@@ -670,7 +678,8 @@ async def update_user(user_id: str, data: UserUpdate, admin: dict = Depends(requ
         access_type=updated_user.get("access_type", "permanent"),
         access_start=updated_user.get("access_start"),
         access_end=updated_user.get("access_end"),
-        permissions=updated_user.get("permissions", {})
+        permissions=updated_user.get("permissions", {}),
+        customer_no=updated_user.get("customer_no"),
     )
 
 @api_router.delete("/users/{user_id}")

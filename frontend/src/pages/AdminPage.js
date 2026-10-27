@@ -436,6 +436,7 @@ export default function AdminPage() {
       access_start: user.access_start || "",
       access_end: user.access_end || "",
       permissions: user.permissions || {},
+      customer_no: user.customer_no || "",
       apps: {
         filesharing: user.apps?.filesharing || {
           enabled: false,
@@ -488,7 +489,8 @@ export default function AdminPage() {
           access_start: formData.access_start || null,
           access_end: formData.access_end || null,
           apps: formData.apps,
-          permissions: formData.permissions || {}
+          permissions: formData.permissions || {},
+          customer_no: formData.customer_no ?? ""
         });
         // Freelancer: Auftrags-Zuweisungen separat speichern
         if (formData.role === "freelancer") {

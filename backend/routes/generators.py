@@ -305,11 +305,14 @@ async def list_generators(user: dict = Depends(get_authenticated_user)):
                 generators = []
 
     # Auto-include Stromerzeuger/Lichtmast devices as generators
+    # Kunden: nur wenn sie ausdruecklich "alle Generatoren" sehen duerfen (sonst Datenleck)
+    _gm = (user.get("apps") or {}).get("generator_monitoring") or {}
+    include_devices = user["role"] in ("admin", "mitarbeiter") or (_gm.get("enabled") and _gm.get("access_all"))
     existing_serials = {g.get("serial_number") for g in generators}
     active_devices = await db.devices.find(
         {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
         {"_id": 0}
-    ).to_list(2000)
+    ).to_list(2000) if include_devices else []
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
             # Determine status from device's mqtt_status or last_seen
@@ -1116,10 +1119,12 @@ async def get_generator_stats(user: dict = Depends(get_authenticated_user)):
     virtual_offline = 0
     virtual_alarm = 0
     virtual_running = 0
+    _gm = (user.get("apps") or {}).get("generator_monitoring") or {}
+    _include_devices = user["role"] in ("admin", "mitarbeiter") or (_gm.get("enabled") and _gm.get("access_all"))
     active_devices = await db.devices.find(
         {"device_type": {"$in": ["stromerzeuger", "lichtmast"]}, "status": {"$ne": "ausser_betrieb"}},
         {"_id": 0, "serial_number": 1, "mqtt_status": 1, "last_seen": 1, "latest_snapshot": 1}
-    ).to_list(2000)
+    ).to_list(2000) if _include_devices else []
     for dev in active_devices:
         if dev.get("serial_number") not in existing_serials:
             existing_serials.add(dev["serial_number"])

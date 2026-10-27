@@ -979,6 +979,66 @@ function MBoxConnectionSection({ formData, update, editing }) {
         </div>
       </div>
       {editing?.mbox_port && <p className="text-[10px] text-gray-400">Interner Dienst-Port: {editing.mbox_port} (nur localhost, wird automatisch verwaltet)</p>}
+      {editing && <MBoxPiSetupSection device={editing} />}
+    </div>
+  );
+}
+
+// Pi im Lichtmast (Soundkarte + USB-GPS) – Setup nach DSE-5510-Muster: Schluessel + wget-Befehl
+function MBoxPiSetupSection({ device }) {
+  const [audioDevice, setAudioDevice] = useState(device.mbox_pi_audio_device || "");
+  const [volume, setVolume] = useState(device.mbox_pi_volume ?? 85);
+  const [wgetCommand, setWgetCommand] = useState("");
+  const [loading, setLoading] = useState(false);
+  const pi = device.pi || {};
+
+  const handleGenerate = async () => {
+    if (!window.confirm("Ein neuer Geräteschlüssel für den Pi wird generiert und in das Setup-Skript eingebettet.\n\nEin bereits installierter Pi muss danach neu eingerichtet werden.\n\nFortfahren?")) return;
+    setLoading(true);
+    try {
+      const res = await api.post(`/mbox/${device.id}/pi-setup`, { audio_device: audioDevice, volume });
+      setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
+      toast.success("Pi-Setup generiert!");
+    } catch (err) {
+      toast.error(`Fehler: ${err?.response?.data?.detail || err?.message}`);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="border-t border-gray-100 pt-4" data-testid="mbox-pi-setup">
+      <div className="flex items-center gap-2 mb-1">
+        <Server className="w-4 h-4 text-fuchsia-600" />
+        <h3 className="text-sm font-medium text-gray-900">Pi im Lichtmast (Audio + GPS)</h3>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${pi.online ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`} data-testid="mbox-pi-badge">{pi.online ? "online" : device.mbox_pi_key_prefix ? "eingerichtet" : "nicht eingerichtet"}</span>
+      </div>
+      <p className="text-[10px] text-gray-400 mb-3">Raspberry Pi mit Soundkarte und USB-GPS-Antenne. Spielt Durchsagen ab und meldet die Position für die automatische Auftragszuweisung.</p>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <Label className="text-gray-600 text-[11px]">ALSA-Gerät (leer = Standard)</Label>
+          <Input value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="z.B. hw:1,0" className="mt-0.5 text-xs h-[30px] font-mono" data-testid="mbox-pi-audio-device" />
+        </div>
+        <div>
+          <Label className="text-gray-600 text-[11px]">Lautstärke %</Label>
+          <Input type="number" min={0} max={100} value={volume} onChange={e => setVolume(parseInt(e.target.value) || 0)} className="mt-0.5 text-xs h-[30px]" data-testid="mbox-pi-volume" />
+        </div>
+      </div>
+      {wgetCommand && (
+        <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid="mbox-pi-setup-instructions">
+          <p className="text-xs text-emerald-800 font-medium mb-2">Diesen Befehl auf dem Pi ausführen:</p>
+          <div className="flex items-start gap-2">
+            <code className="flex-1 bg-white border border-emerald-300 px-3 py-2 rounded text-[11px] font-mono select-all break-all leading-relaxed">{wgetCommand}</code>
+            <button type="button" onClick={() => { navigator.clipboard.writeText(wgetCommand); toast.success("Kopiert!"); }} className="shrink-0 px-2 py-2 bg-white border border-emerald-300 rounded hover:bg-emerald-100" data-testid="mbox-pi-copy-wget-btn" title="Kopieren">
+              <Download className="w-4 h-4 text-emerald-600" />
+            </button>
+          </div>
+          <p className="text-[10px] text-emerald-600 mt-2">Link ist 1 Stunde gültig.</p>
+        </div>
+      )}
+      <Button type="button" variant="outline" size="sm" onClick={handleGenerate} disabled={loading} className="text-gray-600 hover:text-fuchsia-600" data-testid="mbox-pi-generate-setup-btn">
+        <Download className="w-3.5 h-3.5 mr-1.5" />
+        {loading ? "Wird generiert..." : "Pi-Setup generieren"}
+      </Button>
+      <p className="text-[10px] text-gray-400 mt-2">Enthält: mpg123 (Audio) + gpsd (USB-GPS) + Sync-Dienst (alle 3 s) + Audiodatei-Abgleich + Systemd-Dienst „mbox_pi“</p>
     </div>
   );
 }
