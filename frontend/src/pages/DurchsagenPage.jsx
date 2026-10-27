@@ -4,6 +4,7 @@ import { ArrowLeft, Volume2, MapPin, Lightbulb } from "lucide-react";
 import api from "../lib/api";
 import { Button } from "../components/ui/button";
 import { OrderAudioPanel } from "../components/mbox/OrderAudioPanel";
+import { Logo } from "../components/Logo";
 
 // Kundenseite: Durchsagen fuer alle heute aktiven Auftraege (Upload, Vorschau, zeitgleicher Start auf allen Masten)
 export default function DurchsagenPage() {
@@ -23,7 +24,7 @@ export default function DurchsagenPage() {
             <h1 className="text-base font-bold text-gray-900 flex items-center gap-2"><Volume2 className="w-5 h-5 text-fuchsia-600" /> Durchsagen</h1>
             <p className="text-xs text-gray-400">Sprachdateien für Ihre Lichtmasten – Start erfolgt zeitgleich auf allen Masten vor Ort</p>
           </div>
-          <img src="/logo.png" alt="Eventenergie" className="h-7 ml-auto hidden sm:block" onError={e => { e.currentTarget.style.display = "none"; }} />
+          <div className="ml-auto hidden sm:block"><Logo size="small" /></div>
         </div>
       </header>
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">

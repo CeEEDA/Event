@@ -20,6 +20,14 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Ausbaustufe: Auftrags-Durchsagen – Kunden-Upload, ffmpeg-Prüfung, zeitgleicher Gruppenstart)
+- `routes/mbox_audio.py`: Upload (MP3/WAV/M4A/OGG/AAC/FLAC ≤ 25 MB) → async 2-Pass ffmpeg (Rauschteppich > −50 dB → `afftdn`, dann Peak auf 0 dBFS + Limiter, MP3 192k), Status processing/ready/ready_unprocessed(ohne ffmpeg)/failed mit Analyse (vorher/nachher, NR, Gain). Name/Umbenennen/Löschen (Kunde nur eigene), Vorschau-Stream `?token=`, Gruppenstart `POST /orders/{pk}/audio/{id}/play` (ein Befehl je Mast, gleiches `start_at = now+6 s`), `…/audio/stop`. Ablage in MongoDB GridFS (Bucket `mbox_audio`), ffmpeg nur über System-Temp.
+- `mbox_pi.device_manifest()` (30-s-Cache): Standard-Dateien + fertige Dateien aktiver Aufträge, denen der Mast zugewiesen ist; Pi-Download `order*`-Dateien; Pi-Sync lässt Befehle > 2 min verfallen (`expired`). Pi-Skript **v1.3.0**: wartet bis `start_at` (Server-Offset) → zeitgleicher Start.
+- **Kundenzugang**: `mbox_order_config.customer_user_ids` (Kachel „Kundenzugang", `GET /mbox/customers`, `PUT/GET /orders/{pk}/customers`), `customer_orders()` = Kundennr. ODER Freigabe; `mbox_level("kunde")` immer „kunde", Zugriff pro Mast über `customer_device_ids`. `GET /mbox/my/orders` für die Kundenseite.
+- Frontend: `OrderAudioPanel.jsx` (Masten-Chips mit spielt/bereit/offline, Upload, Liste mit Badge/Analyse/`<audio>`-Vorschau/Umbenennen/Löschen, „Auf allen Masten starten" mit Countdown, „Alle stoppen"), `MBoxOrderTab` ohne „Masten laut Auftrag" + `KundenFreigabe` + Panel, Kundenseite `/durchsagen` (`DurchsagenPage.jsx`) + Hub-Kachel „Durchsagen" (nur bei aktivem Auftrag), AudioPiTab zeigt Labels.
+- Tests: `tests/test_mbox_order_audio.py` (19) + Testing-Agent iteration_90 (Backend 19/19 nach Fix, Frontend Kunde/Admin/Mast-Seite grün). **Live-Voraussetzung: ffmpeg im PATH des Windows-Servers** (README_BETRIEB).
+- Offen: Pi-Abnahme Gruppenstart mit ≥ 2 Masten; Kunden-Upload-Freigabe durch Mitarbeiter (optional); Dateien pro Kunde statt pro Auftrag wiederverwenden.
+
 ### 2026-06 (Standort-Karte auf der M-Box-Seite wie bei Generatoren)
 - `components/mbox/MBoxStandortKarte.jsx` (Leaflet, gleicher Marker-Stil wie GeneratorDetailPage) unter der Übersicht: Position = Pi-GPS (mit Zeitstempel) sonst Gerätekoordinaten, Quelle wird angezeigt, Google-Maps-Link. Monitoring-Karte zeigt M-Boxen über `latitude/longitude` (vom Pi-GPS gesetzt) bereits als Marker; Klick → `/mbox/:id`.
 - Live-Stand: M-Box_001 meldet seit dem gpsd-Fix echten GPS-Fix (Pi online, Pin in der Liste).

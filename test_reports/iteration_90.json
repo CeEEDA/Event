@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 90: tested M-Box order announcements (Auftrags-Durchsagen) end to end. Backend: 18 of 19 pytest checks pass. Covered upload with 2-pass ffmpeg processing (normalised to -0.3 dB, 145.5 s), noise reduction (noise floor -29 dB -> afftdn applied, gain 35.1 dB, after -0.3 dB), delete removes the file from disk, rename, stream via ?token, delete permissions, manifest with label/order_pk, Pi download, group start with the same start_at (+6 s) delivered to the Pi, stop, 409 for a file still processing, 403 for another customer's order, customer list and auto-assignment by customer number. 1 FAIL: a customer without a customer number who gets access through the order override receives 403 on GET /api/mbox/devices. Frontend: customer flow on /durchsagen works fully (tile, upload, 'wird geprüft…' -> 'bereit · 0 dB', audio preview 200 audio/mpeg, rename, play toast 'startet in 6 s', stop-all button counts down, stop, delete). Admin order tile (real order 128): 'Masten laut Auftrag' is gone, customer access checkboxes plus toast 'Kundenzugang gespeichert' work, audio panel is present. Mast page Audio tab shows the label 'Evakuierung Halle 1'.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/mbox/devices (and all _allow/mbox_level checks, e.g. /api/mbox/{id}/status, /audio/play)", "issue": "routes/mbox.py mbox_level() returns 'none' for role kunde unless customer_no is set. A customer who only has access via mbox_order_config.customer_user_ids can see the order in /my/orders and use /orders/{pk}/audio, but gets 403 'Kein Zugriff auf M-Box' for the devices list, the mast page, 'Masten ansehen' and single-mast control. Fix: return 'kunde' for every role=kunde (customer_device_ids already scopes the devices), or check customer_orders.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/mbox/orders/{pk}/audio/{fid}/stream", "issue": "The JWT is passed as a query parameter (?token=) and therefore ends up in proxy/access logs. A short-lived signed stream token would be safer."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "OrderAudioPanel", "issue": "The delete button is always shown ((!kunde || true)). A customer can click delete on files uploaded by staff or other customers and only then gets a 403 error. Show it only for own files or for staff.", "selector": "order-audio-delete-<id>", "priority": "LOW"},
+      {"component": "OrderAudioPanel devices", "issue": "Before the first load finishes, order-audio-devices shows 'Aktuell kein Mast zugewiesen.' (misleading flicker). Show a loading state instead.", "selector": "order-audio-devices", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Customer with access via override only -> 'Masten ansehen' (/generators) / mast page", "issue": "Fails because of the backend mbox_level bug (403)", "affected_selectors": ["durchsagen-masten-<pk>"]}
+    ],
+    "design_issues": [
+      {"screen": "/durchsagen header", "issues": ["<img src='/logo.png'>: /logo.png returns text/html (SPA fallback). The broken image shows its alt text 'Eventenergie' instead of being hidden. Use the same logo asset as the other pages."]},
+      {"screen": "Mast page Audio tab - Letzte Befehle", "issues": ["Shows the stored file name (play order999901_xxxx.mp3) instead of the label; params.label is available."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_mbox_order_audio.py", "/app/test_reports/pytest/pytest_mbox_order_audio.xml"],
+  "action_items": [
+    "Fix mbox_level() in routes/mbox.py so customers without customer_no but with an order override get level 'kunde' (devices list, mast page, single-mast control)",
+    "OrderAudioPanel: show the delete button only for own files (or for staff)",
+    "OrderAudioPanel: loading state instead of 'Aktuell kein Mast zugewiesen.' before data arrives",
+    "DurchsagenPage: fix the logo src (/logo.png does not exist)"
+  ],
+  "critical_code_review_comments": [
+    "mbox_level kunde branch requires customer_no and is inconsistent with the new customer_orders override logic",
+    "OrderAudioPanel line 67 '(!kunde || true)' is dead conditional code",
+    "Stream auth via JWT in the query string (log leakage)",
+    "Upload does not validate the content by magic bytes; a non-audio file with a .mp3 extension ends up as status failed (acceptable, the ffmpeg error is stored)"
+  ],
+  "updated_files": ["/app/backend/tests/test_mbox_order_audio.py"],
+  "success_rate": {"backend": "95% (18/19)", "frontend": "100% of requested flows (minor UX issues)"},
+  "seed_data_creation": "None kept. QA audio files (QA Durchsage, QA MA1, QA Noisy, QA Processing, UI Test) were deleted. The temporary test_kunde_* users were deleted. Customer access for 999901 was reset to [] and for order 128 restored to its original 2 users. The pi-setup key for MBOX-TEST-1 was regenerated (test device only).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/test_mbox_order_audio.py (cleans up after itself; test_override_flow fails until mbox_level is fixed). /orders/999901 is not an EpiRent order -> use /orders/128 for the admin tile (it uses the real device M-Box_001: do NOT press play there). MBOX-TEST-1 id ee277308-711d-48c2-acfd-3ac9d20ff8be, Meier user id d6f99378-7a32-4353-a3f2-27ca74addd25. Keep the file 'Evakuierung Halle 1'.",
+  "rca of the issue": "test_override_flow: in customer_orders() the override is respected (customer_user_ids), but mbox_level() line 55-56 returns 'none' if customer_no is empty -> list_mbox_devices goes to the else branch -> _require('lesen') -> 403. Reproduce: create a kunde without customer_no, PUT /api/mbox/orders/999901/customers {user_ids:[id]}, GET /api/mbox/devices as that customer -> 403."
+}

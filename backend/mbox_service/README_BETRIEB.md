@@ -55,3 +55,10 @@ Rate-Limit: 30 schreibende Befehle/min je Benutzer+Gerät. Jeder Schreibzugriff 
 ## Kunden-Zuweisung
 - Kunde bekommt in der Benutzerverwaltung die EpiRent-Kundennummer. Dann sieht er unter "Power Monitoring" alle M-Boxen im Umkreis (1 km, waechst in 500-m-Schritten bis "Masten laut Auftrag", max. 10 km) der Veranstaltungsadresse seiner heute aktiven Auftraege (Dispo-Zeitraum). Position des Masts = Pi-GPS, sonst Koordinaten am Geraet.
 - Kunde darf nur Licht (Lampen, Schnellstart/-stop, Quittieren) und Durchsagen. Manuelle Korrektur in der Auftrags-Kachel "M-Box Lichtmasten" (zuweisen / ausschliessen).
+
+## Auftrags-Durchsagen (Kunden-Upload, Gruppenstart)
+- **ffmpeg muss auf dem Windows-Server im PATH liegen** (https://www.gyan.dev/ffmpeg/builds/ -> `ffmpeg.exe` z.B. nach `C:\ffmpeg\bin`, PATH ergaenzen, Dienst `EventenergieBackend` neu starten). Ohne ffmpeg werden Dateien ungeprueft uebernommen (Status "bereit (ungeprueft)").
+- Ablage: MongoDB GridFS (Bucket `mbox_audio`), Metadaten in `mbox_order_audio`; ffmpeg nutzt nur das System-Temp. Verarbeitung: Rauschteppich > -50 dB -> `afftdn`, dann Spitzenpegel auf 0 dBFS, MP3 192k.
+- Verteilung: fertige Dateien erscheinen im Audio-Manifest aller dem Auftrag zugewiesenen Masten; der Pi laedt sie beim naechsten Sync (einmalig). Loeschen entfernt sie wieder vom Pi.
+- Gruppenstart: `play` mit `start_at = jetzt + 6 s` fuer jeden Mast; Pi (ab Skript v1.3) wartet bis `start_at` (Server-Zeitversatz aus `server_time`) -> alle Masten starten gleichzeitig. Befehle, die ein Pi > 2 min nicht abholt, verfallen.
+- Kundenzugang: Kundennummer am Login (automatisch) ODER Haekchen "Kundenzugang" in der Auftrags-Kachel. Kunde: Hub-Kachel "Durchsagen" -> /durchsagen.

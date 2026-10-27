@@ -53,7 +53,7 @@ def mbox_level(user: dict) -> str:
     if user.get("role") == "admin":
         return "admin"
     if user.get("role") == "kunde":
-        return "kunde" if str(user.get("customer_no") or "").strip() else "none"
+        return "kunde"  # konkreter Zugriff pro Mast ueber customer_device_ids (Kundennr. oder Freigabe im Auftrag)
     if user.get("role") != "mitarbeiter":
         return "none"
     modules = (user.get("apps") or {}).get("modules") or {}
@@ -530,11 +530,12 @@ async def mbox_pi_audio_download(device_id: str, name: str, api_key: str = ""):
     mbox_pi.verify_pi_key(device, api_key)
     safe = os.path.basename(name)
     if safe.startswith("order"):
-        from routes.mbox_audio import ORDER_AUDIO_DIR
-        from fastapi.responses import FileResponse
-        if not (ORDER_AUDIO_DIR / safe).exists():
+        from routes.mbox_audio import load_bytes
+        from fastapi.responses import Response
+        data = await load_bytes(safe)
+        if data is None:
             raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-        return FileResponse(ORDER_AUDIO_DIR / safe, media_type="audio/mpeg", filename=safe)
+        return Response(content=data, media_type="audio/mpeg", headers={"Content-Disposition": f'attachment; filename="{safe}"'})
     return mbox_pi.audio_file_response(safe)
 
 

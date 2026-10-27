@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
+import tempfile
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from routes import mbox_pi
 from routes.mbox import get_user, _audit, _rate_check
@@ -21,8 +23,8 @@ router = APIRouter(prefix="/api/mbox", tags=["mbox-audio"])
 db = None
 decode_jwt_token = None
 
-# Ablage auf dem eigenen Windows-Server (persistente Platte, wie mbox_service/audio) - kein Cloud-Pod.
-ORDER_AUDIO_DIR = Path(__file__).resolve().parent.parent / "mbox_service" / "audio_orders"
+# Fertige Durchsagen liegen in MongoDB (GridFS, Bucket "mbox_audio"); ffmpeg arbeitet nur mit temporaeren Dateien.
+fs = None
 MAX_UPLOAD = 25 * 1024 * 1024
 ALLOWED_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac"}
 GROUP_START_LEAD_SEC = 6  # Pi pollt alle 3 s -> alle Masten haben den Befehl vor dem Startzeitpunkt
@@ -30,9 +32,28 @@ NOISE_FLOOR_LIMIT_DB = -50.0
 
 
 def init_mbox_audio_routes(_db, _decode):
-    global db, decode_jwt_token
+    global db, decode_jwt_token, fs
     db, decode_jwt_token = _db, _decode
-    ORDER_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    fs = AsyncIOMotorGridFSBucket(_db, bucket_name="mbox_audio")
+
+
+async def store_bytes(stored: str, data: bytes) -> None:
+    async for old in fs.find({"filename": stored}):
+        await fs.delete(old._id)
+    await fs.upload_from_stream(stored, data, metadata={"content_type": "audio/mpeg"})
+
+
+async def load_bytes(stored: str) -> Optional[bytes]:
+    try:
+        stream = await fs.open_download_stream_by_name(stored)
+    except Exception:
+        return None
+    return await stream.read()
+
+
+async def delete_stored(stored: str) -> None:
+    async for old in fs.find({"filename": stored}):
+        await fs.delete(old._id)
 
 
 def ffmpeg_available() -> bool:
@@ -94,25 +115,29 @@ def process_audio(src: Path, dst: Path) -> dict:
             "filters": (["afftdn=nf=-25"] if noisy else []) + filters}
 
 
-async def _process_job(fid: str, src: Path, dst: Path):
+async def _process_job(fid: str, src: Path, stored: str):
+    dst = src.with_suffix(".out.mp3")
     try:
         if not ffmpeg_available():
             shutil.copyfile(src, dst)
             sha, size = _sha_size(dst)
+            await store_bytes(stored, dst.read_bytes())
             await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "ready_unprocessed", "sha256": sha, "size": size,
                                                                         "warning": "ffmpeg fehlt auf dem Server - Datei unveraendert uebernommen"}})
         else:
             analysis = await asyncio.to_thread(process_audio, src, dst)
             sha, size = _sha_size(dst)
+            await store_bytes(stored, dst.read_bytes())
             await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "ready", "sha256": sha, "size": size, "analysis": analysis,
                                                                         "duration_sec": analysis["after"].get("duration_sec")}})
     except Exception as e:
         await db.mbox_order_audio.update_one({"id": fid}, {"$set": {"status": "failed", "error": str(e)[:300]}})
     finally:
-        try:
-            src.unlink()
-        except Exception:
-            pass
+        for tmp in (src, dst):
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
         mbox_pi.invalidate_manifest_cache()
         # betroffene Masten sofort zum Dateiabgleich anstossen
         doc = await db.mbox_order_audio.find_one({"id": fid}, {"_id": 0, "order_pk": 1})
@@ -203,7 +228,7 @@ async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: 
     if ext not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Dateityp {ext or '?'} nicht erlaubt (MP3, WAV, M4A, OGG, AAC, FLAC)")
     fid = str(uuid.uuid4())
-    src = ORDER_AUDIO_DIR / f"{fid}.upload{ext}"
+    src = Path(tempfile.gettempdir()) / f"mbox_upload_{fid}{ext}"  # nur Zwischenablage fuer ffmpeg
     size = 0
     with open(src, "wb") as out:
         while chunk := await file.read(1 << 20):
@@ -218,7 +243,7 @@ async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: 
            "status": "processing", "size": size, "sha256": None, "uploaded_by": user.get("name"), "uploaded_by_id": user["id"],
            "uploaded_by_role": user.get("role"), "uploaded_at": datetime.now(timezone.utc).isoformat()}
     await db.mbox_order_audio.insert_one(doc)
-    asyncio.create_task(_process_job(fid, src, ORDER_AUDIO_DIR / stored))
+    asyncio.create_task(_process_job(fid, src, stored))
     return _public_file(doc)
 
 @router.patch("/orders/{order_pk}/audio/{fid}")
@@ -242,7 +267,7 @@ async def delete_order_audio(order_pk: int, fid: str, user: dict = Depends(get_u
     if not _is_staff(user) and f.get("uploaded_by_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Nur eigene Dateien loeschbar")
     await db.mbox_order_audio.delete_one({"id": fid})
-    (ORDER_AUDIO_DIR / f["stored"]).unlink(missing_ok=True)
+    await delete_stored(f["stored"])
     mbox_pi.invalidate_manifest_cache()
     await _enqueue_order(order_pk, user, "sync_files", {})
     return {"ok": True}
@@ -255,9 +280,11 @@ async def stream_order_audio(order_pk: int, fid: str, token: str = Query(...)):
         raise HTTPException(status_code=401, detail="Ungueltig")
     await _order_access(user, order_pk)
     f = await db.mbox_order_audio.find_one({"id": fid, "order_pk": str(order_pk)}, {"_id": 0})
-    if not f or not (ORDER_AUDIO_DIR / f["stored"]).exists():
+    data = await load_bytes(f["stored"]) if f else None
+    if data is None:
         raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-    return FileResponse(ORDER_AUDIO_DIR / f["stored"], media_type="audio/mpeg", filename=f"{f['name']}.mp3")
+    return Response(content=data, media_type="audio/mpeg",
+                    headers={"Content-Disposition": f'inline; filename="{f["name"]}.mp3"', "Accept-Ranges": "bytes"})
 
 @router.post("/orders/{order_pk}/audio/{fid}/play")
 async def play_order_audio(order_pk: int, fid: str, user: dict = Depends(get_user)):
