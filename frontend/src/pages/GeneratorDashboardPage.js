@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { MapContainer, Marker, Popup, Tooltip, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
-import { MBoxSection } from "../components/mbox/MBoxSection";
+import { Lightbulb } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -255,11 +255,27 @@ export default function GeneratorDashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [genRes, statsRes] = await Promise.all([
+      const [genRes, statsRes, mboxRes] = await Promise.all([
         api.get("/generators"),
         api.get("/generators/stats/overview"),
+        api.get("/mbox/devices").catch(() => ({ data: { devices: [] } })),
       ]);
-      setGenerators(genRes.data);
+      // M-Box Lichtmasten als normale Zeilen in die Liste einreihen
+      const mboxRows = (mboxRes.data?.devices || []).map(d => ({
+        id: `mbox-${d.id}`,
+        mbox_id: d.id,
+        kind: "mbox",
+        serial_number: d.user_field || d.serial_number,
+        name: d.user_field || d.serial_number,
+        model: `M-Box Lichtmast · ${d.serial_number}`,
+        location_name: d.mbox_endpoint,
+        status: d.status === "ausser_betrieb" ? "offline" : d.runtime?.running ? "online" : "offline",
+        last_seen: d.runtime?.started_at || null,
+        latitude: d.latitude,
+        longitude: d.longitude,
+        latest_telemetry: null,
+      }));
+      setGenerators([...genRes.data, ...mboxRows]);
       setStats(statsRes.data);
     } catch (err) {
       toast.error("Fehler beim Laden der Generatoren");
@@ -369,9 +385,6 @@ export default function GeneratorDashboardPage() {
           </div>
         </div>
 
-        {/* M-Box Lichtmasten (Fernbedienung per OPC UA) */}
-        <MBoxSection search={search} />
-
         {/* Map View */}
         {viewMode === "map" && (
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6" style={{ height: "500px" }} data-testid="generator-map">
@@ -433,7 +446,7 @@ export default function GeneratorDashboardPage() {
                         )}
                         {gen.location_name && <p className="text-xs text-gray-400 mt-1">{gen.location_name}</p>}
                         <button
-                          onClick={() => navigate(`/generators/${gen.id}`)}
+                          onClick={() => navigate(gen.kind === "mbox" ? `/mbox/${gen.mbox_id}` : `/generators/${gen.id}`)}
                           className="mt-2 w-full text-xs font-medium text-fuchsia-600 hover:text-fuchsia-700 hover:underline text-left"
                           data-testid={`map-popup-details-${gen.id}`}
                         >
@@ -467,16 +480,19 @@ export default function GeneratorDashboardPage() {
                   return (
                     <div
                       key={gen.id}
-                      onClick={() => navigate(`/generators/${gen.id}`)}
+                      onClick={() => navigate(gen.kind === "mbox" ? `/mbox/${gen.mbox_id}` : `/generators/${gen.id}`)}
                       className={`flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${idx > 0 ? "border-t border-gray-100" : ""} ${gen.status === "alarm" || gen.status === "warning" ? "bg-red-50/50" : ""}`}
-                      data-testid={`generator-row-${gen.serial_number || gen.id}`}
+                      data-testid={gen.kind === "mbox" ? `mbox-row-${gen.serial_number}` : `generator-row-${gen.serial_number || gen.id}`}
                     >
                       {/* Status Dot */}
                       <div className={`w-3 h-3 rounded-full flex-shrink-0 ${s.color}`} title={s.label} />
 
                       {/* Name + Model + Alarm */}
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{gen.serial_number || gen.name}</p>
+                        <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 min-w-0">
+                          <span className="truncate">{gen.serial_number || gen.name}</span>
+                          {gen.kind === "mbox" && <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 inline-flex items-center gap-1"><Lightbulb className="w-3 h-3" />M-Box</span>}
+                        </p>
                         {t?.fault_text ? (
                           <p className="text-xs text-red-600 font-medium truncate">{t.fault_text}</p>
                         ) : (
@@ -502,7 +518,7 @@ export default function GeneratorDashboardPage() {
 
                       {/* Status + Time */}
                       <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                        <span className={`text-[10px] font-medium ${s.textColor}`}>{s.label}</span>
+                        <span className={`text-[10px] font-medium ${s.textColor}`}>{gen.kind === "mbox" ? (gen.status === "online" ? "Dienst aktiv" : "Dienst aus") : s.label}</span>
                         <span className="text-[10px] text-gray-400">{lastSeen}</span>
                       </div>
 

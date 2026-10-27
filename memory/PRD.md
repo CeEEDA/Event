@@ -20,6 +20,9 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Änderung: M-Boxen als normale Zeilen in der Power-Monitoring-Liste)
+- `GeneratorDashboardPage.js`: separate Karten-Sektion entfernt (`MBoxSection.jsx` gelöscht). M-Box-Geräte (`GET /api/mbox/devices`) werden als Zeilen mit Badge „M-Box", Status „Dienst aktiv/aus", Suche/Filter/Sortierung und Karten-Marker (wenn GPS) in die Liste gemischt; Klick → `/mbox/:id`. Stats-Kacheln bleiben Generator-only.
+
 ### 2026-06 (Bugfix: Projektbericht – Material-Kachel scrollte über den Speichern-Button)
 - `ProjectReportFormPage.jsx`: Material-Kopfzeile war `sticky top-0 z-20` und lag damit über dem Seiten-Header (`z-10`). Fix: Header `z-30` + per `ResizeObserver` gemessene Header-Höhe als `top`-Offset der Material-Zeile (mobil umbricht der Titel → Header höher). Verifiziert Desktop + 390px.
 
