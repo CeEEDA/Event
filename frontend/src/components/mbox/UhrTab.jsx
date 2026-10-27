@@ -128,7 +128,7 @@ export function UhrTab({ h, post, aktualisieren, darf, confirm }) {
           <table className="w-full text-xs">
             <thead><tr className="text-left text-gray-500"><th className="py-1 pr-2">Tag</th>{PAARE.map(p => <th key={p} className="py-1 pr-2">Paar {p}</th>)}</tr></thead>
             <tbody>{TAGE.map((t, di) => { const d = di + 1; return (
-              <tr key={t} onClick={() => tagWaehlen(d)} className={`border-t border-gray-100 cursor-pointer hover:bg-gray-50 ${d === tag ? "bg-sky-50" : ""}`} data-testid={`mbox-woche-zeile-${d}`}>
+              <tr key={t} onClick={() => tagWaehlen(d)} className={`border-t border-gray-100 cursor-pointer hover:bg-gray-50 ${d === tag ? "bg-fuchsia-50" : ""}`} data-testid={`mbox-woche-zeile-${d}`}>
                 <td className="py-1.5 pr-2 font-medium text-gray-700">{t}</td>
                 {PAARE.map(p => {
                   const b = `DB_Schaltuhr.Woche[${d},${p}].`, parts = [];

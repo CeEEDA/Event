@@ -5,10 +5,10 @@ import {
 } from "../ui/alert-dialog";
 
 export const Karte = ({ titel, children, action, className = "", testId }) => (
-  <div className={`bg-white border border-gray-200 rounded-xl p-4 ${className}`} data-testid={testId}>
+  <div className={`bg-white border border-gray-200 rounded-xl shadow-sm p-5 ${className}`} data-testid={testId}>
     {titel && (
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-        <h2 className="text-sm font-semibold text-gray-900">{titel}</h2>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{titel}</h2>
         {action}
       </div>
     )}
@@ -31,7 +31,7 @@ export const Dot = ({ on, farbe = "gruen" }) => {
 
 export const Balken = ({ p, warn, err }) => (
   <div className="h-3 bg-gray-200 rounded-full overflow-hidden mt-1">
-    <div className={`h-full ${err ? "bg-red-500" : warn ? "bg-amber-400" : "bg-sky-700"}`} style={{ width: `${Math.max(0, Math.min(100, p || 0))}%` }} />
+    <div className={`h-full ${err ? "bg-red-500" : warn ? "bg-amber-400" : "bg-fuchsia-600"}`} style={{ width: `${Math.max(0, Math.min(100, p || 0))}%` }} />
   </div>
 );
 
@@ -43,7 +43,7 @@ export const Hinweis = ({ art, children, testId }) => (
 export const Btn = ({ variant, disabled, onClick, children, testId, className = "", title }) => {
   const base = "text-sm px-3.5 py-2 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]";
   const v = {
-    haupt: "bg-sky-800 text-white border-sky-800 hover:bg-sky-900",
+    haupt: "bg-fuchsia-600 text-white border-fuchsia-600 hover:bg-fuchsia-700",
     an: "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700",
     laeuft: "bg-amber-300 border-amber-500 text-gray-900",
     gefahr: "bg-white text-red-700 border-red-300 hover:bg-red-50",

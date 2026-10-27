@@ -20,6 +20,9 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Design: M-Box-Seite im Portal-Look, gelbes Badge entfernt)
+- `MBoxPage.jsx` an `GeneratorDetailPage` angeglichen: weißer Sticky-Header (Zurück | Name/Untertitel, Online/Offline-Pill, Aktionen, Logo), roter Banner bei fehlender Verbindung, Info-Leiste (Endpoint, SPS-Zeit) + Zustands-Pills, Reiter in weißer Karte mit Fuchsia-Unterstrich, Karten mit Uppercase-Titeln (`MBoxUi.Karte`), Haupt-Buttons/Balken in Fuchsia statt Sky. Listen-Zeile ohne gelbes „M-Box"-Badge (Typ steht in der Unterzeile).
+
 ### 2026-06 (Änderung: M-Boxen als normale Zeilen in der Power-Monitoring-Liste)
 - `GeneratorDashboardPage.js`: separate Karten-Sektion entfernt (`MBoxSection.jsx` gelöscht). M-Box-Geräte (`GET /api/mbox/devices`) werden als Zeilen mit Badge „M-Box", Status „Dienst aktiv/aus", Suche/Filter/Sortierung und Karten-Marker (wenn GPS) in die Liste gemischt; Klick → `/mbox/:id`. Stats-Kacheln bleiben Generator-only.
 

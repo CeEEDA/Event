@@ -20,7 +20,7 @@ export function MeldungenTab({ h, befehl, darf }) {
           <ul className="divide-y divide-gray-100">
             {aktiv.map(n => { const m = MELDUNGEN[n] || ["I", "Meldung " + n, ""]; return (
               <li key={n} className="py-2 flex gap-3 items-start">
-                <span className={`text-xs px-2 py-0.5 rounded-md font-medium shrink-0 ${m[0] === "S" ? "bg-red-100 text-red-800" : "bg-sky-100 text-sky-800"}`}>{m[0] === "S" ? "Störung" : "Info"}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium shrink-0 ${m[0] === "S" ? "bg-red-100 text-red-800" : "bg-fuchsia-100 text-fuchsia-700"}`}>{m[0] === "S" ? "Störung" : "Info"}</span>
                 <div><p className="text-sm font-medium text-gray-900">{m[1]}</p>{m[2] && <p className="text-xs text-gray-500">{m[2]}</p>}</div>
               </li>); })}
           </ul>

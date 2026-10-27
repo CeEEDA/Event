@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { MapContainer, Marker, Popup, Tooltip, useMap } from "react-leaflet";
 import MapTileLayer from "../components/MapTileLayer";
-import { Lightbulb } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -489,10 +488,7 @@ export default function GeneratorDashboardPage() {
 
                       {/* Name + Model + Alarm */}
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 min-w-0">
-                          <span className="truncate">{gen.serial_number || gen.name}</span>
-                          {gen.kind === "mbox" && <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 inline-flex items-center gap-1"><Lightbulb className="w-3 h-3" />M-Box</span>}
-                        </p>
+                        <p className="text-sm font-semibold text-gray-900 truncate">{gen.serial_number || gen.name}</p>
                         {t?.fault_text ? (
                           <p className="text-xs text-red-600 font-medium truncate">{t.fault_text}</p>
                         ) : (
