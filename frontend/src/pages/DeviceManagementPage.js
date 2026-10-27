@@ -986,7 +986,6 @@ function MBoxConnectionSection({ formData, update, editing }) {
 
 // Pi im Lichtmast (Soundkarte + USB-GPS) – Setup nach DSE-5510-Muster: Schluessel + wget-Befehl
 function MBoxPiSetupSection({ device }) {
-  const [audioDevice, setAudioDevice] = useState(device.mbox_pi_audio_device || "");
   const [volume, setVolume] = useState(device.mbox_pi_volume ?? 85);
   const [wgetCommand, setWgetCommand] = useState("");
   const [loading, setLoading] = useState(false);
@@ -996,7 +995,7 @@ function MBoxPiSetupSection({ device }) {
     if (!window.confirm("Ein neuer Geräteschlüssel für den Pi wird generiert und in das Setup-Skript eingebettet.\n\nEin bereits installierter Pi muss danach neu eingerichtet werden.\n\nFortfahren?")) return;
     setLoading(true);
     try {
-      const res = await api.post(`/mbox/${device.id}/pi-setup`, { audio_device: audioDevice, volume });
+      const res = await api.post(`/mbox/${device.id}/pi-setup`, { volume });
       setWgetCommand(`wget "${res.data.download_url}" -O setup.sh && sudo bash setup.sh`);
       toast.success("Pi-Setup generiert!");
     } catch (err) {
@@ -1011,12 +1010,8 @@ function MBoxPiSetupSection({ device }) {
         <h3 className="text-sm font-medium text-gray-900">Pi im Lichtmast (Audio + GPS)</h3>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${pi.online ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`} data-testid="mbox-pi-badge">{pi.online ? "online" : device.mbox_pi_key_prefix ? "eingerichtet" : "nicht eingerichtet"}</span>
       </div>
-      <p className="text-[10px] text-gray-400 mb-3">Raspberry Pi mit Soundkarte und USB-GPS-Antenne. Spielt Durchsagen ab und meldet die Position für die automatische Auftragszuweisung.</p>
+      <p className="text-[10px] text-gray-400 mb-3">Raspberry Pi mit DAC/Soundkarte und USB-GPS-Antenne. Das Setup setzt den DAC automatisch als Standard-Audioausgabe, spielt Durchsagen ab und meldet die Position für die automatische Auftragszuweisung.</p>
       <div className="grid grid-cols-2 gap-2 mb-3">
-        <div>
-          <Label className="text-gray-600 text-[11px]">ALSA-Gerät (leer = Standard)</Label>
-          <Input value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="z.B. hw:1,0" className="mt-0.5 text-xs h-[30px] font-mono" data-testid="mbox-pi-audio-device" />
-        </div>
         <div>
           <Label className="text-gray-600 text-[11px]">Lautstärke %</Label>
           <Input type="number" min={0} max={100} value={volume} onChange={e => setVolume(parseInt(e.target.value) || 0)} className="mt-0.5 text-xs h-[30px]" data-testid="mbox-pi-volume" />
@@ -1038,7 +1033,7 @@ function MBoxPiSetupSection({ device }) {
         <Download className="w-3.5 h-3.5 mr-1.5" />
         {loading ? "Wird generiert..." : "Pi-Setup generieren"}
       </Button>
-      <p className="text-[10px] text-gray-400 mt-2">Enthält: mpg123 (Audio) + gpsd (USB-GPS) + Sync-Dienst (alle 3 s) + Audiodatei-Abgleich + Systemd-Dienst „mbox_pi“</p>
+      <p className="text-[10px] text-gray-400 mt-2">Enthält: mpg123 (Audio) + DAC als ALSA-Standard + gpsd (USB-GPS) + Sync-Dienst (alle 3 s) + Audiodatei-Abgleich + Systemd-Dienst „mbox_pi“</p>
     </div>
   );
 }

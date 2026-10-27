@@ -20,6 +20,10 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Änderung: DAC wird vom Setup-Skript als ALSA-Standard gesetzt, keine Geräteauswahl im Portal)
+- Setup-Skript Schritt „[2/6] DAC als Standard-Audioausgabe": erkennt per `aplay -l` die DAC/USB-Karte (Muster dac|usb|codec|hifiberry|iqaudio|pcm5|wm8, HDMI/vc4 ausgeschlossen, sonst erste Nicht-HDMI-Karte) und schreibt `/etc/asound.conf` (`defaults.pcm.card N`, `defaults.ctl.card N`) + setzt Mixer-Lautstärke. Verifiziert mit simulierter aplay-Ausgabe (HDMI + HiFiBerry + USB → card 1 DAC).
+- Entfernt: Dropdown „Ausgabegerät" im Audio-Reiter, Endpoint `POST /audio/device`, ALSA-Feld im Pi-Setup-Formular. `audio_device` bleibt im Pi-Skript/Konfig immer leer → Standard (= DAC).
+
 ### 2026-06 (Bugfix/Härtung: Pi spielt Testansage nicht – mpg123 bricht sofort ab)
 - Befund am echten Pi EED-M-Box001 (M-Box_001): Sync/Download/Befehl ok, „gestartet" gemeldet, aber 3 s später `playing=None` → mpg123 beendet sofort (falsches/fehlendes ALSA-Standardgerät); Fehler wurde verschluckt (stderr → DEVNULL).
 - `static/mbox_pi_sync.py` **v1.1.0**: stderr erfassen, 1,5 s Startprüfung, **Karten-Fallback** (Standard → USB-Karten → Rest aus `aplay -l`), meldet `audio_cards`, `last_error`, genutztes Gerät; `amixer -D hw:N`; **Selbst-Update** über `script_sha256` im Sync + `GET /api/mbox/pi/{id}/script`; Konfig (`audio_device`, `volume`) kommt live vom Portal.

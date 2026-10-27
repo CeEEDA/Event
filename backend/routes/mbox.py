@@ -454,10 +454,10 @@ async def mbox_pi_setup(device_id: str, request: Request, body: Optional[dict] =
     await db.devices.update_one({"id": device_id}, {"$set": {
         "mbox_pi_key_hash": h, "mbox_pi_key_prefix": plain[:8],
         "mbox_pi_key_created_at": datetime.now(timezone.utc).isoformat(),
-        "mbox_pi_audio_device": body.get("audio_device") or "", "mbox_pi_volume": int(body.get("volume") or 85),
+        "mbox_pi_audio_device": "", "mbox_pi_volume": int(body.get("volume") or 85),
     }})
     base = mbox_pi.api_base(request)
-    script = mbox_pi.build_setup_script(device, plain, base, body.get("audio_device") or "", int(body.get("volume") or 85))
+    script = mbox_pi.build_setup_script(device, plain, base, int(body.get("volume") or 85))
     token = mbox_pi.store_setup(script, device.get("user_field") or device.get("serial_number") or device_id)
     await _audit(device, user, "pi-setup", None, {"ok": True})
     return {"download_token": token, "download_url": f"{base}/mbox/pi-setup-download/{token}"}
@@ -503,19 +503,6 @@ async def mbox_pi_script(device_id: str, api_key: str = ""):
     mbox_pi.verify_pi_key(device, api_key)
     from fastapi.responses import Response
     return Response(content=mbox_pi.pi_script_bytes(), media_type="text/x-python")
-
-
-@router.post("/{device_id}/audio/device")
-async def mbox_audio_device(device_id: str, body: dict, user: dict = Depends(get_user)):
-    """ALSA-Ausgabegeraet des Pi aendern (leer = automatisch: Standard, dann USB-Karten)."""
-    await _allow(user, "bedienen", device_id)
-    device = await _device(device_id)
-    dev = str(body.get("audio_device") or "").strip()[:60]
-    if dev and not re.match(r"^[A-Za-z0-9_:,.=-]+$", dev):
-        raise HTTPException(status_code=400, detail="Ungueltiger Geraetename")
-    await db.devices.update_one({"id": device_id}, {"$set": {"mbox_pi_audio_device": dev, "mbox_pi_last_error": None}})
-    await _audit(device, user, "audio/device", {"audio_device": dev or "auto"}, {"ok": True})
-    return {"ok": True, "audio_device": dev}
 
 
 @router.post("/pi/{device_id}/command-result")
