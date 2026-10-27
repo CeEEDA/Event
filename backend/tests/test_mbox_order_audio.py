@@ -213,6 +213,76 @@ class TestManifestPlay:
         assert p.status_code == 409, p.text
 
 
+class TestLoopSelectTimers:
+    """Einmal/Schleife, Masten-Auswahl, Stopp einzeln, Timer-CRUD + Sofortstart, Minuten-Logik."""
+
+    def test_loop_on_selected_mast(self, kunde, dev_id):
+        sync(dev_id, S["key"])
+        r = requests.post(f"{API}/mbox/orders/{ORDER}/audio/{S['kfile']['id']}/play", headers=kunde,
+                          json={"loop": True, "device_ids": [dev_id]}, timeout=T)
+        assert r.status_code == 200, r.text
+        assert r.json()["loop"] is True and r.json()["devices"] == 1
+        p = [c for c in sync(dev_id, S["key"]).json()["pending_commands"] if c["command"] == "play"][-1]
+        assert p["params"]["loop"] is True and p["params"]["file"] == S["kfile"]["stored"]
+
+    def test_foreign_device_ids_ignored(self, kunde, dev_id):
+        r = requests.post(f"{API}/mbox/orders/{ORDER}/audio/{S['kfile']['id']}/play", headers=kunde,
+                          json={"loop": False, "device_ids": ["gibt-es-nicht"]}, timeout=T)
+        assert r.status_code == 409, r.text
+        sync(dev_id, S["key"])
+
+    def test_stop_selected(self, kunde, dev_id):
+        r = requests.post(f"{API}/mbox/orders/{ORDER}/audio/stop", headers=kunde, json={"device_ids": [dev_id]}, timeout=T)
+        assert r.status_code == 200 and r.json()["devices"] == 1
+        assert any(c["command"] == "stop" for c in sync(dev_id, S["key"]).json()["pending_commands"])
+
+    def test_timer_crud(self, kunde, admin, dev_id):
+        fid = S["kfile"]["id"]
+        bad = requests.post(f"{API}/mbox/orders/{ORDER}/audio/{fid}/timers", headers=kunde, json={"time": "25:99"}, timeout=T)
+        assert bad.status_code == 400
+        r = requests.post(f"{API}/mbox/orders/{ORDER}/audio/{fid}/timers", headers=kunde,
+                          json={"time": "18:30", "days": [4, 5, 6], "loop": True, "device_ids": [dev_id]}, timeout=T)
+        assert r.status_code == 200, r.text
+        t = r.json()
+        S["timer"] = t
+        assert t["time"] == "18:30" and t["days"] == [4, 5, 6] and t["loop"] is True and t["enabled"] is True and t["file_name"]
+        r2 = requests.post(f"{API}/mbox/orders/{ORDER}/audio/{fid}/timers", headers=admin, json={"time": "09:00", "date": "2027-06-01"}, timeout=T)
+        assert r2.status_code == 200 and r2.json()["date"] == "2027-06-01" and r2.json()["days"] == []
+        S["timer2"] = r2.json()
+        lst = requests.get(f"{API}/mbox/orders/{ORDER}/audio", headers=kunde, timeout=T).json()
+        ids = {x["id"] for x in lst["timers"]}
+        assert t["id"] in ids and S["timer2"]["id"] in ids and lst["active"] is True
+        u = requests.patch(f"{API}/mbox/orders/{ORDER}/timers/{t['id']}", headers=kunde, json={"enabled": False, "time": "19:00"}, timeout=T)
+        assert u.status_code == 200 and u.json()["enabled"] is False and u.json()["time"] == "19:00"
+
+    def test_timer_run_now(self, kunde, dev_id):
+        sync(dev_id, S["key"])
+        r = requests.post(f"{API}/mbox/orders/{ORDER}/timers/{S['timer']['id']}/run-now", headers=kunde, timeout=T)
+        assert r.status_code == 200, r.text
+        assert r.json()["loop"] is True and r.json()["devices"] == 1
+        p = [c for c in sync(dev_id, S["key"]).json()["pending_commands"] if c["command"] == "play"][-1]
+        assert p["params"]["loop"] is True and p["user_name"] == "Test Meier"
+
+    def test_timer_due_logic(self):
+        import sys
+        sys.path.insert(0, "/app/backend")
+        from routes.mbox_audio import _timer_due
+        from datetime import datetime
+        fr = datetime(2026, 6, 19, 18, 30)  # Freitag
+        assert _timer_due({"enabled": True, "time": "18:30", "days": [4]}, fr)
+        assert _timer_due({"enabled": True, "time": "18:30", "days": []}, fr)
+        assert not _timer_due({"enabled": True, "time": "18:30", "days": [0]}, fr)
+        assert not _timer_due({"enabled": True, "time": "18:31", "days": []}, fr)
+        assert not _timer_due({"enabled": False, "time": "18:30", "days": []}, fr)
+        assert _timer_due({"enabled": True, "time": "18:30", "date": "2026-06-19"}, fr)
+        assert not _timer_due({"enabled": True, "time": "18:30", "date": "2026-06-20"}, fr)
+
+    def test_timer_delete_with_file(self, kunde, admin):
+        d = requests.delete(f"{API}/mbox/orders/{ORDER}/timers/{S['timer2']['id']}", headers=admin, timeout=T)
+        assert d.status_code == 200
+        assert requests.delete(f"{API}/mbox/orders/{ORDER}/timers/{S['timer2']['id']}", headers=admin, timeout=T).status_code == 404
+
+
 class TestCustomerAccess:
     def test_list_customers(self, admin, kunde):
         r = requests.get(f"{API}/mbox/customers", headers=admin, timeout=T)
@@ -264,5 +334,8 @@ class TestCleanup:
                 f, _ = wait_ready(admin, S[k]["id"])
                 r = requests.delete(f"{API}/mbox/orders/{ORDER}/audio/{S[k]['id']}", headers=h, timeout=T)
                 assert r.status_code == 200, (k, r.text)
+        if "timer" in S:  # Timer wurden mit der Datei geloescht
+            lst = requests.get(f"{API}/mbox/orders/{ORDER}/audio", headers=admin, timeout=T).json()
+            assert all(t["id"] != S["timer"]["id"] for t in lst["timers"])
         if "k2id" in S:
             requests.delete(f"{API}/users/{S['k2id']}", headers=admin, timeout=T)

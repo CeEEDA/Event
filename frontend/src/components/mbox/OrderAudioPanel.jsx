@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Upload, Play, Square, Trash2, Pencil, Check, Volume2, Loader2, AlertTriangle, Radio } from "lucide-react";
+import { Upload, Play, Square, Trash2, Pencil, Check, Volume2, Loader2, AlertTriangle, Repeat, CalendarClock } from "lucide-react";
 import api from "../../lib/api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { MastAuswahl } from "./MastAuswahl";
+import { OrderAudioTimers } from "./OrderAudioTimers";
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL;
 
@@ -18,17 +20,18 @@ function StatusBadge({ f }) {
   return <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${cls}`} data-testid={`order-audio-status-${f.id}`}>{txt}</span>;
 }
 
-function FileRow({ f, orderPk, kunde, onChange, onPlay, busy }) {
+function FileRow({ f, orderPk, devices, selected, timers, active, onChange, onPlay, onStop, busy }) {
   const [edit, setEdit] = useState(false);
   const [name, setName] = useState(f.name);
   const token = localStorage.getItem("token");
   const ready = f.status === "ready" || f.status === "ready_unprocessed";
+  const spielt = devices.filter(d => d.pi?.playing?.file === f.stored);
   const save = async () => {
     try { await api.patch(`/mbox/orders/${orderPk}/audio/${f.id}`, { name }); setEdit(false); onChange(); toast.success("Umbenannt"); }
     catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
   };
   const del = async () => {
-    if (!window.confirm(`„${f.name}“ löschen? Die Datei wird von allen Masten entfernt.`)) return;
+    if (!window.confirm(`„${f.name}“ löschen? Die Datei und ihre Timer werden von allen Masten entfernt.`)) return;
     try { await api.delete(`/mbox/orders/${orderPk}/audio/${f.id}`); onChange(); toast.success("Gelöscht"); }
     catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
   };
@@ -48,7 +51,8 @@ function FileRow({ f, orderPk, kunde, onChange, onPlay, busy }) {
         )}
         <StatusBadge f={f} />
         {f.duration_sec != null && <span className="text-[11px] text-gray-400">{Math.floor(f.duration_sec / 60)}:{String(Math.round(f.duration_sec % 60)).padStart(2, "0")} min</span>}
-        <span className="text-[11px] text-gray-400 ml-auto">{f.uploaded_by} · {new Date(f.uploaded_at).toLocaleString("de-DE")}</span>
+        {spielt.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700 font-medium animate-pulse" data-testid={`order-audio-playing-${f.id}`}>läuft auf {spielt.length} Mast(en){spielt[0].pi.playing.loop ? " · Schleife" : ""}</span>}
+        <span className="text-[11px] text-gray-400 sm:ml-auto w-full sm:w-auto">{f.uploaded_by} · {new Date(f.uploaded_at).toLocaleString("de-DE")}</span>
       </div>
       {f.status === "failed" && <p className="text-xs text-red-600 mt-1">{f.error}</p>}
       {f.warning && <p className="text-xs text-amber-600 mt-1">{f.warning}</p>}
@@ -59,27 +63,37 @@ function FileRow({ f, orderPk, kunde, onChange, onPlay, busy }) {
         </p>
       )}
       {ready && (
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <audio controls preload="none" className="h-8 max-w-xs" src={`${API_BASE}/api/mbox/orders/${orderPk}/audio/${f.id}/stream?token=${token}`} data-testid={`order-audio-preview-${f.id}`} />
-          <Button size="sm" onClick={() => onPlay(f)} disabled={busy} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid={`order-audio-play-${f.id}`}>
-            <Play className="w-4 h-4 mr-1" /> Auf allen Masten starten
-          </Button>
-          {(!kunde || true) && <Button size="sm" variant="ghost" onClick={del} className="text-gray-400 hover:text-red-600" data-testid={`order-audio-delete-${f.id}`}><Trash2 className="w-4 h-4" /></Button>}
+        <div className="mt-2 space-y-2">
+          <audio controls preload="none" className="h-9 w-full sm:max-w-md" src={`${API_BASE}/api/mbox/orders/${orderPk}/audio/${f.id}/stream?token=${token}`} data-testid={`order-audio-preview-${f.id}`} />
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => onPlay(f, false)} disabled={busy || !active || devices.length === 0} className="bg-fuchsia-600 hover:bg-fuchsia-700 h-10 sm:h-9" data-testid={`order-audio-play-${f.id}`}>
+              <Play className="w-4 h-4 mr-1" /> Einmal abspielen
+            </Button>
+            <Button size="sm" onClick={() => onPlay(f, true)} disabled={busy || !active || devices.length === 0} variant="outline" className="border-fuchsia-300 text-fuchsia-700 hover:bg-fuchsia-50 h-10 sm:h-9" data-testid={`order-audio-loop-${f.id}`}>
+              <Repeat className="w-4 h-4 mr-1" /> Schleife
+            </Button>
+            <Button size="sm" onClick={onStop} disabled={busy || !active || devices.length === 0} variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 h-10 sm:h-9" data-testid={`order-audio-stop-${f.id}`}>
+              <Square className="w-4 h-4 mr-1" /> Stopp
+            </Button>
+            <Button size="sm" variant="ghost" onClick={del} className="text-gray-400 hover:text-red-600 h-10 sm:h-9 justify-self-end" data-testid={`order-audio-delete-${f.id}`}><Trash2 className="w-4 h-4" /><span className="sm:hidden ml-1">Löschen</span></Button>
+          </div>
+          <OrderAudioTimers orderPk={orderPk} file={f} timers={timers} devices={devices} selectedDevices={selected} onChange={onChange} />
         </div>
       )}
     </li>
   );
 }
 
-export function OrderAudioPanel({ orderPk, compact = false }) {
+export function OrderAudioPanel({ orderPk }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState([]); // [] = alle Masten
   const [uploadName, setUploadName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const fileRef = useRef(null);
 
-  const load = useCallback(() => api.get(`/mbox/orders/${orderPk}/audio`).then(r => setData(r.data)).catch(() => setData(d => d || { files: [], devices: [] })), [orderPk]);
+  const load = useCallback(() => api.get(`/mbox/orders/${orderPk}/audio`).then(r => setData(r.data)).catch(() => setData(d => d || { files: [], devices: [], timers: [] })), [orderPk]);
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
 
   const upload = async (e) => {
@@ -98,55 +112,59 @@ export function OrderAudioPanel({ orderPk, compact = false }) {
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
-  const play = async (f) => {
+  const zielText = () => selected.length ? `${selected.length} Mast(en)` : "allen Masten";
+  const play = async (f, loop) => {
     setBusy(true);
     try {
-      const r = await api.post(`/mbox/orders/${orderPk}/audio/${f.id}/play`);
+      const r = await api.post(`/mbox/orders/${orderPk}/audio/${f.id}/play`, { loop, device_ids: selected });
       let s = r.data.lead_sec;
       setCountdown(s);
       const t = setInterval(() => { s -= 1; setCountdown(s); if (s <= 0) { clearInterval(t); setCountdown(null); } }, 1000);
-      toast.success(`„${f.name}“ startet in ${r.data.lead_sec} s auf ${r.data.devices} Mast(en)`);
+      toast.success(`„${f.name}“ startet in ${r.data.lead_sec} s auf ${r.data.devices} Mast(en)${loop ? " – Schleife bis Stopp" : ""}`);
       if (r.data.offline?.length) toast.warning(`Offline: ${r.data.offline.join(", ")} – Befehl verfällt nach 2 min`);
     } catch (err) { toast.error(err.response?.data?.detail || "Start fehlgeschlagen"); }
     finally { setBusy(false); load(); }
   };
   const stop = async () => {
     setBusy(true);
-    try { await api.post(`/mbox/orders/${orderPk}/audio/stop`); toast.success("Stopp an alle Masten gesendet"); }
+    try { await api.post(`/mbox/orders/${orderPk}/audio/stop`, { device_ids: selected }); setCountdown(null); toast.success(`Stopp an ${zielText()} gesendet`); }
     catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
     finally { setBusy(false); load(); }
   };
 
   const files = data?.files || [];
   const devices = data?.devices || [];
+  const timers = data?.timers || [];
+  const active = data ? data.active !== false : true;
   const playing = devices.filter(d => d.pi?.playing);
   return (
     <div className="space-y-4" data-testid="order-audio-panel">
-      {/* Masten-Status */}
-      <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="order-audio-devices">
-        <Radio className="w-4 h-4 text-gray-400" />
-        {devices.length === 0 && <span className="text-gray-400">Aktuell kein Mast zugewiesen.</span>}
-        {devices.map(d => (
-          <span key={d.id} className={`px-2 py-1 rounded-full border ${d.pi?.playing ? "bg-fuchsia-50 border-fuchsia-200 text-fuchsia-700" : d.pi?.online ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-gray-50 border-gray-200 text-gray-500"}`} data-testid={`order-audio-device-${d.serial_number}`}>
-            {d.name} · {d.pi?.playing ? `spielt ${d.pi.playing.label || d.pi.playing.file}` : d.pi?.online ? "bereit" : "offline"}
-          </span>
-        ))}
+      {!active && data && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="order-audio-inactive">
+          Diese Veranstaltung liegt noch vor Ihnen: Durchsagen können bereits hochgeladen, benannt und vorgehört werden. Die Masten lassen sich ab Lieferung bedienen.
+        </p>
+      )}
+      {/* Ziel-Masten */}
+      <div className="flex flex-wrap items-start gap-2" data-testid="order-audio-devices">
+        <div className="flex-1 min-w-0"><MastAuswahl devices={devices} selected={selected} onChange={setSelected} /></div>
         {(playing.length > 0 || countdown != null) && (
-          <Button size="sm" variant="outline" onClick={stop} disabled={busy} className="ml-auto text-red-600 border-red-200 hover:bg-red-50" data-testid="order-audio-stop-all">
-            <Square className="w-4 h-4 mr-1" /> {countdown != null ? `Start in ${countdown} s – abbrechen` : "Alle stoppen"}
+          <Button size="sm" variant="outline" onClick={stop} disabled={busy} className="text-red-600 border-red-200 hover:bg-red-50 w-full sm:w-auto" data-testid="order-audio-stop-all">
+            <Square className="w-4 h-4 mr-1" /> {countdown != null ? `Start in ${countdown} s – abbrechen` : `Stopp (${zielText()})`}
           </Button>
         )}
       </div>
 
       {/* Upload */}
-      <div className="flex flex-wrap items-center gap-2 bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3" data-testid="order-audio-upload">
-        <Volume2 className="w-4 h-4 text-gray-400" />
-        <Input value={uploadName} onChange={e => setUploadName(e.target.value)} placeholder="Name der Durchsage, z.B. Evakuierung" className="h-9 max-w-xs bg-white" data-testid="order-audio-upload-name" />
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3" data-testid="order-audio-upload">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Volume2 className="w-4 h-4 text-gray-400 shrink-0" />
+          <Input value={uploadName} onChange={e => setUploadName(e.target.value)} placeholder="Name der Durchsage, z.B. Evakuierung" className="h-10 sm:h-9 sm:max-w-xs bg-white" data-testid="order-audio-upload-name" />
+        </div>
         <input ref={fileRef} type="file" accept=".mp3,.wav,.m4a,.ogg,.aac,.flac,audio/*" onChange={upload} className="hidden" id={`order-audio-file-${orderPk}`} data-testid="order-audio-upload-input" />
-        <Button size="sm" variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()} data-testid="order-audio-upload-btn">
+        <Button size="sm" variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()} className="h-10 sm:h-9 bg-white" data-testid="order-audio-upload-btn">
           {uploading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Upload className="w-4 h-4 mr-1" />} Sprachdatei hochladen
         </Button>
-        <span className="text-[11px] text-gray-400">MP3/WAV bis 25 MB · wird automatisch auf Rauschen geprüft und auf 0 dB normalisiert</span>
+        <span className="text-[11px] text-gray-400 w-full sm:w-auto">MP3/WAV bis 25 MB · wird automatisch auf Rauschen geprüft und auf 0 dB normalisiert</span>
         {data && data.ffmpeg === false && <span className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> ffmpeg fehlt auf dem Server – Dateien werden ungeprüft übernommen</span>}
       </div>
 
@@ -155,8 +173,11 @@ export function OrderAudioPanel({ orderPk, compact = false }) {
         <p className="text-sm text-gray-400" data-testid="order-audio-empty">Noch keine Durchsagen hochgeladen.</p>
       ) : (
         <ul data-testid="order-audio-list">
-          {files.map(f => <FileRow key={f.id} f={f} orderPk={orderPk} kunde={data?.kunde} onChange={load} onPlay={play} busy={busy} />)}
+          {files.map(f => <FileRow key={f.id} f={f} orderPk={orderPk} devices={devices} selected={selected} timers={timers.filter(t => t.file_id === f.id)} active={active} onChange={load} onPlay={play} onStop={stop} busy={busy} />)}
         </ul>
+      )}
+      {timers.length > 0 && (
+        <p className="text-[11px] text-gray-400 flex items-center gap-1" data-testid="order-audio-timers-hint"><CalendarClock className="w-3.5 h-3.5" /> {timers.filter(t => t.enabled).length} aktive(r) Timer · Uhrzeiten in deutscher Zeit, nur während Lieferung bis Abholung</p>
       )}
     </div>
   );

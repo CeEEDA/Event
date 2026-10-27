@@ -362,8 +362,16 @@ async def compute_order_mboxes(db, order_pk, devices: Optional[list] = None) -> 
     }
 
 
-async def customer_orders(db, user: dict) -> list:
-    """Heute aktive Auftraege des Kunden: ueber EpiRent-Kundennummer ODER explizite Freigabe in der Auftrags-Kachel."""
+def order_upcoming(order: dict, day: Optional[str] = None) -> bool:
+    """Auftrag liegt noch vor uns (Kunde darf schon Durchsagen vorbereiten, aber keine Masten bedienen)."""
+    day = day or today_str()
+    s = order.get("dispo_start") or order.get("event_start") or ""
+    return s not in ("", "0000-00-00") and s[:10] > day
+
+
+async def customer_orders(db, user: dict, upcoming: bool = False) -> list:
+    """Auftraege des Kunden ueber EpiRent-Kundennummer ODER explizite Freigabe in der Auftrags-Kachel.
+    Standard: nur heute aktive (Lieferung..Abholung); upcoming=True liefert zusaetzlich kommende Auftraege."""
     cno = str(user.get("customer_no") or "").strip()
     cfgs = await db.mbox_order_config.find({"customer_user_ids": user["id"]}, {"_id": 0, "order_pk": 1}).to_list(500)
     freigegeben = {str(c["order_pk"]) for c in cfgs}
@@ -371,8 +379,19 @@ async def customer_orders(db, user: dict) -> list:
         return []
     orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "customer_no": 1, "event": 1, "address": 1,
                                              "dispo_start": 1, "dispo_end": 1, "event_start": 1, "event_end": 1}).to_list(2000)
-    return [o for o in orders if order_active(o) and
-            ((cno and str(o.get("customer_no") or "").strip() == cno) or str(o.get("primary_key")) in freigegeben)]
+    out = []
+    for o in orders:
+        if not ((cno and str(o.get("customer_no") or "").strip() == cno) or str(o.get("primary_key")) in freigegeben):
+            continue
+        if order_active(o):
+            o["active"] = True
+        elif upcoming and order_upcoming(o):
+            o["active"] = False
+        else:
+            continue
+        out.append(o)
+    out.sort(key=lambda o: (not o["active"], str(o.get("dispo_start") or "")))
+    return out
 
 
 async def customer_device_ids(db, user: dict) -> set:

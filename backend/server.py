@@ -2358,6 +2358,13 @@ async def startup_event():
     except Exception as _e:
         logger.warning(f"M-Box Dienste konnten nicht starten: {_e}")
 
+    # M-Box Durchsagen-Timer (automatische Wiedergabe zu festen Uhrzeiten, Europe/Berlin)
+    try:
+        from routes.mbox_audio import timer_loop as _mbox_timer_loop
+        asyncio.create_task(_mbox_timer_loop())
+    except Exception as _e:
+        logger.warning(f"M-Box Durchsagen-Timer konnte nicht starten: {_e}")
+
     # Health-Diag Log-Loop (alle 15 Min RSS/FDs/Tasks/Mongo-Ping)
     try:
         from routes.system_diag import start_health_diag_logger

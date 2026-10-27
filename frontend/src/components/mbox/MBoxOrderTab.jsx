@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Lightbulb, MapPin, Plus, X, RotateCcw, ExternalLink, Satellite, Users, Volume2 } from "lucide-react";
+import { Lightbulb, MapPin, Plus, X, RotateCcw, ExternalLink, Satellite, Users, Volume2, Search } from "lucide-react";
 import api from "../../lib/api";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { OrderAudioPanel } from "./OrderAudioPanel";
 
 // Kunden, die diesen Auftrag (Masten + Durchsagen) sehen und bedienen duerfen
@@ -12,6 +13,7 @@ function KundenFreigabe({ orderPk }) {
   const [sel, setSel] = useState([]);
   const [auto, setAuto] = useState([]);
   const [open, setOpen] = useState(false);
+  const [suche, setSuche] = useState("");
   useEffect(() => {
     api.get("/mbox/customers").then(r => setKunden(r.data)).catch(() => {});
     api.get(`/mbox/orders/${orderPk}/customers`).then(r => { setSel(r.data.user_ids || []); setAuto(r.data.auto_by_customer_no || []); }).catch(() => {});
@@ -23,6 +25,8 @@ function KundenFreigabe({ orderPk }) {
     catch (e) { toast.error(e.response?.data?.detail || "Fehler"); }
   };
   const namen = [...auto.map(a => a.name), ...kunden.filter(k => sel.includes(k.id) && !auto.some(a => a.id === k.id)).map(k => k.name)];
+  const q = suche.trim().toLowerCase();
+  const gefiltert = kunden.filter(k => !q || `${k.name} ${k.email} ${k.customer_no || ""}`.toLowerCase().includes(q));
   return (
     <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 mb-4" data-testid="mbox-order-customers">
       <div className="flex items-center gap-2 flex-wrap">
@@ -32,21 +36,28 @@ function KundenFreigabe({ orderPk }) {
         <Button size="sm" variant="outline" onClick={() => setOpen(o => !o)} className="ml-auto h-7 text-xs" data-testid="mbox-order-customers-toggle">{open ? "Schließen" : "Kunden auswählen"}</Button>
       </div>
       {open && (
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-60 overflow-y-auto" data-testid="mbox-order-customers-list">
-          {kunden.length === 0 && <p className="text-xs text-gray-400">Keine Kunden-Logins vorhanden (Benutzerverwaltung → Rolle Kunde).</p>}
-          {kunden.map(k => {
-            const viaNo = auto.some(a => a.id === k.id);
-            return (
-              <label key={k.id} className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded hover:bg-white cursor-pointer ${viaNo ? "opacity-70" : ""}`}>
-                <input type="checkbox" checked={viaNo || sel.includes(k.id)} disabled={viaNo} onChange={() => toggle(k.id)} className="accent-fuchsia-600" data-testid={`mbox-order-customer-${k.id}`} />
-                <span className="flex-1 truncate">{k.name} <span className="text-gray-400 text-xs">{k.email}</span></span>
-                {viaNo && <span className="text-[10px] text-gray-400">automatisch (Kundennr.)</span>}
-              </label>
-            );
-          })}
+        <div className="mt-3">
+          <div className="relative mb-2">
+            <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <Input value={suche} onChange={e => setSuche(e.target.value)} placeholder="Kunde suchen (Name, E-Mail, Kundennummer)…" className="h-9 pl-8 bg-white" autoFocus data-testid="mbox-order-customers-search" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-60 overflow-y-auto" data-testid="mbox-order-customers-list">
+            {kunden.length === 0 && <p className="text-xs text-gray-400">Keine Kunden-Logins vorhanden (Benutzerverwaltung → Rolle Kunde).</p>}
+            {kunden.length > 0 && gefiltert.length === 0 && <p className="text-xs text-gray-400" data-testid="mbox-order-customers-nohit">Kein Kunde passt zu „{suche}“.</p>}
+            {gefiltert.map(k => {
+              const viaNo = auto.some(a => a.id === k.id);
+              return (
+                <label key={k.id} className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded hover:bg-white cursor-pointer ${viaNo ? "opacity-70" : ""}`}>
+                  <input type="checkbox" checked={viaNo || sel.includes(k.id)} disabled={viaNo} onChange={() => toggle(k.id)} className="accent-fuchsia-600" data-testid={`mbox-order-customer-${k.id}`} />
+                  <span className="flex-1 truncate">{k.name} <span className="text-gray-400 text-xs">{k.email}{k.customer_no ? ` · Kd-Nr. ${k.customer_no}` : ""}</span></span>
+                  {viaNo && <span className="text-[10px] text-gray-400">automatisch (Kundennr.)</span>}
+                </label>
+              );
+            })}
+          </div>
         </div>
       )}
-      <p className="text-[11px] text-gray-400 mt-2">Freigegebene Kunden sehen die zugewiesenen Masten (Licht + Durchsagen) von Lieferung bis Abholung. Kunden mit passender EpiRent-Kundennummer sind automatisch dabei.</p>
+      <p className="text-[11px] text-gray-400 mt-2">Freigegebene Kunden sehen den Auftrag unter „Durchsagen“ (Upload + Vorhören schon vorab, Bedienen von Lieferung bis Abholung). Kunden mit passender EpiRent-Kundennummer sind automatisch dabei.</p>
     </div>
   );
 }
