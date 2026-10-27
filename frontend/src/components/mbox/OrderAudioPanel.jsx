@@ -92,6 +92,10 @@ export function OrderAudioPanel({ orderPk }) {
   const [uploading, setUploading] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const fileRef = useRef(null);
+  const countdownRef = useRef(null);
+
+  const clearCountdown = () => { if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; } setCountdown(null); };
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
 
   const load = useCallback(() => api.get(`/mbox/orders/${orderPk}/audio`).then(r => setData(r.data)).catch(() => setData(d => d || { files: [], devices: [], timers: [] })), [orderPk]);
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
@@ -117,9 +121,10 @@ export function OrderAudioPanel({ orderPk }) {
     setBusy(true);
     try {
       const r = await api.post(`/mbox/orders/${orderPk}/audio/${f.id}/play`, { loop, device_ids: selected });
+      clearCountdown();
       let s = r.data.lead_sec;
       setCountdown(s);
-      const t = setInterval(() => { s -= 1; setCountdown(s); if (s <= 0) { clearInterval(t); setCountdown(null); } }, 1000);
+      countdownRef.current = setInterval(() => { s -= 1; setCountdown(s); if (s <= 0) clearCountdown(); }, 1000);
       toast.success(`„${f.name}“ startet in ${r.data.lead_sec} s auf ${r.data.devices} Mast(en)${loop ? " – Schleife bis Stopp" : ""}`);
       if (r.data.offline?.length) toast.warning(`Offline: ${r.data.offline.join(", ")} – Befehl verfällt nach 2 min`);
     } catch (err) { toast.error(err.response?.data?.detail || "Start fehlgeschlagen"); }
@@ -127,7 +132,7 @@ export function OrderAudioPanel({ orderPk }) {
   };
   const stop = async () => {
     setBusy(true);
-    try { await api.post(`/mbox/orders/${orderPk}/audio/stop`, { device_ids: selected }); setCountdown(null); toast.success(`Stopp an ${zielText()} gesendet`); }
+    try { await api.post(`/mbox/orders/${orderPk}/audio/stop`, { device_ids: selected }); clearCountdown(); toast.success(`Stopp an ${zielText()} gesendet`); }
     catch (err) { toast.error(err.response?.data?.detail || "Fehler"); }
     finally { setBusy(false); load(); }
   };
@@ -135,18 +140,23 @@ export function OrderAudioPanel({ orderPk }) {
   const files = data?.files || [];
   const devices = data?.devices || [];
   const timers = data?.timers || [];
-  const active = data ? data.active !== false : true;
+  const phase = data?.phase || "active";
+  // Kunde darf nur waehrend Lieferung..Abholung bedienen; Mitarbeiter immer (z.B. Test vor Ort)
+  const active = !data || !data.kunde || phase === "active";
+  const banner = {
+    upcoming: "Diese Veranstaltung liegt noch vor Ihnen: Durchsagen können bereits hochgeladen, benannt und vorgehört werden. Die Masten lassen sich ab Lieferung bedienen.",
+    past: "Diese Veranstaltung ist beendet. Die Durchsagen bleiben zum Nachhören erhalten; Masten werden nicht mehr angesteuert.",
+    unknown: "Dieser Auftrag hat keinen Dispo-Zeitraum (Lieferung/Abholung). Er gilt für Kunden erst als laufend, sobald ein Mast manuell zugewiesen oder ein Kunde freigegeben wurde.",
+  }[phase];
   const playing = devices.filter(d => d.pi?.playing);
   return (
     <div className="space-y-4" data-testid="order-audio-panel">
-      {!active && data && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="order-audio-inactive">
-          Diese Veranstaltung liegt noch vor Ihnen: Durchsagen können bereits hochgeladen, benannt und vorgehört werden. Die Masten lassen sich ab Lieferung bedienen.
-        </p>
+      {banner && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="order-audio-inactive">{banner}</p>
       )}
       {/* Ziel-Masten */}
       <div className="flex flex-wrap items-start gap-2" data-testid="order-audio-devices">
-        <div className="flex-1 min-w-0"><MastAuswahl devices={devices} selected={selected} onChange={setSelected} /></div>
+        <div className="flex-1 min-w-0">{data ? <MastAuswahl devices={devices} selected={selected} onChange={setSelected} /> : <span className="text-xs text-gray-400">Lade Masten…</span>}</div>
         {(playing.length > 0 || countdown != null) && (
           <Button size="sm" variant="outline" onClick={stop} disabled={busy} className="text-red-600 border-red-200 hover:bg-red-50 w-full sm:w-auto" data-testid="order-audio-stop-all">
             <Square className="w-4 h-4 mr-1" /> {countdown != null ? `Start in ${countdown} s – abbrechen` : `Stopp (${zielText()})`}

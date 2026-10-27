@@ -163,9 +163,22 @@ async def _order_access(user: dict, order_pk: int, need_active: bool = False):
     raise HTTPException(status_code=403, detail="Kein Zugriff auf diesen Auftrag")
 
 
-async def _order_is_active(order_pk: int) -> bool:
+async def _order_phase(order_pk: int) -> str:
+    """active = Lieferung..Abholung, upcoming = liegt vor uns, past = beendet, unknown = keine Dispo-Daten."""
     o = await db.orders_cache.find_one({"primary_key": int(order_pk)}, {"_id": 0, "dispo_start": 1, "dispo_end": 1, "event_start": 1, "event_end": 1})
-    return bool(o) and mbox_pi.order_active(o)
+    if not o:
+        return "unknown"
+    if mbox_pi.order_active(o):
+        return "active"
+    if not mbox_pi.order_has_period(o):
+        return "active" if str(order_pk) in await mbox_pi.manual_active_pks(db) else "unknown"
+    if mbox_pi.order_upcoming(o):
+        return "upcoming"
+    return "past"
+
+
+async def _order_is_active(order_pk: int) -> bool:
+    return await _order_phase(order_pk) == "active"
 
 
 def _public_file(f: dict) -> dict:
@@ -247,8 +260,9 @@ async def list_order_audio(order_pk: int, user: dict = Depends(get_user)):
     res = await mbox_pi.compute_order_mboxes(db, int(order_pk))
     cmds = await db.mbox_pi_commands.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("created_at", -1).to_list(20)
     timers = await db.mbox_order_timers.find({"order_pk": str(order_pk)}, {"_id": 0}).sort("time", 1).to_list(200)
+    phase = await _order_phase(order_pk)
     return {"files": files, "devices": res["devices"], "ffmpeg": ffmpeg_available(), "recent_commands": cmds, "timers": timers,
-            "kunde": user.get("role") == "kunde", "active": await _order_is_active(order_pk), "server_time": datetime.now(timezone.utc).isoformat()}
+            "kunde": user.get("role") == "kunde", "active": phase == "active", "phase": phase, "server_time": datetime.now(timezone.utc).isoformat()}
 
 @router.post("/orders/{order_pk}/audio")
 async def upload_order_audio(order_pk: int, file: UploadFile = File(...), name: str = Form(""), user: dict = Depends(get_user)):

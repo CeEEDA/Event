@@ -13,7 +13,9 @@
 
 ## M-Box Testkunde + Testauftrag (Preview)
 - **Test Meier (Kunde, customer_no TM-4711)**: kunde.meier@test.com / Meier2026!
-- Testauftrag in `orders_cache`: primary_key 999901 „Testfest Neuwied (M-Box)", customer_no TM-4711, dispo 2026-01-01..2027-12-31, Koordinaten 50.4335/7.4720 (`order_settings`) → MBOX-TEST-1 liegt 0,41 km entfernt (auto zugewiesen). Hinweis: kein EpiRent-Auftrag, `/api/orders/epirent/999901` liefert daher Fehler – `/api/mbox/orders/999901` funktioniert.
+- Testauftrag in `orders_cache`: primary_key 999901 „Testfest Neuwied (M-Box)", customer_no TM-4711, dispo 2026-01-01..2027-12-31, Koordinaten 50.4335/7.4720 (`order_settings`) → MBOX-TEST-1 liegt 0,41 km entfernt (auto zugewiesen). Kein EpiRent-Auftrag → `/api/orders/epirent/999901` liefert seit 2026-06 Grunddaten aus dem Cache (Admin-Auftragsdetail nutzbar).
+- Zweiter Testauftrag 999902 „Kommendes Fest (M-Box)", customer_no TM-4711, dispo 2027-03-01..2027-03-05 → in `/durchsagen` als „ab 01.03.2027 bedienbar" (Upload ja, Play 403).
+- Echter Pi im Preview: Gerät `M-Box_001` (Serial, id bcd7198b…) meldet echte GPS-Position; Auftrag 128 (ohne Dispo-Zeitraum) hat ihn manuell zugewiesen und Kunden kunde@test.com / kunde1@test.com freigegeben (Passwörter unbekannt).
 
 ## Freelancer Accounts (Preview)
 - **Test 12 (Freelancer, Aufträge: 33, 21, 163)**: test12@test.de / Freelance2026!

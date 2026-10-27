@@ -582,7 +582,23 @@ async def get_order_detail(order_pk: int, user: dict = Depends(_auth_user)):
     try:
         raw = await _get_full_order(api_url, api_key, order_pk, ssl_skip)
         if not raw:
-            raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+            cached = await _db.orders_cache.find_one({"primary_key": order_pk}, {"_id": 0})
+            if not cached:
+                raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+            # Nur im Cache (z.B. M-Box-Testauftrag oder EpiRent nicht erreichbar): Grunddaten liefern, Kacheln bleiben nutzbar
+            settings = await _db.order_settings.find_one({"order_pk": order_pk}, {"_id": 0}) or {}
+            return {
+                "primary_key": order_pk, "order_no": str(cached.get("order_no") or order_pk), "event": cached.get("event", ""),
+                "status": cached.get("status", ""), "event_start": cached.get("event_start"), "event_end": cached.get("event_end"),
+                "dispo_start": cached.get("dispo_start"), "dispo_end": cached.get("dispo_end"), "date_shipping": None,
+                "contact_name": cached.get("contact_name", ""), "customer_no": cached.get("customer_no"),
+                "address": cached.get("address", ""), "address_manual": bool(cached.get("address_manual")),
+                "address_raw": {"name": "", "street": "", "postal_code": "", "city": ""},
+                "is_confirmed": True, "is_canceled": False, "is_archived": False, "editor_name": "",
+                "sum_net": 0, "sum_gro": 0, "center_lat": settings.get("center_lat"), "center_lng": settings.get("center_lng"),
+                "radius_km": settings.get("radius_km", 5.0), "contact_phone": "", "contact_email": "", "contact_street": "",
+                "contact_postal_code": "", "contact_city": "", "source": "cache",
+            }
 
         # Parse schedule
         event_start = event_end = dispo_start = dispo_end = None

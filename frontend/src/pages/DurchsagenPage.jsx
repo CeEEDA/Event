@@ -48,7 +48,8 @@ export default function DurchsagenPage() {
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium flex items-center gap-1" data-testid={`durchsagen-upcoming-${o.order_pk}`}><CalendarClock className="w-3 h-3" /> ab {fmt(o.dispo_start)} bedienbar</span>
                   )}
                 </h2>
-                <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3 shrink-0" /> <span className="truncate">{o.address || "–"}</span> · {fmt(o.dispo_start)} – {fmt(o.dispo_end)}</p>
+                <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3 shrink-0" /> <span className="truncate">{o.address || "–"}</span></p>
+                <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><CalendarClock className="w-3 h-3 shrink-0" /> {fmt(o.dispo_start)} – {fmt(o.dispo_end)}</p>
               </div>
               {o.active && <Button size="sm" variant="outline" onClick={() => navigate("/generators")} data-testid={`durchsagen-masten-${o.order_pk}`}>Masten ansehen</Button>}
             </div>

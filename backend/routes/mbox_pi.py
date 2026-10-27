@@ -297,14 +297,32 @@ def today_str() -> str:
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
 
 
+def order_has_period(order: dict) -> bool:
+    s = order.get("dispo_start") or order.get("event_start") or ""
+    e = order.get("dispo_end") or order.get("event_end") or ""
+    return s not in ("", "0000-00-00", None) and e not in ("", "0000-00-00", None)
+
+
 def order_active(order: dict, day: Optional[str] = None) -> bool:
     """Von Lieferung (Dispo-Start) bis Abholung (Dispo-Ende) laut Auftrag."""
     day = day or today_str()
+    if not order_has_period(order):
+        return False
     s = order.get("dispo_start") or order.get("event_start") or ""
     e = order.get("dispo_end") or order.get("event_end") or ""
-    if s in ("", "0000-00-00") or e in ("", "0000-00-00"):
-        return False
     return s[:10] <= day <= e[:10]
+
+
+async def manual_active_pks(db) -> set:
+    """Auftraege OHNE Dispo-Zeitraum (z.B. Rahmen-/Archivauftrag) gelten als laufend, sobald ein Mast manuell
+    zugewiesen wurde oder Kunden explizit freigegeben sind - sonst saehe der Kunde nie etwas."""
+    pks = {o["order_pk"] for o in await db.mbox_order_overrides.find({"action": "add"}, {"_id": 0, "order_pk": 1}).to_list(500)}
+    pks |= {c["order_pk"] for c in await db.mbox_order_config.find({"customer_user_ids.0": {"$exists": True}}, {"_id": 0, "order_pk": 1}).to_list(500)}
+    if not pks:
+        return set()
+    orders = await db.orders_cache.find({"primary_key": {"$in": [int(p) for p in pks if str(p).isdigit()]}},
+                                        {"_id": 0, "primary_key": 1, "dispo_start": 1, "dispo_end": 1, "event_start": 1, "event_end": 1}).to_list(500)
+    return {str(o["primary_key"]) for o in orders if not order_has_period(o)}
 
 
 async def compute_order_mboxes(db, order_pk, devices: Optional[list] = None) -> dict:
@@ -379,11 +397,12 @@ async def customer_orders(db, user: dict, upcoming: bool = False) -> list:
         return []
     orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "customer_no": 1, "event": 1, "address": 1,
                                              "dispo_start": 1, "dispo_end": 1, "event_start": 1, "event_end": 1}).to_list(2000)
+    manual = await manual_active_pks(db)
     out = []
     for o in orders:
         if not ((cno and str(o.get("customer_no") or "").strip() == cno) or str(o.get("primary_key")) in freigegeben):
             continue
-        if order_active(o):
+        if order_active(o) or str(o.get("primary_key")) in manual:
             o["active"] = True
         elif upcoming and order_upcoming(o):
             o["active"] = False
@@ -420,6 +439,7 @@ async def device_manifest(db, device_id: str) -> list:
     orders = await db.orders_cache.find({}, {"_id": 0, "primary_key": 1, "dispo_start": 1, "dispo_end": 1,
                                              "event_start": 1, "event_end": 1}).to_list(2000)
     active_pks = [o["primary_key"] for o in orders if order_active(o)]
+    active_pks += [int(p) for p in await manual_active_pks(db) if int(p) not in active_pks]
     if active_pks:
         files = await db.mbox_order_audio.find({"order_pk": {"$in": [str(p) for p in active_pks]}, "status": {"$in": ["ready", "ready_unprocessed"]}},
                                                {"_id": 0}).to_list(1000)

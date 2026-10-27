@@ -1,0 +1,35 @@
+{
+  "summary": "Frontend test of the M-Box order announcements (Auftrags-Durchsagen). The admin route /orders/999901 shows 'Auftrag nicht gefunden' because /api/orders/epirent/999901 returns 404, and OrderDetailPage returns early on that error. As a result the M-Box tile cannot be reached for the test order (blocker, as expected). Workaround: tested the admin customer search (KundenFreigabe) on the real order /orders/33. The full OrderAudioPanel/timer flow (the same component) was tested as customer on /durchsagen, on desktop 1920 and on mobile 390x844. Everything requested works except one countdown bug after Stopp. All test files and timers were deleted afterwards (999901 only has the existing 'Evakuierung' left, 0 timers).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "OrderAudioPanel play()/stop()", "issue": "The countdown setInterval from play() is never cleared by stop(). Stop sets countdown=null, but the next tick sets it again, so the button 'Start in 4 s – abbrechen' (order-audio-stop-all) reappears about 1 s after Stopp and counts down to 0. Reproduced: Einmal abspielen -> Stopp -> after 0.7 s the button is gone, after 1.4 s it is back with 'Start in 4 s'. Several plays in a row also start several parallel intervals, and there is no cleanup on unmount. Fix: keep the interval in a useRef, clear it in stop()/before a new play()/in the useEffect cleanup.", "selector": "[data-testid=order-audio-stop-all]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Admin order detail for test order 999901", "issue": "/orders/999901 renders the error page 'Auftrag nicht gefunden' (the EpiRent call returns 404, and OrderDetailPage returns early at `if (error)`). The M-Box tile (tile-mbox / mbox-order-section) is therefore not reachable in the admin UI for orders that only exist in orders_cache/mbox. Admin flows on 999901 (chips with a real mast, play/loop/timer as admin) could not be run in the admin UI; they were verified through the same component on the customer page. If needed: on an EpiRent 404, fall back to orders_cache or still render the M-Box tile.", "affected_selectors": ["mbox-order-section", "tile-mbox"]}
+    ],
+    "design_issues": [
+      {"screen": "OrderAudioPanel inactive banner (admin /orders/33)", "issues": ["order-audio-inactive always says 'Diese Veranstaltung liegt noch vor Ihnen', even for past orders (order 33: dispo 05.06.–17.06.2026, today is Oct 2026). For past orders it needs its own text, e.g. 'Veranstaltung beendet'."]},
+      {"screen": "/durchsagen mobile 390", "issues": ["The address line is truncated after 'Neu…' and the date range wraps to its own two lines next to it, which looks a bit uneven. Better: address and dates on separate lines.", "Minor: on first render, before the data loads, the chip area shows 'Aktuell kein Mast zugewiesen.' for a moment (data=null is treated like devices=[]). A loading state would be cleaner."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OrderAudioPanel: clear the countdown interval in stop(), on a new play() and on unmount (useRef), otherwise the countdown/stop-all button comes back after Stopp",
+    "OrderDetailPage: on an EpiRent 404, still allow the M-Box tile for orders from orders_cache (otherwise test order 999901 and similar orders cannot be managed as admin)",
+    "Inactive banner: use separate wording for past orders vs. upcoming ones"
+  ],
+  "critical_code_review_comments": [
+    "OrderAudioPanel.play: the setInterval handle is not stored, so there is no clearInterval in stop/unmount and multiple clicks start parallel intervals",
+    "MastAuswahl: with only one mast, a click on that mast does nothing visible (it falls back to 'Alle'). This works as specified but gives the user no feedback",
+    "TimerForm: no client-side check for a date in the past in mode 'Einmalig' (relies on the backend)",
+    "OrderAudioPanel: data=null before the first load renders 'kein Mast zugewiesen', so there is no loading state"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend only)", "frontend": "~93% (all requested checks pass except the countdown-after-stop bug; admin route 999901 blocked)"},
+  "seed_data_creation": "None kept. Uploaded files 'QA UI Test' and 'QA Kunde Handy' plus 2 timers on 999901 were created and deleted again.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Admin M-Box tile only works on real EpiRent orders (e.g. /orders/33 -> tile-mbox). /orders/999901 = 'Auftrag nicht gefunden'. Customer kunde.meier@test.com sees 999901 (läuft, mast MBOX-TEST-1 offline -> toast 'Offline: ...' is expected) and 999902 (ab 01.03.2027 bedienbar, no files). Tested and OK: customer search meier/TM-4711/xyzxyz (nohit), chips (single mast falls back to Alle), upload -> 'bereit · 0 dB' within about 5-10 s, play/loop/stop toasts, stop-all countdown, timers (18:30 Fr, Sa loop; toggle -> opacity-60 and hint 0 aktive; run-now toast 'Timer-Test'; one-off timer 'am 01.06.2027'; delete), file delete with confirm, mobile 390: hub tile module-durchsagen, no horizontal overflow (scrollWidth=390).",
+  "rca of the issue": "Countdown: in OrderAudioPanel.play() `const t = setInterval(...)` is a local variable; stop() only calls setCountdown(null), and the still-running interval keeps setting s-1. Admin 999901: OrderDetailPage.fetchOrder -> GET /orders/epirent/999901 returns 404 -> setError -> early return of the error view before the tab hub."
+}

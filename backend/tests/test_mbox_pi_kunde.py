@@ -275,7 +275,8 @@ class TestKunde:
         requests.post(u, json={"device_id": ids["test1"], "action": "remove"}, headers=admin, timeout=T)
         try:
             assert requests.get(f"{API}/mbox/{ids['test1']}/status", headers=kunde, timeout=T).status_code == 403
-            assert requests.get(f"{API}/mbox/devices", headers=kunde, timeout=T).json()["devices"] == []
+            # weitere Masten (z.B. echter Pi im Preview) koennen per Radius-Wachstum nachruecken -> nur test1 darf fehlen
+            assert all(d["id"] != ids["test1"] for d in requests.get(f"{API}/mbox/devices", headers=kunde, timeout=T).json()["devices"])
         finally:
             requests.post(u, json={"device_id": ids["test1"], "action": "reset"}, headers=admin, timeout=T)
         assert requests.get(f"{API}/mbox/{ids['test1']}/status", headers=kunde, timeout=T).status_code == 200
@@ -296,7 +297,9 @@ class TestCustomerNo:
             assert r.status_code == 200 and r.json()["customer_no"] == "TM-4711"
             r = requests.put(f"{API}/users/{uid}", json={"customer_no": ""}, headers=admin, timeout=T)
             assert r.status_code == 200
-            assert requests.get(f"{API}/mbox/devices", headers=kunde, timeout=T).status_code == 403
+            # Kunde ohne Kundennr. und ohne Freigabe: 200 mit leerer Liste (kein 403, damit Freigabe-Kunden ohne Kundennr. funktionieren)
+            r = requests.get(f"{API}/mbox/devices", headers=kunde, timeout=T)
+            assert r.status_code == 200 and r.json()["devices"] == [], r.text[:200]
         finally:
             r = requests.put(f"{API}/users/{uid}", json={"customer_no": "TM-4711"}, headers=admin, timeout=T)
             assert r.json()["customer_no"] == "TM-4711"
