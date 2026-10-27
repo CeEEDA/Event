@@ -189,7 +189,7 @@ export default function UserEditModal({
                           <Switch
                             id={`mod-${m.key}`}
                             checked={!!formData.apps.modules?.[m.key]}
-                            onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), [m.key]: checked, ...(m.key === "mbox_bedienen" && checked ? { mbox_lesen: true } : {}) } } }))}
+                            onCheckedChange={(checked) => setFormData(p => ({ ...p, apps: { ...p.apps, modules: { ...(p.apps.modules || {}), [m.key]: checked, ...(m.key === "mbox_bedienen" && checked ? { mbox_lesen: true } : {}), ...(m.key === "mbox_lesen" && !checked ? { mbox_bedienen: false } : {}) } } }))}
                             data-testid={`module-toggle-${m.key}`}
                           />
                         </div>

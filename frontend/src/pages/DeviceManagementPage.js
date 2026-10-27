@@ -975,7 +975,7 @@ function MBoxConnectionSection({ formData, update, editing }) {
         </div>
         <div>
           <Label className="text-gray-700 text-sm">OPC-UA-Passwort</Label>
-          <Input type="password" value={formData.mbox_password} onChange={(e) => update("mbox_password", e.target.value)} className="mt-1" data-testid="mbox-password-input" />
+          <Input type="password" value={formData.mbox_password} onChange={(e) => update("mbox_password", e.target.value)} placeholder={editing && formData.mbox_password_set ? "•••••• (gesetzt – leer lassen = unverändert)" : "leer = kein Passwort"} className="mt-1" data-testid="mbox-password-input" />
         </div>
       </div>
       {editing?.mbox_port && <p className="text-[10px] text-gray-400">Interner Dienst-Port: {editing.mbox_port} (nur localhost, wird automatisch verwaltet)</p>}
@@ -2119,7 +2119,8 @@ export default function DeviceManagementPage() {
       mbox_security_mode: device.mbox_security_mode || "None",
       mbox_security_policy: device.mbox_security_policy || "None",
       mbox_user: device.mbox_user || "",
-      mbox_password: device.mbox_password || "",
+      mbox_password: "",
+      mbox_password_set: !!device.mbox_password_set,
     });
     setModalOpen(true);
   };
@@ -2140,6 +2141,7 @@ export default function DeviceManagementPage() {
     // Remove frontend-only fields
     delete payload.copy_image_from;
     delete payload.copy_docs_from;
+    delete payload.mbox_password_set;
     try {
       if (editing) {
         await api.put(`/devices/${editing.id}`, payload);

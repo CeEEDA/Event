@@ -1,0 +1,46 @@
+{
+  "summary": "M-Box Lichtmast-Fernbedienung, Backend und Frontend durchgetestet. Backend: 20/20 pytest bestanden (/app/backend/tests/test_mbox_gateway.py). Abgedeckt: Anlage mit Port-Vergabe (8102+), 400 bei fehlendem oder falschem Endpoint (Create und Update), devices/status ohne mbox_password, runtime.running, lesen/befehl mit erwartetem Timeout 'Zeitüberschreitung', Filter ungueltiger Namen, 400 bei Sonderzeichen-Befehl, Audit-Eintrag, Rate-Limit (31 parallele Anfragen -> genau ein 429), Berechtigungsmatrix Mitarbeiter lesen/bedienen/none, Admin-Diagnose (log/knoten/restart), Neustart bei PUT (started_at neuer), 404 nach DELETE. Frontend: alle beschriebenen Flows bestanden (Geraeteverwaltung M-Box anlegen/bearbeiten/Fernbedienung oeffnen, /generators M-Box Sektion, /mbox/:id als Admin mit 7 Reitern, Pills, Hinweis, Schnellstart-Toast, Kundenzaehler-Bestaetigung mit Abbrechen, Zeitschaltuhr-Editor mit Punkt-Marker und Verwerfen-Dialog, Zurueck-Button; Mitarbeiter-Ansicht nur Lesen; Admin-Berechtigungsschalter mit Auto-Aktivierung und Persistenz). Keine JS-Seitenfehler. Wichtigster Befund: Sicherheitsluecke, GET /api/devices gibt das OPC-UA mbox_password im Klartext an jeden Mitarbeiter zurueck.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/devices (require_staff), auch POST/PUT /api/devices Response", "issue": "mbox_password (OPC-UA-Passwort) wird im Klartext an JEDEN Mitarbeiter geliefert, auch ohne mbox_lesen. Verifiziert: Geraet mit mbox_password='SECRETPW' angelegt, ma1 sieht es in GET /api/devices. Das /api/mbox Gateway filtert das Passwort, die Geraete-API nicht.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "routes/mbox.py ensure_running()", "issue": "Bei abgestuerztem Node-Prozess ist p.process nicht None (returncode gesetzt). Dadurch greift die 5-s-Drossel nicht und restarts wird nicht hochgezaehlt. Jede Anfrage (Polling alle 2 s pro Client) startet sofort neu -> Crash-Loop ohne Drossel. Ausserdem wird der Log-Datei-Handle aus _spawn im Elternprozess nie geschlossen (FD-Leak pro Neustart)."},
+      {"endpoint": "GET /api/users (server.py list_users)", "issue": "500 KeyError 'created_at', sobald ein User ohne created_at existiert. Ursache waren 5 alte Testuser 'test-offday-bug-*' eines frueheren Testlaufs; habe ich geloescht. Dadurch war die Benutzerverwaltung kaputt. Robuster waere u.get('created_at')."},
+      {"endpoint": "routes/mbox.py _rate", "issue": "Rate-Limit liegt im Speicher pro Prozess, das Dict waechst ohne Bereinigung der Keys. Fuer einen einzelnen Worker ok."},
+      {"endpoint": "DELETE /api/devices/{id}", "issue": "mbox_audit-Eintraege des geloeschten Geraets bleiben verwaist zurueck. Moeglicherweise gewollt (Audit-Aufbewahrung)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "UserEditModal mbox-permissions-block", "issue": "Bei aktivem 'Bedienen' kann 'Status sehen' ausgeschaltet werden, ohne dass 'Bedienen' mit ausgeht. Gespeichert wird dann lesen=false, bedienen=true, effektiv also Stufe 'bedienen'. Das ist inkonsistent: Ausschalten von lesen sollte bedienen mit ausschalten.", "selector": "[data-testid=module-toggle-mbox_lesen]", "priority": "LOW"},
+      {"component": "AdminPage openEdit modules mapping (schon vorher vorhanden)", "issue": "Das Modul 'telefon' fehlt im formData.modules-Mapping. Beim Speichern eines Mitarbeiters geht apps.modules.telefon verloren; ein explizites telefon=false wird so still wieder zu 'an'. Bei ma1 trat das waehrend des Tests auf, telefon=true habe ich in der DB wiederhergestellt.", "selector": "[data-testid=module-toggle-telefon]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/mbox/:id Zeitschaltuhr", "issues": ["Native Browser-Eingaben fuer Datum/Uhrzeit (input type=date/time) statt shadcn-Calendar; in englischer Browser-Locale erscheinen mm/dd/yyyy und 12h AM/PM in einer deutschen Oberflaeche", "Der Bestaetigungsdialog fuer 'Verwerfen?' hat den Button 'Ja, ausführen'; 'Verwerfen' waere klarer"]},
+      {"screen": "/mbox/:id Toasts", "issues": ["toast.error erscheint als neutraler weisser Toast und nicht rot (Sonner ohne richColors); erwartet war ein roter Toast"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_mbox_gateway.py", "/app/test_reports/pytest/pytest_mbox.xml"],
+  "action_items": [
+    "HIGH: mbox_password (und idealerweise mqtt_password/pi_password) aus den Antworten von GET /api/devices fuer Nicht-Admins entfernen, ebenso aus den Create/Update-Antworten. Frontend-Edit: Passwortfeld leer lassen, 'leer = unveraendert'",
+    "ensure_running: abgestuerzten Prozess (returncode != None) wie p.process None behandeln, damit Drossel und restarts-Zaehler greifen; log_file in _spawn nach create_subprocess_exec schliessen",
+    "UserEditModal: Ausschalten von mbox_lesen soll mbox_bedienen mit ausschalten",
+    "AdminPage openEdit: 'telefon' ins modules-Mapping aufnehmen (telefon: user.apps?.modules?.telefon !== false)",
+    "list_users: created_at robust per .get() lesen",
+    "Optional: Sonner richColors fuer Fehler-Toasts; shadcn-Datepicker in der Zeitschaltuhr"
+  ],
+  "critical_code_review_comments": [
+    "GET /api/devices liefert Geraete-Credentials an alle Staff-User, siehe oben",
+    "Crash-Restart-Pfad in ensure_running wird bei gecrashtem Prozess nie gedrosselt",
+    "Datei-Handle in _spawn wird nicht geschlossen",
+    "Berechtigungslogik und ADMIN_BEFEHLE serverseitig korrekt durchgesetzt; Gateway filtert mbox_password korrekt"
+  ],
+  "updated_files": ["/app/backend/tests/test_mbox_gateway.py"],
+  "success_rate": {"backend": "100% (20/20) fuer M-Box; 1 Sicherheitsbefund ausserhalb des Gateways", "frontend": "100% der angefragten Flows"},
+  "seed_data_creation": "Keine dauerhaften Daten. QA-Geraete (MBOX-QA-*, MBOX-UI-QA, MBOX-QA-PW1) angelegt und wieder geloescht; nur MBOX-TEST-1 (Port 8101) bleibt, laeuft. ma1 wieder auf mbox_lesen=true, mbox_bedienen=false (telefon=true wiederhergestellt). 5 alte Testuser 'test-offday-bug-*' ohne created_at geloescht (verursachten 500 auf GET /api/users).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pytest: REACT_APP_BACKEND_URL exportieren, dann pytest /app/backend/tests/test_mbox_gateway.py (Laufzeit ca. 70 s, im Hintergrund starten wegen 120-s-Limit). Admin-User-Update laeuft ueber PUT /api/users/{id} mit dem kompletten apps-Objekt, das apps vollstaendig ersetzt. Im Admin-UI: Mitarbeiter-Filter ist data-testid=filter-mitarbeiter, Bearbeiten ist edit-user-<id>, Geraetetyp-Button ist type-mbox. Ohne SPS ist 'Zeitüberschreitung: Verbinden (8 s)' das erwartete Verhalten."
+}

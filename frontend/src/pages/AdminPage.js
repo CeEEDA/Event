@@ -466,6 +466,7 @@ export default function AdminPage() {
           fileshare: user.apps?.modules?.fileshare !== false,
           serviceplan: user.apps?.modules?.serviceplan !== false,
           adr: !!user.apps?.modules?.adr,
+          telefon: user.apps?.modules?.telefon !== false,
           mbox_lesen: !!user.apps?.modules?.mbox_lesen,
           mbox_bedienen: !!user.apps?.modules?.mbox_bedienen,
         }

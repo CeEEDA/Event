@@ -33,6 +33,15 @@ DEVICE_TYPES = ["stromerzeuger", "lichtmast", "mbox", "messkoffer", "kirmeskiste
 MBOX_FIELDS = ("mbox_endpoint", "mbox_security_mode", "mbox_security_policy", "mbox_user", "mbox_password")
 
 
+def _hide_mbox_secret(doc: dict) -> dict:
+    """OPC-UA-Passwort nie an den Browser geben; nur Flag ob gesetzt."""
+    if doc and doc.get("device_type") == "mbox":
+        doc["mbox_password_set"] = bool(doc.get("mbox_password"))
+    if doc:
+        doc.pop("mbox_password", None)
+    return doc
+
+
 # ============== Models ==============
 
 class DeviceCreate(BaseModel):
@@ -307,6 +316,7 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)
                 await db.device_documents.insert_one(doc)
 
     result = {k: v for k, v in device_doc.items() if k != "_id"}
+    _hide_mbox_secret(result)
     if "image_gridfs_id" in result and result["image_gridfs_id"]:
         result["image_gridfs_id"] = str(result["image_gridfs_id"])
     return result
@@ -315,6 +325,8 @@ async def create_device(data: DeviceCreate, admin: dict = Depends(require_staff)
 @router.get("")
 async def list_devices(user: dict = Depends(require_staff)):
     devices = await db.devices.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    for d in devices:
+        _hide_mbox_secret(d)
 
     # Collect serial numbers to look up generator last_seen
     serial_numbers = [d["serial_number"] for d in devices if d.get("device_type") in ("stromerzeuger", "lichtmast")]
@@ -379,6 +391,7 @@ async def get_device(device_id: str, user: dict = Depends(require_staff)):
     device = await db.devices.find_one({"id": device_id}, {"_id": 0})
     if not device:
         raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+    _hide_mbox_secret(device)
     docs = await db.device_documents.find({"device_id": device_id}, {"_id": 0}).to_list(100)
     for d in docs:
         if "gridfs_id" in d:
@@ -400,6 +413,9 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
     for k, v in data.dict(exclude_unset=True).items():
         if v is not None:
             update_data[k] = v
+    # M-Box Passwort: leer = unveraendert lassen (wird nie an den Browser zurueckgegeben)
+    if update_data.get("mbox_password", None) == "":
+        update_data.pop("mbox_password")
 
     # Validate status
     if "status" in update_data and update_data["status"] not in ("aktiv", "ausser_betrieb"):
@@ -451,6 +467,7 @@ async def update_device(device_id: str, data: DeviceUpdate, user: dict = Depends
             )
 
     updated = await db.devices.find_one({"id": device_id}, {"_id": 0})
+    _hide_mbox_secret(updated)
     if "image_gridfs_id" in updated and updated["image_gridfs_id"]:
         updated["image_gridfs_id"] = str(updated["image_gridfs_id"])
     return updated

@@ -20,6 +20,15 @@ German (all UI + agent responses in German only).
 
 
 ## Recently Implemented (Session current)
+### 2026-06 (Feature: M-Box Lichtmast-Fernbedienung – OPC UA / Siemens S7)
+- **Quelle**: ZIP der SPS-Firma (`M-Box_Webintegration.md` + Node-Dienst). Code 1:1 nach `backend/mbox_service/` übernommen (server.js, texte.js, Anleitung als `ANLEITUNG_SPS_FIRMA.md`). OPC-UA-Logik/Befehlslisten NICHT verändert (Vorgabe).
+- **Mehrmast-Architektur** (User-Wunsch): Gerätetyp `mbox` in der Geräteverwaltung (Felder `mbox_endpoint`, `mbox_security_mode/policy`, `mbox_user`, `mbox_password`, auto `mbox_port` ab 8101). `routes/mbox.py` startet pro Gerät einen Node-Kindprozess (Start beim Backend-Start, Neustart bei Konfigänderung/Crash mit 5-s-Drossel, Stop bei Löschen/außer Betrieb, Logs in `mbox_service/logs/`).
+- **Gateway** `/api/mbox/*`: JWT, Stufen lesen/bedienen/admin (`apps.modules.mbox_lesen|mbox_bedienen`, Admin alles; `Wartung_Reset`/`Kundenzaehler_Reset`/`Probelauf_Start`/GPS/Diagnose nur Admin), Rate-Limit 30/min, Audit-Collection `mbox_audit`, `mbox_password` wird nie an den Browser gegeben (`mbox_password_set`-Flag, leer = unverändert).
+- **Frontend**: `/mbox/:id` (MBoxPage + `components/mbox/*`, alle 7 Reiter nativ, 2-s-Polling, Bestätigungsdialoge), Sektion „M-Box Lichtmasten" im Power Monitoring (`/generators`), M-Box-Formular in der Geräteverwaltung inkl. „Fernbedienung öffnen", Berechtigungsschalter im UserEditModal.
+- **Deploy**: `update-live.ps1` führt `npm install` in `backend/mbox_service` aus; Betriebsdoku `backend/mbox_service/README_BETRIEB.md`. Node ≥ 20 auf dem Server nötig.
+- **Tests**: `tests/test_mbox_gateway.py` (20 Tests, Testing-Agent iteration_88: Backend 20/20, Frontend alle Flows grün). Im Preview keine SPS → erwartet `ok:false Zeitüberschreitung`.
+- **Nebenbei gefixt** (Testing-Agent): `telefon` im AdminPage-Modul-Mapping, `created_at` robust in list_users.
+
 ### 2026-06 (P0 Bugfix: „Bereits eingestempelt" – MA konnten morgens nicht einstempeln)
 - **Root Cause**: `POST /time/clock-in`, `GET /time/status`, `GET /time/presence`, `POST /time/clock-out`, `force-clock-out` und `saldo-summary` suchten den „offenen Eintrag" nur über `{"clock_out": None}`. Admin-Stunden-Korrekturen (`type="korrektur"`) haben `clock_in=None` UND `clock_out=None` → sobald der Admin für einen MA eine Korrektur gebucht hatte, galt dieser dauerhaft als eingestempelt (400 „Bereits eingestempelt"). Traf deshalb nacheinander genau die MA, bei denen zuvor korrigiert wurde.
 - **Fix** (`routes/employee.py`): alle 6 Queries filtern jetzt zusätzlich `clock_in: {"$ne": None}` (analog zum Bug-B-Fix im Recompute).
@@ -135,6 +144,8 @@ German (all UI + agent responses in German only).
 - **Meter Auto-Freeze on Event End** (`/app/backend/routes/kirmes.py`): Scheduler runs every 30 min, freezes final `E_imp_kWh` as `kwh_ausbau/meter_end`, computes `kwh_used`, unlinks `emu_device_id/emu_meter_id/emu_meter_name`, marks event `meters_frozen_at`. Manual trigger endpoint `POST /api/kirmes/events/{id}/freeze-meters`. UI banner + button on KirmesEventDetailPage.
 
 ## Backlog (P1)
+- **M-Box Abnahme am echten Mast** (Abschnitt 10 der SPS-Anleitung): Verbindung, Fernbedienung-erlaubt-Sperre, Quittieren/Lampe/Netzüberwachung/Zeitschaltuhr prüfen; danach Security auf SignAndEncrypt/Basic256Sha256 + OPC-UA-Benutzer in TIA
+- **M-Box Erweiterungen**: Audit-Ansicht im Frontend (wer hat was geschaltet), Karte/Standort des Masts, Störungs-Benachrichtigung (Push/Telegram) bei Code 100+
 - **Eingangsrechnungen Volksbank**: Zweit-Bank neben Sparkasse in `fints_banking.py` einbinden (FINTS_URL/BLZ/USER/PIN parametrisieren, Konto-Auswahl über IBAN)
 - OTA-Update-Mechanik für Tankbeleg Pi (client-side polling + systemd restart)
 - EpiRent "Lieferscheine" (Delivery Notes) PDF Generation

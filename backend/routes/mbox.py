@@ -149,6 +149,7 @@ async def _spawn(device: dict) -> _Proc:
         node_bin, "server.js", cwd=str(SERVICE_DIR), env=_env_for(device),
         stdout=log_file, stderr=asyncio.subprocess.STDOUT, **kwargs,
     )
+    log_file.close()
     p.config_sig = _config_sig(device)
     p.started_at = datetime.now(timezone.utc).isoformat()
     logger.info(f"M-Box Dienst gestartet: {device.get('serial_number')} pid={p.process.pid} port={device.get('mbox_port')}")
@@ -174,10 +175,11 @@ async def ensure_running(device: dict) -> _Proc:
         p = _procs.get(device["id"])
         if p and _proc_alive(p) and p.config_sig == _config_sig(device):
             return p
+        crashed = bool(p and p.started_at and not _proc_alive(p))
         if p and _proc_alive(p):
-            await _kill(p)
-        if p and p.process is None and p.started_at:
-            # Crash/Konfigwechsel -> Neustart, aber hoechstens alle 5 s
+            await _kill(p)  # Konfig geaendert -> sauber neu starten
+        if crashed:
+            # Prozess ist von selbst gestorben -> Neustart, aber hoechstens alle 5 s
             if time.monotonic() - p.last_start_try < 5:
                 raise HTTPException(status_code=503, detail="M-Box Dienst startet gerade neu, bitte kurz warten")
             p.restarts += 1
